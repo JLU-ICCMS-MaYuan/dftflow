@@ -25,11 +25,12 @@ class JobConfig:
 
     vasp_std: str
     vasp_gam: str
-    bashtitle: str
+    bashtitle: Optional[str]
     slurmtitle: Optional[str]
     pbstitle: Optional[str]
     lsftitle: Optional[str]
     default_mpi_procs: int = 8
+    default_queue: str = "bash"
 
 
 def _load_templates_from_toml(toml_path: Path) -> tuple[dict, dict]:
@@ -69,15 +70,22 @@ def load_job_config(toml_path: Optional[Path] = None) -> JobConfig:
     if defaults.get("mpi_procs"):
         cfg["default_mpi_procs"] = defaults["mpi_procs"]
 
-    for queue, header in templates.items():
-        if queue == "bash":
-            cfg["bashtitle"] = header or cfg.get("bashtitle")
-        if queue == "slurm":
-            cfg["slurmtitle"] = header or cfg.get("slurmtitle")
-        if queue == "pbs":
-            cfg["pbstitle"] = header or cfg.get("pbstitle")
-        if queue == "lsf":
-            cfg["lsftitle"] = header or cfg.get("lsftitle")
+    if not templates:
+        raise ValueError("配置缺少 [templates]，请至少定义一个队列脚本头（如 [templates.slurm]）")
+
+    # 仅读取第一个定义的队列模板，其余忽略
+    first_queue, first_header = next(iter(templates.items()))
+    allowed_queues = {"bash", "slurm", "pbs", "lsf"}
+    if first_queue not in allowed_queues:
+        raise ValueError(f"[templates.{first_queue}] 队列类型不支持，仅允许 {allowed_queues}")
+    if not first_header:
+        raise ValueError(f"[templates.{first_queue}] 缺少 header 内容")
+
+    cfg["default_queue"] = first_queue
+    cfg["bashtitle"] = first_header if first_queue == "bash" else None
+    cfg["slurmtitle"] = first_header if first_queue == "slurm" else None
+    cfg["pbstitle"] = first_header if first_queue == "pbs" else None
+    cfg["lsftitle"] = first_header if first_queue == "lsf" else None
 
     required = ["vasp_std", "vasp_gam"]
     missing = [k for k in required if not cfg.get(k)]
@@ -87,23 +95,29 @@ def load_job_config(toml_path: Optional[Path] = None) -> JobConfig:
     return JobConfig(
         vasp_std=str(cfg["vasp_std"]),
         vasp_gam=str(cfg["vasp_gam"]),
-        bashtitle=str(cfg.get("bashtitle") or "").strip(),
+        bashtitle=str(cfg.get("bashtitle") or "").strip() if cfg.get("bashtitle") else None,
         slurmtitle=str(cfg["slurmtitle"]).strip() if cfg.get("slurmtitle") else None,
         pbstitle=str(cfg["pbstitle"]).strip() if cfg.get("pbstitle") else None,
         lsftitle=str(cfg["lsftitle"]).strip() if cfg.get("lsftitle") else None,
         default_mpi_procs=int(cfg.get("default_mpi_procs") or 8),
+        default_queue=str(cfg.get("default_queue") or "bash"),
     )
 
 
 def select_job_header(queue_system: str, cfg: JobConfig) -> str:
-    """脚本头选择器，所有模块共用，按队列类型选择 header。"""
+    """脚本头选择器，仅使用配置中定义的第一个队列模板。"""
+    queue = (queue_system or cfg.default_queue or "").lower()
+    if queue not in {"bash", "slurm", "pbs", "lsf"}:
+        raise ValueError(f"不支持的队列类型: {queue}")
     header_map = {
         "bash": cfg.bashtitle,
-        "slurm": cfg.slurmtitle or cfg.bashtitle,
-        "pbs": cfg.pbstitle or cfg.bashtitle,
-        "lsf": cfg.lsftitle or cfg.bashtitle,
+        "slurm": cfg.slurmtitle,
+        "pbs": cfg.pbstitle,
+        "lsf": cfg.lsftitle,
     }
-    header = header_map.get((queue_system or "bash"), cfg.bashtitle) or cfg.bashtitle
+    header = header_map.get(queue)
+    if not header:
+        raise ValueError(f"未为队列 {queue} 提供脚本头，请在 [templates.{queue}] 中配置或调整 default_queue")
     return header.strip()
 
 
@@ -117,7 +131,7 @@ def write_job_script(
 ) -> Path:
     """根据 queue_system 生成作业脚本。"""
     work_dir = Path(work_dir)
-    queue = (queue_system or "bash").lower()
+    queue = (queue_system or cfg.default_queue or "").lower()
     script_file = work_dir / f"run_{job_name}.sh"
 
     header = select_job_header(queue, cfg)

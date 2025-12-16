@@ -16,7 +16,7 @@ pressure = [0]
 # 计算参数
 kspacing = 0.3
 encut = 500
-job_system = "bash"       # bash/slurm/pbs/lsf
+job_system = ""           # 留空则使用 templates 中的首个队列
 max_workers = 2           # 批量/多压强并行度
 structure_ext = "vasp"    # 目录输入时的结构后缀过滤
 dos_type = "element"      # element/spd/element_spd
@@ -29,6 +29,8 @@ submit = false            # true 时自动提交 run_*.sh
 [phonon]
 supercell = [2, 2, 2]
 method = "disp"
+# primitive/conventional/relaxed，决定声子计算使用的结构
+structure = "primitive"
 
 [md]
 potim = 1.0
@@ -39,7 +41,7 @@ nsw = 200
 [tasks]
 max_workers = 2
 
-[templates.bash]
+[templates.bash]  # templates 仅读取第一个定义的队列头，其余将被忽略
 header = """
 #!/bin/sh
 source /home/mayuan/intel/oneapi/setvars.sh

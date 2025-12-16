@@ -112,7 +112,9 @@ class PropertiesPipeline(BasePipeline):
         self.include_bader = include_bader
         self.include_fermi = include_fermi
         self.plot_dos_type = plot_dos_type
-        self.queue_system = queue_system or "bash"
+        self.queue_system = queue_system or (self.job_cfg.default_queue if self.job_cfg else None)
+        if not self.queue_system:
+            raise ValueError("未找到队列配置，请在 job_templates.local.toml 的 [templates] 中至少提供一个队列头")
         self.mpi_procs = mpi_procs
         self.run_relax = run_relax
         self.requested_steps = self._normalize_steps(requested_steps)

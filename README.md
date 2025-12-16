@@ -15,7 +15,8 @@
 
 ## 作业脚本与可执行
 - VASP 可执行路径与队列头只读自当前配置文件；不再支持环境变量或用户级配置。
-- 生成脚本时优先使用 `templates.<queue>`，缺失则回退到 bash 头；MPI 进程数默认用 `[defaults].mpi_procs`，可被 `mpi_procs` 覆盖。
+- `[templates]` 仅读取首个定义的队列头（如 `templates.slurm`），其余忽略；若未定义任何模板将直接报错。未显式写 `job_system` 时默认使用首个模板的队列；若指定的队列无对应模板也会报错。
+- MPI 进程数默认用 `[defaults].mpi_procs`，可被 `mpi_procs` 覆盖。
 
 ## POTCAR 处理
 - 不再搜索 `potcar_dir` 或 `potcar_lib`。程序仅使用 `[potcar]` 映射，按 POSCAR 中的元素顺序拼接成 POTCAR。
@@ -25,3 +26,6 @@
 - 单结构：`<stem>/<pressure>_GPa/01_relax -> 02_scf -> ...`；批量目录下按文件名分组。
 - 每个步骤输出 `pipeline_checkpoint.json`、`pipeline_report.txt` 与 `run_*.sh`，完成后写 `finished` 标记。
 - 重复运行会基于产物检查决定跳过/重跑；prepare_only 模式仅生成输入不提交。
+
+## 声子结构开关
+- `[phonon].structure` 决定声子计算使用的结构：`primitive`（默认，原胞）、`conventional`（标准晶胞）或 `relaxed`（CONTCAR）。若选定结构不存在将报错。

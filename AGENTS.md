@@ -9,7 +9,7 @@
 
 ## 开发、构建与运行
 - Python 3.12+，`python -m venv .venv && source .venv/bin/activate`，开发时 `export PYTHONPATH=$(pwd):$PYTHONPATH`，无额外构建，可用 `pip install -e .` 做可编辑安装。
-- CLI 仅读取 TOML：默认查找工作目录 `job_templates.local.toml`，或通过 `--config` 指定；仓库内 `config/job_templates.toml` 仅作模板。
+- CLI 仅读取 TOML：默认查找工作目录 `job_templates.local.toml`，或通过 `--config` 指定；仓库内 `config/job_templates.toml` 仅作模板且不可直接使用。
 - 基本用法：`vasp -i POSCAR --config job_templates.local.toml -p 0 5`；批量：`vasp -i ./structures --config job_templates.local.toml -p 0 5 10`。
 - 并行与提交：并发来自 `[tasks].max_workers` 或 `[settings].max_workers`，`submit=true` 时自动提交 `run_*.sh`，否则仅生成输入。
 - 调试建议：先在 prepare 模式检查目录结构与 POTCAR，确认无误后再打开 `submit`；日志在各工作子目录 `pipeline.log`。 
@@ -35,7 +35,9 @@
 
 ## 配置与安全提示
 - 配置来源唯一：`--config` 指定的 TOML 或当前目录 `job_templates.local.toml`；不再读取环境变量、用户级配置或仓库模板。
+- `[templates]` 仅使用首个定义的队列头；如果既未定义模板又设置了 job_system，将报错，请至少提供一个 `[templates.<queue>]`。
 - `[potcar]` 必填：元素 -> POTCAR 绝对路径；缺失元素或路径不存在会直接报错，不再支持 potcar_dir/potcar_lib 搜索。
+- `[phonon].structure` 新增开关：primitive（默认）/conventional/relaxed，缺少对应结构会报错。
 - 调整队列模板时勿提交真实账号路径；批量任务先用少量结构自检，关注 `pipeline.log` 与 `pipeline_report.txt`。
 - 产出目录包含 `pipeline_checkpoint.json`/`pipeline_report.txt`/`finished` 标记，可用于排查；异常时先查 `VASP_error_collecting.md`，再最小化复现场景。 
 
@@ -50,3 +52,4 @@
 - 2025-12-15：新增 `vasp_cli_entry.py` 与入口脚本映射 `vasp/vaspflow -> vasp_cli_entry:main`，在运行时强制优先加载当前项目的 `vasp` 包，避免与其他同名包冲突导致 CLI 无法导入 pipelines。
 - 2025-12-15：完善 `config_example.json` 使用说明（已废弃，现已移除并合并到 TOML 模板）。
 - 2025-12-16：配置与赝势来源统一为 TOML（仅读取 `job_templates.local.toml` 或 `--config` 指定文件），移除环境变量/用户级兼容；POTCAR 仅按 `[potcar]` 映射拼接；CLI 仍只保留 `-i`/`-p`/`--config`，README 更新为新用法。
+- 2025-12-16：队列模板仅采纳首个 `[templates.<queue>]`，缺失模板即报错；声子计算新增结构选择开关 `[phonon].structure`（默认原胞）。 

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional, List
 
 from vasp.pipelines.base import BasePipeline
-from vasp.pipelines.utils import ensure_poscar, prepare_potcar, check_vasp_completion
+from vasp.pipelines.utils import ensure_poscar, prepare_potcar, check_vasp_completion, find_symmetry
 from vasp.analysis import plotters
 from vasp.utils.job import load_job_config, write_job_script, submit_job, JobConfig
 
@@ -52,6 +52,7 @@ class PhononPropertiesPipeline(BasePipeline):
         potcar_map: Optional[dict[str, str]] = None,
         job_cfg: Optional[JobConfig] = None,
         config_path: Optional[Path] = None,
+        phonon_structure: str = "primitive",
         **kwargs
     ):
         """
@@ -92,13 +93,16 @@ class PhononPropertiesPipeline(BasePipeline):
         self.kdensity = kdensity or 8000
         self.kspacing = kspacing
         self.encut = encut
-        self.queue_system = queue_system or "bash"
+        self.queue_system = queue_system or (self.job_cfg.default_queue if self.job_cfg else None)
+        if not self.queue_system:
+            raise ValueError("未找到队列配置，请在 job_templates.local.toml 的 [templates] 中至少提供一个队列头")
         self.mpi_procs = mpi_procs
         # 声子必须基于结构优化
         self.include_relax = include_relax
         self.custom_steps = self._normalize_steps(custom_steps)
         self.pressure = pressure
         self.potcar_map = potcar_map or {}
+        self.phonon_structure = phonon_structure.lower() if phonon_structure else "primitive"
 
         # 子目录
         self.relax_dir = self.work_dir / "01_relax"
@@ -219,6 +223,14 @@ class PhononPropertiesPipeline(BasePipeline):
             poscar_relaxed = self.work_dir / "POSCAR_relaxed"
             shutil.copy(contcar, poscar_relaxed)
             self.steps_data['relaxed_structure'] = str(poscar_relaxed)
+            # 生成原胞/标准晶胞，供声子开关选择
+            prim, std, sg = find_symmetry(poscar_relaxed, self.work_dir, symprec=1e-3)
+            if prim:
+                self.steps_data["primitive_structure"] = str(prim)
+            if std:
+                self.steps_data["conventional_structure"] = str(std)
+            if sg:
+                self.steps_data["spacegroup"] = sg
 
         logger.info("结构优化完成")
         return True
@@ -229,8 +241,8 @@ class PhononPropertiesPipeline(BasePipeline):
 
         self.phonon_dir.mkdir(parents=True, exist_ok=True)
 
-        # 使用优化后的结构
-        relaxed_poscar = Path(self.steps_data.get('relaxed_structure', self.structure_file))
+        # 选择声子计算所用结构
+        relaxed_poscar = self._resolve_phonon_poscar()
 
         # 复制到phonon目录并命名为POSCAR-init
         shutil.copy(relaxed_poscar, self.phonon_dir / "POSCAR-init")
@@ -472,6 +484,29 @@ class PhononPropertiesPipeline(BasePipeline):
             f.write(f"DIM = {self.supercell[0]} {self.supercell[1]} {self.supercell[2]}\n")
             f.write("MP = 20 20 20\n")
             f.write("TPROP = T\n")
+
+    def _resolve_phonon_poscar(self) -> Path:
+        """
+        根据 phonon_structure 开关选择声子计算的结构：
+        - primitive（默认）：优先原胞，否则用 CONTCAR
+        - conventional：优先标准晶胞，否则用 CONTCAR
+        - relaxed：直接用 CONTCAR（若未生成则回退输入结构）
+        """
+        relaxed = Path(self.steps_data.get("relaxed_structure", self.structure_file))
+        if self.phonon_structure == "primitive":
+            cand = self.steps_data.get("primitive_structure")
+            poscar = Path(cand) if cand else relaxed
+        elif self.phonon_structure == "conventional":
+            cand = self.steps_data.get("conventional_structure")
+            poscar = Path(cand) if cand else relaxed
+        elif self.phonon_structure == "relaxed":
+            poscar = relaxed
+        else:
+            raise ValueError(f"不支持的 phonon_structure: {self.phonon_structure}")
+
+        if not poscar.exists():
+            raise FileNotFoundError(f"声子计算的结构文件不存在: {poscar}")
+        return poscar
 
     def _write_job_script(self, work_dir: Path, job_name: str) -> str:
         """写入任务提交脚本（支持 bash/slurm/pbs/lsf）"""

@@ -32,7 +32,9 @@ class RelaxPipeline(BasePipeline):
         self.job_cfg = job_cfg or load_job_config(config_path)
         self.kspacing = kspacing
         self.encut = encut
-        self.queue_system = queue_system or "bash"
+        self.queue_system = queue_system or (self.job_cfg.default_queue if self.job_cfg else None)
+        if not self.queue_system:
+            raise ValueError("未找到队列配置，请在 job_templates.local.toml 的 [templates] 中至少提供一个队列头")
         self.mpi_procs = mpi_procs
         self.pressure = pressure
         self.potcar_map = potcar_map or {}

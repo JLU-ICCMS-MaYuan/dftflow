@@ -109,7 +109,7 @@ def build_runtime_config(raw: Dict[str, Any], config_path: Path) -> Dict[str, An
     config["pressure"] = settings.get("pressure")
     config["kspacing"] = settings.get("kspacing")
     config["encut"] = settings.get("encut")
-    config["job_system"] = settings.get("job_system", "bash")
+    config["job_system"] = settings.get("job_system")
     config["mpi_procs"] = settings.get("mpi_procs")
     config["tasks"] = tasks_cfg.get("max_workers") or settings.get("max_workers") or settings.get("tasks")
     config["structure_ext"] = settings.get("structure_ext")
@@ -137,6 +137,7 @@ def build_runtime_config(raw: Dict[str, Any], config_path: Path) -> Dict[str, An
             path_obj = (potcar_root / path_obj).resolve()
         resolved_map[k] = str(path_obj)
     config["potcar_map"] = resolved_map
+    config["phonon_structure"] = (phonon_cfg.get("structure") or "primitive").lower()
     config["config_path"] = config_path
     return config
 
@@ -227,7 +228,7 @@ def run_properties_command(args, title: str, modules: list[str]):
                 "include_bader": include_bader,
                 "include_fermi": include_fermi,
                 "plot_dos_type": final_config.get("dos_type", "element"),
-                "queue_system": final_config.get("job_system", "bash"),
+                "queue_system": final_config.get("job_system"),
                 "mpi_procs": final_config.get("mpi_procs"),
                 "prepare_only": not final_config.get("submit", False),
                 "requested_steps": modules,
@@ -668,7 +669,7 @@ def command_phonon(args):
             'method': final_config.get('method', 'disp'),
             'kspacing': final_config.get('kspacing', 0.3),
             'encut': final_config.get('encut'),
-            'queue_system': final_config.get('job_system', 'bash'),
+            'queue_system': final_config.get('job_system'),
             'mpi_procs': final_config.get('mpi_procs'),
             'prepare_only': not final_config.get('submit', False),
             'include_relax': True,
@@ -754,7 +755,7 @@ def command_md(args):
                 "nsw": final_config.get("nsw", 200),
                 "kspacing": final_config.get("kspacing", 0.2),
                 "encut": final_config.get("encut"),
-                "queue_system": final_config.get("job_system", "bash"),
+                "queue_system": final_config.get("job_system"),
                 "mpi_procs": final_config.get("mpi_procs"),
                 "prepare_only": not final_config.get("submit", False),
                 "include_relax": True,
@@ -802,7 +803,7 @@ def _run_relax_pipeline(structure_file: Path, work_dir: Path, cfg: Dict[str, Any
         work_dir=work_dir,
         kspacing=cfg.get("kspacing", 0.2),
         encut=cfg.get("encut"),
-        queue_system=cfg.get("job_system", "bash"),
+        queue_system=cfg.get("job_system"),
         mpi_procs=cfg.get("mpi_procs"),
         prepare_only=cfg.get("prepare_only", True),
         pressure=pressure,
@@ -827,7 +828,7 @@ def _run_phonon_pipeline(structure_file: Path, work_dir: Path, cfg: Dict[str, An
         method=cfg.get("method", "disp"),
         kspacing=cfg.get("kspacing", 0.3),
         encut=cfg.get("encut"),
-        queue_system=cfg.get("job_system", "bash"),
+        queue_system=cfg.get("job_system"),
         mpi_procs=cfg.get("mpi_procs"),
         prepare_only=cfg.get("prepare_only", True),
         include_relax=False,
@@ -837,6 +838,7 @@ def _run_phonon_pipeline(structure_file: Path, work_dir: Path, cfg: Dict[str, An
         potcar_map=cfg.get("potcar_map") or {},
         job_cfg=cfg.get("job_cfg"),
         config_path=cfg.get("config_path"),
+        phonon_structure=cfg.get("phonon_structure", "primitive"),
     )
     return pipeline.run()
 
@@ -856,7 +858,7 @@ def _run_properties_pipeline(structure_file: Path, work_dir: Path, modules: list
         include_bader=cfg.get("include_bader", include_bader) or include_bader,
         include_fermi=cfg.get("include_fermi", include_fermi) or include_fermi,
         plot_dos_type=cfg.get("dos_type", "element"),
-        queue_system=cfg.get("job_system", "bash"),
+        queue_system=cfg.get("job_system"),
         mpi_procs=cfg.get("mpi_procs"),
         prepare_only=cfg.get("prepare_only", True),
         requested_steps=modules,
@@ -881,7 +883,7 @@ def _run_md_pipeline(structure_file: Path, work_dir: Path, cfg: Dict[str, Any], 
         nsw=cfg.get("nsw", 200),
         kspacing=cfg.get("kspacing", 0.2),
         encut=cfg.get("encut"),
-        queue_system=cfg.get("job_system", "bash"),
+        queue_system=cfg.get("job_system"),
         mpi_procs=cfg.get("mpi_procs"),
         prepare_only=cfg.get("prepare_only", True),
         include_relax=False,
@@ -953,6 +955,7 @@ def command_combo(args):
             "include_cohp": getattr(args, "include_cohp", False),
             "include_bader": getattr(args, "include_bader", False),
             "include_fermi": getattr(args, "include_fermi", False),
+            "phonon_structure": getattr(args, "phonon_structure", "primitive"),
         }
         results = _run_matrix_tasks(
             structures=structures,
@@ -1026,6 +1029,12 @@ def main():
         logger.error("配置文件缺少 [potcar] 段，需为每个元素提供 POTCAR 绝对路径")
         sys.exit(1)
 
+    phonon_structure = config_data.get("phonon_structure", "primitive")
+    allowed_structures = {"primitive", "conventional", "relaxed"}
+    if phonon_structure not in allowed_structures:
+        logger.error(f"[phonon].structure 仅支持 {allowed_structures}，当前为 {phonon_structure}")
+        sys.exit(1)
+
     try:
         job_cfg = load_job_config(config_path)
     except Exception as exc:  # pragma: no cover - 运行期校验
@@ -1061,6 +1070,7 @@ def main():
         include_cohp=config_data.get("include_cohp", False),
         include_bader=config_data.get("include_bader", False),
         include_fermi=config_data.get("include_fermi", False),
+        phonon_structure=phonon_structure,
     )
 
     if combo_args.log_level:
