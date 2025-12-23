@@ -55,7 +55,7 @@ class RelaxPipeline(BasePipeline):
 
         self.relax_dir.mkdir(parents=True, exist_ok=True)
 
-        # 若已有收敛结果，直接复用，不重复准备
+        # 若已有收敛结果，直接复用并视为完成
         if check_vasp_completion(self.relax_dir):
             logger.info("检测到已有收敛的 relax 结果，直接复用")
             contcar = self.relax_dir / "CONTCAR"
