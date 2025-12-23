@@ -13,7 +13,9 @@ import math
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
+from ase import Atoms
 from ase.io import read as ase_read, write as ase_write
+from ase import Atoms
 import spglib
 
 logger = logging.getLogger(__name__)
