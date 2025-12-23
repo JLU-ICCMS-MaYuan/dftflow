@@ -110,7 +110,6 @@ def build_runtime_config(raw: Dict[str, Any], config_path: Path) -> Dict[str, An
     config["pressure"] = settings.get("pressure")
     config["kspacing"] = settings.get("kspacing")
     config["encut"] = settings.get("encut")
-    config["job_system"] = settings.get("job_system")
     config["mpi_procs"] = settings.get("mpi_procs")
     config["tasks"] = tasks_cfg.get("max_workers") or settings.get("max_workers") or settings.get("tasks")
     config["structure_ext"] = settings.get("structure_ext")
@@ -216,7 +215,6 @@ def run_properties_command(args, title: str, modules: list[str]):
                 "kspacing": final_config.get("kspacing", 0.2),
                 "encut": final_config.get("encut"),
                 "plot_dos_type": final_config.get("dos_type", "element"),
-                "queue_system": final_config.get("job_system"),
                 "mpi_procs": final_config.get("mpi_procs"),
                 "prepare_only": not final_config.get("submit", False),
                 "requested_steps": modules,
@@ -396,7 +394,6 @@ def _run_combo_pipeline(
         cfg_common = {
             "kspacing": config.get("kspacing", 0.2),
             "encut": config.get("encut"),
-            "job_system": config.get("job_system", "bash"),
             "mpi_procs": config.get("mpi_procs"),
             "prepare_only": not config.get("submit", False),
             "potcar_map": config.get("potcar_map") or {},
@@ -653,7 +650,6 @@ def command_phonon(args):
             'method': final_config.get('method', 'disp'),
             'kspacing': final_config.get('kspacing', 0.3),
             'encut': final_config.get('encut'),
-            'queue_system': final_config.get('job_system'),
             'mpi_procs': final_config.get('mpi_procs'),
             'prepare_only': not final_config.get('submit', False),
             'include_relax': True,
@@ -739,7 +735,6 @@ def command_md(args):
                 "nsw": final_config.get("nsw", 200),
                 "kspacing": final_config.get("kspacing", 0.2),
                 "encut": final_config.get("encut"),
-                "queue_system": final_config.get("job_system"),
                 "mpi_procs": final_config.get("mpi_procs"),
                 "prepare_only": not final_config.get("submit", False),
                 "include_relax": True,
