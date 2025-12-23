@@ -51,6 +51,7 @@ from vasp.pipelines import PropertiesPipeline, PhononPropertiesPipeline, BatchPi
 from vasp.pipelines.relax import RelaxPipeline
 from vasp.pipelines.md import MdPipeline
 from vasp.pipelines.utils import validate_structure_file
+from vasp.utils.job import load_job_config
 
 # 配置日志
 logging.basicConfig(
