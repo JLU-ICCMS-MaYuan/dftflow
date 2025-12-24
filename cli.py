@@ -647,13 +647,12 @@ def command_phonon(args):
 
     try:
         pipeline_kwargs = {
-            'supercell': final_config.get('supercell', [2, 2, 2]),
-            'method': final_config.get('method', 'disp'),
-            'kspacing': final_config.get('kspacing', 0.3),
+            'supercell': final_config.get('supercell', list(dft.DEFAULT_PHONON_SUPERCELL)),
+            'method': final_config.get('method', dft.DEFAULT_PHONON_METHOD),
+            'kspacing': final_config.get('kspacing', dft.DEFAULT_KSPACING),
             'encut': final_config.get('encut'),
             'mpi_procs': final_config.get('mpi_procs'),
             'prepare_only': not final_config.get('submit', False),
-            'include_relax': True,
         }
 
         if is_batch:
@@ -730,15 +729,14 @@ def command_md(args):
             pressure_dir = base_root / pressure_label
 
             pipeline_kwargs = {
-                "potim": final_config.get("potim", 1.0),
-                "tebeg": final_config.get("tebeg", 300.0),
-                "teend": final_config.get("teend", 300.0),
-                "nsw": final_config.get("nsw", 200),
-                "kspacing": final_config.get("kspacing", 0.2),
+                "potim": final_config.get("potim", dft.DEFAULT_MD["potim"]),
+                "tebeg": final_config.get("tebeg", dft.DEFAULT_MD["tebeg"]),
+                "teend": final_config.get("teend", dft.DEFAULT_MD["teend"]),
+                "nsw": final_config.get("nsw", dft.DEFAULT_MD["nsw"]),
+                "kspacing": final_config.get("kspacing", dft.DEFAULT_KSPACING),
                 "encut": final_config.get("encut"),
                 "mpi_procs": final_config.get("mpi_procs"),
                 "prepare_only": not final_config.get("submit", False),
-                "include_relax": True,
                 "pressure": p,
             }
 

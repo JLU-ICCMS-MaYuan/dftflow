@@ -79,8 +79,6 @@ class PhononPropertiesPipeline(BasePipeline):
             队列系统
         mpi_procs : int, optional
             mpirun -np 参数，默认取 rc 中设置或8
-        include_relax : bool
-            是否在声子前自动进行结构优化
         custom_steps : List[str], optional
             自定义步骤序列，如 ["phonon_prepare", "phonon_calculate"]
         pressure : float
@@ -98,23 +96,19 @@ class PhononPropertiesPipeline(BasePipeline):
         if not self.queue_system:
             raise ValueError("未找到队列配置，请在 job_templates.local.toml 的 [templates] 中至少提供一个队列头")
         self.mpi_procs = mpi_procs
-        # 声子必须基于结构优化
-        self.include_relax = include_relax
         self.custom_steps = self._normalize_steps(custom_steps)
         self.pressure = pressure
         self.potcar_map = potcar_map or {}
         self.phonon_structure = phonon_structure.lower() if phonon_structure else "primitive"
 
         # 子目录
-        self.relax_dir = self.work_dir / "01_relax"
-        self.phonon_dir = self.work_dir / "02_phonon"
+        self.phonon_dir = self.work_dir / "01_phonon"
         self.plots_dir = self.work_dir / "plots"
 
     def _normalize_steps(self, custom_steps: Optional[List[str]]) -> Optional[List[str]]:
         if not custom_steps:
             return None
         allowed = [
-            "relax",
             "phonon_prepare",
             "phonon_calculate",
             "phonon_band",
@@ -129,11 +123,7 @@ class PhononPropertiesPipeline(BasePipeline):
             else:
                 if name not in allowed:
                     logger.warning(f"忽略未支持的步骤: {name}")
-        if normalized:
-            if self.include_relax and "relax" not in normalized:
-                normalized.insert(0, "relax")
-            return normalized
-        return None
+        return normalized or None
 
     def get_steps(self) -> List[str]:
         """返回所有步骤"""
@@ -147,16 +137,12 @@ class PhononPropertiesPipeline(BasePipeline):
             "phonon_dos",
             "plotting",
         ]
-        if self.include_relax:
-            steps.insert(0, "relax")
         return steps
 
     def execute_step(self, step_name: str) -> bool:
         """执行单个步骤"""
         try:
-            if step_name == "relax":
-                return self._run_relax()
-            elif step_name == "phonon_prepare":
+            if step_name == "phonon_prepare":
                 return self._prepare_phonon()
             elif step_name == "phonon_calculate":
                 return self._run_phonon_calculate()
@@ -173,68 +159,6 @@ class PhononPropertiesPipeline(BasePipeline):
         except Exception as e:
             logger.error(f"步骤 '{step_name}' 执行异常: {e}", exc_info=True)
             return False
-
-    def _run_relax(self) -> bool:
-        """Step 1: 结构优化"""
-        logger.info("执行结构优化...")
-
-        self.relax_dir.mkdir(parents=True, exist_ok=True)
-
-        # 复制POSCAR
-        ensure_poscar(self.structure_file, self.relax_dir / "POSCAR")
-
-        # 创建INCAR
-        self._write_relax_incar(self.relax_dir / "INCAR")
-
-        # 创建KPOINTS
-        self._write_kpoints(self.relax_dir / "KPOINTS", self.relax_dir / "POSCAR", self.kspacing)
-
-        # 准备POTCAR
-        if not self.potcar_map:
-            logger.error("缺少 [potcar] 配置，无法生成 POTCAR")
-            return False
-        if not prepare_potcar(
-            self.relax_dir / "POSCAR",
-            self.potcar_map,
-            self.relax_dir / "POTCAR",
-        ):
-            logger.error("POTCAR准备失败")
-            return False
-
-        # 提交任务
-        job_script = self._write_job_script(self.relax_dir, "relax")
-        job_id = self._submit_job(self.relax_dir, job_script)
-
-        if self.prepare_only:
-            logger.info("submit=false，仅准备声子 relax 输入，不提交任务")
-            return True
-
-        # 等待完成
-        if not self._wait_for_job(job_id, self.relax_dir, self.queue_system):
-            return False
-
-        # 检查收敛
-        if not self._check_convergence(self.relax_dir):
-            logger.error("结构优化未收敛")
-            return False
-
-        # 保存优化后的结构
-        contcar = self.relax_dir / "CONTCAR"
-        if contcar.exists():
-            poscar_relaxed = self.work_dir / "POSCAR_relaxed"
-            shutil.copy(contcar, poscar_relaxed)
-            self.steps_data['relaxed_structure'] = str(poscar_relaxed)
-            # 生成原胞/标准晶胞，供声子开关选择
-            prim, std, sg = find_symmetry(poscar_relaxed, self.work_dir, symprec=1e-3)
-            if prim:
-                self.steps_data["primitive_structure"] = str(prim)
-            if std:
-                self.steps_data["conventional_structure"] = str(std)
-            if sg:
-                self.steps_data["spacegroup"] = sg
-
-        logger.info("结构优化完成")
-        return True
 
     def _prepare_phonon(self) -> bool:
         """Step 2: 准备声子计算"""
@@ -304,15 +228,13 @@ class PhononPropertiesPipeline(BasePipeline):
                     self._write_phonon_incar(disp_dir / "INCAR")
                     self._write_kpoints(disp_dir / "KPOINTS", disp_dir / "POSCAR", self.kspacing)
 
-                    potcar_source = self.relax_dir / "POTCAR"
-                    if potcar_source.exists():
-                        shutil.copy(potcar_source, disp_dir / "POTCAR")
-                    elif self.potcar_map:
+                    if self.potcar_map:
                         if not prepare_potcar(disp_dir / "POSCAR", self.potcar_map, disp_dir / "POTCAR"):
                             logger.error("POTCAR准备失败")
                             return False
                     else:
-                        logger.warning(f"未找到POTCAR文件: {potcar_source}")
+                        logger.error("缺少 [potcar] 配置，无法生成 POTCAR")
+                        return False
 
                     self._write_job_script(disp_dir, f"disp{disp_num}")
 
@@ -485,26 +407,34 @@ class PhononPropertiesPipeline(BasePipeline):
     def _resolve_phonon_poscar(self) -> Path:
         """
         根据 phonon_structure 开关选择声子计算的结构：
-        - primitive（默认）：优先原胞，否则用 CONTCAR
-        - conventional：优先标准晶胞，否则用 CONTCAR
-        - relaxed：直接用 CONTCAR（若未生成则回退输入结构）
+        - primitive（默认）：优先原胞，否则用输入结构
+        - conventional：优先标准晶胞，否则用输入结构
+        - relaxed：直接用输入结构
         """
-        relaxed = Path(self.steps_data.get("relaxed_structure", self.structure_file))
+        base = Path(self.structure_file)
+
+        # 若尚未生成对称性衍生结构，尝试基于输入结构生成
+        if not self.steps_data.get("primitive_structure") and not self.steps_data.get("conventional_structure"):
+            prim, std, sg = find_symmetry(base, self.work_dir, symprec=1e-3)
+            if prim:
+                self.steps_data["primitive_structure"] = str(prim)
+            if std:
+                self.steps_data["conventional_structure"] = str(std)
+            if sg:
+                self.steps_data["spacegroup"] = sg
+
         if self.phonon_structure == "primitive":
             cand = self.steps_data.get("primitive_structure")
-            poscar = Path(cand) if cand else relaxed
+            poscar = Path(cand) if cand else base
         elif self.phonon_structure == "conventional":
             cand = self.steps_data.get("conventional_structure")
-            poscar = Path(cand) if cand else relaxed
+            poscar = Path(cand) if cand else base
         elif self.phonon_structure == "relaxed":
-            poscar = relaxed
+            poscar = base
         else:
             raise ValueError(f"不支持的 phonon_structure: {self.phonon_structure}")
 
         if not poscar.exists():
-            if self.prepare_only:
-                logger.info("submit=false，尚未得到 relax 产物，声子结构回退为输入结构")
-                return self.structure_file
             raise FileNotFoundError(f"声子计算的结构文件不存在: {poscar}")
         return poscar
 

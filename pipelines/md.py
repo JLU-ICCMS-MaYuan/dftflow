@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional, List
 
 from vasp.pipelines.base import BasePipeline
-from vasp.pipelines.utils import prepare_potcar, ensure_poscar, check_vasp_completion
+from vasp.pipelines.utils import prepare_potcar, ensure_poscar
 from vasp.pipelines import defaults as dft
 from vasp.utils.job import load_job_config, write_job_script, submit_job, JobConfig
 
@@ -26,7 +26,6 @@ class MdPipeline(BasePipeline):
         encut: Optional[float] = None,
         queue_system: Optional[str] = None,
         mpi_procs: Optional[str] = None,
-        include_relax: bool = True,
         custom_steps: Optional[List[str]] = None,
         pressure: float = 0.0,
         potcar_map: Optional[dict[str, str]] = None,
@@ -48,21 +47,17 @@ class MdPipeline(BasePipeline):
             raise ValueError("未找到队列配置，请在 job_templates.local.toml 的 [templates] 中至少提供一个队列头")
         self.mpi_procs = mpi_procs
         self.potcar_map = potcar_map or {}
-        self.include_relax = include_relax
         self.custom_steps = self._normalize_steps(custom_steps)
         self.pressure = pressure
 
-        self.relax_dir = self.work_dir / "01_relax" if self.include_relax else None
-        self.md_dir = self.work_dir / ("02_md" if self.include_relax else "01_md")
+        self.md_dir = self.work_dir / "01_md"
 
     def get_steps(self):
         if self.custom_steps:
             return self.custom_steps
-        return ["relax", "md"] if self.include_relax else ["md"]
+        return ["md"]
 
     def execute_step(self, step_name: str) -> bool:
-        if step_name == "relax":
-            return self._run_relax()
         if step_name == "md":
             return self._run_md()
         logger.error(f"未知步骤: {step_name}")
@@ -71,7 +66,7 @@ class MdPipeline(BasePipeline):
     def _normalize_steps(self, custom_steps: Optional[List[str]]) -> Optional[List[str]]:
         if not custom_steps:
             return None
-        allowed = ["relax", "md"]
+        allowed = ["md"]
         normalized: List[str] = []
         for step in custom_steps:
             name = step.strip().lower()
@@ -80,84 +75,22 @@ class MdPipeline(BasePipeline):
                     normalized.append(name)
             else:
                 logger.warning(f"忽略未支持的步骤: {name}")
-        if self.include_relax and "md" in normalized and "relax" not in normalized:
-            normalized.insert(0, "relax")
         return normalized or None
-
-    def _run_relax(self) -> bool:
-        logger.info("执行结构优化(为MD准备)...")
-
-        if not self.relax_dir:
-            logger.error("未启用 include_relax，不能运行 relax 步骤")
-            return False
-
-        self.relax_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(self.structure_file, self.relax_dir / "POSCAR")
-
-        self._write_relax_incar(self.relax_dir / "INCAR")
-        self._write_kpoints(self.relax_dir / "KPOINTS", self.relax_dir / "POSCAR", self.kspacing)
-
-        if not self.potcar_map:
-            logger.error("缺少 [potcar] 配置，无法生成 POTCAR")
-            return False
-        if not prepare_potcar(
-            self.relax_dir / "POSCAR",
-            self.potcar_map,
-            self.relax_dir / "POTCAR",
-        ):
-            logger.error("POTCAR准备失败")
-            return False
-
-        job_script = self._write_job_script(self.relax_dir, "relax")
-        job_id = self._submit_job(self.relax_dir, job_script)
-
-        if self.prepare_only:
-            logger.info("submit=false，仅准备 MD 前的 relax 输入，不检查收敛")
-            return True
-
-        if not self._wait_for_job(job_id, self.relax_dir, self.queue_system):
-            return False
-
-        if not self._check_convergence(self.relax_dir):
-            logger.error("结构优化未收敛")
-            return False
-
-        contcar = self.relax_dir / "CONTCAR"
-        if contcar.exists():
-            relaxed = self.work_dir / "POSCAR_relaxed"
-            shutil.copy(contcar, relaxed)
-            self.steps_data["relaxed_structure"] = str(relaxed)
-
-        logger.info("结构优化完成")
-        return True
 
     def _run_md(self) -> bool:
         logger.info("执行分子动力学计算...")
 
         self.md_dir.mkdir(parents=True, exist_ok=True)
-        # 使用relax结果优先
-        source_poscar = Path(self.structure_file)
-        if self.include_relax and self.steps_data.get("relaxed_structure"):
-            source_poscar = Path(self.steps_data["relaxed_structure"])
-        ensure_poscar(source_poscar, self.md_dir / "POSCAR")
+        ensure_poscar(Path(self.structure_file), self.md_dir / "POSCAR")
 
         self._write_md_incar(self.md_dir / "INCAR")
         self._write_kpoints(self.md_dir / "KPOINTS", self.md_dir / "POSCAR", self.kspacing)
 
-        if self.include_relax:
-            if self.relax_dir and check_vasp_completion(self.relax_dir) and (self.relax_dir / "POTCAR").exists():
-                shutil.copy(self.relax_dir / "POTCAR", self.md_dir / "POTCAR")
-            elif self.prepare_only:
-                if self.relax_dir and (self.relax_dir / "POTCAR").exists():
-                    shutil.copy(self.relax_dir / "POTCAR", self.md_dir / "POTCAR")
-                elif self.potcar_map:
-                    prepare_potcar(self.md_dir / "POSCAR", self.potcar_map, self.md_dir / "POTCAR")
-                logger.info("submit=false，未检测到收敛 relax，先准备 MD 输入")
-            else:
-                logger.error("未检测到已收敛的 relax，MD 不允许启动")
-                return False
-        else:
-            logger.error("未启用 relax，MD 不允许启动")
+        if not self.potcar_map:
+            logger.error("缺少 [potcar] 配置，无法生成 POTCAR")
+            return False
+        if not prepare_potcar(self.md_dir / "POSCAR", self.potcar_map, self.md_dir / "POTCAR"):
+            logger.error("POTCAR准备失败")
             return False
 
         job_script = self._write_job_script(self.md_dir, "md")
@@ -198,21 +131,6 @@ class MdPipeline(BasePipeline):
             f.write("LWAVE = .FALSE.\n")
             f.write("LCHARG = .FALSE.\n")
 
-    def _write_relax_incar(self, incar_file: Path):
-        """写入用于MD前结构优化的 INCAR。"""
-        with open(incar_file, "w") as f:
-            f.write("# Relaxation for MD\n")
-            f.write("SYSTEM = Relax before MD\n\n")
-            f.write(f"PREC = {dft.DEFAULT_MD_RELAX['prec']}\n")
-            f.write(f"ENCUT = {self.encut if self.encut else dft.DEFAULT_MD_RELAX['encut']}\n")
-            f.write(f"EDIFF = {dft.DEFAULT_MD_RELAX['ediff']}\n")
-            f.write(f"ISMEAR = {dft.DEFAULT_MD_RELAX['ismear']}\n")
-            f.write(f"SIGMA = {dft.DEFAULT_MD_RELAX['sigma']}\n")
-            f.write(f"IBRION = {dft.DEFAULT_MD_RELAX['ibrion']}\n")
-            f.write(f"NSW = {dft.DEFAULT_MD_RELAX['nsw']}\n")
-            f.write(f"ISIF = {dft.DEFAULT_MD_RELAX['isif']}\n")
-            f.write(f"EDIFFG = {dft.DEFAULT_MD_RELAX['ediffg']}\n")
-            f.write(f"PSTRESS = {self.pressure_kbar}\n")
             f.write("LWAVE = .FALSE.\n")
             f.write("LCHARG = .FALSE.\n")
 

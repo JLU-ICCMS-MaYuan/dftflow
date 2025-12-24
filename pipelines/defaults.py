@@ -168,33 +168,10 @@ DEFAULT_MD = {
     "sigma": 0.05,
 }
 
-DEFAULT_MD_RELAX = {
-    "prec": "Accurate",
-    "encut": DEFAULT_ENCUT,
-    "ediff": "1E-6",
-    "ismear": 0,
-    "sigma": 0.05,
-    "ibrion": 2,
-    "nsw": 120,
-    "isif": 3,
-    "ediffg": "-0.02",
-}
-
 # 声子默认
 DEFAULT_PHONON_SUPERCELL: Tuple[int, int, int] = (2, 2, 2)
 DEFAULT_PHONON_METHOD = "disp"
 DEFAULT_PHONON_STRUCTURE = "primitive"
-DEFAULT_PHONON_RELAX_INCAR = {
-    "prec": "Accurate",
-    "encut": DEFAULT_ENCUT,
-    "ediff": "1E-8",
-    "ismear": 0,
-    "sigma": 0.01,
-    "ibrion": 2,
-    "nsw": 200,
-    "isif": 3,
-    "ediffg": "-1E-5",
-}
 DEFAULT_PHONON_INCAR = {
     "prec": "Accurate",
     "encut": DEFAULT_ENCUT,

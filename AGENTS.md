@@ -59,3 +59,4 @@
 - 2025-12-24：结构优化改为四阶段 INCAR+串行脚本，`submit=false` 时仅准备输入不提交，prepare 模式下缺失 CHGCAR/POTCAR 不再阻断后续输入准备（需实际运行后补齐）。
 - 2025-12-24：RelaxPipeline 默认断点文件更名为 `relax_checkpoint.json`，兼容读取旧的 `pipeline_checkpoint.json`。
 - 2025-12-24：新增 `pipelines/defaults.py` 统一管理最低优先级默认值（提交/并发、kspacing/encut、MD/phonon、队列脚本头、四阶段 relax 等），CLI 与各 Pipeline 均改为引用该集中默认。
+- 2025-12-24：移除 MD/Phonon 前置自动 relax，直接基于输入结构生成超胞并准备/运行 MD 与声子，相关默认值与逻辑同步到 defaults 与 Pipeline。
