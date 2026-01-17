@@ -35,16 +35,19 @@ class VaspCohpSetup:
             "ISTART" : 1,
             "ICHARG" : 11,
             "SYMPREC": 1e-5,
+            "EDIFF"  : 1e-8,
             "ALGO"   : "Normal",
-            "ISMEAR" : 0,
-            "SIGMA"  : 0.05,
-            "ISMEAR" : -1,
+            "NELM"   : 200,          
+            "NELMIN" : 2,
+            "ISMEAR" : -5,
             "PREC"   : "Accurate",
             "IBRION" : -1,
-            "LORBIT" : 11,
+            "LORBIT" : 12,
             "LWAVE"  : ".TRUE.",
-            "LCHARG" : ".FALSE.",
-            "ISYM"   : -1      # LOBSTER 推荐关闭对称性
+            "LCHARG" : ".TRUE.",
+            "ISYM"   : -1,      # LOBSTER 推荐关闭对称性
+            "NCORE"  : 4,
+            "NEDOS"  : 2000,
         }
 
     def get_elements_from_poscar(self):
