@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import shutil
 import argparse
@@ -172,10 +173,13 @@ class VaspFermiSetup:
         except Exception as e:
             print(f"错误: {e}")
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="VASP FermiSurface Setup Script")
     parser.add_argument("-i", "--input", help="输入结构文件")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径")
     args = parser.parse_args()
     setup = VaspFermiSetup(config_file=args.config, struct_file=args.input)
     setup.run()
+
+if __name__ == "__main__":
+    main()

@@ -2,7 +2,6 @@
 import os
 import shutil
 import argparse
-import math
 import subprocess
 
 try:
@@ -15,9 +14,9 @@ except ImportError:
         print("Please install it using: pip install toml")
         exit(1)
 
-class VaspDosSetup:
+class VaspCohpSetup:
     def __init__(self, config_file="input.toml", struct_file=None):
-        self.work_dir = "eledos"
+        self.work_dir = "cohp"
         # 1. 加载配置文件
         if not os.path.exists(config_file):
             raise FileNotFoundError(f"找不到配置文件: {config_file}")
@@ -30,21 +29,22 @@ class VaspDosSetup:
         
         self.struct_file = struct_file
         
-        # 2. 默认 INCAR 模板 (针对 DOS 优化)
+        # 2. 默认 INCAR 模板 (针对 COHP 优化)
         self.incar_template = {
-            "SYSTEM" : "VASP_DOS",
+            "SYSTEM" : "VASP_COHP",
             "ISTART" : 1,
             "ICHARG" : 11,
+            "SYMPREC": 1e-5,
+            "ALGO"   : "Normal",
+            "ISMEAR" : 0,
+            "SIGMA"  : 0.05,
+            "ISMEAR" : -1,
             "PREC"   : "Accurate",
             "IBRION" : -1,
-            "NSW"    : 0,
-            "ISMEAR" : -5,
             "LORBIT" : 11,
-            "LWAVE"  : ".FALSE.",
+            "LWAVE"  : ".TRUE.",
             "LCHARG" : ".FALSE.",
-            "NCORE"  : 4,
-            "NEDOS"  : 2000,
-            "LORBIT" : 11
+            "ISYM"   : -1      # LOBSTER 推荐关闭对称性
         }
 
     def get_elements_from_poscar(self):
@@ -56,21 +56,19 @@ class VaspDosSetup:
         with open(poscar_path, "r") as f:
             lines = f.readlines()
             elements = lines[5].split()
-            if elements[0].isdigit():
-                print("警告: 检测到可能不包含元素名称的 POSCAR (VASP 4 格式)。")
             return elements
 
     def generate_incar(self):
         """生成 INCAR 文件"""
         final_params = self.incar_template.copy()
             
-        # 优先级: [dos_params] > [incar_params] > 默认模板
+        # 优先级: [cohp_params] > [incar_params] > 默认模板
         if "incar_params" in self.config:
             final_params.update(self.config["incar_params"])
-        if "dos_params" in self.config:
-            final_params.update(self.config["dos_params"])
+        if "cohp_params" in self.config:
+            final_params.update(self.config["cohp_params"])
         
-        print(f"正在生成 INCAR (DOS)...")
+        print(f"正在生成 INCAR (COHP)...")
         incar_path = os.path.join(self.work_dir, "INCAR")
         with open(incar_path, "w") as f:
             for key, value in final_params.items():
@@ -121,7 +119,6 @@ class VaspDosSetup:
                 print(f"KPOINTS 已通过 vaspkit 生成完成。")
             else:
                 print(f"错误: vaspkit 未生成 KPOINTS。")
-                print(f"vaspkit 输出: {stdout}")
         except Exception as e:
             print(f"调用 vaspkit 出错: {e}")
 
@@ -161,6 +158,58 @@ class VaspDosSetup:
         os.chmod(run_script_path, 0o755)
         print(f"生成运行脚本: {run_script_path}")
 
+    def calculate_distances(self):
+        """计算并打印原子间距离 (用于辅助设置 LOBSTER)"""
+        try:
+            from pymatgen.core.structure import Structure
+            import numpy as np
+            from collections import defaultdict
+            from itertools import combinations
+        except ImportError:
+            print("\n提示: 未找到 pymatgen 或 numpy，跳过距离计算。")
+            print("如果需要查看键长，请安装: pip install pymatgen numpy")
+            return
+
+        print("\n正在计算原子间距离...")
+        poscar_path = os.path.join(self.work_dir, "POSCAR")
+        if not os.path.exists(poscar_path):
+            return
+
+        struct = Structure.from_file(poscar_path)
+        index_custom1 = [idx+1 for idx, site in enumerate(struct.sites)]
+        
+        pairs = list(combinations(struct.sites, r=2))
+        idxs = list(combinations(index_custom1, r=2))
+        
+        pairs_dist = defaultdict(list)
+        for pair, idx in zip(pairs, idxs):
+            # 获取所有镜像距离中的最小值
+            d = struct.lattice.get_all_distances(pair[0].frac_coords, pair[1].frac_coords)[0][0]
+            pair_name = str(pair[0].specie) + str(idx[0]) + '-' + str(pair[1].specie) + str(idx[1])
+            pairs_dist[np.round(d, decimals=3)].append(pair_name)
+        
+        sorted_dist = sorted(pairs_dist.items())
+
+        print("Note: --------------------")
+        print("{:<8} {:<8}".format("Number", "Elements"))
+        for idx, site in enumerate(struct.sites):
+            print("{:<8} {:<8}".format(idx+1, str(site.specie)))
+
+        print("\nNote: --------------------")
+        print("{:<12} {:<12} {:<12}".format("Species", "Species", "Distance"))
+        
+        dist_dat_path = os.path.join(self.work_dir, "distance.dat")
+        with open(dist_dat_path, "w") as f:
+            for d, p_list in sorted_dist:
+                if d > 6.0: continue # 仅打印 6.0A 以内的
+                line = "distance = {:.3f}, Number={}".format(d, len(p_list))
+                print(line)
+                print("    " + "   ".join(p_list))
+                f.write(line + "\n")
+                f.write("    " + "   ".join(p_list) + "\n\n")
+        
+        print(f"\n键长信息已保存至: {dist_dat_path}")
+
     def run(self):
         try:
             os.makedirs(self.work_dir, exist_ok=True)
@@ -176,16 +225,20 @@ class VaspDosSetup:
             self.generate_kpoints()
             self.copy_scf_files()
             self.create_run_script()
-            print(f"\nDOS 计算文件已在 {self.work_dir} 目录中准备就绪！")
+            
+            # 执行距离计算
+            self.calculate_distances()
+            
+            print(f"\nCOHP 计算文件已在 {self.work_dir} 目录中准备就绪！")
         except Exception as e:
             print(f"错误: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="VASP DOS Setup Script")
+    parser = argparse.ArgumentParser(description="VASP COHP Setup Script")
     parser.add_argument("-i", "--input", help="输入结构文件")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径")
     args = parser.parse_args()
-    setup = VaspDosSetup(config_file=args.config, struct_file=args.input)
+    setup = VaspCohpSetup(config_file=args.config, struct_file=args.input)
     setup.run()
 
 if __name__ == "__main__":

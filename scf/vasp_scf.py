@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import shutil
 import argparse
@@ -176,7 +177,7 @@ class VaspSetup:
         except Exception as e:
             print(f"错误: {e}")
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="VASP SCF Setup Script")
     parser.add_argument("-i", "--input", help="输入结构文件 (将被拷贝为 POSCAR)")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径 (默认为 input.toml)")
@@ -185,3 +186,6 @@ if __name__ == "__main__":
     
     setup = VaspSetup(config_file=args.config, struct_file=args.input)
     setup.run()
+
+if __name__ == "__main__":
+    main()
