@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
-#!/usr/bin/env python3
 import os
 import sys
 import argparse
+
+try:
+    import tomllib  # Python 3.11+
+except ImportError:
+    try:
+        import toml
+    except ImportError:
+        toml = None
 
 def parse_args():
     parser = argparse.ArgumentParser(description="生成 LOBSTER 输入文件并准备后处理目录")
@@ -97,11 +104,30 @@ def main():
                    species_custom1=species_custom1, species_custom2=species_custom2, 
                    lower_d=lower_d, upper_d=upper_d, zval_dict=zval_custom, custom_basis_dict=custom_basis)
 
-    print(f"\nLOBSTER 输入文件已在 {dirs}/lobsterin 准备就绪。 সন")
+    # 读取 input.toml 生成 slurm 脚本
+    config = {}
+    config_path = "input.toml"
+    if os.path.exists(config_path):
+        if 'tomllib' in globals() and tomllib:
+            with open(config_path, "rb") as f:
+                config = tomllib.load(f)
+        elif 'toml' in globals() and toml:
+            config = toml.load(config_path)
+    
+    slurm_config = config.get("slurm", {})
+    slurm_header = slurm_config.get("header", "#!/bin/bash")
+    
+    slurm_script_path = os.path.join(dirs, "slurm.sh")
+    with open(slurm_script_path, "w") as f:
+        f.write(slurm_header.strip() + "\n\n")
+        f.write("lobster-5.1.0\n")
+    os.chmod(slurm_script_path, 0o755)
+
+    print(f"\nLOBSTER 输入文件和 slurm 脚本已在 {dirs} 准备就绪。 সন")
     print("\n提示: -------------------------------")
     print("1. 如果运行 LOBSTER 后得不到 COHP，请检查 NBANDS 是否足够大。 সন")
     print("2. 确保在 VASP 计算中设置了 LWAVE = .TRUE. 以生成 WAVECAR。 সন")
-    print("3. 运行 LOBSTER 命令: cd {} && lobster".format(dirs))
+    print("3. 运行 LOBSTER 命令: cd {} && lobster-5.1.0".format(dirs))
 
 if __name__ == "__main__":
     main()
