@@ -152,7 +152,24 @@ class VaspSetup:
         os.chmod(run_script_path, 0o755)
         print(f"生成运行脚本: {run_script_path}")
 
-    def run(self):
+    def execute_vasp(self):
+        """进入工作目录并执行 VASP 命令"""
+        vasp_config = self.config.get("vasp", {})
+        vasp_path = vasp_config.get("executable_path", "vasp_std")
+        
+        original_dir = os.getcwd()
+        try:
+            print(f"\n正在进入 {self.work_dir} 目录执行: {vasp_path}")
+            os.chdir(self.work_dir)
+            # 使用 shell=True 因为 executable_path 可能包含 mpirun 等复杂命令
+            subprocess.run(vasp_path, shell=True, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"执行 VASP 出错: {e}")
+        finally:
+            os.chdir(original_dir)
+            print(f"已返回目录: {original_dir}")
+
+    def run(self, run_calc=False):
         try:
             # 确保工作目录存在
             os.makedirs(self.work_dir, exist_ok=True)
@@ -174,6 +191,10 @@ class VaspSetup:
             self.generate_kpoints()
             self.create_run_script()
             print(f"\n所有 VASP 输入文件已在 {self.work_dir} 目录中准备就绪！")
+
+            if run_calc:
+                self.execute_vasp()
+                
         except Exception as e:
             print(f"错误: {e}")
 
@@ -181,11 +202,12 @@ def main():
     parser = argparse.ArgumentParser(description="VASP SCF Setup Script")
     parser.add_argument("-i", "--input", help="输入结构文件 (将被拷贝为 POSCAR)")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径 (默认为 input.toml)")
+    parser.add_argument("--run", action="store_true", help="生成文件后直接执行计算")
     
     args = parser.parse_args()
     
     setup = VaspSetup(config_file=args.config, struct_file=args.input)
-    setup.run()
+    setup.run(run_calc=args.run)
 
 if __name__ == "__main__":
     main()

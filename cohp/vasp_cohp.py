@@ -131,13 +131,13 @@ class VaspCohpSetup:
         wavecar_src = self.config.get("wavecar_path")
         
         if chgcar_src and os.path.exists(os.path.expanduser(chgcar_src)):
-            shutil.copy2(os.path.expanduser(chgcar_src), os.path.join(self.work_dir, "CHGCAR"))
+            shutil.copy2(os.path.expanduser(chgcar_src), os.path.join(self.work_dir, "CHGCAR")),
             print(f"已从 {chgcar_src} 拷贝 CHGCAR")
         else:
             print(f"警告: 找不到 CHGCAR 源文件 {chgcar_src}")
 
         if wavecar_src and os.path.exists(os.path.expanduser(wavecar_src)):
-            shutil.copy2(os.path.expanduser(wavecar_src), os.path.join(self.work_dir, "WAVECAR"))
+            shutil.copy2(os.path.expanduser(wavecar_src), os.path.join(self.work_dir, "WAVECAR")),
             print(f"已从 {wavecar_src} 拷贝 WAVECAR")
         else:
             print(f"警告: 找不到 WAVECAR 源文件 {wavecar_src}")
@@ -213,7 +213,23 @@ class VaspCohpSetup:
         
         print(f"\n键长信息已保存至: {dist_dat_path}")
 
-    def run(self):
+    def execute_vasp(self):
+        """进入工作目录并执行 VASP 命令"""
+        vasp_config = self.config.get("vasp", {})
+        vasp_path = vasp_config.get("executable_path", "vasp_std")
+        
+        original_dir = os.getcwd()
+        try:
+            print(f"\n正在进入 {self.work_dir} 目录执行: {vasp_path}")
+            os.chdir(self.work_dir)
+            subprocess.run(vasp_path, shell=True, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"执行 VASP 出错: {e}")
+        finally:
+            os.chdir(original_dir)
+            print(f"已返回目录: {original_dir}")
+
+    def run(self, run_calc=False):
         try:
             os.makedirs(self.work_dir, exist_ok=True)
             target_poscar = os.path.join(self.work_dir, "POSCAR")
@@ -233,6 +249,9 @@ class VaspCohpSetup:
             self.calculate_distances()
             
             print(f"\nCOHP 计算文件已在 {self.work_dir} 目录中准备就绪！")
+
+            if run_calc:
+                self.execute_vasp()
         except Exception as e:
             print(f"错误: {e}")
 
@@ -240,9 +259,10 @@ def main():
     parser = argparse.ArgumentParser(description="VASP COHP Setup Script")
     parser.add_argument("-i", "--input", help="输入结构文件")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径")
+    parser.add_argument("--run", action="store_true", help="生成文件后直接执行计算")
     args = parser.parse_args()
     setup = VaspCohpSetup(config_file=args.config, struct_file=args.input)
-    setup.run()
+    setup.run(run_calc=args.run)
 
 if __name__ == "__main__":
     main()
