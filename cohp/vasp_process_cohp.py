@@ -116,10 +116,13 @@ def main():
     
     slurm_config = config.get("slurm", {})
     slurm_header = slurm_config.get("header", "#!/bin/bash")
+    title = config.get("title", "")
     
     slurm_script_path = os.path.join(dirs, "slurm.sh")
     with open(slurm_script_path, "w") as f:
         f.write(slurm_header.strip() + "\n\n")
+        if title:
+            f.write(f"# {title}\n")
         f.write("lobster-5.1.0\n")
     os.chmod(slurm_script_path, 0o755)
 

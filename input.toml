@@ -1,4 +1,5 @@
 # VASP 运行配置
+title = "vaspflow_job"
 potcar_dir = "~/pot/PBE"
 # eledos的kmesh是scf的kmesh的2倍的密度
 kmesh = 0.025
