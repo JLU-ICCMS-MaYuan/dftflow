@@ -18,7 +18,8 @@ def parse_args():
     parser.add_argument('-z', '--zvalances', nargs="+", type=str, required=True, help="元素及其价电子轨道, 例如 -z Si:3s,3p O:2s,2p")
     parser.add_argument('-d', '--d_limit', nargs=2, type=float, required=True, help="原子间最小最大距离, 例如 -d 1.0 2.5")
     parser.add_argument('-m', '--mode', type=int, default=5, help="选择生成的输入文件版本: 5 或 0 (默认 5)")
-    parser.add_argument('-c', '--custom_basis', nargs="+", type=str, help="使用自定义基组, 例如 -c H:h.sto La:la.sto")
+    parser.add_argument('--custom_basis', nargs="+", type=str, help="使用自定义基组, 例如 --custom_basis H:h.sto La:la.sto")
+    parser.add_argument('-c', '--config', default="input.toml", help="配置文件路径 (默认为 input.toml)")
     return parser.parse_args()
 
 def parse_zvalances(zvalances):
@@ -104,15 +105,17 @@ def main():
                    species_custom1=species_custom1, species_custom2=species_custom2, 
                    lower_d=lower_d, upper_d=upper_d, zval_dict=zval_custom, custom_basis_dict=custom_basis)
 
-    # 读取 input.toml 生成 slurm 脚本
+    # 读取配置文件生成 slurm 脚本
     config = {}
-    config_path = "input.toml"
+    config_path = args.config
     if os.path.exists(config_path):
         if 'tomllib' in globals() and tomllib:
             with open(config_path, "rb") as f:
                 config = tomllib.load(f)
         elif 'toml' in globals() and toml:
             config = toml.load(config_path)
+    else:
+        print(f"警告: 找不到配置文件 {config_path}，将使用默认配置。")
     
     slurm_config = config.get("slurm", {})
     slurm_header = slurm_config.get("header", "#!/bin/bash")
