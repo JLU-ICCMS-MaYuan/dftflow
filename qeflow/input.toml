@@ -45,3 +45,10 @@ Si = { mass = 28.085, pseudo = "Si.pbe-n-rrkjus_psl.1.0.0.UPF" }
 O  = { mass = 15.999, pseudo = "O.pbe-n-kkjus_psl.0.1.UPF" }
 Al = { mass = 26.982, pseudo = "Al.pbe-n-kjpaw_psl.1.0.0.UPF" }
 Fe = { mass = 55.845, pseudo = "Fe.pbe-n-kjpaw_psl.1.0.0.UPF" }
+
+[nscf]
+kmesh = 0.02
+
+# NSCF 特有参数覆盖 (可选)
+[nscf_params.SYSTEM]
+occupations = "'tetrahedra'"
