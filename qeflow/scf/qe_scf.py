@@ -175,16 +175,17 @@ class QESetup:
                     atom_idx += 1
             f.write("\n")
             
-            # K_POINTS
-            kmesh_val = self.config.get("kmesh", 0.04)
-            kpts = self.get_kpoints(struct_info["lattice"], kmesh_val)
-            f.write("K_POINTS automatic\n")
-            f.write(f"  {kpts[0]} {kpts[1]} {kpts[2]} 0 0 0\n\n")
-            
             # CELL_PARAMETERS
             f.write("CELL_PARAMETERS {angstrom}\n")
             for vec in struct_info["lattice"]:
                 f.write(f"  {vec[0]:12.8f} {vec[1]:12.8f} {vec[2]:12.8f}\n")
+            f.write("\n")
+            
+            # K_POINTS
+            kmesh_val = self.config.get("kmesh", 0.04)
+            kpts = self.get_kpoints(struct_info["lattice"], kmesh_val)
+            f.write("K_POINTS automatic\n")
+            f.write(f"  {kpts[0]} {kpts[1]} {kpts[2]} 0 0 0\n")
 
     def create_run_script(self):
         """创建运行脚本"""
