@@ -1,5 +1,4 @@
 # Quantum ESPRESSO 运行配置
-qe_pseudo_dir = "~/pseudo/qe"
 # kmesh 为 K 点密度 (spacing)，单位为 2pi/Angstrom
 kmesh = 0.04
 
@@ -27,7 +26,7 @@ ulimit -s unlimited
 [qe_params.CONTROL]
 prefix = "'qe'"
 outdir = "'./out'"
-pseudo_dir = "'./pseudo'"
+pseudo_dir = "'~/pseudo/qe'"
 
 [qe_params.SYSTEM]
 ecutwfc = 60.0

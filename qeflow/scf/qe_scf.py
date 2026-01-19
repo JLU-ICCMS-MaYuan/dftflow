@@ -179,28 +179,7 @@ class QESetup:
             # CELL_PARAMETERS
             f.write("CELL_PARAMETERS angstrom\n")
             for vec in struct_info["lattice"]:
-                f.write(f"  {vec[0]:12.8f} {vec[1]:12.8f} {vec[2]:12.8f}\n")
-
-    def copy_pseudos(self, elements):
-        """拷贝赝势文件"""
-        pseudo_dir_src = self.config.get("qe_pseudo_dir", "")
-        if not pseudo_dir_src:
-            print("提示: 未在配置文件中设置 'qe_pseudo_dir'，跳过赝势拷贝。")
-            return
-        
-        pseudo_dir_src = os.path.expanduser(pseudo_dir_src)
-        target_pseudo_dir = os.path.join(self.work_dir, "pseudo")
-        os.makedirs(target_pseudo_dir, exist_ok=True)
-        
-        pseudo_map = self.config.get("pseudo_map", {})
-        for el in elements:
-            pseudo_file = pseudo_map.get(el, {}).get("pseudo", f"{el}.UPF")
-            src_path = os.path.join(pseudo_dir_src, pseudo_file)
-            if os.path.exists(src_path):
-                shutil.copy2(src_path, os.path.join(target_pseudo_dir, pseudo_file))
-                print(f"已拷贝赝势: {pseudo_file}")
-            else:
-                print(f"警告: 找不到赝势文件 {src_path}")
+                f.write(f"  {vec[0]:12.88f} {vec[1]:12.88f} {vec[2]:12.88f}\n")
 
     def create_run_script(self):
         """创建运行脚本"""
@@ -233,7 +212,6 @@ class QESetup:
 
             struct_info = self.parse_poscar(target_poscar)
             self.generate_qe_input(struct_info)
-            self.copy_pseudos(struct_info["elements"])
             self.create_run_script()
             
             print(f"\n所有 QE 输入文件已在 {self.work_dir} 目录中准备就绪！")
