@@ -3,22 +3,29 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vaspflow"
+name = "dftflow"
 version = "0.1.0"
-description = "VASP calculation workflow automation scripts"
+description = "A collection of DFT calculation workflow automation scripts."
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
 dependencies = [
-    "toml",
+    "toml; python_version < '3.11'",
     "numpy",
+]
+
+[project.optional-dependencies]
+analysis = [
     "pymatgen",
 ]
 
 [project.scripts]
-vasp_scf = "scf.vasp_scf:main"
-vasp_eband = "eband.vasp_eband:main"
-vasp_eledos = "eledos.vasp_eledos:main"
-vasp_fermisurface = "fermisurface.vasp_fermisurface:main"
-vasp_cohp = "cohp.vasp_cohp:main"
-vasp_process_cohp = "cohp.vasp_process_cohp:main"
+vasp_scf = "vaspflow.scf.vasp_scf:main"
+vasp_eband = "vaspflow.eband.vasp_eband:main"
+vasp_eledos = "vaspflow.eledos.vasp_eledos:main"
+vasp_fermi = "vaspflow.fermisurface.vasp_fermisurface:main"
+vasp_cohp = "vaspflow.cohp.vasp_cohp:main"
+vasp_lobster = "vaspflow.cohp.vasp_process_cohp:main"
 
 [tool.setuptools]
-packages = ["scf", "eband", "eledos", "fermisurface", "cohp"]
+packages = {find = {where = ["."], include = ["*flow*"]}}

@@ -1,7 +1,0 @@
-[console_scripts]
-vasp_cohp = cohp.vasp_cohp:main
-vasp_eband = eband.vasp_eband:main
-vasp_eledos = eledos.vasp_eledos:main
-vasp_fermisurface = fermisurface.vasp_fermisurface:main
-vasp_process_cohp = cohp.vasp_process_cohp:main
-vasp_scf = scf.vasp_scf:main
