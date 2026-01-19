@@ -121,7 +121,7 @@ class QESetup:
 
     def generate_qe_input(self, struct_info):
         """生成 QE pw.x 输入文件"""
-        print(f"正在生成 qe.in...")
+        print(f"正在生成 scf.in...")
         
         # 合并配置文件中的参数
         if "qe_params" in self.config:
@@ -132,7 +132,7 @@ class QESetup:
                 else:
                     self.qe_params[section_upper] = params
 
-        qe_input_path = os.path.join(self.work_dir, "qe.in")
+        qe_input_path = os.path.join(self.work_dir, "scf.in")
         with open(qe_input_path, "w") as f:
             # Namelists
             for section in ["CONTROL", "SYSTEM", "ELECTRONS"]:
@@ -191,7 +191,7 @@ class QESetup:
         with open(run_script_path, "w") as f:
             f.write(slurm_header.strip() + "\n\n")
             f.write(f"echo 'Job started at' `date` \n")
-            f.write(f"{pw_path} < qe.in > qe.out\n")
+            f.write(f"{pw_path} < scf.in > scf.out\n")
             f.write(f"echo 'Job finished at' `date` \n")
         os.chmod(run_script_path, 0o755)
         print(f"生成运行脚本: {run_script_path}")
