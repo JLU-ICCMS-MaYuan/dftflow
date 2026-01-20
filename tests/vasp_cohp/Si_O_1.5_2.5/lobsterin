@@ -1,6 +1,0 @@
-COHPstartEnergy  -10.0
-COHPendEnergy    5.0
-usebasisset pbeVaspFit2015
-basisfunctions Si 3s 3p
-basisfunctions O 2s 2p
-cohpGenerator from 1.5 to 2.5 type Si type O orbitalWise

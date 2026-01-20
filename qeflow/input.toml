@@ -1,9 +1,7 @@
 # Quantum ESPRESSO 运行配置
-# kmesh 为 K 点密度 (spacing)，单位为 2pi/Angstrom
-kmesh = 0.04
 
 [qe]
-executable_path = "mpirun -np 48 pw.x"
+executable_path = "mpirun -np 8 ~/soft/qe-7.4.1/bin/pw.x"
 
 # Slurm 提交脚本配置
 [slurm]
@@ -45,21 +43,13 @@ O  = { pseudo = "O.pbe-n-kkjus_psl.0.1.UPF" }
 Al = { pseudo = "Al.pbe-n-kjpaw_psl.1.0.0.UPF" }
 Fe = { pseudo = "Fe.pbe-n-kjpaw_psl.1.0.0.UPF" }
 
-[nscf]
-k_automatic = true
+[k_points]
+# kpoints_dense 优先：直接指定 K 点均匀网格
 kpoints_dense = [6, 6, 6]
+# 当未提供 kpoints_dense 时，kmesh 表示 K 点间距 (2pi/Angstrom)，用于自动生成均匀网格
+kmesh = 0.3
+# wan = true 时只写 K 点坐标，不写权重；wan = false 时写入权重
 wan = false
-kmesh = 0.02
-# k_automatic = true → 写 K_POINTS automatic
-# k_automatic = false → 写 K_POINTS crystal + 坐标列表（用
-# get_kmesh_justlike_kmesh_pl）
-# kpoints_dense 必填（除非你只用 kmesh 走自动换算）
-# 先看 [nscf].kpoints_dense
-#   - 如果有，就直接用它，不管 kmesh 是多少。
-# 如果没有 kpoints_dense，才用 kmesh 计算出等价网格。
-# k_automatic 只决定输出格式：
-#   - true → K_POINTS automatic
-#   - false → K_POINTS crystal + 坐标列表
 
 # NSCF 特有参数覆盖 (可选)
 [nscf_params.SYSTEM]

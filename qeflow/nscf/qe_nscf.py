@@ -47,9 +47,8 @@ class QENSCFSetup:
             self.config = toml.load(config_file)
         
         self.struct_file = struct_file
-        nscf_config = self.config.get("nscf", {})
-        self.k_automatic = nscf_config.get("k_automatic", True)
-        self.wan = nscf_config.get("wan", False)
+        self.k_points_config = self.config.get("k_points", {})
+        self.wan = self.k_points_config.get("wan", False)
         
         # 2. 默认 QE 参数模板 (Namelists)
         # 注意：NSCF 默认使用 tetrahedra 且通常需要 high verbosity
@@ -63,8 +62,11 @@ class QENSCFSetup:
                 "verbosity": "'high'",
                 "tprnfor": ".true.",
                 "tstress": ".true.",
+                "forc_conv_thr": "1.0e-6",
+                "etot_conv_thr": "1.0e-7",
             },
             "SYSTEM": {
+                "ibrav": 0,
                 "ecutwfc": 50.0,
                 "ecutrho": 400.0,
                 "occupations": "'tetrahedra'",
@@ -72,6 +74,7 @@ class QENSCFSetup:
             "ELECTRONS": {
                 "conv_thr": 1.0e-8,
                 "mixing_beta": 0.7,
+                "electron_maxstep": 400,
             }
         }
 
@@ -135,7 +138,7 @@ class QENSCFSetup:
 
     def get_kmesh_justlike_kmesh_pl(self, kpoints):
         """
-        读取self.kpoints_dense参数, 将其传给n1, n2, n3, 再将n1, n2, n3转化为相应的倒空间的均匀网格点坐标
+        将均匀网格 [n1, n2, n3] 转化为倒空间均匀网格坐标
         """
         # 获取输入的 n1, n2, n3
         n1, n2, n3 = kpoints
@@ -156,20 +159,16 @@ class QENSCFSetup:
 
         kpoints_coords = []
         if not self.wan: # 前三列写k点倒空间分数坐标，第四列写其权重
-            print("K_POINTS crystal")
-            print(totpts)
             for x in range(n1):
                 for y in range(n2):
                     for z in range(n3):
                         # 格式化输出 k 点信息
-                        # print(f"{x/n1:12.8f}{y/n2:12.8f}{z/n3:12.8f}{1/totpts:14.6e}")
                         kpoints_coords.append(f"{x/n1:12.8f}{y/n2:12.8f}{z/n3:12.8f}{1/totpts:14.6e}")
         else:  # 只写前三列写k点倒空间分数坐标
             for x in range(n1):
                 for y in range(n2):
                     for z in range(n3):
                         # 格式化输出 k 点信息（没有权重）
-                        # print(f"{x/n1:12.8f}{y/n2:12.8f}{z/n3:12.8f}")
                         kpoints_coords.append(f"{x/n1:12.8f}{y/n2:12.8f}{z/n3:12.8f}")
         return kpoints_coords, totpts
 
@@ -206,6 +205,13 @@ class QENSCFSetup:
         else:
              self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
+        # 3. 处理 pseudo_dir 中的 ~ 符号
+        if "CONTROL" in self.qe_params:
+            pdir = self.qe_params["CONTROL"].get("pseudo_dir", "").strip("'").strip('"')
+            if pdir.startswith("~"):
+                pdir = os.path.expanduser(pdir)
+                self.qe_params["CONTROL"]["pseudo_dir"] = f"'{pdir}'"
+
         qe_input_path = os.path.join(self.work_dir, "nscf.in")
         with open(qe_input_path, "w") as f:
             # Namelists
@@ -230,7 +236,8 @@ class QENSCFSetup:
                 if mass is None:
                     mass = ATOMIC_MASSES.get(el, 1.0)
                 
-                f.write(f"  {el:3} {mass:8.4f} {info.get('pseudo', f'{el}.UPF')}\n")
+                pseudo_file = info.get('pseudo', f'{el}.UPF').strip()
+                f.write(f"  {el:3} {mass:8.4f} {pseudo_file}\n")
             f.write("\n")
             
             # ATOMIC_POSITIONS
@@ -254,21 +261,23 @@ class QENSCFSetup:
                 f.write(f"  {vec[0]:12.8f} {vec[1]:12.8f} {vec[2]:12.8f}\n")
             f.write("\n")
             
-            # K_POINTS
-            nscf_config = self.config.get("nscf", {})
-            kpoints_dense = nscf_config.get("kpoints_dense")
-            if kpoints_dense is None:
-                kmesh_val = nscf_config.get("kmesh", 0.02)
-                kpoints_dense = self.get_kpoints(struct_info["lattice"], kmesh_val)
-            if self.k_automatic:
-                f.write("K_POINTS automatic\n")
-                f.write(f"  {kpoints_dense[0]} {kpoints_dense[1]} {kpoints_dense[2]} 0 0 0\n")
+            # K_POINTS：仅从 [k_points] 读取
+            kpoints_dense = self.k_points_config.get("kpoints_dense")
+            kmesh_val = self.k_points_config.get("kmesh")
+
+            if kpoints_dense is not None:
+                final_kmesh = kpoints_dense
+            elif kmesh_val is not None:
+                final_kmesh = self.get_kpoints(struct_info["lattice"], kmesh_val)
             else:
-                kpoints_coords, totpts = self.get_kmesh_justlike_kmesh_pl(kpoints_dense)
-                f.write("K_POINTS crystal\n")
-                f.write(f"{totpts}\n")
-                for kinfo in kpoints_coords:
-                    f.write(f" {kinfo}\n")
+                # 默认回退值
+                final_kmesh = self.get_kpoints(struct_info["lattice"], 0.02)
+
+            kpoints_coords, totpts = self.get_kmesh_justlike_kmesh_pl(final_kmesh)
+            f.write("K_POINTS crystal\n")
+            f.write(f"{totpts}\n")
+            for kinfo in kpoints_coords:
+                f.write(f" {kinfo}\n")
 
     def create_run_script(self):
         """创建运行脚本"""
@@ -350,14 +359,12 @@ class QENSCFSetup:
             self.generate_qe_input(struct_info)
             self.create_run_script()
             
-            print(f"\n所有 QE NSCF 输入文件及数据已在 {self.work_dir} 目录中准备就绪！")
-                
-        except Exception as e:
-            print(f"准备 NSCF 环境出错: {e}")
-            raise
-            self.generate_qe_input(struct_info)
-            self.create_run_script()
-            
+            # 确保 outdir 目录存在
+            if outdir_val:
+                full_outdir = os.path.join(self.work_dir, outdir_val)
+                os.makedirs(full_outdir, exist_ok=True)
+                print(f"确保 outdir 存在: {full_outdir}")
+
             print(f"\n所有 QE NSCF 输入文件及数据已在 {self.work_dir} 目录中准备就绪！")
                 
         except Exception as e:

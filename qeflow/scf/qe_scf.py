@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import sys
 import shutil
 import argparse
 import subprocess
@@ -13,7 +14,7 @@ except ImportError:
     except ImportError:
         print("Error: 'toml' or 'tomllib' (Python 3.11+) is required.")
         print("Please install it using: pip install toml")
-        exit(1)
+        sys.exit(1)
 
 ATOMIC_MASSES = {
     "H": 1.008, "He": 4.0026, "Li": 6.94, "Be": 9.0122, "B": 10.81, "C": 12.011, "N": 14.007, "O": 15.999, "F": 18.998, "Ne": 20.180,
@@ -54,10 +55,14 @@ class QESetup:
                 "prefix": "'qe'",
                 "outdir": "'./out'",
                 "pseudo_dir": "'./pseudo'",
+                "verbosity": "'high'",
                 "tprnfor": ".true.",
                 "tstress": ".true.",
+                "forc_conv_thr": "1.0e-6",
+                "etot_conv_thr": "1.0e-7",
             },
             "SYSTEM": {
+                "ibrav": 0,
                 "ecutwfc": 50.0,
                 "ecutrho": 400.0,
                 "occupations": "'smearing'",
@@ -67,6 +72,7 @@ class QESetup:
             "ELECTRONS": {
                 "conv_thr": 1.0e-8,
                 "mixing_beta": 0.7,
+                "electron_maxstep": 400,
             }
         }
 
@@ -169,6 +175,13 @@ class QESetup:
         else:
              self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
+        # 3. 处理 pseudo_dir 中的 ~ 符号 (QE 不支持 ~)
+        if "CONTROL" in self.qe_params:
+            pdir = self.qe_params["CONTROL"].get("pseudo_dir", "").strip("'").strip('"')
+            if pdir.startswith("~"):
+                pdir = os.path.expanduser(pdir)
+                self.qe_params["CONTROL"]["pseudo_dir"] = f"'{pdir}'"
+
         qe_input_path = os.path.join(self.work_dir, "scf.in")
         with open(qe_input_path, "w") as f:
             # Namelists
@@ -189,12 +202,14 @@ class QESetup:
             pseudo_map = self.config.get("pseudo_map", {})
             for el in struct_info["elements"]:
                 info = pseudo_map.get(el, {})
-                # 自动获取质量，如果 pseudo_map 里没写则从 ATOMIC_MASSES 获取
+                # 自动获取质量
                 mass = info.get("mass")
                 if mass is None:
                     mass = ATOMIC_MASSES.get(el, 1.0)
                 
-                f.write(f"  {el:3} {mass:8.4f} {info.get('pseudo', f'{el}.UPF')}\n")
+                # 剔除伪势文件名中的多余空格
+                pseudo_file = info.get('pseudo', f'{el}.UPF').strip()
+                f.write(f"  {el:3} {mass:8.4f} {pseudo_file}\n")
             f.write("\n")
             
             # ATOMIC_POSITIONS
@@ -278,6 +293,13 @@ class QESetup:
             self.generate_qe_input(struct_info)
             self.create_run_script()
             
+            # 确保 outdir 目录存在，否则 QE 会报错
+            outdir_val = self.qe_params["CONTROL"].get("outdir", "").strip("'").strip('"')
+            if outdir_val:
+                full_outdir = os.path.join(self.work_dir, outdir_val)
+                os.makedirs(full_outdir, exist_ok=True)
+                print(f"确保 outdir 存在: {full_outdir}")
+
             print(f"\n所有 QE 输入文件已在 {self.work_dir} 目录中准备就绪！")
                 
         except Exception as e:
