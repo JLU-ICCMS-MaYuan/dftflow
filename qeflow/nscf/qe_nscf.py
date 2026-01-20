@@ -336,14 +336,22 @@ class QENSCFSetup:
             dst_save_path = os.path.join(dst_out_base, save_dir_name)
 
             if os.path.exists(src_save_path):
-                # 创建目标 outdir 层级
-                os.makedirs(dst_out_base, exist_ok=True)
-                if os.path.exists(dst_save_path):
-                    shutil.rmtree(dst_save_path)
-
-                # 拷贝整个 .save 目录
-                shutil.copytree(src_save_path, dst_save_path)
-                print(f"已成功从 {src_save_path} 拷贝数据至 {dst_save_path}")
+                # 创建目标 outdir 和 .save 目录层级
+                os.makedirs(dst_save_path, exist_ok=True)
+                
+                # 仅拷贝 NSCF 必需的三个关键文件
+                needed_files = ["data-file-schema.xml", "charge-density.dat", "paw.txt"]
+                for filename in needed_files:
+                    src_file = os.path.join(src_save_path, filename)
+                    dst_file = os.path.join(dst_save_path, filename)
+                    if os.path.exists(src_file):
+                        shutil.copy2(src_file, dst_file)
+                        print(f"已拷贝: {filename}")
+                    else:
+                        if filename != "paw.txt": # paw.txt 可能不存在（非 PAW 赝势）
+                            print(f"警告: 找不到必要文件 {src_file}")
+                
+                print(f"已从 {src_save_path} 准备好 NSCF 所需的关键数据。")
             else:
                 print(f"警告: 找不到 SCF 的数据目录 {src_save_path}")
 
