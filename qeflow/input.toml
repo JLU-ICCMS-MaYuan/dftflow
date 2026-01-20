@@ -24,7 +24,6 @@ ulimit -s unlimited
 
 # QE pw.x 参数自定义 (Namelists)
 [qe_params.CONTROL]
-prefix = "'qe'"
 outdir = "'./out'"
 pseudo_dir = "'~/pseudo/qe'"
 
@@ -39,12 +38,12 @@ degauss = 0.02
 conv_thr = 1.0e-8
 mixing_beta = 0.7
 
-# 元素与赝势文件的映射关系
+# 元素与赝势文件的映射关系 (质量将自动获取，此处仅需配置赝势文件名)
 [pseudo_map]
-Si = { mass = 28.085, pseudo = "Si.pbe-n-rrkjus_psl.1.0.0.UPF" }
-O  = { mass = 15.999, pseudo = "O.pbe-n-kkjus_psl.0.1.UPF" }
-Al = { mass = 26.982, pseudo = "Al.pbe-n-kjpaw_psl.1.0.0.UPF" }
-Fe = { mass = 55.845, pseudo = "Fe.pbe-n-kjpaw_psl.1.0.0.UPF" }
+Si = { pseudo = "Si.pbe-n-rrkjus_psl.1.0.0.UPF" }
+O  = { pseudo = "O.pbe-n-kkjus_psl.0.1.UPF" }
+Al = { pseudo = "Al.pbe-n-kjpaw_psl.1.0.0.UPF" }
+Fe = { pseudo = "Fe.pbe-n-kjpaw_psl.1.0.0.UPF" }
 
 [nscf]
 k_automatic = true

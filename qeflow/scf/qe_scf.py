@@ -15,6 +15,22 @@ except ImportError:
         print("Please install it using: pip install toml")
         exit(1)
 
+ATOMIC_MASSES = {
+    "H": 1.008, "He": 4.0026, "Li": 6.94, "Be": 9.0122, "B": 10.81, "C": 12.011, "N": 14.007, "O": 15.999, "F": 18.998, "Ne": 20.180,
+    "Na": 22.990, "Mg": 24.305, "Al": 26.982, "Si": 28.085, "P": 30.974, "S": 32.06, "Cl": 35.45, "Ar": 39.948,
+    "K": 39.098, "Ca": 40.078, "Sc": 44.956, "Ti": 47.867, "V": 50.942, "Cr": 51.996, "Mn": 54.938, "Fe": 55.845, "Co": 58.933, "Ni": 58.693, "Cu": 63.546, "Zn": 65.38, "Ga": 69.723, "Ge": 72.63, "As": 74.922, "Se": 78.971, "Br": 79.904, "Kr": 83.798,
+    "Rb": 85.468, "Sr": 87.62, "Y": 88.906, "Zr": 91.224, "Nb": 92.906, "Mo": 95.95, "Tc": 98, "Ru": 101.07, "Rh": 102.91, "Pd": 106.42, "Ag": 107.87, "Cd": 112.41, "In": 114.82, "Sn": 118.71, "Sb": 121.76, "Te": 127.60, "I": 126.90, "Xe": 131.29,
+    "Cs": 132.91, "Ba": 137.33, "La": 138.91, "Ce": 140.12, "Pr": 140.91, "Nd": 144.24, "Pm": 145, "Sm": 150.36, "Eu": 151.96, "Gd": 157.25, "Tb": 158.93, "Dy": 162.50, "Ho": 164.93, "Er": 167.26, "Tm": 168.93, "Yb": 173.05, "Lu": 174.97, "Hf": 178.49, "Ta": 180.95, "W": 183.84, "Re": 186.21, "Os": 190.23, "Ir": 192.22, "Pt": 195.08, "Au": 196.97, "Hg": 200.59, "Tl": 204.38, "Pb": 207.2, "Bi": 208.98, "Th": 232.04, "Pa": 231.04, "U": 238.03
+}
+
+def get_formula(elements, counts):
+    formula = ""
+    for el, count in zip(elements, counts):
+        formula += el
+        if count > 1:
+            formula += str(count)
+    return formula
+
 class QESetup:
     def __init__(self, config_file="input.toml", struct_file=None):
         self.work_dir = "qe_scf"
@@ -128,14 +144,30 @@ class QESetup:
         """生成 QE pw.x 输入文件"""
         print(f"正在生成 scf.in...")
         
-        # 合并配置文件中的参数
+        # 1. 自动设置 prefix (由化学配比决定)
+        formula = get_formula(struct_info["elements"], struct_info["counts"])
+        self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
+
+        # 2. 合并配置文件中的参数 (覆盖默认值，但 prefix 已由上面逻辑确定)
         if "qe_params" in self.config:
             for section, params in self.config["qe_params"].items():
                 section_upper = section.upper()
                 if section_upper in self.qe_params:
+                    # 如果配置文件里也写了 prefix，这里会覆盖上面的自动设置
+                    # 但根据需求，我们应该优先使用自动生成的，或者如果用户没写才用自动生成的。
+                    # 用户说“不用在input.toml里面手动设置”，意味着我们应该自动生成。
+                    # 如果用户还是写了，我们决定是否覆盖。这里我们选择如果用户写了则遵循用户，没写用自动。
+                    # 修正：用户明确说“不用手动设置”，所以我们总是自动生成。
                     self.qe_params[section_upper].update(params)
                 else:
                     self.qe_params[section_upper] = params
+        
+        # 强制使用自动生成的 prefix (如果用户在 config 里也写了，这里再次确保覆盖)
+        if "qe_params" in self.config and "CONTROL" in self.config["qe_params"]:
+             if "prefix" not in self.config["qe_params"]["CONTROL"]:
+                 self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
+        else:
+             self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
         qe_input_path = os.path.join(self.work_dir, "scf.in")
         with open(qe_input_path, "w") as f:
@@ -156,8 +188,13 @@ class QESetup:
             f.write("ATOMIC_SPECIES\n")
             pseudo_map = self.config.get("pseudo_map", {})
             for el in struct_info["elements"]:
-                info = pseudo_map.get(el, {"mass": 1.0, "pseudo": f"{el}.UPF"})
-                f.write(f"  {el:3} {info.get('mass', 1.0):8.4f} {info.get('pseudo', f'{el}.UPF')}\n")
+                info = pseudo_map.get(el, {})
+                # 自动获取质量，如果 pseudo_map 里没写则从 ATOMIC_MASSES 获取
+                mass = info.get("mass")
+                if mass is None:
+                    mass = ATOMIC_MASSES.get(el, 1.0)
+                
+                f.write(f"  {el:3} {mass:8.4f} {info.get('pseudo', f'{el}.UPF')}\n")
             f.write("\n")
             
             # ATOMIC_POSITIONS
