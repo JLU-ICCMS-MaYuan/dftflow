@@ -21,6 +21,12 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
+DEFAULT_SLURM_HEADER = """#!/bin/bash
+#SBATCH --job-name=wannier90
+#SBATCH --output=slurm.out
+#SBATCH --error=slurm.err
+"""
+
 try:
     import tomllib  # Python 3.11+
 except ImportError:
@@ -154,7 +160,7 @@ def create_run_script(work_dir: str, prefix: str, cfg: Dict[str, Any]) -> None:
     pw2_exec_path = pw2_cfg.get("executable_path", "pw2wannier90.x")
     pw2_input_path, pw2_input_name = resolve_pw2_input_path(work_dir, prefix, cfg)
     ensure_pw2wan_input(pw2_input_path, prefix, cfg)
-    slurm_header = cfg.get("slurm", {}).get("header", "#!/bin/bash")
+    slurm_header = DEFAULT_SLURM_HEADER
 
     script_path = os.path.join(work_dir, "run_wannier90.sh")
     with open(script_path, "w", encoding="utf-8") as f:
@@ -179,21 +185,6 @@ def create_run_script(work_dir: str, prefix: str, cfg: Dict[str, Any]) -> None:
         f.write('$W90 "$PREFIX"\n')
     os.chmod(script_path, 0o755)
     print(f"已生成提交脚本: {script_path}")
-
-
-def create_slurm_script(work_dir: str, cfg: Dict[str, Any]) -> None:
-    slurm_cfg = cfg.get("slurm", {})
-    slurm_header = slurm_cfg.get("header", "#!/bin/bash")
-    script_name = slurm_cfg.get("script_name", "run_wannier90.slurm")
-
-    script_path = os.path.join(work_dir, script_name)
-    with open(script_path, "w", encoding="utf-8") as f:
-        f.write(slurm_header.strip() + "\n\n")
-        f.write("set -e\n")
-        f.write('cd "$(dirname "$0")"\n\n')
-        f.write('bash ./run_wannier90.sh\n')
-    os.chmod(script_path, 0o755)
-    print(f"已生成 Slurm 脚本: {script_path}")
 
 
 def format_pw2_value(value: Any) -> str:
@@ -437,7 +428,6 @@ def main() -> None:
 
     write_win(output, struct, cfg, kpoints, band_segments)
     create_run_script(work_dir, basename, cfg)
-    create_slurm_script(work_dir, cfg)
     print(f"已生成 {output}，包含 {len(kpoints)} 个 k 点。")
     if args.run:
         run_wannier90_pipeline(work_dir, basename, cfg)
