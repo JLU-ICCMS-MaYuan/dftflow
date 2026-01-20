@@ -308,19 +308,15 @@ class QENSCFSetup:
         try:
             os.makedirs(self.work_dir, exist_ok=True)
 
-            # 1. 处理结构文件 (优先从 qe_scf 拷贝)
-            target_poscar = os.path.join(self.work_dir, "POSCAR")
+            # 1. 确定结构文件路径 (不再拷贝到工作目录)
             scf_poscar = os.path.join(self.scf_dir, "POSCAR")
             
             if self.struct_file:
-                shutil.copy2(self.struct_file, target_poscar)
-                print(f"已将输入文件 {self.struct_file} 拷贝为 {target_poscar}")
+                struct_path = self.struct_file
             elif os.path.exists(scf_poscar):
-                shutil.copy2(scf_poscar, target_poscar)
-                print(f"已从 {self.scf_dir} 目录拷贝 POSCAR")
+                struct_path = scf_poscar
             elif os.path.exists("POSCAR"):
-                shutil.copy2("POSCAR", target_poscar)
-                print(f"已将当前目录下的 POSCAR 拷贝为 {target_poscar}")
+                struct_path = "POSCAR"
             else:
                 raise FileNotFoundError("找不到结构文件，且无法从 qe_scf 自动获取。")
 
@@ -355,7 +351,7 @@ class QENSCFSetup:
             else:
                 print(f"警告: 找不到 SCF 的数据目录 {src_save_path}")
 
-            struct_info = self.parse_poscar(target_poscar)
+            struct_info = self.parse_poscar(struct_path)
             self.generate_qe_input(struct_info)
             self.create_run_script()
             
