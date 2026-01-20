@@ -45,14 +45,14 @@ def build_parser():
         description="解析能量窗口：模式 e 提取某条能带的能量范围；模式 n 统计能量区间内的能带数。"
     )
     parser.add_argument(
-        "xml",
+        "--xml",
         help="能量文件：EIGENVAL 或 QE/FLEUR XML（含能带信息）",
     )
 
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
     parser_e = subparsers.add_parser(
-        "e",
+        "-e",
         help="指定 band 序号输出该带的能量范围",
     )
     parser_e.add_argument(
@@ -62,16 +62,16 @@ def build_parser():
     )
 
     parser_n = subparsers.add_parser(
-        "n",
+        "-n",
         help="指定能量区间统计各 k 点包含的能带数",
     )
     parser_n.add_argument(
-        "emin",
+        "--emin",
         type=float,
         help="能量下限（eV）",
     )
     parser_n.add_argument(
-        "emax",
+        "--emax",
         type=float,
         help="能量上限（eV）",
     )
