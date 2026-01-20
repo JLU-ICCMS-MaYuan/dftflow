@@ -167,22 +167,18 @@ def create_run_script(work_dir: str, prefix: str, cfg: Dict[str, Any]) -> None:
         f.write(slurm_header.strip() + "\n\n")
         f.write("set -e\n")
         f.write('cd "$(dirname "$0")"\n\n')
-        f.write(f'PREFIX="{prefix}"\n')
-        f.write(f'W90="{exec_path}"\n\n')
-        f.write(f'PW2="{pw2_exec_path}"\n')
-        f.write(f'PW2_INPUT="{pw2_input_name}"\n\n')
         f.write('echo "Prep NNKP at $(date)"\n')
-        f.write('$W90 -pp "$PREFIX"\n')
+        f.write(f'{exec_path} -pp "{prefix}"\n')
         f.write('\n')
         f.write('echo "Run pw2wannier90 at $(date)"\n')
-        f.write('if [ ! -f "$PW2_INPUT" ]; then\n')
-        f.write('  echo "缺少 pw2wannier90 输入文件: $PW2_INPUT"\n')
+        f.write(f'if [ ! -f "{pw2_input_name}" ]; then\n')
+        f.write(f'  echo "缺少 pw2wannier90 输入文件: {pw2_input_name}"\n')
         f.write('  exit 1\n')
         f.write('fi\n')
-        f.write('$PW2 < "$PW2_INPUT"\n')
+        f.write(f'{pw2_exec_path} < "{pw2_input_name}" > PW2WAN.log 2>&1\n')
         f.write('\n')
         f.write('echo "Run Wannier90 (requires *.amn/*.mmn ready)"\n')
-        f.write('$W90 "$PREFIX"\n')
+        f.write(f'{exec_path} "{prefix}" > WANNIER90.log 2>&1\n')
     os.chmod(script_path, 0o755)
     print(f"已生成提交脚本: {script_path}")
 
@@ -217,7 +213,9 @@ def resolve_pw2_input_path(
 
 
 def ensure_pw2wan_input(path: str, prefix: str, cfg: Dict[str, Any]) -> None:
+    """确保 pw2wannier90 输入文件存在，若不存在则生成默认文件。"""
     if os.path.exists(path):
+        print(f"pw2wannier90 输入文件已存在: {path}")
         return
     pw2_cfg = cfg.get("pw2wannier90", {})
     outdir = pw2_cfg.get("outdir", "./")
@@ -262,8 +260,8 @@ def run_wannier90_pipeline(work_dir: str, prefix: str, cfg: Dict[str, Any]) -> N
 
     print("开始执行 Wannier90 流程（-pp -> pw2wannier90 -> wannier90）...")
     subprocess.run(f'{exec_path} -pp "{prefix}"', shell=True, check=True, cwd=work_dir)
-    subprocess.run(f'{pw2_exec_path} < "{pw2_input_name}"', shell=True, check=True, cwd=work_dir)
-    subprocess.run(f'{exec_path} "{prefix}"', shell=True, check=True, cwd=work_dir)
+    subprocess.run(f'{pw2_exec_path} < "{pw2_input_name}" > PW2WAN.log 2>&1', shell=True, check=True, cwd=work_dir)
+    subprocess.run(f'{exec_path} "{prefix}.win" > WANNIER90.log 2>&1', shell=True, check=True, cwd=work_dir)
 
 
 def write_win(
