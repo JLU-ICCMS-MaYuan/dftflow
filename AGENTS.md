@@ -22,6 +22,16 @@
     3. 在 `pyproject.toml` 注册脚本入口 `wannier90_prepare`（指向 `wannier90flow.wannier_init:main`）。
 - **状态**：已完成。
 
+### [2026-01-20] Wannier90 工具参数化
+- **需求**：`wannier90flow/wannier_window.py` 使用 argparse 管理输入参数。
+- **方案**：改为 argparse 解析 xml 文件、模式（e/n）及对应 band_index 或能量区间。
+- **状态**：已完成。
+
+### [2026-01-20] Wannier90 能量窗口参数统一为子命令
+- **需求**：`wannier90flow/wannier_window.py` 所有输入参数统一由 argparse 解析，并按模式拆分参数。
+- **方案**：使用 `argparse` 子命令 `e`/`n` 分别接收 `band_index` 与 `emin/emax`，保留原有调用结构。
+- **状态**：已完成。
+
 ### [2026-01-19] 功能扩展与规范化：Quantum ESPRESSO 支持及目录命名规范
 - **需求**：
     1. 在 `qeflow` 目录下增加 `qe_scf.py`。
