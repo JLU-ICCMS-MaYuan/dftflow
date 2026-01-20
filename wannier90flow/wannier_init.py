@@ -146,6 +146,28 @@ def format_kpoint(pt: Tuple[float, float, float]) -> str:
     return f"{pt[0]:12.8f} {pt[1]:12.8f} {pt[2]:12.8f}"
 
 
+def create_run_script(work_dir: str, prefix: str, cfg: Dict[str, Any]) -> None:
+    """生成提交脚本，包含 -pp 预处理与主计算占位。"""
+    w90_cfg = cfg.get("wannier90", {})
+    exec_path = w90_cfg.get("executable_path", "wannier90.x")
+    slurm_header = cfg.get("slurm", {}).get("header", "#!/bin/bash")
+
+    script_path = os.path.join(work_dir, "run_wannier90.sh")
+    with open(script_path, "w", encoding="utf-8") as f:
+        f.write(slurm_header.strip() + "\n\n")
+        f.write("set -e\n")
+        f.write('cd "$(dirname "$0")"\n\n')
+        f.write(f'PREFIX="{prefix}"\n')
+        f.write(f'W90="{exec_path}"\n\n')
+        f.write('echo "Prep NNKP at $(date)"\n')
+        f.write('$W90 -pp "$PREFIX"\n')
+        f.write('\n')
+        f.write('echo "Run Wannier90 (requires *.amn/*.mmn ready)"\n')
+        f.write('# $W90 "$PREFIX"\n')
+    os.chmod(script_path, 0o755)
+    print(f"已生成提交脚本: {script_path}")
+
+
 def write_win(
     output: str,
     struct: Dict[str, Any],
@@ -255,6 +277,9 @@ def main() -> None:
     parser.add_argument("-c", "--config", required=True, help="配置文件 (TOML/JSON)")
     args = parser.parse_args()
 
+    work_dir = "wannier90"
+    os.makedirs(work_dir, exist_ok=True)
+
     struct = parse_poscar(args.input)
     cfg = load_config(args.config)
     kpt_cfg = cfg.get("k_points", {})
@@ -267,18 +292,24 @@ def main() -> None:
     else:
         raise ValueError("k_points 配置缺少 mp_grid 或 kpoints。")
 
-    kpath_file = kpt_cfg.get("kpath_file", "KPATH.in")
+    kpath_file_cfg = kpt_cfg.get("kpath_file", "KPATH.in")
+    kpath_file = (
+        kpath_file_cfg
+        if os.path.isabs(kpath_file_cfg)
+        else os.path.join(work_dir, kpath_file_cfg)
+    )
     band_segments: List[Dict[str, Any]] = []
     if os.path.exists(kpath_file):
         band_segments = parse_kpath(kpath_file)
         print(f"从 {kpath_file} 读取到 {len(band_segments)} 段能带路径。")
     else:
-        print(f"未找到 {kpath_file}，将不写入 kpoint_path（可先用 vaspkit 303 生成）。")
+        print(f"未找到 {kpath_file}，将不写入 kpoint_path（可先在 {work_dir} 运行 vaspkit 303 生成）。")
 
     basename = cfg.get("system_name") or struct["comment"] or "wannier90"
-    output = f"{basename}.win"
+    output = os.path.join(work_dir, f"{basename}.win")
 
     write_win(output, struct, cfg, kpoints, band_segments)
+    create_run_script(work_dir, basename, cfg)
     print(f"已生成 {output}，包含 {len(kpoints)} 个 k 点。")
 
 
