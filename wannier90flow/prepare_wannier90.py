@@ -251,11 +251,11 @@ def write_win(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="准备 Wannier90 .win 输入文件")
-    parser.add_argument("-p", "--poscar", default="POSCAR", help="结构文件 (VASP POSCAR)")
+    parser.add_argument("-i", "--input", default="POSCAR", help="结构文件 (VASP POSCAR)")
     parser.add_argument("-c", "--config", required=True, help="配置文件 (TOML/JSON)")
     args = parser.parse_args()
 
-    struct = parse_poscar(args.poscar)
+    struct = parse_poscar(args.input)
     cfg = load_config(args.config)
     kpt_cfg = cfg.get("k_points", {})
 
