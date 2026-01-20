@@ -239,7 +239,28 @@ class QESetup:
         os.chmod(run_script_path, 0o755)
         print(f"生成运行脚本: {run_script_path}")
 
-    def run(self, run_calc=False):
+    def execute(self):
+        """进入工作目录并执行 Quantum ESPRESSO 计算"""
+        qe_config = self.config.get("qe", {})
+        pw_path = qe_config.get("executable_path", "mpirun -np 4 pw.x")
+        
+        original_dir = os.getcwd()
+        try:
+            print(f"\n正在进入 {self.work_dir} 目录执行: {pw_path}")
+            os.chdir(self.work_dir)
+            # 使用 shell=True 因为 pw_path 可能包含 mpirun 等复杂命令
+            # QE 通常通过 < scf.in 读取输入
+            cmd = f"{pw_path} < scf.in > scf.out"
+            subprocess.run(cmd, shell=True, check=True)
+            print(f"QE 计算完成，输出已保存至 {self.work_dir}/scf.out")
+        except subprocess.CalledProcessError as e:
+            print(f"执行 QE 出错: {e}")
+        finally:
+            os.chdir(original_dir)
+            print(f"已返回目录: {original_dir}")
+
+    def setup(self):
+        """准备所有输入文件和计算环境"""
         try:
             os.makedirs(self.work_dir, exist_ok=True)
 
@@ -258,22 +279,26 @@ class QESetup:
             self.create_run_script()
             
             print(f"\n所有 QE 输入文件已在 {self.work_dir} 目录中准备就绪！")
-
-            if run_calc: # 执行逻辑
-                pass
                 
         except Exception as e:
-            print(f"错误: {e}")
+            print(f"准备环境出错: {e}")
+            raise
 
 def main():
     parser = argparse.ArgumentParser(description="Quantum ESPRESSO SCF Setup Script")
     parser.add_argument("-i", "--input", help="输入结构文件 (POSCAR 格式)")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径")
-    parser.add_argument("--run", action="store_true", help="直接执行计算")
+    parser.add_argument("--run", action="store_true", help="生成文件后直接执行计算")
     
     args = parser.parse_args()
-    setup = QESetup(config_file=args.config, struct_file=args.input)
-    setup.run(run_calc=args.run)
+    setup_obj = QESetup(config_file=args.config, struct_file=args.input)
+    
+    # 1. 环境准备
+    setup_obj.setup()
+    
+    # 2. 如果指定了 --run，则执行计算
+    if args.run:
+        setup_obj.execute()
 
 if __name__ == "__main__":
     main()

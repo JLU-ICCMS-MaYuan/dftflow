@@ -285,7 +285,26 @@ class QENSCFSetup:
         os.chmod(run_script_path, 0o755)
         print(f"生成运行脚本: {run_script_path}")
 
-    def run(self, run_calc=False):
+    def execute(self):
+        """进入工作目录并执行 Quantum ESPRESSO NSCF 计算"""
+        qe_config = self.config.get("qe", {})
+        pw_path = qe_config.get("executable_path", "mpirun -np 4 pw.x")
+        
+        original_dir = os.getcwd()
+        try:
+            print(f"\n正在进入 {self.work_dir} 目录执行: {pw_path}")
+            os.chdir(self.work_dir)
+            cmd = f"{pw_path} < nscf.in > nscf.out"
+            subprocess.run(cmd, shell=True, check=True)
+            print(f"QE NSCF 计算完成，输出已保存至 {self.work_dir}/nscf.out")
+        except subprocess.CalledProcessError as e:
+            print(f"执行 QE NSCF 出错: {e}")
+        finally:
+            os.chdir(original_dir)
+            print(f"已返回目录: {original_dir}")
+
+    def setup(self):
+        """准备 NSCF 环境，包括拷贝 SCF 数据"""
         try:
             os.makedirs(self.work_dir, exist_ok=True)
 
@@ -306,7 +325,6 @@ class QENSCFSetup:
                 raise FileNotFoundError("找不到结构文件，且无法从 qe_scf 自动获取。")
 
             # 2. 拷贝 SCF 生成的数据 (outdir 及其内部的 prefix.save)
-            # 自动获取 prefix 和 outdir，确保 NSCF 与 SCF 一致
             outdir_val = self.qe_params["CONTROL"]["outdir"].strip("'").strip('"')
             prefix_val = self.qe_params["CONTROL"]["prefix"].strip("'").strip('"')
 
@@ -323,35 +341,37 @@ class QENSCFSetup:
                 if os.path.exists(dst_save_path):
                     shutil.rmtree(dst_save_path)
 
-                # 拷贝整个 .save 目录以包含 xml, dat, paw 等所有必要文件
+                # 拷贝整个 .save 目录
                 shutil.copytree(src_save_path, dst_save_path)
                 print(f"已成功从 {src_save_path} 拷贝数据至 {dst_save_path}")
-                print(f"  - 包含: data-file-schema.xml, charge-density.dat, paw.txt 等")
             else:
                 print(f"警告: 找不到 SCF 的数据目录 {src_save_path}")
-                print(f"      请确保 {self.scf_dir} 中已完成计算且 prefix='{prefix_val}', outdir='{outdir_val}'")
 
             struct_info = self.parse_poscar(target_poscar)
             self.generate_qe_input(struct_info)
             self.create_run_script()
             
             print(f"\n所有 QE NSCF 输入文件及数据已在 {self.work_dir} 目录中准备就绪！")
-
-            if run_calc:
-                pass
                 
         except Exception as e:
-            print(f"错误: {e}")
+            print(f"准备 NSCF 环境出错: {e}")
+            raise
 
 def main():
     parser = argparse.ArgumentParser(description="Quantum ESPRESSO NSCF Setup Script")
     parser.add_argument("-i", "--input", help="输入结构文件 (POSCAR 格式)")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径")
-    parser.add_argument("--run", action="store_true", help="直接执行计算")
+    parser.add_argument("--run", action="store_true", help="生成文件后直接执行计算")
     
     args = parser.parse_args()
-    setup = QENSCFSetup(config_file=args.config, struct_file=args.input)
-    setup.run(run_calc=args.run)
+    setup_obj = QENSCFSetup(config_file=args.config, struct_file=args.input)
+    
+    # 1. 环境准备 (包含数据拷贝)
+    setup_obj.setup()
+    
+    # 2. 计算执行
+    if args.run:
+        setup_obj.execute()
 
 if __name__ == "__main__":
     main()
