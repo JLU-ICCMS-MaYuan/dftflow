@@ -152,7 +152,8 @@ def create_run_script(work_dir: str, prefix: str, cfg: Dict[str, Any]) -> None:
     exec_path = w90_cfg.get("executable_path", "wannier90.x")
     pw2_cfg = cfg.get("pw2wannier90", {})
     pw2_exec_path = pw2_cfg.get("executable_path", "pw2wannier90.x")
-    pw2_input = pw2_cfg.get("input_file", f"{prefix}.pw2wan.in")
+    pw2_input_path, pw2_input_name = resolve_pw2_input_path(work_dir, prefix, cfg)
+    ensure_pw2wan_input(pw2_input_path, prefix, cfg)
     slurm_header = cfg.get("slurm", {}).get("header", "#!/bin/bash")
 
     script_path = os.path.join(work_dir, "run_wannier90.sh")
@@ -163,7 +164,7 @@ def create_run_script(work_dir: str, prefix: str, cfg: Dict[str, Any]) -> None:
         f.write(f'PREFIX="{prefix}"\n')
         f.write(f'W90="{exec_path}"\n\n')
         f.write(f'PW2="{pw2_exec_path}"\n')
-        f.write(f'PW2_INPUT="{pw2_input}"\n\n')
+        f.write(f'PW2_INPUT="{pw2_input_name}"\n\n')
         f.write('echo "Prep NNKP at $(date)"\n')
         f.write('$W90 -pp "$PREFIX"\n')
         f.write('\n')
@@ -195,20 +196,82 @@ def create_slurm_script(work_dir: str, cfg: Dict[str, Any]) -> None:
     print(f"已生成 Slurm 脚本: {script_path}")
 
 
+def format_pw2_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return ".true." if value else ".false."
+    if isinstance(value, (int, float)):
+        return str(value)
+    return f"'{value}'"
+
+
+def resolve_pw2_input_path(
+    work_dir: str, prefix: str, cfg: Dict[str, Any]
+) -> Tuple[str, str]:
+    pw2_cfg = cfg.get("pw2wannier90", {})
+    input_file = pw2_cfg.get("input_file")
+    candidates: List[str] = []
+    if input_file:
+        candidates.append(input_file)
+    else:
+        candidates.extend([f"{prefix}.pw2wan", f"{prefix}.pw2wan.in"])
+
+    for cand in candidates:
+        path = cand if os.path.isabs(cand) else os.path.join(work_dir, cand)
+        if os.path.exists(path):
+            return path, os.path.basename(path)
+
+    default_name = input_file or f"{prefix}.pw2wan"
+    path = default_name if os.path.isabs(default_name) else os.path.join(work_dir, default_name)
+    return path, os.path.basename(path)
+
+
+def ensure_pw2wan_input(path: str, prefix: str, cfg: Dict[str, Any]) -> None:
+    if os.path.exists(path):
+        return
+    pw2_cfg = cfg.get("pw2wannier90", {})
+    outdir = pw2_cfg.get("outdir", "./")
+    prefix_val = pw2_cfg.get("prefix", prefix)
+    seedname = pw2_cfg.get("seedname", prefix)
+
+    lines = [
+        "&inputpp",
+        f"  outdir = {format_pw2_value(outdir)}",
+        f"  prefix = {format_pw2_value(prefix_val)}",
+        f"  seedname = {format_pw2_value(seedname)}",
+    ]
+    if "write_amn" in pw2_cfg:
+        lines.append(f"  write_amn = {format_pw2_value(pw2_cfg['write_amn'])}")
+    else:
+        lines.append("  write_amn = .true.")
+    if "write_mmn" in pw2_cfg:
+        lines.append(f"  write_mmn = {format_pw2_value(pw2_cfg['write_mmn'])}")
+    else:
+        lines.append("  write_mmn = .true.")
+    if "write_unk" in pw2_cfg:
+        lines.append(f"  write_unk = {format_pw2_value(pw2_cfg['write_unk'])}")
+    if "spin_component" in pw2_cfg:
+        lines.append(f"  spin_component = {format_pw2_value(pw2_cfg['spin_component'])}")
+    if "wan_mode" in pw2_cfg:
+        lines.append(f"  wan_mode = {format_pw2_value(pw2_cfg['wan_mode'])}")
+    lines.append("/\n")
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    print(f"已生成 pw2wannier90 输入文件: {path}")
+
+
 def run_wannier90_pipeline(work_dir: str, prefix: str, cfg: Dict[str, Any]) -> None:
     w90_cfg = cfg.get("wannier90", {})
     exec_path = w90_cfg.get("executable_path", "wannier90.x")
     pw2_cfg = cfg.get("pw2wannier90", {})
     pw2_exec_path = pw2_cfg.get("executable_path", "pw2wannier90.x")
-    pw2_input = pw2_cfg.get("input_file", f"{prefix}.pw2wan.in")
-
-    pw2_input_path = os.path.join(work_dir, pw2_input)
-    if not os.path.exists(pw2_input_path):
-        raise FileNotFoundError(f"缺少 pw2wannier90 输入文件: {pw2_input_path}")
+    pw2_input_path, pw2_input_name = resolve_pw2_input_path(work_dir, prefix, cfg)
+    ensure_pw2wan_input(pw2_input_path, prefix, cfg)
 
     print("开始执行 Wannier90 流程（-pp -> pw2wannier90 -> wannier90）...")
     subprocess.run(f'{exec_path} -pp "{prefix}"', shell=True, check=True, cwd=work_dir)
-    subprocess.run(f'{pw2_exec_path} < "{pw2_input}"', shell=True, check=True, cwd=work_dir)
+    subprocess.run(f'{pw2_exec_path} < "{pw2_input_name}"', shell=True, check=True, cwd=work_dir)
     subprocess.run(f'{exec_path} "{prefix}"', shell=True, check=True, cwd=work_dir)
 
 
