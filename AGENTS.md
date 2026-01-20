@@ -32,6 +32,11 @@
 - **方案**：使用 `argparse` 子命令 `e`/`n` 分别接收 `band_index` 与 `emin/emax`，保留原有调用结构。
 - **状态**：已完成。
 
+### [2026-01-20] Wannier90 脚本入口补齐
+- **需求**：在 `pyproject.toml` 中补齐 wannier 相关脚本入口。
+- **方案**：在 `[project.scripts]` 新增 `wannier_window` 指向 `wannier90flow.wannier_window:main`，保留现有 `wannier_init`。
+- **状态**：已完成。
+
 ### [2026-01-19] 功能扩展与规范化：Quantum ESPRESSO 支持及目录命名规范
 - **需求**：
     1. 在 `qeflow` 目录下增加 `qe_scf.py`。

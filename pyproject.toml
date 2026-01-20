@@ -29,6 +29,7 @@ vasp_lobster = "vaspflow.cohp.vasp_process_cohp:main"
 qe_scf = "qeflow.scf.qe_scf:main"
 qe_nscf = "qeflow.nscf.qe_nscf:main"
 wannier_init = "wannier90flow.wannier_init:main"
+wannier_window = "wannier90flow.wannier_window:main"
 
 [tool.setuptools]
 packages = {find = {where = ["."], include = ["*flow*"]}}
