@@ -106,6 +106,11 @@
 - **方案**：在 `wannier90flow/wannier_window.py` 中对自动能窗边界增加 ±0.02 偏移。
 - **状态**：已完成。
 
+### [2026-01-21] Wannier90 自动能窗偏移可配置
+- **需求**：支持 `--auto-delta` 配置自动能窗边界偏移，默认 0.02。
+- **方案**：新增 `--auto-delta` 参数并应用到 `dis_froz_min/max` 与 `dis_win_min/max`。
+- **状态**：已完成。
+
 ### [2026-01-19] 功能扩展与规范化：Quantum ESPRESSO 支持及目录命名规范
 - **需求**：
     1. 在 `qeflow` 目录下增加 `qe_scf.py`。

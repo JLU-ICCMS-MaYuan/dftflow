@@ -69,6 +69,12 @@ def build_parser():
         metavar=("nbnd1", "num_wann", "nbnd3"),
         help="自动估计能窗：nbnd1 起始能带，num_wann 目标带数，nbnd3 用于 dis_win_max 的偏移带数。",
     )
+    parser.add_argument(
+        "--auto-delta",
+        type=float,
+        default=0.02,
+        help="自动能窗边界偏移（默认 0.02 eV）。",
+    )
     return parser
 
 
@@ -130,7 +136,8 @@ def main():
         if nbnd1 > len(eng_full[0]):
             parser.error("nbnd1 超出能带数量")
 
-        dis_froz_min = min(eng[nbnd1 - 1] for eng in eng_full) - 0.02
+        delta = args.auto_delta
+        dis_froz_min = min(eng[nbnd1 - 1] for eng in eng_full) - delta
         dis_win_min = dis_froz_min
 
         nbnd2 = nbnd1 + num_wann
@@ -148,7 +155,7 @@ def main():
         while True:
             if nbnd2 < nbnd1:
                 parser.error("自适应失败：nbnd2 已小于 nbnd1")
-            dis_froz_max = max(eng[nbnd2 - 1] for eng in eng_full) + 0.02
+            dis_froz_max = max(eng[nbnd2 - 1] for eng in eng_full) + delta
             max_count = max_band_count(dis_froz_min, dis_froz_max)
             print(f"auto: nbnd2={nbnd2}, dis_froz_max={dis_froz_max:.6f}, max_nbnd={max_count}")
             if max_count <= num_wann:
@@ -158,7 +165,7 @@ def main():
         nbnd_win = nbnd2 + nbnd3
         if nbnd_win > len(eng_full[0]):
             parser.error("nbnd2 + nbnd3 超出能带数量")
-        dis_win_max = max(eng[nbnd_win - 1] for eng in eng_full) + 0.02
+        dis_win_max = max(eng[nbnd_win - 1] for eng in eng_full) + delta
 
         print(f"dis_froz_min = {dis_froz_min:.6f}")
         print(f"dis_froz_max = {dis_froz_max:.6f}")
