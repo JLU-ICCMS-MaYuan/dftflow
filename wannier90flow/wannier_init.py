@@ -238,6 +238,8 @@ def ensure_pw2wan_input(path: str, prefix: str, cfg: Dict[str, Any]) -> None:
         lines.append("  write_mmn = .true.")
     if "write_unk" in pw2_cfg:
         lines.append(f"  write_unk = {format_pw2_value(pw2_cfg['write_unk'])}")
+    if "wvfn_formatted" in pw2_cfg:
+        lines.append(f"  wvfn_formatted = {format_pw2_value(pw2_cfg['wvfn_formatted'])}")
     if "spin_component" in pw2_cfg:
         lines.append(f"  spin_component = {format_pw2_value(pw2_cfg['spin_component'])}")
     if "wan_mode" in pw2_cfg:
@@ -336,6 +338,12 @@ def write_win(
             f.write(f"bands_plot = {str(bands_plot).lower()}\n")
         if bands_plot_format is not None and bands_plot:
             f.write(f"bands_plot_format = {bands_plot_format}\n")
+        wannier_plot = win_cfg.get("wannier_plot", cfg.get("wannier_plot"))
+        if wannier_plot is not None:
+            f.write(f"wannier_plot = {str(wannier_plot).lower()}\n")
+        wannier_plot_format = win_cfg.get("wannier_plot_format", cfg.get("wannier_plot_format"))
+        if wannier_plot_format is not None and wannier_plot:
+            f.write(f"wannier_plot_format = {wannier_plot_format}\n")
 
         f.write(f"mp_grid = {' '.join(str(int(x)) for x in kpt_cfg.get('mp_grid', []))}\n")
         f.write("\n")

@@ -116,6 +116,18 @@
 - **方案**：新增 `wannier90flow/README.md`，包含功能、示例与参数说明。
 - **状态**：已完成。
 
+### [2026-01-21] Wannier90 额外输出参数支持
+- **需求**：增加 `wvfn_formatted`、`wannier_plot`、`wannier_plot_format` 并在测试配置中说明用途。
+- **方案**：
+    1. `wannier90flow/wannier_init.py` 写入 `wannier_plot` 与 `wannier_plot_format` 到 `.win`，并支持 `wvfn_formatted` 写入 `pw2wan` 输入。
+    2. `tests/inputwannier.toml` 增加参数并写明功能说明。
+- **状态**：已完成。
+
+### [2026-01-21] 移除误添加的子模块
+- **需求**：撤销误引入的 `wannier90flow/external/wannier90` 子模块配置。
+- **方案**：删除 `.gitmodules` 并移除子模块记录，清理 README 引用。
+- **状态**：已完成。
+
 ### [2026-01-19] 功能扩展与规范化：Quantum ESPRESSO 支持及目录命名规范
 - **需求**：
     1. 在 `qeflow` 目录下增加 `qe_scf.py`。

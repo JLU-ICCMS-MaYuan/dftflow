@@ -1,5 +1,4 @@
 # Wannier90flow 使用说明
-
 ## 1. wannier_init
 
 ### 1.1 功能概述
@@ -85,4 +84,3 @@ wannier_window EIGENVAL --auto 1 9 3 --auto-delta 0.01
   - 自适应调整 `nbnd2=nbnd1+num_wann`，直到区间最大带数等于 `num_wann`
   - `dis_froz_max = band(nbnd2).max + delta`
   - `dis_win_max = band(nbnd2+nbnd3).max + delta`
-
