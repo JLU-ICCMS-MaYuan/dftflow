@@ -138,6 +138,11 @@
 - **方案**：在 `wannier90flow/wannier_init.py` 的 `.win` 输出中增加对应字段。
 - **状态**：已完成。
 
+### [2026-01-21] Wannier90 UNK 文件生成提示
+- **需求**：在测试配置中标注 `write_unk` 用途，避免 `wannier_plot` 报错缺少 UNK。
+- **方案**：在 `tests/inputwannier.toml` 的 `[pw2wannier90]` 中增加 `write_unk = true` 并说明用途。
+- **状态**：已完成。
+
 ### [2026-01-21] 移除误添加的子模块
 - **需求**：撤销误引入的 `wannier90flow/external/wannier90` 子模块配置。
 - **方案**：删除 `.gitmodules` 并移除子模块记录，清理 README 引用。
