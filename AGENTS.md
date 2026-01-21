@@ -88,6 +88,14 @@
     2. `-e` 接受 1 或 2 个数值；2 个按能量区间统计 min/max 带数，1 个按旧行为视作 band_index。
 - **状态**：已完成。
 
+### [2026-01-20] Wannier90 自动估计能窗
+- **需求**：新增 `--auto nbnd1 num_wann nbnd3` 自动确定 `dis_froz_min/max` 与 `dis_win_min/max`。
+- **方案**：
+    1. `dis_froz_min = dis_win_min = band(nbnd1) 最低值`。
+    2. 自适应下调 `nbnd2 = nbnd1 + num_wann` 的上界，直到区间最大带数等于 `num_wann`，否则报错。
+    3. `dis_win_max = band(nbnd2 + nbnd3) 最大值`。
+- **状态**：已完成。
+
 ### [2026-01-19] 功能扩展与规范化：Quantum ESPRESSO 支持及目录命名规范
 - **需求**：
     1. 在 `qeflow` 目录下增加 `qe_scf.py`。

@@ -42,7 +42,7 @@ def get_energies(xml_name):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="解析能量窗口：-n 指定能带编号；-e 指定能量范围。"
+        description="解析能量窗口：-n 指定能带编号；-e 指定能量范围；--auto 自动估计能窗。"
     )
     parser.add_argument(
         "xml",
@@ -61,6 +61,13 @@ def build_parser():
         nargs="+",
         type=float,
         help="能量范围（1 或 2 个浮点）。2 个：统计区间内带数 min/max；1 个：视作 band_index。",
+    )
+    group.add_argument(
+        "--auto",
+        nargs=3,
+        type=int,
+        metavar=("nbnd1", "num_wann", "nbnd3"),
+        help="自动估计能窗：nbnd1 起始能带，num_wann 目标带数，nbnd3 用于 dis_win_max 的偏移带数。",
     )
     return parser
 
@@ -92,7 +99,7 @@ def main():
             emax = max(eng_high)
             print(f"emin = {emin:.6f}")
             print(f"emax = {emax:.6f}")
-    else:
+    elif args.e is not None:
         if len(args.e) not in (1, 2):
             parser.error("-e 需要 1 或 2 个数值参数")
         if len(args.e) == 1:
@@ -115,6 +122,46 @@ def main():
                 print(f"ik = {ik + 1}, nbnd = {num_bands}")
                 nbnd.append(num_bands)
             print(min(nbnd), max(nbnd))
+    else:
+        nbnd1, num_wann, nbnd3 = args.auto
+        if nbnd1 < 1 or num_wann < 1 or nbnd3 < 0:
+            parser.error("--auto 参数必须满足：nbnd1>=1, num_wann>=1, nbnd3>=0")
+
+        if nbnd1 > len(eng_full[0]):
+            parser.error("nbnd1 超出能带数量")
+
+        dis_froz_min = min(eng[nbnd1 - 1] for eng in eng_full)
+        dis_win_min = dis_froz_min
+
+        nbnd2 = nbnd1 + num_wann
+        if nbnd2 > len(eng_full[0]):
+            parser.error("nbnd1 + num_wann 超出能带数量")
+
+        def max_band_count(emin, emax):
+            max_count = 0
+            for ek in eng_full:
+                count = sum(1 for eng in ek if emin <= eng <= emax)
+                if count > max_count:
+                    max_count = count
+            return max_count
+
+        while True:
+            if nbnd2 < nbnd1:
+                parser.error("自适应失败：nbnd2 已小于 nbnd1")
+            dis_froz_max = max(eng[nbnd2 - 1] for eng in eng_full)
+            if max_band_count(dis_froz_min, dis_froz_max) <= num_wann:
+                break
+            nbnd2 -= 1
+
+        nbnd_win = nbnd2 + nbnd3
+        if nbnd_win > len(eng_full[0]):
+            parser.error("nbnd2 + nbnd3 超出能带数量")
+        dis_win_max = max(eng[nbnd_win - 1] for eng in eng_full)
+
+        print(f"dis_froz_min = {dis_froz_min:.6f}")
+        print(f"dis_froz_max = {dis_froz_max:.6f}")
+        print(f"dis_win_min = {dis_win_min:.6f}")
+        print(f"dis_win_max = {dis_win_max:.6f}")
 
 
 if __name__ == "__main__":
