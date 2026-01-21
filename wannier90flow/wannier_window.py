@@ -210,7 +210,7 @@ def main():
         if plot_end > len(eng_full[0]):
             plot_end = len(eng_full[0])
         plot_band_ranges(
-            nbnd1,
+            1,
             plot_end,
             dis_froz_min,
             dis_froz_max,
