@@ -84,6 +84,28 @@ def main():
 
     eng_full = get_energies(args.xml)
 
+    def plot_band_ranges(start_band: int, end_band: int, output_path: str) -> None:
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            print("未安装 matplotlib，跳过能带范围绘图。")
+            return
+
+        band_indices = list(range(start_band, end_band + 1))
+        band_mins = [min(eng[i - 1] for eng in eng_full) for i in band_indices]
+        band_maxs = [max(eng[i - 1] for eng in eng_full) for i in band_indices]
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        for idx, emin, emax in zip(band_indices, band_mins, band_maxs):
+            ax.bar(idx, emax - emin, bottom=emin, width=0.6, color="red", alpha=0.3, edgecolor="red")
+        ax.set_xlabel("Band Index")
+        ax.set_ylabel("Energy")
+        ax.set_title("Energy spectrum of bands")
+        ax.set_xticks(band_indices)
+        fig.tight_layout()
+        fig.savefig(output_path, dpi=300)
+        plt.close(fig)
+
     if args.n is not None:
         if len(args.n) not in (1, 2):
             parser.error("-n 需要 1 或 2 个整数参数")
@@ -171,6 +193,7 @@ def main():
         print(f"dis_froz_max = {dis_froz_max:.6f}")
         print(f"dis_win_min = {dis_win_min:.6f}")
         print(f"dis_win_max = {dis_win_max:.6f}")
+        plot_band_ranges(nbnd1, nbnd2, "band_ranges.png")
 
 
 if __name__ == "__main__":

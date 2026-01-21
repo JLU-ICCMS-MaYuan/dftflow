@@ -111,6 +111,11 @@
 - **方案**：新增 `--auto-delta` 参数并应用到 `dis_froz_min/max` 与 `dis_win_min/max`。
 - **状态**：已完成。
 
+### [2026-01-21] Wannier90 自动能窗绘图
+- **需求**：`--auto` 完成后绘制能带能量范围图，并保存为 `band_ranges.png`。
+- **方案**：在 `wannier90flow/wannier_window.py` 中使用 matplotlib 绘制 `nbnd1..nbnd2` 的能带能量区间柱状图，若缺少 matplotlib 则提示跳过。
+- **状态**：已完成。
+
 ### [2026-01-21] Wannier90flow 使用方法文档
 - **需求**：补充 `wannier_init` 与 `wannier_window` 的使用方法说明。
 - **方案**：新增 `wannier90flow/README.md`，包含功能、示例与参数说明。
