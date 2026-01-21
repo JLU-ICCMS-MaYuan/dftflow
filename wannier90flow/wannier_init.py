@@ -345,6 +345,12 @@ def write_win(
         wannier_plot_format = win_cfg.get("wannier_plot_format", cfg.get("wannier_plot_format"))
         if wannier_plot_format is not None and wannier_plot:
             f.write(f"wannier_plot_format = {wannier_plot_format}\n")
+        fermi_energy = win_cfg.get("fermi_energy", cfg.get("fermi_energy"))
+        if fermi_energy is not None:
+            f.write(f"fermi_energy = {float(fermi_energy):12.6f}\n")
+        fermi_surface_plot = win_cfg.get("fermi_surface_plot", cfg.get("fermi_surface_plot"))
+        if fermi_surface_plot is not None:
+            f.write(f"fermi_surface_plot = {str(fermi_surface_plot).lower()}\n")
 
         f.write(f"mp_grid = {' '.join(str(int(x)) for x in kpt_cfg.get('mp_grid', []))}\n")
         f.write("\n")

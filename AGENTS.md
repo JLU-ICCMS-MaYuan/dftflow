@@ -133,6 +133,11 @@
 - **方案**：从 `pw2wan` 生成逻辑移除该字段，改为写入 `*.win`，并在 `tests/inputwannier.toml` 的 `[win]` 中说明。
 - **状态**：已完成。
 
+### [2026-01-21] Wannier90 fermi 参数支持
+- **需求**：支持 `fermi_energy` 与 `fermi_surface_plot` 写入 `*.win`。
+- **方案**：在 `wannier90flow/wannier_init.py` 的 `.win` 输出中增加对应字段。
+- **状态**：已完成。
+
 ### [2026-01-21] 移除误添加的子模块
 - **需求**：撤销误引入的 `wannier90flow/external/wannier90` 子模块配置。
 - **方案**：删除 `.gitmodules` 并移除子模块记录，清理 README 引用。
