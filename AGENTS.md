@@ -7,6 +7,11 @@
 - **方案**：在 `wannier90flow/wannier_init.py` 中解析结构后，复制输入文件到 `wannier90/POSCAR`。
 - **状态**：已完成。
 
+### [2026-01-22] 修复 vaspkit KPATH.in 解析
+- **需求**：`parse_kpath` 需要正确解析 vaspkit 303 生成的 `KPATH.in`（两行一段）。
+- **方案**：按“坐标+标签”两行一段收集点，再成对生成路径段。
+- **状态**：已完成。
+
 ### [2026-01-20] QE K 点配置统一至 [k_points]
 - **需求**：
     1. 删除 `[nscf]` 中的 K 点配置，统一在 `[k_points]` 管理 NSCF/SCF 的 K 点设置。

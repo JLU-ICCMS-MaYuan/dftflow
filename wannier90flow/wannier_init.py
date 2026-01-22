@@ -121,27 +121,32 @@ def generate_kpoints_from_grid(grid: List[int]) -> List[Tuple[float, float, floa
 def parse_kpath(path: str) -> List[Dict[str, Any]]:
     """
     解析 vaspkit 303 生成的 KPATH.in，提取能带路径段。
-    期望行格式：Label1 k1x k1y k1z Label2 k2x k2y k2z
+    期望行格式（两行一段）：
+      k1x k1y k1z Label1
+      k2x k2y k2z Label2
     """
     segments: List[Dict[str, Any]] = []
+    points: List[Tuple[List[float], str]] = []
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
             parts = line.split()
-            if len(parts) != 8:
-                # 兼容含有前缀数字的行，如 "4\n" 或 header
+            if len(parts) == 4:
+                try:
+                    kx, ky, kz = map(float, parts[:3])
+                except ValueError:
+                    continue
+                label = parts[3]
+                points.append(([kx, ky, kz], label))
+            else:
+                # 头部、计数行或其它无关行直接跳过
                 continue
-            from_label, k1x, k1y, k1z, to_label, k2x, k2y, k2z = parts
-            segments.append(
-                {
-                    "from": from_label,
-                    "from_k": [float(k1x), float(k1y), float(k1z)],
-                    "to": to_label,
-                    "to_k": [float(k2x), float(k2y), float(k2z)],
-                }
-            )
+
+    for i in range(0, len(points) - 1, 2):
+        (k1, l1), (k2, l2) = points[i], points[i + 1]
+        segments.append({"from": l1, "from_k": k1, "to": l2, "to_k": k2})
     return segments
 
 
