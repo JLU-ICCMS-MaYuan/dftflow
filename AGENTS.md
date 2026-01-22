@@ -17,6 +17,11 @@
 - **方案**：`qeflow/scf/qe_scf.py` 与 `qeflow/nscf/qe_nscf.py` 移除默认回退，缺失配置时报错。
 - **状态**：已完成。
 
+### [2026-01-22] 新增 QE eband 输入生成脚本
+- **需求**：仿照 `qe_nscf.py` 新增 `qe_eband.py`，高对称路径通过 vaspkit 生成。
+- **方案**：新增 `qeflow/eband/qe_eband.py`，调用 vaspkit 生成 `KPATH.in`，解析后写入 `K_POINTS crystal_b`；生成 `eband.in/elebanddata.in/elebandprojdata.in` 与运行脚本，并补充脚本入口。
+- **状态**：已完成。
+
 ### [2026-01-20] QE K 点配置统一至 [k_points]
 - **需求**：
     1. 删除 `[nscf]` 中的 K 点配置，统一在 `[k_points]` 管理 NSCF/SCF 的 K 点设置。
