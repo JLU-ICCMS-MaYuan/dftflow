@@ -143,6 +143,11 @@
 - **方案**：在 `tests/inputwannier.toml` 的 `[pw2wannier90]` 中增加 `write_unk = true` 并说明用途。
 - **状态**：已完成。
 
+### [2026-01-21] bands_plot 自动生成 KPATH
+- **需求**：当 `bands_plot = true` 且缺少 `KPATH.in` 时自动运行 vaspkit 303；`bands_plot = false` 时不执行。
+- **方案**：在 `wannier90flow/wannier_init.py` 中检测 `bands_plot` 并调用 vaspkit 生成 `KPATH.in`，失败则报错退出。
+- **状态**：已完成。
+
 ### [2026-01-21] 移除误添加的子模块
 - **需求**：撤销误引入的 `wannier90flow/external/wannier90` 子模块配置。
 - **方案**：删除 `.gitmodules` 并移除子模块记录，清理 README 引用。

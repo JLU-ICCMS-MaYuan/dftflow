@@ -419,6 +419,7 @@ def main() -> None:
     struct = parse_poscar(args.input)
     cfg = load_config(args.config)
     kpt_cfg = cfg.get("k_points", {})
+    win_cfg = cfg.get("win", {})
 
     explicit_kpts = kpt_cfg.get("kpoints")
     if explicit_kpts:
@@ -428,6 +429,7 @@ def main() -> None:
     else:
         raise ValueError("k_points 配置缺少 mp_grid 或 kpoints。")
 
+    bands_plot_cfg = win_cfg.get("bands_plot", cfg.get("bands_plot"))
     kpath_file_cfg = kpt_cfg.get("kpath_file", "KPATH.in")
     kpath_file = (
         kpath_file_cfg
@@ -435,11 +437,23 @@ def main() -> None:
         else os.path.join(work_dir, kpath_file_cfg)
     )
     band_segments: List[Dict[str, Any]] = []
+    if bands_plot_cfg and not os.path.exists(kpath_file):
+        print("检测到 bands_plot=true，开始运行 vaspkit 303 生成 KPATH.in ...")
+        try:
+            subprocess.run(
+                ["vaspkit"],
+                input="3\n303\n",
+                text=True,
+                check=True,
+                cwd=work_dir,
+            )
+        except Exception as exc:
+            raise RuntimeError("vaspkit 运行失败，无法生成 KPATH.in") from exc
     if os.path.exists(kpath_file):
         band_segments = parse_kpath(kpath_file)
         print(f"从 {kpath_file} 读取到 {len(band_segments)} 段能带路径。")
     else:
-        print(f"未找到 {kpath_file}，将不写入 kpoint_path（可先在 {work_dir} 运行 vaspkit 303 生成）。")
+        print(f"未找到 {kpath_file}，将不写入 kpoint_path。")
 
     win_cfg = cfg.get("win", {})
     basename = win_cfg.get("system_name") or cfg.get("system_name") or struct["comment"] or "wannier90"
