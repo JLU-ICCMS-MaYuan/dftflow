@@ -12,6 +12,11 @@
 - **方案**：按“坐标+标签”两行一段收集点，再成对生成路径段。
 - **状态**：已完成。
 
+### [2026-01-22] QE 赝势名仅从 pseudo_map 读取
+- **需求**：`ATOMIC_SPECIES` 伪势文件名应直接使用 `pseudo_map` 中对应元素的 `pseudo` 字段。
+- **方案**：`qeflow/scf/qe_scf.py` 与 `qeflow/nscf/qe_nscf.py` 移除默认回退，缺失配置时报错。
+- **状态**：已完成。
+
 ### [2026-01-20] QE K 点配置统一至 [k_points]
 - **需求**：
     1. 删除 `[nscf]` 中的 K 点配置，统一在 `[k_points]` 管理 NSCF/SCF 的 K 点设置。

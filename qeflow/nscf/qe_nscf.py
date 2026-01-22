@@ -231,12 +231,14 @@ class QENSCFSetup:
             f.write("ATOMIC_SPECIES\n")
             pseudo_map = self.config.get("pseudo_map", {})
             for el in struct_info["elements"]:
-                info = pseudo_map.get(el, {})
+                info = pseudo_map.get(el)
+                if not info or "pseudo" not in info:
+                    raise KeyError(f"pseudo_map 缺少元素 {el} 的 pseudo 配置")
                 mass = info.get("mass")
                 if mass is None:
                     mass = ATOMIC_MASSES.get(el, 1.0)
                 
-                pseudo_file = info.get('pseudo', f'{el}.UPF').strip()
+                pseudo_file = str(info["pseudo"]).strip()
                 f.write(f"  {el:3} {mass:8.4f} {pseudo_file}\n")
             f.write("\n")
             
