@@ -390,7 +390,6 @@ def write_win(
         f.write("end kpoints\n\n")
 
         if band_path:
-            f.write("bands_plot = .true.\n")
             f.write("begin kpoint_path\n")
             for seg in band_path:
                 from_label = seg.get("from", "G")

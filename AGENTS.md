@@ -153,6 +153,11 @@
 - **方案**：调用 vaspkit 时重定向 stdout/stderr 到 DEVNULL。
 - **状态**：已完成。
 
+### [2026-01-22] bands_plot 写入位置统一
+- **需求**：`bands_plot` 仅由统一配置块写入，不在 `kpoint_path` 段重复写入。
+- **方案**：移除 `kpoint_path` 写入中的 `bands_plot = .true.`，保留统一逻辑。
+- **状态**：已完成。
+
 ### [2026-01-21] 移除误添加的子模块
 - **需求**：撤销误引入的 `wannier90flow/external/wannier90` 子模块配置。
 - **方案**：删除 `.gitmodules` 并移除子模块记录，清理 README 引用。
