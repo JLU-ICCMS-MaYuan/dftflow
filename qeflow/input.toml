@@ -1,7 +1,7 @@
 # Quantum ESPRESSO 运行配置
 
 [qe]
-executable_path = "mpirun -np 8 ~/soft/qe-7.4.1/bin/pw.x"
+executable_path = "~/soft/qe-7.4.1/bin"
 
 # Slurm 提交脚本配置
 [slurm]

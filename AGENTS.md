@@ -22,6 +22,11 @@
 - **方案**：新增 `qeflow/eband/qe_eband.py`，调用 vaspkit 生成 `KPATH.in`，解析后写入 `K_POINTS crystal_b`；生成 `eband.in/elebanddata.in/elebandprojdata.in` 与运行脚本，并补充脚本入口。
 - **状态**：已完成。
 
+### [2026-01-22] QE 可执行路径统一为 bin 目录
+- **需求**：`[qe].executable_path` 只保存到 `qe-7.4.1/bin`，各脚本自动拼接 `pw.x`、`bands.x`、`projwfc.x`。
+- **方案**：`qe_scf.py`/`qe_nscf.py` 使用 `executable_path/pw.x`；`qe_eband.py` 使用 `executable_path/pw.x/bands.x/projwfc.x`，并更新示例配置。
+- **状态**：已完成。
+
 ### [2026-01-20] QE K 点配置统一至 [k_points]
 - **需求**：
     1. 删除 `[nscf]` 中的 K 点配置，统一在 `[k_points]` 管理 NSCF/SCF 的 K 点设置。

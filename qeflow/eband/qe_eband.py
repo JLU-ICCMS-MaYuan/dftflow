@@ -34,6 +34,13 @@ def get_formula(elements, counts):
     return formula
 
 
+def resolve_qe_executable(bin_path, exe_name):
+    if not bin_path:
+        return exe_name
+    bin_path = os.path.expanduser(str(bin_path))
+    return os.path.join(bin_path, exe_name)
+
+
 def parse_kpath(path):
     points = []
     with open(path, "r", encoding="utf-8") as f:
@@ -295,12 +302,13 @@ class QEEBandSetup:
 
     def create_run_script(self):
         qe_config = self.config.get("qe", {})
-        pw_path = qe_config.get("executable_path", "mpirun -np 4 pw.x")
+        qe_bin = qe_config.get("executable_path", "")
+        pw_path = resolve_qe_executable(qe_bin, "pw.x")
         bands_cfg = self.config.get("bands", {})
-        bands_exec = bands_cfg.get("executable_path", "bands.x")
+        bands_exec = resolve_qe_executable(bands_cfg.get("executable_path", qe_bin), "bands.x")
         bands_args = bands_cfg.get("args", "-pd .true.")
         proj_cfg = self.config.get("projwfc", {})
-        proj_exec = proj_cfg.get("executable_path", "projwfc.x")
+        proj_exec = resolve_qe_executable(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
         proj_args = proj_cfg.get("args", "-pd .true.")
         slurm_header = self.config.get("slurm", {}).get("header", "#!/bin/bash")
 
@@ -323,12 +331,13 @@ class QEEBandSetup:
 
     def execute(self):
         qe_config = self.config.get("qe", {})
-        pw_path = qe_config.get("executable_path", "mpirun -np 4 pw.x")
+        qe_bin = qe_config.get("executable_path", "")
+        pw_path = resolve_qe_executable(qe_bin, "pw.x")
         bands_cfg = self.config.get("bands", {})
-        bands_exec = bands_cfg.get("executable_path", "bands.x")
+        bands_exec = resolve_qe_executable(bands_cfg.get("executable_path", qe_bin), "bands.x")
         bands_args = bands_cfg.get("args", "-pd .true.")
         proj_cfg = self.config.get("projwfc", {})
-        proj_exec = proj_cfg.get("executable_path", "projwfc.x")
+        proj_exec = resolve_qe_executable(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
         proj_args = proj_cfg.get("args", "-pd .true.")
 
         original_dir = os.getcwd()

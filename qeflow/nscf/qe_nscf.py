@@ -24,6 +24,12 @@ ATOMIC_MASSES = {
     "Cs": 132.91, "Ba": 137.33, "La": 138.91, "Ce": 140.12, "Pr": 140.91, "Nd": 144.24, "Pm": 145, "Sm": 150.36, "Eu": 151.96, "Gd": 157.25, "Tb": 158.93, "Dy": 162.50, "Ho": 164.93, "Er": 167.26, "Tm": 168.93, "Yb": 173.05, "Lu": 174.97, "Hf": 178.49, "Ta": 180.95, "W": 183.84, "Re": 186.21, "Os": 190.23, "Ir": 192.22, "Pt": 195.08, "Au": 196.97, "Hg": 200.59, "Tl": 204.38, "Pb": 207.2, "Bi": 208.98, "Th": 232.04, "Pa": 231.04, "U": 238.03
 }
 
+def resolve_qe_executable(bin_path, exe_name):
+    if not bin_path:
+        return exe_name
+    bin_path = os.path.expanduser(str(bin_path))
+    return os.path.join(bin_path, exe_name)
+
 def get_formula(elements, counts):
     formula = ""
     for el, count in zip(elements, counts):
@@ -284,7 +290,7 @@ class QENSCFSetup:
     def create_run_script(self):
         """创建运行脚本"""
         qe_config = self.config.get("qe", {})
-        pw_path = qe_config.get("executable_path", "mpirun -np 4 pw.x")
+        pw_path = resolve_qe_executable(qe_config.get("executable_path", ""), "pw.x")
         slurm_header = self.config.get("slurm", {}).get("header", "#!/bin/bash")
 
         run_script_path = os.path.join(self.work_dir, "run_qe.sh")
@@ -299,7 +305,7 @@ class QENSCFSetup:
     def execute(self):
         """进入工作目录并执行 Quantum ESPRESSO NSCF 计算"""
         qe_config = self.config.get("qe", {})
-        pw_path = qe_config.get("executable_path", "mpirun -np 4 pw.x")
+        pw_path = resolve_qe_executable(qe_config.get("executable_path", ""), "pw.x")
         
         original_dir = os.getcwd()
         try:
