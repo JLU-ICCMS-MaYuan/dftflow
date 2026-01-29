@@ -115,6 +115,52 @@ def read_kpath_points_from_eband(path):
     return np.array(points, dtype=float), labels
 
 
+def read_kpoints_weights_from_eband(path):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"找不到 eband.in: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    kpoint_line = None
+    for idx, line in enumerate(lines):
+        if line.strip().upper().startswith("K_POINTS"):
+            kpoint_line = idx
+            break
+    if kpoint_line is None:
+        raise ValueError("eband.in 中未找到 K_POINTS 段。")
+    if "CRYSTAL_B" not in lines[kpoint_line].upper():
+        raise ValueError("K_POINTS 段不是 crystal_b 格式。")
+
+    idx = kpoint_line + 1
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+    if idx >= len(lines):
+        raise ValueError("K_POINTS 段缺少点数。")
+    try:
+        num_points = int(lines[idx].split()[0])
+    except ValueError as exc:
+        raise ValueError("K_POINTS 点数解析失败。") from exc
+    idx += 1
+
+    weights = []
+    for _ in range(num_points):
+        while idx < len(lines) and not lines[idx].strip():
+            idx += 1
+        if idx >= len(lines):
+            raise ValueError("K_POINTS 段数据不足。")
+        line = lines[idx]
+        idx += 1
+        coord_part = line.split("!", 1)[0]
+        parts = coord_part.split()
+        if len(parts) < 4:
+            raise ValueError(f"K_POINTS 行格式错误: {line}")
+        try:
+            weight = int(float(parts[3]))
+        except ValueError as exc:
+            raise ValueError(f"K_POINTS 权重解析失败: {line}") from exc
+        weights.append(weight)
+    return weights
+
+
 def get_recip_lattice(cell):
     vol = np.dot(cell[0], np.cross(cell[1], cell[2]))
     b1 = 2 * np.pi * np.cross(cell[1], cell[2]) / vol
@@ -123,11 +169,22 @@ def get_recip_lattice(cell):
     return np.array([b1, b2, b3], dtype=float)
 
 
-def compute_kpath_dist(coords, cell):
+def compute_kpath_dist(coords, cell, weights=None):
     recip = get_recip_lattice(cell)
     metric = recip @ recip.T
     dist = [0.0]
+    jump_points = set()
+    if weights:
+        indices = [1]
+        for i in range(1, len(weights)):
+            indices.append(indices[-1] + int(weights[i - 1]))
+        jump_indices = set(indices[i] for i in range(1, len(indices)) if weights[i - 1] == 1)
+        jump_points = set(jump_indices)
+
     for i in range(1, len(coords)):
+        if i + 1 in jump_points:
+            dist.append(dist[-1])
+            continue
         delta = np.array(coords[i]) - np.array(coords[i - 1])
         dist.append(dist[-1] + float(np.sqrt(delta @ metric @ delta)))
     return dist
@@ -383,7 +440,8 @@ def main():
 
     cell = read_cell_from_eband(args.cell)
     kpath_points, kpath_labels = read_kpath_points_from_eband(args.cell)
-    kpath_dist = compute_kpath_dist(coords, cell)
+    weights = read_kpoints_weights_from_eband(args.cell)
+    kpath_dist = compute_kpath_dist(coords, cell, weights)
     channels, group_map = build_channels(proj_labels)
     proj_index = {label: idx for idx, label in enumerate(proj_labels)}
 
