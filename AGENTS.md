@@ -15,6 +15,7 @@
     3. QE 目录匹配 `*_band.gnu`，Wannier90 目录匹配 `*_band.dat`，并兼容 `&plot`/`.gnu` 两种格式的 QE 能带解析。
     4. 解析 Wannier90 的 `*_band.dat` 时按空行拆分为单条能带并逐条绘制。
     5. 移除 `--label` 分支，标签文件仅通过目录匹配自动发现。
+    6. QE/Wannier90 能带文件统一读取 `*_band.dat`，并跳过注释行。
 - **状态**：已完成。
 
 ### [2026-01-29] QE 投影能带 kpath 距离与 Wannier90 对齐

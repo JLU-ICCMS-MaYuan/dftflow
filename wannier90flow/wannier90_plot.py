@@ -34,7 +34,7 @@ def resolve_inputs(qe_dir, w90_dir):
 
     qe_band_file = pick_file(
         qe_dir,
-        ["*_band.gnu"],
+        ["*_band.dat"],
         "QE 能带数据",
     )
     w90_band_file = pick_file(
@@ -114,7 +114,7 @@ def parse_qe_gnu_file(qe_band_file, fermi_qe):
     with open(qe_band_file, "r") as f:
         for line in f:
             line = line.strip()
-            if not line:
+            if not line or line.startswith("#"):
                 if x_vals:
                     yield np.array(x_vals), np.array(y_vals) - fermi_qe
                 x_vals = []
@@ -136,7 +136,7 @@ def parse_w90_band_file(w90_band_file, fermi_w90):
     with open(w90_band_file, "r") as f:
         for line in f:
             line = line.strip()
-            if not line:
+            if not line or line.startswith("#"):
                 if x_vals:
                     segments.append((np.array(x_vals), np.array(y_vals) - fermi_w90))
                 x_vals = []
@@ -178,7 +178,7 @@ def plot_comparison(qe_band_file, w90_band_file, w90_label_file, fermi_energy, o
     if qe_is_gnu:
         qe_segments = list(parse_qe_gnu_file(qe_band_file, fermi_qe))
     else:
-        qe_k_dist, qe_bands = parse_qe_plot_file(qe_band_file, b_basis, fermi_qe)
+        qe_segments = parse_w90_band_file(qe_band_file, fermi_qe)
 
     # --- 3. 读取 Wannier90 数据 ---
     w90_segments = parse_w90_band_file(w90_band_file, fermi_w90)
@@ -189,14 +189,9 @@ def plot_comparison(qe_band_file, w90_band_file, w90_label_file, fermi_energy, o
     plt.figure(figsize=(10, 7))
 
     # 绘制 QE 能带 (红色点)
-    if qe_is_gnu:
-        for idx, (x_vals, y_vals) in enumerate(qe_segments):
-            label = 'DFT (QE)' if idx == 0 else ""
-            plt.scatter(x_vals, y_vals, s=7, c='red', alpha=0.6, edgecolors='none', label=label)
-    else:
-        for i in range(len(qe_bands)):
-            label = 'DFT (QE)' if i == 0 else ""
-            plt.scatter(qe_k_dist, qe_bands[i], s=7, c='red', alpha=0.6, edgecolors='none', label=label)
+    for idx, (x_vals, y_vals) in enumerate(qe_segments):
+        label = 'DFT (QE)' if idx == 0 else ""
+        plt.scatter(x_vals, y_vals, s=7, c='red', alpha=0.6, edgecolors='none', label=label)
 
     # 绘制 Wannier90 能带 (蓝色线)
     for idx, (w90_k, w90_e) in enumerate(w90_segments):
@@ -227,10 +222,7 @@ def plot_comparison(qe_band_file, w90_band_file, w90_label_file, fermi_energy, o
     by_label = dict(zip(labels, handles))
     plt.legend(by_label.values(), by_label.keys(), loc='upper right')
 
-    if qe_is_gnu:
-        plt.xlim(0, max(seg[0].max() for seg in qe_segments))
-    else:
-        plt.xlim(0, max(qe_k_dist))
+    plt.xlim(0, max(seg[0].max() for seg in qe_segments))
     plt.ylim(-10, 10) # 能量显示范围
     plt.grid(True, axis='y', linestyle=':', alpha=0.4)
     
