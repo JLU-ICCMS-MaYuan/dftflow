@@ -225,6 +225,43 @@ class QEEBandSetup:
                 last_cart = cart
         print(f"已生成高对称点坐标: {label_path}")
 
+    def write_kpath_labels_with_index(self, segments, lattice, prefix, weights):
+        bohr_to_ang = 0.52917721092
+        lattice_bohr = lattice / bohr_to_ang
+        alat_bohr = float(np.linalg.norm(lattice_bohr[0]))
+        recip_lat = np.linalg.inv(lattice_bohr).T * alat_bohr
+
+        label_points = []
+        for seg_idx, segment in enumerate(segments):
+            if seg_idx == 0:
+                label_points.extend(segment)
+                continue
+            prev_end_coords, prev_end_label = segments[seg_idx - 1][-1]
+            replaced = [(prev_end_coords, prev_end_label)]
+            replaced.extend(segment[1:])
+            label_points.extend(replaced)
+
+        if len(label_points) != len(weights):
+            raise ValueError("高对称点数量与 K_POINTS 权重数量不一致。")
+
+        indices = [1]
+        for i in range(1, len(weights)):
+            indices.append(indices[-1] + int(weights[i - 1]))
+
+        total_dist = 0.0
+        last_cart = None
+        label_path = os.path.join(self.work_dir, f"{prefix}_band.labelinfo.dat")
+        with open(label_path, "w") as f:
+            for idx, (coords, label) in zip(indices, label_points):
+                cart = np.dot(coords, recip_lat)
+                if last_cart is not None:
+                    total_dist += float(np.linalg.norm(cart - last_cart))
+                f.write(
+                    f"{label:8} {idx:12d} {total_dist:16.10f} {coords[0]:16.10f} {coords[1]:16.10f} {coords[2]:16.10f}\n"
+                )
+                last_cart = cart
+        print(f"已生成高对称点坐标: {label_path}")
+
     def generate_qe_input(self, struct_info):
         print("正在生成 eband.in ...")
 
@@ -331,6 +368,9 @@ class QEEBandSetup:
                     is_jump = is_last_point and seg_idx < len(segments) - 1
                     weight = 1 if is_jump else self.kpath_points
                     kpoint_lines.append((coords, label, weight))
+
+            weights = [weight for _coords, _label, weight in kpoint_lines]
+            self.write_kpath_labels_with_index(segments, struct_info["lattice"], formula, weights)
 
             f.write("K_POINTS crystal_b\n")
             f.write(f"{len(kpoint_lines)}\n")
