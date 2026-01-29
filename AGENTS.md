@@ -38,7 +38,7 @@
 - **方案**：
     1. 按两行一段解析 `KPATH.in`，以“上一段终点坐标 == 下一段起点坐标(1e-6)”判定连续。
     2. 生成路径段日志，并在标签输出时替换不连续段起点坐标/标签。
-    3. 写 `K_POINTS crystal_b` 时，对段末点设置权重为 1 以形成跳转点。
+    3. 写 `K_POINTS crystal_b` 时，对段末点设置权重为 1 以形成跳转点，且最后一个高对称点权重固定为 1。
     4. 额外输出 `{prefix}_band.labelinfo.dat`，包含索引列与与 Wannier90 一致的累计距离。
     5. `{prefix}_band.labelinfo.dat` 使用 Wannier90 的 2π 倒格子度量，`*_gun_band.labelinfo.dat` 保持 QE 2π/alat。
     6. 不连续段起点距离不累加（跳转段不计入距离），与 Wannier90 的 labelinfo 对齐。

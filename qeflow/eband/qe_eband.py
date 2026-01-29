@@ -366,7 +366,11 @@ class QEEBandSetup:
                 for pt_idx, (coords, label) in enumerate(segment):
                     is_last_point = pt_idx == len(segment) - 1
                     is_jump = is_last_point and seg_idx < len(segments) - 1
-                    weight = 1 if is_jump else self.kpath_points
+                    is_final_point = is_last_point and seg_idx == len(segments) - 1
+                    if is_jump or is_final_point:
+                        weight = 1
+                    else:
+                        weight = self.kpath_points
                     kpoint_lines.append((coords, label, weight))
 
             weights = [weight for _coords, _label, weight in kpoint_lines]
@@ -385,7 +389,7 @@ class QEEBandSetup:
         outdir_val = self.qe_params["CONTROL"].get("outdir", "'./out'").strip("'").strip('"')
         eband_cfg = self.config.get("eband", {})
         bands_filband = f"{prefix}_band"
-        proj_filproj = f"{prefix}_band_proj"
+        proj_filproj = f"{prefix}_band"
         lsym = eband_cfg.get("lsym", False)
 
         bands_input_path = os.path.join(self.work_dir, "elebanddata.in")
