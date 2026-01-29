@@ -174,7 +174,7 @@ class QEEBandSetup:
         except Exception as e:
             raise RuntimeError(f"vaspkit 运行失败: {e}")
 
-    def write_kpath_labels(self, path_points, lattice):
+    def write_kpath_labels(self, path_points, lattice, prefix):
         bohr_to_ang = 0.52917721092
         lattice_bohr = lattice / bohr_to_ang
         alat_bohr = float(np.linalg.norm(lattice_bohr[0]))
@@ -182,7 +182,7 @@ class QEEBandSetup:
         recip_lat = np.linalg.inv(lattice_bohr).T * alat_bohr
         total_dist = 0.0
         last_cart = None
-        label_path = os.path.join(self.work_dir, "qe_k_lable.dat")
+        label_path = os.path.join(self.work_dir, f"{prefix}__band.labelinfo.dat")
         with open(label_path, "w") as f:
             f.write("# label dist kx ky kz\n")
             for coords, label in path_points:
@@ -287,7 +287,7 @@ class QEEBandSetup:
             if not path_points:
                 raise ValueError("KPATH.in 未解析到任何高对称点。")
 
-            self.write_kpath_labels(path_points, struct_info["lattice"])
+            self.write_kpath_labels(path_points, struct_info["lattice"], formula)
 
             f.write("K_POINTS crystal_b\n")
             f.write(f"{len(path_points)}\n")
@@ -301,8 +301,8 @@ class QEEBandSetup:
     def generate_banddata_inputs(self, prefix):
         outdir_val = self.qe_params["CONTROL"].get("outdir", "'./out'").strip("'").strip('"')
         eband_cfg = self.config.get("eband", {})
-        bands_filband = eband_cfg.get("filband", "elebanddata.dat")
-        proj_filproj = eband_cfg.get("filproj", "elebandprojdata")
+        bands_filband = f"{prefix}_band"
+        proj_filproj = f"{prefix}_band_proj"
         lsym = eband_cfg.get("lsym", False)
 
         bands_input_path = os.path.join(self.work_dir, "elebanddata.in")
