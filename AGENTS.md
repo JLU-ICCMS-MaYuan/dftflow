@@ -2,14 +2,30 @@
 
 ## 需求处理记录
 
+### [2026-01-29] Wannier90 postw90 流程拆分
+- **需求**：
+    1. 将 `postw90.x` 流程从 `wannier_init.py` 迁移到独立脚本。
+    2. `wannier_init.py` 移除 `postw90.x` 的执行与脚本生成，避免重复。
+    3. 新增 `wannier_post.py` 支持生成脚本与 `--run` 本地执行。
+    4. 更新脚本入口与使用文档。
+- **方案**：
+    1. 新增 `wannier90flow/wannier_post.py`，读取 `[postw90].executable_path` 并生成 `run_postw90.sh`，`--run` 执行 `postw90.x`。
+    2. `wannier90flow/wannier_init.py` 移除 `postw90.x` 相关逻辑与提示。
+    3. `pyproject.toml` 增加 `wannier_post` 脚本入口。
+    4. 更新 `wannier90flow/README.md` 与示例配置说明。
+- **状态**：已完成。
+
 ### [2026-01-29] Wannier90 DOS 参数写入 .win
 - **需求**：
-    1. 在 `wannier90flow/wannier_init.py` 增加 `dos` 与 `dos_kmesh` 参数读取。
-    2. `dos` 与 `dos_kmesh` 写入 `*.win`，并更新示例配置。
+    1. 在 `wannier90flow/wannier_init.py` 增加 `dos`、`dos_kmesh` 与 `dos_project` 参数读取。
+    2. `dos`、`dos_kmesh`、`dos_project` 写入 `*.win`，并更新示例配置。
+    3. `--run` 模式下补充执行 `postw90.x`。
 - **方案**：
-    1. 从 `[win]` 读取 `dos/dos_kmesh`，写入 `.win` 文件。
+    1. 从 `[win]` 读取 `dos/dos_kmesh/dos_project`，写入 `.win` 文件。
     2. `dos_kmesh` 支持空格分隔字符串或数组输入，输出为 `dos_kmesh = 25 25 25` 形式。
-    3. 更新 `tests/inputwannier.toml` 示例。
+    3. `dos_project` 支持字符串或数组输入，输出为 `dos_project = 1:5` 形式。
+    4. `--run` 流程追加 `postw90.x`，路径从 `[postw90].executable_path` 读取。
+    5. 更新 `tests/inputwannier.toml` 示例。
 - **状态**：已完成。
 
 ### [2026-01-29] Wannier90 能带对比与 QE eband 输出命名调整

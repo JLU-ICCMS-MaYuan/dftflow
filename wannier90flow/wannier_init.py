@@ -367,6 +367,13 @@ def write_win(
             else:
                 dos_kmesh_value = str(dos_kmesh)
             f.write(f"dos_kmesh = {dos_kmesh_value}\n")
+        dos_project = win_cfg.get("dos_project", cfg.get("dos_project"))
+        if dos_project is not None:
+            if isinstance(dos_project, (list, tuple)):
+                dos_project_value = ", ".join(str(x) for x in dos_project)
+            else:
+                dos_project_value = str(dos_project)
+            f.write(f"dos_project = {dos_project_value}\n")
 
         f.write(f"mp_grid = {' '.join(str(int(x)) for x in kpt_cfg.get('mp_grid', []))}\n")
         f.write("\n")

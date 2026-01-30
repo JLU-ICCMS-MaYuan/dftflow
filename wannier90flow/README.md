@@ -47,7 +47,38 @@ seedname = "Y1H6"
 - `wannier90/run_wannier90.sh`
 - `wannier90/<seed>.pw2wan`（若不存在会自动生成）
 
-## 2. wannier_window
+## 2. wannier_post
+
+### 2.1 功能概述
+- 生成 `run_postw90.sh` 运行脚本。
+- 可选本地执行 `postw90` 以计算 DOS 等后处理任务。
+
+### 2.2 基本用法
+```bash
+wannier_post -c inputwannier.toml
+```
+
+### 2.3 直接执行（本地）
+```bash
+wannier_post -c inputwannier.toml --run
+```
+
+### 2.4 关键配置字段（示例）
+```toml
+[postw90]
+executable_path = "/path/to/postw90.x"
+
+[win]
+dos = true
+dos_kmesh = "25 25 25"
+dos_project = "1:5"
+```
+
+### 2.5 产出文件
+- `wannier90/run_postw90.sh`
+- `wannier90/<seed>_dos.dat`（postw90 输出）
+
+## 3. wannier_window
 
 ### 2.1 功能概述
 - 解析 `EIGENVAL` 或 QE/FLEUR XML 中的能带数据。

@@ -33,6 +33,7 @@ qe_eledos = "qeflow.eledos.qe_eledos:main"
 qe_process_eledos = "qeflow.eledos.qe_process_dos:main"
 qe_process_eband = "qeflow.eband.qe_process_eband:main"
 wannier_init = "wannier90flow.wannier_init:main"
+wannier_post = "wannier90flow.wannier_post:main"
 wannier_window = "wannier90flow.wannier_window:main"
 wannier_plot = "wannier90flow.wannier90_plot:main"
 
