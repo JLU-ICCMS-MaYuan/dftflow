@@ -62,7 +62,7 @@ def load_post_config(path: str) -> Dict[str, Any]:
                 if len(parts) == 2:
                     value = parts[1].split("#", 1)[0].strip()
                     if value:
-                        if value.startswith("["):
+                        if value.startswith("[") or value.startswith("{"):
                             dos_projects_literal = value
                         elif value[0] in ("'", '"') and value[-1] == value[0]:
                             dos_projects.append(value)
@@ -184,11 +184,13 @@ def main() -> None:
             original_content = f.read()
         dos_cfg = cfg.get("dos", {})
         dos_projects = dos_cfg.get("dos_project")
-        projects: List[Any] = []
-        if isinstance(dos_projects, (list, tuple)):
-            projects = list(dos_projects)
+        projects: List[Tuple[str, Any]] = []
+        if isinstance(dos_projects, dict):
+            projects = [(str(key), value) for key, value in dos_projects.items()]
+        elif isinstance(dos_projects, (list, tuple)):
+            projects = [(sanitize_project_tag(str(value)), value) for value in dos_projects]
         elif dos_projects is not None:
-            projects = [dos_projects]
+            projects = [(sanitize_project_tag(str(dos_projects)), dos_projects)]
         else:
             projects = []
 
@@ -202,7 +204,7 @@ def main() -> None:
 
         try:
             if projects:
-                for proj in projects:
+                for tag, proj in projects:
                     updates = dict(common_updates)
                     updates["dos_project"] = proj
                     content = update_win_content(original_content, updates)
@@ -211,7 +213,6 @@ def main() -> None:
                     run_postw90(work_dir, prefix, cfg)
                     output_path = resolve_dos_output(work_dir, prefix)
                     if output_path:
-                        tag = sanitize_project_tag(str(proj))
                         target = os.path.join(work_dir, f"{prefix}_dos_{tag}.dat")
                         os.replace(output_path, target)
                         print(f"已保存投影 DOS: {target}")

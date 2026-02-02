@@ -73,12 +73,12 @@ dos_kmesh = "25 25 25"
 dos_energy_min = 5.0
 dos_energy_max = 20.0
 dos_energy_step = 0.01
-dos_project = ["1:5", "6:11"]
+dos_project = { Y_d = "1:5", H_p = "6:11" }
 ```
 
 ### 2.5 产出文件
 - `wannier90/run_postw90.sh`
-- `wannier90/<seed>_dos_1_5.dat`（按 dos_project 重命名）
+- `wannier90/<seed>_dos_Y_d.dat`（按 dos_project 名称重命名）
 
 ## 3. wannier_window
 
