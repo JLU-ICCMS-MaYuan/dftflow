@@ -35,6 +35,18 @@
     3. 注册 `vasp_locpot` 脚本入口。
 - **状态**：已完成。
 
+### [2026-02-07] vasp_charge 能量范围电荷密度
+- **需求**：
+    1. 新增能量范围电荷密度脚本 `vasp_charge.py`。
+    2. 默认写入 `LORBIT=11`、`LPARD=.TRUE.`。
+    3. `EINT` 与网格参数由 `[charge_params]` 提供。
+    4. 拷贝 SCF 的 `CHGCAR/WAVECAR`。
+- **方案**：
+    1. 新增 `vaspflow/charge/vasp_charge.py` 与 `__init__.py`。
+    2. `input.toml` 增加 `[charge_params]`（含 `EINT` 与网格参数）。
+    3. `pyproject.toml` 注册 `vasp_charge` 入口。
+- **状态**：已完成。
+
 ### [2026-01-30] postw90 多投影自动执行
 - **需求**：
     1. `inputw90post.toml` 中出现多个 `dos_project` 时，循环执行多次 `postw90.x`。
