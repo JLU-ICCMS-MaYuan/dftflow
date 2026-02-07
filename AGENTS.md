@@ -24,6 +24,17 @@
     3. 生成 `vaspflow_overview.pptx`。
 - **状态**：已完成。
 
+### [2026-02-07] vasp_locpot 脚本与配置
+- **需求**：
+    1. 新增 `vasp_locpot.py`，支持拷贝 SCF 的 `CHGCAR/WAVECAR`。
+    2. 默认写入 `LVHAR = .TRUE.`，网格参数从配置读取。
+    3. `input.toml` 增加 `[locpot_params]`，`pyproject.toml` 增加脚本入口。
+- **方案**：
+    1. 新增 `vaspflow/locpot/vasp_locpot.py` 与 `__init__.py`。
+    2. `locpot_params` 覆盖 INCAR 网格参数（无配置则不写入）。
+    3. 注册 `vasp_locpot` 脚本入口。
+- **状态**：已完成。
+
 ### [2026-01-30] postw90 多投影自动执行
 - **需求**：
     1. `inputw90post.toml` 中出现多个 `dos_project` 时，循环执行多次 `postw90.x`。

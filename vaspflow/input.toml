@@ -35,3 +35,12 @@ ISMEAR = 0
 SIGMA = 0.05
 EDIFF = 1e-8
 LREAL = "Auto"
+
+[locpot_params]
+# 网格参数按需填写；不设置则不写入 INCAR
+NGX = 80
+NGY = 80
+NGZ = 80
+NGXF = 160
+NGYF = 160
+NGZF = 160
