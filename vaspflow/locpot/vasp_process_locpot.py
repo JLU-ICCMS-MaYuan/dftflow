@@ -302,19 +302,19 @@ def main():
 
     rho_list = []
     rho_labels = []
-    for chg_path in chg_paths:
-        if not os.path.exists(chg_path):
-            kind = classify_charge_file(chg_path)
-            if kind == "CHGCAR":
-                print(f"CHGCAR not found at {chg_path}, skip plotting.")
-                continue
-            raise FileNotFoundError(f"File not found: {chg_path}")
-        _, grid_C, rho = read_vasp_volumetric(chg_path)
-        if grid_L != grid_C:
-            raise RuntimeError(f"Grid mismatch: LOCPOT {grid_L} vs {chg_path} {grid_C}")
-        rho_list.append(rho)
-        rho_labels.append(chg_path)
-
+    if chg_paths:
+        for chg_path in chg_paths:
+            if not os.path.exists(chg_path):
+                kind = classify_charge_file(chg_path)
+                if kind == "CHGCAR":
+                    print(f"CHGCAR not found at {chg_path}, skip plotting.")
+                    continue
+                raise FileNotFoundError(f"File not found: {chg_path}")
+            _, grid_C, rho = read_vasp_volumetric(chg_path)
+            if grid_L != grid_C:
+                raise RuntimeError(f"Grid mismatch: LOCPOT {grid_L} vs {chg_path} {grid_C}")
+            rho_list.append(rho)
+            rho_labels.append(chg_path)
     if chg_paths and not rho_list:
         raise FileNotFoundError("没有可用的电荷密度文件，请检查 --chg 输入。")
     grid = grid_L
