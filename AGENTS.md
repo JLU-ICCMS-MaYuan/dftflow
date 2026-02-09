@@ -62,6 +62,18 @@
 - **方案**：将入口指向 `vaspflow.locpot.vasp_process_locpot:main`。
 - **状态**：已完成。
 
+### [2026-02-07] vasp_charge_diff 电荷密度差分
+- **需求**：
+    1. 新增 `vasp_charge_diff`，计算电荷密度差 A - B。
+    2. 同时支持 `PARCHG` 与 `CHGCAR`。
+    3. 头信息/坐标/网格必须一致，否则报错。
+    4. 输出文件名默认 `A_minus_B.vasp`。
+- **方案**：
+    1. 新增 `vaspflow/charge/vasp_charge_diff.py`。
+    2. 读取两份电荷密度并逐点相减。
+    3. 在 `pyproject.toml` 注册脚本入口。
+- **状态**：已完成。
+
 ### [2026-01-30] postw90 多投影自动执行
 - **需求**：
     1. `inputw90post.toml` 中出现多个 `dos_project` 时，循环执行多次 `postw90.x`。
