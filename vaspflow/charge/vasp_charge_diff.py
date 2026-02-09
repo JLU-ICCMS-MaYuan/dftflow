@@ -10,16 +10,31 @@ def _read_vasp_charge(path):
     if len(lines) < 10:
         raise ValueError(f"文件内容过短，无法解析: {path}")
 
-    header = lines[:8]
-    coord_line = lines[8].strip()
+    def _is_int_tokens(tokens):
+        if not tokens:
+            return False
+        for token in tokens:
+            try:
+                int(token)
+            except ValueError:
+                return False
+        return True
 
-    if coord_line.lower().startswith("selective"):
-        coord_line = lines[9].strip()
-        atom_count_line = lines[7].strip()
-        coords_start = 10
+    line5_tokens = lines[5].split()
+    if _is_int_tokens(line5_tokens):
+        counts_line_index = 5
+        coord_line_index = 6
     else:
-        atom_count_line = lines[7].strip()
-        coords_start = 9
+        counts_line_index = 6
+        coord_line_index = 7
+
+    atom_count_line = lines[counts_line_index].strip()
+    coord_line = lines[coord_line_index].strip()
+    if coord_line.lower().startswith("selective"):
+        coord_line_index += 1
+        coord_line = lines[coord_line_index].strip()
+
+    coords_start = coord_line_index + 1
 
     try:
         atom_counts = [int(x) for x in atom_count_line.split()]
@@ -61,9 +76,7 @@ def _read_vasp_charge(path):
 
     data = [float(x) for x in data_lines[:expected]]
 
-    header_block = header + [lines[8]]
-    if coord_line.lower().startswith("selective"):
-        header_block = header + [lines[8], lines[9]]
+    header_block = lines[:coords_start]
 
     return {
         "header": header_block,
