@@ -57,6 +57,11 @@
 - **方案**：在 `vasp_charge.py` 初始化阶段读取 `incar_params.EINT`，若为数组则按三位小数格式更新 `work_dir`。
 - **状态**：已完成。
 
+### [2026-02-07] vasp_process_locpot 脚本入口
+- **需求**：在 `pyproject.toml` 中新增 `vasp_process_locpot` 入口。
+- **方案**：将入口指向 `vaspflow.locpot.vasp_process_locpot:main`。
+- **状态**：已完成。
+
 ### [2026-01-30] postw90 多投影自动执行
 - **需求**：
     1. `inputw90post.toml` 中出现多个 `dos_project` 时，循环执行多次 `postw90.x`。
