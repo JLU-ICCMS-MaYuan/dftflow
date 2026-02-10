@@ -58,6 +58,11 @@
 - **方案**：`incar_params` 缺少 `KSPACING` 时读取 `kmesh` 写入 INCAR。
 - **状态**：已完成。
 
+### [2026-02-10] vasp_opt 示例移除 KSPACING
+- **需求**：示例配置仅保留 `kmesh`，不在 `[incar_params]` 里写 `KSPACING`。
+- **方案**：移除 `tests/inputvasp.toml` 的 `KSPACING` 示例。
+- **状态**：已完成。
+
 ### [2026-02-09] vasp_process_locpot 多点剖面分析
 - **需求**：
     1. 支持多点路径抽样 LOCPOT/PARCHG/CHGCAR 的 1D 剖面。

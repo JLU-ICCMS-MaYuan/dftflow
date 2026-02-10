@@ -141,7 +141,7 @@ class VaspOptSetup:
             lines.append(f"KPAR   = {self.incar_params['KPAR']}")
         kspacing = self.incar_params.get("KSPACING")
         if kspacing is None:
-            kspacing = self.config.get("kmesh")
+            kspacing = self.config.get("kmesh")*2*3.1415926
         if kspacing is None:
             raise ValueError("缺少 KSPACING 且未设置 kmesh")
         lines.extend([
