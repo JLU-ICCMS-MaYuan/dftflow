@@ -39,6 +39,36 @@ class VaspOptSetup:
             for line in lines:
                 incar.write(line if line.endswith("\n") else line + "\n")
 
+    def get_elements_from_poscar(self):
+        poscar_path = os.path.join(self.work_dir, "POSCAR")
+        if not os.path.exists(poscar_path):
+            raise FileNotFoundError(f"找不到 {poscar_path} 文件")
+        with open(poscar_path, "r") as f:
+            lines = f.readlines()
+            elements = lines[5].split()
+            if elements and elements[0].isdigit():
+                print("警告: 检测到可能不包含元素名称的 POSCAR (VASP 4 格式)。")
+                print("请确保 POSCAR 第6行包含元素名称。")
+            return elements
+
+    def generate_potcar(self, elements):
+        print(f"检测到元素顺序: {' '.join(elements)}")
+        potcar_dir = self.config.get("potcar_dir", "")
+        if not potcar_dir:
+            raise ValueError("未在配置文件中找到 'potcar_dir' (赝势目录路径)")
+        potcar_dir = os.path.expanduser(potcar_dir)
+        potcar_content = []
+        for el in elements:
+            path = os.path.join(potcar_dir, el)
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"在 {potcar_dir} 中找不到元素 {el} 的 POTCAR 文件")
+            with open(path, "r") as f:
+                potcar_content.append(f.read())
+        potcar_path = os.path.join(self.work_dir, "POTCAR")
+        with open(potcar_path, "w") as f:
+            f.writelines(potcar_content)
+        print(f"POTCAR 已从 {potcar_dir} 合并完成。")
+
     def opt_incar1(self, incar_dirpath):
         incar_filepath = os.path.join(incar_dirpath, "INCAR_1")
         lines = [
@@ -259,6 +289,8 @@ class VaspOptSetup:
     def run(self, mode):
         self._prepare_poscar()
         self._copy_aux_files()
+        elements = self.get_elements_from_poscar()
+        self.generate_potcar(elements)
         if mode == "rv4":
             self.opt_incar1(self.work_dir)
             self.opt_incar2(self.work_dir)

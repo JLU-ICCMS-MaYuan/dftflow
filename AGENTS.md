@@ -63,6 +63,11 @@
 - **方案**：移除 `tests/inputvasp.toml` 的 `KSPACING` 示例。
 - **状态**：已完成。
 
+### [2026-02-10] vasp_opt 生成 POTCAR
+- **需求**：结构优化脚本参照 `vasp_scf.py` 自动合并生成 POTCAR。
+- **方案**：按 POSCAR 元素顺序从 `potcar_dir` 合并写入 `vasp_opt/POTCAR`。
+- **状态**：已完成。
+
 ### [2026-02-09] vasp_process_locpot 多点剖面分析
 - **需求**：
     1. 支持多点路径抽样 LOCPOT/PARCHG/CHGCAR 的 1D 剖面。
