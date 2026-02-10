@@ -26,13 +26,13 @@ class VaspOptSetup:
         else:
             self.config = toml.load(config_file)
         self.struct_file = struct_file
-        self.vasp_inputpara = self._load_vasp_inputpara()
+        self.incar_params = self._load_incar_params()
 
-    def _load_vasp_inputpara(self):
-        vasp_inputpara = self.config.get("vasp_inputpara")
-        if not vasp_inputpara:
-            raise ValueError("配置缺少 [vasp_inputpara] 块")
-        return vasp_inputpara
+    def _load_incar_params(self):
+        incar_params = self.config.get("incar_params")
+        if not incar_params:
+            raise ValueError("配置缺少 [incar_params] 块")
+        return incar_params
 
     def _write_incar(self, filepath, lines):
         with open(filepath, "w") as incar:
@@ -44,10 +44,10 @@ class VaspOptSetup:
         lines = [
             "ISTART   = 0",
             "ICHARG   = 2",
-            f"ISYM     = {self.vasp_inputpara['isym']}",
+            f"ISYM     = {self.incar_params['ISYM']}",
             "ENCUT    = 300",
             "PREC     = Normal",
-            f"SYMPREC  = {self.vasp_inputpara['symprec']}",
+            f"SYMPREC  = {self.incar_params['SYMPREC']}",
             "NCORE    = 4",
             "KSPACING = 0.8",
             "ISMEAR   = 0",
@@ -62,7 +62,7 @@ class VaspOptSetup:
             "POTIM    = 0.3",
             "LWAVE  = .FALSE.",
             "LCHARG = .FALSE.",
-            f"PSTRESS  = {float(self.vasp_inputpara['press']) * 10}",
+            f"PSTRESS  = {float(self.incar_params['PSTRESS'])}",
         ]
         self._write_incar(incar_filepath, lines)
         return incar_filepath
@@ -72,10 +72,10 @@ class VaspOptSetup:
         lines = [
             "ISTART   = 0",
             "ICHARG   = 2",
-            f"ISYM     = {self.vasp_inputpara['isym']}",
+            f"ISYM     = {self.incar_params['ISYM']}",
             "ENCUT    = 400",
             "PREC     = Normal",
-            f"SYMPREC  = {self.vasp_inputpara['symprec']}",
+            f"SYMPREC  = {self.incar_params['SYMPREC']}",
             "NCORE    = 4",
             "KSPACING = 0.6",
             "ISMEAR   = 0",
@@ -90,7 +90,7 @@ class VaspOptSetup:
             "POTIM    = 0.1",
             "LWAVE  = .FALSE.",
             "LCHARG = .FALSE.",
-            f"PSTRESS  = {float(self.vasp_inputpara['press']) * 10}",
+            f"PSTRESS  = {float(self.incar_params['PSTRESS'])}",
         ]
         self._write_incar(incar_filepath, lines)
         return incar_filepath
@@ -100,10 +100,10 @@ class VaspOptSetup:
         lines = [
             "ISTART   = 0",
             "ICHARG   = 2",
-            f"ISYM     = {self.vasp_inputpara['isym']}",
+            f"ISYM     = {self.incar_params['ISYM']}",
             "ENCUT    = 500",
             "PREC     = Accurate",
-            f"SYMPREC  = {self.vasp_inputpara['symprec']}",
+            f"SYMPREC  = {self.incar_params['SYMPREC']}",
             "NCORE    = 4",
             "KSPACING = 0.4",
             "ISMEAR   = 0",
@@ -118,7 +118,7 @@ class VaspOptSetup:
             "POTIM    = 0.05",
             "LWAVE    = .FALSE.",
             "LCHARG   = .FALSE.",
-            f"PSTRESS  = {float(self.vasp_inputpara['press']) * 10}",
+            f"PSTRESS  = {float(self.incar_params['PSTRESS'])}",
         ]
         self._write_incar(incar_filepath, lines)
         return incar_filepath
@@ -128,32 +128,32 @@ class VaspOptSetup:
         lines = [
             "ISTART   = 0",
             "ICHARG   = 2",
-            f"ISYM     = {self.vasp_inputpara['isym']}",
-            f"ENCUT    = {self.vasp_inputpara['encut']}",
+            f"ISYM     = {self.incar_params['ISYM']}",
+            f"ENCUT    = {self.incar_params['ENCUT']}",
             "PREC     = Accurate",
-            f"SYMPREC  = {self.vasp_inputpara['symprec']}",
+            f"SYMPREC  = {self.incar_params['SYMPREC']}",
         ]
-        if self.vasp_inputpara.get("npar") is not None:
-            lines.append(f"NPAR   = {self.vasp_inputpara['npar']}")
-        if self.vasp_inputpara.get("ncore") is not None:
-            lines.append(f"NCORE  = {self.vasp_inputpara['ncore']}")
-        if self.vasp_inputpara.get("kpar") is not None:
-            lines.append(f"KPAR   = {self.vasp_inputpara['kpar']}")
+        if self.incar_params.get("NPAR") is not None:
+            lines.append(f"NPAR   = {self.incar_params['NPAR']}")
+        if self.incar_params.get("NCORE") is not None:
+            lines.append(f"NCORE  = {self.incar_params['NCORE']}")
+        if self.incar_params.get("KPAR") is not None:
+            lines.append(f"KPAR   = {self.incar_params['KPAR']}")
         lines.extend([
-            f"KSPACING = {self.vasp_inputpara['kspacing']}",
-            f"ISMEAR   = {self.vasp_inputpara['ismear']}",
-            f"SIGMA    = {self.vasp_inputpara['sigma']}",
-            f"NELM     = {self.vasp_inputpara['nelm']}",
+            f"KSPACING = {self.incar_params['KSPACING']}",
+            f"ISMEAR   = {self.incar_params['ISMEAR']}",
+            f"SIGMA    = {self.incar_params['SIGMA']}",
+            f"NELM     = {self.incar_params['NELM']}",
             "NELMIN   = 6",
-            f"EDIFF    = {self.vasp_inputpara['ediff']}",
-            f"EDIFFG   = {self.vasp_inputpara['ediffg']}",
+            f"EDIFF    = {self.incar_params['EDIFF']}",
+            f"EDIFFG   = {self.incar_params['EDIFFG']}",
             "NSW      = 500",
-            f"IBRION   = {self.vasp_inputpara['ibrion']}",
-            f"ISIF     = {self.vasp_inputpara['isif']}",
-            f"POTIM    = {self.vasp_inputpara['potim']}",
+            f"IBRION   = {self.incar_params['IBRION']}",
+            f"ISIF     = {self.incar_params['ISIF']}",
+            f"POTIM    = {self.incar_params['POTIM']}",
             "LWAVE  = .FALSE.",
             "LCHARG = .FALSE.",
-            f"PSTRESS  = {float(self.vasp_inputpara['press']) * 10}",
+            f"PSTRESS  = {float(self.incar_params['PSTRESS'])}",
         ])
         self._write_incar(incar_filepath, lines)
         return incar_filepath
