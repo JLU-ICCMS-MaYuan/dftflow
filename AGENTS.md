@@ -43,6 +43,11 @@
     3. 在 `pyproject.toml` 中注册 `vasp_opt` 入口。
 - **状态**：已完成。
 
+### [2026-02-10] vasp_opt 示例配置补充
+- **需求**：补充 `tests/inputvasp.toml` 的 `[vasp_inputpara]` 示例配置。
+- **方案**：新增结构优化所需字段示例值。
+- **状态**：已完成。
+
 ### [2026-02-09] vasp_process_locpot 多点剖面分析
 - **需求**：
     1. 支持多点路径抽样 LOCPOT/PARCHG/CHGCAR 的 1D 剖面。
