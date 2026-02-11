@@ -83,6 +83,17 @@
 - **方案**：统一 `submit.write` 输出，去除尾随空格与日志重定向。
 - **状态**：已完成。
 
+### [2026-02-10] vasp_elf ELF 计算脚本
+- **需求**：
+    1. 新增 ELF 计算脚本并支持 `--run` 执行。
+    2. 固定 `LELF = .TRUE.`、`LWAVE = .FALSE.`、`LCHARG = .FALSE.`。
+    3. 生成 POTCAR/KPOINTS 与运行脚本。
+- **方案**：
+    1. 新增 `vaspflow/elf/vasp_elf.py` 与 `__init__.py`。
+    2. INCAR 基于固定模板并允许 `[incar_params]` 覆盖。
+    3. 在 `pyproject.toml` 注册 `vasp_elf` 入口。
+- **状态**：已完成。
+
 ### [2026-02-09] vasp_process_locpot 多点剖面分析
 - **需求**：
     1. 支持多点路径抽样 LOCPOT/PARCHG/CHGCAR 的 1D 剖面。
