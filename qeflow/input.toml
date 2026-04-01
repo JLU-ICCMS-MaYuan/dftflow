@@ -1,0 +1,58 @@
+# Quantum ESPRESSO 运行配置
+
+[qe]
+executable_path = "~/soft/qe-7.4.1/bin"
+
+# Slurm 提交脚本配置
+[slurm]
+header = """
+#!/bin/sh
+#SBATCH  --job-name=qe_job
+#SBATCH  --output=log.out
+#SBATCH  --error=log.err
+#SBATCH  --partition=liuhanyu
+#SBATCH  --nodes=1
+#SBATCH  --ntasks=48
+#SBATCH  --ntasks-per-node=48
+#SBATCH  --cpus-per-task=1
+
+source /work/home/mayuan/intel/oneapi/setvars.sh --force
+ulimit -s unlimited
+"""
+
+# QE pw.x 参数自定义 (Namelists)
+[qe_params.CONTROL]
+outdir = "'./tmp'"
+pseudo_dir = "'~/pot/SSSP_1.3.0_PBE_efficiency'"
+
+[qe_params.SYSTEM]
+ecutwfc = 60.0
+ecutrho = 480.0
+occupations = "'smearing'"
+smearing = "'gauss'"
+degauss = 0.02
+
+[qe_params.ELECTRONS]
+conv_thr = 1.0e-8
+mixing_beta = 0.7
+
+[k_points]
+# kpoints 优先：直接指定均匀网格 (n1, n2, n3)
+kpoints = [6, 6, 6]
+# 当未提供 kpoints 时，kmesh 表示 K 点间距 (2pi/Angstrom)，用于自动生成均匀网格
+# kmesh = 0.3
+# wan = true 时只写 K 点坐标，不写权重；wan = false 时写入权重
+wan = false
+
+# 元素与赝势文件的映射关系
+[pseudo_map]
+Y = { pseudo = "Y_pbe_v1.uspp.F.UPF " }
+H = { pseudo = "H.pbe-rrkjus_psl.1.0.0.UPF" }
+
+[eledos]
+# 电子态密度参数
+DeltaE = 0.01
+emin = -10
+emax = 30
+ngauss = 0
+degauss = 0.0

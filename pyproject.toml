@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dftflow"
+version = "0.1.0"
+description = "A collection of DFT calculation workflow automation scripts."
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+dependencies = [
+    "toml; python_version < '3.11'",
+    "numpy",
+]
+
+[project.optional-dependencies]
+analysis = [
+    "pymatgen",
+]
+
+[project.scripts]
+vasp_scf = "vaspflow.scf.vasp_scf:main"
+vasp_scf_converge = "vaspflow.scf.vasp_scf_converge:main"
+vasp_eband = "vaspflow.eband.vasp_eband:main"
+vasp_eledos = "vaspflow.eledos.vasp_eledos:main"
+vasp_fermi = "vaspflow.fermisurface.vasp_fermisurface:main"
+vasp_cohp = "vaspflow.cohp.vasp_cohp:main"
+vasp_lobster = "vaspflow.cohp.vasp_process_cohp:main"
+vasp_locpot = "vaspflow.locpot.vasp_locpot:main"
+vasp_process_locpot = "vaspflow.locpot.vasp_process_locpot:main"
+vasp_charge = "vaspflow.charge.vasp_charge:main"
+vasp_charge_diff = "vaspflow.charge.vasp_charge_diff:main"
+vasp_opt = "vaspflow.opt.vasp_opt:main"
+vasp_elf = "vaspflow.elf.vasp_elf:main"
+qe_scf = "qeflow.scf.qe_scf:main"
+qe_nscf = "qeflow.nscf.qe_nscf:main"
+qe_eband = "qeflow.eband.qe_eband:main"
+qe_eledos = "qeflow.eledos.qe_eledos:main"
+qe_process_eledos = "qeflow.eledos.qe_process_dos:main"
+qe_process_eband = "qeflow.eband.qe_process_eband:main"
+wannier_init = "wannier90flow.wannier_init:main"
+wannier_post = "wannier90flow.wannier_post:main"
+wannier_window = "wannier90flow.wannier_window:main"
+wannier_plot = "wannier90flow.wannier90_plot:main"
+
+[tool.setuptools]
+packages = {find = {where = ["."], include = ["*flow*"]}}
