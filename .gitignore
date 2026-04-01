@@ -4,7 +4,7 @@ test_manual/
 __pycache__/
 *.egg-info/
 node_modules/
-external/vasp.6.3.2/
+external/
 
 # files
 package-lock.json
