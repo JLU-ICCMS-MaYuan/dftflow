@@ -3,6 +3,7 @@ import argparse
 import os
 import shutil
 import subprocess
+from public.job import add_run_submit_arguments, handle_job_action, execute_commands
 
 try:
     import tomllib  # Python 3.11+
@@ -306,16 +307,30 @@ class VaspOptSetup:
             self.opt_incar2(self.work_dir)
             self.opt_incar3(self.work_dir)
             self.opt_incar4(self.work_dir)
-            script = self.fouropt(self.work_dir)
+            self._script_name = self.fouropt(self.work_dir)
         elif mode == "rv1":
             self.opt_incar4(self.work_dir)
-            script = self.oneopt(self.work_dir)
+            self._script_name = self.oneopt(self.work_dir)
         elif mode == "rvf":
             self.opt_incar4(self.work_dir)
-            script = self.fopt(self.work_dir)
+            self._script_name = self.fopt(self.work_dir)
         else:
             raise ValueError("mode must be one of rv4/rv1/rvf")
-        print(f"已生成优化输入于 {self.work_dir}，提交脚本: {script}")
+        print(f"已生成优化输入于 {self.work_dir}，提交脚本: {self._script_name}")
+
+    def execute(self):
+        """执行结构优化"""
+        vasp_config = self.config.get("vasp", {})
+        vasp_path = vasp_config.get("executable_path", "vasp_std")
+
+        script = getattr(self, "_script_name", "fouropt.sh")
+        execute_commands(
+            self.work_dir,
+            [f"bash {script}"],
+            work_label=os.path.basename(os.path.normpath(self.work_dir)),
+            error_prefix="执行 VASP 结构优化出错"
+        )
+        print(f"VASP 结构优化完成，输出已保存至 {self.work_dir}")
 
 
 def main():
@@ -324,6 +339,7 @@ def main():
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径 (默认为 input.toml)")
     parser.add_argument("--mode", choices=["rv4", "rv1", "rvf"], default="rv4", help="优化模式")
     parser.add_argument("-p", "--pressure", type=int, help="覆盖 PSTRESS (整数)")
+    add_run_submit_arguments(parser, "生成文件后直接执行优化", "生成文件后提交优化脚本")
     args = parser.parse_args()
 
     work_dir = "vasp_opt"
@@ -336,6 +352,8 @@ def main():
         work_dir=work_dir,
     )
     setup.run(mode=args.mode)
+    script_name = getattr(setup, "_script_name", "fouropt.sh")
+    handle_job_action(args.run, args.submit, setup.work_dir, script_name, setup.execute)
 
 
 if __name__ == "__main__":

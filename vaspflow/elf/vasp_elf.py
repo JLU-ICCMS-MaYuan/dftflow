@@ -3,6 +3,7 @@ import os
 import shutil
 import argparse
 import subprocess
+from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
 
 try:
     import tomllib  # Python 3.11+
@@ -136,21 +137,22 @@ class VaspElfSetup:
         os.chmod(run_script_path, 0o755)
         print(f"生成运行脚本: {run_script_path}")
 
-    def execute_vasp(self):
+    def execute(self):
+        """执行 VASP 计算"""
         vasp_config = self.config.get("vasp", {})
         vasp_path = vasp_config.get("executable_path", "vasp_std")
-        original_dir = os.getcwd()
-        try:
-            print(f"\n正在进入 {self.work_dir} 目录执行: {vasp_path}")
-            os.chdir(self.work_dir)
-            subprocess.run(vasp_path, shell=True, check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"执行 VASP 出错: {e}")
-        finally:
-            os.chdir(original_dir)
-            print(f"已返回目录: {original_dir}")
 
-    def run(self, run_calc=False):
+        execute_commands(
+            self.work_dir,
+            [vasp_path],
+            work_label=os.path.basename(os.path.normpath(self.work_dir)),
+            error_prefix="执行 VASP 出错"
+        )
+        print(f"VASP 计算完成，输出已保存至 {self.work_dir}")
+
+
+    def setup(self):
+        """准备所有 VASP 输入文件"""
         try:
             os.makedirs(self.work_dir, exist_ok=True)
             target_poscar = os.path.join(self.work_dir, "POSCAR")
@@ -170,23 +172,28 @@ class VaspElfSetup:
             self.copy_wavecar_chgcar()
             self.create_run_script()
             print(f"\n所有 VASP 输入文件已在 {self.work_dir} 目录中准备就绪！")
-
-            if run_calc:
-                self.execute_vasp()
         except Exception as e:
             print(f"错误: {e}")
 
 
+
+    def run(self, run_calc=False):
+        """向后兼容的方法"""
+        self.setup()
+        if run_calc:
+            self.execute()
+
 def main():
     parser = argparse.ArgumentParser(description="VASP ELF Setup Script")
     parser.add_argument("-i", "--input", help="输入结构文件 (将被拷贝为 POSCAR)")
-    parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径 (默认为 input.toml)")
-    parser.add_argument("--run", action="store_true", help="生成文件后直接执行计算")
+    parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径")
+    add_run_submit_arguments(parser, "生成文件后直接执行计算", "生成文件后提交 run_vasp.sh")
+
     args = parser.parse_args()
 
     setup = VaspElfSetup(config_file=args.config, struct_file=args.input)
-    setup.run(run_calc=args.run)
-
+    setup.setup()
+    handle_job_action(args.run, args.submit, setup.work_dir, "run_vasp.sh", setup.execute)
 
 if __name__ == "__main__":
     main()

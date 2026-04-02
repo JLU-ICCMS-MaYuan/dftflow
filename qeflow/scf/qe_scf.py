@@ -5,6 +5,7 @@ import shutil
 import argparse
 import subprocess
 import numpy as np
+from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
 
 try:
     import tomllib  # Python 3.11+
@@ -259,34 +260,31 @@ class QESetup:
         """创建运行脚本"""
         qe_config = self.config.get("qe", {})
         pw_path = resolve_qe_executable(qe_config.get("executable_path", ""), "pw.x")
-        slurm_header = self.config.get("slurm", {}).get("header", "#!/bin/bash")
+        slurm_header = self.config.get("slurm", {}).get("header", "")
 
         run_script_path = os.path.join(self.work_dir, "run_qe.sh")
-        with open(run_script_path, "w") as f:
-            f.write(slurm_header.strip() + "\n\n")
-            f.write(f"echo 'Job started at' `date` \n")
-            f.write(f"{pw_path} < scf.in > scf.out\n")
-            f.write(f"echo 'Job finished at' `date` \n")
-        os.chmod(run_script_path, 0o755)
-        print(f"生成运行脚本: {run_script_path}")
+        write_job_script(
+            run_script_path,
+            slurm_header,
+            [
+                "echo 'Job started at' `date`",
+                f"{pw_path} < scf.in > scf.out",
+                "echo 'Job finished at' `date`"
+            ]
+        )
 
     def execute(self):
-        """进入工作目录并执行 Quantum ESPRESSO 计算"""
+        """执行 Quantum ESPRESSO 计算"""
         qe_config = self.config.get("qe", {})
         pw_path = resolve_qe_executable(qe_config.get("executable_path", ""), "pw.x")
-        
-        original_dir = os.getcwd()
-        try:
-            print(f"\n正在进入 {self.work_dir} 目录执行: {pw_path}")
-            os.chdir(self.work_dir)
-            cmd = f"{pw_path} < scf.in > scf.out"
-            subprocess.run(cmd, shell=True, check=True)
-            print(f"QE 计算完成，输出已保存至 {self.work_dir}/scf.out")
-        except subprocess.CalledProcessError as e:
-            print(f"执行 QE 出错: {e}")
-        finally:
-            os.chdir(original_dir)
-            print(f"已返回目录: {original_dir}")
+
+        execute_commands(
+            self.work_dir,
+            [f"{pw_path} < scf.in > scf.out"],
+            work_label=os.path.basename(os.path.normpath(self.work_dir)),
+            error_prefix="执行 QE 出错"
+        )
+        print(f"QE 计算完成，输出已保存至 {self.work_dir}/scf.out")
 
     def setup(self):
         """准备所有输入文件和计算环境"""
@@ -324,17 +322,13 @@ def main():
     parser = argparse.ArgumentParser(description="Quantum ESPRESSO SCF Setup Script")
     parser.add_argument("-i", "--input", help="输入结构文件 (POSCAR 格式)")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径")
-    parser.add_argument("--run", action="store_true", help="生成文件后直接执行计算")
-    
+    add_run_submit_arguments(parser, "生成文件后直接执行计算", "生成文件后提交 run_qe.sh")
+
     args = parser.parse_args()
     setup_obj = QESetup(config_file=args.config, struct_file=args.input)
-    
-    # 1. 环境准备
+
     setup_obj.setup()
-    
-    # 2. 如果指定了 --run，则执行计算
-    if args.run:
-        setup_obj.execute()
+    handle_job_action(args.run, args.submit, setup_obj.work_dir, "run_qe.sh", setup_obj.execute)
 
 if __name__ == "__main__":
     main()

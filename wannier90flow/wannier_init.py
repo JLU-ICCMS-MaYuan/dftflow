@@ -19,6 +19,7 @@ import os
 import shutil
 import subprocess
 from typing import Any, Dict, List, Tuple
+from public.job import add_run_submit_arguments, handle_job_action, submit_script
 
 import numpy as np
 
@@ -432,7 +433,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="准备 Wannier90 .win 输入文件")
     parser.add_argument("-i", "--input", default="POSCAR", help="结构文件 (VASP POSCAR)")
     parser.add_argument("-c", "--config", required=True, help="配置文件 (TOML/JSON)")
-    parser.add_argument("--run", action="store_true", help="生成文件后直接执行 Wannier90 流程")
+    add_run_submit_arguments(parser, "生成文件后直接执行 Wannier90 流程", "生成文件后提交 run_wannier90.sh")
     args = parser.parse_args()
 
     work_dir = "wannier90"
@@ -489,6 +490,8 @@ def main() -> None:
     print(f"已生成 {output}，包含 {len(kpoints)} 个 k 点。")
     if args.run:
         run_wannier90_pipeline(work_dir, basename, cfg)
+    elif args.submit:
+        submit_script(work_dir, "run_wannier90.sh")
 
 
 if __name__ == "__main__":

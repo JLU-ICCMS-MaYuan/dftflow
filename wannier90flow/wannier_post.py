@@ -7,6 +7,7 @@ import argparse
 import os
 import subprocess
 from typing import Any, Dict, List, Tuple
+from public.job import add_run_submit_arguments, submit_script
 
 from .wannier_init import DEFAULT_SLURM_HEADER
 try:
@@ -171,7 +172,8 @@ def main() -> None:
         required=True,
         help="输入 .win 文件路径（或不带扩展名的前缀）",
     )
-    parser.add_argument("--run", action="store_true", help="生成脚本后直接执行 postw90.x")
+    parser.add_argument("--run", "-r", action="store_true", help="生成脚本后直接执行 postw90.x")
+    parser.add_argument("--submit", "-s", action="store_true", help="生成脚本后提交 run_postw90.sh")
     args = parser.parse_args()
 
     cfg = load_post_config(args.config)
@@ -224,6 +226,8 @@ def main() -> None:
         finally:
             with open(win_path, "w", encoding="utf-8") as f:
                 f.write(original_content)
+    elif args.submit:
+        submit_script(work_dir, "run_postw90.sh")
 
 
 if __name__ == "__main__":
