@@ -353,10 +353,10 @@ class VaspOptSetup:
             self.opt_incar4(self.work_dir)
             self._script_name = self.fouropt(self.work_dir)
         elif mode == "rv1":
-            self.opt_incar(self.work_dir)
+            self.opt_incar4(self.work_dir)
             self._script_name = self.oneopt(self.work_dir)
         elif mode == "rvf":
-            self.opt_incar(self.work_dir)
+            self.opt_incar4(self.work_dir)
             self._script_name = self.fopt(self.work_dir)
         else:
             raise ValueError("mode must be one of rv4/rv1/rvf")
