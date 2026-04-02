@@ -5,6 +5,7 @@ import argparse
 import subprocess
 import sys
 import numpy as np
+from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
 
 try:
@@ -24,12 +25,6 @@ ATOMIC_MASSES = {
     "Rb": 85.468, "Sr": 87.62, "Y": 88.906, "Zr": 91.224, "Nb": 92.906, "Mo": 95.95, "Tc": 98, "Ru": 101.07, "Rh": 102.91, "Pd": 106.42, "Ag": 107.87, "Cd": 112.41, "In": 114.82, "Sn": 118.71, "Sb": 121.76, "Te": 127.60, "I": 126.90, "Xe": 131.29,
     "Cs": 132.91, "Ba": 137.33, "La": 138.91, "Ce": 140.12, "Pr": 140.91, "Nd": 144.24, "Pm": 145, "Sm": 150.36, "Eu": 151.96, "Gd": 157.25, "Tb": 158.93, "Dy": 162.50, "Ho": 164.93, "Er": 167.26, "Tm": 168.93, "Yb": 173.05, "Lu": 174.97, "Hf": 178.49, "Ta": 180.95, "W": 183.84, "Re": 186.21, "Os": 190.23, "Ir": 192.22, "Pt": 195.08, "Au": 196.97, "Hg": 200.59, "Tl": 204.38, "Pb": 207.2, "Bi": 208.98, "Th": 232.04, "Pa": 231.04, "U": 238.03
 }
-
-def resolve_qe_executable(bin_path, exe_name):
-    if not bin_path:
-        return exe_name
-    bin_path = os.path.expanduser(str(bin_path))
-    return os.path.join(bin_path, exe_name)
 
 def get_formula(elements, counts):
     formula = ""
@@ -291,7 +286,7 @@ class QENSCFSetup:
     def create_run_script(self):
         """创建运行脚本"""
         qe_config = self.config.get("qe", {})
-        pw_path = resolve_qe_executable(qe_config.get("executable_path", ""), "pw.x")
+        pw_path = resolve_qe_command(qe_config.get("executable_path"), "pw.x")
         slurm_header = self.config.get("slurm", {}).get("header", "#!/bin/bash")
 
         run_script_path = os.path.join(self.work_dir, "run_qe.sh")
@@ -304,7 +299,7 @@ class QENSCFSetup:
     def execute(self):
         """进入工作目录并执行 Quantum ESPRESSO NSCF 计算"""
         qe_config = self.config.get("qe", {})
-        pw_path = resolve_qe_executable(qe_config.get("executable_path", ""), "pw.x")
+        pw_path = resolve_qe_command(qe_config.get("executable_path"), "pw.x")
         execute_commands(
             self.work_dir,
             [f"{pw_path} < nscf.in > nscf.out"],

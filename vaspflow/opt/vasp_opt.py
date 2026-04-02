@@ -3,6 +3,7 @@ import argparse
 import os
 import shutil
 import subprocess
+from public.executables import resolve_vasp_command
 from public.job import add_run_submit_arguments, handle_job_action, execute_commands
 
 try:
@@ -207,9 +208,53 @@ class VaspOptSetup:
         self._write_incar(incar_filepath, lines)
         return incar_filepath
 
+    def opt_incar(self, incar_dirpath):
+        incar_filepath = os.path.join(incar_dirpath, "INCAR")
+        lines = [
+            "ISTART   = 0",
+            "ICHARG   = 2",
+            f"ISYM     = {self.opt_params['ISYM']}",
+            f"ENCUT    = {self.opt_params['ENCUT']}",
+            "PREC     = Accurate",
+            f"SYMPREC  = {self.opt_params['SYMPREC']}",
+        ]
+        if self.opt_params.get("NPAR") is not None:
+            lines.append(f"NPAR   = {self.opt_params['NPAR']}")
+        if self.opt_params.get("NCORE") is not None:
+            lines.append(f"NCORE  = {self.opt_params['NCORE']}")
+        if self.opt_params.get("KPAR") is not None:
+            lines.append(f"KPAR   = {self.opt_params['KPAR']}")
+        kspacing = self.opt_params.get("KSPACING")
+        if kspacing is None:
+            kspacing = self.config.get("kmesh")*2*3.1415926
+        if kspacing is None:
+            raise ValueError("缺少 KSPACING 且未设置 kmesh")
+        ediff = self.opt_params.get("EDIFF", 1e-7)
+        ediffg = self.opt_params.get("EDIFFG", -0.01)
+        ibrion = self.opt_params.get("IBRION", 2)
+        isif = self.opt_params.get("ISIF", 3)
+        lines.extend([
+            f"KSPACING = {kspacing}",
+            f"ISMEAR   = {self.opt_params['ISMEAR']}",
+            f"SIGMA    = {self.opt_params['SIGMA']}",
+            f"NELM     = {self.opt_params['NELM']}",
+            "NELMIN   = 6",
+            f"EDIFF    = {ediff}",
+            f"EDIFFG   = {ediffg}",
+            "NSW      = 500",
+            f"IBRION   = {ibrion}",
+            f"ISIF     = {isif}",
+            f"POTIM    = {self.opt_params['POTIM']}",
+            "LWAVE  = .FALSE.",
+            "LCHARG = .FALSE.",
+            f"PSTRESS  = {float(self.pstress_value)}",
+        ])
+        self._write_incar(incar_filepath, lines)
+        return incar_filepath
+
     def _get_vasp_execmd(self):
         vasp_config = self.config.get("vasp", {})
-        return vasp_config.get("executable_path", "vasp_std")
+        return resolve_vasp_command(vasp_config.get("executable_path"))
 
     def _get_slurm_header(self):
         slurm_config = self.config.get("slurm", {})
@@ -228,10 +273,9 @@ class VaspOptSetup:
         vasp_execmd = self._get_vasp_execmd()
         with open(submit_script_filepath, "w") as submit:
             self._write_job_header(submit)
+            submit.write("set -e\n")
             submit.write("for i in {1..4}; do\n")
             submit.write("cp INCAR_$i INCAR\n")
-            submit.write("killall -9 vasp_std\n")
-            submit.write("sleep 3\n")
             submit.write(f"{vasp_execmd}\n")
             submit.write("cp CONTCAR CONTCAR_$i\n")
             submit.write("cp OUTCAR OUTCAR_$i\n")
@@ -246,6 +290,7 @@ class VaspOptSetup:
         vasp_execmd = self._get_vasp_execmd()
         with open(submit_script_filepath, "w") as submit:
             self._write_job_header(submit)
+            submit.write("set -e\n")
             submit.write(f"{vasp_execmd}\n")
             submit.write("cp CONTCAR POSCAR\n")
         os.chmod(submit_script_filepath, 0o755)
@@ -257,12 +302,11 @@ class VaspOptSetup:
         vasp_execmd = self._get_vasp_execmd()
         with open(submit_script_filepath, "w") as submit:
             self._write_job_header(submit)
+            submit.write("set -e\n")
             submit.write("num=0\n")
             submit.write("while true;do\n")
             submit.write("        let num+=1\n")
             submit.write("        echo \"run fine vasp opt-$num\"\n")
-            submit.write("        killall -9 vasp_std\n")
-            submit.write("        sleep 3\n")
             submit.write(f"        timeout 14400s {vasp_execmd}\n")
             submit.write("        cp -f CONTCAR CONTCAR-fine &&  cp -f CONTCAR POSCAR\n")
             submit.write("        rows=`sed -n '/F\\=/p' OSZICAR | wc -l`\n")
@@ -309,10 +353,10 @@ class VaspOptSetup:
             self.opt_incar4(self.work_dir)
             self._script_name = self.fouropt(self.work_dir)
         elif mode == "rv1":
-            self.opt_incar4(self.work_dir)
+            self.opt_incar(self.work_dir)
             self._script_name = self.oneopt(self.work_dir)
         elif mode == "rvf":
-            self.opt_incar4(self.work_dir)
+            self.opt_incar(self.work_dir)
             self._script_name = self.fopt(self.work_dir)
         else:
             raise ValueError("mode must be one of rv4/rv1/rvf")
@@ -320,15 +364,13 @@ class VaspOptSetup:
 
     def execute(self):
         """执行结构优化"""
-        vasp_config = self.config.get("vasp", {})
-        vasp_path = vasp_config.get("executable_path", "vasp_std")
-
         script = getattr(self, "_script_name", "fouropt.sh")
         execute_commands(
             self.work_dir,
             [f"bash {script}"],
             work_label=os.path.basename(os.path.normpath(self.work_dir)),
-            error_prefix="执行 VASP 结构优化出错"
+            error_prefix="执行 VASP 结构优化出错",
+            expected_outputs=["OUTCAR", "CONTCAR"]
         )
         print(f"VASP 结构优化完成，输出已保存至 {self.work_dir}")
 
@@ -337,7 +379,7 @@ def main():
     parser = argparse.ArgumentParser(description="VASP structure optimization (rv4/rv1/rvf)")
     parser.add_argument("-i", "--input", help="输入结构文件 (将被拷贝为 POSCAR)")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径 (默认为 input.toml)")
-    parser.add_argument("--mode", choices=["rv4", "rv1", "rvf"], default="rv4", help="优化模式")
+    parser.add_argument("-m", "--mode", choices=["rv4", "rv1", "rvf"], default="rv4", help="优化模式")
     parser.add_argument("-p", "--pressure", type=int, help="覆盖 PSTRESS (整数)")
     add_run_submit_arguments(parser, "生成文件后直接执行优化", "生成文件后提交优化脚本")
     args = parser.parse_args()

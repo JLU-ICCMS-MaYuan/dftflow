@@ -3,6 +3,7 @@ import os
 import shutil
 import argparse
 import subprocess
+from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
 import numpy as np
 
@@ -15,13 +16,6 @@ except ImportError:
         print("Error: 'toml' or 'tomllib' (Python 3.11+) is required.")
         print("Please install it using: pip install toml")
         exit(1)
-
-
-def resolve_qe_executable(bin_path, exe_name):
-    if not bin_path:
-        return exe_name
-    bin_path = os.path.expanduser(str(bin_path))
-    return os.path.join(bin_path, exe_name)
 
 
 def get_formula(elements, counts):
@@ -143,12 +137,12 @@ class QEEleDosSetup:
 
     def create_run_script(self):
         qe_config = self.config.get("qe", {})
-        qe_bin = qe_config.get("executable_path", "")
+        qe_bin = qe_config.get("executable_path")
         dos_cfg = self.config.get("dos", {})
-        dos_exec = resolve_qe_executable(dos_cfg.get("executable_path", qe_bin), "dos.x")
+        dos_exec = resolve_qe_command(dos_cfg.get("executable_path", qe_bin), "dos.x")
         dos_args = dos_cfg.get("args", "-pd .true.")
         proj_cfg = self.config.get("projwfc", {})
-        proj_exec = resolve_qe_executable(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
+        proj_exec = resolve_qe_command(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
         proj_args = proj_cfg.get("args", "-pd .true.")
         slurm_header = self.config.get("slurm", {}).get("header", "#!/bin/bash")
 
@@ -168,12 +162,12 @@ class QEEleDosSetup:
 
     def execute(self):
         qe_config = self.config.get("qe", {})
-        qe_bin = qe_config.get("executable_path", "")
+        qe_bin = qe_config.get("executable_path")
         dos_cfg = self.config.get("dos", {})
-        dos_exec = resolve_qe_executable(dos_cfg.get("executable_path", qe_bin), "dos.x")
+        dos_exec = resolve_qe_command(dos_cfg.get("executable_path", qe_bin), "dos.x")
         dos_args = dos_cfg.get("args", "-pd .true.")
         proj_cfg = self.config.get("projwfc", {})
-        proj_exec = resolve_qe_executable(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
+        proj_exec = resolve_qe_command(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
         proj_args = proj_cfg.get("args", "-pd .true.")
 
         dos_cmd = f"{dos_exec} {dos_args}".strip() if dos_args else dos_exec

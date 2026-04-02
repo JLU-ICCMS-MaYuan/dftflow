@@ -3,6 +3,7 @@ import os
 import shutil
 import argparse
 import subprocess
+from public.executables import resolve_vasp_command
 from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
 
 try:
@@ -137,7 +138,7 @@ class VaspBandSetup:
     def create_run_script(self):
         """创建一个提交脚本"""
         vasp_config = self.config.get("vasp", {})
-        vasp_path = vasp_config.get("executable_path", "vasp_std")
+        vasp_path = resolve_vasp_command(vasp_config.get("executable_path"))
         slurm_config = self.config.get("slurm", {})
         slurm_header = slurm_config.get("header", "")
 
@@ -155,13 +156,14 @@ class VaspBandSetup:
     def execute(self):
         """执行 VASP 计算"""
         vasp_config = self.config.get("vasp", {})
-        vasp_path = vasp_config.get("executable_path", "vasp_std")
+        vasp_path = resolve_vasp_command(vasp_config.get("executable_path"))
 
         execute_commands(
             self.work_dir,
             [vasp_path],
             work_label=os.path.basename(os.path.normpath(self.work_dir)),
-            error_prefix="执行 VASP 出错"
+            error_prefix="执行 VASP 出错",
+            expected_outputs=["OUTCAR", "EIGENVAL"]
         )
         print(f"VASP 计算完成，输出已保存至 {self.work_dir}")
 
