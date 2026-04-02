@@ -1,0 +1,39 @@
+# Wannier90 测试配置
+
+[win]
+system_name = "MgB2"
+num_wann = 8
+num_bands = 16
+iprint = 1
+num_iter = 100
+dis_num_iter = 100
+dis_froz_min = -10.0
+dis_froz_max = 20.0
+dis_win_min = -10.0
+dis_win_max = 30.0
+bands_plot = false
+bands_plot_format = "gnuplot"
+
+[slurm]
+header = """
+#!/bin/bash
+#SBATCH --job-name=test_w90
+"""
+
+[wannier90]
+executable_path = "/home/mayuan/soft/qe-7.4.1/external/wannier90/wannier90.x"
+
+[pw2wannier90]
+executable_path = "/home/mayuan/soft/qe-7.4.1/PP/src/pw2wannier90.x"
+prefix = "MgB2"
+outdir = "../qe_nscf/tmp"
+seedname = "MgB2"
+
+[postw90]
+executable_path = "/home/mayuan/soft/qe-7.4.1/external/wannier90/postw90.x"
+
+[projections]
+list = ["Mg:s", "B:p"]
+
+[k_points]
+mp_grid = [4, 4, 4]

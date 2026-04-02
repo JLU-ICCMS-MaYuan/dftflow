@@ -65,9 +65,7 @@ class VaspCohpSetup:
         """生成 INCAR 文件"""
         final_params = self.incar_template.copy()
             
-        # 优先级: [cohp_params] > [incar_params] > 默认模板
-        if "incar_params" in self.config:
-            final_params.update(self.config["incar_params"])
+        # 从 [cohp_params] 读取参数覆盖默认模板
         if "cohp_params" in self.config:
             final_params.update(self.config["cohp_params"])
         

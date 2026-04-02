@@ -26,19 +26,19 @@ class VaspOptSetup:
         else:
             self.config = toml.load(config_file)
         self.struct_file = struct_file
-        self.incar_params = self._load_incar_params()
+        self.opt_params = self._load_opt_params()
         self.pstress_value = self._resolve_pstress(pressure_override)
 
-    def _load_incar_params(self):
-        incar_params = self.config.get("incar_params")
-        if not incar_params:
-            raise ValueError("配置缺少 [incar_params] 块")
-        return incar_params
+    def _load_opt_params(self):
+        opt_params = self.config.get("opt_params")
+        if not opt_params:
+            raise ValueError("配置缺少 [opt_params] 块")
+        return opt_params
 
     def _resolve_pstress(self, pressure_override):
         if pressure_override is not None:
             return pressure_override
-        pstress = self.incar_params.get("PSTRESS")
+        pstress = self.opt_params.get("PSTRESS")
         if pstress is None:
             raise ValueError("缺少 PSTRESS，且未通过 -p 指定")
         return pstress
@@ -83,10 +83,10 @@ class VaspOptSetup:
         lines = [
             "ISTART   = 0",
             "ICHARG   = 2",
-            f"ISYM     = {self.incar_params['ISYM']}",
+            f"ISYM     = {self.opt_params['ISYM']}",
             "ENCUT    = 300",
             "PREC     = Normal",
-            f"SYMPREC  = {self.incar_params['SYMPREC']}",
+            f"SYMPREC  = {self.opt_params['SYMPREC']}",
             "NCORE    = 4",
             "KSPACING = 0.8",
             "ISMEAR   = 0",
@@ -111,10 +111,10 @@ class VaspOptSetup:
         lines = [
             "ISTART   = 0",
             "ICHARG   = 2",
-            f"ISYM     = {self.incar_params['ISYM']}",
+            f"ISYM     = {self.opt_params['ISYM']}",
             "ENCUT    = 400",
             "PREC     = Normal",
-            f"SYMPREC  = {self.incar_params['SYMPREC']}",
+            f"SYMPREC  = {self.opt_params['SYMPREC']}",
             "NCORE    = 4",
             "KSPACING = 0.6",
             "ISMEAR   = 0",
@@ -139,10 +139,10 @@ class VaspOptSetup:
         lines = [
             "ISTART   = 0",
             "ICHARG   = 2",
-            f"ISYM     = {self.incar_params['ISYM']}",
+            f"ISYM     = {self.opt_params['ISYM']}",
             "ENCUT    = 500",
             "PREC     = Accurate",
-            f"SYMPREC  = {self.incar_params['SYMPREC']}",
+            f"SYMPREC  = {self.opt_params['SYMPREC']}",
             "NCORE    = 4",
             "KSPACING = 0.4",
             "ISMEAR   = 0",
@@ -167,38 +167,38 @@ class VaspOptSetup:
         lines = [
             "ISTART   = 0",
             "ICHARG   = 2",
-            f"ISYM     = {self.incar_params['ISYM']}",
-            f"ENCUT    = {self.incar_params['ENCUT']}",
+            f"ISYM     = {self.opt_params['ISYM']}",
+            f"ENCUT    = {self.opt_params['ENCUT']}",
             "PREC     = Accurate",
-            f"SYMPREC  = {self.incar_params['SYMPREC']}",
+            f"SYMPREC  = {self.opt_params['SYMPREC']}",
         ]
-        if self.incar_params.get("NPAR") is not None:
-            lines.append(f"NPAR   = {self.incar_params['NPAR']}")
-        if self.incar_params.get("NCORE") is not None:
-            lines.append(f"NCORE  = {self.incar_params['NCORE']}")
-        if self.incar_params.get("KPAR") is not None:
-            lines.append(f"KPAR   = {self.incar_params['KPAR']}")
-        kspacing = self.incar_params.get("KSPACING")
+        if self.opt_params.get("NPAR") is not None:
+            lines.append(f"NPAR   = {self.opt_params['NPAR']}")
+        if self.opt_params.get("NCORE") is not None:
+            lines.append(f"NCORE  = {self.opt_params['NCORE']}")
+        if self.opt_params.get("KPAR") is not None:
+            lines.append(f"KPAR   = {self.opt_params['KPAR']}")
+        kspacing = self.opt_params.get("KSPACING")
         if kspacing is None:
             kspacing = self.config.get("kmesh")*2*3.1415926
         if kspacing is None:
             raise ValueError("缺少 KSPACING 且未设置 kmesh")
-        ediff = self.incar_params.get("EDIFF", 1e-7)
-        ediffg = self.incar_params.get("EDIFFG", -0.01)
-        ibrion = self.incar_params.get("IBRION", 2)
-        isif = self.incar_params.get("ISIF", 3)
+        ediff = self.opt_params.get("EDIFF", 1e-7)
+        ediffg = self.opt_params.get("EDIFFG", -0.01)
+        ibrion = self.opt_params.get("IBRION", 2)
+        isif = self.opt_params.get("ISIF", 3)
         lines.extend([
             f"KSPACING = {kspacing}",
-            f"ISMEAR   = {self.incar_params['ISMEAR']}",
-            f"SIGMA    = {self.incar_params['SIGMA']}",
-            f"NELM     = {self.incar_params['NELM']}",
+            f"ISMEAR   = {self.opt_params['ISMEAR']}",
+            f"SIGMA    = {self.opt_params['SIGMA']}",
+            f"NELM     = {self.opt_params['NELM']}",
             "NELMIN   = 6",
             f"EDIFF    = {ediff}",
             f"EDIFFG   = {ediffg}",
             "NSW      = 500",
             f"IBRION   = {ibrion}",
             f"ISIF     = {isif}",
-            f"POTIM    = {self.incar_params['POTIM']}",
+            f"POTIM    = {self.opt_params['POTIM']}",
             "LWAVE  = .FALSE.",
             "LCHARG = .FALSE.",
             f"PSTRESS  = {float(self.pstress_value)}",

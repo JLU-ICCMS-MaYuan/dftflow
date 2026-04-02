@@ -1,0 +1,73 @@
+# VASP 测试配置（使用新参数名）
+potcar_dir = "potcar_lib"
+kmesh = 0.04
+chgcar_path = "vasp_scf/CHGCAR"
+wavecar_path = "vasp_scf/WAVECAR"
+
+[vasp]
+executable_path = "/home/mayuan/soft/vasp.6.3.2/bin/vasp_std"
+
+[slurm]
+header = """
+#!/bin/bash
+#SBATCH --job-name=test
+"""
+
+[scf_params]
+ENCUT = 520
+ISMEAR = 0
+SIGMA = 0.05
+EDIFF = 1e-6
+LREAL = "Auto"
+NCORE = 4
+
+[eband_params]
+ENCUT = 520
+ISMEAR = 0
+SIGMA = 0.05
+NCORE = 4
+
+[eledos_params]
+ENCUT = 520
+NCORE = 4
+
+[fermisurface_params]
+ENCUT = 520
+ISMEAR = 0
+SIGMA = 0.05
+NCORE = 4
+
+[cohp_params]
+ENCUT = 520
+ISMEAR = -5
+ISYM = -1
+NCORE = 4
+
+[locpot_params]
+ENCUT = 520
+NGX = 40
+NGY = 40
+NGZ = 40
+NCORE = 4
+
+[charge_params]
+ENCUT = 520
+EINT = [-5.0, 5.0]
+NCORE = 4
+
+[elf_params]
+ENCUT = 520
+NCORE = 4
+
+[opt_params]
+ENCUT = 520
+ISMEAR = 0
+SIGMA = 0.05
+ISYM = 0
+SYMPREC = 1e-5
+PSTRESS = 0.0
+NCORE = 4
+NELM = 200
+POTIM = 0.05
+EDIFF = 1e-6
+EDIFFG = -0.01

@@ -60,9 +60,7 @@ class VaspLocpotSetup:
         """生成 INCAR 文件"""
         final_params = self.incar_template.copy()
 
-        # 优先级: [locpot_params] > [incar_params] > 默认模板
-        if "incar_params" in self.config:
-            final_params.update(self.config["incar_params"])
+        # 从 [locpot_params] 读取参数覆盖默认模板
         if "locpot_params" in self.config:
             final_params.update(self.config["locpot_params"])
 

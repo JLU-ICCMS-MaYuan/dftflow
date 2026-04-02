@@ -64,11 +64,9 @@ class VaspDosSetup:
         """生成 INCAR 文件"""
         final_params = self.incar_template.copy()
             
-        # 优先级: [dos_params] > [incar_params] > 默认模板
-        if "incar_params" in self.config:
-            final_params.update(self.config["incar_params"])
-        if "dos_params" in self.config:
-            final_params.update(self.config["dos_params"])
+        # 从 [eledos_params] 读取参数覆盖默认模板
+        if "eledos_params" in self.config:
+            final_params.update(self.config["eledos_params"])
         
         print(f"正在生成 INCAR (DOS)...")
         incar_path = os.path.join(self.work_dir, "INCAR")

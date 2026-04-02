@@ -51,8 +51,9 @@ class VaspElfSetup:
 
     def generate_incar(self):
         final_params = self.incar_template.copy()
-        if "incar_params" in self.config:
-            final_params.update(self.config["incar_params"])
+        # 从 [elf_params] 读取参数覆盖默认模板
+        if "elf_params" in self.config:
+            final_params.update(self.config["elf_params"])
         incar_path = os.path.join(self.work_dir, "INCAR")
         with open(incar_path, "w") as f:
             for key, value in final_params.items():

@@ -59,11 +59,9 @@ class VaspFermiSetup:
         """生成 INCAR 文件"""
         final_params = self.incar_template.copy()
             
-        # 优先级: [fermi_params] > [incar_params] > 默认模板
-        if "incar_params" in self.config:
-            final_params.update(self.config["incar_params"])
-        if "fermi_params" in self.config:
-            final_params.update(self.config["fermi_params"])
+        # 从 [fermisurface_params] 读取参数覆盖默认模板
+        if "fermisurface_params" in self.config:
+            final_params.update(self.config["fermisurface_params"])
         
         print(f"正在生成 INCAR (FermiSurface)...")
         incar_path = os.path.join(self.work_dir, "INCAR")

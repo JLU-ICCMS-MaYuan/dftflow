@@ -67,9 +67,9 @@ class VaspSetup:
         # 合并模板和配置文件中的参数
         final_params = self.incar_template.copy()
             
-        # 1. 合并 [incar_params] 中的参数 (最高优先级)
-        if "incar_params" in self.config:
-            final_params.update(self.config["incar_params"])
+        # 1. 合并 [scf_params] 中的参数 (最高优先级)
+        if "scf_params" in self.config:
+            final_params.update(self.config["scf_params"])
         
         print(f"正在生成 INCAR...")
         incar_path = os.path.join(self.work_dir, "INCAR")

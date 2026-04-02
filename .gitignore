@@ -1,5 +1,4 @@
 # directory
-test_auto/
 test_manual/
 __pycache__/
 *.egg-info/

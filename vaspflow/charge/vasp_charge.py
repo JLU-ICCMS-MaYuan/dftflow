@@ -29,8 +29,8 @@ class VaspChargeSetup:
 
         self.struct_file = struct_file
 
-        incar_params = self.config.get("incar_params", {})
-        eint_value = incar_params.get("EINT")
+        charge_params = self.config.get("charge_params", {})
+        eint_value = charge_params.get("EINT")
         if isinstance(eint_value, list) and len(eint_value) >= 2:
             self.work_dir = f"vasp_charge___{float(eint_value[0]):.3f}___{float(eint_value[1]):.3f}"
 
@@ -66,13 +66,13 @@ class VaspChargeSetup:
         """生成 INCAR 文件"""
         final_params = self.incar_template.copy()
 
-        # 优先级: [incar_params] > 默认模板
-        if "incar_params" in self.config:
-            incar_params = self.config["incar_params"].copy()
-            eint_value = incar_params.get("EINT")
+        # 从 [charge_params] 读取参数覆盖默认模板
+        if "charge_params" in self.config:
+            charge_params = self.config["charge_params"].copy()
+            eint_value = charge_params.get("EINT")
             if isinstance(eint_value, list):
-                incar_params["EINT"] = " ".join(str(item) for item in eint_value)
-            final_params.update(incar_params)
+                charge_params["EINT"] = " ".join(str(item) for item in eint_value)
+            final_params.update(charge_params)
 
         print("正在生成 INCAR (Charge)...")
         incar_path = os.path.join(self.work_dir, "INCAR")

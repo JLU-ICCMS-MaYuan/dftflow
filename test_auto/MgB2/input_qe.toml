@@ -1,0 +1,40 @@
+# Quantum ESPRESSO 测试配置
+
+[qe]
+executable_path = "~/soft/qe-7.4.1/bin"
+
+[slurm]
+header = """
+#!/bin/bash
+#SBATCH --job-name=test_qe
+"""
+
+[qe_params.CONTROL]
+outdir = "'./tmp'"
+pseudo_dir = "'pp'"
+
+[qe_params.SYSTEM]
+ecutwfc = 40.0
+ecutrho = 320.0
+occupations = "'smearing'"
+smearing = "'gauss'"
+degauss = 0.02
+
+[qe_params.ELECTRONS]
+conv_thr = 1.0e-6
+mixing_beta = 0.7
+
+[k_points]
+kpoints = [4, 4, 4]
+wan = false
+
+[pseudo_map]
+Mg = { pseudo = "mg_pbe_v1.4.uspp" }
+B = { pseudo = "b_pbe_v1.4.uspp.F.UPF" }
+
+[eledos]
+DeltaE = 0.01
+emin = -10
+emax = 30
+ngauss = 0
+degauss = 0.0

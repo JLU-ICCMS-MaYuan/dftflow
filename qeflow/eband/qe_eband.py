@@ -5,7 +5,7 @@ import argparse
 import subprocess
 import sys
 import numpy as np
-from publici.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
+from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
 
 try:
     import tomllib  # Python 3.11+

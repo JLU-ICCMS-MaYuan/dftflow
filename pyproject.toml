@@ -45,4 +45,4 @@ wannier_window = "wannier90flow.wannier_window:main"
 wannier_plot = "wannier90flow.wannier90_plot:main"
 
 [tool.setuptools]
-packages = {find = {where = ["."], include = ["*flow*"]}}
+packages = {find = {where = ["."], include = ["*flow*", "public"]}}

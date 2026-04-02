@@ -60,11 +60,9 @@ class VaspBandSetup:
         """生成 INCAR 文件"""
         final_params = self.incar_template.copy()
             
-        # 优先级: [band_params] > [incar_params] > 默认模板
-        if "incar_params" in self.config:
-            final_params.update(self.config["incar_params"])
-        if "band_params" in self.config:
-            final_params.update(self.config["band_params"])
+        # 从 [eband_params] 读取参数覆盖默认模板
+        if "eband_params" in self.config:
+            final_params.update(self.config["eband_params"])
         
         print(f"正在生成 INCAR (Band)...")
         incar_path = os.path.join(self.work_dir, "INCAR")

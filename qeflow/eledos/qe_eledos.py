@@ -3,7 +3,7 @@ import os
 import shutil
 import argparse
 import subprocess
-from publici.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
+from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
 import numpy as np
 
 try:
