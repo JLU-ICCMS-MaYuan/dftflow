@@ -208,5 +208,6 @@ def test_qe_eledos_run(chdir_shared):
     )
 
     assert result.returncode == 0
-    # DOS 计算可能生成多个输出文件
-    assert (Path("qe_eledos") / "dos.out").exists() or len(list(Path("qe_eledos").glob("*.dos"))) > 0
+    # DOS 计算生成 eletdos.out 和 elepdos.in
+    assert (Path("qe_eledos") / "eletdos.out").exists()
+    assert (Path("qe_eledos") / "elepdos.in").exists()
