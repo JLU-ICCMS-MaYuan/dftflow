@@ -273,7 +273,6 @@ class VaspOptSetup:
         vasp_execmd = self._get_vasp_execmd()
         with open(submit_script_filepath, "w") as submit:
             self._write_job_header(submit)
-            submit.write("set -e\n")
             submit.write("for i in {1..4}; do\n")
             submit.write("cp INCAR_$i INCAR\n")
             submit.write(f"{vasp_execmd}\n")
@@ -290,7 +289,6 @@ class VaspOptSetup:
         vasp_execmd = self._get_vasp_execmd()
         with open(submit_script_filepath, "w") as submit:
             self._write_job_header(submit)
-            submit.write("set -e\n")
             submit.write(f"{vasp_execmd}\n")
             submit.write("cp CONTCAR POSCAR\n")
         os.chmod(submit_script_filepath, 0o755)
@@ -302,7 +300,6 @@ class VaspOptSetup:
         vasp_execmd = self._get_vasp_execmd()
         with open(submit_script_filepath, "w") as submit:
             self._write_job_header(submit)
-            submit.write("set -e\n")
             submit.write("num=0\n")
             submit.write("while true;do\n")
             submit.write("        let num+=1\n")
@@ -353,10 +350,10 @@ class VaspOptSetup:
             self.opt_incar4(self.work_dir)
             self._script_name = self.fouropt(self.work_dir)
         elif mode == "rv1":
-            self.opt_incar4(self.work_dir)
+            self.opt_incar(self.work_dir)
             self._script_name = self.oneopt(self.work_dir)
         elif mode == "rvf":
-            self.opt_incar4(self.work_dir)
+            self.opt_incar(self.work_dir)
             self._script_name = self.fopt(self.work_dir)
         else:
             raise ValueError("mode must be one of rv4/rv1/rvf")

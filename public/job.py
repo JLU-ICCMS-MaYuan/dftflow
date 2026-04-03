@@ -9,7 +9,6 @@ def write_job_script(script_path, header, commands, default_header="#!/bin/bash"
             f.write(header.strip() + "\n\n")
         else:
             f.write(default_header + "\n")
-        f.write("set -e\n\n")
         for command in commands:
             f.write(command if command.endswith("\n") else command + "\n")
     os.chmod(script_path, 0o755)

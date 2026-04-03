@@ -172,7 +172,6 @@ def create_run_script(work_dir: str, prefix: str, cfg: Dict[str, Any]) -> None:
     script_path = os.path.join(work_dir, "run_wannier90.sh")
     with open(script_path, "w", encoding="utf-8") as f:
         f.write(slurm_header.strip() + "\n\n")
-        f.write("set -e\n")
         f.write('cd "$(dirname "$0")"\n\n')
         f.write('echo "Prep NNKP at $(date)"\n')
         f.write(f'{exec_path} -pp "{prefix}"\n')

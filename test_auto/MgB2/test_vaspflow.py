@@ -462,8 +462,19 @@ def test_vasp_opt_rv1_api(chdir_work):
     setup = VaspOptSetup(config_file="input_vasp.toml", struct_file="MgB2.vasp")
     setup.run(mode="rv1")
 
-    assert (Path("vasp_opt") / "INCAR_4").exists()
+    assert (Path("vasp_opt") / "INCAR").exists()
     assert (Path("vasp_opt") / "oneopt.sh").exists()
+
+
+def test_vasp_opt_rvf_api(chdir_work):
+    """API 测试：vasp_opt rvf 模式"""
+    from vaspflow.opt.vasp_opt import VaspOptSetup
+
+    setup = VaspOptSetup(config_file="input_vasp.toml", struct_file="MgB2.vasp")
+    setup.run(mode="rvf")
+
+    assert (Path("vasp_opt") / "INCAR").exists()
+    assert (Path("vasp_opt") / "fopt.sh").exists()
 
 
 def test_vasp_opt_cli(chdir_work):

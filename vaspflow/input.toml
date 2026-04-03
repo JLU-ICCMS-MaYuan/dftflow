@@ -1,14 +1,13 @@
-# VASP 运行配置
-potcar_dir = "~/pot/PBE"
-# eledos的kmesh是scf的kmesh的2倍的密度
-kmesh = 0.025
+# VASP 共享基础模板
+# 注意：[vasp].executable_path 是完整执行命令，不是可执行文件路径。
+potcar_dir = "potcar_lib"
+kmesh = 0.04
 chgcar_path = "vasp_scf/CHGCAR"
 wavecar_path = "vasp_scf/WAVECAR"
 
 [vasp]
-executable_path = "mpirun -np 48 vasp_std"
+executable_path = "mpirun -np 8 /home/mayuan/soft/vasp.6.3.2/bin/vasp_std > vasp.log 2>&1"
 
-# Slurm 提交脚本配置
 [slurm]
 header = """
 #!/bin/sh
@@ -22,25 +21,67 @@ header = """
 #SBATCH  --cpus-per-task=1
 #SBATCH  --exclude=node49,node98,node57
 
-source /work/home/mayuan/intel/oneapi/setvars.sh --force
+source  ~/intel/oneapi/setvars.sh
 ulimit -s unlimited
 export I_MPI_ADJUST_REDUCE=3
 export MPIR_CVAR_COLL_ALIAS_CHECK=0
 """
 
-# INCAR 参数自定义 (会覆盖脚本内的默认值)
-[incar_params]
+[scf_params]
 ENCUT = 520
 ISMEAR = 0
 SIGMA = 0.05
-EDIFF = 1e-8
+EDIFF = 1e-6
 LREAL = "Auto"
+NCORE = 4
+
+[eband_params]
+ENCUT = 520
+ISMEAR = 0
+SIGMA = 0.05
+NCORE = 4
+
+[eledos_params]
+ENCUT = 520
+NCORE = 4
+
+[fermisurface_params]
+ENCUT = 520
+ISMEAR = 0
+SIGMA = 0.05
+NCORE = 4
+
+[cohp_params]
+ENCUT = 520
+ISMEAR = -5
+ISYM = -1
+NCORE = 4
 
 [locpot_params]
-# 网格参数按需填写；不设置则不写入 INCAR
-NGX = 80
-NGY = 80
-NGZ = 80
-NGXF = 160
-NGYF = 160
-NGZF = 160
+ENCUT = 520
+NGX = 40
+NGY = 40
+NGZ = 40
+NCORE = 4
+
+[charge_params]
+ENCUT = 520
+EINT = [-5.0, 5.0]
+NCORE = 4
+
+[elf_params]
+ENCUT = 520
+NCORE = 4
+
+[opt_params]
+ENCUT = 520
+ISMEAR = 0
+SIGMA = 0.05
+ISYM = 0
+SYMPREC = 1e-5
+PSTRESS = 0.0
+NCORE = 4
+NELM = 200
+POTIM = 0.05
+EDIFF = 1e-6
+EDIFFG = -0.01
