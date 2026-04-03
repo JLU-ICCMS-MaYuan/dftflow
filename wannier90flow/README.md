@@ -1,4 +1,9 @@
 # Wannier90flow 使用说明
+## 0. executable_path 语义
+- 与 `qeflow` 不同，Wannier90 相关模块不会从一个 bin 目录自动拼接 `*.x`。
+- `[wannier90].executable_path`、`[pw2wannier90].executable_path`、`[postw90].executable_path` 都应直接填写各自程序的完整路径或完整命令。
+- 仓库自带的共享模板文件是 `wannier90flow/input.toml`。如果你习惯使用 `inputwannier.toml` 或 `inputw90post.toml`，可以从该模板复制后自行重命名。
+
 ## 1. wannier_init
 
 ### 1.1 功能概述
@@ -9,12 +14,12 @@
 
 ### 1.2 基本用法
 ```bash
-wannier_init -i POSCAR -c inputwannier.toml
+wannier_init -i POSCAR -c wannier90flow/input.toml
 ```
 
 ### 1.3 直接执行（本地）
 ```bash
-wannier_init -i POSCAR -c inputwannier.toml --run
+wannier_init -i POSCAR -c wannier90flow/input.toml --run
 ```
 
 ### 1.4 关键配置字段（示例）
@@ -55,12 +60,12 @@ seedname = "Y1H6"
 
 ### 2.2 基本用法
 ```bash
-wannier_post -i wannier90/Y1H6.win -c inputw90post.toml
+wannier_post -i wannier90/Y1H6.win -c wannier90flow/input.toml
 ```
 
 ### 2.3 直接执行（本地）
 ```bash
-wannier_post -i wannier90/Y1H6.win -c inputw90post.toml --run
+wannier_post -i wannier90/Y1H6.win -c wannier90flow/input.toml --run
 ```
 
 ### 2.4 关键配置字段（示例）

@@ -24,6 +24,17 @@
 
 ## 需求处理记录
 
+### [2026-04-03] qeflow 与 wannier90flow 模板和 executable_path 语义整理
+- **需求**：
+    1. 明确 `qeflow` 的 `[qe].executable_path` 语义为“启动命令 + QE bin 目录”，并在模板与说明中体现自动拼接的 `*.x`。
+    2. 将 `wannier90flow/input.toml` 整理为完整模板，覆盖 init 与 post 两类配置。
+    3. 在 `wannier90flow/README.md` 中明确其 `executable_path` 语义与 `qeflow` 不同，避免混淆。
+- **方案**：
+    1. 更新 `qeflow/input.toml` 与测试样例，统一使用 `mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin` 示例，并新增 `qeflow/README.md` 说明自动拼接规则。
+    2. 参考 `test_manual/YH6/inputw90init.toml` 与 `inputw90post.toml` 重写 `wannier90flow/input.toml`，补齐 `[wannier90]`、`[pw2wannier90]`、`[postw90]`、`[slurm]`、`[dos]` 等块。
+    3. 修改 `wannier90flow/README.md`，统一模板文件说明并明确各子模块 `executable_path` 应填写完整路径或完整命令。
+- **状态**：已完成。
+
 ### [2026-04-02] executable_path 语义修正与运行结果校验
 - **需求**：
     1. 修正 `vaspflow` 中将 `[vasp].executable_path` 误当作“可执行文件路径”处理的问题，明确其语义是“完整执行命令”。

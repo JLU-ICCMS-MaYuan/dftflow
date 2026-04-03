@@ -1,7 +1,12 @@
-# Quantum ESPRESSO 运行配置
+# Quantum ESPRESSO 共享基础模板
+# 注意：[qe].executable_path 填写的是“启动命令 + QE bin 目录”。
+# 各 qeflow CLI 会在此基础上自动拼接自己的 *.x：
+# - qe_scf / qe_nscf -> pw.x
+# - qe_eband -> pw.x、bands.x、projwfc.x
+# - qe_eledos -> dos.x、projwfc.x
 
 [qe]
-executable_path = "~/soft/qe-7.4.1/bin"
+executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 
 # Slurm 提交脚本配置
 [slurm]

@@ -1,7 +1,7 @@
 # Quantum ESPRESSO 测试配置
 
 [qe]
-executable_path = "~/soft/qe-7.4.1/bin"
+executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 
 [slurm]
 header = """
