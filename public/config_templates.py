@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import copy
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
 
 try:
     import tomllib  # Python 3.11+
@@ -34,6 +34,20 @@ def load_config_file(path: str) -> Dict[str, Any]:
 def merge_parameter_template(template: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
     merged = copy.deepcopy(template)
     return _merge_dict_in_place(merged, overrides)
+
+
+def filter_config_by_allowed_keys(input_config: Dict[str, Any], allowed_keys: Iterable[str]) -> Dict[str, Any]:
+    filtered: Dict[str, Any] = {}
+    allowed = set(allowed_keys)
+    for key, value in input_config.items():
+        if key in allowed:
+            filtered[key] = copy.deepcopy(value)
+    return filtered
+
+
+def build_cli_config(template: Dict[str, Any], input_config: Dict[str, Any], allowed_keys: Iterable[str]) -> Dict[str, Any]:
+    filtered = filter_config_by_allowed_keys(input_config, allowed_keys)
+    return merge_parameter_template(template, filtered)
 
 
 def _merge_dict_in_place(base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:

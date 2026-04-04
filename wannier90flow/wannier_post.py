@@ -11,7 +11,11 @@ from public.job import add_run_submit_arguments, submit_script
 from public.config_templates import load_config_file
 
 from .wannier_init import DEFAULT_SLURM_HEADER
-from .templates import apply_wannier_config_overrides, get_wannier_post_parameters_template
+from .templates import (
+    apply_wannier_config_overrides,
+    get_wannier_post_allowed_keys,
+    get_wannier_post_parameters_template,
+)
 try:
     import tomllib  # Python 3.11+
 except ImportError:
@@ -51,15 +55,15 @@ def load_post_config(path: str) -> Dict[str, Any]:
     for idx, line in enumerate(raw_lines):
         stripped = line.strip()
         if stripped.startswith("[") and stripped.endswith("]"):
-            if current_section == "[dos]":
+            if current_section == "[wannier_post]":
                 dos_section_end = len(out_lines)
             current_section = stripped
-            if current_section == "[dos]":
+            if current_section == "[wannier_post]":
                 dos_section_start = len(out_lines)
             out_lines.append(line)
             continue
 
-        if current_section == "[dos]":
+        if current_section == "[wannier_post]":
             if stripped.startswith("dos_project"):
                 parts = stripped.split("=", 1)
                 if len(parts) == 2:
@@ -74,7 +78,7 @@ def load_post_config(path: str) -> Dict[str, Any]:
                 continue
         out_lines.append(line)
 
-    if current_section == "[dos]":
+    if current_section == "[wannier_post]":
         dos_section_end = len(out_lines)
 
     if dos_projects_literal:
@@ -93,7 +97,7 @@ def load_post_config(path: str) -> Dict[str, Any]:
     else:
         raise ImportError("缺少 tomllib/toml 模块，无法读取配置。")
     template = get_wannier_post_parameters_template()
-    return apply_wannier_config_overrides(template, parsed)
+    return apply_wannier_config_overrides(template, parsed, get_wannier_post_allowed_keys())
 
 
 def format_win_value(key: str, value: Any) -> str:
@@ -189,7 +193,7 @@ def main() -> None:
     if args.run:
         with open(win_path, "r", encoding="utf-8") as f:
             original_content = f.read()
-        dos_cfg = cfg.get("dos", {})
+        dos_cfg = cfg.get("wannier_post", {})
         dos_projects = dos_cfg.get("dos_project")
         projects: List[Tuple[str, Any]] = []
         if isinstance(dos_projects, dict):

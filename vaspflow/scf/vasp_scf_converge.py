@@ -8,7 +8,11 @@ from typing import Any, Dict, List, Tuple
 from public.config_templates import load_config_file
 from public.job import add_run_submit_arguments, handle_job_action
 from vaspflow.scf.vasp_scf import VaspSetup
-from vaspflow.templates import apply_vasp_config_overrides, get_vasp_scf_parameters_template
+from vaspflow.templates import (
+    apply_vasp_config_overrides,
+    get_vasp_scf_converge_allowed_keys,
+    get_vasp_scf_converge_parameters_template,
+)
 
 try:
     import tomllib  # Python 3.11+
@@ -101,17 +105,20 @@ class VaspScfConvergeSetup:
     def __init__(self, config_file: str = "input.toml", struct_file: str = None):
         self.config_file = config_file
         self.struct_file = struct_file
-        self.parameter_template = get_vasp_scf_parameters_template()
+        self.parameter_template = get_vasp_scf_converge_parameters_template()
         self.input_config = load_config_file(config_file)
-        self.base_config = apply_vasp_config_overrides(self.parameter_template, self.input_config)
-        self.scan_path, self.scan_raw_values = find_unique_scan_parameter(self.base_config)
+        self.base_config = apply_vasp_config_overrides(
+            self.parameter_template, self.input_config, get_vasp_scf_converge_allowed_keys()
+        )
+        self.scan_path, self.scan_raw_values = find_unique_scan_parameter(self.base_config["vasp_scf_converge"])
         self.scan_values = expand_scan_values(self.scan_raw_values)
         self.param_name = self.scan_path[-1]
         self.work_root = self.param_name
 
-    def _build_case_config(self, value: Any) -> Dict[str, Any]:
+    def _build_case_runtime_config(self, value: Any) -> Dict[str, Any]:
         case_config = copy.deepcopy(self.base_config)
-        _set_nested_value(case_config, self.scan_path, value)
+        _set_nested_value(case_config["vasp_scf_converge"], self.scan_path, value)
+        case_config["vasp_scf"] = case_config.pop("vasp_scf_converge")
         return case_config
 
     def _build_case_dir(self, value: Any) -> str:
@@ -121,7 +128,7 @@ class VaspScfConvergeSetup:
         for value in self.scan_values:
             case_dir = self._build_case_dir(value)
             setup = VaspSetup(config_file=self.config_file, struct_file=self.struct_file)
-            setup.config = self._build_case_config(value)
+            setup.config = self._build_case_runtime_config(value)
             setup.work_dir = case_dir
             setup.setup()
             print(f"已生成收敛测试目录: {case_dir}")
@@ -130,7 +137,7 @@ class VaspScfConvergeSetup:
         for value in self.scan_values:
             case_dir = self._build_case_dir(value)
             setup = VaspSetup(config_file=self.config_file, struct_file=self.struct_file)
-            setup.config = self._build_case_config(value)
+            setup.config = self._build_case_runtime_config(value)
             setup.work_dir = case_dir
             setup.execute()
 

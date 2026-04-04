@@ -3,7 +3,11 @@ import os
 import sys
 import argparse
 from public.config_templates import load_config_file
-from vaspflow.templates import apply_vasp_config_overrides, get_vasp_lobster_parameters_template
+from vaspflow.templates import (
+    apply_vasp_config_overrides,
+    get_vasp_lobster_allowed_keys,
+    get_vasp_lobster_parameters_template,
+)
 
 try:
     import tomllib  # Python 3.11+
@@ -111,7 +115,9 @@ def main():
     config = get_vasp_lobster_parameters_template()
     config_path = args.config
     if os.path.exists(config_path):
-        config = apply_vasp_config_overrides(config, load_config_file(config_path))
+        config = apply_vasp_config_overrides(
+            config, load_config_file(config_path), get_vasp_lobster_allowed_keys()
+        )
     else:
         print(f"警告: 找不到配置文件 {config_path}，将使用默认配置。")
     

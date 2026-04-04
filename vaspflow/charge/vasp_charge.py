@@ -6,7 +6,11 @@ import subprocess
 from public.config_templates import load_config_file
 from public.executables import resolve_vasp_command
 from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
-from vaspflow.templates import apply_vasp_config_overrides, get_vasp_charge_parameters_template
+from vaspflow.templates import (
+    apply_vasp_config_overrides,
+    get_vasp_charge_allowed_keys,
+    get_vasp_charge_parameters_template,
+)
 
 try:
     import tomllib  # Python 3.11+
@@ -24,10 +28,12 @@ class VaspChargeSetup:
         self.work_dir = "vasp_charge"
         self.parameter_template = get_vasp_charge_parameters_template()
         self.input_config = load_config_file(config_file)
-        self.config = apply_vasp_config_overrides(self.parameter_template, self.input_config)
+        self.config = apply_vasp_config_overrides(
+            self.parameter_template, self.input_config, get_vasp_charge_allowed_keys()
+        )
         self.struct_file = struct_file
 
-        charge_params = self.config.get("charge_params", {})
+        charge_params = self.config.get("vasp_charge", {})
         eint_value = charge_params.get("EINT")
         if isinstance(eint_value, list) and len(eint_value) >= 2:
             self.work_dir = f"vasp_charge___{float(eint_value[0]):.3f}___{float(eint_value[1]):.3f}"
@@ -47,7 +53,8 @@ class VaspChargeSetup:
 
     def generate_incar(self):
         """生成 INCAR 文件"""
-        final_params = self.config["charge_params"].copy()
+        final_params = self.config["vasp_charge"].copy()
+        final_params.pop("kmesh", None)
         eint_value = final_params.get("EINT")
         if isinstance(eint_value, list):
             final_params["EINT"] = " ".join(str(item) for item in eint_value)
@@ -80,7 +87,7 @@ class VaspChargeSetup:
 
     def generate_kpoints(self):
         """使用 vaspkit 生成 KPOINTS 文件"""
-        kmesh = self.config.get("kmesh")
+        kmesh = self.config["vasp_charge"].get("kmesh")
         if not kmesh:
             print("未在配置文件中找到 'kmesh'，跳过生成 KPOINTS。")
             return

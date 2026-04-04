@@ -16,12 +16,12 @@ def test_vasp_scf_converge_api_explicit_values(chdir_work):
         config_path,
         """
 potcar_dir = "potcar_lib"
-kmesh = 0.04
 
 [vasp]
 executable_path = "vasp_std"
 
-[scf_params]
+[vasp_scf_converge]
+kmesh = 0.04
 ENCUT = [400, 450, 500]
 ISMEAR = 0
 SIGMA = 0.05
@@ -44,12 +44,12 @@ def test_vasp_scf_converge_api_range_values(chdir_work):
         config_path,
         """
 potcar_dir = "potcar_lib"
-kmesh = [0.02, 0.04, 0.01]
 
 [vasp]
 executable_path = "vasp_std"
 
-[scf_params]
+[vasp_scf_converge]
+kmesh = [0.02, 0.04, 0.01]
 ENCUT = 520
 ISMEAR = 0
 SIGMA = 0.05
@@ -73,12 +73,12 @@ def test_vasp_scf_converge_rejects_multiple_lists(chdir_work):
         config_path,
         """
 potcar_dir = "potcar_lib"
-kmesh = [0.02, 0.04, 0.01]
 
 [vasp]
 executable_path = "vasp_std"
 
-[scf_params]
+[vasp_scf_converge]
+kmesh = [0.02, 0.04, 0.01]
 ENCUT = [400, 450, 500]
 ISMEAR = 0
 SIGMA = 0.05
@@ -95,12 +95,12 @@ def test_vasp_scf_converge_cli(chdir_work):
         config_path,
         """
 potcar_dir = "potcar_lib"
-kmesh = 0.04
 
 [vasp]
 executable_path = "vasp_std"
 
-[scf_params]
+[vasp_scf_converge]
+kmesh = 0.04
 ENCUT = [400, 450, 500]
 ISMEAR = 0
 SIGMA = 0.05

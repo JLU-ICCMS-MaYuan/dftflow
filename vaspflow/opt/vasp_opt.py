@@ -6,7 +6,11 @@ import subprocess
 from public.config_templates import load_config_file
 from public.executables import resolve_vasp_command
 from public.job import add_run_submit_arguments, handle_job_action, execute_commands
-from vaspflow.templates import apply_vasp_config_overrides, get_vasp_opt_parameters_template
+from vaspflow.templates import (
+    apply_vasp_config_overrides,
+    get_vasp_opt_allowed_keys,
+    get_vasp_opt_parameters_template,
+)
 
 try:
     import tomllib  # Python 3.11+
@@ -24,16 +28,18 @@ class VaspOptSetup:
         self.work_dir = work_dir
         self.parameter_template = get_vasp_opt_parameters_template()
         self.input_config = load_config_file(config_file)
-        self.config = apply_vasp_config_overrides(self.parameter_template, self.input_config)
+        self.config = apply_vasp_config_overrides(
+            self.parameter_template, self.input_config, get_vasp_opt_allowed_keys()
+        )
         self.struct_file = struct_file
         self.opt_params = self._load_opt_params()
         self.opt_stage_templates = self.config["opt_stage_templates"]
         self.pstress_value = self._resolve_pstress(pressure_override)
 
     def _load_opt_params(self):
-        opt_params = self.config.get("opt_params")
+        opt_params = self.config.get("vasp_opt")
         if not opt_params:
-            raise ValueError("配置缺少 [opt_params] 块")
+            raise ValueError("配置缺少 [vasp_opt] 块")
         return opt_params
 
     def _resolve_pstress(self, pressure_override):
@@ -184,9 +190,10 @@ class VaspOptSetup:
             lines.append(f"KPAR   = {self.opt_params['KPAR']}")
         kspacing = self.opt_params.get("KSPACING")
         if kspacing is None:
-            kspacing = self.config.get("kmesh")*2*3.1415926
+            kmesh = self.opt_params.get("kmesh")
+            kspacing = None if kmesh is None else kmesh * 2 * 3.1415926
         if kspacing is None:
-            raise ValueError("缺少 KSPACING 且未设置 kmesh")
+            raise ValueError("缺少 KSPACING 且未设置 [vasp_opt].kmesh")
         ediff = self.opt_params.get("EDIFF", 1e-7)
         ediffg = self.opt_params.get("EDIFFG", -0.01)
         ibrion = self.opt_params.get("IBRION", 2)
@@ -228,9 +235,10 @@ class VaspOptSetup:
             lines.append(f"KPAR   = {self.opt_params['KPAR']}")
         kspacing = self.opt_params.get("KSPACING")
         if kspacing is None:
-            kspacing = self.config.get("kmesh")*2*3.1415926
+            kmesh = self.opt_params.get("kmesh")
+            kspacing = None if kmesh is None else kmesh * 2 * 3.1415926
         if kspacing is None:
-            raise ValueError("缺少 KSPACING 且未设置 kmesh")
+            raise ValueError("缺少 KSPACING 且未设置 [vasp_opt].kmesh")
         ediff = self.opt_params.get("EDIFF", 1e-7)
         ediffg = self.opt_params.get("EDIFFG", -0.01)
         ibrion = self.opt_params.get("IBRION", 2)

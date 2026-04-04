@@ -22,7 +22,11 @@ import subprocess
 from typing import Any, Dict, List, Tuple
 from public.job import add_run_submit_arguments, handle_job_action, submit_script
 from public.config_templates import load_config_file
-from wannier90flow.templates import apply_wannier_config_overrides, get_wannier_init_parameters_template
+from wannier90flow.templates import (
+    apply_wannier_config_overrides,
+    get_wannier_init_allowed_keys,
+    get_wannier_init_parameters_template,
+)
 
 import numpy as np
 
@@ -46,7 +50,7 @@ def load_config(path: str) -> Dict[str, Any]:
     """读取配置并叠加运行时默认模板。"""
     template = get_wannier_init_parameters_template()
     input_config = load_config_file(path)
-    return apply_wannier_config_overrides(template, input_config)
+    return apply_wannier_config_overrides(template, input_config, get_wannier_init_allowed_keys())
 
 
 def parse_poscar(path: str) -> Dict[str, Any]:
@@ -277,56 +281,56 @@ def write_win(
     band_path: List[Dict[str, Any]],
 ) -> None:
     """写出 .win 文件。"""
-    win_cfg = cfg.get("win", {})
-    system_name = win_cfg.get("system_name") or cfg.get("system_name") or struct["comment"] or "wannier_system"
-    projections = cfg.get("projections", {}).get("list") or cfg.get("projections") or []
-    kpt_cfg = cfg.get("k_points", {})
+    init_cfg = cfg.get("wannier_init", {})
+    system_name = init_cfg.get("system_name") or struct["comment"] or "wannier_system"
+    projections = init_cfg.get("projections", {}).get("list") or []
+    kpt_cfg = init_cfg.get("k_points", {})
 
     # 必选参数检查
     if not projections:
         raise ValueError("配置缺少投影 (projections)。")
 
-    num_wann = win_cfg.get("num_wann", cfg.get("num_wann"))
+    num_wann = init_cfg.get("num_wann")
     if num_wann is None:
         raise ValueError("配置缺少 num_wann。")
 
     with open(output, "w", encoding="utf-8") as f:
         f.write(f"num_wann = {int(num_wann)}\n")
-        num_bands = win_cfg.get("num_bands", cfg.get("num_bands"))
+        num_bands = init_cfg.get("num_bands")
         if num_bands is not None:
             f.write(f"num_bands = {int(num_bands)}\n")
-        exclude_bands = win_cfg.get("exclude_bands", cfg.get("exclude_bands"))
+        exclude_bands = init_cfg.get("exclude_bands")
         if exclude_bands is not None:
             f.write(f"exclude_bands = {exclude_bands}\n")
-        iprint = win_cfg.get("iprint", cfg.get("iprint"))
+        iprint = init_cfg.get("iprint")
         if iprint is not None:
             f.write(f"iprint = {int(iprint)}\n")
-        num_iter = win_cfg.get("num_iter", cfg.get("num_iter"))
+        num_iter = init_cfg.get("num_iter")
         if num_iter is not None:
             f.write(f"num_iter = {int(num_iter)}\n")
-        dis_num_iter = win_cfg.get("dis_num_iter", cfg.get("dis_num_iter"))
+        dis_num_iter = init_cfg.get("dis_num_iter")
         if dis_num_iter is not None:
             f.write(f"dis_num_iter = {int(dis_num_iter)}\n")
-        dis_froz_min = win_cfg.get("dis_froz_min", cfg.get("dis_froz_min"))
+        dis_froz_min = init_cfg.get("dis_froz_min")
         if dis_froz_min is not None:
             f.write(f"dis_froz_min = {float(dis_froz_min):12.6f}\n")
-        dis_froz_max = win_cfg.get("dis_froz_max", cfg.get("dis_froz_max"))
+        dis_froz_max = init_cfg.get("dis_froz_max")
         if dis_froz_max is not None:
             f.write(f"dis_froz_max = {float(dis_froz_max):12.6f}\n")
-        dis_win_min = win_cfg.get("dis_win_min", cfg.get("dis_win_min"))
+        dis_win_min = init_cfg.get("dis_win_min")
         if dis_win_min is not None:
             f.write(f"dis_win_min = {float(dis_win_min):12.6f}\n")
-        dis_win_max = win_cfg.get("dis_win_max", cfg.get("dis_win_max"))
+        dis_win_max = init_cfg.get("dis_win_max")
         if dis_win_max is not None:
             f.write(f"dis_win_max = {float(dis_win_max):12.6f}\n")
-        write_hr = win_cfg.get("write_hr", cfg.get("write_hr"))
+        write_hr = init_cfg.get("write_hr")
         if write_hr is not None:
             f.write(f"write_hr = {str(write_hr).lower()}\n")
-        write_bvec = win_cfg.get("write_bvec", cfg.get("write_bvec"))
+        write_bvec = init_cfg.get("write_bvec")
         if write_bvec is not None:
             f.write(f"write_bvec = {str(write_bvec).lower()}\n")
-        bands_plot = win_cfg.get("bands_plot", cfg.get("bands_plot"))
-        bands_plot_format = win_cfg.get("bands_plot_format", cfg.get("bands_plot_format"))
+        bands_plot = init_cfg.get("bands_plot")
+        bands_plot_format = init_cfg.get("bands_plot_format")
         has_band_path = len(band_path) > 0
         if bands_plot is not None:
             if bands_plot and not has_band_path:
@@ -335,32 +339,32 @@ def write_win(
             f.write(f"bands_plot = {str(bands_plot).lower()}\n")
         if bands_plot_format is not None and bands_plot:
             f.write(f"bands_plot_format = {bands_plot_format}\n")
-        wvfn_formatted = win_cfg.get("wvfn_formatted", cfg.get("wvfn_formatted"))
+        wvfn_formatted = init_cfg.get("wvfn_formatted")
         if wvfn_formatted is not None:
             f.write(f"wvfn_formatted = {str(wvfn_formatted).lower()}\n")
-        wannier_plot = win_cfg.get("wannier_plot", cfg.get("wannier_plot"))
+        wannier_plot = init_cfg.get("wannier_plot")
         if wannier_plot is not None:
             f.write(f"wannier_plot = {str(wannier_plot).lower()}\n")
-        wannier_plot_format = win_cfg.get("wannier_plot_format", cfg.get("wannier_plot_format"))
+        wannier_plot_format = init_cfg.get("wannier_plot_format")
         if wannier_plot_format is not None and wannier_plot:
             f.write(f"wannier_plot_format = {wannier_plot_format}\n")
-        fermi_energy = win_cfg.get("fermi_energy", cfg.get("fermi_energy"))
+        fermi_energy = init_cfg.get("fermi_energy")
         if fermi_energy is not None:
             f.write(f"fermi_energy = {float(fermi_energy):12.6f}\n")
-        fermi_surface_plot = win_cfg.get("fermi_surface_plot", cfg.get("fermi_surface_plot"))
+        fermi_surface_plot = init_cfg.get("fermi_surface_plot")
         if fermi_surface_plot is not None:
             f.write(f"fermi_surface_plot = {str(fermi_surface_plot).lower()}\n")
-        dos = win_cfg.get("dos", cfg.get("dos"))
+        dos = init_cfg.get("dos")
         if dos is not None:
             f.write(f"dos = {str(dos).lower()}\n")
-        dos_kmesh = win_cfg.get("dos_kmesh", cfg.get("dos_kmesh"))
+        dos_kmesh = init_cfg.get("dos_kmesh")
         if dos_kmesh is not None:
             if isinstance(dos_kmesh, (list, tuple)):
                 dos_kmesh_value = " ".join(str(int(x)) for x in dos_kmesh)
             else:
                 dos_kmesh_value = str(dos_kmesh)
             f.write(f"dos_kmesh = {dos_kmesh_value}\n")
-        dos_project = win_cfg.get("dos_project", cfg.get("dos_project"))
+        dos_project = init_cfg.get("dos_project")
         if dos_project is not None:
             if isinstance(dos_project, (list, tuple)):
                 dos_project_value = ", ".join(str(x) for x in dos_project)
@@ -434,8 +438,8 @@ def main() -> None:
     struct = parse_poscar(args.input)
     shutil.copyfile(args.input, os.path.join(work_dir, "POSCAR"))
     cfg = load_config(args.config)
-    kpt_cfg = cfg.get("k_points", {})
-    win_cfg = cfg.get("win", {})
+    init_cfg = cfg.get("wannier_init", {})
+    kpt_cfg = init_cfg.get("k_points", {})
 
     explicit_kpts = kpt_cfg.get("kpoints")
     if explicit_kpts:
@@ -445,7 +449,7 @@ def main() -> None:
     else:
         raise ValueError("k_points 配置缺少 mp_grid 或 kpoints。")
 
-    bands_plot_cfg = win_cfg.get("bands_plot", cfg.get("bands_plot"))
+    bands_plot_cfg = init_cfg.get("bands_plot")
     kpath_file_cfg = kpt_cfg.get("kpath_file", "KPATH.in")
     kpath_file = (
         kpath_file_cfg
@@ -473,8 +477,7 @@ def main() -> None:
     else:
         print(f"未找到 {kpath_file}，将不写入 kpoint_path。")
 
-    win_cfg = cfg.get("win", {})
-    basename = win_cfg.get("system_name") or cfg.get("system_name") or struct["comment"] or "wannier90"
+    basename = init_cfg.get("system_name") or struct["comment"] or "wannier90"
     output = os.path.join(work_dir, f"{basename}.win")
 
     write_win(output, struct, cfg, kpoints, band_segments)

@@ -12,7 +12,7 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
   - `qe_scf` / `qe_nscf` 自动使用 `pw.x`
   - `qe_eband` 自动使用 `pw.x`、`bands.x`、`projwfc.x`
   - `qe_eledos` 自动使用 `dos.x`、`projwfc.x`
-- 如果在 `[bands]`、`[projwfc]`、`[dos]` 中单独提供 `executable_path`，则该模块优先使用自己的值。
+- 如果在 `[qe_eband.bands]`、`[qe_eband.projwfc]`、`[qe_eledos.dos]`、`[qe_eledos.projwfc]` 中单独提供 `executable_path`，则该模块优先使用自己的值。
 
 ## 2. 基础模板
 - 测试样例：`test_auto/MgB2/input_qe.toml`
@@ -30,18 +30,18 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 [qe]
 executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 
-[qe_params.CONTROL]
+[qe_scf.CONTROL]
 outdir = "'./tmp'"
 pseudo_dir = "'/path/to/pseudo'"
 
-[qe_params.SYSTEM]
+[qe_scf.SYSTEM]
 ecutwfc = 60.0
 ecutrho = 480.0
 
-[qe_params.ELECTRONS]
+[qe_scf.ELECTRONS]
 conv_thr = 1.0e-8
 
-[k_points]
+[qe_scf.k_points]
 kpoints = [6, 6, 6]
 wan = false
 
@@ -54,15 +54,19 @@ H = { pseudo = "H.pbe-rrkjus_psl.1.0.0.UPF" }
 `qe_eband` 与 `qe_eledos` 可以给某些后处理模块单独指定命令来源：
 
 ```toml
-[bands]
+[qe_eband.bands]
 executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 args = "-pd .true."
 
-[projwfc]
+[qe_eband.projwfc]
 executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 args = "-pd .true."
 
-[dos]
+[qe_eledos.dos]
+executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
+args = "-pd .true."
+
+[qe_eledos.projwfc]
 executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 args = "-pd .true."
 ```

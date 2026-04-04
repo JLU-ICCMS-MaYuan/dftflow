@@ -31,16 +31,16 @@ wannier_init -i POSCAR -c wannier90flow/input.toml --run
 
 ### 1.4 关键配置字段（示例）
 ```toml
-[win]
+[wannier_init]
 system_name = "Y1H6"
 num_wann = 9
 num_bands = 21
 exclude_bands = "1:4"
 
-[k_points]
+[wannier_init.k_points]
 mp_grid = [6, 6, 6]
 
-[projections]
+[wannier_init.projections]
 list = ["Y:d", "H:s"]
 
 [wannier90]
@@ -80,7 +80,7 @@ wannier_post -i wannier90/Y1H6.win -c wannier90flow/input.toml --run
 [postw90]
 executable_path = "/path/to/postw90.x"
 
-[dos]
+[wannier_post]
 dos_kmesh = "25 25 25"
 dos_energy_min = 5.0
 dos_energy_max = 20.0

@@ -1,6 +1,6 @@
 # Wannier90 测试配置
 
-[win]
+[wannier_init]
 system_name = "MgB2"
 num_wann = 8
 num_bands = 16
@@ -32,8 +32,8 @@ seedname = "MgB2"
 [postw90]
 executable_path = "/home/mayuan/soft/qe-7.4.1/external/wannier90/postw90.x"
 
-[projections]
+[wannier_init.projections]
 list = ["Mg:s", "B:p"]
 
-[k_points]
+[wannier_init.k_points]
 mp_grid = [4, 4, 4]

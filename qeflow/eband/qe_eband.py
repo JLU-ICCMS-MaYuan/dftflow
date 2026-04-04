@@ -9,7 +9,11 @@ import numpy as np
 from public.config_templates import load_config_file
 from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
-from qeflow.templates import apply_qe_config_overrides, get_qe_eband_parameters_template
+from qeflow.templates import (
+    apply_qe_config_overrides,
+    get_qe_eband_allowed_keys,
+    get_qe_eband_parameters_template,
+)
 
 try:
     import tomllib  # Python 3.11+
@@ -95,12 +99,19 @@ class QEEBandSetup:
         self.scf_dir = "qe_scf"
         self.parameter_template = get_qe_eband_parameters_template()
         self.input_config = load_config_file(config_file)
-        self.config = apply_qe_config_overrides(self.parameter_template, self.input_config)
+        self.config = apply_qe_config_overrides(
+            self.parameter_template, self.input_config, get_qe_eband_allowed_keys()
+        )
         self.struct_file = struct_file
-        self.k_points_config = self.config.get("k_points", {})
+        self.cli_config = copy.deepcopy(self.config["qe_eband"])
+        self.k_points_config = self.cli_config.get("k_points", {})
         self.kpath_points = int(self.k_points_config.get("kpath_points", 100))
         self.kpath_file = self.k_points_config.get("kpath_file", "KPATH.in")
-        self.qe_params = copy.deepcopy(self.config["qe_params"])
+        self.qe_params = {
+            "CONTROL": copy.deepcopy(self.cli_config["CONTROL"]),
+            "SYSTEM": copy.deepcopy(self.cli_config["SYSTEM"]),
+            "ELECTRONS": copy.deepcopy(self.cli_config["ELECTRONS"]),
+        }
 
     def parse_poscar(self, poscar_path):
         if not os.path.exists(poscar_path):
@@ -234,14 +245,6 @@ class QEEBandSetup:
         formula = get_formula(struct_info["elements"], struct_info["counts"])
         self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
-        if "eband_params" in self.config:
-            for section, params in self.config["eband_params"].items():
-                section_upper = section.upper()
-                if section_upper in self.qe_params:
-                    self.qe_params[section_upper].update(params)
-                else:
-                    self.qe_params[section_upper] = params
-
         if "CONTROL" in self.qe_params:
             pdir = self.qe_params["CONTROL"].get("pseudo_dir", "").strip("'").strip('"')
             if pdir.startswith("~"):
@@ -339,7 +342,7 @@ class QEEBandSetup:
 
     def generate_banddata_inputs(self, prefix):
         outdir_val = self.qe_params["CONTROL"].get("outdir", "'./out'").strip("'").strip('"')
-        eband_cfg = self.config.get("eband", {})
+        eband_cfg = self.cli_config.get("eband", {})
         bands_filband = f"{prefix}_band"
         proj_filproj = f"{prefix}_band"
         lsym = eband_cfg.get("lsym", False)
@@ -366,10 +369,10 @@ class QEEBandSetup:
         qe_config = self.config.get("qe", {})
         qe_bin = qe_config.get("executable_path")
         pw_path = resolve_qe_command(qe_bin, "pw.x")
-        bands_cfg = self.config.get("bands", {})
+        bands_cfg = self.cli_config.get("bands", {})
         bands_exec = resolve_qe_command(bands_cfg.get("executable_path", qe_bin), "bands.x")
         bands_args = bands_cfg.get("args", "-pd .true.")
-        proj_cfg = self.config.get("projwfc", {})
+        proj_cfg = self.cli_config.get("projwfc", {})
         proj_exec = resolve_qe_command(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
         proj_args = proj_cfg.get("args", "-pd .true.")
         slurm_header = self.config.get("slurm", {}).get("header", "")
@@ -393,10 +396,10 @@ class QEEBandSetup:
         qe_config = self.config.get("qe", {})
         qe_bin = qe_config.get("executable_path")
         pw_path = resolve_qe_command(qe_bin, "pw.x")
-        bands_cfg = self.config.get("bands", {})
+        bands_cfg = self.cli_config.get("bands", {})
         bands_exec = resolve_qe_command(bands_cfg.get("executable_path", qe_bin), "bands.x")
         bands_args = bands_cfg.get("args", "-pd .true.")
-        proj_cfg = self.config.get("projwfc", {})
+        proj_cfg = self.cli_config.get("projwfc", {})
         proj_exec = resolve_qe_command(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
         proj_args = proj_cfg.get("args", "-pd .true.")
         bands_cmd = f"{bands_exec} {bands_args}".strip() if bands_args else bands_exec

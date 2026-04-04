@@ -11,7 +11,7 @@ def test_vasp_template_override_priority(chdir_work):
 [vasp]
 executable_path = "mpirun -np 8 /path/to/vasp_std"
 
-[scf_params]
+[vasp_scf]
 ENCUT = 520
 """.strip()
     )
@@ -19,10 +19,11 @@ ENCUT = 520
     merged = apply_vasp_config_overrides(
         get_vasp_scf_parameters_template(),
         load_config_file(str(config_path)),
+        ("vasp", "slurm", "potcar_dir", "chgcar_path", "wavecar_path", "vasp_scf"),
     )
 
-    assert merged["scf_params"]["PREC"] == "Accurate"
-    assert merged["scf_params"]["ENCUT"] == 520
+    assert merged["vasp_scf"]["PREC"] == "Accurate"
+    assert merged["vasp_scf"]["ENCUT"] == 520
     assert merged["vasp"]["executable_path"] == "mpirun -np 8 /path/to/vasp_std"
 
 
@@ -36,7 +37,7 @@ def test_qe_template_override_priority(chdir_work):
 [qe]
 executable_path = "mpirun -np 8 /path/to/qe/bin"
 
-[qe_params.SYSTEM]
+[qe_scf.SYSTEM]
 ecutwfc = 60.0
 """.strip()
     )
@@ -44,11 +45,12 @@ ecutwfc = 60.0
     merged = apply_qe_config_overrides(
         get_qe_scf_parameters_template(),
         load_config_file(str(config_path)),
+        ("qe", "slurm", "pseudo_map", "qe_scf"),
     )
 
-    assert merged["k_points"]["kmesh"] == 0.04
-    assert merged["qe_params"]["SYSTEM"]["ecutwfc"] == 60.0
-    assert merged["qe_params"]["SYSTEM"]["ecutrho"] == 400.0
+    assert merged["qe_scf"]["k_points"]["kmesh"] == 0.04
+    assert merged["qe_scf"]["SYSTEM"]["ecutwfc"] == 60.0
+    assert merged["qe_scf"]["SYSTEM"]["ecutrho"] == 400.0
 
 
 def test_wannier_template_override_priority(chdir_work):
@@ -61,10 +63,10 @@ def test_wannier_template_override_priority(chdir_work):
     config_path = Path("tmp_w90_template.toml")
     config_path.write_text(
         """
-[win]
+[wannier_init]
 num_wann = 8
 
-[projections]
+[wannier_init.projections]
 list = ["Mg:s", "B:p"]
 """.strip()
     )
@@ -72,8 +74,9 @@ list = ["Mg:s", "B:p"]
     merged = apply_wannier_config_overrides(
         get_wannier_init_parameters_template(),
         load_config_file(str(config_path)),
+        ("slurm", "wannier90", "pw2wannier90", "postw90", "wannier_init"),
     )
 
-    assert merged["win"]["bands_plot"] is False
-    assert merged["win"]["num_wann"] == 8
-    assert merged["projections"]["list"] == ["Mg:s", "B:p"]
+    assert merged["wannier_init"]["bands_plot"] is False
+    assert merged["wannier_init"]["num_wann"] == 8
+    assert merged["wannier_init"]["projections"]["list"] == ["Mg:s", "B:p"]

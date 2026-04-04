@@ -9,7 +9,11 @@ import numpy as np
 from public.config_templates import load_config_file
 from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
-from qeflow.templates import apply_qe_config_overrides, get_qe_scf_parameters_template
+from qeflow.templates import (
+    apply_qe_config_overrides,
+    get_qe_scf_allowed_keys,
+    get_qe_scf_parameters_template,
+)
 
 try:
     import tomllib  # Python 3.11+
@@ -42,10 +46,17 @@ class QESetup:
         self.work_dir = "qe_scf"
         self.parameter_template = get_qe_scf_parameters_template()
         self.input_config = load_config_file(config_file)
-        self.config = apply_qe_config_overrides(self.parameter_template, self.input_config)
+        self.config = apply_qe_config_overrides(
+            self.parameter_template, self.input_config, get_qe_scf_allowed_keys()
+        )
         self.struct_file = struct_file
-        self.k_points_config = self.config.get("k_points", {})
-        self.qe_params = copy.deepcopy(self.config["qe_params"])
+        self.cli_config = copy.deepcopy(self.config["qe_scf"])
+        self.k_points_config = self.cli_config.get("k_points", {})
+        self.qe_params = {
+            "CONTROL": copy.deepcopy(self.cli_config["CONTROL"]),
+            "SYSTEM": copy.deepcopy(self.cli_config["SYSTEM"]),
+            "ELECTRONS": copy.deepcopy(self.cli_config["ELECTRONS"]),
+        }
 
     def parse_poscar(self, poscar_path):
         """从 POSCAR 中读取结构信息"""
@@ -121,11 +132,7 @@ class QESetup:
         """生成 QE pw.x 输入文件"""
         print(f"正在生成 scf.in...")
         
-        # 1. 自动设置 prefix (由化学配比决定)
         formula = get_formula(struct_info["elements"], struct_info["counts"])
-        self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
-
-        # prefix 是运行时派生值，不从静态模板或 input.toml 继承
         self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
         # 3. 处理 pseudo_dir 中的 ~ 符号 (QE 不支持 ~)

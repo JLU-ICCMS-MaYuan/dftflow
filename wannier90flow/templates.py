@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
 
-from public.config_templates import merge_parameter_template
+from public.config_templates import build_cli_config
+
+WANNIER_SHARED_ALLOWED_KEYS = ("slurm", "wannier90", "pw2wannier90", "postw90")
 
 
 def _base_wannier_template() -> Dict[str, Any]:
@@ -27,20 +29,12 @@ def _base_wannier_template() -> Dict[str, Any]:
         "postw90": {
             "executable_path": "postw90.x",
         },
-        "projections": {
-            "list": [],
-        },
-        "k_points": {
-            "mp_grid": [4, 4, 4],
-            "kpoints": None,
-            "kpath_file": "KPATH.in",
-        },
     }
 
 
 def get_wannier_init_parameters_template() -> Dict[str, Any]:
     template = _base_wannier_template()
-    template["win"] = {
+    template["wannier_init"] = {
         "system_name": None,
         "num_wann": None,
         "num_bands": None,
@@ -64,13 +58,21 @@ def get_wannier_init_parameters_template() -> Dict[str, Any]:
         "dos": None,
         "dos_kmesh": None,
         "dos_project": None,
+        "projections": {
+            "list": [],
+        },
+        "k_points": {
+            "mp_grid": [4, 4, 4],
+            "kpoints": None,
+            "kpath_file": "KPATH.in",
+        },
     }
     return template
 
 
 def get_wannier_post_parameters_template() -> Dict[str, Any]:
     template = _base_wannier_template()
-    template["dos"] = {
+    template["wannier_post"] = {
         "dos": True,
         "kmesh": None,
         "project": None,
@@ -79,5 +81,13 @@ def get_wannier_post_parameters_template() -> Dict[str, Any]:
     return template
 
 
-def apply_wannier_config_overrides(template: Dict[str, Any], input_config: Dict[str, Any]) -> Dict[str, Any]:
-    return merge_parameter_template(template, input_config)
+def get_wannier_init_allowed_keys() -> Iterable[str]:
+    return (*WANNIER_SHARED_ALLOWED_KEYS, "wannier_init")
+
+
+def get_wannier_post_allowed_keys() -> Iterable[str]:
+    return (*WANNIER_SHARED_ALLOWED_KEYS, "wannier_post")
+
+
+def apply_wannier_config_overrides(template: Dict[str, Any], input_config: Dict[str, Any], allowed_keys: Iterable[str]) -> Dict[str, Any]:
+    return build_cli_config(template, input_config, allowed_keys)

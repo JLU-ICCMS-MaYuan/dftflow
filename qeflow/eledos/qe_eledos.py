@@ -8,7 +8,11 @@ from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
 import numpy as np
 from public.config_templates import load_config_file
-from qeflow.templates import apply_qe_config_overrides, get_qe_eledos_parameters_template
+from qeflow.templates import (
+    apply_qe_config_overrides,
+    get_qe_eledos_allowed_keys,
+    get_qe_eledos_parameters_template,
+)
 
 try:
     import tomllib  # Python 3.11+
@@ -36,9 +40,16 @@ class QEEleDosSetup:
         self.scf_dir = "qe_scf"
         self.parameter_template = get_qe_eledos_parameters_template()
         self.input_config = load_config_file(config_file)
-        self.config = apply_qe_config_overrides(self.parameter_template, self.input_config)
+        self.config = apply_qe_config_overrides(
+            self.parameter_template, self.input_config, get_qe_eledos_allowed_keys()
+        )
         self.struct_file = struct_file
-        self.qe_params = copy.deepcopy(self.config["qe_params"])
+        self.cli_config = copy.deepcopy(self.config["qe_eledos"])
+        self.qe_params = {
+            "CONTROL": copy.deepcopy(self.cli_config["CONTROL"]),
+            "SYSTEM": copy.deepcopy(self.cli_config["SYSTEM"]),
+            "ELECTRONS": copy.deepcopy(self.cli_config["ELECTRONS"]),
+        }
 
     def parse_poscar(self, poscar_path):
         if not os.path.exists(poscar_path):
@@ -85,7 +96,7 @@ class QEEleDosSetup:
         }
 
     def generate_dos_inputs(self, prefix):
-        eledos_cfg = self.config.get("eledos", {})
+        eledos_cfg = self.cli_config.get("eledos", {})
         outdir_val = self.qe_params["CONTROL"].get("outdir", "'./tmp'").strip("'").strip('"')
         outdir_cfg = eledos_cfg.get("outdir")
         if outdir_cfg:
@@ -130,10 +141,10 @@ class QEEleDosSetup:
     def create_run_script(self):
         qe_config = self.config.get("qe", {})
         qe_bin = qe_config.get("executable_path")
-        dos_cfg = self.config.get("dos", {})
+        dos_cfg = self.cli_config.get("dos", {})
         dos_exec = resolve_qe_command(dos_cfg.get("executable_path", qe_bin), "dos.x")
         dos_args = dos_cfg.get("args", "-pd .true.")
-        proj_cfg = self.config.get("projwfc", {})
+        proj_cfg = self.cli_config.get("projwfc", {})
         proj_exec = resolve_qe_command(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
         proj_args = proj_cfg.get("args", "-pd .true.")
         slurm_header = self.config.get("slurm", {}).get("header", "")
@@ -155,10 +166,10 @@ class QEEleDosSetup:
     def execute(self):
         qe_config = self.config.get("qe", {})
         qe_bin = qe_config.get("executable_path")
-        dos_cfg = self.config.get("dos", {})
+        dos_cfg = self.cli_config.get("dos", {})
         dos_exec = resolve_qe_command(dos_cfg.get("executable_path", qe_bin), "dos.x")
         dos_args = dos_cfg.get("args", "-pd .true.")
-        proj_cfg = self.config.get("projwfc", {})
+        proj_cfg = self.cli_config.get("projwfc", {})
         proj_exec = resolve_qe_command(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
         proj_args = proj_cfg.get("args", "-pd .true.")
 

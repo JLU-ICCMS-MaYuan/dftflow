@@ -1,6 +1,5 @@
 # VASP 测试配置（使用新参数名）
 potcar_dir = "potcar_lib"
-kmesh = 0.04
 chgcar_path = "vasp_scf/CHGCAR"
 wavecar_path = "vasp_scf/WAVECAR"
 
@@ -13,7 +12,8 @@ header = """
 #SBATCH --job-name=test
 """
 
-[scf_params]
+[vasp_scf]
+kmesh = 0.04
 ENCUT = 520
 ISMEAR = 0
 SIGMA = 0.05
@@ -21,45 +21,53 @@ EDIFF = 1e-6
 LREAL = "Auto"
 NCORE = 4
 
-[eband_params]
+[vasp_eband]
+kmesh = 0.04
 ENCUT = 520
 ISMEAR = 0
 SIGMA = 0.05
 NCORE = 4
 
-[eledos_params]
+[vasp_eledos]
+kmesh = 0.04
 ENCUT = 520
 NCORE = 4
 
-[fermisurface_params]
+[vasp_fermi]
+kmesh = 0.04
 ENCUT = 520
 ISMEAR = 0
 SIGMA = 0.05
 NCORE = 4
 
-[cohp_params]
+[vasp_cohp]
+kmesh = 0.04
 ENCUT = 520
 ISMEAR = -5
 ISYM = -1
 NCORE = 4
 
-[locpot_params]
+[vasp_locpot]
+kmesh = 0.04
 ENCUT = 520
 NGX = 40
 NGY = 40
 NGZ = 40
 NCORE = 4
 
-[charge_params]
+[vasp_charge]
+kmesh = 0.04
 ENCUT = 520
 EINT = [-5.0, 5.0]
 NCORE = 4
 
-[elf_params]
+[vasp_elf]
+kmesh = 0.04
 ENCUT = 520
 NCORE = 4
 
-[opt_params]
+[vasp_opt]
+kmesh = 0.04
 ENCUT = 520
 ISMEAR = 0
 SIGMA = 0.05
@@ -71,3 +79,9 @@ NELM = 200
 POTIM = 0.05
 EDIFF = 1e-6
 EDIFFG = -0.01
+
+[vasp_scf_converge]
+kmesh = 0.04
+ENCUT = [400, 450, 500]
+ISMEAR = 0
+SIGMA = 0.05

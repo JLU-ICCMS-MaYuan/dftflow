@@ -7,7 +7,11 @@ import subprocess
 from public.config_templates import load_config_file
 from public.executables import resolve_vasp_command
 from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
-from vaspflow.templates import apply_vasp_config_overrides, get_vasp_scf_parameters_template
+from vaspflow.templates import (
+    apply_vasp_config_overrides,
+    get_vasp_scf_allowed_keys,
+    get_vasp_scf_parameters_template,
+)
 
 try:
     import tomllib  # Python 3.11+
@@ -24,7 +28,9 @@ class VaspSetup:
         self.work_dir = "vasp_scf"
         self.parameter_template = get_vasp_scf_parameters_template()
         self.input_config = load_config_file(config_file)
-        self.config = apply_vasp_config_overrides(self.parameter_template, self.input_config)
+        self.config = apply_vasp_config_overrides(
+            self.parameter_template, self.input_config, get_vasp_scf_allowed_keys()
+        )
         self.struct_file = struct_file
 
     def get_elements_from_poscar(self):
@@ -49,7 +55,8 @@ class VaspSetup:
 
     def generate_incar(self):
         """生成 INCAR 文件"""
-        final_params = self.config["scf_params"].copy()
+        final_params = self.config["vasp_scf"].copy()
+        final_params.pop("kmesh", None)
         
         print(f"正在生成 INCAR...")
         incar_path = os.path.join(self.work_dir, "INCAR")
@@ -82,7 +89,7 @@ class VaspSetup:
 
     def generate_kpoints(self):
         """使用 vaspkit 生成 KPOINTS 文件"""
-        kmesh = self.config.get("kmesh")
+        kmesh = self.config["vasp_scf"].get("kmesh")
         if not kmesh:
             print("未在配置文件中找到 'kmesh'，跳过生成 KPOINTS。")
             return
@@ -168,6 +175,7 @@ class VaspSetup:
 
         except Exception as e:
             print(f"错误: {e}")
+            raise
 
     def run(self, run_calc=False):
         """向后兼容的方法"""
