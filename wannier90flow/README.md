@@ -2,7 +2,14 @@
 ## 0. executable_path 语义
 - 与 `qeflow` 不同，Wannier90 相关模块不会从一个 bin 目录自动拼接 `*.x`。
 - `[wannier90].executable_path`、`[pw2wannier90].executable_path`、`[postw90].executable_path` 都应直接填写各自程序的完整路径或完整命令。
-- 仓库自带的共享模板文件是 `wannier90flow/input.toml`。如果你习惯使用 `inputwannier.toml` 或 `inputw90post.toml`，可以从该模板复制后自行重命名。
+- `test_auto/MgB2/input_w90.toml` 可以作为现有 TOML 示例；运行时默认模板定义在 `wannier90flow/templates.py`。
+- 运行时默认模板定义在 `wannier90flow/templates.py`，`input.toml` 只负责覆盖。
+
+## 0.1 覆盖规则
+- 模板里有默认值，`input.toml` 没写：用模板默认值
+- 模板里有默认值，`input.toml` 写了：用 `input.toml`
+- 模板里没有默认值，但 `input.toml` 写了：用 `input.toml`
+- `prefix`、`kpoint_path` 等依赖具体结构或运行现场的值，属于运行时派生值，不放进静态模板里
 
 ## 1. wannier_init
 

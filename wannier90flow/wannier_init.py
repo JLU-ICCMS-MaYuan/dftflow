@@ -14,12 +14,15 @@ python wannier90flow/wannier_init.py \
 """
 
 import argparse
+import copy
 import json
 import os
 import shutil
 import subprocess
 from typing import Any, Dict, List, Tuple
 from public.job import add_run_submit_arguments, handle_job_action, submit_script
+from public.config_templates import load_config_file
+from wannier90flow.templates import apply_wannier_config_overrides, get_wannier_init_parameters_template
 
 import numpy as np
 
@@ -40,20 +43,10 @@ except ImportError:
 
 
 def load_config(path: str) -> Dict[str, Any]:
-    """读取 TOML 或 JSON 配置。"""
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"找不到配置文件: {path}")
-
-    if path.endswith(".json"):
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    if tomllib:
-        with open(path, "rb") as f:
-            return tomllib.load(f)
-    if toml:
-        return toml.load(path)
-    raise ImportError("缺少 tomllib/toml 模块，且配置不是 JSON。")
+    """读取配置并叠加运行时默认模板。"""
+    template = get_wannier_init_parameters_template()
+    input_config = load_config_file(path)
+    return apply_wannier_config_overrides(template, input_config)
 
 
 def parse_poscar(path: str) -> Dict[str, Any]:
@@ -167,7 +160,7 @@ def create_run_script(work_dir: str, prefix: str, cfg: Dict[str, Any]) -> None:
     pw2_exec_path = pw2_cfg.get("executable_path", "pw2wannier90.x")
     pw2_input_path, pw2_input_name = resolve_pw2_input_path(work_dir, prefix, cfg)
     ensure_pw2wan_input(pw2_input_path, prefix, cfg)
-    slurm_header = DEFAULT_SLURM_HEADER
+    slurm_header = cfg.get("slurm", {}).get("header") or DEFAULT_SLURM_HEADER
 
     script_path = os.path.join(work_dir, "run_wannier90.sh")
     with open(script_path, "w", encoding="utf-8") as f:

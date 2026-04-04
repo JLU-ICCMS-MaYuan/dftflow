@@ -3,8 +3,10 @@ import os
 import shutil
 import argparse
 import subprocess
+from public.config_templates import load_config_file
 from public.executables import resolve_vasp_command
 from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
+from vaspflow.templates import apply_vasp_config_overrides, get_vasp_elf_parameters_template
 
 try:
     import tomllib  # Python 3.11+
@@ -20,24 +22,10 @@ except ImportError:
 class VaspElfSetup:
     def __init__(self, config_file="input.toml", struct_file=None):
         self.work_dir = "vasp_elf"
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"找不到配置文件: {config_file}")
-        if "tomllib" in globals():
-            with open(config_file, "rb") as f:
-                self.config = tomllib.load(f)
-        else:
-            self.config = toml.load(config_file)
+        self.parameter_template = get_vasp_elf_parameters_template()
+        self.input_config = load_config_file(config_file)
+        self.config = apply_vasp_config_overrides(self.parameter_template, self.input_config)
         self.struct_file = struct_file
-        self.incar_template = {
-            "SYSTEM": "VASP_Job",
-            "ISTART": 1,
-            "ICHARG": 11,
-            "PREC": "Accurate",
-            "IBRION": -1,
-            "LELF": ".TRUE.",
-            "LWAVE": ".FALSE.",
-            "LCHARG": ".FALSE.",
-        }
 
     def get_elements_from_poscar(self):
         poscar_path = os.path.join(self.work_dir, "POSCAR")
@@ -52,10 +40,7 @@ class VaspElfSetup:
             return elements
 
     def generate_incar(self):
-        final_params = self.incar_template.copy()
-        # 从 [elf_params] 读取参数覆盖默认模板
-        if "elf_params" in self.config:
-            final_params.update(self.config["elf_params"])
+        final_params = self.config["elf_params"].copy()
         incar_path = os.path.join(self.work_dir, "INCAR")
         with open(incar_path, "w") as f:
             for key, value in final_params.items():

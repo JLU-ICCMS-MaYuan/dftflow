@@ -5,8 +5,10 @@ import math
 import os
 from typing import Any, Dict, List, Tuple
 
+from public.config_templates import load_config_file
 from public.job import add_run_submit_arguments, handle_job_action
 from vaspflow.scf.vasp_scf import VaspSetup
+from vaspflow.templates import apply_vasp_config_overrides, get_vasp_scf_parameters_template
 
 try:
     import tomllib  # Python 3.11+
@@ -16,16 +18,6 @@ except ImportError:
     except ImportError:
         print("Error: 'toml' or 'tomllib' (Python 3.11+) is required.")
         raise SystemExit(1)
-
-
-def load_config(config_file: str) -> Dict[str, Any]:
-    if not os.path.exists(config_file):
-        raise FileNotFoundError(f"找不到配置文件: {config_file}")
-    if "tomllib" in globals():
-        with open(config_file, "rb") as f:
-            return tomllib.load(f)
-    return toml.load(config_file)
-
 
 def _is_numeric(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -109,7 +101,9 @@ class VaspScfConvergeSetup:
     def __init__(self, config_file: str = "input.toml", struct_file: str = None):
         self.config_file = config_file
         self.struct_file = struct_file
-        self.base_config = load_config(config_file)
+        self.parameter_template = get_vasp_scf_parameters_template()
+        self.input_config = load_config_file(config_file)
+        self.base_config = apply_vasp_config_overrides(self.parameter_template, self.input_config)
         self.scan_path, self.scan_raw_values = find_unique_scan_parameter(self.base_config)
         self.scan_values = expand_scan_values(self.scan_raw_values)
         self.param_name = self.scan_path[-1]

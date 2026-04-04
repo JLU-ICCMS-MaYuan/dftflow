@@ -3,8 +3,10 @@ import os
 import shutil
 import argparse
 import subprocess
+from public.config_templates import load_config_file
 from public.executables import resolve_vasp_command
 from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
+from vaspflow.templates import apply_vasp_config_overrides, get_vasp_eband_parameters_template
 
 try:
     import tomllib  # Python 3.11+
@@ -19,33 +21,10 @@ except ImportError:
 class VaspBandSetup:
     def __init__(self, config_file="input.toml", struct_file=None):
         self.work_dir = "vasp_eband"
-        # 1. 加载配置文件
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"找不到配置文件: {config_file}")
-        
-        if 'tomllib' in globals():
-            with open(config_file, "rb") as f:
-                self.config = tomllib.load(f)
-        else:
-            self.config = toml.load(config_file)
-        
+        self.parameter_template = get_vasp_eband_parameters_template()
+        self.input_config = load_config_file(config_file)
+        self.config = apply_vasp_config_overrides(self.parameter_template, self.input_config)
         self.struct_file = struct_file
-        
-        # 2. 默认 INCAR 模板 (针对 Band 优化)
-        self.incar_template = {
-            "SYSTEM" : "VASP_Band",
-            "ISTART" : 1,
-            "ICHARG" : 11,
-            "PREC"   : "Accurate",
-            "IBRION" : -1,
-            "NSW"    : 0,
-            "ISMEAR" : 0,
-            "SIGMA"  : 0.05,
-            "LORBIT" : 11,
-            "LWAVE"  : ".TRUE.",
-            "LCHARG" : ".FALSE.",
-            "NCORE"  : 4
-        }
 
     def get_elements_from_poscar(self):
         """从 POSCAR 中读取元素名称和顺序"""
@@ -60,11 +39,7 @@ class VaspBandSetup:
 
     def generate_incar(self):
         """生成 INCAR 文件"""
-        final_params = self.incar_template.copy()
-            
-        # 从 [eband_params] 读取参数覆盖默认模板
-        if "eband_params" in self.config:
-            final_params.update(self.config["eband_params"])
+        final_params = self.config["eband_params"].copy()
         
         print(f"正在生成 INCAR (Band)...")
         incar_path = os.path.join(self.work_dir, "INCAR")

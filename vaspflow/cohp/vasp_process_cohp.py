@@ -2,6 +2,8 @@
 import os
 import sys
 import argparse
+from public.config_templates import load_config_file
+from vaspflow.templates import apply_vasp_config_overrides, get_vasp_lobster_parameters_template
 
 try:
     import tomllib  # Python 3.11+
@@ -106,14 +108,10 @@ def main():
                    lower_d=lower_d, upper_d=upper_d, zval_dict=zval_custom, custom_basis_dict=custom_basis)
 
     # 读取配置文件生成 slurm 脚本
-    config = {}
+    config = get_vasp_lobster_parameters_template()
     config_path = args.config
     if os.path.exists(config_path):
-        if 'tomllib' in globals() and tomllib:
-            with open(config_path, "rb") as f:
-                config = tomllib.load(f)
-        elif 'toml' in globals() and toml:
-            config = toml.load(config_path)
+        config = apply_vasp_config_overrides(config, load_config_file(config_path))
     else:
         print(f"警告: 找不到配置文件 {config_path}，将使用默认配置。")
     

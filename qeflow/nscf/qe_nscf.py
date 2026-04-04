@@ -4,9 +4,12 @@ import shutil
 import argparse
 import subprocess
 import sys
+import copy
 import numpy as np
+from public.config_templates import load_config_file
 from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
+from qeflow.templates import apply_qe_config_overrides, get_qe_nscf_parameters_template
 
 try:
     import tomllib  # Python 3.11+
@@ -38,47 +41,13 @@ class QENSCFSetup:
     def __init__(self, config_file="input.toml", struct_file=None):
         self.work_dir = "qe_nscf"
         self.scf_dir = "qe_scf"
-        # 1. 加载配置文件
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"找不到配置文件: {config_file}")
-        
-        if 'tomllib' in globals():
-            with open(config_file, "rb") as f:
-                self.config = tomllib.load(f)
-        else:
-            self.config = toml.load(config_file)
-        
+        self.parameter_template = get_qe_nscf_parameters_template()
+        self.input_config = load_config_file(config_file)
+        self.config = apply_qe_config_overrides(self.parameter_template, self.input_config)
         self.struct_file = struct_file
         self.k_points_config = self.config.get("k_points", {})
         self.wan = self.k_points_config.get("wan", False)
-        
-        # 2. 默认 QE 参数模板 (Namelists)
-        # 注意：NSCF 默认使用 tetrahedra 且通常需要 high verbosity
-        self.qe_params = {
-            "CONTROL": {
-                "calculation": "'nscf'",
-                "restart_mode": "'from_scratch'",
-                "prefix": "'qe'",
-                "outdir": "'./out'",
-                "pseudo_dir": "'./pseudo'",
-                "verbosity": "'high'",
-                "tprnfor": ".true.",
-                "tstress": ".true.",
-                "forc_conv_thr": "1.0e-6",
-                "etot_conv_thr": "1.0e-7",
-            },
-            "SYSTEM": {
-                "ibrav": 0,
-                "ecutwfc": 50.0,
-                "ecutrho": 400.0,
-                "occupations": "'tetrahedra'",
-            },
-            "ELECTRONS": {
-                "conv_thr": 1.0e-8,
-                "mixing_beta": 0.7,
-                "electron_maxstep": 400,
-            }
-        }
+        self.qe_params = copy.deepcopy(self.config["qe_params"])
 
     def parse_poscar(self, poscar_path):
         """从 POSCAR 中读取结构信息"""
@@ -182,16 +151,6 @@ class QENSCFSetup:
         formula = get_formula(struct_info["elements"], struct_info["counts"])
         self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
-        # 2. 合并配置文件中的参数
-        if "qe_params" in self.config:
-            for section, params in self.config["qe_params"].items():
-                section_upper = section.upper()
-                if section_upper in self.qe_params:
-                    self.qe_params[section_upper].update(params)
-                else:
-                    self.qe_params[section_upper] = params
-
-        # 合并 NSCF 特有参数覆盖
         if "nscf_params" in self.config:
             for section, params in self.config["nscf_params"].items():
                 section_upper = section.upper()
@@ -199,13 +158,7 @@ class QENSCFSetup:
                     self.qe_params[section_upper].update(params)
                 else:
                     self.qe_params[section_upper] = params
-        
-        # 强制使用自动生成的 prefix
-        if "qe_params" in self.config and "CONTROL" in self.config["qe_params"]:
-             if "prefix" not in self.config["qe_params"]["CONTROL"]:
-                 self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
-        else:
-             self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
+        self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
         # 3. 处理 pseudo_dir 中的 ~ 符号
         if "CONTROL" in self.qe_params:
@@ -274,8 +227,7 @@ class QENSCFSetup:
             elif kmesh_val is not None:
                 final_kmesh = self.get_kpoints(struct_info["lattice"], kmesh_val)
             else:
-                # 默认回退值
-                final_kmesh = self.get_kpoints(struct_info["lattice"], 0.02)
+                raise ValueError("k_points 需要提供 kmesh 或 kpoints")
 
             kpoints_coords, totpts = self.get_kmesh_justlike_kmesh_pl(final_kmesh)
             f.write("K_POINTS crystal\n")
@@ -287,7 +239,7 @@ class QENSCFSetup:
         """创建运行脚本"""
         qe_config = self.config.get("qe", {})
         pw_path = resolve_qe_command(qe_config.get("executable_path"), "pw.x")
-        slurm_header = self.config.get("slurm", {}).get("header", "#!/bin/bash")
+        slurm_header = self.config.get("slurm", {}).get("header", "")
 
         run_script_path = os.path.join(self.work_dir, "run_qe.sh")
         write_job_script(
@@ -325,10 +277,8 @@ class QENSCFSetup:
             formula = get_formula(struct_info["elements"], struct_info["counts"])
             self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
-            # 3. 合并配置文件参数 (如果用户在 input.toml 里指定了 prefix，则以用户为准)
-            if "qe_params" in self.config and "CONTROL" in self.config["qe_params"]:
-                self.qe_params["CONTROL"].update(self.config["qe_params"]["CONTROL"])
-            
+            # 3. prefix 是运行时派生值
+
             # 4. 拷贝 SCF 生成的数据 (此时 prefix 已确定)
             outdir_val = self.qe_params["CONTROL"]["outdir"].strip("'").strip('"')
             prefix_val = self.qe_params["CONTROL"]["prefix"].strip("'").strip('"')

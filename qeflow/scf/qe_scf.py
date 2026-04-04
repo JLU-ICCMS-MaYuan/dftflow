@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 import os
 import sys
+import copy
 import shutil
 import argparse
 import subprocess
 import numpy as np
+from public.config_templates import load_config_file
 from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
+from qeflow.templates import apply_qe_config_overrides, get_qe_scf_parameters_template
 
 try:
     import tomllib  # Python 3.11+
@@ -37,48 +40,12 @@ def get_formula(elements, counts):
 class QESetup:
     def __init__(self, config_file="input.toml", struct_file=None):
         self.work_dir = "qe_scf"
-        self.k_points_config = {}
-        # 1. 加载配置文件
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"找不到配置文件: {config_file}")
-        
-        if 'tomllib' in globals():
-            with open(config_file, "rb") as f:
-                self.config = tomllib.load(f)
-        else:
-            self.config = toml.load(config_file)
-        
+        self.parameter_template = get_qe_scf_parameters_template()
+        self.input_config = load_config_file(config_file)
+        self.config = apply_qe_config_overrides(self.parameter_template, self.input_config)
         self.struct_file = struct_file
         self.k_points_config = self.config.get("k_points", {})
-        
-        # 2. 默认 QE 参数模板 (Namelists)
-        self.qe_params = {
-            "CONTROL": {
-                "calculation": "'scf'",
-                "restart_mode": "'from_scratch'",
-                "prefix": "'qe'",
-                "outdir": "'./out'",
-                "pseudo_dir": "'./pseudo'",
-                "verbosity": "'high'",
-                "tprnfor": ".true.",
-                "tstress": ".true.",
-                "forc_conv_thr": "1.0e-6",
-                "etot_conv_thr": "1.0e-7",
-            },
-            "SYSTEM": {
-                "ibrav": 0,
-                "ecutwfc": 50.0,
-                "ecutrho": 400.0,
-                "occupations": "'smearing'",
-                "smearing": "'gaussian'",
-                "degauss": 0.01,
-            },
-            "ELECTRONS": {
-                "conv_thr": 1.0e-8,
-                "mixing_beta": 0.7,
-                "electron_maxstep": 400,
-            }
-        }
+        self.qe_params = copy.deepcopy(self.config["qe_params"])
 
     def parse_poscar(self, poscar_path):
         """从 POSCAR 中读取结构信息"""
@@ -158,26 +125,8 @@ class QESetup:
         formula = get_formula(struct_info["elements"], struct_info["counts"])
         self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
-        # 2. 合并配置文件中的参数 (覆盖默认值，但 prefix 已由上面逻辑确定)
-        if "qe_params" in self.config:
-            for section, params in self.config["qe_params"].items():
-                section_upper = section.upper()
-                if section_upper in self.qe_params:
-                    # 如果配置文件里也写了 prefix，这里会覆盖上面的自动设置
-                    # 但根据需求，我们应该优先使用自动生成的，或者如果用户没写才用自动生成的。
-                    # 用户说“不用在input.toml里面手动设置”，意味着我们应该自动生成。
-                    # 如果用户还是写了，我们决定是否覆盖。这里我们选择如果用户写了则遵循用户，没写用自动。
-                    # 修正：用户明确说“不用手动设置”，所以我们总是自动生成。
-                    self.qe_params[section_upper].update(params)
-                else:
-                    self.qe_params[section_upper] = params
-        
-        # 强制使用自动生成的 prefix (如果用户在 config 里也写了，这里再次确保覆盖)
-        if "qe_params" in self.config and "CONTROL" in self.config["qe_params"]:
-             if "prefix" not in self.config["qe_params"]["CONTROL"]:
-                 self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
-        else:
-             self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
+        # prefix 是运行时派生值，不从静态模板或 input.toml 继承
+        self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
         # 3. 处理 pseudo_dir 中的 ~ 符号 (QE 不支持 ~)
         if "CONTROL" in self.qe_params:
@@ -241,7 +190,7 @@ class QESetup:
             
             # K_POINTS：支持显式 kpoints 或按 kmesh 生成自动网格
             kpoints_list = self.k_points_config.get("kpoints")
-            kmesh_val = self.k_points_config.get("kmesh", 0.04)
+            kmesh_val = self.k_points_config.get("kmesh")
 
             if isinstance(kpoints_list, list) and len(kpoints_list) == 3:
                 kpts = kpoints_list

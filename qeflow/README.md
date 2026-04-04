@@ -15,8 +15,15 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 - 如果在 `[bands]`、`[projwfc]`、`[dos]` 中单独提供 `executable_path`，则该模块优先使用自己的值。
 
 ## 2. 基础模板
-- 仓库自带共享模板：`qeflow/input.toml`
 - 测试样例：`test_auto/MgB2/input_qe.toml`
+- 运行时默认模板定义在 `qeflow/templates.py`
+- 模板与 `input.toml` 覆盖的递归合并逻辑定义在 `public/config_templates.py`
+
+## 2.1 覆盖规则
+- 模板里有默认值，且 `input.toml` 没写：使用模板默认值
+- 模板里有默认值，且 `input.toml` 写了：使用 `input.toml`
+- 模板里没有默认值，且 `input.toml` 写了：使用 `input.toml`
+- `prefix` 这类依赖具体结构的值属于运行时派生值，不写死在静态模板里
 
 ## 3. 关键配置块
 ```toml

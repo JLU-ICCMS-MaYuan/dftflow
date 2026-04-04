@@ -8,8 +8,10 @@ import os
 import subprocess
 from typing import Any, Dict, List, Tuple
 from public.job import add_run_submit_arguments, submit_script
+from public.config_templates import load_config_file
 
 from .wannier_init import DEFAULT_SLURM_HEADER
+from .templates import apply_wannier_config_overrides, get_wannier_post_parameters_template
 try:
     import tomllib  # Python 3.11+
 except ImportError:
@@ -85,10 +87,13 @@ def load_post_config(path: str) -> Dict[str, Any]:
 
     merged_text = "\n".join(out_lines) + "\n"
     if tomllib:
-        return tomllib.loads(merged_text)
-    if toml:
-        return toml.loads(merged_text)
-    raise ImportError("缺少 tomllib/toml 模块，无法读取配置。")
+        parsed = tomllib.loads(merged_text)
+    elif toml:
+        parsed = toml.loads(merged_text)
+    else:
+        raise ImportError("缺少 tomllib/toml 模块，无法读取配置。")
+    template = get_wannier_post_parameters_template()
+    return apply_wannier_config_overrides(template, parsed)
 
 
 def format_win_value(key: str, value: Any) -> str:
@@ -139,9 +144,10 @@ def resolve_dos_output(work_dir: str, prefix: str) -> str:
 def create_run_script(work_dir: str, prefix: str, cfg: Dict[str, Any]) -> None:
     post_cfg = cfg.get("postw90", {})
     post_exec_path = post_cfg.get("executable_path", "postw90.x")
+    slurm_header = cfg.get("slurm", {}).get("header") or DEFAULT_SLURM_HEADER
     script_path = os.path.join(work_dir, "run_postw90.sh")
     with open(script_path, "w", encoding="utf-8") as f:
-        f.write(DEFAULT_SLURM_HEADER.strip() + "\n\n")
+        f.write(slurm_header.strip() + "\n\n")
         f.write('cd "$(dirname "$0")"\n\n')
         f.write('echo "Run postw90 at $(date)"\n')
         f.write(f'{post_exec_path} "{prefix}" > POSTW90.log 2>&1\n')

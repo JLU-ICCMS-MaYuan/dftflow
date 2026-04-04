@@ -3,8 +3,10 @@ import argparse
 import os
 import shutil
 import subprocess
+from public.config_templates import load_config_file
 from public.executables import resolve_vasp_command
 from public.job import add_run_submit_arguments, handle_job_action, execute_commands
+from vaspflow.templates import apply_vasp_config_overrides, get_vasp_opt_parameters_template
 
 try:
     import tomllib  # Python 3.11+
@@ -20,15 +22,12 @@ except ImportError:
 class VaspOptSetup:
     def __init__(self, config_file="input.toml", struct_file=None, pressure_override=None, work_dir="vasp_opt"):
         self.work_dir = work_dir
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"找不到配置文件: {config_file}")
-        if "tomllib" in globals():
-            with open(config_file, "rb") as f:
-                self.config = tomllib.load(f)
-        else:
-            self.config = toml.load(config_file)
+        self.parameter_template = get_vasp_opt_parameters_template()
+        self.input_config = load_config_file(config_file)
+        self.config = apply_vasp_config_overrides(self.parameter_template, self.input_config)
         self.struct_file = struct_file
         self.opt_params = self._load_opt_params()
+        self.opt_stage_templates = self.config["opt_stage_templates"]
         self.pstress_value = self._resolve_pstress(pressure_override)
 
     def _load_opt_params(self):
@@ -82,27 +81,28 @@ class VaspOptSetup:
 
     def opt_incar1(self, incar_dirpath):
         incar_filepath = os.path.join(incar_dirpath, "INCAR_1")
+        params = self.opt_stage_templates["stage1"]
         lines = [
-            "ISTART   = 0",
-            "ICHARG   = 2",
-            f"ISYM     = {self.opt_params['ISYM']}",
-            "ENCUT    = 300",
-            "PREC     = Normal",
+            f"ISTART   = {params['ISTART']}",
+            f"ICHARG   = {params['ICHARG']}",
+            f"ISYM     = {params['ISYM']}",
+            f"ENCUT    = {params['ENCUT']}",
+            f"PREC     = {params['PREC']}",
             f"SYMPREC  = {self.opt_params['SYMPREC']}",
-            "NCORE    = 4",
-            "KSPACING = 0.8",
-            "ISMEAR   = 0",
-            "SIGMA    = 0.2",
-            "NELM     = 200",
-            "NELMIN   = 6",
-            "EDIFF    = 1e-3",
-            "EDIFFG   = -0.2",
-            "NSW      = 100",
-            "IBRION   = 2",
-            "ISIF     = 2",
-            "POTIM    = 0.3",
-            "LWAVE  = .FALSE.",
-            "LCHARG = .FALSE.",
+            f"NCORE    = {params['NCORE']}",
+            f"KSPACING = {params['KSPACING']}",
+            f"ISMEAR   = {params['ISMEAR']}",
+            f"SIGMA    = {params['SIGMA']}",
+            f"NELM     = {params['NELM']}",
+            f"NELMIN   = {params['NELMIN']}",
+            f"EDIFF    = {params['EDIFF']}",
+            f"EDIFFG   = {params['EDIFFG']}",
+            f"NSW      = {params['NSW']}",
+            f"IBRION   = {params['IBRION']}",
+            f"ISIF     = {params['ISIF']}",
+            f"POTIM    = {params['POTIM']}",
+            f"LWAVE    = {params['LWAVE']}",
+            f"LCHARG   = {params['LCHARG']}",
             f"PSTRESS  = {float(self.pstress_value)}",
         ]
         self._write_incar(incar_filepath, lines)
@@ -110,27 +110,28 @@ class VaspOptSetup:
 
     def opt_incar2(self, incar_dirpath):
         incar_filepath = os.path.join(incar_dirpath, "INCAR_2")
+        params = self.opt_stage_templates["stage2"]
         lines = [
-            "ISTART   = 0",
-            "ICHARG   = 2",
-            f"ISYM     = {self.opt_params['ISYM']}",
-            "ENCUT    = 400",
-            "PREC     = Normal",
+            f"ISTART   = {params['ISTART']}",
+            f"ICHARG   = {params['ICHARG']}",
+            f"ISYM     = {params['ISYM']}",
+            f"ENCUT    = {params['ENCUT']}",
+            f"PREC     = {params['PREC']}",
             f"SYMPREC  = {self.opt_params['SYMPREC']}",
-            "NCORE    = 4",
-            "KSPACING = 0.6",
-            "ISMEAR   = 0",
-            "SIGMA    = 0.1",
-            "NELM     = 200",
-            "NELMIN   = 6",
-            "EDIFF    = 1e-4",
-            "EDIFFG   = -0.1",
-            "NSW      = 200",
-            "IBRION   = 2",
-            "ISIF     = 4",
-            "POTIM    = 0.1",
-            "LWAVE  = .FALSE.",
-            "LCHARG = .FALSE.",
+            f"NCORE    = {params['NCORE']}",
+            f"KSPACING = {params['KSPACING']}",
+            f"ISMEAR   = {params['ISMEAR']}",
+            f"SIGMA    = {params['SIGMA']}",
+            f"NELM     = {params['NELM']}",
+            f"NELMIN   = {params['NELMIN']}",
+            f"EDIFF    = {params['EDIFF']}",
+            f"EDIFFG   = {params['EDIFFG']}",
+            f"NSW      = {params['NSW']}",
+            f"IBRION   = {params['IBRION']}",
+            f"ISIF     = {params['ISIF']}",
+            f"POTIM    = {params['POTIM']}",
+            f"LWAVE    = {params['LWAVE']}",
+            f"LCHARG   = {params['LCHARG']}",
             f"PSTRESS  = {float(self.pstress_value)}",
         ]
         self._write_incar(incar_filepath, lines)
@@ -138,27 +139,28 @@ class VaspOptSetup:
 
     def opt_incar3(self, incar_dirpath):
         incar_filepath = os.path.join(incar_dirpath, "INCAR_3")
+        params = self.opt_stage_templates["stage3"]
         lines = [
-            "ISTART   = 0",
-            "ICHARG   = 2",
-            f"ISYM     = {self.opt_params['ISYM']}",
-            "ENCUT    = 500",
-            "PREC     = Accurate",
+            f"ISTART   = {params['ISTART']}",
+            f"ICHARG   = {params['ICHARG']}",
+            f"ISYM     = {params['ISYM']}",
+            f"ENCUT    = {params['ENCUT']}",
+            f"PREC     = {params['PREC']}",
             f"SYMPREC  = {self.opt_params['SYMPREC']}",
-            "NCORE    = 4",
-            "KSPACING = 0.4",
-            "ISMEAR   = 0",
-            "SIGMA    = 0.05",
-            "NELM     = 90",
-            "NELMIN   = 6",
-            "EDIFF    = 1e-5",
-            "EDIFFG   = -0.05",
-            "NSW      = 300",
-            "IBRION   = 2",
-            "ISIF     = 3",
-            "POTIM    = 0.05",
-            "LWAVE    = .FALSE.",
-            "LCHARG   = .FALSE.",
+            f"NCORE    = {params['NCORE']}",
+            f"KSPACING = {params['KSPACING']}",
+            f"ISMEAR   = {params['ISMEAR']}",
+            f"SIGMA    = {params['SIGMA']}",
+            f"NELM     = {params['NELM']}",
+            f"NELMIN   = {params['NELMIN']}",
+            f"EDIFF    = {params['EDIFF']}",
+            f"EDIFFG   = {params['EDIFFG']}",
+            f"NSW      = {params['NSW']}",
+            f"IBRION   = {params['IBRION']}",
+            f"ISIF     = {params['ISIF']}",
+            f"POTIM    = {params['POTIM']}",
+            f"LWAVE    = {params['LWAVE']}",
+            f"LCHARG   = {params['LCHARG']}",
             f"PSTRESS  = {float(self.pstress_value)}",
         ]
         self._write_incar(incar_filepath, lines)

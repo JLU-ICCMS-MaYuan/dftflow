@@ -4,9 +4,12 @@ import shutil
 import argparse
 import subprocess
 import sys
+import copy
 import numpy as np
+from public.config_templates import load_config_file
 from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
+from qeflow.templates import apply_qe_config_overrides, get_qe_eband_parameters_template
 
 try:
     import tomllib  # Python 3.11+
@@ -90,46 +93,14 @@ class QEEBandSetup:
     def __init__(self, config_file="input.toml", struct_file=None):
         self.work_dir = "qe_eband"
         self.scf_dir = "qe_scf"
-
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"找不到配置文件: {config_file}")
-
-        if "tomllib" in globals():
-            with open(config_file, "rb") as f:
-                self.config = tomllib.load(f)
-        else:
-            self.config = toml.load(config_file)
-
+        self.parameter_template = get_qe_eband_parameters_template()
+        self.input_config = load_config_file(config_file)
+        self.config = apply_qe_config_overrides(self.parameter_template, self.input_config)
         self.struct_file = struct_file
         self.k_points_config = self.config.get("k_points", {})
         self.kpath_points = int(self.k_points_config.get("kpath_points", 100))
         self.kpath_file = self.k_points_config.get("kpath_file", "KPATH.in")
-
-        self.qe_params = {
-            "CONTROL": {
-                "calculation": "'bands'",
-                "restart_mode": "'from_scratch'",
-                "prefix": "'qe'",
-                "outdir": "'./out'",
-                "pseudo_dir": "'./pseudo'",
-                "verbosity": "'high'",
-                "tprnfor": ".true.",
-                "tstress": ".true.",
-                "forc_conv_thr": "1.0e-6",
-                "etot_conv_thr": "1.0e-7",
-            },
-            "SYSTEM": {
-                "ibrav": 0,
-                "ecutwfc": 50.0,
-                "ecutrho": 400.0,
-                "occupations": "'tetrahedra'",
-            },
-            "ELECTRONS": {
-                "conv_thr": 1.0e-8,
-                "mixing_beta": 0.7,
-                "electron_maxstep": 400,
-            },
-        }
+        self.qe_params = copy.deepcopy(self.config["qe_params"])
 
     def parse_poscar(self, poscar_path):
         if not os.path.exists(poscar_path):
@@ -263,14 +234,6 @@ class QEEBandSetup:
         formula = get_formula(struct_info["elements"], struct_info["counts"])
         self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
-        if "qe_params" in self.config:
-            for section, params in self.config["qe_params"].items():
-                section_upper = section.upper()
-                if section_upper in self.qe_params:
-                    self.qe_params[section_upper].update(params)
-                else:
-                    self.qe_params[section_upper] = params
-
         if "eband_params" in self.config:
             for section, params in self.config["eband_params"].items():
                 section_upper = section.upper()
@@ -278,12 +241,6 @@ class QEEBandSetup:
                     self.qe_params[section_upper].update(params)
                 else:
                     self.qe_params[section_upper] = params
-
-        if "qe_params" in self.config and "CONTROL" in self.config["qe_params"]:
-            if "prefix" not in self.config["qe_params"]["CONTROL"]:
-                self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
-        else:
-            self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
         if "CONTROL" in self.qe_params:
             pdir = self.qe_params["CONTROL"].get("pseudo_dir", "").strip("'").strip('"')
@@ -415,7 +372,7 @@ class QEEBandSetup:
         proj_cfg = self.config.get("projwfc", {})
         proj_exec = resolve_qe_command(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
         proj_args = proj_cfg.get("args", "-pd .true.")
-        slurm_header = self.config.get("slurm", {}).get("header", "#!/bin/bash")
+        slurm_header = self.config.get("slurm", {}).get("header", "")
         bands_cmd = f"{bands_exec} {bands_args}".strip() if bands_args else bands_exec
         proj_cmd = f"{proj_exec} {proj_args}".strip() if proj_args else proj_exec
 
@@ -474,11 +431,6 @@ class QEEBandSetup:
             struct_info = self.parse_poscar(struct_path)
             formula = get_formula(struct_info["elements"], struct_info["counts"])
             self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
-
-            if "qe_params" in self.config and "CONTROL" in self.config["qe_params"]:
-                self.qe_params["CONTROL"].update(self.config["qe_params"]["CONTROL"])
-            if "eband_params" in self.config and "CONTROL" in self.config["eband_params"]:
-                self.qe_params["CONTROL"].update(self.config["eband_params"]["CONTROL"])
 
             outdir_val = self.qe_params["CONTROL"]["outdir"].strip("'").strip('"')
             prefix_val = self.qe_params["CONTROL"]["prefix"].strip("'").strip('"')

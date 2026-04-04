@@ -3,9 +3,12 @@ import os
 import shutil
 import argparse
 import subprocess
+import copy
 from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
 import numpy as np
+from public.config_templates import load_config_file
+from qeflow.templates import apply_qe_config_overrides, get_qe_eledos_parameters_template
 
 try:
     import tomllib  # Python 3.11+
@@ -31,22 +34,11 @@ class QEEleDosSetup:
     def __init__(self, config_file="input.toml", struct_file=None):
         self.work_dir = "qe_eledos"
         self.scf_dir = "qe_scf"
-
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"找不到配置文件: {config_file}")
-
-        if "tomllib" in globals():
-            with open(config_file, "rb") as f:
-                self.config = tomllib.load(f)
-        else:
-            self.config = toml.load(config_file)
-
+        self.parameter_template = get_qe_eledos_parameters_template()
+        self.input_config = load_config_file(config_file)
+        self.config = apply_qe_config_overrides(self.parameter_template, self.input_config)
         self.struct_file = struct_file
-        self.qe_params = {
-            "CONTROL": {
-                "outdir": "'./tmp'",
-            }
-        }
+        self.qe_params = copy.deepcopy(self.config["qe_params"])
 
     def parse_poscar(self, poscar_path):
         if not os.path.exists(poscar_path):
@@ -99,16 +91,16 @@ class QEEleDosSetup:
         if outdir_cfg:
             outdir_val = str(outdir_cfg).strip("'").strip('"')
 
-        fildos = eledos_cfg.get("fildos", f"{prefix}.tdos")
-        filpdos = eledos_cfg.get("filpdos", f"{prefix}.pdos")
-        filproj = eledos_cfg.get("filproj", f"{prefix}.proj")
+        fildos = eledos_cfg.get("fildos") or f"{prefix}.tdos"
+        filpdos = eledos_cfg.get("filpdos") or f"{prefix}.pdos"
+        filproj = eledos_cfg.get("filproj") or f"{prefix}.proj"
 
-        delta_e = eledos_cfg.get("DeltaE", 0.01)
-        emin = eledos_cfg.get("emin", -10)
-        emax = eledos_cfg.get("emax", 30)
+        delta_e = eledos_cfg.get("DeltaE")
+        emin = eledos_cfg.get("emin")
+        emax = eledos_cfg.get("emax")
 
-        ngauss = eledos_cfg.get("ngauss", 0)
-        degauss = eledos_cfg.get("degauss", 0.0)
+        ngauss = eledos_cfg.get("ngauss")
+        degauss = eledos_cfg.get("degauss")
 
         eletdos_path = os.path.join(self.work_dir, "eletdos.in")
         with open(eletdos_path, "w") as f:
@@ -144,7 +136,7 @@ class QEEleDosSetup:
         proj_cfg = self.config.get("projwfc", {})
         proj_exec = resolve_qe_command(proj_cfg.get("executable_path", qe_bin), "projwfc.x")
         proj_args = proj_cfg.get("args", "-pd .true.")
-        slurm_header = self.config.get("slurm", {}).get("header", "#!/bin/bash")
+        slurm_header = self.config.get("slurm", {}).get("header", "")
 
         run_script_path = os.path.join(self.work_dir, "run_qe.sh")
         dos_cmd = f"{dos_exec} {dos_args}".strip() if dos_args else dos_exec
@@ -198,11 +190,7 @@ class QEEleDosSetup:
             struct_info = self.parse_poscar(struct_path)
             formula = get_formula(struct_info["elements"], struct_info["counts"])
 
-            if "qe_params" in self.config and "CONTROL" in self.config["qe_params"]:
-                self.qe_params["CONTROL"].update(self.config["qe_params"]["CONTROL"])
-
-            if "prefix" not in self.qe_params["CONTROL"] or self.qe_params["CONTROL"]["prefix"] in ("''", '""'):
-                self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
+            self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
             prefix_val = self.qe_params["CONTROL"]["prefix"].strip("'").strip('"')
             outdir_val = self.qe_params["CONTROL"]["outdir"].strip("'").strip('"')

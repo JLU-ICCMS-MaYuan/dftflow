@@ -3,8 +3,10 @@ import os
 import shutil
 import argparse
 import subprocess
+from public.config_templates import load_config_file
 from public.executables import resolve_vasp_command
 from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
+from vaspflow.templates import apply_vasp_config_overrides, get_vasp_cohp_parameters_template
 
 try:
     import tomllib  # Python 3.11+
@@ -19,38 +21,10 @@ except ImportError:
 class VaspCohpSetup:
     def __init__(self, config_file="input.toml", struct_file=None):
         self.work_dir = "vasp_cohp"
-        # 1. 加载配置文件
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"找不到配置文件: {config_file}")
-        
-        if 'tomllib' in globals():
-            with open(config_file, "rb") as f:
-                self.config = tomllib.load(f)
-        else:
-            self.config = toml.load(config_file)
-        
+        self.parameter_template = get_vasp_cohp_parameters_template()
+        self.input_config = load_config_file(config_file)
+        self.config = apply_vasp_config_overrides(self.parameter_template, self.input_config)
         self.struct_file = struct_file
-        
-        # 2. 默认 INCAR 模板 (针对 COHP 优化)
-        self.incar_template = {
-            "SYSTEM" : "VASP_COHP",
-            "ISTART" : 1,
-            "ICHARG" : 11,
-            "SYMPREC": 1e-5,
-            "EDIFF"  : 1e-8,
-            "ALGO"   : "Normal",
-            "NELM"   : 200,          
-            "NELMIN" : 2,
-            "ISMEAR" : -5,
-            "PREC"   : "Accurate",
-            "IBRION" : -1,
-            "LORBIT" : 12,
-            "LWAVE"  : ".TRUE.",
-            "LCHARG" : ".TRUE.",
-            "ISYM"   : -1,      # LOBSTER 推荐关闭对称性
-            "NCORE"  : 4,
-            "NEDOS"  : 2000,
-        }
 
     def get_elements_from_poscar(self):
         """从 POSCAR 中读取元素名称和顺序"""
@@ -65,11 +39,7 @@ class VaspCohpSetup:
 
     def generate_incar(self):
         """生成 INCAR 文件"""
-        final_params = self.incar_template.copy()
-            
-        # 从 [cohp_params] 读取参数覆盖默认模板
-        if "cohp_params" in self.config:
-            final_params.update(self.config["cohp_params"])
+        final_params = self.config["cohp_params"].copy()
         
         print(f"正在生成 INCAR (COHP)...")
         incar_path = os.path.join(self.work_dir, "INCAR")

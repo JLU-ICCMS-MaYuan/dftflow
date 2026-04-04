@@ -4,8 +4,10 @@ import shutil
 import argparse
 import math
 import subprocess
+from public.config_templates import load_config_file
 from public.executables import resolve_vasp_command
 from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
+from vaspflow.templates import apply_vasp_config_overrides, get_vasp_scf_parameters_template
 
 try:
     import tomllib  # Python 3.11+
@@ -20,29 +22,10 @@ except ImportError:
 class VaspSetup:
     def __init__(self, config_file="input.toml", struct_file=None):
         self.work_dir = "vasp_scf"
-        # 1. 加载配置文件
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"找不到配置文件: {config_file}")
-        
-        if 'tomllib' in globals():
-            with open(config_file, "rb") as f:
-                self.config = tomllib.load(f)
-        else:
-            self.config = toml.load(config_file)
-        
+        self.parameter_template = get_vasp_scf_parameters_template()
+        self.input_config = load_config_file(config_file)
+        self.config = apply_vasp_config_overrides(self.parameter_template, self.input_config)
         self.struct_file = struct_file
-        
-        # 2. 默认 INCAR 模板
-        self.incar_template = {
-            "SYSTEM" : "VASP_Job",
-            "ISTART" : 0,
-            "ICHARG" : 2,
-            "PREC"   : "Accurate",
-            "IBRION" : -1,
-            "LWAVE"  : ".TRUE.",
-            "LCHARG" : ".TRUE.",
-            "NCORE"  : 4
-        }
 
     def get_elements_from_poscar(self):
         """从 POSCAR 中读取元素名称和顺序"""
@@ -66,12 +49,7 @@ class VaspSetup:
 
     def generate_incar(self):
         """生成 INCAR 文件"""
-        # 合并模板和配置文件中的参数
-        final_params = self.incar_template.copy()
-            
-        # 1. 合并 [scf_params] 中的参数 (最高优先级)
-        if "scf_params" in self.config:
-            final_params.update(self.config["scf_params"])
+        final_params = self.config["scf_params"].copy()
         
         print(f"正在生成 INCAR...")
         incar_path = os.path.join(self.work_dir, "INCAR")
