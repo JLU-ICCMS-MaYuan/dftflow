@@ -187,6 +187,37 @@ def test_vasp_fermisurface_api(chdir_work):
     assert (Path("vasp_fermisurface") / "INCAR").exists()
 
 
+def test_vasp_fermisurface_uses_vaspkit_261(chdir_work, monkeypatch):
+    from vaspflow.fermisurface.vasp_fermisurface import VaspFermiSetup
+
+    os.makedirs("vasp_scf", exist_ok=True)
+    Path("vasp_scf/CHGCAR").touch()
+    Path("vasp_scf/WAVECAR").touch()
+
+    captured = {}
+
+    class FakeProcess:
+        def communicate(self, input=None):
+            captured["input"] = input
+            Path("vasp_fermisurface/KPOINTS").write_text("fake kpoints\n", encoding="utf-8")
+            return ("", "")
+
+    def fake_popen(cmd, cwd=None, stdin=None, stdout=None, stderr=None, text=None):
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        return FakeProcess()
+
+    monkeypatch.setattr("vaspflow.fermisurface.vasp_fermisurface.subprocess.Popen", fake_popen)
+
+    setup = VaspFermiSetup(config_file="input_vasp.toml", struct_file="MgB2.vasp")
+    setup.run(run_calc=False)
+
+    assert captured["cmd"] == ["vaspkit"]
+    assert captured["cwd"].endswith("vasp_fermisurface")
+    assert captured["input"] == "261\n0.04\n"
+    assert (Path("vasp_fermisurface") / "KPOINTS").exists()
+
+
 def test_vasp_fermisurface_cli(chdir_work):
     """CLI 测试：vasp_fermisurface 命令行"""
     os.makedirs("vasp_scf", exist_ok=True)

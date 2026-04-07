@@ -89,8 +89,8 @@ class VaspFermiSetup:
                 stderr=subprocess.PIPE,
                 text=True
             )
-            # vaspkit 102 -> 2 -> kmesh
-            stdout, stderr = process.communicate(input=f"102\n2\n{kmesh}\n")
+            # vaspkit 261 -> kmesh
+            stdout, stderr = process.communicate(input=f"261\n{kmesh}\n")
             
             kpoints_file = os.path.join(self.work_dir, "KPOINTS")
             if os.path.exists(kpoints_file):

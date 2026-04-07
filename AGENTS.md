@@ -24,6 +24,16 @@
 
 ## 需求处理记录
 
+### [2026-04-07] vasp_fermi 固定使用 vaspkit 261 生成 K 点
+- **需求**：
+    1. `vasp_fermi` 生成 K 点时，`vaspkit` 菜单必须使用 `261`，不能继续使用 `102`。
+    2. 不做任何旧方式兼容，`vasp_fermi` 只允许 `261` 这一种生成方式。
+- **方案**：
+    1. 在 `vaspflow/fermisurface/vasp_fermisurface.py` 中，将 `generate_kpoints()` 的 `vaspkit` 交互输入固定为 `261` 和 `kmesh`。
+    2. 删除旧的 `102 -> 2 -> kmesh` 语义，不增加回退或自动判断分支。
+    3. 在 `test_auto/MgB2/test_vaspflow.py` 中新增测试，使用 `monkeypatch` 截获 `subprocess.Popen`，显式断言发送给 `vaspkit` 的输入为 `261\\n<kmesh>\\n`。
+- **状态**：已完成。
+
 ### [2026-04-07] vasp_scf_converge 绘图与目录结构调整
 - **需求**：
     1. `vasp_scf_converge` 的收敛测试目录不再额外嵌套 `vasp_scf`，改为更便于人工检查的两层结构，例如 `ENCUT/300`、`ENCUT/350`。
