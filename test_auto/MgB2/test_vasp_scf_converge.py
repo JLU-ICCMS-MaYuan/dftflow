@@ -191,3 +191,72 @@ SIGMA = 0.05
     captured = capsys.readouterr()
     assert "警告: 跳过" in captured.out
     assert Path(output_path).exists()
+
+
+def test_vasp_scf_converge_collect_plot_data_uses_highest_accuracy_reference(chdir_work):
+    from vaspflow.scf.vasp_scf_converge import VaspScfConvergeSetup
+
+    config_path = Path("input_converge.toml")
+    write_config(
+        config_path,
+        """
+potcar_dir = "potcar_lib"
+
+[vasp]
+executable_path = "vasp_std"
+
+[vasp_scf_converge]
+kmesh = 0.04
+ENCUT = [400, 450, 500]
+ISMEAR = 0
+SIGMA = 0.05
+        """,
+    )
+
+    setup = VaspScfConvergeSetup(config_file=str(config_path), struct_file="MgB2.vasp")
+    for value, energy in [(400, -20.0000), (450, -20.0015), (500, -20.0020)]:
+        case_dir = Path(setup._build_case_dir(value))
+        case_dir.mkdir(parents=True, exist_ok=True)
+        (case_dir / "POSCAR").write_text(Path("MgB2.vasp").read_text(encoding="utf-8"), encoding="utf-8")
+        write_outcar(case_dir / "OUTCAR", energy)
+
+    plot_data = setup._collect_plot_data()
+
+    assert plot_data["reference_point"]["x"] == 500
+    assert pytest.approx(plot_data["reference_energy"], rel=0, abs=1e-12) == (-20.0020 / 3.0)
+    delta_by_x = {point["x"]: point["delta_mev_per_atom"] for point in plot_data["points"]}
+    assert pytest.approx(delta_by_x[500], rel=0, abs=1e-12) == 0.0
+    assert pytest.approx(delta_by_x[450], rel=0, abs=1e-9) == ((-20.0015 / 3.0) - (-20.0020 / 3.0)) * 1000.0
+
+
+def test_vasp_scf_converge_collect_plot_data_marks_first_converged_point(chdir_work):
+    from vaspflow.scf.vasp_scf_converge import VaspScfConvergeSetup
+
+    config_path = Path("input_converge.toml")
+    write_config(
+        config_path,
+        """
+potcar_dir = "potcar_lib"
+
+[vasp]
+executable_path = "vasp_std"
+
+[vasp_scf_converge]
+kmesh = 0.04
+ENCUT = [400, 450, 500]
+ISMEAR = 0
+SIGMA = 0.05
+        """,
+    )
+
+    setup = VaspScfConvergeSetup(config_file=str(config_path), struct_file="MgB2.vasp")
+    for value, energy in [(400, -19.9980), (450, -20.001998), (500, -20.0020)]:
+        case_dir = Path(setup._build_case_dir(value))
+        case_dir.mkdir(parents=True, exist_ok=True)
+        (case_dir / "POSCAR").write_text(Path("MgB2.vasp").read_text(encoding="utf-8"), encoding="utf-8")
+        write_outcar(case_dir / "OUTCAR", energy)
+
+    plot_data = setup._collect_plot_data()
+    assert plot_data["first_converged_point"] is not None
+    assert plot_data["first_converged_point"]["x"] == 450
+    assert abs(plot_data["first_converged_point"]["delta_mev_per_atom"]) <= 1.0

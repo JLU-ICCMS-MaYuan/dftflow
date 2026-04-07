@@ -4,7 +4,7 @@ import copy
 import math
 import os
 import shutil
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
 from public.job import add_run_submit_arguments, handle_job_action
@@ -184,15 +184,9 @@ class VaspScfConvergeSetup:
         except ValueError as exc:
             raise ValueError(f"无法将 {outcar_path} 中提取的能量转换为浮点数: {lines[-1]}") from exc
 
-    def plot(self) -> str:
-        try:
-            import matplotlib.pyplot as plt
-        except ImportError as exc:
-            raise ImportError("缺少 matplotlib，无法绘制收敛曲线。") from exc
-
+    def _collect_plot_data(self) -> Dict[str, Any]:
         total_atoms = _read_total_atoms_from_poscar(self._find_reference_poscar())
-        x_values: List[Any] = []
-        y_values: List[float] = []
+        points: List[Dict[str, Any]] = []
 
         for value in self.scan_values:
             outcar_path = os.path.join(self._build_case_dir(value), "OUTCAR")
@@ -202,18 +196,99 @@ class VaspScfConvergeSetup:
                 print(f"警告: 跳过 {outcar_path}，原因: {exc}")
                 continue
 
-            x_values.append(value)
-            y_values.append(total_energy / total_atoms)
+            points.append(
+                {
+                    "x": value,
+                    "energy_per_atom": total_energy / total_atoms,
+                    "outcar_path": outcar_path,
+                }
+            )
 
-        if not x_values:
+        if not points:
             raise RuntimeError("没有可用于绘图的有效 OUTCAR 能量数据。")
 
-        fig, ax = plt.subplots(figsize=(8, 5))
-        ax.plot(x_values, y_values, marker="o", linewidth=1.5)
-        ax.set_xlabel(self.param_name)
-        ax.set_ylabel("Energy per atom (eV/atom)")
-        ax.set_title(f"{self.param_name} convergence")
-        ax.grid(True, linestyle=":", alpha=0.5)
+        reference_point = max(points, key=lambda item: item["x"])
+        reference_energy = reference_point["energy_per_atom"]
+        first_converged_point: Optional[Dict[str, Any]] = None
+
+        for point in points:
+            delta_mev = (point["energy_per_atom"] - reference_energy) * 1000.0
+            point["delta_mev_per_atom"] = delta_mev
+            point["within_1mev"] = abs(delta_mev) <= 1.0
+            if first_converged_point is None and point["within_1mev"]:
+                first_converged_point = point
+
+        return {
+            "points": points,
+            "reference_point": reference_point,
+            "reference_energy": reference_energy,
+            "first_converged_point": first_converged_point,
+        }
+
+    def plot(self) -> str:
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError as exc:
+            raise ImportError("缺少 matplotlib，无法绘制收敛曲线。") from exc
+
+        plot_data = self._collect_plot_data()
+        points = plot_data["points"]
+        reference_point = plot_data["reference_point"]
+        first_converged_point = plot_data["first_converged_point"]
+
+        x_values = [point["x"] for point in points]
+        total_energy_values = [point["energy_per_atom"] for point in points]
+        delta_values = [point["delta_mev_per_atom"] for point in points]
+
+        fig, (ax_energy, ax_delta) = plt.subplots(
+            2,
+            1,
+            figsize=(8, 7),
+            sharex=True,
+            gridspec_kw={"height_ratios": [2, 1]},
+        )
+
+        ax_energy.plot(x_values, total_energy_values, marker="o", linewidth=1.5)
+        ax_energy.set_ylabel("Energy per atom (eV/atom)")
+        ax_energy.set_title(f"{self.param_name} convergence")
+        ax_energy.grid(True, linestyle=":", alpha=0.5)
+        ax_energy.text(
+            0.98,
+            0.98,
+            f"reference = {self.param_name} {reference_point['x']}",
+            transform=ax_energy.transAxes,
+            ha="right",
+            va="top",
+            fontsize=9,
+            bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8, "edgecolor": "0.8"},
+        )
+
+        ax_delta.plot(x_values, delta_values, marker="o", linewidth=1.5, color="tab:red")
+        ax_delta.axhline(1.0, color="tab:green", linestyle="--", linewidth=1.0)
+        ax_delta.axhline(-1.0, color="tab:green", linestyle="--", linewidth=1.0)
+        ax_delta.fill_between(x_values, -1.0, 1.0, color="tab:green", alpha=0.08)
+        ax_delta.set_xlabel(self.param_name)
+        ax_delta.set_ylabel("ΔE vs highest\n(meV/atom)")
+        ax_delta.grid(True, linestyle=":", alpha=0.5)
+
+        if first_converged_point is not None:
+            ax_delta.scatter(
+                [first_converged_point["x"]],
+                [first_converged_point["delta_mev_per_atom"]],
+                color="tab:blue",
+                s=50,
+                zorder=3,
+            )
+            ax_delta.annotate(
+                f"{self.param_name} = {first_converged_point['x']}",
+                xy=(first_converged_point["x"], first_converged_point["delta_mev_per_atom"]),
+                xytext=(10, 12),
+                textcoords="offset points",
+                fontsize=9,
+                color="tab:blue",
+                arrowprops={"arrowstyle": "->", "color": "tab:blue", "lw": 0.8},
+            )
+
         fig.tight_layout()
 
         output_path = os.path.abspath(f"converge_{self.param_name}.png")
