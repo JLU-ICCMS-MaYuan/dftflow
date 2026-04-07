@@ -24,6 +24,43 @@
 
 ## 需求处理记录
 
+### [2026-04-04] CLI 参数模板与块级配置隔离重构
+- **需求**：
+    1. 明确“模板”的含义：每个工作流都要有独立、可查看的默认参数模板变量，模板优先级最低，`input.toml` 只做覆盖，不再混杂默认值与用户赋值。
+    2. 为 `vaspflow`、`qeflow`、`wannier90flow` 建立统一的“模板函数 + CLI 白名单过滤 + 用户配置覆盖”机制。
+    3. 每个 CLI 只读取自己的参数块和共享块，不再读取其它 CLI 的参数块，避免跨模块参数互相污染。
+    4. `vaspflow` 取消顶层通用 `kmesh`，不再兼容旧行为；改为每个 VASP CLI 自己的参数块里单独设置 `kmesh`，模板默认值统一为 `0.025`。
+    5. 参数块命名改为“CLI 名称优先”，便于用户按命令名直接修改 `input.toml`。
+- **方案**：
+    1. 在 `public/config_templates.py` 中新增 CLI 配置构建公共层，包含“按允许键过滤”和“模板 + 覆盖递归合并”两步：
+        - `filter_config_by_allowed_keys()`
+        - `build_cli_config()`
+    2. `vaspflow/templates.py` 重写为独立模板函数与允许键集合：
+        - 共享块保留 `potcar_dir`、`chgcar_path`、`wavecar_path`、`[vasp]`、`[slurm]`
+        - 参数块统一改为 `[vasp_scf]`、`[vasp_scf_converge]`、`[vasp_eband]`、`[vasp_eledos]`、`[vasp_fermi]`、`[vasp_cohp]`、`[vasp_locpot]`、`[vasp_charge]`、`[vasp_elf]`、`[vasp_opt]`
+        - 各 VASP CLI 模板块都内置 `kmesh = 0.025`
+    3. `qeflow/templates.py` 重写为：
+        - 共享块 `qe`、`slurm`、`pseudo_map`
+        - 参数块 `[qe_scf.*]`、`[qe_nscf.*]`、`[qe_eband.*]`、`[qe_eledos.*]`
+    4. `wannier90flow/templates.py` 重写为：
+        - 共享执行块保留 `[wannier90]`、`[pw2wannier90]`、`[postw90]`、`[slurm]`
+        - 参数块统一为 `[wannier_init]`、`[wannier_init.projections]`、`[wannier_init.k_points]`、`[wannier_post]`
+    5. 各 CLI 脚本只对自身允许键做过滤，再与自身模板合并，不再自动并入未授权参数块。
+    6. 同步更新 `test_auto`、`test_manual`、README 与模板示例，确保文档、样例、代码三者一致。
+- **状态**：已完成。
+
+### [2026-04-04] vasp_scf_converge 读取边界与错误传播修正
+- **需求**：
+    1. `vasp_scf_converge` 只应读取共享块和 `[vasp_scf_converge]`，不能读取其它块中的列表参数，例如 `[vasp_charge].EINT` 不应影响收敛扫描。
+    2. `vasp_scf_converge` 在输入生成阶段若真实失败，例如 `POTCAR` 缺失，不应吞掉异常并返回成功。
+    3. 收敛测试目录仍应复用 `vasp_scf` 的输入生成逻辑，但扫描参数边界必须严格受限。
+- **方案**：
+    1. 在 `vaspflow/scf/vasp_scf_converge.py` 中仅对 `self.base_config["vasp_scf_converge"]` 子树执行唯一列表参数识别与展开。
+    2. 新增运行时配置转换逻辑：将 `[vasp_scf_converge]` 中当前测试值映射为单次运行使用的 `[vasp_scf]` 配置，再复用 `VaspSetup`。
+    3. 修改 `vaspflow/scf/vasp_scf.py`，`setup()` 捕获异常后打印错误信息并继续抛出，避免“表面成功、实际失败”的假阳性。
+    4. 补充并更新 `test_auto/MgB2/test_vasp_scf_converge.py`，验证显式列表、区间展开、多列表报错，以及只扫描 `[vasp_scf_converge]` 的边界。
+- **状态**：已完成。
+
 ### [2026-04-03] qeflow 与 wannier90flow 模板和 executable_path 语义整理
 - **需求**：
     1. 明确 `qeflow` 的 `[qe].executable_path` 语义为“启动命令 + QE bin 目录”，并在模板与说明中体现自动拼接的 `*.x`。
@@ -31,9 +68,9 @@
     3. 在 `wannier90flow/README.md` 中明确其 `executable_path` 语义与 `qeflow` 不同，避免混淆。
 - **方案**：
     1. 更新 `qeflow/input.toml` 与测试样例，统一使用 `mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin` 示例，并新增 `qeflow/README.md` 说明自动拼接规则。
-    2. 参考 `test_manual/YH6/inputw90init.toml` 与 `inputw90post.toml` 重写 `wannier90flow/input.toml`，补齐 `[wannier90]`、`[pw2wannier90]`、`[postw90]`、`[slurm]`、`[dos]` 等块。
+    2. 参考 `test_manual/YH6/inputw90init.toml` 与 `inputw90post.toml` 重写 `wannier90flow/input.toml`，补齐 `[wannier90]`、`[pw2wannier90]`、`[postw90]`、`[slurm]` 与后处理参数块。
     3. 修改 `wannier90flow/README.md`，统一模板文件说明并明确各子模块 `executable_path` 应填写完整路径或完整命令。
-- **状态**：已完成。
+- **状态**：已完成，后续已在 [2026-04-04] 进一步统一为 `[wannier_init]` / `[wannier_post]` 命名。
 
 ### [2026-04-02] executable_path 语义修正与运行结果校验
 - **需求**：
@@ -42,8 +79,8 @@
     3. 修复 `--run` 时“脚本表面成功但程序未真正启动”仍返回成功的问题，确保运行失败时抛出异常。
 - **方案**：
     1. 在公共层新增命令解析工具：`vasp` 原样执行完整命令，`qe` 将“前置命令 + bin 目录”解析为具体 `*.x` 命令，`wannier90` 保持子模块独立完整命令。
-    2. 重构公共执行模块，统一启用脚本 `set -e`，命令失败直接抛异常，不再吞掉错误。
-    3. 为 `vaspflow` 各运行入口增加关键输出文件校验，仅当本次运行实际生成目标文件时才视为成功，并补充对应测试。
+    2. 重构公共执行模块，保持 Slurm 脚本不过度拦截 VASP 标准输出错误，不在 Slurm 头中统一插入 `set -e`。
+    3. 为 `vaspflow` 各运行入口增加关键输出文件校验，仅当本次运行实际生成目标文件时才视为成功；若未生成关键输出则抛出异常，并补充对应测试。
 - **状态**：已完成。
 
 ### [2026-04-03] vasp_scf_converge 入口恢复
@@ -60,13 +97,13 @@
 ### [2026-04-01] vaspflow 参数命名收敛与模块级 kmesh
 - **需求**：
     1. 删除 `vaspflow` 中旧参数兼容入口，仅保留新的参数块命名方式。
-    2. 保留顶层 `kmesh` 作为默认值，并允许各功能模块用自身 `kmesh` 覆盖。
+    2. 初始阶段保留顶层 `kmesh` 作为默认值，并允许各功能模块用自身 `kmesh` 覆盖。
     3. 模块级 `kmesh` 仅用于脚本逻辑，不写入 `INCAR`。
 - **方案**：
     1. 移除 `incar_params`、`band_params`、`dos_params`、`fermi_params` 兼容逻辑。
     2. 统一由 `scf_params` 与各功能块读取参数，并增加模块级 `kmesh` 查找函数。
     3. 更新示例配置，明确顶层与模块级 `kmesh` 的优先级。
-- **状态**：已完成。
+- **状态**：已完成，后续已在 [2026-04-04] 进一步收紧为“删除顶层 `kmesh` 且不再兼容”。
 
 ### [2026-04-01] 统一运行与 Slurm 提交方式
 - **需求**：
@@ -98,7 +135,7 @@
     1. 新增公共配置读取模块，统一处理 TOML 加载与参数合并。
     2. 基础 INCAR 参数改由 `[scf_params]` 提供，各功能模块读取对应 `*_params` 块并覆盖基础参数。
     3. 兼容旧配置块名，如 `[incar_params]`、`[band_params]`、`[dos_params]`、`[fermi_params]`。
-- **状态**：已完成。
+- **状态**：已完成，后续已在 [2026-04-04] 收敛为按 CLI 命名的新参数块，如 `[vasp_scf]`、`[vasp_eband]` 等。
 
 ### [2026-02-09] vasp_charge_diff 输出格式调整
 - **需求**：
@@ -152,14 +189,14 @@
 - **状态**：已完成。
 
 ### [2026-02-10] vasp_opt KSPACING 由 kmesh 兜底
-- **需求**：`KSPACING` 未配置时使用顶层 `kmesh`。
-- **方案**：`incar_params` 缺少 `KSPACING` 时读取 `kmesh` 写入 INCAR。
-- **状态**：已完成。
+- **需求**：`KSPACING` 未配置时使用 `kmesh` 兜底。
+- **方案**：初始实现为从顶层 `kmesh` 读取；后续已调整为从当前 CLI 参数块读取，现行为 `vasp_opt` 缺少 `KSPACING` 时使用 `[vasp_opt].kmesh` 计算。
+- **状态**：已完成，旧的顶层 `kmesh` 兜底逻辑已被后续规则替代。
 
 ### [2026-02-10] vasp_opt 示例移除 KSPACING
-- **需求**：示例配置仅保留 `kmesh`，不在 `[incar_params]` 里写 `KSPACING`。
-- **方案**：移除 `tests/inputvasp.toml` 的 `KSPACING` 示例。
-- **状态**：已完成。
+- **需求**：示例配置仅保留 `kmesh`，不在参数块里写 `KSPACING`。
+- **方案**：移除示例中的 `KSPACING`，由参数块内 `kmesh` 负责兜底。
+- **状态**：已完成，当前规则见 [2026-04-04]。
 
 ### [2026-02-10] vasp_opt 生成 POTCAR
 - **需求**：结构优化脚本参照 `vasp_scf.py` 自动合并生成 POTCAR。
