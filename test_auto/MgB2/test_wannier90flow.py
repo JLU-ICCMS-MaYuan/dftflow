@@ -1,6 +1,7 @@
 """Wannier90 模块测试 - API + CLI + 实际运行"""
 import os
 import subprocess
+import sys
 import pytest
 from pathlib import Path
 
@@ -44,6 +45,24 @@ def test_wannier_init_cli(chdir_work):
     assert len(win_files) > 0
 
 
+def test_wannier_init_submit_uses_run_wannier90_script(chdir_work, monkeypatch):
+    from wannier90flow import wannier_init as module
+
+    captured = {}
+
+    def fake_submit_script(work_dir, script_name):
+        captured["work_dir"] = work_dir
+        captured["script_name"] = script_name
+
+    monkeypatch.setattr(module, "submit_script", fake_submit_script)
+    monkeypatch.setattr(sys, "argv", ["wannier_init", "--input", "MgB2.vasp", "--config", "input_w90.toml", "-s"])
+
+    module.main()
+
+    assert captured["work_dir"] == "wannier90"
+    assert captured["script_name"] == "run_wannier90.sh"
+
+
 @pytest.mark.run
 def test_wannier_init_run(chdir_shared):
     """实际运行测试：wannier_init（生成 .win 文件）"""
@@ -62,3 +81,25 @@ def test_wannier_init_run(chdir_shared):
     win_content = win_files[0].read_text()
     assert "begin unit_cell_cart" in win_content
     assert "end unit_cell_cart" in win_content
+
+
+def test_wannier_post_submit_uses_run_postw90_script(chdir_work, monkeypatch):
+    from wannier90flow import wannier_post as module
+
+    win_path = Path("wannier90") / "MgB2.win"
+    win_path.parent.mkdir(exist_ok=True)
+    win_path.write_text("num_wann = 8\n", encoding="utf-8")
+
+    captured = {}
+
+    def fake_submit_script(work_dir, script_name):
+        captured["work_dir"] = work_dir
+        captured["script_name"] = script_name
+
+    monkeypatch.setattr(module, "submit_script", fake_submit_script)
+    monkeypatch.setattr(sys, "argv", ["wannier_post", "-i", str(win_path), "-c", "input_w90.toml", "-s"])
+
+    module.main()
+
+    assert captured["work_dir"] == str(win_path.parent.resolve())
+    assert captured["script_name"] == "run_postw90.sh"

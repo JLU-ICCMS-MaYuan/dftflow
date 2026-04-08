@@ -34,6 +34,23 @@
     3. 在 `test_auto/MgB2/test_vaspflow.py` 中新增测试，使用 `monkeypatch` 截获 `subprocess.Popen`，显式断言发送给 `vaspkit` 的输入为 `261\\n<kmesh>\\n`。
 - **状态**：已完成。
 
+### [2026-04-08] --submit 提交路径修复与 dummy 测试覆盖
+- **需求**：
+    1. 全面检查 `vaspflow`、`qeflow`、`wannier90flow` 中 `-s/--submit` 的接线是否正确，避免出现 `sbatch` 后脚本名为空的情况。
+    2. 修复 `vasp_scf_converge -s` 提交失败的问题：当前它会生成各扫描目录，但最终调用成 `sbatch `，说明脚本名没有正确传入。
+    3. 由于测试环境没有真实 Slurm，需要增加 dummy/mock 模式测试，验证 `sbatch <script>` 的参数是否正确。
+- **方案**：
+    1. 审计所有使用 `add_run_submit_arguments()` 与 `handle_job_action()` 的入口，确认大部分 CLI 已正确传入 `run_vasp.sh`、`run_qe.sh`、`run_wannier90.sh`、`run_postw90.sh`。
+    2. 对 `vasp_scf_converge` 单独修复：在参数根目录下生成总提交脚本 `submit_all.sh`，脚本内部逐个 `sbatch` 各扫描点目录下的 `run_vasp.sh`。
+    3. `vasp_scf_converge -s` 不再直接尝试提交空脚本名，而是提交根目录的 `submit_all.sh`。
+    4. 在测试层用 `monkeypatch/mock` 模拟 `handle_job_action` 或 `submit_script`，验证：
+        - `vasp_scf --submit` 传入 `run_vasp.sh`
+        - `qe_scf --submit` 传入 `run_qe.sh`
+        - `wannier_init --submit` 传入 `run_wannier90.sh`
+        - `wannier_post --submit` 传入 `run_postw90.sh`
+        - `vasp_scf_converge --submit` 传入 `submit_all.sh`
+- **状态**：已完成。
+
 ### [2026-04-07] vasp_scf_converge 绘图与目录结构调整
 - **需求**：
     1. `vasp_scf_converge` 的收敛测试目录不再额外嵌套 `vasp_scf`，改为更便于人工检查的两层结构，例如 `ENCUT/300`、`ENCUT/350`。

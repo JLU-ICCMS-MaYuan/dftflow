@@ -1,4 +1,5 @@
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -260,3 +261,79 @@ SIGMA = 0.05
     assert plot_data["first_converged_point"] is not None
     assert plot_data["first_converged_point"]["x"] == 450
     assert abs(plot_data["first_converged_point"]["delta_mev_per_atom"]) <= 1.0
+
+
+def test_vasp_scf_converge_creates_root_submit_script(chdir_work):
+    from vaspflow.scf.vasp_scf_converge import VaspScfConvergeSetup
+
+    config_path = Path("input_converge.toml")
+    write_config(
+        config_path,
+        '''
+potcar_dir = "potcar_lib"
+
+[vasp]
+executable_path = "vasp_std"
+
+[slurm]
+header = """
+#!/bin/bash
+#SBATCH --job-name=test
+"""
+
+[vasp_scf_converge]
+kmesh = 0.04
+ENCUT = [400, 450, 500]
+ISMEAR = 0
+SIGMA = 0.05
+        ''',
+    )
+
+    setup = VaspScfConvergeSetup(config_file=str(config_path), struct_file="MgB2.vasp")
+    setup.setup()
+
+    submit_script = Path("ENCUT") / "submit_all.sh"
+    assert submit_script.exists()
+    content = submit_script.read_text(encoding="utf-8")
+    assert 'sbatch "400/run_vasp.sh"' in content
+    assert 'sbatch "450/run_vasp.sh"' in content
+    assert 'sbatch "500/run_vasp.sh"' in content
+
+
+def test_vasp_scf_converge_submit_uses_root_submit_script(chdir_work, monkeypatch):
+    from vaspflow.scf import vasp_scf_converge as module
+
+    config_path = Path("input_converge.toml")
+    write_config(
+        config_path,
+        """
+potcar_dir = "potcar_lib"
+
+[vasp]
+executable_path = "vasp_std"
+
+[vasp_scf_converge]
+kmesh = 0.04
+ENCUT = [400, 450, 500]
+ISMEAR = 0
+SIGMA = 0.05
+        """,
+    )
+
+    captured = {}
+
+    def fake_handle_job_action(run_calc, submit_job, work_dir, script_name, execute_fn):
+        captured["run_calc"] = run_calc
+        captured["submit_job"] = submit_job
+        captured["work_dir"] = work_dir
+        captured["script_name"] = script_name
+
+    monkeypatch.setattr(module, "handle_job_action", fake_handle_job_action)
+    monkeypatch.setattr(sys, "argv", ["vasp_scf_converge", "-i", "MgB2.vasp", "-c", str(config_path), "-s"])
+
+    module.main()
+
+    assert captured["run_calc"] is False
+    assert captured["submit_job"] is True
+    assert captured["work_dir"] == "ENCUT"
+    assert captured["script_name"] == "submit_all.sh"

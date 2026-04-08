@@ -37,6 +37,8 @@ def get_vasp_scf_parameters_template() -> Dict[str, Any]:
     template["vasp_scf"] = _with_default_kmesh(
         {
             "SYSTEM": "VASP_Job",
+            "ALGO": "Normal",
+            "ISYM": 2,
             "ISTART": 0,
             "ICHARG": 2,
             "PREC": "Accurate",
@@ -54,6 +56,8 @@ def get_vasp_scf_converge_parameters_template() -> Dict[str, Any]:
     template["vasp_scf_converge"] = _with_default_kmesh(
         {
             "SYSTEM": "VASP_Job",
+            "ALGO": "Normal",
+            "ISYM": 2,
             "ISTART": 0,
             "ICHARG": 2,
             "PREC": "Accurate",
@@ -71,11 +75,13 @@ def get_vasp_eband_parameters_template() -> Dict[str, Any]:
     template["vasp_eband"] = _with_default_kmesh(
         {
             "SYSTEM": "VASP_Band",
+            "ISYM": 2,
+            "ALGO": "Normal",
+            "LREAL": ".FALSE.",
             "ISTART": 1,
             "ICHARG": 11,
             "PREC": "Accurate",
             "IBRION": -1,
-            "NSW": 0,
             "ISMEAR": 0,
             "SIGMA": 0.05,
             "LORBIT": 11,
@@ -92,11 +98,13 @@ def get_vasp_eledos_parameters_template() -> Dict[str, Any]:
     template["vasp_eledos"] = _with_default_kmesh(
         {
             "SYSTEM": "VASP_DOS",
+            "ISYM": 2,
+            "ALGO": "Normal",
+            "LREAL": ".FALSE.",
             "ISTART": 1,
             "ICHARG": 11,
             "PREC": "Accurate",
             "IBRION": -1,
-            "NSW": 0,
             "ISMEAR": -5,
             "LORBIT": 11,
             "LWAVE": ".FALSE.",
@@ -113,6 +121,9 @@ def get_vasp_fermi_parameters_template() -> Dict[str, Any]:
     template["vasp_fermi"] = _with_default_kmesh(
         {
             "SYSTEM": "VASP_FermiSurface",
+            "ISYM": 2,
+            "ALGO": "Normal",
+            "LREAL": ".FALSE.",
             "ISTART": 1,
             "ICHARG": 11,
             "PREC": "Accurate",
@@ -133,11 +144,12 @@ def get_vasp_cohp_parameters_template() -> Dict[str, Any]:
     template["vasp_cohp"] = _with_default_kmesh(
         {
             "SYSTEM": "VASP_COHP",
+            "ALGO": "Normal",
+            "LREAL": ".FALSE.",
             "ISTART": 1,
             "ICHARG": 11,
             "SYMPREC": 1e-5,
             "EDIFF": 1e-8,
-            "ALGO": "Normal",
             "NELM": 200,
             "NELMIN": 2,
             "ISMEAR": -5,
@@ -159,6 +171,9 @@ def get_vasp_locpot_parameters_template() -> Dict[str, Any]:
     template["vasp_locpot"] = _with_default_kmesh(
         {
             "SYSTEM": "VASP_LOCPOT",
+            "ISYM": 2,
+            "ALGO": "Normal",
+            "LREAL": ".FALSE.",
             "ISTART": 1,
             "ICHARG": 11,
             "PREC": "Accurate",

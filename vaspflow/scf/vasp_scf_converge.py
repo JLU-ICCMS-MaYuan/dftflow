@@ -7,7 +7,7 @@ import shutil
 from typing import Any, Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
-from public.job import add_run_submit_arguments, handle_job_action
+from public.job import add_run_submit_arguments, handle_job_action, write_job_script
 from vaspflow.scf.vasp_scf import VaspSetup
 from vaspflow.templates import (
     apply_vasp_config_overrides,
@@ -151,6 +151,16 @@ class VaspScfConvergeSetup:
 
     def _build_case_dir(self, value: Any) -> str:
         return os.path.join(self.work_root, _format_value_for_dir(value))
+
+    def create_submit_script(self) -> str:
+        slurm_header = self.base_config.get("slurm", {}).get("header", "")
+        script_name = "submit_all.sh"
+        script_path = os.path.join(self.work_root, script_name)
+        commands = ['cd "$(dirname "$0")"']
+        for value in self.scan_values:
+            commands.append(f'sbatch "{_format_value_for_dir(value)}/run_vasp.sh"')
+        write_job_script(script_path, slurm_header, commands)
+        return script_name
 
     def _find_reference_poscar(self) -> str:
         for value in self.scan_values:
@@ -305,6 +315,7 @@ class VaspScfConvergeSetup:
             setup.work_dir = case_dir
             setup.setup()
             print(f"已生成收敛测试目录: {case_dir}")
+        self.create_submit_script()
 
     def execute(self) -> None:
         for value in self.scan_values:
@@ -329,7 +340,7 @@ def main():
         return
 
     setup.setup()
-    handle_job_action(args.run, args.submit, setup.work_root, "", setup.execute)
+    handle_job_action(args.run, args.submit, setup.work_root, "submit_all.sh", setup.execute)
     if args.plot:
         setup.plot()
 

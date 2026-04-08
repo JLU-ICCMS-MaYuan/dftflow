@@ -1,6 +1,7 @@
 """VASP 模块测试 - API + CLI + 实际运行"""
 import os
 import subprocess
+import sys
 import pytest
 from pathlib import Path
 
@@ -40,6 +41,28 @@ def test_vasp_scf_cli(chdir_work):
     assert result.returncode == 0
     assert (Path("vasp_scf") / "INCAR").exists()
     assert (Path("vasp_scf") / "POTCAR").exists()
+
+
+def test_vasp_scf_submit_uses_run_vasp_script(chdir_work, monkeypatch):
+    from vaspflow.scf import vasp_scf as module
+
+    captured = {}
+
+    def fake_handle_job_action(run_calc, submit_job, work_dir, script_name, execute_fn):
+        captured["run_calc"] = run_calc
+        captured["submit_job"] = submit_job
+        captured["work_dir"] = work_dir
+        captured["script_name"] = script_name
+
+    monkeypatch.setattr(module, "handle_job_action", fake_handle_job_action)
+    monkeypatch.setattr(sys, "argv", ["vasp_scf", "-i", "MgB2.vasp", "-c", "input_vasp.toml", "-s"])
+
+    module.main()
+
+    assert captured["run_calc"] is False
+    assert captured["submit_job"] is True
+    assert captured["work_dir"] == "vasp_scf"
+    assert captured["script_name"] == "run_vasp.sh"
 
 
 @pytest.mark.run
