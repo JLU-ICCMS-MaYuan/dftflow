@@ -158,7 +158,10 @@ class VaspScfConvergeSetup:
         script_path = os.path.join(self.work_root, script_name)
         commands = ['cd "$(dirname "$0")"']
         for value in self.scan_values:
-            commands.append(f'sbatch "{_format_value_for_dir(value)}/run_vasp.sh"')
+            case_dir = _format_value_for_dir(value)
+            commands.append(f'cd "{case_dir}"')
+            commands.append('sbatch "run_vasp.sh"')
+            commands.append('cd ..')
         write_job_script(script_path, slurm_header, commands)
         return script_name
 
