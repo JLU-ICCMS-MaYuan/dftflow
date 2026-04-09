@@ -41,9 +41,10 @@
     3. 由于测试环境没有真实 Slurm，需要增加 dummy/mock 模式测试，验证 `sbatch <script>` 的参数是否正确。
 - **方案**：
     1. 审计所有使用 `add_run_submit_arguments()` 与 `handle_job_action()` 的入口，确认大部分 CLI 已正确传入 `run_vasp.sh`、`run_qe.sh`、`run_wannier90.sh`、`run_postw90.sh`。
-    2. 对 `vasp_scf_converge` 单独修复：在参数根目录下生成总提交脚本 `submit_all.sh`，脚本内部逐个 `sbatch` 各扫描点目录下的 `run_vasp.sh`。
+    2. 对 `vasp_scf_converge` 单独修复：在参数根目录下生成总脚本 `submit_all.sh`，并由该脚本逐个进入各扫描点目录。
     3. `vasp_scf_converge -s` 不再直接尝试提交空脚本名，而是提交根目录的 `submit_all.sh`。
-    4. 在测试层用 `monkeypatch/mock` 模拟 `handle_job_action` 或 `submit_script`，验证：
+    4. `submit_all.sh` 在各扫描点目录中直接运行 `[vasp].executable_path`，不再二次 `sbatch run_vasp.sh`。
+    5. 在测试层用 `monkeypatch/mock` 模拟 `handle_job_action` 或 `submit_script`，验证：
         - `vasp_scf --submit` 传入 `run_vasp.sh`
         - `qe_scf --submit` 传入 `run_qe.sh`
         - `wannier_init --submit` 传入 `run_wannier90.sh`

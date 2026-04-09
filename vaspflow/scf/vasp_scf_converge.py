@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
 from public.job import add_run_submit_arguments, handle_job_action, write_job_script
+from public.executables import resolve_vasp_command
 from vaspflow.scf.vasp_scf import VaspSetup
 from vaspflow.templates import (
     apply_vasp_config_overrides,
@@ -154,13 +155,15 @@ class VaspScfConvergeSetup:
 
     def create_submit_script(self) -> str:
         slurm_header = self.base_config.get("slurm", {}).get("header", "")
+        vasp_config = self.base_config.get("vasp", {})
+        vasp_command = resolve_vasp_command(vasp_config.get("executable_path"))
         script_name = "submit_all.sh"
         script_path = os.path.join(self.work_root, script_name)
         commands = ['cd "$(dirname "$0")"']
         for value in self.scan_values:
             case_dir = _format_value_for_dir(value)
             commands.append(f'cd "{case_dir}"')
-            commands.append('sbatch "run_vasp.sh"')
+            commands.append(vasp_command)
             commands.append('cd ..')
         write_job_script(script_path, slurm_header, commands)
         return script_name

@@ -298,7 +298,8 @@ SIGMA = 0.05
     assert 'cd "400"' in content
     assert 'cd "450"' in content
     assert 'cd "500"' in content
-    assert content.count('sbatch "run_vasp.sh"') == 3
+    assert content.count('vasp_std') == 3
+    assert 'sbatch "run_vasp.sh"' not in content
     assert content.count('cd ..') == 3
 
 
