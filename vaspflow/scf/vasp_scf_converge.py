@@ -159,12 +159,12 @@ class VaspScfConvergeSetup:
         vasp_command = resolve_vasp_command(vasp_config.get("executable_path"))
         script_name = "submit_all.sh"
         script_path = os.path.join(self.work_root, script_name)
-        commands = ['cd "$(dirname "$0")"']
+        work_root_abs = os.path.abspath(self.work_root)
+        commands = [f'cd "{work_root_abs}"']
         for value in self.scan_values:
-            case_dir = _format_value_for_dir(value)
+            case_dir = os.path.abspath(self._build_case_dir(value))
             commands.append(f'cd "{case_dir}"')
             commands.append(vasp_command)
-            commands.append('cd ..')
         write_job_script(script_path, slurm_header, commands)
         return script_name
 

@@ -295,12 +295,13 @@ SIGMA = 0.05
     submit_script = Path("ENCUT") / "submit_all.sh"
     assert submit_script.exists()
     content = submit_script.read_text(encoding="utf-8")
-    assert 'cd "400"' in content
-    assert 'cd "450"' in content
-    assert 'cd "500"' in content
+    assert f'cd "{(Path.cwd() / "ENCUT").resolve()}"' in content
+    assert f'cd "{(Path.cwd() / "ENCUT" / "400").resolve()}"' in content
+    assert f'cd "{(Path.cwd() / "ENCUT" / "450").resolve()}"' in content
+    assert f'cd "{(Path.cwd() / "ENCUT" / "500").resolve()}"' in content
     assert content.count('vasp_std') == 3
     assert 'sbatch "run_vasp.sh"' not in content
-    assert content.count('cd ..') == 3
+    assert 'cd ..' not in content
 
 
 def test_vasp_scf_converge_submit_uses_root_submit_script(chdir_work, monkeypatch):
