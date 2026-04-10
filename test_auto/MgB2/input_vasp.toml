@@ -2,6 +2,7 @@
 potcar_dir = "potcar_lib"
 chgcar_path = "vasp_scf/CHGCAR"
 wavecar_path = "vasp_scf/WAVECAR"
+lobster_executable_path = "/home/mayuan/bin/lobster-5.1.1"
 
 [vasp]
 executable_path = "/home/mayuan/soft/vasp.6.3.2/bin/vasp_std"
@@ -40,8 +41,17 @@ ISMEAR = 0
 SIGMA = 0.05
 NCORE = 4
 
-[vasp_cohp]
+[vasp_cohp_uniform]
 kmesh = 0.04
+ENCUT = 520
+ISMEAR = -5
+ISYM = -1
+NCORE = 4
+
+[vasp_cohp_fatband]
+scf_kmesh = 0.03
+kpath_kmesh = 0.03
+kmesh_scheme = "monkhorst"
 ENCUT = 520
 ISMEAR = -5
 ISYM = -1

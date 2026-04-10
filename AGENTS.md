@@ -24,6 +24,53 @@
 
 ## 需求处理记录
 
+### [2026-04-10] vasp_cohp 拆分为 uniform 与 fatband 两个 CLI
+- **需求**：
+    1. 原有 `vasp_cohp` 不再保留，拆分成 `vasp_cohp_uniform` 与 `vasp_cohp_fatband` 两个独立 CLI。
+    2. `vasp_cohp_uniform` 保留原有均匀网格自洽逻辑，工作目录改为 `vasp_cohp_uniform`。
+    3. `vasp_cohp_fatband` 新增独立目录 `vasp_cohp_fatband`，其 `KPOINTS` 生成流程固定为 `vaspkit 303 + 251`。
+    4. 配置块改为 `[vasp_cohp_uniform]` 和 `[vasp_cohp_fatband]`；`fatband` 使用 `scf_kmesh`、`kpath_kmesh`、`kmesh_scheme`。
+- **方案**：
+    1. 删除旧 `vasp_cohp` CLI 注册与旧源码，新增 `vasp_cohp_uniform`、`vasp_cohp_fatband` 两个入口。
+    2. 抽出 `cohp` 公共逻辑，复用 INCAR/POTCAR/CHGCAR/WAVECAR/运行脚本/距离分析流程。
+    3. `uniform` 继续使用均匀网格 `KPOINTS`；`fatband` 在工作目录中先运行 `303` 生成 `KPATH.in`，再运行 `251` 生成最终混合 `KPOINTS`。
+    4. 更新模板、测试配置、自动化测试与文档，彻底移除对旧 `[vasp_cohp]` 和 `vasp_cohp` 命名的依赖。
+- **状态**：已完成。
+
+### [2026-04-10] vasp_opt 去除 KPOINTS 依赖并统一使用 KSPACING
+- **需求**：
+    1. `vasp_opt` 不应生成 `KPOINTS`，也不应复制当前目录中的 `KPOINTS`。
+    2. `rv1`、`rvf`、`rv4` 最后一步都应通过 `[vasp_opt].KSPACING` 或 `[vasp_opt].kmesh * 2π` 控制 k 点精度。
+    3. `rv4` 的前三步继续保留各自独立的粗优化 `KSPACING`。
+- **方案**：
+    1. 删除 `vaspflow/opt/vasp_opt.py` 中残留的 `KPOINTS` 复制逻辑，使 `vasp_opt` 完全脱离 `KPOINTS` 文件依赖。
+    2. 保留并测试 `rv1`、`rvf`、`rv4` 最终步的 `KSPACING` 计算：优先使用显式 `KSPACING`，否则使用 `kmesh * 2 * 3.1415926`。
+    3. 在 `test_auto/MgB2/test_vaspflow.py` 中补充测试，验证不会复制 `KPOINTS`，并验证 `rv4` 前三步固定 `KSPACING` 与最终步换算逻辑。
+    4. 更新 `vaspflow/README.md`，明确 `vasp_opt` 是 `vaspflow` 中通过 `KSPACING` 控制 k 点精度的特例。
+- **状态**：已完成。
+
+### [2026-04-10] 新增独立 vasp_lobsterin CLI
+- **需求**：
+    1. 在 `vaspflow/cohp/` 中新增独立工具，用于生成 `lobsterin`、准备 LOBSTER 运行目录并执行或提交作业。
+    2. `lobster_executable_path` 作为顶层键配置，默认值固定为 `/home/mayuan/bin/lobster-5.1.1`，不放在任何 `[xxx]` 模块下。
+    3. 不复活旧的 `vasp_lobster` / `vasp_process_cohp` 命名；VASP 侧 COHP 前置计算已拆分为 `vasp_cohp_uniform` 与 `vasp_cohp_fatband`。
+- **方案**：
+    1. 在 `vaspflow/cohp/vasp_lobsterin.py` 中实现独立 CLI，生成 `lobsterin`、软链接所需输入文件，并写出 `run_lobster.sh`。
+    2. 在 `vaspflow/templates.py` 中新增 `get_vasp_lobsterin_parameters_template()`，只暴露顶层 `lobster_executable_path` 与 `[slurm]`。
+    3. 在执行与提交阶段校验 `lobster_executable_path`，并沿用公共 `-r/--run`、`-s/--submit` 逻辑。
+    4. 更新 `pyproject.toml`、README、测试配置与自动化测试，覆盖模板合并、脚本生成和 `--submit` 接线。
+- **状态**：已完成。
+
+### [2026-04-10] 移除 vasp_lobster / vasp_process_cohp 旧入口
+- **需求**：
+    1. 不再保留 `vasp_lobster` 与 `vasp_process_cohp` 相关对外接口；COHP 前置计算统一使用 `vasp_cohp_uniform` 与 `vasp_cohp_fatband`，LOBSTER 输入准备统一使用 `vasp_lobsterin`。
+    2. 清理仓库内残留的旧入口注册、模板说明与文档引用，避免继续误导安装环境生成旧脚本。
+- **方案**：
+    1. 从 `pyproject.toml` 删除 `vasp_lobster = "vaspflow.cohp.vasp_process_cohp:main"` 旧 CLI 注册。
+    2. 删除 `vaspflow/cohp/vasp_process_cohp.py` 旧入口源码，并移除 `vaspflow/templates.py` 中仅服务于该入口的 `get_vasp_lobster_allowed_keys()`。
+    3. 同步更新 `README.md`、`vaspflow/README.md`、`CLAUDE.md`，移除旧入口并切换到新的 `vasp_cohp_uniform`、`vasp_cohp_fatband`、`vasp_lobsterin` 命名。
+- **状态**：已完成。
+
 ### [2026-04-07] vasp_fermi 固定使用 vaspkit 261 生成 K 点
 - **需求**：
     1. `vasp_fermi` 生成 K 点时，`vaspkit` 菜单必须使用 `261`，不能继续使用 `102`。
@@ -81,7 +128,7 @@
         - `build_cli_config()`
     2. `vaspflow/templates.py` 重写为独立模板函数与允许键集合：
         - 共享块保留 `potcar_dir`、`chgcar_path`、`wavecar_path`、`[vasp]`、`[slurm]`
-        - 参数块统一改为 `[vasp_scf]`、`[vasp_scf_converge]`、`[vasp_eband]`、`[vasp_eledos]`、`[vasp_fermi]`、`[vasp_cohp]`、`[vasp_locpot]`、`[vasp_charge]`、`[vasp_elf]`、`[vasp_opt]`
+        - 参数块统一改为 `[vasp_scf]`、`[vasp_scf_converge]`、`[vasp_eband]`、`[vasp_eledos]`、`[vasp_fermi]`、`[vasp_cohp_uniform]`、`[vasp_cohp_fatband]`、`[vasp_locpot]`、`[vasp_charge]`、`[vasp_elf]`、`[vasp_opt]`
         - 各 VASP CLI 模板块都内置 `kmesh = 0.025`
     3. `qeflow/templates.py` 重写为：
         - 共享块 `qe`、`slurm`、`pseudo_map`

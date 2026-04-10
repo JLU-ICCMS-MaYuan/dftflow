@@ -15,5 +15,6 @@ Available commands:
 - `vasp_eband`
 - `vasp_eledos`
 - `vasp_fermisurface`
-- `vasp_cohp`
-- `vasp_process_cohp`
+- `vasp_cohp_uniform`
+- `vasp_cohp_fatband`
+- `vasp_lobsterin`

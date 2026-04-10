@@ -15,7 +15,7 @@ pip install ".[analysis]"        # 含 pymatgen 分析依赖
 ```
 
 ### 已注册的 CLI 入口（安装后可直接使用）
-VASP 系列: `vasp_scf`, `vasp_scf_converge`, `vasp_eband`, `vasp_eledos`, `vasp_fermi`, `vasp_cohp`, `vasp_lobster`, `vasp_locpot`, `vasp_process_locpot`, `vasp_charge`, `vasp_charge_diff`, `vasp_opt`, `vasp_elf`
+VASP 系列: `vasp_scf`, `vasp_scf_converge`, `vasp_eband`, `vasp_eledos`, `vasp_fermi`, `vasp_cohp_uniform`, `vasp_cohp_fatband`, `vasp_lobsterin`, `vasp_locpot`, `vasp_process_locpot`, `vasp_charge`, `vasp_charge_diff`, `vasp_opt`, `vasp_elf`
 
 QE 系列: `qe_scf`, `qe_nscf`, `qe_eband`, `qe_eledos`, `qe_process_eledos`, `qe_process_eband`
 
@@ -47,12 +47,11 @@ Wannier90 系列: `wannier_init`, `wannier_post`, `wannier_window`, `wannier_plo
 ### 配置驱动模式
 
 所有工作流通过 `input.toml`（TOML 格式）驱动，典型结构：
-- 顶层字段：`potcar_dir`、`kmesh`、`chgcar_path`、`wavecar_path`
-- `[vasp]` / `[qe]`：可执行文件路径
+- 顶层字段：`potcar_dir`、`chgcar_path`、`wavecar_path`、`lobster_executable_path`
+- `[vasp]` / `[qe]`：可执行命令或路径配置
 - `[slurm]`：Slurm 提交脚本头
-- `[incar_params]` / `[scf_params]`：基础 INCAR/SCF 参数
-- `[<module>_params]`：模块专用参数覆盖基础参数
-- 模块级 `kmesh` 可覆盖顶层 `kmesh`
+- `[vasp_scf]`、`[vasp_eband]`、`[vasp_cohp_uniform]`、`[vasp_cohp_fatband]` 等：按 CLI 命名的模块参数块
+- 各 VASP CLI 在自己的参数块内单独设置 `kmesh`
 
 各模块示例配置：`vaspflow/input.toml`、`qeflow/input.toml`、`wannier90flow/input.toml`。
 

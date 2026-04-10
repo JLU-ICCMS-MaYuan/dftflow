@@ -27,6 +27,61 @@ ENCUT = 520
     assert merged["vasp"]["executable_path"] == "mpirun -np 8 /path/to/vasp_std"
 
 
+def test_vasp_lobsterin_template_top_level_command(chdir_work):
+    from public.config_templates import load_config_file
+    from vaspflow.templates import (
+        apply_vasp_config_overrides,
+        get_vasp_lobsterin_parameters_template,
+    )
+
+    config_path = Path("tmp_vasp_lobsterin_template.toml")
+    config_path.write_text(
+        """
+lobster_executable_path = "/custom/bin/lobster"
+
+[slurm]
+header = "#!/bin/bash"
+""".strip()
+    )
+
+    merged = apply_vasp_config_overrides(
+        get_vasp_lobsterin_parameters_template(),
+        load_config_file(str(config_path)),
+        ("lobster_executable_path", "slurm"),
+    )
+
+    assert merged["lobster_executable_path"] == "/custom/bin/lobster"
+    assert merged["slurm"]["header"] == "#!/bin/bash"
+
+
+def test_vasp_cohp_fatband_template_override_priority(chdir_work):
+    from public.config_templates import load_config_file
+    from vaspflow.templates import (
+        apply_vasp_config_overrides,
+        get_vasp_cohp_fatband_parameters_template,
+    )
+
+    config_path = Path("tmp_vasp_cohp_fatband_template.toml")
+    config_path.write_text(
+        """
+[vasp_cohp_fatband]
+scf_kmesh = 0.02
+kpath_kmesh = 0.04
+kmesh_scheme = "gamma"
+""".strip()
+    )
+
+    merged = apply_vasp_config_overrides(
+        get_vasp_cohp_fatband_parameters_template(),
+        load_config_file(str(config_path)),
+        ("potcar_dir", "chgcar_path", "wavecar_path", "lobster_executable_path", "vasp", "slurm", "vasp_cohp_fatband"),
+    )
+
+    assert merged["vasp_cohp_fatband"]["scf_kmesh"] == 0.02
+    assert merged["vasp_cohp_fatband"]["kpath_kmesh"] == 0.04
+    assert merged["vasp_cohp_fatband"]["kmesh_scheme"] == "gamma"
+
+
 def test_qe_template_override_priority(chdir_work):
     from public.config_templates import load_config_file
     from qeflow.templates import apply_qe_config_overrides, get_qe_scf_parameters_template

@@ -1,5 +1,6 @@
 """VASP 模块测试 - API + CLI + 实际运行"""
 import os
+import shutil
 import subprocess
 import sys
 import pytest
@@ -63,6 +64,84 @@ def test_vasp_scf_submit_uses_run_vasp_script(chdir_work, monkeypatch):
     assert captured["submit_job"] is True
     assert captured["work_dir"] == "vasp_scf"
     assert captured["script_name"] == "run_vasp.sh"
+
+
+def test_vasp_lobsterin_api(chdir_work):
+    from argparse import Namespace
+    from vaspflow.cohp.vasp_lobsterin import VaspLobsterinSetup
+
+    for filename in ["WAVECAR", "KPOINTS", "OUTCAR", "POTCAR", "vasprun.xml", "POSCAR"]:
+        Path(filename).write_text(f"{filename}\n", encoding="utf-8")
+
+    setup = VaspLobsterinSetup(config_file="input_vasp.toml")
+    args = Namespace(
+        COHPEnergy=[-10.0, 5.0],
+        species_custom=["Mg", "B"],
+        zvalances=["Mg:3s,3p", "B:2s,2p"],
+        d_limit=[1.0, 2.5],
+        mode=0,
+        custom_basis=["Mg:mg.sto"],
+        config="input_vasp.toml",
+    )
+
+    setup.prepare_inputs(args)
+
+    work_dir = Path("Mg_B_1.0_2.5")
+    assert (work_dir / "lobsterin").exists()
+    assert (work_dir / "run_lobster.sh").exists()
+    assert (work_dir / "CONTCAR").is_symlink()
+
+    lobsterin_content = (work_dir / "lobsterin").read_text(encoding="utf-8")
+    assert "COHPstartEnergy  -10.0" in lobsterin_content
+    assert "gaussianSmearingWidth 0.05" in lobsterin_content
+    assert "basisfunctions Mg 3s 3p" in lobsterin_content
+    assert "customSTOforAtom Mg  mg.sto" in lobsterin_content
+
+    run_script_content = (work_dir / "run_lobster.sh").read_text(encoding="utf-8")
+    assert "/home/mayuan/bin/lobster-5.1.1" in run_script_content
+
+
+def test_vasp_lobsterin_submit_uses_run_lobster_script(chdir_work, monkeypatch):
+    from vaspflow.cohp import vasp_lobsterin as module
+
+    for filename in ["WAVECAR", "KPOINTS", "OUTCAR", "POTCAR", "vasprun.xml", "POSCAR"]:
+        Path(filename).write_text(f"{filename}\n", encoding="utf-8")
+
+    captured = {}
+
+    def fake_handle_job_action(run_calc, submit_job, work_dir, script_name, execute_fn):
+        captured["run_calc"] = run_calc
+        captured["submit_job"] = submit_job
+        captured["work_dir"] = work_dir
+        captured["script_name"] = script_name
+
+    monkeypatch.setattr(module, "handle_job_action", fake_handle_job_action)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "vasp_lobsterin",
+            "-c",
+            "input_vasp.toml",
+            "-s",
+            "--species_custom",
+            "Mg",
+            "B",
+            "-z",
+            "Mg:3s,3p",
+            "B:2s,2p",
+            "-d",
+            "1.0",
+            "2.5",
+        ],
+    )
+
+    module.main()
+
+    assert captured["run_calc"] is False
+    assert captured["submit_job"] is True
+    assert captured["work_dir"] == "Mg_B_1.0_2.5"
+    assert captured["script_name"] == "run_lobster.sh"
 
 
 @pytest.mark.run
@@ -274,55 +353,142 @@ def test_vasp_fermisurface_run(chdir_shared):
 
 
 # ============================================================================
-# vasp_cohp 测试
+# vasp_cohp_uniform / vasp_cohp_fatband 测试
 # ============================================================================
 
-def test_vasp_cohp_api(chdir_work):
-    """API 测试：vasp_cohp 文件生成"""
+def test_vasp_cohp_uniform_api(chdir_work):
+    """API 测试：vasp_cohp_uniform 文件生成"""
     os.makedirs("vasp_scf", exist_ok=True)
     Path("vasp_scf/CHGCAR").touch()
     Path("vasp_scf/WAVECAR").touch()
 
-    from vaspflow.cohp.vasp_cohp import VaspCohpSetup
+    from vaspflow.cohp.vasp_cohp_uniform import VaspCohpUniformSetup
 
-    setup = VaspCohpSetup(config_file="input_vasp.toml", struct_file="MgB2.vasp")
+    setup = VaspCohpUniformSetup(config_file="input_vasp.toml", struct_file="MgB2.vasp")
     setup.run(run_calc=False)
 
-    assert (Path("vasp_cohp") / "INCAR").exists()
-    incar_content = (Path("vasp_cohp") / "INCAR").read_text()
+    assert (Path("vasp_cohp_uniform") / "INCAR").exists()
+    incar_content = (Path("vasp_cohp_uniform") / "INCAR").read_text()
     assert "ISYM" in incar_content
 
 
-def test_vasp_cohp_cli(chdir_work):
-    """CLI 测试：vasp_cohp 命令行"""
+def test_vasp_cohp_uniform_cli(chdir_work, monkeypatch):
+    """CLI 测试：vasp_cohp_uniform 命令行"""
     os.makedirs("vasp_scf", exist_ok=True)
     Path("vasp_scf/CHGCAR").touch()
     Path("vasp_scf/WAVECAR").touch()
 
-    result = subprocess.run(
-        ["vasp_cohp", "-i", "MgB2.vasp", "-c", "input_vasp.toml"],
-        capture_output=True,
-        text=True
-    )
+    from vaspflow.cohp import vasp_cohp_uniform as module
 
-    assert result.returncode == 0
-    assert (Path("vasp_cohp") / "INCAR").exists()
+    class FakeProcess:
+        def __init__(self, cwd):
+            self.cwd = cwd
+
+        def communicate(self, input=None):
+            Path(self.cwd, "KPOINTS").write_text("fake uniform kpoints\n", encoding="utf-8")
+            return ("", "")
+
+    def fake_popen(cmd, cwd=None, stdin=None, stdout=None, stderr=None, text=None):
+        return FakeProcess(cwd)
+
+    monkeypatch.setattr("vaspflow.cohp.cohp_common.subprocess.Popen", fake_popen)
+    monkeypatch.setattr(sys, "argv", ["vasp_cohp_uniform", "-i", "MgB2.vasp", "-c", "input_vasp.toml"])
+
+    module.main()
+    assert (Path("vasp_cohp_uniform") / "INCAR").exists()
 
 
 @pytest.mark.run
-def test_vasp_cohp_run(chdir_shared):
-    """实际运行测试：vasp_cohp --run"""
-    assert (Path("vasp_scf") / "CHGCAR").exists()
+def test_vasp_cohp_uniform_run(chdir_shared):
+    """实际运行测试：vasp_cohp_uniform --run"""
+    if shutil.which("vasp_cohp_uniform") is None:
+        pytest.skip("当前环境未安装 vasp_cohp_uniform CLI。")
+
+    if not (Path("vasp_scf") / "CHGCAR").exists():
+        scf_result = subprocess.run(
+            ["vasp_scf", "-i", "MgB2.vasp", "-c", "input_vasp.toml", "--run"],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if scf_result.returncode != 0:
+            pytest.skip("当前环境无法完成前置 vasp_scf 真实计算，跳过 cohp_uniform --run 测试。")
 
     result = subprocess.run(
-        ["vasp_cohp", "-i", "MgB2.vasp", "-c", "input_vasp.toml", "--run"],
+        ["vasp_cohp_uniform", "-i", "MgB2.vasp", "-c", "input_vasp.toml", "--run"],
         capture_output=True,
         text=True,
         timeout=600
     )
 
     assert result.returncode == 0
-    assert (Path("vasp_cohp") / "OUTCAR").exists()
+    assert (Path("vasp_cohp_uniform") / "OUTCAR").exists()
+
+
+def test_vasp_cohp_fatband_api(chdir_work, monkeypatch):
+    os.makedirs("vasp_scf", exist_ok=True)
+    Path("vasp_scf/CHGCAR").touch()
+    Path("vasp_scf/WAVECAR").touch()
+
+    from vaspflow.cohp.vasp_cohp_fatband import VaspCohpFatbandSetup
+
+    captured = []
+
+    class FakeProcess:
+        def __init__(self, cwd):
+            self.cwd = cwd
+
+        def communicate(self, input=None):
+            captured.append((self.cwd, input))
+            if input == "303\n":
+                Path(self.cwd, "KPATH.in").write_text("fake kpath\n", encoding="utf-8")
+            else:
+                Path(self.cwd, "KPOINTS").write_text("fake fatband kpoints\n", encoding="utf-8")
+            return ("", "")
+
+    def fake_popen(cmd, cwd=None, stdin=None, stdout=None, stderr=None, text=None):
+        assert cmd == ["vaspkit"]
+        return FakeProcess(cwd)
+
+    monkeypatch.setattr("vaspflow.cohp.cohp_common.subprocess.Popen", fake_popen)
+
+    setup = VaspCohpFatbandSetup(config_file="input_vasp.toml", struct_file="MgB2.vasp")
+    setup.run(run_calc=False)
+
+    assert (Path("vasp_cohp_fatband") / "INCAR").exists()
+    assert (Path("vasp_cohp_fatband") / "KPATH.in").exists()
+    assert (Path("vasp_cohp_fatband") / "KPOINTS").exists()
+    assert captured[0][1] == "303\n"
+    assert captured[1][1] == "251\n1\n0.03\n0.03\n"
+
+
+def test_vasp_cohp_fatband_cli(chdir_work, monkeypatch):
+    from vaspflow.cohp import vasp_cohp_fatband as module
+
+    os.makedirs("vasp_scf", exist_ok=True)
+    Path("vasp_scf/CHGCAR").touch()
+    Path("vasp_scf/WAVECAR").touch()
+
+    class FakeProcess:
+        def __init__(self, cwd):
+            self.cwd = cwd
+
+        def communicate(self, input=None):
+            if input == "303\n":
+                Path(self.cwd, "KPATH.in").write_text("fake kpath\n", encoding="utf-8")
+            else:
+                Path(self.cwd, "KPOINTS").write_text("fake fatband kpoints\n", encoding="utf-8")
+            return ("", "")
+
+    def fake_popen(cmd, cwd=None, stdin=None, stdout=None, stderr=None, text=None):
+        return FakeProcess(cwd)
+
+    monkeypatch.setattr("vaspflow.cohp.cohp_common.subprocess.Popen", fake_popen)
+
+    monkeypatch.setattr(sys, "argv", ["vasp_cohp_fatband", "-i", "MgB2.vasp", "-c", "input_vasp.toml"])
+
+    module.main()
+    assert (Path("vasp_cohp_fatband") / "INCAR").exists()
 
 
 # ============================================================================
@@ -499,6 +665,7 @@ def test_vasp_opt_rv4_api(chdir_work):
     """API 测试：vasp_opt rv4 模式"""
     from vaspflow.opt.vasp_opt import VaspOptSetup
 
+    Path("KPOINTS").write_text("external kpoints\n", encoding="utf-8")
     setup = VaspOptSetup(config_file="input_vasp.toml", struct_file="MgB2.vasp")
     setup.run(mode="rv4")
 

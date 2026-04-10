@@ -7,6 +7,7 @@ VASP_SHARED_ALLOWED_KEYS = (
     "potcar_dir",
     "chgcar_path",
     "wavecar_path",
+    "lobster_executable_path",
     "vasp",
     "slurm",
 )
@@ -17,6 +18,7 @@ def _base_vasp_template() -> Dict[str, Any]:
         "potcar_dir": None,
         "chgcar_path": None,
         "wavecar_path": None,
+        "lobster_executable_path": "/home/mayuan/bin/lobster-5.1.1",
         "vasp": {
             "executable_path": None,
         },
@@ -139,30 +141,46 @@ def get_vasp_fermi_parameters_template() -> Dict[str, Any]:
     return template
 
 
-def get_vasp_cohp_parameters_template() -> Dict[str, Any]:
+def _vasp_cohp_base_params() -> Dict[str, Any]:
+    return {
+        "SYSTEM": "VASP_COHP",
+        "ALGO": "Normal",
+        "LREAL": ".FALSE.",
+        "ISTART": 1,
+        "ICHARG": 11,
+        "SYMPREC": 1e-5,
+        "EDIFF": 1e-8,
+        "NELM": 200,
+        "NELMIN": 2,
+        "ISMEAR": -5,
+        "PREC": "Accurate",
+        "IBRION": -1,
+        "LORBIT": 12,
+        "LWAVE": ".TRUE.",
+        "LCHARG": ".TRUE.",
+        "ISYM": -1,
+        "NCORE": 4,
+        "NEDOS": 2000,
+    }
+
+
+def get_vasp_cohp_uniform_parameters_template() -> Dict[str, Any]:
     template = _base_vasp_template()
-    template["vasp_cohp"] = _with_default_kmesh(
+    template["vasp_cohp_uniform"] = _with_default_kmesh(_vasp_cohp_base_params())
+    return template
+
+
+def get_vasp_cohp_fatband_parameters_template() -> Dict[str, Any]:
+    template = _base_vasp_template()
+    params = _vasp_cohp_base_params()
+    params.update(
         {
-            "SYSTEM": "VASP_COHP",
-            "ALGO": "Normal",
-            "LREAL": ".FALSE.",
-            "ISTART": 1,
-            "ICHARG": 11,
-            "SYMPREC": 1e-5,
-            "EDIFF": 1e-8,
-            "NELM": 200,
-            "NELMIN": 2,
-            "ISMEAR": -5,
-            "PREC": "Accurate",
-            "IBRION": -1,
-            "LORBIT": 12,
-            "LWAVE": ".TRUE.",
-            "LCHARG": ".TRUE.",
-            "ISYM": -1,
-            "NCORE": 4,
-            "NEDOS": 2000,
+            "scf_kmesh": 0.03,
+            "kpath_kmesh": 0.03,
+            "kmesh_scheme": "monkhorst",
         }
     )
+    template["vasp_cohp_fatband"] = params
     return template
 
 
@@ -315,14 +333,6 @@ def get_vasp_opt_parameters_template() -> Dict[str, Any]:
     return template
 
 
-def get_vasp_lobster_parameters_template() -> Dict[str, Any]:
-    return {
-        "slurm": {
-            "header": "",
-        },
-    }
-
-
 def get_vasp_scf_allowed_keys() -> Iterable[str]:
     return (*VASP_SHARED_ALLOWED_KEYS, "vasp_scf")
 
@@ -343,8 +353,12 @@ def get_vasp_fermi_allowed_keys() -> Iterable[str]:
     return (*VASP_SHARED_ALLOWED_KEYS, "vasp_fermi")
 
 
-def get_vasp_cohp_allowed_keys() -> Iterable[str]:
-    return (*VASP_SHARED_ALLOWED_KEYS, "vasp_cohp")
+def get_vasp_cohp_uniform_allowed_keys() -> Iterable[str]:
+    return (*VASP_SHARED_ALLOWED_KEYS, "vasp_cohp_uniform")
+
+
+def get_vasp_cohp_fatband_allowed_keys() -> Iterable[str]:
+    return (*VASP_SHARED_ALLOWED_KEYS, "vasp_cohp_fatband")
 
 
 def get_vasp_locpot_allowed_keys() -> Iterable[str]:
@@ -363,8 +377,17 @@ def get_vasp_opt_allowed_keys() -> Iterable[str]:
     return (*VASP_SHARED_ALLOWED_KEYS, "vasp_opt")
 
 
-def get_vasp_lobster_allowed_keys() -> Iterable[str]:
-    return ("slurm",)
+def get_vasp_lobsterin_parameters_template() -> Dict[str, Any]:
+    return {
+        "lobster_executable_path": "/home/mayuan/bin/lobster-5.1.1",
+        "slurm": {
+            "header": "",
+        },
+    }
+
+
+def get_vasp_lobsterin_allowed_keys() -> Iterable[str]:
+    return ("lobster_executable_path", "slurm")
 
 
 def apply_vasp_config_overrides(template: Dict[str, Any], input_config: Dict[str, Any], allowed_keys: Iterable[str]) -> Dict[str, Any]:
