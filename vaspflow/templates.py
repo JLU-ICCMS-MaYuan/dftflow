@@ -172,15 +172,27 @@ def get_vasp_cohp_uniform_parameters_template() -> Dict[str, Any]:
 
 def get_vasp_cohp_fatband_parameters_template() -> Dict[str, Any]:
     template = _base_vasp_template()
-    params = _vasp_cohp_base_params()
-    params.update(
-        {
+    template["vasp_cohp_fatband"] = {
+            "SYSTEM": "VASP_COHP",
+            "ALGO": "Normal",
+            "LREAL": ".FALSE.",
+            "ISTART": 1,
+            "ICHARG": 11,
+            "SYMPREC": 1e-5,
+            "EDIFF": 1e-8,
+            "NELM": 200,
+            "ISMEAR": 0,
+            "PREC": "Accurate",
+            "IBRION": -1,
+            "LORBIT": 12,
+            "LWAVE": ".TRUE.",
+            "LCHARG": ".TRUE.",
+            "ISYM": 2,
+            "NCORE": 4,
             "scf_kmesh": 0.03,
             "kpath_kmesh": 0.03,
             "kmesh_scheme": "Monkhorst-Pack", # Gamma
         }
-    )
-    template["vasp_cohp_fatband"] = params
     return template
 
 

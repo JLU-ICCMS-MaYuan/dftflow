@@ -24,6 +24,43 @@
 
 ## 需求处理记录
 
+### [2026-04-10] 新增 vasp_plot_cohp 用于 orbital-resolved COHP/ICOHP 分析
+- **需求**：
+    1. 新增一个 CLI，读取 `COHPCAR.lobster` 并对指定轨道对做 orbital-resolved `COHP / ICOHP` 分析。
+    2. 最终对外输入语法与 `vasp_plot_kcohp` 统一，使用 `--interaction "元素A:轨道列表|元素B:轨道列表"`。
+    3. 输出 `proj_cohp.dat`、`average_cohp.dat`，并分别绘制投影图和 average 图。
+    4. 支持打印 `ICOHP @ E_F`，以及在给定 `[low, up]` 能窗时打印能窗差值表。
+- **方案**：
+    1. 新增 `vaspflow/cohp/vasp_plot_cohp.py`，作为纯后处理 CLI；内部使用 `pymatgen.io.lobster.outputs.Cohpcar` 惰性加载 `COHPCAR.lobster`。
+    2. 轨道匹配与 `vasp_plot_kcohp` 复用同一套公共解析逻辑，因此 `Mg:3p|B:2p` 会自动聚合所有 `p_x/p_y/p_z` 分量。
+    3. 数值策略保持旧脚本一致：匹配到的轨道贡献先求和，再除以总键数 `num_bonds`，不改成按匹配轨道对数平均。
+    4. 默认输出 `proj_cohp.png` 与 `average_cohp.png` 两张图，不把 average 曲线和投影轨道曲线混画在同一张图里。
+- **状态**：已完成。
+
+### [2026-04-10] 新增 vasp_plot_kcohp 用于 band-resolved pCOHP 绘图
+- **需求**：
+    1. 新增一个 CLI，读取 LOBSTER `kSpaceCOHP` 结果目录，绘制 band-resolved projected COHP 图。
+    2. 保留旧脚本的解析策略：读取 `KspaceCOHPBand*.lobster`、`POSCAR`、`KPOINTS`、`KPATH.in`，并输出 `DAT + PNG`。
+    3. 大幅简化输入，不再让用户手写 regex，而是改为 `--interaction "元素A:轨道列表|元素B:轨道列表"`。
+    4. 费米能默认从 `OUTCAR` 读取，绘图纵坐标统一为 `E - E_F`。
+- **方案**：
+    1. 新增 `vaspflow/cohp/vasp_plot_kcohp.py`，作为纯后处理 CLI，不接入 `input.toml` 模板层。
+    2. 每个 `--interaction` 对应一个子图；轨道匹配默认自动汇总所有匹配原子，例如 `Mg:3p|B:2p` 会自动聚合所有 `Mg*` 与 `B*` 的相应轨道。
+    3. 输出 `.dat` 文件时保留按 band 分块的格式；输出 `.png` 时保留灰色背景能带、颜色表示 pCOHP、多子图布局与高对称点标记。
+    4. 同步更新 `pyproject.toml`、README、`vaspflow/README.md` 和自动化测试。
+- **状态**：已完成。
+
+### [2026-04-10] 统一 vasp_plot_cohp 与 vasp_plot_kcohp 的相互作用输入语法
+- **需求**：
+    1. `vasp_plot_cohp` 与 `vasp_plot_kcohp` 对元素和轨道的设置方式必须一致。
+    2. `vasp_plot_cohp` 不再继续使用旧的 `3s-2p` 轨道对子串接口，统一切换为 `--interaction "元素A:轨道列表|元素B:轨道列表"`。
+- **方案**：
+    1. 在 `vaspflow/cohp/orbital_interactions.py` 中抽出公共的相互作用解析与轨道匹配逻辑，统一处理元素筛选、壳层自动展开和标签格式。
+    2. `vasp_plot_kcohp` 改为直接复用该公共模块，删除本地重复实现。
+    3. `vasp_plot_cohp` 改为读取重复传入的 `--interaction`，并按与 `vasp_plot_kcohp` 相同的规则匹配 `COHPCAR.lobster` 中的 orbital-resolved 项。
+    4. 同步更新测试与文档，明确两个 CLI 的输入语法完全一致。
+- **状态**：已完成。
+
 ### [2026-04-10] vasp_cohp_fatband 的 kmesh_scheme 语义收紧
 - **需求**：
     1. `vasp_cohp_fatband` 中 `kmesh_scheme` 只允许使用 VASPKIT 251 对应的两种模式名：`Monkhorst-Pack` 和 `Gamma`。
@@ -70,6 +107,17 @@
     2. 在 `vaspflow/templates.py` 中新增 `get_vasp_lobsterin_parameters_template()`，只暴露顶层 `lobster_executable_path` 与 `[slurm]`。
     3. 在执行与提交阶段校验 `lobster_executable_path`，并沿用公共 `-r/--run`、`-s/--submit` 逻辑。
     4. 更新 `pyproject.toml`、README、测试配置与自动化测试，覆盖模板合并、脚本生成和 `--submit` 接线。
+- **状态**：已完成。
+
+### [2026-04-10] vasp_lobsterin 支持可选 orbitalWise 与 kSpaceCOHP
+- **需求**：
+    1. `vasp_lobsterin` 默认不再强制在 `cohpGenerator` 后追加 `orbitalWise`。
+    2. 当显式指定 `--orbitalWise` 时，才在 `cohpGenerator` 行末追加 `orbitalWise`。
+    3. 当显式指定 `--kSpaceCOHP` 时，在同一行末追加 `kSpaceCOHP`，并把执行目录所需的 `KPOINTS`、`KPATH.in` 一并准备好。
+- **方案**：
+    1. 在 `vaspflow/cohp/vasp_lobsterin.py` 中新增 `--orbitalWise` 与 `--kSpaceCOHP` 两个布尔开关，并按开关状态拼接 `cohpGenerator` 行。
+    2. `kSpaceCOHP` 场景下不再软链接 `KPOINTS`，而是直接复制 `KPOINTS` 与 `KPATH.in` 到 LOBSTER 工作目录，避免后续修改原目录或路径缺失导致运行失败。
+    3. 在 `test_auto/MgB2/test_vaspflow.py` 中补充自动化测试，验证默认不追加、显式追加以及 `KPOINTS/KPATH.in` 准备行为。
 - **状态**：已完成。
 
 ### [2026-04-10] 移除 vasp_lobster / vasp_process_cohp 旧入口

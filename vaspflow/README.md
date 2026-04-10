@@ -37,6 +37,12 @@
 - `vasp_cohp_uniform` 使用均匀网格 `KPOINTS`；`vasp_cohp_fatband` 使用 `vaspkit 303 + 251` 生成包含均匀网格和零权重路径点的混合 `KPOINTS`。
 - `[vasp_cohp_fatband]` 使用 `scf_kmesh`、`kpath_kmesh`、`kmesh_scheme`，不再使用单一 `kmesh`；其中 `kmesh_scheme` 仅接受 `Monkhorst-Pack` 或 `Gamma`。
 - `lobster_executable_path` 是顶层键，不放在任何 `[xxx]` 模块下；`vasp_lobsterin` 只读取这个顶层键和 `[slurm]`。
+- `vasp_plot_cohp` 是一个纯后处理 CLI，用于读取 `COHPCAR.lobster` 并输出 orbital-resolved `COHP / ICOHP` 数据和图片；它不读取 `input.toml` 模板。
+- `vasp_plot_cohp` 的 `--interaction` 语法与 `vasp_plot_kcohp` 保持一致，固定为 `"元素A:轨道列表|元素B:轨道列表"`，例如 `"Mg:3s,3p|B:2s,2p"`；其中 `3p` 会自动聚合 `3p_x/3p_y/3p_z` 等分量。
+- `vasp_plot_cohp` 默认同时输出 `proj_cohp.dat`、`average_cohp.dat`、`proj_cohp.png` 和 `average_cohp.png`。
+- `vasp_plot_kcohp` 是一个纯后处理 CLI，不读取 `input.toml` 模板；它直接读取 LOBSTER 目录中的 `KspaceCOHPBand*.lobster`、`POSCAR`、`KPOINTS`、`KPATH.in` 和 `OUTCAR`。
+- `vasp_plot_kcohp` 的 `--interaction` 语法固定为 `"元素A:轨道列表|元素B:轨道列表"`，例如 `"Mg:3s,3p|B:2s,2p"`；每个 `--interaction` 对应一个子图。
+- `vasp_plot_kcohp` 默认从 `OUTCAR` 读取费米能，将能量统一绘制为 `E - E_F`，并同时输出 `PNG + DAT`。
 - `vasp_opt` 的 `rv1/rvf` 使用 `INCAR`，`rv4` 使用 `INCAR_1` 到 `INCAR_4`。
 - `rv1/rvf` 和 `rv4` 的最终高精度参数来自 `vasp_opt`。
 - `vasp_opt` 不生成也不复制 `KPOINTS`；其 k 点精度完全通过 `KSPACING` 控制。若 `[vasp_opt].KSPACING` 未设置，则仅对最终步用 `[vasp_opt].kmesh * 2π` 换算。

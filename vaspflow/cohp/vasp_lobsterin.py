@@ -2,6 +2,7 @@
 import argparse
 import os
 import shlex
+import shutil
 import sys
 
 from public.config_templates import load_config_file
@@ -63,7 +64,7 @@ class VaspLobsterinSetup:
         os.makedirs(self.work_dir, exist_ok=True)
         print(f"创建目录: {self.work_dir}")
 
-        self._link_required_files()
+        self._link_required_files(kspace_cohp=args.kSpaceCOHP)
         self._write_lobsterin(
             mode=args.mode,
             cohp_start=args.COHPEnergy[0],
@@ -74,25 +75,40 @@ class VaspLobsterinSetup:
             upper_d=args.d_limit[1],
             zval_dict=zval_custom,
             custom_basis_dict=custom_basis,
+            orbital_wise=args.orbitalWise,
+            kspace_cohp=args.kSpaceCOHP,
         )
         self._create_run_script()
         print(f"\nLOBSTER 输入文件和运行脚本已在 {self.work_dir} 准备就绪。")
         print("提示: 如果运行 LOBSTER 后得不到 COHP，请检查 NBANDS 是否足够大。")
         print("提示: 确保在 VASP 计算中设置了 LWAVE = .TRUE. 以生成 WAVECAR。")
 
-    def _link_required_files(self):
+    def _link_required_files(self, kspace_cohp=False):
         files = ["WAVECAR", "CONTCAR", "KPOINTS", "OUTCAR", "POTCAR", "vasprun.xml", "POSCAR"]
         for filename in files:
             target = os.path.join(self.work_dir, filename)
             if os.path.lexists(target):
                 os.remove(target)
             if os.path.exists(filename):
+                if kspace_cohp and filename == "KPOINTS":
+                    shutil.copy2(filename, target)
+                    continue
                 os.symlink(os.path.abspath(filename), target)
                 continue
             if filename == "CONTCAR" and os.path.exists("POSCAR"):
                 os.symlink(os.path.abspath("POSCAR"), target)
                 continue
             print(f"警告: {filename} 不存在，LOBSTER 可能运行失败。")
+
+        if kspace_cohp:
+            kpath_source = "KPATH.in"
+            kpath_target = os.path.join(self.work_dir, "KPATH.in")
+            if os.path.lexists(kpath_target):
+                os.remove(kpath_target)
+            if os.path.exists(kpath_source):
+                shutil.copy2(kpath_source, kpath_target)
+            else:
+                print("警告: KPATH.in 不存在，已请求 kSpaceCOHP，LOBSTER 可能运行失败。")
 
     def _write_lobsterin(
         self,
@@ -105,6 +121,8 @@ class VaspLobsterinSetup:
         upper_d,
         zval_dict,
         custom_basis_dict,
+        orbital_wise,
+        kspace_cohp,
     ):
         lobsterin_path = os.path.join(self.work_dir, "lobsterin")
         with open(lobsterin_path, "w", encoding="utf-8") as f:
@@ -120,10 +138,15 @@ class VaspLobsterinSetup:
                 f.write("gaussianSmearingWidth 0.05\n")
             for element, orbitals in zval_dict.items():
                 f.write(f"basisfunctions {element} {orbitals}\n")
-            f.write(
+            cohp_generator = (
                 "cohpGenerator from "
-                f"{lower_d} to {upper_d} type {species_custom1} type {species_custom2} orbitalWise\n"
+                f"{lower_d} to {upper_d} type {species_custom1} type {species_custom2}"
             )
+            if orbital_wise:
+                cohp_generator += " orbitalWise"
+            if kspace_cohp:
+                cohp_generator += " kSpaceCOHP"
+            f.write(cohp_generator + "\n")
 
     def _create_run_script(self):
         command = self.get_lobster_command()
@@ -175,6 +198,16 @@ def parse_args():
         type=float,
         required=True,
         help="原子间最小最大距离, 例如 -d 1.0 2.5",
+    )
+    parser.add_argument(
+        "--orbitalWise",
+        action="store_true",
+        help="若设置，则在 cohpGenerator 行末增加 orbitalWise",
+    )
+    parser.add_argument(
+        "--kSpaceCOHP",
+        action="store_true",
+        help="若设置，则在 cohpGenerator 行末增加 kSpaceCOHP",
     )
     parser.add_argument("-m", "--mode", type=int, default=5, help="选择生成的输入文件版本: 5 或 0 (默认 5)")
     parser.add_argument("--custom_basis", nargs="+", type=str, help="使用自定义基组, 例如 --custom_basis H:h.sto")

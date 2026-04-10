@@ -18,3 +18,5 @@ Available commands:
 - `vasp_cohp_uniform`
 - `vasp_cohp_fatband`
 - `vasp_lobsterin`
+- `vasp_plot_cohp`
+- `vasp_plot_kcohp`
