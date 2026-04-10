@@ -35,7 +35,7 @@
 - 每个 VASP CLI 现在只读取自己的参数块和共享块，不再读取其它 CLI 的参数块。
 - 顶层通用 `kmesh` 已删除且不再兼容；`vasp_scf`、`vasp_eband`、`vasp_opt` 等都需要在各自块内单独设置 `kmesh`，模板默认值统一为 `0.025`。
 - `vasp_cohp_uniform` 使用均匀网格 `KPOINTS`；`vasp_cohp_fatband` 使用 `vaspkit 303 + 251` 生成包含均匀网格和零权重路径点的混合 `KPOINTS`。
-- `[vasp_cohp_fatband]` 使用 `scf_kmesh`、`kpath_kmesh`、`kmesh_scheme`，不再使用单一 `kmesh`。
+- `[vasp_cohp_fatband]` 使用 `scf_kmesh`、`kpath_kmesh`、`kmesh_scheme`，不再使用单一 `kmesh`；其中 `kmesh_scheme` 仅接受 `Monkhorst-Pack` 或 `Gamma`。
 - `lobster_executable_path` 是顶层键，不放在任何 `[xxx]` 模块下；`vasp_lobsterin` 只读取这个顶层键和 `[slurm]`。
 - `vasp_opt` 的 `rv1/rvf` 使用 `INCAR`，`rv4` 使用 `INCAR_1` 到 `INCAR_4`。
 - `rv1/rvf` 和 `rv4` 的最终高精度参数来自 `vasp_opt`。

@@ -51,7 +51,7 @@ NCORE = 4
 [vasp_cohp_fatband]
 scf_kmesh = 0.03
 kpath_kmesh = 0.03
-kmesh_scheme = "monkhorst"
+kmesh_scheme = "Monkhorst-Pack"
 ENCUT = 520
 ISMEAR = -5
 ISYM = -1

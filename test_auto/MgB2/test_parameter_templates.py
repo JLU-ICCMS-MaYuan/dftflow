@@ -67,7 +67,7 @@ def test_vasp_cohp_fatband_template_override_priority(chdir_work):
 [vasp_cohp_fatband]
 scf_kmesh = 0.02
 kpath_kmesh = 0.04
-kmesh_scheme = "gamma"
+kmesh_scheme = "Gamma"
 """.strip()
     )
 
@@ -79,7 +79,7 @@ kmesh_scheme = "gamma"
 
     assert merged["vasp_cohp_fatband"]["scf_kmesh"] == 0.02
     assert merged["vasp_cohp_fatband"]["kpath_kmesh"] == 0.04
-    assert merged["vasp_cohp_fatband"]["kmesh_scheme"] == "gamma"
+    assert merged["vasp_cohp_fatband"]["kmesh_scheme"] == "Gamma"
 
 
 def test_qe_template_override_priority(chdir_work):

@@ -24,6 +24,17 @@
 
 ## 需求处理记录
 
+### [2026-04-10] vasp_cohp_fatband 的 kmesh_scheme 语义收紧
+- **需求**：
+    1. `vasp_cohp_fatband` 中 `kmesh_scheme` 只允许使用 VASPKIT 251 对应的两种模式名：`Monkhorst-Pack` 和 `Gamma`。
+    2. `Monkhorst-Pack` 必须映射到菜单数字 `1`，`Gamma` 必须映射到菜单数字 `2`。
+    3. 清理此前代码、模板、测试中混用 `monkhorst`、`gamma`、小写比较等不一致行为。
+- **方案**：
+    1. 修正 `vaspflow/cohp/vasp_cohp_fatband.py` 中的判断逻辑，不再对 `kmesh_scheme` 做 `.lower()` 后再与大写值比较。
+    2. 固定仅接受 `Monkhorst-Pack` / `Gamma` 两个字符串，并分别映射到 `1` / `2`。
+    3. 同步更新 `test_auto/MgB2/input_vasp.toml`、模板覆盖测试和 `vaspflow/README.md`，统一对外语义。
+- **状态**：已完成。
+
 ### [2026-04-10] vasp_cohp 拆分为 uniform 与 fatband 两个 CLI
 - **需求**：
     1. 原有 `vasp_cohp` 不再保留，拆分成 `vasp_cohp_uniform` 与 `vasp_cohp_fatband` 两个独立 CLI。

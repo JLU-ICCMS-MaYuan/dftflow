@@ -26,18 +26,18 @@ class VaspCohpFatbandSetup(BaseVaspCohpSetup):
         params = self.config[self.block_name]
         scf_kmesh = params.get("scf_kmesh")
         kpath_kmesh = params.get("kpath_kmesh")
-        scheme = params.get("kmesh_scheme", "monkhorst").lower()
+        scheme = params.get("kmesh_scheme", "Monkhorst-Pack")
         if scf_kmesh is None or kpath_kmesh is None:
             raise ValueError("vasp_cohp_fatband 需要设置 scf_kmesh 和 kpath_kmesh。")
-        if scheme not in {"monkhorst", "gamma"}:
-            raise ValueError("kmesh_scheme 仅支持 monkhorst 或 gamma。")
+        if scheme not in {"Monkhorst-Pack", "Gamma"}:
+            raise ValueError("kmesh_scheme 仅支持 Monkhorst-Pack 或 Gamma。")
 
         print("正在使用 vaspkit 303 生成 KPATH.in...")
         stdout_303, _ = run_vaspkit(self.work_dir, "303\n")
         if not os.path.exists(os.path.join(self.work_dir, "KPATH.in")):
             raise RuntimeError(f"vaspkit 303 未生成 KPATH.in。输出: {stdout_303}")
 
-        scheme_code = "1" if scheme == "monkhorst" else "2"
+        scheme_code = "1" if scheme == "Monkhorst-Pack" else "2"
         print("正在使用 vaspkit 251 生成 fatband KPOINTS...")
         stdout_251, _ = run_vaspkit(self.work_dir, f"251\n{scheme_code}\n{scf_kmesh}\n{kpath_kmesh}\n")
         if not os.path.exists(os.path.join(self.work_dir, "KPOINTS")):

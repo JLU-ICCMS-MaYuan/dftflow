@@ -177,7 +177,7 @@ def get_vasp_cohp_fatband_parameters_template() -> Dict[str, Any]:
         {
             "scf_kmesh": 0.03,
             "kpath_kmesh": 0.03,
-            "kmesh_scheme": "monkhorst",
+            "kmesh_scheme": "Monkhorst-Pack", # Gamma
         }
     )
     template["vasp_cohp_fatband"] = params
