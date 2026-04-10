@@ -300,7 +300,6 @@ class VaspOptSetup:
         with open(submit_script_filepath, "w") as submit:
             self._write_job_header(submit)
             submit.write(f"{vasp_execmd}\n")
-            submit.write("cp CONTCAR POSCAR\n")
         os.chmod(submit_script_filepath, 0o755)
         return jobname
 
