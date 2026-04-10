@@ -340,16 +340,8 @@ class VaspOptSetup:
             shutil.copy2("POSCAR", target_poscar)
             print(f"已将当前目录下的 POSCAR 拷贝为 {target_poscar}")
 
-    def _copy_aux_files(self):
-        for name in ["POTCAR", "KPOINTS"]:
-            src = name
-            dst = os.path.join(self.work_dir, name)
-            if os.path.exists(src) and os.path.abspath(src) != os.path.abspath(dst):
-                shutil.copy2(src, dst)
-
     def run(self, mode):
         self._prepare_poscar()
-        self._copy_aux_files()
         elements = self.get_elements_from_poscar()
         self.generate_potcar(elements)
         if mode == "rv4":

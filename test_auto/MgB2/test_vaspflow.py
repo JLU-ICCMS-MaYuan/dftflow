@@ -507,28 +507,68 @@ def test_vasp_opt_rv4_api(chdir_work):
     assert (Path("vasp_opt") / "INCAR_3").exists()
     assert (Path("vasp_opt") / "INCAR_4").exists()
     assert (Path("vasp_opt") / "fouropt.sh").exists()
+    assert not (Path("vasp_opt") / "KPOINTS").exists()
+
+    incar_1 = (Path("vasp_opt") / "INCAR_1").read_text(encoding="utf-8")
+    incar_2 = (Path("vasp_opt") / "INCAR_2").read_text(encoding="utf-8")
+    incar_3 = (Path("vasp_opt") / "INCAR_3").read_text(encoding="utf-8")
+    incar_4 = (Path("vasp_opt") / "INCAR_4").read_text(encoding="utf-8")
+
+    assert "KSPACING = 0.8" in incar_1
+    assert "KSPACING = 0.6" in incar_2
+    assert "KSPACING = 0.4" in incar_3
+    assert f"KSPACING = {0.04 * 2 * 3.1415926}" in incar_4
 
 
 def test_vasp_opt_rv1_api(chdir_work):
     """API 测试：vasp_opt rv1 模式"""
     from vaspflow.opt.vasp_opt import VaspOptSetup
 
+    Path("KPOINTS").write_text("external kpoints\n", encoding="utf-8")
     setup = VaspOptSetup(config_file="input_vasp.toml", struct_file="MgB2.vasp")
     setup.run(mode="rv1")
 
     assert (Path("vasp_opt") / "INCAR").exists()
     assert (Path("vasp_opt") / "oneopt.sh").exists()
+    assert not (Path("vasp_opt") / "KPOINTS").exists()
+
+    incar_content = (Path("vasp_opt") / "INCAR").read_text(encoding="utf-8")
+    assert f"KSPACING = {0.04 * 2 * 3.1415926}" in incar_content
 
 
 def test_vasp_opt_rvf_api(chdir_work):
     """API 测试：vasp_opt rvf 模式"""
     from vaspflow.opt.vasp_opt import VaspOptSetup
 
+    Path("KPOINTS").write_text("external kpoints\n", encoding="utf-8")
     setup = VaspOptSetup(config_file="input_vasp.toml", struct_file="MgB2.vasp")
     setup.run(mode="rvf")
 
     assert (Path("vasp_opt") / "INCAR").exists()
     assert (Path("vasp_opt") / "fopt.sh").exists()
+    assert not (Path("vasp_opt") / "KPOINTS").exists()
+
+    incar_content = (Path("vasp_opt") / "INCAR").read_text(encoding="utf-8")
+    assert f"KSPACING = {0.04 * 2 * 3.1415926}" in incar_content
+
+
+def test_vasp_opt_prefers_explicit_kspacing_over_kmesh(chdir_work):
+    from pathlib import Path
+
+    config_path = Path("input_vasp_opt_kspacing.toml")
+    content = Path("input_vasp.toml").read_text(encoding="utf-8").replace(
+        "[vasp_opt]\nkmesh = 0.04",
+        "[vasp_opt]\nkmesh = 0.04\nKSPACING = 0.23",
+    )
+    config_path.write_text(content, encoding="utf-8")
+
+    from vaspflow.opt.vasp_opt import VaspOptSetup
+
+    setup = VaspOptSetup(config_file=str(config_path), struct_file="MgB2.vasp")
+    setup.run(mode="rv1")
+
+    incar_content = (Path("vasp_opt") / "INCAR").read_text(encoding="utf-8")
+    assert "KSPACING = 0.23" in incar_content
 
 
 def test_vasp_opt_cli(chdir_work):
