@@ -3,9 +3,10 @@ import argparse
 import os
 import shutil
 import subprocess
+from typing import List
 from public.config_templates import load_config_file
 from public.executables import resolve_vasp_command
-from public.job import add_run_submit_arguments, handle_job_action, execute_commands
+from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
 from vaspflow.templates import (
     apply_vasp_config_overrides,
     get_vasp_opt_allowed_keys,
@@ -377,23 +378,95 @@ class VaspOptSetup:
         print(f"VASP 结构优化完成，输出已保存至 {self.work_dir}")
 
 
+def _format_pressure_dirname(pressure_gpa: float) -> str:
+    return f"{pressure_gpa:g}"
+
+
+def _parse_pressure_values(pressure_args: List[str]) -> List[float]:
+    values = []
+    for raw_value in pressure_args:
+        try:
+            values.append(float(raw_value))
+        except ValueError as exc:
+            raise ValueError(f"无法解析压力值: {raw_value}") from exc
+    return values
+
+
+def _create_batch_submit_script(setups: List[VaspOptSetup], script_name: str = "submit_all_vasp_opt.sh") -> str:
+    if not setups:
+        raise ValueError("没有可用于批量提交的 vasp_opt 任务。")
+    slurm_header = setups[0].config.get("slurm", {}).get("header", "")
+    script_path = os.path.abspath(script_name)
+    commands = []
+    for setup in setups:
+        case_dir = os.path.abspath(setup.work_dir)
+        case_script = getattr(setup, "_script_name", "fouropt.sh")
+        commands.append(f'cd "{case_dir}"')
+        commands.append(f"bash {case_script}")
+    write_job_script(script_path, slurm_header, commands)
+    return os.path.basename(script_path)
+
+
+def _run_multiple_pressures(config_file, struct_file, mode, pressure_values):
+    setups = []
+    for pressure_gpa in pressure_values:
+        work_dir = os.path.join(_format_pressure_dirname(pressure_gpa), "vasp_opt")
+        setup = VaspOptSetup(
+            config_file=config_file,
+            struct_file=struct_file,
+            pressure_override=pressure_gpa,
+            work_dir=work_dir,
+        )
+        setup.run(mode=mode)
+        setups.append(setup)
+    return setups
+
+
 def main():
     parser = argparse.ArgumentParser(description="VASP structure optimization (rv4/rv1/rvf)")
     parser.add_argument("-i", "--input", help="输入结构文件 (将被拷贝为 POSCAR)")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径 (默认为 input.toml)")
     parser.add_argument("-m", "--mode", choices=["rv4", "rv1", "rvf"], default="rv4", help="优化模式")
-    parser.add_argument("-p", "--pressure", type=float, help="覆盖 PSTRESS，输入单位为 GPa（写入 INCAR 时自动转换为 kbar）")
+    parser.add_argument(
+        "-p",
+        "--pressure",
+        nargs="+",
+        help="覆盖 PSTRESS，输入单位为 GPa（支持多个值，写入 INCAR 时自动转换为 kbar）",
+    )
     add_run_submit_arguments(parser, "生成文件后直接执行优化", "生成文件后提交优化脚本")
     args = parser.parse_args()
 
-    work_dir = "vasp_opt"
-    if args.pressure is not None:
-        work_dir = os.path.join(str(args.pressure), "vasp_opt")
+    if args.pressure:
+        pressure_values = _parse_pressure_values(args.pressure)
+        if len(pressure_values) == 1:
+            pressure_value = pressure_values[0]
+            work_dir = os.path.join(_format_pressure_dirname(pressure_value), "vasp_opt")
+            setup = VaspOptSetup(
+                config_file=args.config,
+                struct_file=args.input,
+                pressure_override=pressure_value,
+                work_dir=work_dir,
+            )
+            setup.run(mode=args.mode)
+            script_name = getattr(setup, "_script_name", "fouropt.sh")
+            handle_job_action(args.run, args.submit, setup.work_dir, script_name, setup.execute)
+            return
+
+        setups = _run_multiple_pressures(args.config, args.input, args.mode, pressure_values)
+        batch_script_name = _create_batch_submit_script(setups)
+
+        def execute_all():
+            for setup in setups:
+                setup.execute()
+
+        handle_job_action(args.run, args.submit, ".", batch_script_name, execute_all)
+        return
+
     setup = VaspOptSetup(
         config_file=args.config,
         struct_file=args.input,
-        pressure_override=args.pressure,
-        work_dir=work_dir,
+        pressure_override=None,
+        work_dir="vasp_opt",
     )
     setup.run(mode=args.mode)
     script_name = getattr(setup, "_script_name", "fouropt.sh")

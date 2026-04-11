@@ -1062,3 +1062,28 @@ def test_vasp_opt_pressure_override_uses_gpa_input_and_writes_kbar(chdir_work):
     assert (Path("1.5") / "vasp_opt" / "INCAR").exists()
     incar_content = (Path("1.5") / "vasp_opt" / "INCAR").read_text(encoding="utf-8")
     assert "PSTRESS  = 15.0" in incar_content
+
+
+def test_vasp_opt_multiple_pressures_generate_multiple_cases(chdir_work):
+    result = subprocess.run(
+        ["vasp_opt", "-i", "MgB2.vasp", "-c", "input_vasp.toml", "--mode", "rv1", "-p", "0", "1.5", "3"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert (Path("0") / "vasp_opt" / "INCAR").exists()
+    assert (Path("1.5") / "vasp_opt" / "INCAR").exists()
+    assert (Path("3") / "vasp_opt" / "INCAR").exists()
+    assert Path("submit_all_vasp_opt.sh").exists()
+
+    incar_0 = (Path("0") / "vasp_opt" / "INCAR").read_text(encoding="utf-8")
+    incar_15 = (Path("1.5") / "vasp_opt" / "INCAR").read_text(encoding="utf-8")
+    incar_3 = (Path("3") / "vasp_opt" / "INCAR").read_text(encoding="utf-8")
+    assert "PSTRESS  = 0.0" in incar_0
+    assert "PSTRESS  = 15.0" in incar_15
+    assert "PSTRESS  = 30.0" in incar_3
+
+    submit_script = Path("submit_all_vasp_opt.sh").read_text(encoding="utf-8")
+    assert 'cd "' in submit_script
+    assert "bash oneopt.sh" in submit_script
