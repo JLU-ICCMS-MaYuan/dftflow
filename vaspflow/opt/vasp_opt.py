@@ -36,6 +36,10 @@ class VaspOptSetup:
         self.opt_stage_templates = self.config["opt_stage_templates"]
         self.pstress_value = self._resolve_pstress(pressure_override)
 
+    @staticmethod
+    def _gpa_to_kbar(pressure_gpa):
+        return float(pressure_gpa) * 10.0
+
     def _load_opt_params(self):
         opt_params = self.config.get("vasp_opt")
         if not opt_params:
@@ -44,7 +48,7 @@ class VaspOptSetup:
 
     def _resolve_pstress(self, pressure_override):
         if pressure_override is not None:
-            return pressure_override
+            return self._gpa_to_kbar(pressure_override)
         pstress = self.opt_params.get("PSTRESS")
         if pstress is None:
             raise ValueError("缺少 PSTRESS，且未通过 -p 指定")
@@ -378,7 +382,7 @@ def main():
     parser.add_argument("-i", "--input", help="输入结构文件 (将被拷贝为 POSCAR)")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径 (默认为 input.toml)")
     parser.add_argument("-m", "--mode", choices=["rv4", "rv1", "rvf"], default="rv4", help="优化模式")
-    parser.add_argument("-p", "--pressure", type=int, help="覆盖 PSTRESS (整数)")
+    parser.add_argument("-p", "--pressure", type=float, help="覆盖 PSTRESS，输入单位为 GPa（写入 INCAR 时自动转换为 kbar）")
     add_run_submit_arguments(parser, "生成文件后直接执行优化", "生成文件后提交优化脚本")
     args = parser.parse_args()
 

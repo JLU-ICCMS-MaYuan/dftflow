@@ -37,6 +37,16 @@
     4. 默认输出 `proj_cohp.png` 与 `average_cohp.png` 两张图，不把 average 曲线和投影轨道曲线混画在同一张图里。
 - **状态**：已完成。
 
+### [2026-04-11] vasp_opt 的 -p 压力参数改为按 GPa 输入
+- **需求**：
+    1. `vasp_opt -p/--pressure` 接收的压力单位应为 `GPa`，与用户实际使用习惯一致。
+    2. VASP `INCAR` 中 `PSTRESS` 的单位仍然是 `kbar`，写入前必须完成单位换算。
+- **方案**：
+    1. 在 `vaspflow/opt/vasp_opt.py` 中把命令行 `-p` 类型放宽为 `float`，支持非整数压力。
+    2. 当显式传入 `-p` 时，内部统一执行 `GPa * 10 = kbar` 转换后再写入所有优化阶段的 `PSTRESS`。
+    3. 保持目录命名仍使用用户输入的 `GPa` 数值，例如 `1.5/vasp_opt`，并补充自动化测试锁定该行为。
+- **状态**：已完成。
+
 ### [2026-04-10] 新增 vasp_plot_kcohp 用于 band-resolved pCOHP 绘图
 - **需求**：
     1. 新增一个 CLI，读取 LOBSTER `kSpaceCOHP` 结果目录，绘制 band-resolved projected COHP 图。

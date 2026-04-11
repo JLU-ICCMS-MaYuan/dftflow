@@ -1049,3 +1049,16 @@ def test_vasp_opt_cli(chdir_work):
 
     assert result.returncode == 0
     assert (Path("vasp_opt") / "INCAR_1").exists()
+
+
+def test_vasp_opt_pressure_override_uses_gpa_input_and_writes_kbar(chdir_work):
+    result = subprocess.run(
+        ["vasp_opt", "-i", "MgB2.vasp", "-c", "input_vasp.toml", "--mode", "rv1", "-p", "1.5"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert (Path("1.5") / "vasp_opt" / "INCAR").exists()
+    incar_content = (Path("1.5") / "vasp_opt" / "INCAR").read_text(encoding="utf-8")
+    assert "PSTRESS  = 15.0" in incar_content
