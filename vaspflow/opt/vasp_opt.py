@@ -275,6 +275,41 @@ class VaspOptSetup:
         slurm_config = self.config.get("slurm", {})
         return slurm_config.get("header", "")
 
+    def _build_mode_commands(self, mode):
+        vasp_execmd = self._get_vasp_execmd()
+        if mode == "rv4":
+            return [
+                "for i in {1..4}; do",
+                "cp INCAR_$i INCAR",
+                vasp_execmd,
+                "cp CONTCAR CONTCAR_$i",
+                "cp OUTCAR OUTCAR_$i",
+                "cp CONTCAR POSCAR",
+                "done",
+            ]
+        if mode == "rv1":
+            return [vasp_execmd]
+        if mode == "rvf":
+            return [
+                "num=0",
+                "while true;do",
+                "        let num+=1",
+                "        echo \"run fine vasp opt-$num\"",
+                f"        timeout 14400s {vasp_execmd}",
+                "        cp -f CONTCAR CONTCAR-fine &&  cp -f CONTCAR POSCAR",
+                "        rows=`sed -n '/F\\=/p' OSZICAR | wc -l`",
+                "        echo \"rows-$rows\"",
+                "        echo $num >> count_opt_times",
+                "        if [ \"$rows\" -eq \"1\" ];then",
+                "                break",
+                "        fi",
+                "        if [ \"$num\" -gt \"50\" ]; then",
+                "                break",
+                "        fi",
+                "done",
+            ]
+        raise ValueError("mode must be one of rv4/rv1/rvf")
+
     def _write_job_header(self, submit_file):
         header = self._get_slurm_header()
         if header:
@@ -285,51 +320,30 @@ class VaspOptSetup:
     def fouropt(self, submit_dirpath):
         jobname = "fouropt.sh"
         submit_script_filepath = os.path.join(submit_dirpath, jobname)
-        vasp_execmd = self._get_vasp_execmd()
         with open(submit_script_filepath, "w") as submit:
             self._write_job_header(submit)
-            submit.write("for i in {1..4}; do\n")
-            submit.write("cp INCAR_$i INCAR\n")
-            submit.write(f"{vasp_execmd}\n")
-            submit.write("cp CONTCAR CONTCAR_$i\n")
-            submit.write("cp OUTCAR OUTCAR_$i\n")
-            submit.write("cp CONTCAR POSCAR\n")
-            submit.write("done\n")
+            for command in self._build_mode_commands("rv4"):
+                submit.write(command + "\n")
         os.chmod(submit_script_filepath, 0o755)
         return jobname
 
     def oneopt(self, submit_dirpath):
         jobname = "oneopt.sh"
         submit_script_filepath = os.path.join(submit_dirpath, jobname)
-        vasp_execmd = self._get_vasp_execmd()
         with open(submit_script_filepath, "w") as submit:
             self._write_job_header(submit)
-            submit.write(f"{vasp_execmd}\n")
+            for command in self._build_mode_commands("rv1"):
+                submit.write(command + "\n")
         os.chmod(submit_script_filepath, 0o755)
         return jobname
 
     def fopt(self, submit_dirpath):
         jobname = "fopt.sh"
         submit_script_filepath = os.path.join(submit_dirpath, jobname)
-        vasp_execmd = self._get_vasp_execmd()
         with open(submit_script_filepath, "w") as submit:
             self._write_job_header(submit)
-            submit.write("num=0\n")
-            submit.write("while true;do\n")
-            submit.write("        let num+=1\n")
-            submit.write("        echo \"run fine vasp opt-$num\"\n")
-            submit.write(f"        timeout 14400s {vasp_execmd}\n")
-            submit.write("        cp -f CONTCAR CONTCAR-fine &&  cp -f CONTCAR POSCAR\n")
-            submit.write("        rows=`sed -n '/F\\=/p' OSZICAR | wc -l`\n")
-            submit.write("        echo \"rows-$rows\"\n")
-            submit.write("        echo $num >> count_opt_times\n")
-            submit.write("        if [ \"$rows\" -eq \"1\" ];then\n")
-            submit.write("                break\n")
-            submit.write("        fi\n")
-            submit.write("        if [ \"$num\" -gt \"50\" ]; then\n")
-            submit.write("                break\n")
-            submit.write("        fi\n")
-            submit.write("done\n")
+            for command in self._build_mode_commands("rvf"):
+                submit.write(command + "\n")
         os.chmod(submit_script_filepath, 0o755)
         return jobname
 
@@ -346,6 +360,7 @@ class VaspOptSetup:
             print(f"已将当前目录下的 POSCAR 拷贝为 {target_poscar}")
 
     def run(self, mode):
+        self.mode = mode
         self._prepare_poscar()
         elements = self.get_elements_from_poscar()
         self.generate_potcar(elements)
@@ -400,9 +415,8 @@ def _create_batch_submit_script(setups: List[VaspOptSetup], script_name: str = "
     commands = []
     for setup in setups:
         case_dir = os.path.abspath(setup.work_dir)
-        case_script = getattr(setup, "_script_name", "fouropt.sh")
         commands.append(f'cd "{case_dir}"')
-        commands.append(f"bash {case_script}")
+        commands.extend(setup._build_mode_commands(setup.mode))
     write_job_script(script_path, slurm_header, commands)
     return os.path.basename(script_path)
 

@@ -1086,4 +1086,6 @@ def test_vasp_opt_multiple_pressures_generate_multiple_cases(chdir_work):
 
     submit_script = Path("submit_all_vasp_opt.sh").read_text(encoding="utf-8")
     assert 'cd "' in submit_script
-    assert "bash oneopt.sh" in submit_script
+    assert "bash oneopt.sh" not in submit_script
+    assert "bash fouropt.sh" not in submit_script
+    assert "/home/mayuan/soft/vasp.6.3.2/bin/vasp_std" in submit_script

@@ -59,6 +59,17 @@
     4. 补充自动化测试，验证多目录生成、`GPa -> kbar` 单位换算以及总脚本写出行为。
 - **状态**：已完成。
 
+### [2026-04-11] vasp_opt 多压强总脚本改为直接展开执行命令
+- **需求**：
+    1. `submit_all_vasp_opt.sh` 进入各 case 目录后，应直接执行 `[vasp].executable_path` 对应命令。
+    2. 不能继续通过 `bash fouropt.sh`、`bash oneopt.sh`、`bash fopt.sh` 间接调用，否则总脚本语义与用户预期不一致。
+- **方案**：
+    1. 在 `vaspflow/opt/vasp_opt.py` 中抽出按 `rv4/rv1/rvf` 生成命令序列的公共方法。
+    2. 单目录脚本 `fouropt.sh`、`oneopt.sh`、`fopt.sh` 继续复用这套命令生成逻辑，避免重复实现。
+    3. 多压强 `submit_all_vasp_opt.sh` 直接内联各目录对应的 VASP 命令序列，不再写出 `bash <case_script>`。
+    4. 更新测试，显式断言总脚本中不再出现 `bash oneopt.sh` / `bash fouropt.sh`，而是直接包含 `executable_path` 命令。
+- **状态**：已完成。
+
 ### [2026-04-10] 新增 vasp_plot_kcohp 用于 band-resolved pCOHP 绘图
 - **需求**：
     1. 新增一个 CLI，读取 LOBSTER `kSpaceCOHP` 结果目录，绘制 band-resolved projected COHP 图。
