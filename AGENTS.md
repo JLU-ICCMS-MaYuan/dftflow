@@ -83,6 +83,19 @@
     4. 同步更新 `pyproject.toml`、README、`vaspflow/README.md` 和自动化测试。
 - **状态**：已完成。
 
+### [2026-04-14] 新增 vasp_process_eledos 用于 VASP DOS 后处理
+- **需求**：
+    1. 新增一个纯后处理 CLI，处理 `vasp_eledos` 目录中的 `DOSCAR/TDOS/PDOS` 数据。
+    2. 支持按 `--elements "元素:轨道"` 指定需要聚合的元素轨道，例如 `"La:s,p,d"`、`"H:s"`。
+    3. 在调用 `vaspkit` 之前，先将 `DOSCAR` 的费米能级同步为 `../vasp_scf/OUTCAR` 中的 `E-fermi`。
+    4. 输出聚合后的 `CSV`、费米能处插值 `CSV`，并基于保存后的 `CSV` 自动绘制 DOS 图，图中标出费米能级。
+- **方案**：
+    1. 在 `vaspflow/eledos/vasp_process_eledos.py` 中实现纯后处理 CLI，不接入 `input.toml` 模板层。
+    2. 默认调用 `vaspkit 11 -> 113` 生成元素分波 `PDOS_<元素>.dat`，调用 `vaspkit 11 -> 111` 生成 `TDOS.dat`；也支持 `--skip-vaspkit` 直接复用现有文件。
+    3. 第一版按非自旋极化 `vaspkit` 输出实现 `s/p/d/f` 聚合，并支持 `--per-volume` 按晶胞体积归一化。
+    4. 同步注册 `pyproject.toml` 入口，更新 README，并补充自动化测试覆盖费米能修正、CSV 输出和 PNG 绘图。
+- **状态**：已完成。
+
 ### [2026-04-10] 统一 vasp_plot_cohp 与 vasp_plot_kcohp 的相互作用输入语法
 - **需求**：
     1. `vasp_plot_cohp` 与 `vasp_plot_kcohp` 对元素和轨道的设置方式必须一致。

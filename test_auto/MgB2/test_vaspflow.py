@@ -556,6 +556,118 @@ def test_vasp_eledos_cli(chdir_work):
     assert (Path("vasp_eledos") / "INCAR").exists()
 
 
+def test_vasp_process_eledos_generates_csv_and_png(chdir_work, monkeypatch):
+    pytest.importorskip("matplotlib")
+    from vaspflow.eledos import vasp_process_eledos as module
+
+    work_dir = Path("vasp_eledos")
+    work_dir.mkdir()
+    (work_dir / "POSCAR").write_text(
+        "\n".join(
+            [
+                "MgB2",
+                "1.0",
+                "1.0 0.0 0.0",
+                "0.0 1.0 0.0",
+                "0.0 0.0 1.0",
+                "Mg B",
+                "1 2",
+                "Direct",
+                "0.0 0.0 0.0",
+                "0.5 0.5 0.5",
+                "0.25 0.25 0.25",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (work_dir / "DOSCAR").write_text(
+        "\n".join(
+            [
+                "1 1 1 1 1",
+                "line2",
+                "line3",
+                "line4",
+                "line5",
+                "  -10.0  10.0  200  5.0000000000  1.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    scf_dir = Path("vasp_scf")
+    scf_dir.mkdir()
+    (scf_dir / "OUTCAR").write_text(" E-fermi : 2.5000 XC(G=0): 0.0000\n", encoding="utf-8")
+
+    class FakeProcess:
+        def __init__(self, cwd):
+            self.cwd = Path(cwd)
+            self.returncode = 0
+
+        def communicate(self, input=None):
+            if input == "11\n113\n":
+                (self.cwd / "PDOS_Mg.dat").write_text(
+                    "\n".join(
+                        [
+                            "Energy s py pz px tot",
+                            "-1.0 1.0 2.0 3.0 4.0 10.0",
+                            "0.0 2.0 3.0 4.0 5.0 14.0",
+                            "1.0 3.0 4.0 5.0 6.0 18.0",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                (self.cwd / "PDOS_B.dat").write_text(
+                    "\n".join(
+                        [
+                            "Energy s py pz px tot",
+                            "-1.0 0.5 1.0 1.5 2.0 5.0",
+                            "0.0 1.0 1.5 2.0 2.5 7.0",
+                            "1.0 1.5 2.0 2.5 3.0 9.0",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            elif input == "11\n111\n":
+                (self.cwd / "TDOS.dat").write_text(
+                    "\n".join(
+                        [
+                            "Energy DOS",
+                            "-1.0 20.0",
+                            "0.0 24.0",
+                            "1.0 28.0",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            return ("", "")
+
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *args, **kwargs: FakeProcess(kwargs.get("cwd")))
+
+    setup = module.VaspProcessDosSetup(
+        directory=str(work_dir),
+        element_specs=["Mg:s,p", "B:s"],
+        out_prefix="mgb2_dos",
+    )
+    merged_csv, at_ef_csv, plot_png = setup.run()
+
+    assert Path(merged_csv).exists()
+    assert Path(at_ef_csv).exists()
+    assert Path(plot_png).exists()
+    assert "2.5000000000" in (work_dir / "DOSCAR").read_text(encoding="utf-8")
+
+    merged_content = Path(merged_csv).read_text(encoding="utf-8")
+    assert "Energy(eV),Mg_s,Mg_p,Mg,B_s,B,TDOS" in merged_content
+    assert "0.0,2.0,12.0,14.0,1.0,7.0,24.0" in merged_content
+
+    ef_content = Path(at_ef_csv).read_text(encoding="utf-8")
+    assert "Energy(eV),Mg_s,Mg_p,Mg,B_s,B,TDOS" in ef_content
+    assert "0.0,2.0,12.0,14.0,1.0,7.0,24.0" in ef_content
+
+
 @pytest.mark.run
 def test_vasp_eledos_run(chdir_shared):
     """实际运行测试：vasp_eledos --run"""
