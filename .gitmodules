@@ -1,3 +1,3 @@
-[submodule "exteral/VASP-tools"]
-	path = exteral/VASP-tools
+[submodule "external/VASP-tools"]
+	path = external/VASP-tools
 	url = git@github.com:JLU-ICCMS-MaYuan/VASP-tools.git
