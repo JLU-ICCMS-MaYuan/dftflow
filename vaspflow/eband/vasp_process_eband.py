@@ -8,11 +8,14 @@ from collections import OrderedDict
 
 import numpy as np
 
-
-SUPPORTED_ORBITALS = ("s", "p", "d", "f")
-P_COMPONENTS = ("py", "pz", "px")
-D_COMPONENTS = ("dxy", "dyz", "dz2", "dxz", "x2-y2")
-F_COMPONENTS = ("fy3x2", "fxyz", "fyz2", "fz3", "fxz2", "fzx2", "fx3")
+from vaspflow.eledos.vasp_process_eledos import (
+    D_COMPONENTS,
+    F_COMPONENTS,
+    P_COMPONENTS,
+    get_orbital_components,
+    parse_element_specs,
+    replace_doscar_fermi,
+)
 
 
 def parse_arguments():
@@ -28,7 +31,7 @@ def parse_arguments():
         "--elements",
         nargs="+",
         required=True,
-        help='元素与轨道列表，例如: "Mg:s,p" "B:p"',
+        help='元素与轨道列表，例如: "Mg:s,p" "B:p" "Mg:px,dz2"',
     )
     parser.add_argument(
         "--fermi",
@@ -36,9 +39,19 @@ def parse_arguments():
         help="显式指定费米能（eV）。默认优先读 FERMI_ENERGY，再退回 OUTCAR。",
     )
     parser.add_argument(
+        "--scf-outcar",
+        default="../vasp_scf/OUTCAR",
+        help="参考 SCF 的 OUTCAR 路径，用于同步 DOSCAR 中的费米能级。",
+    )
+    parser.add_argument(
+        "--doscar",
+        default="DOSCAR",
+        help="DOSCAR 文件名，默认 DOSCAR。",
+    )
+    parser.add_argument(
         "--skip-vaspkit",
         action="store_true",
-        help="跳过 vaspkit 调用，直接复用现有 BAND.dat/PBAND_<元素>.dat/KLABELS。",
+        help="跳过 vaspkit 调用，直接复用现有 BAND.dat/PBAND_*.dat/KLABELS。",
     )
     parser.add_argument(
         "--out-prefix",
@@ -64,28 +77,6 @@ def parse_arguments():
         help="fatband 散点尺寸缩放因子，默认 200。",
     )
     return parser.parse_args()
-
-
-def parse_element_specs(items):
-    specs = OrderedDict()
-    for item in items:
-        try:
-            element, orbitals_text = item.split(":")
-        except ValueError as exc:
-            raise ValueError(f"无效输入格式: {item}，应为 元素:轨道,轨道") from exc
-        orbitals = []
-        for orbital in orbitals_text.split(","):
-            orbital = orbital.strip().lower()
-            if orbital not in SUPPORTED_ORBITALS:
-                raise ValueError(f"不支持的轨道类型: {orbital}，仅支持 s/p/d/f")
-            if orbital not in orbitals:
-                orbitals.append(orbital)
-        specs[element.strip()] = orbitals
-    if not specs:
-        raise ValueError("至少需要指定一个元素轨道组合。")
-    return specs
-
-
 def is_float(text):
     try:
         float(text)
@@ -140,6 +131,7 @@ def run_vaspkit(work_dir, command_text):
 def generate_vaspkit_band_files(work_dir):
     run_vaspkit(work_dir, "21\n211\n")
     run_vaspkit(work_dir, "21\n213\n")
+    run_vaspkit(work_dir, "21\n215\n")
 
 
 def parse_numeric_band_blocks(path):
@@ -176,6 +168,26 @@ def sum_optional_columns(data_block, indices):
     return total
 
 
+PBAND_COMPONENT_INDEX = {
+    "s": 2,
+    "py": 3,
+    "pz": 4,
+    "px": 5,
+    "dxy": 6,
+    "dyz": 7,
+    "dz2": 8,
+    "dxz": 9,
+    "dx2": 10,
+    "fy3x2": 11,
+    "fxyz": 12,
+    "fyz2": 13,
+    "fz3": 14,
+    "fxz2": 15,
+    "fzx2": 16,
+    "fx3": 17,
+}
+
+
 def load_element_pband(path, orbitals):
     blocks = parse_numeric_band_blocks(path)
     result = []
@@ -183,16 +195,12 @@ def load_element_pband(path, orbitals):
         kpath = block[:, 0]
         energy = block[:, 1]
         values = {}
-        if "s" in orbitals:
-            values["s"] = block[:, 2]
-        if "p" in orbitals:
-            values["p"] = sum_optional_columns(block, [3, 4, 5])
-        if "d" in orbitals:
-            values["d"] = sum_optional_columns(block, [6, 7, 8, 9, 10])
-        if "f" in orbitals:
-            if block.shape[1] < 18:
-                raise ValueError(f"{os.path.basename(path)} 不包含完整 f 轨道分量。")
-            values["f"] = sum_optional_columns(block, [11, 12, 13, 14, 15, 16, 17])
+        for orbital in orbitals:
+            components = get_orbital_components(orbital)
+            indices = [PBAND_COMPONENT_INDEX[component] for component in components]
+            if max(indices) >= block.shape[1]:
+                raise ValueError(f"{os.path.basename(path)} 不包含轨道 {orbital} 所需的完整分量。")
+            values[orbital] = sum_optional_columns(block, indices)
         result.append({"kpath": kpath, "energy": energy, "orbitals": values})
     return result
 
@@ -210,7 +218,8 @@ def ensure_matching_blocks(ref_blocks, test_blocks, path):
             raise ValueError(f"{path} 第 {idx} 条 band 的 k 点数不一致。")
         if np.max(np.abs(ref_block["kpath"] - test_block["kpath"])) > 1e-8:
             raise ValueError(f"{path} 第 {idx} 条 band 的 kpath 不一致。")
-        if np.max(np.abs(ref_block["energy"] - test_block["energy"])) > 1e-8:
+        # VASPKIT 导出的 BAND.dat 与 PBAND_*.dat 在文本写出时可能出现 1e-6 量级舍入差异。
+        if np.max(np.abs(ref_block["energy"] - test_block["energy"])) > 1e-5:
             raise ValueError(f"{path} 第 {idx} 条 band 的能量不一致。")
 
 
@@ -251,7 +260,11 @@ def load_csv_columns(path):
     return data
 
 
-def plot_band_from_csv(csv_path, png_path, emin=None, emax=None, weight_scale=200.0):
+def _format_klabel(label):
+    return label.replace("GAMMA", r"$\Gamma$")
+
+
+def plot_band_from_csv(csv_path, png_path, klabels=None, emin=None, emax=None, weight_scale=200.0):
     try:
         import matplotlib
 
@@ -264,7 +277,6 @@ def plot_band_from_csv(csv_path, png_path, emin=None, emax=None, weight_scale=20
     band_index = np.array(data["band_index"], dtype=int)
     kpath = np.array(data["kpath_dist"], dtype=float)
     energy = np.array(data["energy_ev"], dtype=float)
-    tick_x = np.array(data["tick_x"], dtype=float)
     weight_keys = [key for key in data if key.startswith("weight_")]
 
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -280,23 +292,28 @@ def plot_band_from_csv(csv_path, png_path, emin=None, emax=None, weight_scale=20
         ax.scatter(kpath, energy, s=sizes, alpha=0.55, label=label, zorder=2)
 
     ax.axhline(0.0, color="k", linestyle="--", linewidth=1.0)
-    for x in sorted(set(tick_x)):
-        ax.axvline(x, color="0.4", linestyle=":", linewidth=0.8)
-
-    labels = []
-    positions = []
-    for x, label in zip(tick_x, data["label"]):
-        if label and (not positions or abs(x - positions[-1]) > 1e-8):
+    if klabels:
+        positions = []
+        labels = []
+        for label, x in klabels:
+            x = float(x)
+            if positions and abs(x - positions[-1]) <= 1e-8:
+                labels[-1] = _format_klabel(label)
+                continue
             positions.append(x)
-            labels.append(label.replace("GAMMA", r"$\Gamma$"))
-    if positions:
+            labels.append(_format_klabel(label))
+            ax.axvline(x, color="0.4", linestyle=":", linewidth=0.8)
         ax.set_xticks(positions)
         ax.set_xticklabels(labels)
+        ax.set_xlim(positions[0], positions[-1])
+    else:
+        ax.set_xlim(float(np.min(kpath)), float(np.max(kpath)))
 
     ax.set_xlabel("K-path")
     ax.set_ylabel("Energy - E_F (eV)")
     if emin is not None or emax is not None:
         ax.set_ylim(emin, emax)
+    ax.margins(x=0.0)
     ax.grid(True, linestyle=":", alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -310,6 +327,8 @@ class VaspProcessBandSetup:
         directory=".",
         element_specs=None,
         fermi=None,
+        scf_outcar="../vasp_scf/OUTCAR",
+        doscar="DOSCAR",
         skip_vaspkit=False,
         out_prefix="pband_merged",
         emin=None,
@@ -319,6 +338,8 @@ class VaspProcessBandSetup:
         self.work_dir = os.path.abspath(directory)
         self.element_specs = parse_element_specs(element_specs or [])
         self.fermi = fermi
+        self.scf_outcar = os.path.abspath(os.path.join(self.work_dir, scf_outcar))
+        self.doscar_path = os.path.abspath(os.path.join(self.work_dir, doscar))
         self.skip_vaspkit = skip_vaspkit
         self.out_prefix = out_prefix
         self.emin = emin
@@ -328,6 +349,9 @@ class VaspProcessBandSetup:
     def prepare_band_files(self):
         if self.skip_vaspkit:
             return
+        fermi = extract_fermi_from_outcar(self.scf_outcar)
+        final_fermi = replace_doscar_fermi(self.doscar_path, fermi)
+        print(f"已将 DOSCAR 的费米能级更新为 {final_fermi} eV")
         print("正在调用 vaspkit 生成 BAND/PBAND 数据...")
         generate_vaspkit_band_files(self.work_dir)
 
@@ -384,7 +408,7 @@ class VaspProcessBandSetup:
                     break
             csv_data.append([row[key] for key in rows[0].keys()] + [label, tick_x])
         write_csv(csv_path, headers, csv_data)
-        plot_band_from_csv(csv_path, png_path, self.emin, self.emax, self.weight_scale)
+        plot_band_from_csv(csv_path, png_path, labels, self.emin, self.emax, self.weight_scale)
         return csv_path, png_path
 
     def run(self):
@@ -402,6 +426,8 @@ def main():
         directory=args.directory,
         element_specs=args.elements,
         fermi=args.fermi,
+        scf_outcar=args.scf_outcar,
+        doscar=args.doscar,
         skip_vaspkit=args.skip_vaspkit,
         out_prefix=args.out_prefix,
         emin=args.emin,

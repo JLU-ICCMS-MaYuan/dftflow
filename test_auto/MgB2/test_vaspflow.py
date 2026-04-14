@@ -415,6 +415,135 @@ def test_vasp_process_eband_generates_csv_and_png(chdir_work):
     assert "1,1,0.0,-1.0,0.1,0.9,0.5,GAMMA,0.0" in csv_content
 
 
+def test_vasp_process_eband_supports_fine_grained_orbitals(chdir_work):
+    from vaspflow.eband.vasp_process_eband import VaspProcessBandSetup
+
+    work_dir = Path("vasp_eband")
+    work_dir.mkdir()
+    (work_dir / "FERMI_ENERGY").write_text("5.000000\n", encoding="utf-8")
+    (work_dir / "KLABELS").write_text("GAMMA 0.000\nM 1.000\n", encoding="utf-8")
+    (work_dir / "BAND.dat").write_text(
+        "\n".join(
+            [
+                "#K-Path(1/A) Energy-Level(eV)",
+                "# NKPTS & NBANDS: 2   1",
+                "# Band-Index    1",
+                "0.00000 4.000000",
+                "1.00000 5.000000",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (work_dir / "PBAND_Mg.dat").write_text(
+        "\n".join(
+            [
+                "#K-Path Energy s py pz px dxy dyz dz2 dxz x2-y2 tot",
+                "# NKPTS & NBANDS: 2   1",
+                "# Band-Index    1",
+                "0.00000 4.000000 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 4.5",
+                "1.00000 5.000000 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0 5.4",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    setup = VaspProcessBandSetup(
+        directory=str(work_dir),
+        element_specs=["Mg:px,dz2,dx2"],
+        skip_vaspkit=True,
+        out_prefix="mgb2_band_fine",
+    )
+    csv_path, _ = setup.run()
+
+    csv_content = Path(csv_path).read_text(encoding="utf-8")
+    assert "weight_Mg_px,weight_Mg_dz2,weight_Mg_dx2" in csv_content
+    assert "1,1,0.0,-1.0,0.4,0.7,0.9,GAMMA,0.0" in csv_content
+
+
+def test_replace_doscar_fermi_preserves_spacing_pattern(chdir_work):
+    from vaspflow.eledos.vasp_process_eledos import replace_doscar_fermi
+
+    doscar_path = Path("DOSCAR")
+    original_line = "  -10.0   10.0    200   5.0000000000   1.0\n"
+    doscar_path.write_text(
+        "\n".join(["1", "2", "3", "4", "5", original_line.rstrip("\n")]) + "\n",
+        encoding="utf-8",
+    )
+
+    replace_doscar_fermi(str(doscar_path), 2.5)
+
+    new_line = doscar_path.read_text(encoding="utf-8").splitlines()[5]
+    assert new_line == "  -10.0   10.0    200   2.5000000000   1.0"
+
+
+def test_vasp_process_eband_syncs_doscar_and_runs_all_vaspkit_steps(chdir_work, monkeypatch):
+    from vaspflow.eband import vasp_process_eband as module
+
+    work_dir = Path("vasp_eband")
+    work_dir.mkdir()
+    (work_dir / "DOSCAR").write_text(
+        "\n".join(
+            [
+                "1 1 1 1 1",
+                "line2",
+                "line3",
+                "line4",
+                "line5",
+                "  -10.0   10.0    200   5.0000000000   1.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    scf_dir = Path("vasp_scf")
+    scf_dir.mkdir()
+    (scf_dir / "OUTCAR").write_text(" E-fermi : 2.5000 XC(G=0): 0.0000\n", encoding="utf-8")
+
+    calls = []
+
+    def fake_run_vaspkit(work_dir_arg, command_text):
+        calls.append((work_dir_arg, command_text))
+        return "", ""
+
+    monkeypatch.setattr(module, "run_vaspkit", fake_run_vaspkit)
+
+    setup = module.VaspProcessBandSetup(
+        directory=str(work_dir),
+        element_specs=["Mg:s"],
+    )
+    setup.prepare_band_files()
+
+    assert calls == [
+        (str(work_dir.resolve()), "21\n211\n"),
+        (str(work_dir.resolve()), "21\n213\n"),
+        (str(work_dir.resolve()), "21\n215\n"),
+    ]
+    assert "  -10.0   10.0    200   2.5000000000   1.0" in (work_dir / "DOSCAR").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_vasp_process_eband_accepts_small_band_energy_rounding_difference():
+    from vaspflow.eband.vasp_process_eband import ensure_matching_blocks
+
+    ref_blocks = [
+        {
+            "kpath": np.array([0.0, 0.5, 1.0], dtype=float),
+            "energy": np.array([1.0, 2.0, 3.0], dtype=float),
+        }
+    ]
+    test_blocks = [
+        {
+            "kpath": np.array([0.0, 0.5, 1.0], dtype=float),
+            "energy": np.array([1.0, 2.0 + 1e-6, 3.0], dtype=float),
+        }
+    ]
+
+    ensure_matching_blocks(ref_blocks, test_blocks, "PBAND_Mg.dat")
+
+
 class _FakeCohpcar:
     def __init__(self):
         self.energies = np.array([-1.0, 0.0, 1.0], dtype=float)
@@ -755,6 +884,206 @@ def test_vasp_process_eledos_generates_csv_and_png(chdir_work, monkeypatch):
     ef_content = Path(at_ef_csv).read_text(encoding="utf-8")
     assert "Energy(eV),Mg_s,Mg_p,Mg,B_s,B,TDOS" in ef_content
     assert "0.0,2.0,12.0,14.0,1.0,7.0,24.0" in ef_content
+
+
+def test_vasp_process_eledos_supports_fine_grained_orbitals(chdir_work, monkeypatch):
+    from vaspflow.eledos import vasp_process_eledos as module
+
+    work_dir = Path("vasp_eledos")
+    work_dir.mkdir()
+    (work_dir / "POSCAR").write_text(
+        "\n".join(
+            [
+                "MgB2",
+                "1.0",
+                "1.0 0.0 0.0",
+                "0.0 1.0 0.0",
+                "0.0 0.0 1.0",
+                "Mg B",
+                "1 2",
+                "Direct",
+                "0.0 0.0 0.0",
+                "0.5 0.5 0.5",
+                "0.25 0.25 0.25",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (work_dir / "DOSCAR").write_text(
+        "\n".join(
+            [
+                "1 1 1 1 1",
+                "line2",
+                "line3",
+                "line4",
+                "line5",
+                "  -10.0  10.0  200  5.0000000000  1.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    scf_dir = Path("vasp_scf")
+    scf_dir.mkdir()
+    (scf_dir / "OUTCAR").write_text(" E-fermi : 2.5000 XC(G=0): 0.0000\n", encoding="utf-8")
+
+    class FakeProcess:
+        def __init__(self, cwd):
+            self.cwd = Path(cwd)
+            self.returncode = 0
+
+        def communicate(self, input=None):
+            if input == "11\n113\n":
+                (self.cwd / "PDOS_Mg.dat").write_text(
+                    "\n".join(
+                        [
+                            "Energy s py pz px dxy dyz dz2 dxz dx2 tot",
+                            "-1.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 45.0",
+                            "0.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 54.0",
+                            "1.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 63.0",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            elif input == "11\n111\n":
+                (self.cwd / "TDOS.dat").write_text(
+                    "\n".join(
+                        [
+                            "Energy DOS",
+                            "-1.0 20.0",
+                            "0.0 24.0",
+                            "1.0 28.0",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            return ("", "")
+
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *args, **kwargs: FakeProcess(kwargs.get("cwd")))
+
+    setup = module.VaspProcessDosSetup(
+        directory=str(work_dir),
+        element_specs=["Mg:px,dz2,dx2"],
+        out_prefix="mgb2_dos_fine",
+    )
+    merged_csv, at_ef_csv, _ = setup.run()
+
+    merged_content = Path(merged_csv).read_text(encoding="utf-8")
+    assert "Energy(eV),Mg_px,Mg_dz2,Mg_dx2,Mg,TDOS" in merged_content
+    assert "0.0,5.0,8.0,10.0,54.0,24.0" in merged_content
+
+    ef_content = Path(at_ef_csv).read_text(encoding="utf-8")
+    assert "Energy(eV),Mg_px,Mg_dz2,Mg_dx2,Mg,TDOS" in ef_content
+    assert "0.0,5.0,8.0,10.0,54.0,24.0" in ef_content
+
+
+def test_vasp_idos_computed_generates_csv(chdir_work, monkeypatch):
+    from vaspflow.eledos import vasp_idos_computed as module
+
+    work_dir = Path("vasp_eledos")
+    work_dir.mkdir()
+    (work_dir / "POSCAR").write_text(
+        "\n".join(
+            [
+                "MgB2",
+                "1.0",
+                "1.0 0.0 0.0",
+                "0.0 1.0 0.0",
+                "0.0 0.0 1.0",
+                "Mg B",
+                "1 2",
+                "Direct",
+                "0.0 0.0 0.0",
+                "0.5 0.5 0.5",
+                "0.25 0.25 0.25",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (work_dir / "DOSCAR").write_text(
+        "\n".join(
+            [
+                "1 1 1 1 1",
+                "line2",
+                "line3",
+                "line4",
+                "line5",
+                "  -10.0  10.0  200  5.0000000000  1.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    scf_dir = Path("vasp_scf")
+    scf_dir.mkdir()
+    (scf_dir / "OUTCAR").write_text(" E-fermi : 2.5000 XC(G=0): 0.0000\n", encoding="utf-8")
+
+    class FakeProcess:
+        def __init__(self, cwd):
+            self.cwd = Path(cwd)
+            self.returncode = 0
+
+        def communicate(self, input=None):
+            if input == "11\n113\n":
+                (self.cwd / "PDOS_Mg.dat").write_text(
+                    "\n".join(
+                        [
+                            "Energy s py pz px tot",
+                            "-1.0 1.0 2.0 3.0 4.0 10.0",
+                            "0.0 2.0 3.0 4.0 5.0 14.0",
+                            "1.0 3.0 4.0 5.0 6.0 18.0",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                (self.cwd / "PDOS_B.dat").write_text(
+                    "\n".join(
+                        [
+                            "Energy s py pz px tot",
+                            "-1.0 0.5 1.0 1.5 2.0 5.0",
+                            "0.0 1.0 1.5 2.0 2.5 7.0",
+                            "1.0 1.5 2.0 2.5 3.0 9.0",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            elif input == "11\n111\n":
+                (self.cwd / "TDOS.dat").write_text(
+                    "\n".join(
+                        [
+                            "Energy DOS",
+                            "-1.0 20.0",
+                            "0.0 24.0",
+                            "1.0 28.0",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            return ("", "")
+
+    monkeypatch.setattr(module, "generate_vaspkit_dos_files", lambda wd: (FakeProcess(wd).communicate("11\n113\n"), FakeProcess(wd).communicate("11\n111\n")))
+
+    setup = module.VaspIdosComputedSetup(
+        directory=str(work_dir),
+        element_specs=["Mg:s,p", "B:s"],
+        low=-0.5,
+        up=0.5,
+        out_prefix="mgb2_idos",
+    )
+    csv_path = setup.run()
+
+    assert Path(csv_path).exists()
+    assert "2.5000000000" in (work_dir / "DOSCAR").read_text(encoding="utf-8")
+    csv_content = Path(csv_path).read_text(encoding="utf-8")
+    assert "low_eV,up_eV,TDOS_IDOS,Mg_s_IDOS,Mg_p_IDOS,B_s_IDOS,sum_selected_PDOS_IDOS,difference_TDOS_minus_sum_selected" in csv_content
+    assert "-0.5,0.5,24.0,2.0,12.0,1.0,15.0,9.0" in csv_content
 
 
 @pytest.mark.run

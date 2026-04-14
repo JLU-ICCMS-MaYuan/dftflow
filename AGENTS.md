@@ -109,6 +109,42 @@
     4. 同步注册 `pyproject.toml` 入口，更新 README，并补充自动化测试覆盖 CSV 输出和 PNG 绘图。
 - **状态**：已完成。
 
+### [2026-04-14] 新增 vasp_idos_computed 用于能量区间 IDOS 计算
+- **需求**：
+    1. 在 `vaspflow/eledos` 下新增一个纯后处理脚本，用于计算指定能量区间内的 IDOS。
+    2. 同时支持 `TDOS` 与通过 `--elements "元素:轨道"` 指定的聚合 `PDOS` 区间积分。
+    3. 输出结果 `CSV`，并在终端打印积分摘要。
+- **方案**：
+    1. 新增 `vaspflow/eledos/vasp_idos_computed.py`，命名固定为 `vasp_idos_computed`。
+    2. 复用 `vasp_process_eledos` 中现有的费米能修正、`vaspkit` 调用、`TDOS/PDOS` 解析与体积读取逻辑，避免重复实现。
+    3. 通过 `--low` / `--up` 指定单个能量区间，在 `E - E_F` 坐标下做端点线性插值后的梯形积分。
+    4. 注册 `pyproject.toml` 入口，更新 README，并补充自动化测试覆盖区间积分与 CSV 输出。
+- **状态**：已完成。
+
+### [2026-04-14] 修正 DOSCAR 费米能替换格式，并收敛 vasp_process_eband 的 vaspkit 流程
+- **需求**：
+    1. 修改 `DOSCAR` 第 6 行费米能时，不能重排整行空格，否则可能导致 `vaspkit` 对 `DOSCAR` 的解析失败。
+    2. 费米能替换应尽量保持原 token 的数值格式，只替换第 4 个数值本身。
+    3. `vasp_process_eband` 需要参考现有 shell 工作流，在调用 `vaspkit` 前先同步 `DOSCAR` 的费米能，并执行 `21/211`、`21/213`、`21/215` 三步。
+- **方案**：
+    1. 在 `vaspflow/eledos/vasp_process_eledos.py` 中重写 `replace_doscar_fermi()`，改为基于第 6 行第 4 个非空白 token 的原位替换，保留原始空格布局。
+    2. 替换时沿用原 token 的表示方式，优先保留原有小数位数与科学计数法风格，避免无意义格式漂移。
+    3. 在 `vaspflow/eband/vasp_process_eband.py` 中新增 `--scf-outcar`、`--doscar` 参数；非 `--skip-vaspkit` 场景下先同步 `DOSCAR` 费米能，再运行 `211 + 213 + 215`。
+    4. 更新 `vaspflow/README.md`，并补充自动化测试，验证 `DOSCAR` 空格模式保持不变以及 `vasp_process_eband` 的 `vaspkit` 调用顺序。
+- **状态**：已完成。
+
+### [2026-04-14] 扩展 vasp_process_eledos 与 vasp_process_eband 的精细轨道支持
+- **需求**：
+    1. `vasp_process_eledos` 与 `vasp_process_eband` 不仅要支持 `s/p/d/f`，还要支持更精细的角量子数轨道选择。
+    2. 两个 CLI 的轨道语法必须保持一致，避免同一输入在不同后处理脚本中语义不同。
+    3. 允许的精细轨道集合固定为 `s py pz px dxy dyz dz2 dxz dx2 fy3x2 fxyz fyz2 fz3 fxz2 fzx2 fx3`。
+- **方案**：
+    1. 在 `vaspflow/eledos/vasp_process_eledos.py` 中统一维护轨道白名单与“粗粒度轨道 -> 精细分量”映射。
+    2. `vasp_process_eledos` 读取 `PDOS_<元素>.dat` 时，若用户指定粗粒度轨道则自动求和，若指定精细轨道则直接读取对应列。
+    3. `vasp_process_eband` 直接复用 `vasp_process_eledos` 的轨道解析逻辑，并通过固定列索引映射读取 `PBAND_<元素>.dat` 中的精细分量或求和结果。
+    4. 更新 README 和自动化测试，覆盖 `px/dz2/dx2` 这类精细轨道输入。
+- **状态**：已完成。
+
 ### [2026-04-10] 统一 vasp_plot_cohp 与 vasp_plot_kcohp 的相互作用输入语法
 - **需求**：
     1. `vasp_plot_cohp` 与 `vasp_plot_kcohp` 对元素和轨道的设置方式必须一致。

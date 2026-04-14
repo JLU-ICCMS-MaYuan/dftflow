@@ -9,10 +9,35 @@ from collections import OrderedDict
 import numpy as np
 
 
-SUPPORTED_ORBITALS = ("s", "p", "d", "f")
 P_COMPONENTS = ("py", "pz", "px")
 D_COMPONENTS = ("dxy", "dyz", "dz2", "dxz", "dx2")
 F_COMPONENTS = ("fy3x2", "fxyz", "fyz2", "fz3", "fxz2", "fzx2", "fx3")
+COARSE_ORBITALS = ("s", "p", "d", "f")
+FINE_ORBITALS = ("s",) + P_COMPONENTS + D_COMPONENTS + F_COMPONENTS
+SUPPORTED_ORBITALS = COARSE_ORBITALS + tuple(
+    orbital for orbital in FINE_ORBITALS if orbital not in COARSE_ORBITALS
+)
+ORBITAL_GROUPS = {
+    "s": ("s",),
+    "p": P_COMPONENTS,
+    "d": D_COMPONENTS,
+    "f": F_COMPONENTS,
+    "py": ("py",),
+    "pz": ("pz",),
+    "px": ("px",),
+    "dxy": ("dxy",),
+    "dyz": ("dyz",),
+    "dz2": ("dz2",),
+    "dxz": ("dxz",),
+    "dx2": ("dx2",),
+    "fy3x2": ("fy3x2",),
+    "fxyz": ("fxyz",),
+    "fyz2": ("fyz2",),
+    "fz3": ("fz3",),
+    "fxz2": ("fxz2",),
+    "fzx2": ("fzx2",),
+    "fx3": ("fx3",),
+}
 
 
 def parse_arguments():
@@ -28,7 +53,7 @@ def parse_arguments():
         "--elements",
         nargs="+",
         required=True,
-        help='元素与轨道列表，例如: "La:s,p,d" "H:s"',
+        help='元素与轨道列表，例如: "La:s,p,d" "H:s" "Mg:px,dz2"',
     )
     parser.add_argument(
         "--scf-outcar",
@@ -69,7 +94,10 @@ def parse_element_specs(items):
         for orbital in orbitals_text.split(","):
             orbital = orbital.strip().lower()
             if orbital not in SUPPORTED_ORBITALS:
-                raise ValueError(f"不支持的轨道类型: {orbital}，仅支持 s/p/d/f")
+                raise ValueError(
+                    f"不支持的轨道类型: {orbital}，支持粗粒度 s/p/d/f 与精细轨道 "
+                    "s/py/pz/px/dxy/dyz/dz2/dxz/dx2/fy3x2/fxyz/fyz2/fz3/fxz2/fzx2/fx3"
+                )
             if orbital not in orbitals:
                 orbitals.append(orbital)
         specs[element.strip()] = orbitals
@@ -97,14 +125,31 @@ def replace_doscar_fermi(doscar_path, new_fermi):
         lines = f.readlines()
     if len(lines) < 6:
         raise ValueError("DOSCAR 行数不足，无法修改费米能级。")
-    parts = lines[5].split()
-    if len(parts) < 4:
+    line = lines[5]
+    matches = list(re.finditer(r"\S+", line.rstrip("\n")))
+    if len(matches) < 4:
         raise ValueError("DOSCAR 第 6 行格式不正确，无法修改费米能级。")
-    parts[3] = f"{new_fermi:.10f}"
-    lines[5] = "  " + "  ".join(parts) + "\n"
+
+    old_token = matches[3].group(0)
+    decimal_places = 10
+    if "e" in old_token.lower():
+        mantissa, exponent = re.split(r"[eE]", old_token, maxsplit=1)
+        if "." in mantissa:
+            decimal_places = len(mantissa.split(".", 1)[1])
+        replacement = f"{new_fermi:.{decimal_places}e}"
+        if "E" in old_token:
+            replacement = replacement.upper()
+    elif "." in old_token:
+        decimal_places = len(old_token.split(".", 1)[1])
+        replacement = f"{new_fermi:.{decimal_places}f}"
+    else:
+        replacement = str(int(round(new_fermi)))
+
+    start, end = matches[3].span()
+    lines[5] = f"{line[:start]}{replacement}{line[end:]}"
     with open(doscar_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
-    return float(parts[3])
+    return float(replacement)
 
 
 def run_vaspkit(work_dir, command_text):
@@ -207,19 +252,23 @@ def sum_optional_columns(columns, names):
     return total
 
 
+def get_orbital_components(orbital):
+    if orbital not in ORBITAL_GROUPS:
+        raise KeyError(f"未知轨道类型: {orbital}")
+    return ORBITAL_GROUPS[orbital]
+
+
 def load_pdos_file(path, orbitals):
     columns = read_dat_table(path)
     energy = find_column(columns, "energy", "energyev", "energyev")
     total = find_column(columns, "tot", "total")
     data = {"energy": energy, "tot": total}
-    if "s" in orbitals:
-        data["s"] = find_column(columns, "s")
-    if "p" in orbitals:
-        data["p"] = sum_optional_columns(columns, P_COMPONENTS)
-    if "d" in orbitals:
-        data["d"] = sum_optional_columns(columns, D_COMPONENTS)
-    if "f" in orbitals:
-        data["f"] = sum_optional_columns(columns, F_COMPONENTS)
+    for orbital in orbitals:
+        components = get_orbital_components(orbital)
+        if len(components) == 1:
+            data[orbital] = find_column(columns, components[0])
+        else:
+            data[orbital] = sum_optional_columns(columns, components)
     return data
 
 
@@ -284,11 +333,15 @@ def plot_dos_from_csv(csv_path, png_path):
     energy = data.pop("Energy(eV)")
 
     fig, ax = plt.subplots(figsize=(8, 5))
+    y_max = 0.0
     for label, values in data.items():
         ax.plot(energy, values, linewidth=1.5, label=label)
+        if len(values) > 0:
+            y_max = max(y_max, float(np.max(values)))
     ax.axvline(0.0, color="k", linestyle="--", linewidth=1.0, label="E_F")
     ax.set_xlabel("Energy - E_F (eV)")
     ax.set_ylabel("DOS")
+    ax.set_ylim(bottom=0.0, top=y_max * 1.05 if y_max > 0.0 else 1.0)
     ax.legend()
     ax.grid(True, linestyle=":", alpha=0.4)
     fig.tight_layout()
