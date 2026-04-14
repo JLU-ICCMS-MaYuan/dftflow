@@ -326,6 +326,95 @@ def test_vasp_plot_kcohp_matches_shell_orbitals_across_atoms(chdir_work):
     assert match_indices(labels, side_b) == [3, 4]
 
 
+def test_vasp_process_eband_generates_csv_and_png(chdir_work):
+    pytest.importorskip("matplotlib")
+    from vaspflow.eband.vasp_process_eband import VaspProcessBandSetup
+
+    work_dir = Path("vasp_eband")
+    work_dir.mkdir()
+    (work_dir / "FERMI_ENERGY").write_text("5.000000\n", encoding="utf-8")
+    (work_dir / "KLABELS").write_text(
+        "\n".join(
+            [
+                "K-Label Coordinate",
+                "GAMMA 0.000",
+                "M 1.000",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (work_dir / "BAND.dat").write_text(
+        "\n".join(
+            [
+                "#K-Path(1/A) Energy-Level(eV)",
+                "# NKPTS & NBANDS: 3   2",
+                "# Band-Index    1",
+                "0.00000 4.000000",
+                "0.50000 5.000000",
+                "1.00000 6.000000",
+                "# Band-Index    2",
+                "0.00000 5.500000",
+                "0.50000 6.000000",
+                "1.00000 6.500000",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (work_dir / "PBAND_Mg.dat").write_text(
+        "\n".join(
+            [
+                "#K-Path Energy s py pz px dxy dyz dz2 dxz x2-y2 tot",
+                "# NKPTS & NBANDS: 3   2",
+                "# Band-Index    1",
+                "0.00000 4.000000 0.1 0.2 0.3 0.4 0 0 0 0 0 1.0",
+                "0.50000 5.000000 0.2 0.3 0.4 0.5 0 0 0 0 0 1.4",
+                "1.00000 6.000000 0.3 0.4 0.5 0.6 0 0 0 0 0 1.8",
+                "# Band-Index    2",
+                "0.00000 5.500000 0.2 0.1 0.1 0.2 0 0 0 0 0 0.6",
+                "0.50000 6.000000 0.3 0.2 0.2 0.3 0 0 0 0 0 1.0",
+                "1.00000 6.500000 0.4 0.3 0.3 0.4 0 0 0 0 0 1.4",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (work_dir / "PBAND_B.dat").write_text(
+        "\n".join(
+            [
+                "#K-Path Energy s py pz px dxy dyz dz2 dxz x2-y2 tot",
+                "# NKPTS & NBANDS: 3   2",
+                "# Band-Index    1",
+                "0.00000 4.000000 0.5 0.1 0.1 0.1 0 0 0 0 0 0.8",
+                "0.50000 5.000000 0.6 0.1 0.2 0.1 0 0 0 0 0 1.0",
+                "1.00000 6.000000 0.7 0.2 0.2 0.2 0 0 0 0 0 1.3",
+                "# Band-Index    2",
+                "0.00000 5.500000 0.4 0.2 0.1 0.1 0 0 0 0 0 0.8",
+                "0.50000 6.000000 0.5 0.2 0.2 0.2 0 0 0 0 0 1.1",
+                "1.00000 6.500000 0.6 0.3 0.2 0.2 0 0 0 0 0 1.3",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    setup = VaspProcessBandSetup(
+        directory=str(work_dir),
+        element_specs=["Mg:s,p", "B:s"],
+        skip_vaspkit=True,
+        out_prefix="mgb2_band",
+    )
+    csv_path, png_path = setup.run()
+
+    assert Path(csv_path).exists()
+    assert Path(png_path).exists()
+    csv_content = Path(csv_path).read_text(encoding="utf-8")
+    assert "band_index,kpoint_index,kpath_dist,energy_ev,weight_Mg_s,weight_Mg_p,weight_B_s,label,tick_x" in csv_content
+    assert "1,2,0.5,0.0,0.2,1.2,0.6,,0.5" in csv_content
+    assert "1,1,0.0,-1.0,0.1,0.9,0.5,GAMMA,0.0" in csv_content
+
+
 class _FakeCohpcar:
     def __init__(self):
         self.energies = np.array([-1.0, 0.0, 1.0], dtype=float)

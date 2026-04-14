@@ -96,6 +96,19 @@
     4. 同步注册 `pyproject.toml` 入口，更新 README，并补充自动化测试覆盖费米能修正、CSV 输出和 PNG 绘图。
 - **状态**：已完成。
 
+### [2026-04-14] 新增 vasp_process_eband 用于 VASP 能带后处理
+- **需求**：
+    1. 新增一个纯后处理 CLI，处理 `vasp_eband` 目录中的 `BAND.dat / PBAND_<元素>.dat / KLABELS / FERMI_ENERGY` 数据。
+    2. 支持按 `--elements "元素:轨道"` 指定需要聚合的元素轨道，例如 `"Mg:s,p"`、`"B:p"`。
+    3. 输出聚合后的 `CSV`，并自动绘制投影能带图，图中包含灰色背景 band、费米能级水平线和高对称点竖线。
+    4. 第一版优先复用 `vaspkit` 已生成的 `BAND/PBAND` 数据格式，不直接解析 `PROCAR`。
+- **方案**：
+    1. 在 `vaspflow/eband/vasp_process_eband.py` 中实现纯后处理 CLI，不接入 `input.toml` 模板层。
+    2. 默认调用 `vaspkit` 生成 `BAND.dat` 与 `PBAND_<元素>.dat`；也支持 `--skip-vaspkit` 直接复用现有文件。
+    3. 第一版按非自旋极化 `PBAND_<元素>.dat` 实现 `s/p/d/f` 聚合，能量默认平移到 `E - E_F`，其中费米能优先读取 `FERMI_ENERGY`，否则退回 `OUTCAR`。
+    4. 同步注册 `pyproject.toml` 入口，更新 README，并补充自动化测试覆盖 CSV 输出和 PNG 绘图。
+- **状态**：已完成。
+
 ### [2026-04-10] 统一 vasp_plot_cohp 与 vasp_plot_kcohp 的相互作用输入语法
 - **需求**：
     1. `vasp_plot_cohp` 与 `vasp_plot_kcohp` 对元素和轨道的设置方式必须一致。
