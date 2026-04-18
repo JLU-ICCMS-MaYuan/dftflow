@@ -39,6 +39,9 @@ vasp_charge = "vaspflow.charge.vasp_charge:main"
 vasp_charge_diff = "vaspflow.charge.vasp_charge_diff:main"
 vasp_opt = "vaspflow.opt.vasp_opt:main"
 vasp_elf = "vaspflow.elf.vasp_elf:main"
+high_throughput_substitute_structure = "high_throughput_substitution.cli_structure:main"
+high_throughput_substitution = "high_throughput_substitution.cli_workflow:main"
+high_throughput_continue = "high_throughput_substitution.cli_continue:main"
 qe_scf = "qeflow.scf.qe_scf:main"
 qe_nscf = "qeflow.nscf.qe_nscf:main"
 qe_eband = "qeflow.eband.qe_eband:main"
@@ -51,4 +54,4 @@ wannier_window = "wannier90flow.wannier_window:main"
 wannier_plot = "wannier90flow.wannier90_plot:main"
 
 [tool.setuptools]
-packages = {find = {where = ["."], include = ["*flow*", "public"]}}
+packages = {find = {where = ["."], include = ["*flow*", "public", "high_throughput_substitution*"]}}

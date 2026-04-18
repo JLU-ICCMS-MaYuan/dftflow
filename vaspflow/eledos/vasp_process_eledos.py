@@ -52,8 +52,13 @@ def parse_arguments():
         "-e",
         "--elements",
         nargs="+",
-        required=True,
+        required=False,
         help='元素与轨道列表，例如: "La:s,p,d" "H:s" "Mg:px,dz2"',
+    )
+    parser.add_argument(
+        "--elements-total",
+        nargs="+",
+        help="只输出指定元素的总投影列，例如: Mg B H。",
     )
     parser.add_argument(
         "--scf-outcar",
@@ -104,6 +109,19 @@ def parse_element_specs(items):
     if not specs:
         raise ValueError("至少需要指定一个元素轨道组合。")
     return specs
+
+
+def parse_total_elements(items):
+    elements = []
+    for item in items:
+        element = item.strip()
+        if not element:
+            continue
+        if element not in elements:
+            elements.append(element)
+    if not elements:
+        raise ValueError("至少需要指定一个元素。")
+    return elements
 
 
 def extract_fermi_from_outcar(path):
@@ -354,6 +372,7 @@ class VaspProcessDosSetup:
         self,
         directory=".",
         element_specs=None,
+        total_elements=None,
         scf_outcar="../vasp_scf/OUTCAR",
         doscar="DOSCAR",
         per_volume=False,
@@ -361,7 +380,12 @@ class VaspProcessDosSetup:
         out_prefix="pdos_merged",
     ):
         self.work_dir = os.path.abspath(directory)
-        self.element_specs = parse_element_specs(element_specs or [])
+        if element_specs and total_elements:
+            raise ValueError("不能同时指定 element_specs 和 total_elements。")
+        if not element_specs and not total_elements:
+            raise ValueError("必须指定 --elements 或 --elements-total。")
+        self.element_specs = parse_element_specs(element_specs or []) if element_specs else OrderedDict()
+        self.total_elements = parse_total_elements(total_elements or []) if total_elements else []
         self.scf_outcar = os.path.abspath(os.path.join(self.work_dir, scf_outcar))
         self.doscar_path = os.path.abspath(os.path.join(self.work_dir, doscar))
         self.per_volume = per_volume
@@ -397,6 +421,19 @@ class VaspProcessDosSetup:
                     values = values / volume
                 merged[f"{element}_{orbital}"] = values
 
+            total_values = pdos_data["tot"]
+            if self.per_volume:
+                total_values = total_values / volume
+            merged[element] = total_values
+
+        for element in self.total_elements:
+            pdos_path = os.path.join(self.work_dir, f"PDOS_{element}.dat")
+            pdos_data = load_pdos_file(pdos_path, [])
+            if energy_ref is None:
+                energy_ref = pdos_data["energy"]
+                merged["Energy(eV)"] = energy_ref
+            else:
+                ensure_same_grid(energy_ref, pdos_data["energy"], pdos_path)
             total_values = pdos_data["tot"]
             if self.per_volume:
                 total_values = total_values / volume
@@ -460,6 +497,7 @@ def main():
     setup = VaspProcessDosSetup(
         directory=args.directory,
         element_specs=args.elements,
+        total_elements=args.elements_total,
         scf_outcar=args.scf_outcar,
         doscar=args.doscar,
         per_volume=args.per_volume,

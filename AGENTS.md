@@ -145,6 +145,44 @@
     4. 更新 README 和自动化测试，覆盖 `px/dz2/dx2` 这类精细轨道输入。
 - **状态**：已完成。
 
+### [2026-04-17] 新增 high_throughput_substitution 高通量替换与续算工作流
+- **需求**：
+    1. 新增正式模块 `high_throughput_substitution/`，用于对含 `XA/XB` 假元素的占位结构做高通量元素替换。
+    2. 替换集合只从 `[high_throughput_substitution]` 读取，语法使用原子序号范围，如 `XA = "1-3,4,6-9"`。
+    3. 目录按 `<Z>.XA_<元素>/period_n/<Z>.<formula>` 组织，并在每个 case 下展开 `vasp_opt -> vasp_scf -> vasp_eledos -> vasp_process_eledos`。
+    4. 从工作流开始就维护 `workflow_status.json`，并新增 `high_throughput_continue` 负责检查、汇总和续算。
+- **方案**：
+    1. 新增 `high_throughput_substitute_structure`、`high_throughput_substitution`、`high_throughput_continue` 三个 CLI。
+    2. 在模块内拆分 `selection.py`、`structure_substitution.py`、`workflow.py`、`status.py`，分别承担元素选择、结构替换、工作流编排和状态管理。
+    3. 第一版只支持两个占位位点 `XA/XB`，其余真实元素保持不变；目录树和状态文件在生成替换结构时一并初始化。
+    4. 为满足工作流默认输出每种元素总投影，扩展 `vasp_process_eledos` 支持 `--elements-total` 模式。
+    5. 更新 `pyproject.toml`、README、自动化测试和文档说明。
+- **状态**：已完成。
+
+### [2026-04-17] 收紧 high_throughput_substitute_structure 的结构输入来源
+- **需求**：
+    1. `high_throughput_substitute_structure` 不应再要求用户额外传 `-i`。
+    2. 既然 `[high_throughput_substitution].structure_filename` 已存在，结构文件路径应直接从配置文件中解析。
+- **方案**：
+    1. 删除 `high_throughput_substitute_structure` 的 `-i/--input` 参数。
+    2. 新增按“配置文件所在目录 + structure_filename”解析输入结构路径的逻辑。
+    3. 补充自动化测试，验证仅指定 `-c/-o` 即可正常生成替换目录。
+- **状态**：已完成。
+
+### [2026-04-17] 重构 high_throughput_substitution 的状态判定与续算机制
+- **需求**：
+    1. `workflow_manifest.json` 改为放在 `period_n/` 目录，只保留静态 case 清单，不再承担动态状态职责。
+    2. 每个实际体系目录新增 `case_status.json`，记录各压力点在 `vasp_opt / vasp_scf / vasp_eledos / vasp_process_eledos` 上的 `finished / running / error / unstarted` 状态。
+    3. 输出根目录中的 `workflow_status.json` 改为纯汇总文件，供 `high_throughput_continue` 统计、扫描和续算使用。
+    4. 状态判定必须按真实 VASP 输出语义实现：`vasp_opt` 检查结构优化收敛关键词，`vasp_scf/vasp_eledos` 检查电子步收敛、`NELM` 与关键输出，`vasp_process_eledos` 检查 `*_at_ef.csv`。
+    5. `running` 状态需要通过 `squeue --format='%12A %12P %5t %25R %8M %Z'` 的工作目录匹配识别，而不是手工写死。
+- **方案**：
+    1. 重写 `high_throughput_substitution/status.py`，新增 manifest 扫描、case 状态文件初始化、四步状态判定、根目录汇总构建与 `squeue` 运行中检测。
+    2. 调整 `high_throughput_substitution/structure_substitution.py`，按 `period_n/` 分组写出 `workflow_manifest.json`，不再在 case 目录写 manifest。
+    3. 调整 `high_throughput_substitution/workflow.py`，不再把根目录状态文件当真源，而是始终基于 `workflow_manifest.json + case_status.json` 刷新后再决定 setup、续算和提交脚本生成。
+    4. 重写 `test_auto/MgB2/test_high_throughput_substitution.py`，覆盖 period-level manifest、case-level status、`finished/error/running/unstarted` 判定以及 continue 续算链路。
+- **状态**：已完成。
+
 ### [2026-04-10] 统一 vasp_plot_cohp 与 vasp_plot_kcohp 的相互作用输入语法
 - **需求**：
     1. `vasp_plot_cohp` 与 `vasp_plot_kcohp` 对元素和轨道的设置方式必须一致。
