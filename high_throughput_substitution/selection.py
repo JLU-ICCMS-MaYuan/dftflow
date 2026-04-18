@@ -132,6 +132,8 @@ def render_selection_preview(label: str, selection: str) -> str:
     numbers = parse_atomic_selection(selection)
     selected = {atomic_number_to_symbol(number) for number in numbers}
     lines = [f"{label} 选择预览:"]
+    all_row_labels = list(PERIOD_TABLE_LAYOUT.keys()) + list(SERIES_TABLE_LAYOUT.keys())
+    row_label_width = max(len(row_label) for row_label in all_row_labels)
 
     def render_layout_row(row_label: str, layout: Dict[int, str]) -> str:
         cells = []
@@ -143,7 +145,8 @@ def render_selection_preview(label: str, selection: str) -> str:
                 count += 1
             else:
                 cells.append(" " * DISPLAY_CELL_WIDTH)
-        return f"({count:02d}){row_label}: {''.join(cells).rstrip()}"
+        padding = " " * (row_label_width - len(row_label))
+        return f"({count:02d}){row_label}:{padding} {''.join(cells).rstrip()}"
 
     for row_label, layout in PERIOD_TABLE_LAYOUT.items():
         lines.append(render_layout_row(row_label, layout))
