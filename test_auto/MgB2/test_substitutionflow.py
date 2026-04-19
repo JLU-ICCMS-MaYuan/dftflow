@@ -328,6 +328,31 @@ def test_refresh_status_detects_finished_error_and_running(chdir_work):
     assert workflow_status["steps"]["mattersim_opt"]["running"] >= 1
 
 
+def test_refresh_status_marks_prepared_mattersim_as_unstarted(chdir_work):
+    from substitutionflow.status import create_initial_status, refresh_status
+    from substitutionflow.structure_substitution import generate_cases
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config(config_path)
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    case_dir = Path("ht_out/03.XA_Li/period_2/03.Li2H7")
+    mattersim_dir = case_dir / "50/mattersim_opt"
+    mattersim_dir.mkdir(parents=True, exist_ok=True)
+    (mattersim_dir / "POSCAR").write_text("poscar\n", encoding="utf-8")
+    (mattersim_dir / "run_mattersim.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+    (mattersim_dir / "run_mattersim_opt.py").write_text("print('run')\n", encoding="utf-8")
+
+    workflow_status = refresh_status("ht_out", squeue_output="")
+    case_status = json.loads((case_dir / "case_status.json").read_text(encoding="utf-8"))
+
+    assert case_status["pressures"]["50"]["mattersim_opt"] == "unstarted"
+    assert workflow_status["steps"]["mattersim_opt"]["unstarted"] >= 1
+
+
 def test_refresh_status_without_mattersim_marks_step_finished(chdir_work):
     from substitutionflow.status import create_initial_status, refresh_status
     from substitutionflow.structure_substitution import generate_cases

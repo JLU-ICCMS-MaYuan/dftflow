@@ -253,6 +253,11 @@ def _mattersim_has_trace(step_dir: str) -> bool:
     return any(os.path.exists(os.path.join(step_dir, name)) for name in tracked) or _directory_has_any_file(step_dir)
 
 
+def _mattersim_has_runtime_trace(step_dir: str) -> bool:
+    tracked = ("CONTCAR", "mattersim_opt.json", "mattersim_opt.log")
+    return any(os.path.exists(os.path.join(step_dir, name)) for name in tracked)
+
+
 def _generic_step_has_trace(step_dir: str) -> bool:
     return _directory_has_any_file(step_dir)
 
@@ -284,11 +289,13 @@ def _detect_mattersim_opt_status(pressure_dir: str, active_dirs: Set[str]) -> st
             if all(bool(stage_payload.get("converged")) for stage_payload in stages.values()):
                 return "finished"
         elif bool(payload.get("stage1", {}).get("converged")) and bool(payload.get("stage2", {}).get("converged")):
-            return "finished"
+                return "finished"
     if _path_matches_active_dir(step_dir, active_dirs):
         return "running"
-    if _mattersim_has_trace(step_dir):
+    if _mattersim_has_runtime_trace(step_dir):
         return "error"
+    if _mattersim_has_trace(step_dir):
+        return "unstarted"
     return "unstarted"
 
 
