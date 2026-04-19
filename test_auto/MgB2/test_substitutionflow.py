@@ -117,6 +117,62 @@ submit_groups = 1
     )
 
 
+def _write_ht_config_without_mattersim(path: Path):
+    path.write_text(
+        """
+potcar_dir = "potcar_lib"
+
+[vasp]
+executable_path = "vasp_std"
+
+[slurm]
+header = "#!/bin/bash"
+
+[vasp_opt]
+ENCUT = 520
+ISMEAR = 0
+SIGMA = 0.05
+ISYM = 0
+SYMPREC = 1e-5
+PSTRESS = 0.0
+NCORE = 4
+NELM = 200
+POTIM = 0.05
+EDIFF = 1e-7
+EDIFFG = -0.01
+IBRION = 2
+ISIF = 3
+kmesh = 0.025
+
+[vasp_scf]
+ENCUT = 520
+ISMEAR = 0
+SIGMA = 0.05
+ISYM = 2
+NCORE = 4
+kmesh = 0.025
+
+[vasp_eledos]
+ENCUT = 520
+ISMEAR = -5
+ISYM = 2
+NCORE = 4
+NEDOS = 2000
+kmesh = 0.025
+
+[substitutionflow]
+XA = "3,4"
+XB = "3-5"
+pressures = [20, 50]
+structure_filename = "structure.vasp"
+preview = true
+submit_groups = 1
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _write_opt_outcar(path: Path, converged: bool = True):
     marker = "reached required accuracy - stopping structural energy minimisation" if converged else "still optimizing"
     path.write_text(marker + "\n", encoding="utf-8")
@@ -270,6 +326,26 @@ def test_refresh_status_detects_finished_error_and_running(chdir_work):
     assert case_status["pressures"]["50"]["mattersim_opt"] == "running"
     assert workflow_status["steps"]["mattersim_opt"]["finished"] >= 1
     assert workflow_status["steps"]["mattersim_opt"]["running"] >= 1
+
+
+def test_refresh_status_without_mattersim_marks_step_finished(chdir_work):
+    from substitutionflow.status import create_initial_status, refresh_status
+    from substitutionflow.structure_substitution import generate_cases
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    case_dir = Path("ht_out/03.XA_Li/period_2/04.LiBeH7")
+    workflow_status = refresh_status("ht_out", squeue_output="")
+    case_status = json.loads((case_dir / "case_status.json").read_text(encoding="utf-8"))
+
+    assert "mattersim_opt" not in case_status["pressures"]["20"]
+    assert case_status["pressures"]["20"]["vasp_opt"] == "unstarted"
+    assert "mattersim_opt" not in workflow_status["steps"]
 
 
 def test_run_workflow_generates_group_scripts_and_opt_dirs(chdir_work, monkeypatch):

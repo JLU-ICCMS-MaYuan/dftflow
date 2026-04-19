@@ -5,7 +5,9 @@ import os
 import re
 import subprocess
 from collections import OrderedDict
-from typing import Dict, Iterable, List, Optional, Set
+from typing import Dict, Iterable, List, Optional, Set, Tuple
+
+from public.config_templates import load_config_file
 
 
 STEP_ORDER = ("mattersim_opt", "vasp_opt", "vasp_scf", "vasp_eledos", "vasp_process_eledos")
@@ -28,6 +30,23 @@ def get_workflow_status_path(output_dir: str) -> str:
 
 def get_case_status_path(case_dir: str) -> str:
     return os.path.join(case_dir, "case_status.json")
+
+
+def case_uses_mattersim(case_dir: str) -> bool:
+    config_path = os.path.join(case_dir, "input.toml")
+    if not os.path.exists(config_path):
+        return False
+    try:
+        config = load_config_file(config_path)
+    except Exception:
+        return False
+    return "mattersim_opt" in config
+
+
+def get_case_step_order(case_dir: str) -> Tuple[str, ...]:
+    if case_uses_mattersim(case_dir):
+        return STEP_ORDER
+    return tuple(step for step in STEP_ORDER if step != "mattersim_opt")
 
 
 def _load_json(path: str) -> Dict:
@@ -80,12 +99,17 @@ def _default_pressure_status(pressures: Iterable) -> Dict[str, Dict[str, str]]:
 
 
 def build_default_case_status(case_meta: Dict) -> Dict:
+    step_order = get_case_step_order(case_meta["case_dir"])
+    pressure_status = OrderedDict()
+    for pressure in case_meta["pressures"]:
+        pressure_key = f"{pressure:g}" if isinstance(pressure, (int, float)) else str(pressure)
+        pressure_status[pressure_key] = {step: "unstarted" for step in step_order}
     return {
         "formula": case_meta["formula"],
         "xa_symbol": case_meta["xa_symbol"],
         "xb_symbol": case_meta["xb_symbol"],
         "input_structure": case_meta["input_structure"],
-        "pressures": _default_pressure_status(case_meta["pressures"]),
+        "pressures": pressure_status,
     }
 
 
@@ -100,6 +124,7 @@ def save_case_status(case_dir: str, case_status: Dict) -> None:
 def _ensure_case_status_file(case_meta: Dict) -> Dict:
     status_path = get_case_status_path(case_meta["case_dir"])
     expected = build_default_case_status(case_meta)
+    step_order = get_case_step_order(case_meta["case_dir"])
     if not os.path.exists(status_path):
         save_case_status(case_meta["case_dir"], expected)
         return expected
@@ -115,9 +140,11 @@ def _ensure_case_status_file(case_meta: Dict) -> Dict:
             continue
         current[key] = value
     for pressure_key in expected["pressures"]:
-        pressure_status = current.setdefault("pressures", {}).setdefault(pressure_key, {})
-        for step in STEP_ORDER:
-            pressure_status.setdefault(step, "unstarted")
+        current_pressure = current.setdefault("pressures", {}).get(pressure_key, {})
+        normalized_pressure = OrderedDict()
+        for step in step_order:
+            normalized_pressure[step] = current_pressure.get(step, "unstarted")
+        current["pressures"][pressure_key] = normalized_pressure
     save_case_status(case_meta["case_dir"], current)
     return current
 
@@ -330,13 +357,20 @@ def _detect_vasp_process_eledos_status(pressure_dir: str) -> str:
 
 def _detect_case_pressure_status(case_dir: str, pressure_key: str, active_dirs: Set[str]) -> Dict[str, str]:
     pressure_dir = os.path.join(case_dir, pressure_key)
-    return {
-        "mattersim_opt": _detect_mattersim_opt_status(pressure_dir, active_dirs),
-        "vasp_opt": _detect_vasp_opt_status(pressure_dir, active_dirs),
-        "vasp_scf": _detect_vasp_scf_status(pressure_dir, active_dirs),
-        "vasp_eledos": _detect_vasp_eledos_status(pressure_dir, active_dirs),
-        "vasp_process_eledos": _detect_vasp_process_eledos_status(pressure_dir),
-    }
+    step_order = get_case_step_order(case_dir)
+    status_map = OrderedDict()
+    for step in step_order:
+        if step == "mattersim_opt":
+            status_map[step] = _detect_mattersim_opt_status(pressure_dir, active_dirs)
+        elif step == "vasp_opt":
+            status_map[step] = _detect_vasp_opt_status(pressure_dir, active_dirs)
+        elif step == "vasp_scf":
+            status_map[step] = _detect_vasp_scf_status(pressure_dir, active_dirs)
+        elif step == "vasp_eledos":
+            status_map[step] = _detect_vasp_eledos_status(pressure_dir, active_dirs)
+        elif step == "vasp_process_eledos":
+            status_map[step] = _detect_vasp_process_eledos_status(pressure_dir)
+    return status_map
 
 
 def _empty_step_counts() -> Dict[str, int]:
@@ -344,11 +378,14 @@ def _empty_step_counts() -> Dict[str, int]:
 
 
 def _build_workflow_summary(output_dir: str, cases: "OrderedDict[str, Dict]") -> Dict:
-    step_totals = {step: _empty_step_counts() for step in STEP_ORDER}
+    step_totals: "OrderedDict[str, Dict[str, int]]" = OrderedDict()
     groups: Dict[str, Dict] = OrderedDict()
     case_index: Dict[str, Dict] = OrderedDict()
     for case_rel, case_meta in cases.items():
         case_status = load_case_status(case_meta["case_dir"])
+        step_order = get_case_step_order(case_meta["case_dir"])
+        for step in step_order:
+            step_totals.setdefault(step, _empty_step_counts())
         group_key = case_meta["period_rel"]
         group_entry = groups.setdefault(
             group_key,
@@ -356,9 +393,11 @@ def _build_workflow_summary(output_dir: str, cases: "OrderedDict[str, Dict]") ->
                 "xa_symbol": case_meta["xa_symbol"],
                 "period": case_meta["period_label"],
                 "case_count": 0,
-                "steps": {step: _empty_step_counts() for step in STEP_ORDER},
+                "steps": OrderedDict(),
             },
         )
+        for step in step_order:
+            group_entry["steps"].setdefault(step, _empty_step_counts())
         group_entry["case_count"] += 1
         case_index[case_rel] = {
             "formula": case_meta["formula"],
@@ -367,7 +406,7 @@ def _build_workflow_summary(output_dir: str, cases: "OrderedDict[str, Dict]") ->
             "case_status_path": os.path.relpath(get_case_status_path(case_meta["case_dir"]), os.path.abspath(output_dir)),
         }
         for pressure_status in case_status["pressures"].values():
-            for step in STEP_ORDER:
+            for step in step_order:
                 step_status = pressure_status[step]
                 step_totals[step][step_status] += 1
                 group_entry["steps"][step][step_status] += 1
@@ -419,8 +458,7 @@ def refresh_status(output_dir: str, squeue_output: Optional[str] = None, squeue_
 
 def summarize_status(workflow_status: Dict) -> str:
     lines = [f"总 case 数: {workflow_status['total_cases']}"]
-    for step in STEP_ORDER:
-        counts = workflow_status["steps"][step]
+    for step, counts in workflow_status["steps"].items():
         lines.append(
             f"{step}: finished={counts['finished']} running={counts['running']} "
             f"error={counts['error']} unstarted={counts['unstarted']}"
