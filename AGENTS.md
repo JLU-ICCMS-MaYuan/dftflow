@@ -145,42 +145,82 @@
     4. 更新 README 和自动化测试，覆盖 `px/dz2/dx2` 这类精细轨道输入。
 - **状态**：已完成。
 
-### [2026-04-17] 新增 high_throughput_substitution 高通量替换与续算工作流
+### [2026-04-17] 新增 substitutionflow 高通量替换与续算工作流
 - **需求**：
-    1. 新增正式模块 `high_throughput_substitution/`，用于对含 `XA/XB` 假元素的占位结构做高通量元素替换。
-    2. 替换集合只从 `[high_throughput_substitution]` 读取，语法使用原子序号范围，如 `XA = "1-3,4,6-9"`。
+    1. 新增正式模块 `substitutionflow/`，用于对含 `XA/XB` 假元素的占位结构做高通量元素替换。
+    2. 替换集合只从 `[substitutionflow]` 读取，语法使用原子序号范围，如 `XA = "1-3,4,6-9"`。
     3. 目录按 `<Z>.XA_<元素>/period_n/<Z>.<formula>` 组织，并在每个 case 下展开 `vasp_opt -> vasp_scf -> vasp_eledos -> vasp_process_eledos`。
-    4. 从工作流开始就维护 `workflow_status.json`，并新增 `high_throughput_continue` 负责检查、汇总和续算。
+    4. 从工作流开始就维护 `workflow_status.json`，并新增 `substitution_continue` 负责检查、汇总和续算。
 - **方案**：
-    1. 新增 `high_throughput_substitute_structure`、`high_throughput_substitution`、`high_throughput_continue` 三个 CLI。
+    1. 新增 `substitution_structure`、`substitution`、`substitution_continue` 三个 CLI。
     2. 在模块内拆分 `selection.py`、`structure_substitution.py`、`workflow.py`、`status.py`，分别承担元素选择、结构替换、工作流编排和状态管理。
     3. 第一版只支持两个占位位点 `XA/XB`，其余真实元素保持不变；目录树和状态文件在生成替换结构时一并初始化。
     4. 为满足工作流默认输出每种元素总投影，扩展 `vasp_process_eledos` 支持 `--elements-total` 模式。
     5. 更新 `pyproject.toml`、README、自动化测试和文档说明。
 - **状态**：已完成。
 
-### [2026-04-17] 收紧 high_throughput_substitute_structure 的结构输入来源
+### [2026-04-17] 收紧 substitution_structure 的结构输入来源
 - **需求**：
-    1. `high_throughput_substitute_structure` 不应再要求用户额外传 `-i`。
-    2. 既然 `[high_throughput_substitution].structure_filename` 已存在，结构文件路径应直接从配置文件中解析。
+    1. `substitution_structure` 不应再要求用户额外传 `-i`。
+    2. 既然 `[substitutionflow].structure_filename` 已存在，结构文件路径应直接从配置文件中解析。
 - **方案**：
-    1. 删除 `high_throughput_substitute_structure` 的 `-i/--input` 参数。
+    1. 删除 `substitution_structure` 的 `-i/--input` 参数。
     2. 新增按“配置文件所在目录 + structure_filename”解析输入结构路径的逻辑。
     3. 补充自动化测试，验证仅指定 `-c/-o` 即可正常生成替换目录。
 - **状态**：已完成。
 
-### [2026-04-17] 重构 high_throughput_substitution 的状态判定与续算机制
+### [2026-04-17] 重构 substitutionflow 的状态判定与续算机制
 - **需求**：
     1. `workflow_manifest.json` 改为放在 `period_n/` 目录，只保留静态 case 清单，不再承担动态状态职责。
     2. 每个实际体系目录新增 `case_status.json`，记录各压力点在 `vasp_opt / vasp_scf / vasp_eledos / vasp_process_eledos` 上的 `finished / running / error / unstarted` 状态。
-    3. 输出根目录中的 `workflow_status.json` 改为纯汇总文件，供 `high_throughput_continue` 统计、扫描和续算使用。
+    3. 输出根目录中的 `workflow_status.json` 改为纯汇总文件，供 `substitution_continue` 统计、扫描和续算使用。
     4. 状态判定必须按真实 VASP 输出语义实现：`vasp_opt` 检查结构优化收敛关键词，`vasp_scf/vasp_eledos` 检查电子步收敛、`NELM` 与关键输出，`vasp_process_eledos` 检查 `*_at_ef.csv`。
     5. `running` 状态需要通过 `squeue --format='%12A %12P %5t %25R %8M %Z'` 的工作目录匹配识别，而不是手工写死。
 - **方案**：
-    1. 重写 `high_throughput_substitution/status.py`，新增 manifest 扫描、case 状态文件初始化、四步状态判定、根目录汇总构建与 `squeue` 运行中检测。
-    2. 调整 `high_throughput_substitution/structure_substitution.py`，按 `period_n/` 分组写出 `workflow_manifest.json`，不再在 case 目录写 manifest。
-    3. 调整 `high_throughput_substitution/workflow.py`，不再把根目录状态文件当真源，而是始终基于 `workflow_manifest.json + case_status.json` 刷新后再决定 setup、续算和提交脚本生成。
-    4. 重写 `test_auto/MgB2/test_high_throughput_substitution.py`，覆盖 period-level manifest、case-level status、`finished/error/running/unstarted` 判定以及 continue 续算链路。
+    1. 重写 `substitutionflow/status.py`，新增 manifest 扫描、case 状态文件初始化、四步状态判定、根目录汇总构建与 `squeue` 运行中检测。
+    2. 调整 `substitutionflow/structure_substitution.py`，按 `period_n/` 分组写出 `workflow_manifest.json`，不再在 case 目录写 manifest。
+    3. 调整 `substitutionflow/workflow.py`，不再把根目录状态文件当真源，而是始终基于 `workflow_manifest.json + case_status.json` 刷新后再决定 setup、续算和提交脚本生成。
+    4. 重写 `test_auto/MgB2/test_substitutionflow.py`，覆盖 period-level manifest、case-level status、`finished/error/running/unstarted` 判定以及 continue 续算链路。
+- **状态**：已完成。
+
+### [2026-04-18] 新增 substitution_prepare_potcar 用于准备本地 potcar_lib
+- **需求**：
+    1. 新增独立 CLI `substitution_prepare_potcar`，从 `input.toml` 中读取 `[substitutionflow]` 与占位结构，自动推导当前高通量工作流所需元素集合。
+    2. 从 `--pot` 指定的原始 VASP 赝势库中搜索候选赝势；若同一元素存在多个候选，需要交互式逐个询问用户选择。
+    3. 每个候选都要打印价电子数和价电子电子构型；价电子数优先读 `ZVAL`，回退到第二行，电子构型从 `Atomic configuration` 反向累加价电子得到。
+    4. 选择结果需要保存到当前目录 `potcar_lib/potcar_lib.log`，脚本下次运行时默认直接读取该文件续选，不再提供 `-psf/--potcar-selected-file`。
+    5. 准备好的赝势输出必须兼容现有 `vaspflow` 的 `potcar_dir` 读取方式，即保存成扁平文件 `potcar_lib/<element>`。
+- **方案**：
+    1. 新增 `substitutionflow/prepare_potcar.py`，实现元素推导、候选归类、POTCAR 信息解析、交互选择和 `potcar_lib.log` 读写，并在每完成一个元素选择后立即刷新记录文件。
+    2. 在 `pyproject.toml` 注册 `substitution_prepare_potcar` CLI，并在 `README.md` 中补充用途说明。
+    3. 候选归类按“目录名前缀等于元素符号”处理，例如 `Ce/Ce_GW` 归类为 `Ce`、`V/V_pv/V_sv` 归类为 `V`。
+    4. 新增自动化测试，覆盖元素发现、POTCAR 解析、交互选择、`potcar_lib.log` 复用和输出兼容性。
+- **状态**：已完成。
+
+### [2026-04-18] 新增 mattersim_opt 并接入 substitutionflow
+- **需求**：
+    1. 在 `vasp_opt` 之前增加 MatterSim 预优化，以提高高压结构优化效率。
+    2. 新增独立模块 `mattersimflow/` 和 CLI `mattersim_opt`，接口风格对齐 `vasp_opt`。
+    3. MatterSim 预优化固定分两步：先只优化原子坐标，再在目标压力下优化晶格和原子坐标。
+    4. `substitution` 的工作流顺序改为 `mattersim_opt -> vasp_opt -> vasp_scf -> vasp_eledos -> vasp_process_eledos`。
+- **方案**：
+    1. 新增 `mattersimflow/templates.py` 与 `mattersimflow/opt/mattersim_opt.py`，通过 `[mattersim].executable_path` 调用外部 MatterSim Python 环境，并在工作目录生成 runner 脚本、`run_mattersim.sh`、`CONTCAR` 与 `mattersim_opt.json`。
+    2. 配置新增顶层 `mattersim_source_path` 与 `[mattersim_opt]`，用于控制模型、设备、两阶段步数与收敛阈值。
+    3. 扩展 `substitutionflow/status.py` 的状态机，把 `mattersim_opt` 纳入 `finished / running / error / unstarted` 判定和根目录汇总。
+    4. 修改 `substitutionflow/workflow.py`，使 `vasp_opt` 固定读取 `mattersim_opt/CONTCAR`，并更新提交脚本展开顺序。
+    5. 增加自动化测试，覆盖 `mattersim_opt` 输入生成、多压力目录、提交接线以及高通量工作流的新步骤链。
+- **状态**：已完成。
+
+### [2026-04-18] substitutionflow 的批量提交改为按完整压强点单元分组
+- **需求**：
+    1. `substitution -s` 与 `substitution_continue -s` 不再把全部未完成任务写入一个总脚本。
+    2. 提交的最小单元固定为“同一 case 的同一 pressure 的完整未完成步骤链”，即 `mattersim_opt -> vasp_opt -> vasp_scf -> vasp_eledos -> vasp_process_eledos`，不得拆分到不同脚本。
+    3. 分组数量只由 `[substitutionflow].submit_groups` 控制，默认值为 `1`。
+- **方案**：
+    1. 在 `substitutionflow/workflow.py` 中新增待提交单元收集、顺序均分、分组脚本生成与逐组提交逻辑，脚本固定命名为 `submit_group_01.sh`、`submit_group_02.sh` 等。
+    2. `running` 或已 `finished` 的压强点不进入新的分组脚本；某个压强点若已完成前半段步骤，则只把剩余步骤整段放入同一个组。
+    3. `substitution` 与 `substitution_continue` 的 `-s` 都改为逐组 `sbatch`，任一组提交失败即停止后续提交。
+    4. 更新 README、CLI 帮助文本和自动化测试，覆盖默认单组、多组均分、单元不可拆分、跳过 `running` 与逐组提交。
 - **状态**：已完成。
 
 ### [2026-04-10] 统一 vasp_plot_cohp 与 vasp_plot_kcohp 的相互作用输入语法

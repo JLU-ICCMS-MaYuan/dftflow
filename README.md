@@ -21,13 +21,18 @@ Available commands:
 - `vasp_lobsterin`
 - `vasp_plot_cohp`
 - `vasp_plot_kcohp`
-- `high_throughput_substitute_structure`
-- `high_throughput_substitution`
-- `high_throughput_continue`
+- `mattersim_opt`
+- `substitution_structure`
+- `substitution`
+- `substitution_continue`
+- `substitution_prepare_potcar`
 
 ## High Throughput Substitution
 
-- `high_throughput_substitute_structure` 从 `[high_throughput_substitution]` 读取 `XA/XB` 原子序号范围，生成 `<Z>.XA_<元素>/period_n/<Z>.<formula>` 目录树。
+- `mattersim_opt` 通过外部 MatterSim Python 环境运行两阶段预优化：先只优化原子坐标，再在目标压力下联合优化晶格和原子坐标，输出 `mattersim_opt/CONTCAR` 供后续 `vasp_opt` 使用。
+- `substitution_structure` 从 `[substitutionflow]` 读取 `XA/XB` 原子序号范围，生成 `<Z>.XA_<元素>/period_n/<Z>.<formula>` 目录树。
 - 每个 `period_n/` 目录保存一份静态 `workflow_manifest.json`，只记录输入结构、`XA` 元素、压力列表和该组 case 清单。
-- 每个实际体系目录保存一份 `case_status.json`，记录各压力点在 `vasp_opt / vasp_scf / vasp_eledos / vasp_process_eledos` 的 `finished / running / error / unstarted` 状态。
-- 输出根目录保存一份汇总 `workflow_status.json`，供 `high_throughput_continue` 扫描、统计和续算使用。
+- 每个实际体系目录保存一份 `case_status.json`，记录各压力点在 `mattersim_opt / vasp_opt / vasp_scf / vasp_eledos / vasp_process_eledos` 的 `finished / running / error / unstarted` 状态。
+- 输出根目录保存一份汇总 `workflow_status.json`，供 `substitution_continue` 扫描、统计和续算使用。
+- `[substitutionflow].submit_groups` 控制 `-s/--submit` 时把未完成任务分成多少组；一个 `case + pressure` 视为一个不可拆分的完整提交单元，组内保持当前遍历顺序，`substitution` 和 `substitution_continue` 会分别对 `submit_group_01.sh`、`submit_group_02.sh` 等脚本逐组执行 `sbatch`。
+- `substitution_prepare_potcar` 从 `[substitutionflow]` 推导需要的元素集合，按 `--pot` 指定的原始赝势库筛选并复制所需 `POTCAR` 到当前目录的 `potcar_lib/`，默认读取已有 `potcar_lib/potcar_lib.log` 续选，并在每次完成单个元素选择后立即更新该记录文件。

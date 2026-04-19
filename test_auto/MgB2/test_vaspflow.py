@@ -9,6 +9,259 @@ from pathlib import Path
 
 
 # ============================================================================
+# mattersim_opt 测试
+# ============================================================================
+
+def _write_mattersim_config(path: Path):
+    path.write_text(
+        """
+[mattersim]
+executable_path = "python"
+
+mattersim_source_path = "/tmp/mock_mattersim/src"
+
+[slurm]
+header = "#!/bin/bash"
+
+[mattersim_opt]
+model = "mattersim-v1.0.0-1m"
+device = "cpu"
+
+[mattersim_opt.stage1]
+optimizer = "FIRE"
+constrain_symmetry = true
+fmax = 0.1
+ionic_steps = 200
+
+[mattersim_opt.stage2]
+optimizer = "FIRE"
+cell_filter = "FrechetCellFilter"
+constrain_symmetry = true
+fix_axis = false
+fmax = 0.05
+ionic_steps = 300
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_mattersim_opt_api(chdir_work):
+    from mattersimflow.opt.mattersim_opt import MatterSimOptSetup
+
+    config_path = Path("input_mattersim.toml")
+    _write_mattersim_config(config_path)
+
+    setup = MatterSimOptSetup(config_file=str(config_path), struct_file="MgB2.vasp")
+    setup.run()
+
+    assert (Path("mattersim_opt") / "POSCAR").exists()
+    assert (Path("mattersim_opt") / "run_mattersim_opt.py").exists()
+    assert (Path("mattersim_opt") / "run_mattersim.sh").exists()
+
+    runner = (Path("mattersim_opt") / "run_mattersim_opt.py").read_text(encoding="utf-8")
+    script = (Path("mattersim_opt") / "run_mattersim.sh").read_text(encoding="utf-8")
+    assert "MatterSimCalculator" in runner
+    assert "write(f\"{stage['name']}_relaxed.vasp\"" in runner
+    assert "'name': 'stage1'" in runner
+    assert "'name': 'stage2'" in runner
+    assert "from ase.units import GPa" in runner
+    assert "FrechetCellFilter" in runner
+    assert "python run_mattersim_opt.py > mattersim_opt.log 2>&1" in script
+
+
+def test_mattersim_opt_supports_dynamic_stage3(chdir_work):
+    from mattersimflow.opt.mattersim_opt import MatterSimOptSetup
+
+    config_path = Path("input_mattersim.toml")
+    _write_mattersim_config(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + """
+[mattersim_opt.stage3]
+optimizer = "BFGS"
+cell_filter = "ExpCellFilter"
+constrain_symmetry = false
+fix_axis = [true, false, false, true, true, true]
+fmax = 0.02
+ionic_steps = 500
+""",
+        encoding="utf-8",
+    )
+
+    setup = MatterSimOptSetup(config_file=str(config_path), struct_file="MgB2.vasp")
+    setup.run()
+
+    runner = (Path("mattersim_opt") / "run_mattersim_opt.py").read_text(encoding="utf-8")
+    assert "'name': 'stage3'" in runner
+    assert "'optimizer': 'BFGS'" in runner
+    assert "'cell_filter': 'ExpCellFilter'" in runner
+    assert "'ionic_steps': 500" in runner
+    assert "[True, False, False, True, True, True]" in runner
+
+
+def test_mattersim_opt_rejects_non_contiguous_stages(chdir_work):
+    from mattersimflow.opt.mattersim_opt import MatterSimOptSetup
+
+    config_path = Path("input_mattersim.toml")
+    _write_mattersim_config(config_path)
+    broken_text = config_path.read_text(encoding="utf-8").replace("[mattersim_opt.stage2]", "[mattersim_opt.stage3]")
+    config_path.write_text(broken_text, encoding="utf-8")
+
+    setup = MatterSimOptSetup(config_file=str(config_path), struct_file="MgB2.vasp")
+    with pytest.raises(ValueError, match="阶段编号必须连续"):
+        setup.run()
+
+
+def test_mattersim_opt_keeps_legacy_flat_config_compatibility(chdir_work):
+    from mattersimflow.opt.mattersim_opt import MatterSimOptSetup
+
+    config_path = Path("input_mattersim_legacy.toml")
+    config_path.write_text(
+        """
+[mattersim]
+executable_path = "python"
+
+mattersim_source_path = "/tmp/mock_mattersim/src"
+
+[slurm]
+header = "#!/bin/bash"
+
+[mattersim_opt]
+model = "mattersim-v1.0.0-1m"
+device = "cpu"
+optimizer = "FIRE"
+cell_filter = "FrechetCellFilter"
+constrain_symmetry = true
+fix_axis = false
+stage1_fmax = 0.1
+stage1_steps = 200
+stage2_fmax = 0.05
+stage2_steps = 300
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    setup = MatterSimOptSetup(config_file=str(config_path), struct_file="MgB2.vasp")
+    setup.run()
+
+    runner = (Path("mattersim_opt") / "run_mattersim_opt.py").read_text(encoding="utf-8")
+    assert "'name': 'stage1'" in runner
+    assert "'name': 'stage2'" in runner
+
+
+def test_mattersim_opt_multiple_pressures_generate_multiple_cases(chdir_work):
+    from mattersimflow.opt import mattersim_opt as module
+
+    config_path = Path("input_mattersim.toml")
+    _write_mattersim_config(config_path)
+    original_argv = sys.argv[:]
+    try:
+        sys.argv = ["mattersim_opt", "-i", "MgB2.vasp", "-c", "input_mattersim.toml", "-p", "0", "10"]
+        module.main()
+    finally:
+        sys.argv = original_argv
+
+    assert (Path("0") / "mattersim_opt" / "run_mattersim_opt.py").exists()
+    assert (Path("10") / "mattersim_opt" / "run_mattersim_opt.py").exists()
+    assert Path("submit_all_mattersim_opt.sh").exists()
+
+
+def test_mattersim_opt_submit_uses_run_mattersim_script(chdir_work, monkeypatch):
+    from mattersimflow.opt import mattersim_opt as module
+
+    config_path = Path("input_mattersim.toml")
+    _write_mattersim_config(config_path)
+
+    captured = {}
+
+    def fake_handle_job_action(run_calc, submit_job, work_dir, script_name, execute_fn):
+        captured["run_calc"] = run_calc
+        captured["submit_job"] = submit_job
+        captured["work_dir"] = work_dir
+        captured["script_name"] = script_name
+
+    monkeypatch.setattr(module, "handle_job_action", fake_handle_job_action)
+    monkeypatch.setattr(sys, "argv", ["mattersim_opt", "-i", "MgB2.vasp", "-c", "input_mattersim.toml", "-s"])
+
+    module.main()
+
+    assert captured["run_calc"] is False
+    assert captured["submit_job"] is True
+    assert captured["work_dir"] == "mattersim_opt"
+    assert captured["script_name"] == "run_mattersim.sh"
+
+
+def test_mattersim_opt_uses_installed_mattersim_without_source_path(chdir_work, monkeypatch):
+    from mattersimflow.opt.mattersim_opt import MatterSimOptSetup
+
+    config_path = Path("input_mattersim_installed.toml")
+    config_path.write_text(
+        """
+[mattersim]
+executable_path = "python"
+
+[slurm]
+header = "#!/bin/bash"
+
+[mattersim_opt]
+model = "mattersim-v1.0.0-1m"
+device = "cpu"
+
+[mattersim_opt.stage1]
+optimizer = "FIRE"
+constrain_symmetry = true
+fmax = 0.1
+ionic_steps = 200
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("mattersimflow.opt.mattersim_opt.importlib.util.find_spec", lambda name: object())
+
+    setup = MatterSimOptSetup(config_file=str(config_path), struct_file="MgB2.vasp")
+    setup.run()
+
+    runner = (Path("mattersim_opt") / "run_mattersim_opt.py").read_text(encoding="utf-8")
+    assert "sys.path.insert(0," not in runner
+
+
+def test_mattersim_opt_requires_source_path_when_mattersim_not_installed(chdir_work, monkeypatch):
+    from mattersimflow.opt.mattersim_opt import MatterSimOptSetup
+
+    config_path = Path("input_mattersim_missing.toml")
+    config_path.write_text(
+        """
+[mattersim]
+executable_path = "python"
+
+[slurm]
+header = "#!/bin/bash"
+
+[mattersim_opt]
+model = "mattersim-v1.0.0-1m"
+device = "cpu"
+
+[mattersim_opt.stage1]
+optimizer = "FIRE"
+constrain_symmetry = true
+fmax = 0.1
+ionic_steps = 200
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("mattersimflow.opt.mattersim_opt.importlib.util.find_spec", lambda name: None)
+
+    setup = MatterSimOptSetup(config_file=str(config_path), struct_file="MgB2.vasp")
+    with pytest.raises(ValueError, match="无法直接 import mattersim"):
+        setup.run()
+
+
+# ============================================================================
 # vasp_scf 测试
 # ============================================================================
 
