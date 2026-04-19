@@ -2,11 +2,11 @@
 import argparse
 import os
 
-from high_throughput_substitution.selection import render_selection_preview
-from high_throughput_substitution.status import create_initial_status
-from high_throughput_substitution.structure_substitution import (
+from substitutionflow.selection import render_selection_preview
+from substitutionflow.status import create_initial_status
+from substitutionflow.structure_substitution import (
     generate_cases,
-    load_high_throughput_config,
+    load_substitutionflow_config,
     resolve_input_structure_path,
 )
 
@@ -17,8 +17,8 @@ def main():
     parser.add_argument("-o", "--output-dir", required=True, help="输出根目录。")
     args = parser.parse_args()
 
-    config = load_high_throughput_config(args.config)
-    ht = config["high_throughput_substitution"]
+    config = load_substitutionflow_config(args.config)
+    ht = config["substitutionflow"]
     if ht.get("preview", True):
         print(render_selection_preview("XA", ht["XA"]))
         print()

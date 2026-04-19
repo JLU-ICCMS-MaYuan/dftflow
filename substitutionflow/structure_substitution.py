@@ -8,7 +8,7 @@ from typing import Dict, List
 
 from public.config_templates import load_config_file
 
-from high_throughput_substitution.selection import (
+from substitutionflow.selection import (
     atomic_number_to_period,
     parse_atomic_selection,
     selection_to_symbols,
@@ -173,16 +173,16 @@ def dump_toml(data: Dict, prefix: str = "") -> str:
     return "\n".join(lines)
 
 
-def load_high_throughput_config(config_file: str) -> Dict:
+def load_substitutionflow_config(config_file: str) -> Dict:
     config = load_config_file(config_file)
-    if "high_throughput_substitution" not in config:
-        raise ValueError("配置缺少 [high_throughput_substitution] 块。")
+    if "substitutionflow" not in config:
+        raise ValueError("配置缺少 [substitutionflow] 块。")
     return config
 
 
 def resolve_input_structure_path(config_file: str) -> str:
-    config = load_high_throughput_config(config_file)
-    ht_config = config["high_throughput_substitution"]
+    config = load_substitutionflow_config(config_file)
+    ht_config = config["substitutionflow"]
     structure_filename = ht_config.get("structure_filename", "structure.vasp")
     config_dir = os.path.dirname(os.path.abspath(config_file))
     structure_path = os.path.join(config_dir, structure_filename)
@@ -217,8 +217,8 @@ def build_case_relative_path(xa_symbol: str, xb_symbol: str, formula: str) -> st
 
 
 def generate_cases(input_path: str, config_file: str, output_dir: str) -> Dict:
-    root_config = load_high_throughput_config(config_file)
-    ht_config = root_config["high_throughput_substitution"]
+    root_config = load_substitutionflow_config(config_file)
+    ht_config = root_config["substitutionflow"]
     xa_symbols = selection_to_symbols(ht_config["XA"])
     xb_symbols = selection_to_symbols(ht_config["XB"])
     pressures = list(ht_config.get("pressures", [20, 50, 100]))

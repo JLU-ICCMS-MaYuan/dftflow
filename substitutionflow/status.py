@@ -8,7 +8,7 @@ from collections import OrderedDict
 from typing import Dict, Iterable, List, Optional, Set
 
 
-STEP_ORDER = ("vasp_opt", "vasp_scf", "vasp_eledos", "vasp_process_eledos")
+STEP_ORDER = ("mattersim_opt", "vasp_opt", "vasp_scf", "vasp_eledos", "vasp_process_eledos")
 STATUS_ORDER = ("finished", "running", "error", "unstarted")
 
 OPT_CONVERGED_MARKER = "reached required accuracy - stopping structural energy minimisation"
@@ -221,6 +221,11 @@ def _opt_has_trace(step_dir: str) -> bool:
     return any(os.path.exists(os.path.join(step_dir, name)) for name in tracked) or _directory_has_any_file(step_dir)
 
 
+def _mattersim_has_trace(step_dir: str) -> bool:
+    tracked = ("POSCAR", "CONTCAR", "run_mattersim.sh", "run_mattersim_opt.py", "mattersim_opt.json", "mattersim_opt.log")
+    return any(os.path.exists(os.path.join(step_dir, name)) for name in tracked) or _directory_has_any_file(step_dir)
+
+
 def _generic_step_has_trace(step_dir: str) -> bool:
     return _directory_has_any_file(step_dir)
 
@@ -236,6 +241,28 @@ def _process_has_trace(eledos_dir: str) -> bool:
     if glob.glob(os.path.join(eledos_dir, "PDOS_*.dat")):
         return True
     return False
+
+
+def _detect_mattersim_opt_status(pressure_dir: str, active_dirs: Set[str]) -> str:
+    step_dir = os.path.join(pressure_dir, "mattersim_opt")
+    json_path = os.path.join(step_dir, "mattersim_opt.json")
+    contcar_path = os.path.join(step_dir, "CONTCAR")
+    if _exists_and_nonempty(json_path) and _exists_and_nonempty(contcar_path):
+        try:
+            payload = _load_json(json_path)
+        except Exception:
+            payload = {}
+        stages = payload.get("stages")
+        if isinstance(stages, dict) and stages:
+            if all(bool(stage_payload.get("converged")) for stage_payload in stages.values()):
+                return "finished"
+        elif bool(payload.get("stage1", {}).get("converged")) and bool(payload.get("stage2", {}).get("converged")):
+            return "finished"
+    if _path_matches_active_dir(step_dir, active_dirs):
+        return "running"
+    if _mattersim_has_trace(step_dir):
+        return "error"
+    return "unstarted"
 
 
 def _detect_vasp_opt_status(pressure_dir: str, active_dirs: Set[str]) -> str:
@@ -304,6 +331,7 @@ def _detect_vasp_process_eledos_status(pressure_dir: str) -> str:
 def _detect_case_pressure_status(case_dir: str, pressure_key: str, active_dirs: Set[str]) -> Dict[str, str]:
     pressure_dir = os.path.join(case_dir, pressure_key)
     return {
+        "mattersim_opt": _detect_mattersim_opt_status(pressure_dir, active_dirs),
         "vasp_opt": _detect_vasp_opt_status(pressure_dir, active_dirs),
         "vasp_scf": _detect_vasp_scf_status(pressure_dir, active_dirs),
         "vasp_eledos": _detect_vasp_eledos_status(pressure_dir, active_dirs),

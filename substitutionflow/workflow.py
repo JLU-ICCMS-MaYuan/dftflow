@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import os
 import subprocess
+import tomllib
 from typing import Dict, List, Optional
 
 from public.job import submit_script, write_job_script
 
-from high_throughput_substitution.status import (
+from substitutionflow.status import (
     STEP_ORDER,
     create_initial_status,
     discover_cases,
@@ -13,7 +14,7 @@ from high_throughput_substitution.status import (
     refresh_status,
     summarize_status,
 )
-from high_throughput_substitution.structure_substitution import generate_cases
+from substitutionflow.structure_substitution import generate_cases, resolve_input_structure_path
 
 
 def run_cli_command(command: List[str], cwd: str) -> None:
@@ -24,7 +25,8 @@ def _pressure_key(pressure) -> str:
     return f"{pressure:g}" if isinstance(pressure, (int, float)) else str(pressure)
 
 
-def ensure_workflow_tree(input_path: str, config_file: str, output_dir: str) -> Dict:
+def ensure_workflow_tree(config_file: str, output_dir: str) -> Dict:
+    input_path = resolve_input_structure_path(config_file)
     result = generate_cases(input_path, config_file, output_dir)
     create_initial_status(output_dir)
     return result
@@ -58,14 +60,15 @@ def _build_process_eledos_command(case_dir: str, structure_filename: str) -> Lis
 def _setup_commands(structure_filename: str, pressure) -> Dict[str, List[str]]:
     pressure_key = _pressure_key(pressure)
     return {
-        "vasp_opt": ["vasp_opt", "-i", structure_filename, "-c", "input.toml", "-p", pressure_key],
+        "mattersim_opt": ["mattersim_opt", "-i", structure_filename, "-c", "input.toml", "-p", pressure_key],
     }
 
 
 def _run_commands(case_dir: str, structure_filename: str, pressure) -> Dict[str, List[str]]:
     pressure_key = _pressure_key(pressure)
     return {
-        "vasp_opt": ["vasp_opt", "-i", structure_filename, "-c", "input.toml", "-p", pressure_key, "-r"],
+        "mattersim_opt": ["mattersim_opt", "-i", structure_filename, "-c", "input.toml", "-p", pressure_key, "-r"],
+        "vasp_opt": ["vasp_opt", "-i", "mattersim_opt/CONTCAR", "-c", "../input.toml", "-p", pressure_key, "-r"],
         "vasp_scf": ["vasp_scf", "-i", "vasp_opt/CONTCAR", "-c", "../input.toml", "-r"],
         "vasp_eledos": ["vasp_eledos", "-i", "vasp_scf/POSCAR", "-c", "../input.toml", "-r"],
         "vasp_process_eledos": _build_process_eledos_command(case_dir, structure_filename),
@@ -73,7 +76,7 @@ def _run_commands(case_dir: str, structure_filename: str, pressure) -> Dict[str,
 
 
 def _step_cwd(case_dir: str, pressure, step: str) -> str:
-    if step == "vasp_opt":
+    if step == "mattersim_opt":
         return case_dir
     return os.path.join(case_dir, _pressure_key(pressure))
 
@@ -112,25 +115,54 @@ def run_case_pressure(output_dir: str, case_meta: Dict, pressure) -> None:
 
 
 def generate_opt_only(case_meta: Dict, pressure) -> None:
-    command = _setup_commands(case_meta["structure_filename"], pressure)["vasp_opt"]
+    command = _setup_commands(case_meta["structure_filename"], pressure)["mattersim_opt"]
     run_cli_command(command, case_meta["case_dir"])
 
 
-def build_submit_script(output_dir: str, script_name: str = "submit_high_throughput_substitution.sh") -> str:
-    refresh_status(output_dir)
+def _load_toml_file(path: str) -> Dict:
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def _load_submit_groups_from_config(config_file: str) -> int:
+    try:
+        config = _load_toml_file(config_file)
+    except Exception:
+        return 1
+    submit_groups = config.get("substitutionflow", {}).get("submit_groups", 1)
+    try:
+        submit_groups = int(submit_groups)
+    except Exception as exc:
+        raise ValueError("[substitutionflow].submit_groups 必须是整数。") from exc
+    if submit_groups < 1:
+        raise ValueError("[substitutionflow].submit_groups 必须大于等于 1。")
+    return submit_groups
+
+
+def _load_submit_groups_from_output_dir(output_dir: str) -> int:
     cases = discover_cases(output_dir)
     first_case = next(iter(cases.values()), None)
-    header = ""
-    if first_case:
-        case_input = os.path.join(first_case["case_dir"], "input.toml")
-        try:
-            import tomllib
-            with open(case_input, "rb") as f:
-                header = tomllib.load(f).get("slurm", {}).get("header", "")
-        except Exception:
-            header = ""
+    if not first_case:
+        return 1
+    return _load_submit_groups_from_config(os.path.join(first_case["case_dir"], "input.toml"))
 
-    commands: List[str] = []
+
+def _load_slurm_header(output_dir: str) -> str:
+    cases = discover_cases(output_dir)
+    first_case = next(iter(cases.values()), None)
+    if not first_case:
+        return ""
+    case_input = os.path.join(first_case["case_dir"], "input.toml")
+    try:
+        return _load_toml_file(case_input).get("slurm", {}).get("header", "")
+    except Exception:
+        return ""
+
+
+def _collect_pending_units(output_dir: str) -> List[Dict]:
+    refresh_status(output_dir)
+    cases = discover_cases(output_dir)
+    units: List[Dict] = []
     for case_meta in cases.values():
         structure_filename = _infer_structure_filename(case_meta["case_dir"])
         case_status = load_case_status(case_meta["case_dir"])
@@ -141,23 +173,96 @@ def build_submit_script(output_dir: str, script_name: str = "submit_high_through
                 continue
             if case_status["pressures"][pressure_key][first_step] == "running":
                 continue
+            commands: List[str] = []
             started = False
             step_commands = _run_commands(case_meta["case_dir"], structure_filename, pressure)
+            step_names: List[str] = []
             for step in STEP_ORDER:
                 if step == first_step:
                     started = True
                 if not started:
                     continue
+                step_names.append(step)
                 commands.append(f'cd "{_step_cwd(case_meta["case_dir"], pressure, step)}"')
                 commands.append(" ".join(step_commands[step]))
+            units.append(
+                {
+                    "case_dir": case_meta["case_dir"],
+                    "case_rel": case_meta["case_rel"],
+                    "formula": case_meta["formula"],
+                    "pressure": pressure,
+                    "pressure_key": pressure_key,
+                    "structure_filename": structure_filename,
+                    "first_step": first_step,
+                    "steps": step_names,
+                    "commands": commands,
+                }
+            )
+    return units
 
-    script_path = os.path.join(output_dir, script_name)
-    write_job_script(script_path, header, commands)
-    return script_path
+
+def _split_pending_units(units: List[Dict], submit_groups: int) -> List[List[Dict]]:
+    if not units:
+        return []
+    actual_groups = min(len(units), submit_groups)
+    base_size = len(units) // actual_groups
+    remainder = len(units) % actual_groups
+    groups: List[List[Dict]] = []
+    start = 0
+    for index in range(actual_groups):
+        size = base_size + (1 if index < remainder else 0)
+        groups.append(units[start:start + size])
+        start += size
+    return groups
 
 
-def run_workflow(input_path: str, config_file: str, output_dir: str, run_calc: bool = False, submit: bool = False) -> str:
-    result = ensure_workflow_tree(input_path, config_file, output_dir)
+def build_submit_scripts(output_dir: str, submit_groups: int) -> Dict:
+    header = _load_slurm_header(output_dir)
+    units = _collect_pending_units(output_dir)
+    groups = _split_pending_units(units, submit_groups)
+    script_infos: List[Dict] = []
+    for index, group in enumerate(groups, start=1):
+        script_name = f"submit_group_{index:02d}.sh"
+        script_path = os.path.join(output_dir, script_name)
+        commands: List[str] = []
+        for unit in group:
+            commands.extend(unit["commands"])
+        write_job_script(script_path, header, commands)
+        script_infos.append(
+            {
+                "script_name": script_name,
+                "script_path": script_path,
+                "unit_count": len(group),
+                "units": group,
+            }
+        )
+    return {
+        "total_units": len(units),
+        "configured_groups": submit_groups,
+        "actual_groups": len(script_infos),
+        "scripts": script_infos,
+    }
+
+
+def _format_submit_summary(script_bundle: Dict) -> str:
+    lines = [
+        f"总未完成单元数: {script_bundle['total_units']}",
+        f"计划分组数: {script_bundle['configured_groups']}",
+        f"实际生成组数: {script_bundle['actual_groups']}",
+    ]
+    for script_info in script_bundle["scripts"]:
+        lines.append(f"{script_info['script_name']}: {script_info['unit_count']} 个完整压强点单元")
+    return "\n".join(lines)
+
+
+def _submit_group_scripts(output_dir: str, script_bundle: Dict) -> None:
+    for script_info in script_bundle["scripts"]:
+        print(f"提交 {script_info['script_name']}，包含 {script_info['unit_count']} 个完整压强点单元")
+        submit_script(output_dir, script_info["script_name"])
+
+
+def run_workflow(config_file: str, output_dir: str, run_calc: bool = False, submit: bool = False) -> str:
+    result = ensure_workflow_tree(config_file, output_dir)
     cases = discover_cases(output_dir)
     for case_meta in cases.values():
         case_meta["structure_filename"] = result["structure_filename"]
@@ -174,10 +279,11 @@ def run_workflow(input_path: str, config_file: str, output_dir: str, run_calc: b
                     continue
         return summarize_status(refresh_status(output_dir))
 
-    script_path = build_submit_script(output_dir)
+    submit_groups = _load_submit_groups_from_config(config_file)
+    script_bundle = build_submit_scripts(output_dir, submit_groups)
     if submit:
-        submit_script(output_dir, os.path.basename(script_path))
-    return script_path
+        _submit_group_scripts(output_dir, script_bundle)
+    return _format_submit_summary(script_bundle)
 
 
 def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = False) -> str:
@@ -195,7 +301,8 @@ def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = Fa
                     continue
         return summarize_status(refresh_status(output_dir))
 
-    script_path = build_submit_script(output_dir)
+    submit_groups = _load_submit_groups_from_output_dir(output_dir)
+    script_bundle = build_submit_scripts(output_dir, submit_groups)
     if submit:
-        submit_script(output_dir, os.path.basename(script_path))
-    return summarize_status(refresh_status(output_dir))
+        _submit_group_scripts(output_dir, script_bundle)
+    return _format_submit_summary(script_bundle)
