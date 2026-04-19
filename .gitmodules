@@ -1,3 +1,6 @@
 [submodule "external/VASP-tools"]
 	path = external/VASP-tools
 	url = git@github.com:JLU-ICCMS-MaYuan/VASP-tools.git
+[submodule "external/mattersim"]
+	path = external/mattersim
+	url = git@github.com:JLU-ICCMS-MaYuan/mattersim.git
