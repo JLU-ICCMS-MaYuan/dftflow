@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 import os
 import subprocess
-import tomllib
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
+from public.config_templates import load_config_file
 from public.job import submit_script, write_job_script
 
 from substitutionflow.status import (
-    STEP_ORDER,
+    case_uses_mattersim,
     create_initial_status,
     discover_cases,
+    get_case_step_order,
     load_case_status,
     refresh_status,
     summarize_status,
@@ -61,29 +62,31 @@ def _setup_commands(structure_filename: str, pressure) -> Dict[str, List[str]]:
     pressure_key = _pressure_key(pressure)
     return {
         "mattersim_opt": ["mattersim_opt", "-i", structure_filename, "-c", "input.toml", "-p", pressure_key],
+        "vasp_opt": ["vasp_opt", "-i", structure_filename, "-c", "input.toml", "-p", pressure_key],
     }
 
 
-def _run_commands(case_dir: str, structure_filename: str, pressure) -> Dict[str, List[str]]:
+def _run_commands(case_dir: str, structure_filename: str, pressure, use_mattersim: bool) -> Dict[str, List[str]]:
     pressure_key = _pressure_key(pressure)
+    vasp_opt_input = os.path.join(pressure_key, "mattersim_opt", "CONTCAR") if use_mattersim else structure_filename
     return {
         "mattersim_opt": ["mattersim_opt", "-i", structure_filename, "-c", "input.toml", "-p", pressure_key, "-r"],
-        "vasp_opt": ["vasp_opt", "-i", "mattersim_opt/CONTCAR", "-c", "../input.toml", "-p", pressure_key, "-r"],
+        "vasp_opt": ["vasp_opt", "-i", vasp_opt_input, "-c", "input.toml", "-p", pressure_key, "-r"],
         "vasp_scf": ["vasp_scf", "-i", "vasp_opt/CONTCAR", "-c", "../input.toml", "-r"],
         "vasp_eledos": ["vasp_eledos", "-i", "vasp_scf/POSCAR", "-c", "../input.toml", "-r"],
         "vasp_process_eledos": _build_process_eledos_command(case_dir, structure_filename),
     }
 
 
-def _step_cwd(case_dir: str, pressure, step: str) -> str:
-    if step == "mattersim_opt":
+def _step_cwd(case_dir: str, pressure, step: str, use_mattersim: bool) -> str:
+    if step in {"mattersim_opt", "vasp_opt"}:
         return case_dir
     return os.path.join(case_dir, _pressure_key(pressure))
 
 
-def _first_unfinished_step(case_status: Dict, pressure_key: str) -> Optional[str]:
+def _first_unfinished_step(case_status: Dict, pressure_key: str, step_order: Tuple[str, ...]) -> Optional[str]:
     pressure_status = case_status["pressures"][pressure_key]
-    for step in STEP_ORDER:
+    for step in step_order:
         if pressure_status[step] != "finished":
             return step
     return None
@@ -93,21 +96,23 @@ def run_case_pressure(output_dir: str, case_meta: Dict, pressure) -> None:
     refresh_status(output_dir)
     pressure_key = _pressure_key(pressure)
     case_status = load_case_status(case_meta["case_dir"])
-    first_step = _first_unfinished_step(case_status, pressure_key)
+    step_order = get_case_step_order(case_meta["case_dir"])
+    use_mattersim = case_uses_mattersim(case_meta["case_dir"])
+    first_step = _first_unfinished_step(case_status, pressure_key, step_order)
     if first_step is None:
         return
     if case_status["pressures"][pressure_key][first_step] == "running":
         return
 
-    commands = _run_commands(case_meta["case_dir"], case_meta["structure_filename"], pressure)
+    commands = _run_commands(case_meta["case_dir"], case_meta["structure_filename"], pressure, use_mattersim)
     started = False
-    for step in STEP_ORDER:
+    for step in step_order:
         if step == first_step:
             started = True
         if not started:
             continue
         try:
-            run_cli_command(commands[step], _step_cwd(case_meta["case_dir"], pressure, step))
+            run_cli_command(commands[step], _step_cwd(case_meta["case_dir"], pressure, step, use_mattersim))
             refresh_status(output_dir)
         except Exception:
             refresh_status(output_dir)
@@ -115,13 +120,14 @@ def run_case_pressure(output_dir: str, case_meta: Dict, pressure) -> None:
 
 
 def generate_opt_only(case_meta: Dict, pressure) -> None:
-    command = _setup_commands(case_meta["structure_filename"], pressure)["mattersim_opt"]
-    run_cli_command(command, case_meta["case_dir"])
+    use_mattersim = case_uses_mattersim(case_meta["case_dir"])
+    setup_commands = _setup_commands(case_meta["structure_filename"], pressure)
+    first_step = "mattersim_opt" if use_mattersim else "vasp_opt"
+    run_cli_command(setup_commands[first_step], case_meta["case_dir"])
 
 
 def _load_toml_file(path: str) -> Dict:
-    with open(path, "rb") as f:
-        return tomllib.load(f)
+    return load_config_file(path)
 
 
 def _load_submit_groups_from_config(config_file: str) -> int:
@@ -159,6 +165,37 @@ def _load_slurm_header(output_dir: str) -> str:
         return ""
 
 
+def _collect_configured_units(output_dir: str) -> List[Dict]:
+    cases = discover_cases(output_dir)
+    units: List[Dict] = []
+    for case_meta in cases.values():
+        structure_filename = _infer_structure_filename(case_meta["case_dir"])
+        step_order = get_case_step_order(case_meta["case_dir"])
+        use_mattersim = case_uses_mattersim(case_meta["case_dir"])
+        for pressure in case_meta["pressures"]:
+            step_commands = _run_commands(case_meta["case_dir"], structure_filename, pressure, use_mattersim)
+            commands: List[str] = []
+            step_names: List[str] = []
+            for step in step_order:
+                step_names.append(step)
+                commands.append(f'cd "{_step_cwd(case_meta["case_dir"], pressure, step, use_mattersim)}"')
+                commands.append(" ".join(step_commands[step]))
+            units.append(
+                {
+                    "case_dir": case_meta["case_dir"],
+                    "case_rel": case_meta["case_rel"],
+                    "formula": case_meta["formula"],
+                    "pressure": pressure,
+                    "pressure_key": _pressure_key(pressure),
+                    "structure_filename": structure_filename,
+                    "first_step": step_order[0],
+                    "steps": step_names,
+                    "commands": commands,
+                }
+            )
+    return units
+
+
 def _collect_pending_units(output_dir: str) -> List[Dict]:
     refresh_status(output_dir)
     cases = discover_cases(output_dir)
@@ -166,24 +203,26 @@ def _collect_pending_units(output_dir: str) -> List[Dict]:
     for case_meta in cases.values():
         structure_filename = _infer_structure_filename(case_meta["case_dir"])
         case_status = load_case_status(case_meta["case_dir"])
+        step_order = get_case_step_order(case_meta["case_dir"])
+        use_mattersim = case_uses_mattersim(case_meta["case_dir"])
         for pressure in case_meta["pressures"]:
             pressure_key = _pressure_key(pressure)
-            first_step = _first_unfinished_step(case_status, pressure_key)
+            first_step = _first_unfinished_step(case_status, pressure_key, step_order)
             if first_step is None:
                 continue
             if case_status["pressures"][pressure_key][first_step] == "running":
                 continue
             commands: List[str] = []
             started = False
-            step_commands = _run_commands(case_meta["case_dir"], structure_filename, pressure)
+            step_commands = _run_commands(case_meta["case_dir"], structure_filename, pressure, use_mattersim)
             step_names: List[str] = []
-            for step in STEP_ORDER:
+            for step in step_order:
                 if step == first_step:
                     started = True
                 if not started:
                     continue
                 step_names.append(step)
-                commands.append(f'cd "{_step_cwd(case_meta["case_dir"], pressure, step)}"')
+                commands.append(f'cd "{_step_cwd(case_meta["case_dir"], pressure, step, use_mattersim)}"')
                 commands.append(" ".join(step_commands[step]))
             units.append(
                 {
@@ -216,9 +255,8 @@ def _split_pending_units(units: List[Dict], submit_groups: int) -> List[List[Dic
     return groups
 
 
-def build_submit_scripts(output_dir: str, submit_groups: int) -> Dict:
+def _build_submit_scripts_from_units(output_dir: str, submit_groups: int, units: List[Dict]) -> Dict:
     header = _load_slurm_header(output_dir)
-    units = _collect_pending_units(output_dir)
     groups = _split_pending_units(units, submit_groups)
     script_infos: List[Dict] = []
     for index, group in enumerate(groups, start=1):
@@ -244,9 +282,17 @@ def build_submit_scripts(output_dir: str, submit_groups: int) -> Dict:
     }
 
 
-def _format_submit_summary(script_bundle: Dict) -> str:
+def build_submit_scripts(output_dir: str, submit_groups: int) -> Dict:
+    return _build_submit_scripts_from_units(output_dir, submit_groups, _collect_pending_units(output_dir))
+
+
+def build_configured_submit_scripts(output_dir: str, submit_groups: int) -> Dict:
+    return _build_submit_scripts_from_units(output_dir, submit_groups, _collect_configured_units(output_dir))
+
+
+def _format_submit_summary(script_bundle: Dict, total_label: str) -> str:
     lines = [
-        f"总未完成单元数: {script_bundle['total_units']}",
+        f"{total_label}: {script_bundle['total_units']}",
         f"计划分组数: {script_bundle['configured_groups']}",
         f"实际生成组数: {script_bundle['actual_groups']}",
     ]
@@ -268,22 +314,25 @@ def run_workflow(config_file: str, output_dir: str, run_calc: bool = False, subm
         case_meta["structure_filename"] = result["structure_filename"]
         for pressure in case_meta["pressures"]:
             generate_opt_only(case_meta, pressure)
-    refresh_status(output_dir)
 
     if run_calc:
         for case_meta in cases.values():
             for pressure in case_meta["pressures"]:
                 try:
-                    run_case_pressure(output_dir, case_meta, pressure)
+                    use_mattersim = case_uses_mattersim(case_meta["case_dir"])
+                    commands = _run_commands(case_meta["case_dir"], case_meta["structure_filename"], pressure, use_mattersim)
+                    step_order = get_case_step_order(case_meta["case_dir"])
+                    for step in step_order:
+                        run_cli_command(commands[step], _step_cwd(case_meta["case_dir"], pressure, step, use_mattersim))
                 except Exception:
                     continue
         return summarize_status(refresh_status(output_dir))
 
     submit_groups = _load_submit_groups_from_config(config_file)
-    script_bundle = build_submit_scripts(output_dir, submit_groups)
+    script_bundle = build_configured_submit_scripts(output_dir, submit_groups)
     if submit:
         _submit_group_scripts(output_dir, script_bundle)
-    return _format_submit_summary(script_bundle)
+    return _format_submit_summary(script_bundle, "总生成单元数")
 
 
 def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = False) -> str:
@@ -305,4 +354,4 @@ def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = Fa
     script_bundle = build_submit_scripts(output_dir, submit_groups)
     if submit:
         _submit_group_scripts(output_dir, script_bundle)
-    return _format_submit_summary(script_bundle)
+    return _format_submit_summary(script_bundle, "总未完成单元数")

@@ -408,11 +408,49 @@ def test_run_workflow_generates_group_scripts_and_opt_dirs(chdir_work, monkeypat
 
     summary = run_workflow(str(config_path), "ht_out", run_calc=False, submit=False)
 
-    assert "总未完成单元数" in summary
+    assert "总生成单元数" in summary
     assert Path("ht_out/submit_group_01.sh").exists()
     assert Path("ht_out/submit_group_02.sh").exists()
     assert any(command[0][0] == "mattersim_opt" for command in calls)
     assert Path("ht_out/03.XA_Li/period_2/04.LiBeH7/20/mattersim_opt/CONTCAR").exists()
+    group_text = Path("ht_out/submit_group_01.sh").read_text(encoding="utf-8") + Path("ht_out/submit_group_02.sh").read_text(encoding="utf-8")
+    assert "vasp_opt -i 20/mattersim_opt/CONTCAR -c input.toml -p 20 -r" in group_text
+
+
+def test_run_workflow_without_mattersim_starts_from_vasp_opt(chdir_work, monkeypatch):
+    from substitutionflow.workflow import run_workflow
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'structure_filename = "structure.vasp"',
+            'structure_filename = "XAXBH7-P63mmc.vasp"',
+        ),
+        encoding="utf-8",
+    )
+
+    calls = []
+
+    def fake_run_cli_command(command, cwd):
+        calls.append((command, cwd))
+
+    monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
+    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
+
+    summary = run_workflow(str(config_path), "ht_out", run_calc=False, submit=False)
+
+    assert "总生成单元数" in summary
+    assert calls
+    assert all(command[0] == "vasp_opt" for command, _ in calls)
+    assert all(command[2] == "XAXBH7-P63mmc.vasp" for command, _ in calls)
+    assert all(Path(cwd).name != "20" for _, cwd in calls)
+    assert not any(command[0] == "mattersim_opt" for command, _ in calls)
+    script_text = Path("ht_out/submit_group_01.sh").read_text(encoding="utf-8")
+    assert "mattersim_opt" not in script_text
+    assert "vasp_opt -i XAXBH7-P63mmc.vasp -c input.toml -p 20 -r" in script_text
 
 
 def test_continue_updates_case_status_and_runs_missing_steps(chdir_work, monkeypatch):
@@ -442,9 +480,11 @@ def test_continue_updates_case_status_and_runs_missing_steps(chdir_work, monkeyp
         calls.append((command, cwd))
         cwd_path = Path(cwd)
         if command[0] == "vasp_opt":
-            (cwd_path / "vasp_opt").mkdir(parents=True, exist_ok=True)
-            (cwd_path / "vasp_opt/CONTCAR").write_text("contcar\n", encoding="utf-8")
-            _write_opt_outcar(cwd_path / "vasp_opt/OUTCAR", converged=True)
+            pressure = command[-2]
+            opt_dir = cwd_path / pressure / "vasp_opt"
+            opt_dir.mkdir(parents=True, exist_ok=True)
+            (opt_dir / "CONTCAR").write_text("contcar\n", encoding="utf-8")
+            _write_opt_outcar(opt_dir / "OUTCAR", converged=True)
         elif command[0] == "vasp_scf":
             (cwd_path / "vasp_scf").mkdir(parents=True, exist_ok=True)
             (cwd_path / "vasp_scf/CHGCAR").write_text("chg\n", encoding="utf-8")
@@ -467,7 +507,89 @@ def test_continue_updates_case_status_and_runs_missing_steps(chdir_work, monkeyp
     assert "总 case 数" in summary
     assert any(command[0] == "vasp_opt" for command, _ in calls)
     assert any(command[0] == "vasp_scf" for command, _ in calls)
+    target_vasp_opt_calls = [
+        (command, cwd)
+        for command, cwd in calls
+        if command[0] == "vasp_opt" and Path(cwd).resolve() == case_dir.resolve()
+    ]
+    target_scf_calls = [
+        (command, cwd)
+        for command, cwd in calls
+        if command[0] == "vasp_scf" and Path(cwd).resolve() == (case_dir / "20").resolve()
+    ]
+    assert target_vasp_opt_calls
+    assert target_scf_calls
     assert case_status["pressures"]["20"]["vasp_process_eledos"] == "finished"
+
+
+def test_continue_without_mattersim_runs_from_vasp_opt(chdir_work, monkeypatch):
+    from substitutionflow.status import create_initial_status
+    from substitutionflow.structure_substitution import generate_cases
+    from substitutionflow.workflow import continue_workflow
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    calls = []
+
+    def fake_run_cli_command(command, cwd):
+        calls.append((command, cwd))
+        cwd_path = Path(cwd)
+        if command[0] == "vasp_opt":
+            (cwd_path / "20/vasp_opt").mkdir(parents=True, exist_ok=True)
+            (cwd_path / "20/vasp_opt/CONTCAR").write_text("contcar\n", encoding="utf-8")
+            _write_opt_outcar(cwd_path / "20/vasp_opt/OUTCAR", converged=True)
+        elif command[0] == "vasp_scf":
+            (cwd_path / "vasp_scf").mkdir(parents=True, exist_ok=True)
+            (cwd_path / "vasp_scf/CHGCAR").write_text("chg\n", encoding="utf-8")
+            (cwd_path / "vasp_scf/WAVECAR").write_text("wav\n", encoding="utf-8")
+            _write_scf_like_outcar(cwd_path / "vasp_scf/OUTCAR", converged=True, iterations=4, nelm=60)
+        elif command[0] == "vasp_eledos":
+            (cwd_path / "vasp_eledos").mkdir(parents=True, exist_ok=True)
+            (cwd_path / "vasp_eledos/DOSCAR").write_text("dos\n", encoding="utf-8")
+            _write_scf_like_outcar(cwd_path / "vasp_eledos/OUTCAR", converged=True, iterations=4, nelm=60)
+        elif command[0] == "vasp_process_eledos":
+            (cwd_path / "vasp_eledos/pdos_merged_at_ef.csv").write_text("csv\n", encoding="utf-8")
+
+    monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
+    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
+
+    summary = continue_workflow("ht_out", run_calc=True, submit=False)
+
+    assert "总 case 数" in summary
+    assert "mattersim_opt" not in summary
+    assert any(command[0] == "vasp_opt" for command, _ in calls)
+    assert all(Path(cwd).name != "20" for command, cwd in calls if command[0] == "vasp_opt")
+    assert not any(command[0] == "mattersim_opt" for command, _ in calls)
+
+
+def test_refresh_status_without_mattersim_removes_legacy_mattersim_key(chdir_work):
+    from substitutionflow.status import create_initial_status, refresh_status
+    from substitutionflow.structure_substitution import generate_cases
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    case_status_path = Path("ht_out/03.XA_Li/period_2/04.LiBeH7/case_status.json")
+    payload = json.loads(case_status_path.read_text(encoding="utf-8"))
+    payload["pressures"]["20"]["mattersim_opt"] = "finished"
+    payload["pressures"]["50"]["mattersim_opt"] = "error"
+    case_status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    workflow_status = refresh_status("ht_out", squeue_output="")
+    refreshed = json.loads(case_status_path.read_text(encoding="utf-8"))
+
+    assert "mattersim_opt" not in refreshed["pressures"]["20"]
+    assert "mattersim_opt" not in refreshed["pressures"]["50"]
+    assert "mattersim_opt" not in workflow_status["steps"]
 
 
 def test_build_submit_scripts_split_units_without_breaking_chain(chdir_work, monkeypatch):
@@ -528,6 +650,8 @@ def test_build_submit_scripts_split_units_without_breaking_chain(chdir_work, mon
     assert len(target_units) == 1
     target_unit = target_units[0]
     target_text = "\n".join(target_unit["commands"])
+    assert 'cd "/tmp' in target_text or 'cd "' in target_text
+    assert f'cd "{Path("ht_out/03.XA_Li/period_2/04.LiBeH7/20").resolve()}"' in target_text
     assert "vasp_scf -i vasp_opt/CONTCAR -c ../input.toml -r" in target_text
     assert "vasp_eledos -i vasp_scf/POSCAR -c ../input.toml -r" in target_text
     assert "vasp_process_eledos -d ./vasp_eledos --elements-total Li Be H" in target_text
