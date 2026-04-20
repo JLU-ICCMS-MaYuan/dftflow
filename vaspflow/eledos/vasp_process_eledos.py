@@ -338,6 +338,11 @@ def load_csv_columns(path):
     return {name: np.array(values, dtype=float) for name, values in data.items()}
 
 
+def determine_dos_plot_ymax(energy, tdos):
+    y_max = 2.0 * interpolate_at_zero(energy, tdos)
+    return y_max if y_max > 0.0 else 1.0
+
+
 def plot_dos_from_csv(csv_path, png_path):
     try:
         import matplotlib
@@ -349,17 +354,19 @@ def plot_dos_from_csv(csv_path, png_path):
 
     data = load_csv_columns(csv_path)
     energy = data.pop("Energy(eV)")
+    tdos = data.get("TDOS")
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    y_max = 0.0
     for label, values in data.items():
         ax.plot(energy, values, linewidth=1.5, label=label)
-        if len(values) > 0:
-            y_max = max(y_max, float(np.max(values)))
     ax.axvline(0.0, color="k", linestyle="--", linewidth=1.0, label="E_F")
     ax.set_xlabel("Energy - E_F (eV)")
     ax.set_ylabel("DOS")
-    ax.set_ylim(bottom=0.0, top=y_max * 1.05 if y_max > 0.0 else 1.0)
+    if tdos is not None:
+        y_max = determine_dos_plot_ymax(energy, tdos)
+    else:
+        y_max = 1.0
+    ax.set_ylim(bottom=0.0, top=y_max if y_max > 0.0 else 1.0)
     ax.legend()
     ax.grid(True, linestyle=":", alpha=0.4)
     fig.tight_layout()

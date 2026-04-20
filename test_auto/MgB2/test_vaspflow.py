@@ -1139,6 +1139,24 @@ def test_vasp_process_eledos_generates_csv_and_png(chdir_work, monkeypatch):
     assert "0.0,2.0,12.0,14.0,1.0,7.0,24.0" in ef_content
 
 
+def test_vasp_process_eledos_plot_uses_two_times_tdos_at_ef_as_ymax(chdir_work):
+    from vaspflow.eledos import vasp_process_eledos as module
+
+    energy = np.array([-1.0, 0.0, 1.0], dtype=float)
+    tdos = np.array([100.0, 4.0, 120.0], dtype=float)
+
+    assert module.determine_dos_plot_ymax(energy, tdos) == 8.0
+
+
+def test_vasp_process_eledos_plot_falls_back_to_one_when_tdos_at_ef_is_non_positive(chdir_work):
+    from vaspflow.eledos import vasp_process_eledos as module
+
+    energy = np.array([-1.0, 0.0, 1.0], dtype=float)
+    tdos = np.array([3.0, 0.0, 5.0], dtype=float)
+
+    assert module.determine_dos_plot_ymax(energy, tdos) == 1.0
+
+
 def test_vasp_process_eledos_supports_fine_grained_orbitals(chdir_work, monkeypatch):
     from vaspflow.eledos import vasp_process_eledos as module
 
