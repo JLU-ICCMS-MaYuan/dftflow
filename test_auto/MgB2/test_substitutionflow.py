@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -896,3 +897,113 @@ def test_prepare_potcar_writes_log_incrementally(chdir_work, monkeypatch):
     log_text = Path("potcar_lib/potcar_lib.log").read_text(encoding="utf-8")
     assert "V = V" in log_text
     assert "Ce = Ce_GW" in log_text
+
+
+def _write_at_ef_csv(path: Path, headers, values):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        ",".join(headers) + "\n" + ",".join(str(value) for value in values) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _prepare_plot_cases(root_dir: Path):
+    from substitutionflow.status import create_initial_status
+    from substitutionflow.structure_substitution import generate_cases
+
+    structure_path = root_dir / "XAXBH7-P63mmc.vasp"
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = root_dir / "input_ht.toml"
+    _write_ht_config_without_mattersim(config_path)
+    config_text = config_path.read_text(encoding="utf-8").replace(
+        'structure_filename = "structure.vasp"', 'structure_filename = "XAXBH7-P63mmc.vasp"'
+    )
+    config_text = config_text.replace('pressures = [20, 50]', 'pressures = [50, 100]')
+    config_path.write_text(config_text, encoding="utf-8")
+    generate_cases(str(structure_path), str(config_path), str(root_dir / "ht_out"))
+    create_initial_status(str(root_dir / "ht_out"))
+    return root_dir / "ht_out"
+
+
+def test_substitution_plot_eledos_accepts_root_single_and_multiple_xa_dirs(chdir_work):
+    from substitutionflow.plot_eledos import resolve_target_xa_dirs
+
+    out_dir = _prepare_plot_cases(Path("."))
+    out_dir = out_dir.resolve()
+    expected = sorted(str(path.resolve()) for path in out_dir.glob("*.XA_*"))
+
+    os.chdir(out_dir)
+    assert sorted(resolve_target_xa_dirs([])) == expected
+    assert sorted(resolve_target_xa_dirs([str(out_dir)])) == expected
+    assert resolve_target_xa_dirs([str(out_dir / "03.XA_Li")]) == [str((out_dir / "03.XA_Li").resolve())]
+    assert sorted(resolve_target_xa_dirs([str(out_dir / "03.XA_Li"), str(out_dir / "04.XA_Be")])) == [
+        str((out_dir / "03.XA_Li").resolve()),
+        str((out_dir / "04.XA_Be").resolve()),
+    ]
+
+
+def test_substitution_plot_eledos_rejects_mixed_root_and_xa_inputs(chdir_work):
+    import pytest
+    from substitutionflow.plot_eledos import resolve_target_xa_dirs
+
+    out_dir = _prepare_plot_cases(Path("."))
+    with pytest.raises(ValueError):
+        resolve_target_xa_dirs([str(out_dir), str(out_dir / "03.XA_Li")])
+
+
+def test_substitution_plot_eledos_generates_pressure_png_and_handles_missing_cells(chdir_work):
+    from substitutionflow.plot_eledos import collect_pressure_plot_data, generate_xa_dir_plots
+
+    out_dir = _prepare_plot_cases(Path("."))
+    xa_dir = out_dir / "03.XA_Li"
+    finished_case = xa_dir / "period_2" / "04.LiBeH7"
+    missing_case = xa_dir / "period_2" / "05.LiBH7"
+
+    _write_at_ef_csv(
+        finished_case / "50" / "vasp_eledos" / "pdos_merged_at_ef.csv",
+        ["Energy(eV)", "Li", "Be", "H", "TDOS"],
+        [0.0, 1.2, 2.3, 3.4, 4.5],
+    )
+    _write_at_ef_csv(
+        finished_case / "100" / "vasp_eledos" / "pdos_merged_at_ef.csv",
+        ["Energy(eV)", "Li", "Be", "H", "TDOS"],
+        [0.0, 1.5, 2.0, 2.5, 3.0],
+    )
+    _write_at_ef_csv(
+        missing_case / "50" / "vasp_eledos" / "pdos_merged_at_ef.csv",
+        ["Energy(eV)", "Li", "B", "TDOS"],
+        [0.0, 0.8, 1.1, 1.4],
+    )
+
+    plot_data = collect_pressure_plot_data(str(xa_dir), "50")
+    assert plot_data["rows"] == ["period_2"]
+    assert plot_data["cells"][("period_2", 2)]["values"]["XB"] == 2.3
+    assert plot_data["cells"][("period_2", 13)]["values"] is None
+    assert plot_data["ymax"] > 4.5
+
+    outputs = generate_xa_dir_plots(str(xa_dir))
+    assert str((xa_dir / "eledos_summary_50.png").resolve()) in [str(Path(item).resolve()) for item in outputs]
+    assert str((xa_dir / "eledos_summary_100.png").resolve()) in [str(Path(item).resolve()) for item in outputs]
+    assert (xa_dir / "eledos_summary_50.png").exists()
+    assert (xa_dir / "eledos_summary_100.png").exists()
+
+
+def test_substitution_plot_eledos_main_defaults_to_current_directory(chdir_work, monkeypatch):
+    from substitutionflow import plot_eledos as module
+
+    out_dir = _prepare_plot_cases(Path("."))
+    xa_dir = out_dir / "03.XA_Li"
+    _write_at_ef_csv(
+        xa_dir / "period_2" / "04.LiBeH7" / "50" / "vasp_eledos" / "pdos_merged_at_ef.csv",
+        ["Energy(eV)", "Li", "Be", "H", "TDOS"],
+        [0.0, 1.0, 2.0, 3.0, 4.0],
+    )
+
+    monkeypatch.chdir(out_dir)
+    monkeypatch.setattr(sys, "argv", ["substitution_plot_eledos"])
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        module.main()
+
+    output = buffer.getvalue()
+    assert "03.XA_Li/eledos_summary_50.png" in output or "03.XA_Li/eledos_summary_100.png" in output

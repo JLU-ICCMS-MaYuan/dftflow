@@ -223,6 +223,19 @@
     4. 更新 README、CLI 帮助文本和自动化测试，覆盖默认单组、多组均分、单元不可拆分、跳过 `running` 与逐组提交。
 - **状态**：已完成。
 
+### [2026-04-21] 新增 substitution_plot_eledos 周期表式 DOS 总览图
+- **需求**：
+    1. 新增独立 CLI `substitution_plot_eledos`，按 XA 目录汇总 `vasp_process_eledos` 的 `*_at_ef.csv` 结果。
+    2. 图面布局必须复用 `substitutionflow/selection.py` 的周期表坐标和镧系/锕系对齐方式。
+    3. 每个 case 位点固定绘制 `XA / XB / H / TDOS` 四个紧挨着的柱状图；未完成位点保留格子并标灰。
+    4. `-d/--directory` 省略时默认扫描当前目录下全部 `[Z].XA_*` 目录，也支持传根目录或多个指定 XA 目录。
+- **方案**：
+    1. 新增 `substitutionflow/plot_eledos.py`，实现目录解析、`*_at_ef.csv` 读取、pressure 维度拆图以及周期表式绘图。
+    2. 列提取固定按 case 元信息中的 `xa_symbol`、`xb_symbol`，外加 `H` 和 `TDOS`；任一缺失即整格按缺失处理。
+    3. 同一张图统一使用全局 `ymax`，输出固定命名为 `<XA_dir>/eledos_summary_<pressure>.png`。
+    4. 在 `pyproject.toml` 注册 `substitution_plot_eledos` 入口，并补充 README 与自动化测试。
+- **状态**：已完成。
+
 ### [2026-04-10] 统一 vasp_plot_cohp 与 vasp_plot_kcohp 的相互作用输入语法
 - **需求**：
     1. `vasp_plot_cohp` 与 `vasp_plot_kcohp` 对元素和轨道的设置方式必须一致。
