@@ -108,13 +108,21 @@ def _load_q_index_mode(workdir: str) -> str:
     return str(mode) if isinstance(mode, str) else ""
 
 
+def _resolve_merged_ph_root(workdir: str) -> str:
+    tmp_ph0 = os.path.join(workdir, "tmp", "_ph0")
+    if os.path.isdir(tmp_ph0) or os.path.isdir(os.path.join(workdir, "tmp")):
+        return tmp_ph0
+    return os.path.join(workdir, "_ph0")
+
+
 def _collect_merge_required_paths(
     workdir: str,
     prefix: str,
     mode: str,
     entries: List[Dict[str, object]],
 ) -> Tuple[List[str], List[List[str]], bool]:
-    required_paths: List[str] = [os.path.join(workdir, "_ph0", f"{prefix}.phsave")]
+    merged_ph_root = _resolve_merged_ph_root(workdir)
+    required_paths: List[str] = [os.path.join(merged_ph_root, f"{prefix}.phsave")]
     alternative_paths: List[List[str]] = []
     requires_patterns = mode == "split_assign_index"
     for entry in entries:
@@ -135,12 +143,13 @@ def _collect_merge_required_paths(
             if q_index == 1:
                 alternative_paths.append(
                     [
-                        os.path.join(workdir, "_ph0", "dvscf"),
-                        os.path.join(workdir, "_ph0", f"{prefix}.q_1"),
+                        os.path.join(merged_ph_root, f"{prefix}.dvscf1"),
+                        os.path.join(merged_ph_root, "dvscf"),
+                        os.path.join(merged_ph_root, f"{prefix}.q_1"),
                     ]
                 )
             else:
-                required_paths.append(os.path.join(workdir, "_ph0", f"{prefix}.q_{q_index}"))
+                required_paths.append(os.path.join(merged_ph_root, f"{prefix}.q_{q_index}"))
         elif mode == "split_assign_coords":
             # coords 模式允许 dvscf 直接位于 _ph0/，不要求根目录必须有 q 子目录。
             pass
@@ -148,7 +157,7 @@ def _collect_merge_required_paths(
 
 
 def _merge_patterns_ready(workdir: str, prefix: str, entries: List[Dict[str, object]], mode: str) -> bool:
-    phsave_dir = os.path.join(workdir, "_ph0", f"{prefix}.phsave")
+    phsave_dir = os.path.join(_resolve_merged_ph_root(workdir), f"{prefix}.phsave")
     if not os.path.isdir(phsave_dir):
         return False
     if mode == "split_assign_coords":

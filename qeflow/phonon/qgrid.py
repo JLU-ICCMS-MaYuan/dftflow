@@ -195,8 +195,8 @@ def write_dyn0(path: str, nq1: int, nq2: int, nq3: int, qpoints: Sequence[Dict])
         f.write(f"{nq1:4d}{nq2:4d}{nq3:4d}\n")
         f.write(f"{len(qpoints):4d}\n")
         for item in qpoints:
-            q_cart = item["q_cart"]
-            f.write(f"{q_cart[0]:24.15E}{q_cart[1]:24.15E}{q_cart[2]:24.15E}\n")
+            q_crystal = item["q_crystal"]
+            f.write(f"{q_crystal[0]:24.15E}{q_crystal[1]:24.15E}{q_crystal[2]:24.15E}\n")
 
 
 def write_q_index_map(path: str, qpoints: Sequence[Dict]) -> None:

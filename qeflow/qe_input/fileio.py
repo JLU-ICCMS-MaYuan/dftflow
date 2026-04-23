@@ -91,7 +91,7 @@ def list_split_directories(workspace: str) -> List[str]:
     if not os.path.isdir(workspace):
         return entries
     for name in sorted(os.listdir(workspace)):
-        if not name.startswith("q_"):
+        if not (name.isdigit() and len(name) == 2):
             continue
         path = os.path.join(workspace, name)
         if os.path.isdir(path):
