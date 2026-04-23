@@ -623,3 +623,100 @@ qe_phonon_split_assign_index 在开始计算前会先检查先前的声子计算
   - `q_index_map.json` 是 merge 的唯一真源；不会再通过目录名或文件名反推 split 模式。
   - coords 模式的主语义按你给的旧脚本收敛为“子目录 dyn 可无编号、patterns 主语义为 `patterns.1.xml`、tmp 结构与 index 不同”。
   - index 模式的主语义按你给的旧脚本收敛为“dyn/`q_<index>`/patterns 都保留物理 q 编号语义，第 1 个 q 点允许特殊目录结构”。
+
+
+
+
+    ## QE 声子工作流 CLI 改名与默认目录拆分方案
+
+  ### Summary
+
+  将当前 3 个总工作流 CLI 从冗长命名改为更短、更直白的一组，并同步把默认 work_dir 从共享的 qe_phonon 拆成 3 个独立目录。按已确认偏好，这次方案采用：
+
+  - qe_phonon_nosplit -> qe_phonon_nosplit
+  - qe_phonon_split_assign_coords -> qe_phonon_split_coords
+  - qe_phonon_split_assign_index -> qe_phonon_split_index
+
+  同时按命令名分别使用独立默认目录：
+
+  - qe_ph_nosplit 默认目录：qe_ph_nosplit
+  - qe_ph_split_coords 默认目录：qe_ph_split_coords
+  - qe_ph_split_index 默认目录：qe_ph_split_index
+
+  旧命令不保留别名，直接替换。
+
+  ### Key Changes
+
+  - 调整 pyproject.toml 的 project.scripts：
+      - 删除 3 个旧工作流入口
+      - 新增 3 个新入口，分别指向现有对应模块的 main()
+  - 调整这 3 个工作流入口文件中的 CLI 描述文案：
+      - qeflow/phonon/qe_phonon_nosplit.py
+      - qeflow/phonon/qe_phonon_split_assign_coords.py
+      - qeflow/phonon/qe_phonon_split_assign_index.py
+      - 文案改成面向新命令名，不再出现旧 CLI 名称
+  - 调整 QE phonon 配置模板与工作目录解析策略：
+      - 当前 [qe_phonon].work_dir 是共享单值，需改成 3 个工作流默认各自独立
+      - 推荐做法：在共享 [qe_phonon] 块内新增 3 个显式键，而不是拆成 3 套新配置块
+          - work_dir_full = "qe_ph_full"
+          - work_dir_split_coords = "qe_ph_split_coords"
+          - work_dir_split_index = "qe_ph_split_index"
+      - 各工作流入口在构造 context 时按自身模式选择对应默认目录
+      - 若用户显式在 [qe_phonon] 中提供旧的单值 work_dir，不再兼容，直接按新键语义读取
+  - 调整 resolve_workspace() 的接口语义：
+      - 目前它默认只读 config["qe_phonon"]["work_dir"]
+      - 需让调用方显式传入“当前工作流模式”，由它解析成对应默认目录
+      - 推荐模式值固定为：
+          - full
+          - split_coords
+          - split_index
+  - 同步更新 README / qeflow 文档中的命令示例与默认目录说明：
+      - 删除旧命令名
+      - 将所有 qe_phonon/ 示例目录替换为对应新默认目录
+      - 说明 3 个工作流命令分别落在自己的目录中运行
+  - 测试层统一切换到新命令语义：
+      - 保留现有模块文件名不动，仅更新 CLI 名、帮助文本、默认目录断言
+      - 增加对 3 个默认目录值的断言，避免未来再次回退到共享目录
+
+  ### Interfaces / Public Behavior
+
+  - 对外 CLI 变更：
+      - 删除：qe_phonon_nosplit
+      - 删除：qe_phonon_split_assign_coords
+      - 删除：qe_phonon_split_assign_index
+      - 新增：qe_ph_full
+      - 新增：qe_ph_split_coords
+      - 新增：qe_ph_split_index
+  - 对外配置变更：
+  - 对外目录行为变更：
+      - qe_ph_split_index 默认在 ./qe_ph_split_index
+
+  ### Test Plan
+
+  - CLI 注册测试：
+      - 新命令存在
+      - 旧命令不存在
+  - 默认目录测试：
+      - qe_ph_full 未显式指定目录时进入 qe_ph_full
+      - qe_ph_split_coords 未显式指定目录时进入 qe_ph_split_coords
+      - qe_ph_split_index 未显式指定目录时进入 qe_ph_split_index
+  - 工作流回归测试：
+      - full 整链推进行为不变，只变默认目录
+      - split_coords 阶段推进、merge、q2r/post 行为不变，只变默认目录和命令名
+      - split_index 同上
+  - 文档一致性检查：
+      - README 与 qeflow/README.md 中不再残留旧工作流命令名
+      - 示例目录不再默认写成 qe_phonon
+
+  ### Assumptions
+
+  - 本次只重命名“总工作流”3 个命令，不改单步命令：
+      - qe_ph_nosplit
+      - qe_ph_split_coords
+      - qe_ph_split_index
+      - qe_merge
+      - qe_q2r
+      - qe_matdyn_*
+  - 模块文件名保持现状，不做 Python 文件重命名；只改 CLI 注册名、默认目录和文档
+  - 旧命令不保留兼容别名，不做过渡期策略
+  - 配置仍统一放在共享 [qe_phonon] 下，不新增 [qe_ph_full] / [qe_ph_split_coords] / [qe_ph_split_index] 三套独立块

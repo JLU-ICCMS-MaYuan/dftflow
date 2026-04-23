@@ -33,21 +33,25 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 
 ### 3.2 可恢复总工作流 CLI
 - `qe_phonon_nosplit`
-- `qe_phonon_split_assign_index`
-- `qe_phonon_split_assign_coords`
+- `qe_phonon_split_index`
+- `qe_phonon_split_coords`
 
 ## 4. `work_dir` 规则
 - 用户始终在“当前目录”执行命令。
-- 程序先读取当前目录的配置文件，再读取 `[qe_phonon].work_dir`。
-- 如果当前目录 basename 等于 `work_dir`，说明用户已经进入真实计算目录，程序直接在当前目录检查和续算。
-- 如果当前目录 basename 不等于 `work_dir`，程序会进入或创建 `./<work_dir>` 作为真实计算目录。
-- 因此用户不需要区分自己应不应该先 `cd qe_phonon`。
+- 如果显式设置 `[qe_phonon].work_dir`，三个总工作流都会统一使用该目录。
+- 如果没有显式设置 `[qe_phonon].work_dir`，程序按当前总工作流命令自动选择默认目录：
+  - `qe_phonon_nosplit` -> `qe_phonon_nosplit`
+  - `qe_phonon_split_coords` -> `qe_phonon_split_coords`
+  - `qe_phonon_split_index` -> `qe_phonon_split_index`
+- 如果当前目录 basename 等于目标 `work_dir`，说明用户已经进入真实计算目录，程序直接在当前目录检查和续算。
+- 如果当前目录 basename 不等于目标 `work_dir`，程序会进入或创建 `./<work_dir>` 作为真实计算目录。
+- 单步 CLI 仍沿用共享声子目录语义；这里只有 3 个总工作流命令的默认目录发生拆分。
 
 ## 5. 目录结构
 `work_dir` 内部固定使用以下语义：
 
 ```text
-qe_phonon/
+qe_phonon_nosplit/
   scf.in
   scf.out
   ph.in
@@ -101,13 +105,13 @@ qe_phonon/
 `running` 统一通过 `squeue -u <user> -h --format='%12A %12P %5t %25R %8M %Z'` 的工作目录 `%Z` 判定，不靠文件猜测。
 
 ## 7. split 工作流行为
-- `qe_phonon_split_assign_index`
+- `qe_phonon_split_index`
   - 根目录 `scf.out` 未完成时，只推进 SCF。
   - `scf.out` 完成但 `dyn0` 未完成时，只推进 `dyn0`。
   - `dyn0` 完成后，首次生成全部 `q_XX/` 输入和脚本。
   - 若 q 子任务部分完成，只刷新并打印各目录状态，不自动回收任务。
   - 当全部 q 子任务完成后，先进入 `merge`，再执行 `q2r -> phband -> phdos`。
-- `qe_phonon_split_assign_coords`
+- `qe_phonon_split_coords`
   - 与上面相同，但 `split_ph.in` 写入单个 q 点坐标而不是 `start_q/last_q`。
 
 split 工作流现在固定为四阶段：
@@ -134,7 +138,7 @@ Mg = { pseudo = "Mg.UPF" }
 B = { pseudo = "B.UPF" }
 
 [qe_phonon]
-work_dir = "qe_phonon"
+work_dir = "custom_ph"
 
 [qe_phonon.scf]
 outdir = "./out"
@@ -162,5 +166,5 @@ dos = true
 ## 9. 说明
 - `pseudo_map` 只强制要求 `pseudo`，质量会按元素自动补。
 - `fildyn`、`flfrc`、`flfrq`、`fldos` 由程序按 `prefix` 自动派生，不建议手写。
-- `qe_ph_split_assign_index` 与 `qe_ph_split_assign_coords` 假定根目录 `scf.out` 已完成；若希望自动推进 SCF，请使用 `qe_phonon_split_assign_index` 或 `qe_phonon_split_assign_coords`。
+- `qe_ph_split_assign_index` 与 `qe_ph_split_assign_coords` 假定根目录 `scf.out` 已完成；若希望自动推进 SCF，请使用 `qe_phonon_split_index` 或 `qe_phonon_split_coords`。
 - `qe_merge` 可独立检查、执行或提交 split 结果回收；split 工作流内部也统一复用这一路径。

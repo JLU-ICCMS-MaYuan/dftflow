@@ -41,8 +41,8 @@ Available commands:
 - `qe_matdyn_phdos`
 - `qe_check`
 - `qe_phonon_nosplit`
-- `qe_phonon_split_assign_index`
-- `qe_phonon_split_assign_coords`
+- `qe_phonon_split_index`
+- `qe_phonon_split_coords`
 
 ## High Throughput Substitution
 
