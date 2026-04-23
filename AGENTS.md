@@ -964,6 +964,19 @@
     2. 输出包含同元素轨道汇总与未汇总两种版本，TDOS/ITDOS 置于最后一列。
 - **状态**：已完成。
 
+### [2026-04-23] QE split 声子工作流补齐 merge 阶段并新增 qe_merge
+- **需求**：
+    1. `qe_phonon_split_assign_*` 与 `qe_ph_split_assign_*` 在全部 `q_XX` split 任务完成后，必须先执行 merge，再进入 `q2r -> matdyn`。
+    2. `workflow_status.json` 新增显式 `"merge"` 字段，状态固定为 `unstarted / finished / error`。
+    3. 新增独立 CLI `qe_merge`，并作为 split merge 的唯一实现入口。
+    4. `qe_ph_split_assign_* -s` 在 split 全部完成后，需要先本地 merge；成功后再提交 `q2r + matdyn`，失败则打印完整缺失明细并停止。
+- **方案**：
+    1. 在 `qeflow/phonon/workflow.py` 中新增 merge 检测、`run_merge.sh` 生成、根目录回收实现以及 split 四阶段推进逻辑。
+    2. 在 `qeflow/qe_check/checks.py` 中新增 `check_merge()`，通过 `q_index_map.json + 根目录 merge 产物` 判断 merge 状态，不再让 `q2r` 隐含承担“尚未 merge”语义。
+    3. 新增 `qeflow/phonon/qe_merge.py` 并在 `pyproject.toml` 注册 `qe_merge` 入口，`-r/-s` 对齐 `qe_q2r` 等单步 CLI。
+    4. 更新 `qeflow/README.md` 与 `test_auto/MgB2/test_qe_phonon.py`，覆盖 merge 状态、四阶段提交、独立 `qe_merge`、split 本地 merge 后再提后处理等场景。
+- **状态**：已完成。
+
 ### [2026-01-23] 修正：qe_process_eledos 脚本入口
 - **需求**：`qe_process_eledos` 入口需可用。
 - **方案**：`pyproject.toml` 中将 `qe_process_eledos` 指向 `qeflow.eledos.qe_process_dos:main`。

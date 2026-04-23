@@ -311,10 +311,315 @@ qe_phonon_split_assign_index 在开始计算前会先检查先前的声子计算
   - 不带 -r/-s 只检查不触发任何命令
 
 
-## Assumptions
+› A previous agent produced the plan below to accomplish the user's task. Implement the plan in a fresh context. Treat the plan as the source of user
+  intent, re-read files as needed, and carry the work through implementation and verification.
 
-- 旧声子 CLI 全部删除，不做兼容转发。
-- q 点子目录命名采用 q_00、q_01、q_02。
-- qe_check -eph 本次不实现；若保留参数，也只明确提示“暂未支持”，不做半成品逻辑。
-- 成功态判断以 QE 输出中的 JOB DONE 和关键产物存在性为主；如后续你有更严格的关键词标准，可在实现时统一补入解析类常量中。
-- 总工作流 CLI 不做守候式轮询；每次执行只检查、推进当前一步、打印状态，然后结束，符合“未来任意时间再次执行同一命令继续推进”的要求。
+  ## QE 声子总工作流续推语义修正与 split 三阶段提交重构
+
+  ### Summary
+  后续实现只调整 `qe_phonon_*` 总工作流，不改变你要求保留的 8 个 CLI 外壳文件名与基本框架。目标语义固定为：
+
+  - `qe_phonon_nosplit -r` 在同一次执行里，会从最后一个已完成步骤之后继续串行跑完整条剩余链，直到 `matdyn_phdos` 完成或某一步失败。
+  - `qe_phonon_split_assign_index` / `qe_phonon_split_assign_coords` 同样支持续推，但 `-s` 固定采用“三阶段续推”语义，而不是第一次就把后处理直接串到同一个立
+  即执行脚本里。
+  - 三个总工作流命令都只需要在根目录重复执行同一个命令；程序自己依据状态文件和输出文件判断从哪里继续。
+
+  ### Key Changes
+  #### 1. `qe_phonon_nosplit` 改成真正的整链续推
+  - `qe_phonon_nosplit -r` 的推进逻辑固定为：
+    - `scf`
+    - `ph`
+    - `q2r`
+    - `matdyn_phband`
+    - `matdyn_phdos`
+  - 每一步执行后立即刷新状态；若该步已 `finished`，同一次命令继续推进下一步，不再在 `ph` 阶段提前 `return`。
+  - 若未来再次执行同一命令，则从最后一个已完成步骤之后继续跑，不重跑已完成步骤。
+  - `qe_phonon_nosplit -s` 改为提交整条链总脚本，脚本内部顺序执行全部剩余未完成步骤。
+
+  #### 2. 全部 `qe_phonon_*` 总工作流统一提前准备输入
+  - `qe_phonon_nosplit` 在工作流入口就一次性准备：
+    - `scf.in`
+    - `ph.in`
+    - `q2r.in`
+    - `matdyn_phband.in`
+    - `matdyn_phdos.in`
+    - 各自 `run_*.sh`
+  - `qe_phonon_split_assign_index` / `qe_phonon_split_assign_coords` 在入口也一次性准备所有当前可确定的根目录输入与脚本：
+    - `scf.in`
+    - `ph.in` 或 `dyn0` 所需输入
+    - `q2r.in`
+    - `matdyn_phband.in`
+    - `matdyn_phdos.in`
+    - 根目录 `run_*.sh`
+  - split 场景里依赖 `dyn0/XML` 的 `q_XX/scf.in`、`q_XX/split_ph.in`、`q_XX/run_split.sh`，仍在 `dyn0` 完成后一次性全部生成，不提前伪造。
+
+  #### 3. split 总工作流的 `-s` 固定为“三阶段续推”
+  - `qe_phonon_split_assign_* -s` 不采用“单总脚本串到底”。
+  - 它固定分成 3 个阶段：
+    - 前计算阶段：`scf -> dyn0`
+    - split 阶段：全部 `q_XX/run_split.sh`
+    - 后处理阶段：`q2r -> matdyn_phband -> matdyn_phdos`
+  - 第一次执行时：
+    - 若 `scf/dyn0` 未完成，则生成全部阶段脚本，但当前只提交前计算阶段；
+    - 若 `dyn0` 已完成但 `q_XX` 未完成，则生成全部 `q_XX` 输入和 split 阶段总脚本，并提交 split 阶段；
+    - 程序提交后退出，不守候。
+  - 以后再次执行同一命令时：
+    - 若检测到全部 `q_XX` 都 `finished`，则自动生成并提交后处理阶段总脚本；
+    - `q2r` 与两个 `matdyn` 后处理始终作为一个整体后处理阶段连续执行。
+  - 这满足你说的“split 总体分为前计算、split_ph、后处理 3 个步骤”，并且后处理仍然通过再次执行同一个 `qe_phonon_split_*` 命令触发。
+
+  #### 4. 状态判断与续推依据
+  - 三个总工作流都统一依赖根目录状态刷新结果决定是否推进：
+    - `scf`: `JOB DONE`
+    - `ph`: `JOB DONE` 或 split 完成态
+    - `q2r`: `JOB DONE + <prefix>.fc`
+    - `matdyn_phband`: `JOB DONE + <prefix>.phband.freq`
+    - `matdyn_phdos`: `JOB DONE + <prefix>.phdos.dat`
+  - split 子目录仍按 `q_00`、`q_01`、`q_02` 命名。
+  - `qe_check -eph` 继续只保留接口，明确输出“暂未支持”。
+  - 不增加守候式轮询；每次命令只做“检查 -> 生成必要输入/脚本 -> 执行或提交当前应推进的阶段 -> 刷新状态 -> 退出”。
+
+  #### 5. 文件与目录边界
+  - 保留以下 8 个 CLI 文件，不做删除或合并：
+    - `qe_matdyn_phband.py`
+    - `qe_matdyn_phdos.py`
+    - `qe_ph_nosplit.py`
+    - `qe_ph_split_assign_coords.py`
+    - `qe_ph_split_assign_index.py`
+    - `qe_phonon_nosplit.py`
+    - `qe_phonon_split_assign_coords.py`
+    - `qe_phonon_split_assign_index.py`
+  - `qgrid.py` 继续保留在 `qeflow/phonon/`，作为唯一需要重点保留、便于后续对比 QE `dyn0` 生成逻辑的核心算法文件。
+  - `workflow.py` 继续保留在 `qeflow/phonon/`，作为这 8 个 CLI 共同依赖的调度中心。
+    - `write_dyn0()`
+  - 如需提升可比对性，只补充高信号注释，重点标明：
+    - XML 读取
+    - 不可约约化与权重累积
+    - `dyn0` 写出
+    - `scf` 未完成时，本次执行应顺次跑到 `matdyn_phdos`
+    - `scf` 已完成、`ph` 未完成时，应从 `ph` 开始继续跑完整条后续链
+    - `q2r` 已完成、`matdyn` 未完成时，只继续后半段
+  - `qe_phonon_nosplit`
+    - 首次 setup 后即存在 `scf.in`、`ph.in`、`q2r.in`、`matdyn_phband.in`、`matdyn_phdos.in` 及对应脚本
+  - `qe_phonon_split_assign_index` / `qe_phonon_split_assign_coords`
+    - 工作流开始时就存在根目录 `scf/ph/q2r/matdyn` 输入与脚本
+  - `qe_phonon_* -s`
+    - `nosplit` 生成整条链总脚本
+    - `split` 生成三阶段脚本，并只提交当前应推进阶段
+    - 所有脚本内容都只包含剩余未完成步骤
+  - `qgrid.py`
+    - 现有 gamma 优先与权重归一化测试保持通过
+    - `dyn0` 写出格式测试保持通过
+
+  ### Assumptions
+  - 你确认保留现有 8 个 `qeflow/phonon/` CLI 外壳，不删除、不合并。
+  - `source /work/home/mayuan/intel/oneapi/setvars.sh` 报错不是本次修复目标，且脚本里不需要加 `set -e`。
+  - 总工作流里：
+    - `nosplit -s` 采用整条链总脚本语义
+    - `split -s` 采用“三阶段续推”语义
+  - split 工作流中依赖 `dyn0/XML` 的 `q_XX` 输入，只在 `dyn0` 完成后生成；这不违背“全部预生成”，因为它们在入口时尚不可确定。
+
+
+
+
+  ## QE Split 声子工作流补齐 Merge 阶段并扩展状态机
+
+  ### Summary
+
+  当前 qe_phonon_split_assign_* 和 qe_ph_split_assign_* 在所有 q_XX split 任务完成后，直接进入 q2r，中间缺少把各 q 点结果回收到根目录的 merge 步骤，导致
+  q2r 在 split 路径下语义不完整。后续实现应把 split 工作流从“前计算 -> split -> 后处理”改为“前计算 -> split -> merge -> 后处理”，并把 merge 纳入
+  workflow_status.json 的显式状态字段。
+
+  这次实现采用你确认的范围：
+
+  - merge 语义接入 qe_phonon_split_assign_* 和 qe_ph_split_assign_*
+  - merge 状态单独记录为 "merge": "unstarted|running|finished|error"
+  - merge 内容按旧脚本完整语义对齐，而不是只做最小 dyn 汇总
+
+  ### Key Changes
+
+  #### 1. split 状态机补一个独立 merge 阶段
+
+  - 在 qeflow/phonon/workflow.py 的 split 分支中，把“全部 q_XX finished 后直接 q2r”改为“先 merge，再 q2r”。
+  - workflow_status.json 顶层新增 "merge" 字段，位置语义上位于 ph 与 q2r 之间；当 split 全部完成但尚未汇总时，应出现：
+      - "ph": {"state": "finished", "dyn0": "finished", ...}
+      - "merge": "unstarted"
+      - "q2r": "unstarted" 或 "q2r": "error" 不再作为“未 merge”替代态
+  - split 总工作流的 -s 语义从 3 阶段改为 4 阶段：
+      - 前计算：scf -> dyn0
+      - split：全部 q_XX/run_split.sh
+      - merge：根目录 merge 阶段
+      - 后处理：q2r -> matdyn_phband -> matdyn_phdos
+  - split 总工作流的 -r 语义改为：当全部 q_XX 完成后，同一次命令先执行 merge，merge 完成后继续执行 q2r -> matdyn_phband -> matdyn_phdos。
+
+  #### 2. 新增并收口 merge 实现
+
+  - 在 qeflow/phonon/ 恢复一个专用 merge 模块或在 workflow.py 中抽出等价 helper，但实现语义必须完整覆盖旧脚本需求，不只复制 dyn。
+  - merge 的遍历顺序以根目录 q_index_map.json 为唯一真源，不依赖目录自然排序。
+  - merge 输出目标固定回收到根目录，至少包括：
+      - 根目录 prefix.dyn1..N 系列文件
+      - _ph0/<prefix>.phsave
+      - _ph0/<prefix>.q_<index>/... 下的 dvscf/dvscf1/<prefix>.dvscf/<prefix>.dvscf1 等候选文件
+      - 旧脚本语义里要保留的 split_ph.in.<i>、split_ph.out.<i> 这类留档文件
+  - merge 的命名规则必须稳定，不允许混用 q_00 目录号和物理 q 点编号；根目录输出编号应与 q_index_map.json 中的 index 对齐。
+  - 若某个 q 点缺少 merge 必要文件，merge 状态记为 error，并阻止进入 q2r。
+
+  你可以创建一个qe_merge.py的功能，用以放置merge功能。我也希望这个qe_merge就像qe_q2r.py, qe_matdyn_*.py一样，既可以单独运行执行，也可以综合到qe_phonon_split_*.py里面执行。
+
+  #### 3. 状态判定与阶段推进规则同步更新
+
+  - refresh_workflow_status() 需要新增 merge 检查函数，并把 merge 纳入打印和 JSON 落盘。
+  - merge 状态判断建议采用以下规则：
+      - unstarted：split 任务未全部完成，或根目录尚未出现任一 merge 目标
+      - running：根目录 merge 脚本正在运行(没必要，因为这个回收过程非常快，只保留三个就行。)
+      - finished：所有必须回收的 merge 目标都已在根目录到位
+      - error：split 已完成，但 merge 目标缺失/不完整/脚本报错
+  - q2r 不再承担“merge 尚未发生”的暗含语义；只有在 merge=finished 后才允许 q2r 进入执行或提交候选集。
+  - qe_ph_split_assign_* 单步 split CLI 也要对齐：当 split 全部完成后，再次执行同一命令时应先执行 merge；该单步 CLI 仍然停在 merge 阶段，不负责继续跑 q2r/
+    matdyn。
+  - split 路径的阶段提示同步更新为 4 段编号，至少体现：
+      - 前计算
+      - 后处理
+
+  - qe_phonon_split_assign_* -s 新增独立 merge 阶段总脚本，例如 submit_merge_stage.sh，并只在全部 q_XX finished 且 merge 未完成时提交它。
+  - submit_post_stage.sh 中不再隐含 merge，只包含剩余 q2r -> matdyn_phband -> matdyn_phdos。
+  - 若保留/恢复 qeflow/phonon/merge.py，对外仍不新增新 CLI；merge 只作为现有 split CLI 的内部阶段。
+  - 对外可见接口变化只有：
+      - workflow_status.json 新增 "merge" 字段
+      - split 总工作流 -s 的阶段语义从 3 阶段变为 4 阶段
+
+  ### Test Plan
+
+  - qe_phonon_split_assign_index / qe_phonon_split_assign_coords
+      - 全部 q_XX finished 后，workflow_status.json 出现 "merge": "unstarted"，且尚未执行 q2r
+      - -r 时先执行 merge，再顺推 q2r -> matdyn_phband -> matdyn_phdos
+      - -s 时第一次只提当前阶段；全部 q_XX finished 后再次执行命令时，只提交 merge 阶段；merge 完成后再次执行命令时，再提交后处理阶段
+  - qe_ph_split_assign_index / qe_ph_split_assign_coords
+      - 全部 q_XX finished 后，再次执行命令会执行 merge
+      - 单步 split CLI 在 merge 完成后停止，不进入 q2r
+      （我没明白你这个-s写的什么意思. 我的想法是：假设从split都已经完成了的步骤开始，-s意味着先在本地merge, 进接着就是提交q2r和matdyn的计算脚本。）
+  - merge 本身
+      - 能按 q_index_map.json 遍历并把所有约定文件回收到根目录
+      - 缺少任一必要文件时抛错并把 merge 记为 error（还要详细爆出来哪些文件缺少，不要因为一个文件缺少就抛错终止，并且我希望merge的时候还要检查每一个split_ph.out是不是都算完了，只有检查到真的都算完了，再执行后面的q2r和matdyn，不是说合并就完事了，特别是合并的时候，
+      我还想知道每个dyn文件频率最低的前5个频率的值是多少，而是所有文件都报错缺少后再终止程序。）
+
+      - 根目录 merge 结果的编号与 q_index_map.json.index 一致，不受 q_00/q_01 字符串排序误导
+  - 回归
+      - nosplit 工作流行为不变
+      - 现有 qgrid.py gamma 优先、权重归一化、dyn0 写出测试继续通过
+      - 原有 split 输入生成与阶段推进测试更新为包含 merge 阶段
+
+  ### Assumptions
+
+  - merge 的实现以你给的旧脚本语义为准，不做“只够 q2r 用”的裁剪。
+  - 不新增独立 qe_merge CLI；merge 只作为 split 工作流内部阶段。
+  - split 总工作流从现在开始以“前计算 / split / merge / 后处理”四阶段为正式语义，相关脚本命名和状态打印都应随之调整。
+
+
+  › A previous agent produced the plan below to accomplish the user's task. Implement the plan in a fresh context. Treat the plan as the source of user
+  intent, re-read files as needed, and carry the work through implementation and verification.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  # QE split 声子工作流修正计划：q 目录从 `q_01` 起编号，并按 `coords/index` 分离 merge 语义
+
+  ## Summary
+  当前 `qeflow` 的 split/merge 有两个核心问题需要一起修正：
+
+  1. q 子目录仍按 `q_00`、`q_01`... 编号，而你要求从 `q_01` 开始。
+  2. `merge` 现在把 `assign_coords` 和 `assign_index` 当成同一种产物结构处理，但我核对了你给的旧脚本和 `/home/mayuan/code/my_script/qe/
+  qe_inputpara.py::merge()` 后，确认两种模式的 dyn/tmp/phsave 语义必须分开实现。
+
+  这次计划会把 split 工作流改成“目录编号规则明确 + merge 按模式分流 + 状态检测按模式判定”的完整方案，避免继续用“一个规则兜所有模式”。
+
+  ## Key Changes
+
+  ### 1. q 子目录编号统一改为从 `q_01` 开始
+  - `materialize_split_directories()` 中子目录命名从 `q_{dir_index:02d}` 改为 `q_{dir_index + 1:02d}`。
+  - `q_index_map.json` 的 `directory` 字段同步写成 `q_01`、`q_02`...，不再出现 `q_00`。
+  - 所有遍历 split 任务的逻辑继续以 `q_index_map.json` 为真源，不依赖目录自然排序，也不依赖字符串中的数字起点。
+  - 相关测试全部改成断言 `q_01` 为首目录。
+ （我的建议：你可以在q_index_map.json纪录q点的分割方式。但是没必要根据q_index_map.json确定要用哪种合并方式，因为我希望你可以把两种不同的
+ 合并方式分别置于qeflow/phonon/qe_phonon_split_assign_coords.py和qeflow/phonon/qe_phonon_split_assign_index.py里面。我自己看了
+ q_index_map.json就知道改用哪个CLI了。这样也可以避免两个CLI都实现两次merge方案。比如qeflow/phonon/qe_phonon_split_assign_coords.py自动
+ 利用qe_merge来运行coord的合并方式。）
+  ### 2. 明确 split 模式元信息，并作为 merge 唯一判据
+  - 在 `q_index_map.json` 顶层新增明确模式标记，例如记录当前 split 是 `split_assign_coords` 还是 `split_assign_index`。
+  - merge 与 `check_merge()` 不再通过“猜文件名”推断模式（我说的也不是猜文件名，而是通过CLI脚本内置了指定的qe_merge合并方式。），而是直接读取 `q_index_map.json` 的模式字段。
+  - `qe_merge`、`run_merge_stage()`、`refresh_workflow_status()` 全部统一复用这份模式信息，避免不同入口出现不同判定。
+
+  ### 3. `assign_coords` 的 merge 语义按旧脚本重做
+  依据你给的 `pre_for_specifyQ_with_coordinates.sh` 和旧 `qe.merge()` 逻辑，coords 模式固定按下面语义实现：
+
+  - 每个 q 子目录中的 dyn 源文件优先按“无编号”版本读取，即 `<prefix>.dyn`；若实际 QE 输出是 `<prefix>.dynN`，可作为兼容兜底，但不是主语义。
+  - 根目录合并结果仍按物理 q 编号统一回收到 `<prefix>.dyn1..N`，保证 `q2r` 输入稳定。
+  - 每个 q 子目录的 `split_ph.in/out` 仍回收到根目录 `split_ph.in.<index>`、`split_ph.out.<index>`。
+  - `_ph0/<prefix>.phsave` 在 coords 模式下只要求单 q 版本的 `patterns.1.xml` 布局；不要求存在 `patterns.<index>.xml`。
+  - coords 模式下每个 q 子目录里若存在 `_ph0/<prefix>.q_<index>` 则复制；若不存在该层而 dvscf 直接位于 `_ph0/`，也必须识别并按旧脚本语义回收到根目录。
+  - `check_merge()` 不能再对 coords 模式强制要求根目录必须存在 `_ph0/<prefix>.q_<index>`；它应按 coords 实际必需产物判定 finished/error。
+
+  ### 4. `assign_index` 的 merge 语义按旧脚本重做
+  依据你给的 `pre_for_specifyQ_with_Index.sh`、`QE_error_collecting.md` 和旧 `qe.merge()` 逻辑，index 模式固定按下面语义实现：
+
+  - dyn 源文件主语义是带物理 q 编号的 `<prefix>.dyn<index>`；若个别环境输出成 `<prefix>.dyn`，可以兼容读取，但最终回收到根目录时必须命名为
+  `<prefix>.dyn<index>`。
+  - 第 1 个 q 点和其余 q 点的 tmp 结构要区别处理：
+    - 第 1 个 q 点允许 dvscf 直接位于 `_ph0/`。
+    - 从第 2 个 q 点开始，dvscf 主语义位于 `_ph0/<prefix>.q_<index>/`。
+  - `phsave/patterns` 在 index 模式下要保留“物理 q 编号语义”：
+    - merge 校验需要识别 `patterns.<index>.xml` 这类真实编号文件。
+    - 若为了后续 QE 继续读取需要回写成 `patterns.1.xml` 并修正 XML 内 `<QPOINT_NUMBER>`，则按旧脚本语义显式执行，不做推断式处理。
+  - `check_merge()` 对 index 模式应要求根目录具备 `<prefix>.dyn<index>` 和对应 `_ph0/<prefix>.q_<index>` 等必要产物；第 1 个 q 点允许走“无 q 子目录
+  dvscf”特例。
+
+  ### 5. `qe_merge` 与工作流状态机同步收紧
+  - `qe_merge` 继续作为唯一 merge 实现入口，但内部实现拆成：
+    - 读取 `q_index_map.json`
+    - 根据模式分派到 `merge_split_results_for_coords()` / `merge_split_results_for_index()`
+  - `merge` 成功摘要继续打印每个 dyn 文件最低前 5 个频率，但来源解析要兼容 coords/index 两种 dyn 命名。
+  - `workflow_status.json` 的 `"merge"` 仍只保留 `unstarted / finished / error` 三态。
+  - `check_merge()` 的 finished/error 规则必须按模式区分，不能继续用“所有模式都要有 `<prefix>.dynN + _ph0/<prefix>.q_N`”这种统一要求。
+  - `qe_ph_split_assign_* -s`、`qe_phonon_split_assign_* -r/-s` 的推进逻辑保持不变，但 merge 成败判定改用新的模式化检查结果。
+
+  - `q_index_map.json` 增加 split 模式字段，作为 merge/状态检测唯一真源。
+  - `qe_merge` 的对外命令行参数不变，但其内部行为会根据 `q_index_map.json` 中的模式自动切换 coords/index merge 规则。
+  - `workflow_status.json` 结构维持现有字段，但 `"merge"` 的判定规则会变成模式相关。
+
+  ## Test Plan
+  - split 目录生成
+    - `qe_ph_split_assign_index` 首目录改为 `q_01`，不再生成 `q_00`。
+    - `qe_ph_split_assign_coords` 首目录改为 `q_01`，并保留单 q 坐标写入逻辑。
+    - `q_index_map.json` 记录 `directory=q_01...` 且包含 split 模式标记。
+
+  - coords merge
+    - 子目录中 dyn 只有 `<prefix>.dyn` 时，`qe_merge -r` 能成功回收为根目录 `<prefix>.dyn1..N`。
+    - coords 模式下 `_ph0` 若不存在 `<prefix>.q_<index>`，但 dvscf 直接位于 `_ph0/`，merge 仍能成功。
+    - coords 模式 finished 判定不再错误要求根目录存在 `_ph0/<prefix>.q_<index>`。
+
+  - index merge
+    - index 模式优先读取 `<prefix>.dyn<index>` 和 `_ph0/<prefix>.q_<index>/...`。
+    - 第 1 个 q 点走 `_ph0/` 直存 dvscf 特例时，merge 仍能成功。
+    - patterns 文件按 index 语义复制/改写后，根目录校验通过。
+
+  - 工作流推进
+    - `qe_phonon_split_assign_*` 在全部 q 子任务 finished 后，第一次 `-s` 只提交 merge 阶段；merge 完成后再提交 post 阶段。
+    - `qe_ph_split_assign_* -s` 在 split 全部完成后先本地 merge；coords/index 各自成功时提交 post，失败时不提交。
+    - `workflow_status.json` 在 coords/index 两种模式下都能正确给出 `"merge": "unstarted|finished|error"`。
+
+  ## Assumptions / Defaults
+  - 根目录最终给 `q2r` 使用的 dyn 文件统一命名为 `<prefix>.dyn1..N`，不因 coords/index 模式改变。
+  - `q_index_map.json` 是 merge 的唯一真源；不会再通过目录名或文件名反推 split 模式。
+  - coords 模式的主语义按你给的旧脚本收敛为“子目录 dyn 可无编号、patterns 主语义为 `patterns.1.xml`、tmp 结构与 index 不同”。
+  - index 模式的主语义按你给的旧脚本收敛为“dyn/`q_<index>`/patterns 都保留物理 q 编号语义，第 1 个 q 点允许特殊目录结构”。

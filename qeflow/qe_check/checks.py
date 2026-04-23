@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import os
 import subprocess
-from typing import Dict, Iterable, Optional, Set
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from qeflow.qe_check.outputs import MatdynOut, PhOut, Q2rOut, RelaxOut, ScfOut
-from qeflow.qe_input.fileio import list_split_directories
+from qeflow.qe_input.fileio import list_split_directories, load_json
 
 
 VALID_STATES = ("unstarted", "running", "finished", "error")
@@ -87,6 +87,114 @@ def check_q2r(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None
     if output.has_error() or not os.path.exists(fc_path):
         return "error"
     return "error"
+
+
+def _load_q_index_payload(workdir: str) -> Dict[str, object]:
+    payload = load_json(os.path.join(workdir, "q_index_map.json"), default={})
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
+def _load_q_index_entries(workdir: str) -> List[Dict[str, object]]:
+    payload = _load_q_index_payload(workdir)
+    entries = payload.get("qpoints", [])
+    return entries if isinstance(entries, list) else []
+
+
+def _load_q_index_mode(workdir: str) -> str:
+    payload = _load_q_index_payload(workdir)
+    mode = payload.get("mode")
+    return str(mode) if isinstance(mode, str) else ""
+
+
+def _collect_merge_required_paths(
+    workdir: str,
+    prefix: str,
+    mode: str,
+    entries: List[Dict[str, object]],
+) -> Tuple[List[str], List[List[str]], bool]:
+    required_paths: List[str] = [os.path.join(workdir, "_ph0", f"{prefix}.phsave")]
+    alternative_paths: List[List[str]] = []
+    requires_patterns = mode == "split_assign_index"
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        index = entry.get("index")
+        if index is None:
+            continue
+        q_index = int(index)
+        required_paths.extend(
+            [
+                os.path.join(workdir, f"{prefix}.dyn{q_index}"),
+                os.path.join(workdir, f"split_ph.in.{q_index}"),
+                os.path.join(workdir, f"split_ph.out.{q_index}"),
+            ]
+        )
+        if mode == "split_assign_index":
+            if q_index == 1:
+                alternative_paths.append(
+                    [
+                        os.path.join(workdir, "_ph0", "dvscf"),
+                        os.path.join(workdir, "_ph0", f"{prefix}.q_1"),
+                    ]
+                )
+            else:
+                required_paths.append(os.path.join(workdir, "_ph0", f"{prefix}.q_{q_index}"))
+        elif mode == "split_assign_coords":
+            # coords 模式允许 dvscf 直接位于 _ph0/，不要求根目录必须有 q 子目录。
+            pass
+    return required_paths, alternative_paths, requires_patterns
+
+
+def _merge_patterns_ready(workdir: str, prefix: str, entries: List[Dict[str, object]], mode: str) -> bool:
+    phsave_dir = os.path.join(workdir, "_ph0", f"{prefix}.phsave")
+    if not os.path.isdir(phsave_dir):
+        return False
+    if mode == "split_assign_coords":
+        return os.path.exists(os.path.join(phsave_dir, "patterns.1.xml"))
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        index = entry.get("index")
+        if index is None:
+            continue
+        if not os.path.exists(os.path.join(phsave_dir, f"patterns.{int(index)}.xml")):
+            return False
+    return True
+
+
+def check_merge(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None) -> str:
+    running = running_dirs or get_running_workdirs()
+    entries = _load_q_index_entries(workdir)
+    if not entries:
+        return "unstarted"
+    mode = _load_q_index_mode(workdir)
+    if mode not in {"split_assign_coords", "split_assign_index"}:
+        return "error"
+
+    split_states = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        q_name = str(entry.get("directory", "")).strip()
+        if not q_name:
+            continue
+        split_states.append(check_split_task(os.path.join(workdir, q_name), running))
+
+    if summarize_task_states(split_states) != "finished":
+        return "unstarted"
+
+    required_paths, alternative_paths, requires_patterns = _collect_merge_required_paths(workdir, prefix, mode, entries)
+
+    existing_count = sum(os.path.exists(path) for path in required_paths)
+    alternative_count = sum(any(os.path.exists(path) for path in group) for group in alternative_paths)
+    patterns_ready = _merge_patterns_ready(workdir, prefix, entries, mode) if requires_patterns or mode == "split_assign_coords" else True
+    if existing_count == 0 and alternative_count == 0 and not patterns_ready:
+        return "unstarted"
+    if existing_count != len(required_paths) or alternative_count != len(alternative_paths) or not patterns_ready:
+        return "error"
+    return "finished"
 
 
 def check_matdyn(

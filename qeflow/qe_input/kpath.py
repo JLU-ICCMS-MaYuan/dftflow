@@ -20,7 +20,13 @@ def compute_reciprocal_lattice(lattice: Sequence[Sequence[float]]) -> np.ndarray
     return 2.0 * np.pi * np.linalg.inv(lattice_array).T
 
 
-def write_kpath_labels(work_dir: str, prefix: str, segments, lattice: Sequence[Sequence[float]], weights: Sequence[int]) -> str:
+def write_kpath_labels(
+    work_dir: str,
+    prefix: str,
+    segments,
+    lattice: Sequence[Sequence[float]],
+    weights: Sequence[int],
+) -> str:
     recip_lat = compute_reciprocal_lattice(lattice)
     label_points = []
     jump_starts = []
@@ -48,15 +54,20 @@ def write_kpath_labels(work_dir: str, prefix: str, segments, lattice: Sequence[S
     return label_path
 
 
-def build_matdyn_band_path(work_dir: str, prefix: str, lattice: Sequence[Sequence[float]], kpath_file: str, kpath_points: int) -> Tuple[List[Tuple[List[float], str, int]], str]:
+def build_matdyn_band_path(
+    work_dir: str,
+    prefix: str,
+    lattice: Sequence[Sequence[float]],
+    kpath_file: str,
+    kpath_points: int,
+) -> Tuple[List[Tuple[List[float], str, int]], str]:
     kpath_path = kpath_file if os.path.isabs(kpath_file) else os.path.join(work_dir, kpath_file)
     if not os.path.exists(kpath_path):
         raise FileNotFoundError(f"找不到 KPATH.in: {kpath_path}")
     segments = parse_kpath_segments(kpath_path)
     if not segments:
         raise ValueError("KPATH.in 未解析到任何高对称点。")
-    path_points = flatten_segments(segments)
-    _ = path_points
+    flatten_segments(segments)
     kpoint_lines = []
     for seg_idx, segment in enumerate(segments):
         for pt_idx, (coords, label) in enumerate(segment):
@@ -65,5 +76,11 @@ def build_matdyn_band_path(work_dir: str, prefix: str, lattice: Sequence[Sequenc
             is_final_point = is_last_point and seg_idx == len(segments) - 1
             weight = 1 if is_jump or is_final_point else int(kpath_points)
             kpoint_lines.append((coords, label, weight))
-    label_path = write_kpath_labels(work_dir, prefix, segments, lattice, [weight for _coords, _label, weight in kpoint_lines])
+    label_path = write_kpath_labels(
+        work_dir,
+        prefix,
+        segments,
+        lattice,
+        [weight for _coords, _label, weight in kpoint_lines],
+    )
     return kpoint_lines, label_path

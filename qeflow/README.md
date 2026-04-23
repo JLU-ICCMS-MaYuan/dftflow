@@ -25,6 +25,7 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 - `qe_ph_nosplit`
 - `qe_ph_split_assign_index`
 - `qe_ph_split_assign_coords`
+- `qe_merge`
 - `qe_q2r`
 - `qe_matdyn_phband`
 - `qe_matdyn_phdos`
@@ -57,19 +58,24 @@ qe_phonon/
   matdyn_phband.out
   matdyn_phdos.in
   matdyn_phdos.out
+  run_merge.sh
   workflow_status.json
   Mg1B2.dyn0
   q_index_map.json
-  q_00/
+  q_01/
     scf.in
     split_ph.in
     run_split.sh
     task_status.json
-  q_01/
+  q_02/
   ...
 ```
 
-- split 子目录固定使用 `q_00`、`q_01`、`q_02` 命名。
+- split 子目录固定使用 `q_01`、`q_02`、`q_03` 命名。
+- `q_index_map.json` 顶层会显式记录 `mode = "split_assign_index"` 或 `mode = "split_assign_coords"`；`qe_merge` 与 `workflow_status.json.merge` 都以它为唯一模式来源。
+- `qe_merge` 会按 `q_index_map.json.mode` 自动切换 merge 规则：
+  - `split_assign_coords`：允许子目录只产出 `<prefix>.dyn`，也允许 `dvscf` 直接位于子目录 `_ph0/`。
+  - `split_assign_index`：主语义仍是 `<prefix>.dyn<index>` 与 `_ph0/<prefix>.q_<index>`；但第 1 个 q 点允许 `_ph0/dvscf` 特例。
 - 每个 `q_XX/run_split.sh` 只包含两步：
   - `pw.x < scf.in > scf.out`
   - `ph.x < split_ph.in > split_ph.out`
@@ -100,9 +106,15 @@ qe_phonon/
   - `scf.out` 完成但 `dyn0` 未完成时，只推进 `dyn0`。
   - `dyn0` 完成后，首次生成全部 `q_XX/` 输入和脚本。
   - 若 q 子任务部分完成，只刷新并打印各目录状态，不自动回收任务。
-  - 当全部 q 子任务完成后，`--run` 会顺序执行 `q2r -> phband -> phdos`。
+  - 当全部 q 子任务完成后，先进入 `merge`，再执行 `q2r -> phband -> phdos`。
 - `qe_phonon_split_assign_coords`
   - 与上面相同，但 `split_ph.in` 写入单个 q 点坐标而不是 `start_q/last_q`。
+
+split 工作流现在固定为四阶段：
+- 前计算：`scf -> dyn0`
+- split：全部 `q_XX/run_split.sh`
+- merge：根目录 `run_merge.sh`
+- 后处理：`q2r -> matdyn_phband -> matdyn_phdos`
 
 ## 8. 最小配置示例
 ```toml
@@ -151,3 +163,4 @@ dos = true
 - `pseudo_map` 只强制要求 `pseudo`，质量会按元素自动补。
 - `fildyn`、`flfrc`、`flfrq`、`fldos` 由程序按 `prefix` 自动派生，不建议手写。
 - `qe_ph_split_assign_index` 与 `qe_ph_split_assign_coords` 假定根目录 `scf.out` 已完成；若希望自动推进 SCF，请使用 `qe_phonon_split_assign_index` 或 `qe_phonon_split_assign_coords`。
+- `qe_merge` 可独立检查、执行或提交 split 结果回收；split 工作流内部也统一复用这一路径。

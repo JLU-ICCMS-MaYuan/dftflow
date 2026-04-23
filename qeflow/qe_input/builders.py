@@ -8,8 +8,8 @@ import numpy as np
 from public.executables import resolve_qe_command
 from public.job import write_job_script
 from qeflow.common import get_atomic_mass, get_pseudo_entry
-from qeflow.phonon.kpath import build_matdyn_band_path, run_vaspkit_for_kpath
 from qeflow.qe_input.fileio import write_text
+from qeflow.qe_input.kpath import build_matdyn_band_path, run_vaspkit_for_kpath
 
 
 SCF_CONTROL_KEYS = (
