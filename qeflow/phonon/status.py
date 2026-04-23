@@ -2,8 +2,8 @@
 import os
 from typing import Dict
 
-from qeflow.phonon.checks import check_matdyn, check_ph, check_q2r, check_scf, get_running_workdirs
-from qeflow.phonon.fileio import dump_json, list_split_directories
+from qeflow.qe_check.checks import check_matdyn, check_ph, check_q2r, check_scf, get_running_workdirs
+from qeflow.qe_input.fileio import dump_json, list_split_directories
 
 
 WORKFLOW_STATUS_FILE = "workflow_status.json"
@@ -13,7 +13,7 @@ TASK_STATUS_FILE = "task_status.json"
 def refresh_split_task_status(workspace: str) -> Dict[str, Dict[str, str]]:
     running = get_running_workdirs()
     task_payload: Dict[str, Dict[str, str]] = {}
-    from qeflow.phonon.checks import check_split_task
+    from qeflow.qe_check.checks import check_split_task
 
     for q_dir in list_split_directories(workspace):
         q_name = os.path.basename(q_dir)

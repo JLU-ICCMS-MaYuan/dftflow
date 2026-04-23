@@ -4,9 +4,9 @@ import os
 import sys
 from typing import Any, Dict, Tuple
 
-from qeflow.phonon.builders import parse_poscar, resolve_prefix
-from qeflow.phonon.checks import check_ph, check_q2r, check_relax, check_scf, get_running_workdirs
-from qeflow.phonon.fileio import load_phonon_config, resolve_workspace
+from qeflow.qe_check.checks import check_ph, check_q2r, check_relax, check_scf, get_running_workdirs
+from qeflow.qe_input.builders import parse_poscar, resolve_prefix
+from qeflow.qe_input.fileio import resolve_workspace
 
 
 def _resolve_target_directory(config_file: str) -> Tuple[Dict[str, Any], str, str]:
@@ -71,7 +71,3 @@ def main() -> None:
         return
 
     sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

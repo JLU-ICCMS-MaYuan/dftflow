@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 import os
 import subprocess
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, Optional, Set
 
-from qeflow.phonon.fileio import list_split_directories
-from qeflow.phonon.outputs import MatdynOut, PhOut, Q2rOut, RelaxOut, ScfOut
+from qeflow.qe_check.outputs import MatdynOut, PhOut, Q2rOut, RelaxOut, ScfOut
+from qeflow.qe_input.fileio import list_split_directories
 
 
 VALID_STATES = ("unstarted", "running", "finished", "error")
 
 
-def get_running_workdirs(user: Optional[str] = None) -> set[str]:
+def get_running_workdirs(user: Optional[str] = None) -> Set[str]:
     target_user = user or os.environ.get("USER", "")
     if not target_user:
         return set()
@@ -24,7 +24,7 @@ def get_running_workdirs(user: Optional[str] = None) -> set[str]:
     )
     if result.returncode != 0:
         return set()
-    workdirs: set[str] = set()
+    workdirs: Set[str] = set()
     for raw_line in result.stdout.splitlines():
         line = raw_line.rstrip()
         if not line:
@@ -39,7 +39,13 @@ def get_running_workdirs(user: Optional[str] = None) -> set[str]:
     return workdirs
 
 
-def _finalize_state(output_exists: bool, finished: bool, errored: bool, workdir: str, running_dirs: set[str]) -> str:
+def _finalize_state(
+    output_exists: bool,
+    finished: bool,
+    errored: bool,
+    workdir: str,
+    running_dirs: Set[str],
+) -> str:
     workdir_abs = os.path.abspath(workdir)
     if workdir_abs in running_dirs:
         return "running"
@@ -52,13 +58,13 @@ def _finalize_state(output_exists: bool, finished: bool, errored: bool, workdir:
     return "error"
 
 
-def check_scf(workdir: str, filename: str = "scf.out", running_dirs: Optional[set[str]] = None) -> str:
+def check_scf(workdir: str, filename: str = "scf.out", running_dirs: Optional[Set[str]] = None) -> str:
     running = running_dirs or get_running_workdirs()
     target = ScfOut(os.path.join(workdir, filename))
     return _finalize_state(target.exists(), target.is_finished(), target.has_error(), workdir, running)
 
 
-def check_relax(workdir: str, running_dirs: Optional[set[str]] = None) -> str:
+def check_relax(workdir: str, running_dirs: Optional[Set[str]] = None) -> str:
     running = running_dirs or get_running_workdirs()
     for candidate in ("relax.out", "vc-relax.out"):
         path = os.path.join(workdir, candidate)
@@ -68,7 +74,7 @@ def check_relax(workdir: str, running_dirs: Optional[set[str]] = None) -> str:
     return "running" if os.path.abspath(workdir) in running else "unstarted"
 
 
-def check_q2r(workdir: str, prefix: str, running_dirs: Optional[set[str]] = None) -> str:
+def check_q2r(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None) -> str:
     running = running_dirs or get_running_workdirs()
     output = Q2rOut(os.path.join(workdir, "q2r.out"))
     fc_path = os.path.join(workdir, f"{prefix}.fc")
@@ -83,7 +89,12 @@ def check_q2r(workdir: str, prefix: str, running_dirs: Optional[set[str]] = None
     return "error"
 
 
-def check_matdyn(workdir: str, output_name: str, product_name: str, running_dirs: Optional[set[str]] = None) -> str:
+def check_matdyn(
+    workdir: str,
+    output_name: str,
+    product_name: str,
+    running_dirs: Optional[Set[str]] = None,
+) -> str:
     running = running_dirs or get_running_workdirs()
     output = MatdynOut(os.path.join(workdir, output_name))
     if os.path.abspath(workdir) in running:
@@ -97,7 +108,7 @@ def check_matdyn(workdir: str, output_name: str, product_name: str, running_dirs
     return "error"
 
 
-def check_split_task(q_dir: str, running_dirs: Optional[set[str]] = None) -> str:
+def check_split_task(q_dir: str, running_dirs: Optional[Set[str]] = None) -> str:
     running = running_dirs or get_running_workdirs()
     q_dir_abs = os.path.abspath(q_dir)
     scf = ScfOut(os.path.join(q_dir, "scf.out"))
@@ -114,7 +125,7 @@ def check_split_task(q_dir: str, running_dirs: Optional[set[str]] = None) -> str
     return "error"
 
 
-def check_ph(workdir: str, prefix: str, running_dirs: Optional[set[str]] = None) -> Dict[str, object]:
+def check_ph(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None) -> Dict[str, object]:
     running = running_dirs or get_running_workdirs()
     dyn0_path = os.path.join(workdir, f"{prefix}.dyn0")
     dyn0_ready = os.path.exists(dyn0_path) and os.path.getsize(dyn0_path) > 0

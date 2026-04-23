@@ -165,7 +165,7 @@ def test_qe_q2r_and_matdyn_generate_inputs(chdir_work, monkeypatch):
     _write_kpath(workdir / "KPATH.in")
     (workdir / "Mg1B2.fc").write_text("fc\n", encoding="utf-8")
     monkeypatch.setattr(
-        "qeflow.phonon.builders.run_vaspkit_for_kpath",
+        "qeflow.qe_input.builders.run_vaspkit_for_kpath",
         lambda target_dir: None,
     )
 
@@ -179,7 +179,7 @@ def test_qe_q2r_and_matdyn_generate_inputs(chdir_work, monkeypatch):
 
 
 def test_output_checks_and_running_detection(chdir_work, monkeypatch):
-    from qeflow.phonon.checks import check_ph, check_q2r, check_relax, check_scf
+    from qeflow.qe_check.checks import check_ph, check_q2r, check_relax, check_scf
 
     workdir = Path("qe_phonon")
     workdir.mkdir()
@@ -206,7 +206,7 @@ def test_output_checks_and_running_detection(chdir_work, monkeypatch):
 
 
 def test_qe_check_cli_reports_supported_status(chdir_work, monkeypatch, capsys):
-    from qeflow.phonon import qe_check as module
+    from qeflow.qe_check import cli as module
 
     workdir = Path("qe_phonon")
     workdir.mkdir()
@@ -263,7 +263,7 @@ def test_qe_phonon_split_workflow_runs_postprocess_after_all_q_finished(chdir_wo
     _write_job_done(workdir / "scf.out")
     _prepare_xml_fixture(Path("."))
     _write_kpath(workdir / "KPATH.in")
-    monkeypatch.setattr("qeflow.phonon.builders.run_vaspkit_for_kpath", lambda target_dir: None)
+    monkeypatch.setattr("qeflow.qe_input.builders.run_vaspkit_for_kpath", lambda target_dir: None)
     module.materialize_split_directories(str(workdir), module.create_context(str(workdir / "input.toml"), None).config, "Mg1B2", "split_assign_index")
     for q_dir in sorted(path for path in workdir.glob("q_*") if path.is_dir()):
         _write_job_done(q_dir / "scf.out")

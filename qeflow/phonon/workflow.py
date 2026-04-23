@@ -8,7 +8,8 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from qeflow.phonon.builders import (
+from qeflow.qe_check.checks import check_ph, check_q2r, check_scf, summarize_task_states
+from qeflow.qe_input.builders import (
     build_qe_commands,
     derive_filenames,
     parse_poscar,
@@ -23,8 +24,7 @@ from qeflow.phonon.builders import (
     write_split_ph_input_assign_index,
     write_split_run_script,
 )
-from qeflow.phonon.checks import check_ph, check_q2r, check_scf, summarize_task_states
-from qeflow.phonon.fileio import dump_json, load_json, resolve_workspace
+from qeflow.qe_input.fileio import dump_json, load_json, resolve_workspace
 from qeflow.phonon.qgrid import generate_irreducible_qpoints, write_dyn0
 from qeflow.phonon.status import refresh_workflow_status
 from public.job import submit_script
