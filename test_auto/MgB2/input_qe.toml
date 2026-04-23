@@ -41,7 +41,6 @@ ngauss = 0
 degauss = 0.0
 
 [qe_phonon]
-work_dir = "qe_phonon"
 
 [qe_phonon.scf]
 outdir = "./out"
