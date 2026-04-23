@@ -108,6 +108,41 @@ ecutwfc = 60.0
     assert merged["qe_scf"]["SYSTEM"]["ecutrho"] == 400.0
 
 
+def test_qe_phonon_template_override_priority(chdir_work):
+    from public.config_templates import load_config_file
+    from qeflow.templates import apply_qe_config_overrides, get_qe_phonon_parameters_template
+
+    config_path = Path("tmp_qe_phonon_template.toml")
+    config_path.write_text(
+        """
+pp_dir = "/pseudo"
+
+[qe]
+executable_path = "mpirun -np 8 /path/to/qe/bin"
+
+[qe_phonon]
+work_dir = "qe_phonon_custom"
+
+[qe_phonon.scf]
+ecutwfc = 60.0
+
+[qe_phonon.ph]
+qpoints = [2, 3, 4]
+""".strip()
+    )
+
+    merged = apply_qe_config_overrides(
+        get_qe_phonon_parameters_template(),
+        load_config_file(str(config_path)),
+        ("qe", "slurm", "pseudo_map", "pp_dir", "qe_phonon"),
+    )
+
+    assert merged["pp_dir"] == "/pseudo"
+    assert merged["qe_phonon"]["work_dir"] == "qe_phonon_custom"
+    assert merged["qe_phonon"]["scf"]["ecutwfc"] == 60.0
+    assert merged["qe_phonon"]["ph"]["qpoints"] == [2, 3, 4]
+
+
 def test_wannier_template_override_priority(chdir_work):
     from public.config_templates import load_config_file
     from wannier90flow.templates import (

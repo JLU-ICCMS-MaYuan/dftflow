@@ -27,6 +27,7 @@ def test_qe_scf_api(chdir_work):
     assert "ATOMIC_POSITIONS" in scf_content
     assert "K_POINTS" in scf_content
     assert "ecutwfc" in scf_content
+    assert f"pseudo_dir = '{Path('~/pp_test').expanduser()}'" in scf_content
 
 
 def test_qe_scf_cli(chdir_work):
@@ -99,6 +100,7 @@ def test_qe_nscf_api(chdir_work):
     nscf_content = (Path("qe_nscf") / "nscf.in").read_text()
     assert "calculation" in nscf_content
     assert "nscf" in nscf_content
+    assert f"pseudo_dir = '{Path('~/pp_test').expanduser()}'" in nscf_content
 
 
 def test_qe_nscf_cli(chdir_work):
@@ -150,6 +152,8 @@ def test_qe_eband_api(chdir_work):
 
     assert (Path("qe_eband") / "eband.in").exists()
     assert (Path("qe_eband") / "run_qe.sh").exists()
+    eband_content = (Path("qe_eband") / "eband.in").read_text()
+    assert f"pseudo_dir = '{Path('~/pp_test').expanduser()}'" in eband_content
 
 
 def test_qe_eband_cli(chdir_work):
@@ -201,6 +205,8 @@ def test_qe_eledos_api(chdir_work):
     assert (Path("qe_eledos") / "eletdos.in").exists()
     assert (Path("qe_eledos") / "elepdos.in").exists()
     assert (Path("qe_eledos") / "run_qe.sh").exists()
+    assert "pseudo_dir" not in (Path("qe_eledos") / "eletdos.in").read_text()
+    assert "pseudo_dir" not in (Path("qe_eledos") / "elepdos.in").read_text()
 
 
 def test_qe_eledos_cli(chdir_work):

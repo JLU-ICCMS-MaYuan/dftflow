@@ -9,6 +9,7 @@ import numpy as np
 from public.config_templates import load_config_file
 from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
+from qeflow.common import get_atomic_mass, get_pseudo_entry
 from qeflow.templates import (
     apply_qe_config_overrides,
     get_qe_nscf_allowed_keys,
@@ -24,14 +25,6 @@ except ImportError:
         print("Error: 'toml' or 'tomllib' (Python 3.11+) is required.")
         print("Please install it using: pip install toml")
         exit(1)
-
-ATOMIC_MASSES = {
-    "H": 1.008, "He": 4.0026, "Li": 6.94, "Be": 9.0122, "B": 10.81, "C": 12.011, "N": 14.007, "O": 15.999, "F": 18.998, "Ne": 20.180,
-    "Na": 22.990, "Mg": 24.305, "Al": 26.982, "Si": 28.085, "P": 30.974, "S": 32.06, "Cl": 35.45, "Ar": 39.948,
-    "K": 39.098, "Ca": 40.078, "Sc": 44.956, "Ti": 47.867, "V": 50.942, "Cr": 51.996, "Mn": 54.938, "Fe": 55.845, "Co": 58.933, "Ni": 58.693, "Cu": 63.546, "Zn": 65.38, "Ga": 69.723, "Ge": 72.63, "As": 74.922, "Se": 78.971, "Br": 79.904, "Kr": 83.798,
-    "Rb": 85.468, "Sr": 87.62, "Y": 88.906, "Zr": 91.224, "Nb": 92.906, "Mo": 95.95, "Tc": 98, "Ru": 101.07, "Rh": 102.91, "Pd": 106.42, "Ag": 107.87, "Cd": 112.41, "In": 114.82, "Sn": 118.71, "Sb": 121.76, "Te": 127.60, "I": 126.90, "Xe": 131.29,
-    "Cs": 132.91, "Ba": 137.33, "La": 138.91, "Ce": 140.12, "Pr": 140.91, "Nd": 144.24, "Pm": 145, "Sm": 150.36, "Eu": 151.96, "Gd": 157.25, "Tb": 158.93, "Dy": 162.50, "Ho": 164.93, "Er": 167.26, "Tm": 168.93, "Yb": 173.05, "Lu": 174.97, "Hf": 178.49, "Ta": 180.95, "W": 183.84, "Re": 186.21, "Os": 190.23, "Ir": 192.22, "Pt": 195.08, "Au": 196.97, "Hg": 200.59, "Tl": 204.38, "Pb": 207.2, "Bi": 208.98, "Th": 232.04, "Pa": 231.04, "U": 238.03
-}
 
 def get_formula(elements, counts):
     formula = ""
@@ -161,6 +154,9 @@ class QENSCFSetup:
         # 1. 自动设置 prefix (由化学配比决定)
         formula = get_formula(struct_info["elements"], struct_info["counts"])
         self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
+        pp_dir = self.config.get("pp_dir")
+        if pp_dir:
+            self.qe_params["CONTROL"]["pseudo_dir"] = f"'{os.path.expanduser(str(pp_dir))}'"
 
         self.qe_params["CONTROL"]["prefix"] = f"'{formula}'"
 
@@ -190,13 +186,8 @@ class QENSCFSetup:
             f.write("ATOMIC_SPECIES\n")
             pseudo_map = self.config.get("pseudo_map", {})
             for el in struct_info["elements"]:
-                info = pseudo_map.get(el)
-                if not info or "pseudo" not in info:
-                    raise KeyError(f"pseudo_map 缺少元素 {el} 的 pseudo 配置")
-                mass = info.get("mass")
-                if mass is None:
-                    mass = ATOMIC_MASSES.get(el, 1.0)
-                
+                info = get_pseudo_entry(pseudo_map, el)
+                mass = get_atomic_mass(el, info.get("mass"))
                 pseudo_file = str(info["pseudo"]).strip()
                 f.write(f"  {el:3} {mass:8.4f} {pseudo_file}\n")
             f.write("\n")
