@@ -21,6 +21,13 @@ def load_phonon_config(config_file: str) -> Dict[str, Any]:
     )
 
 
+WORKFLOW_DEFAULT_WORKDIRS = {
+    "qe_phonon_nosplit": "qe_phonon_nosplit",
+    "qe_phonon_split_coords": "qe_phonon_split_coords",
+    "qe_phonon_split_index": "qe_phonon_split_index",
+}
+
+
 def read_text(path: str) -> str:
     with open(path, "r", encoding="utf-8") as handle:
         return handle.read()
@@ -60,10 +67,23 @@ def resolve_workspace(
     config_file: str,
     struct_file: Optional[str] = None,
     prepare_inputs: bool = False,
+    workflow_name: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], str, str]:
     current_dir = os.getcwd()
-    config = load_phonon_config(config_file)
-    work_dir_name = str(config["qe_phonon"]["work_dir"])
+    raw_config = load_config_file(config_file)
+    config = apply_qe_config_overrides(
+        get_qe_phonon_parameters_template(),
+        raw_config,
+        get_qe_phonon_allowed_keys(),
+    )
+    qe_phonon_raw = raw_config.get("qe_phonon", {})
+    has_explicit_work_dir = isinstance(qe_phonon_raw, dict) and "work_dir" in qe_phonon_raw
+    if has_explicit_work_dir:
+        work_dir_name = str(config["qe_phonon"]["work_dir"])
+    elif workflow_name in WORKFLOW_DEFAULT_WORKDIRS:
+        work_dir_name = WORKFLOW_DEFAULT_WORKDIRS[str(workflow_name)]
+    else:
+        work_dir_name = "qe_phonon"
     if os.path.basename(os.path.abspath(current_dir)) == work_dir_name:
         workspace = current_dir
     else:

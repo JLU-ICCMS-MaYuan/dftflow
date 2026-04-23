@@ -27,7 +27,7 @@ def run_phonon_nosplit_workflow(
     run_calc: bool,
     submit_job: bool,
 ) -> int:
-    context = create_context(config_file, struct_file)
+    context = create_context(config_file, struct_file, workflow_name="qe_phonon_nosplit")
     prepare_root_scf_step(context)
     prepare_ph_nosplit_step(context, dyn0_only=False)
     prepare_q2r_step(context)

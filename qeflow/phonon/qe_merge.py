@@ -330,8 +330,9 @@ def run_merge_step(
     struct_file: Optional[str],
     run_calc: bool,
     submit_job: bool,
+    workflow_name: Optional[str] = None,
 ) -> int:
-    context = create_context(config_file, struct_file)
+    context = create_context(config_file, struct_file, workflow_name=workflow_name)
     script = prepare_merge_step(context)
     workflow = refresh_workflow_status(context.workspace, context.prefix)
     if not (run_calc or submit_job):

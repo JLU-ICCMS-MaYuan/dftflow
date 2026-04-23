@@ -30,7 +30,7 @@ from qeflow.phonon.qe_q2r import prepare_q2r_step
 
 
 def _ensure_split_materialized(config_file: str, struct_file: Optional[str]) -> dict:
-    context = create_context(config_file, struct_file)
+    context = create_context(config_file, struct_file, workflow_name="qe_phonon_split_coords")
     workflow = refresh_workflow_status(context.workspace, context.prefix)
     if dyn0_state(workflow) == "finished" and not os.path.exists(os.path.join(context.workspace, "q_index_map.json")):
         print_stage(3, "生成 split q 点输入")
@@ -45,7 +45,7 @@ def run_phonon_split_assign_coords_workflow(
     run_calc: bool,
     submit_job: bool,
 ) -> int:
-    context = create_context(config_file, struct_file)
+    context = create_context(config_file, struct_file, workflow_name="qe_phonon_split_coords")
     prepare_root_scf_step(context)
     prepare_ph_nosplit_step(context, dyn0_only=True)
     prepare_merge_step(context)
@@ -112,7 +112,13 @@ def run_phonon_split_assign_coords_workflow(
         if run_calc:
             if merge_state(workflow) != "finished":
                 print_stage(4, "执行 merge")
-                if run_merge_step(config_file, struct_file, run_calc=True, submit_job=False) != 0:
+                if run_merge_step(
+                    config_file,
+                    struct_file,
+                    run_calc=True,
+                    submit_job=False,
+                    workflow_name="qe_phonon_split_coords",
+                ) != 0:
                     print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
                     return 1
                 workflow = refresh_workflow_status(context.workspace, context.prefix)

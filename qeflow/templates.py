@@ -171,7 +171,7 @@ def get_qe_eledos_parameters_template() -> Dict[str, Any]:
 def get_qe_phonon_parameters_template() -> Dict[str, Any]:
     template = _base_qe_template()
     template["qe_phonon"] = {
-        "work_dir": "qe_phonon",
+        "work_dir": None,
         "prefix": None,
         "scf": {
             "calculation": "scf",

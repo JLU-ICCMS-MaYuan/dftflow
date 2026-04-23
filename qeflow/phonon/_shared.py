@@ -48,8 +48,17 @@ def print_stage(stage_no: int, message: str) -> None:
     print(f"{stage_no}. {message}")
 
 
-def create_context(config_file: str, struct_file: Optional[str]) -> PhononStepContext:
-    config, _root_dir, workspace = resolve_workspace(config_file, struct_file, prepare_inputs=True)
+def create_context(
+    config_file: str,
+    struct_file: Optional[str],
+    workflow_name: Optional[str] = None,
+) -> PhononStepContext:
+    config, _root_dir, workspace = resolve_workspace(
+        config_file,
+        struct_file,
+        prepare_inputs=True,
+        workflow_name=workflow_name,
+    )
     struct_info = parse_poscar(os.path.join(workspace, "POSCAR"))
     prefix = resolve_prefix(config, struct_info)
     commands = build_qe_commands(config)
