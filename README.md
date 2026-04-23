@@ -27,6 +27,22 @@ Available commands:
 - `substitution_continue`
 - `substitution_prepare_potcar`
 - `substitution_plot_eledos`
+- `qe_scf`
+- `qe_nscf`
+- `qe_eband`
+- `qe_eledos`
+- `qe_process_eledos`
+- `qe_process_eband`
+- `qe_ph_nosplit`
+- `qe_ph_split_assign_index`
+- `qe_ph_split_assign_coords`
+- `qe_q2r`
+- `qe_matdyn_phband`
+- `qe_matdyn_phdos`
+- `qe_check`
+- `qe_phonon_nosplit`
+- `qe_phonon_split_assign_index`
+- `qe_phonon_split_assign_coords`
 
 ## High Throughput Substitution
 

@@ -1,5 +1,7 @@
 # Quantum ESPRESSO 测试配置
 
+pp_dir = "~/pp_test"
+
 [qe]
 executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 
@@ -11,7 +13,6 @@ header = """
 
 [qe_scf.CONTROL]
 outdir = "'./tmp'"
-pseudo_dir = "'pp'"
 
 [qe_scf.SYSTEM]
 ecutwfc = 40.0
@@ -38,3 +39,40 @@ emin = -10
 emax = 30
 ngauss = 0
 degauss = 0.0
+
+[qe_phonon]
+work_dir = "qe_phonon"
+
+[qe_phonon.scf]
+outdir = "./out"
+kpoints = [4, 4, 4]
+ecutwfc = 40.0
+ecutrho = 320.0
+occupations = "smearing"
+smearing = "gauss"
+degauss = 0.02
+conv_thr = 1.0e-6
+mixing_beta = 0.7
+electron_maxstep = 200
+
+[qe_phonon.ph]
+qpoints = [2, 2, 1]
+fildvscf = "dvscf"
+recover = false
+epsil = false
+trans = true
+search_sym = true
+lqdir = false
+
+[qe_phonon.q2r]
+zasr = "simple"
+
+[qe_phonon.phband]
+kpath_file = "KPATH.in"
+kpath_points = 20
+q_in_band_form = true
+
+[qe_phonon.phdos]
+qpoints = [4, 4, 4]
+ndos = 100
+dos = true
