@@ -5,10 +5,11 @@ import re
 import shutil
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
 from qeflow.common import extract_pseudo_element_token
+from substitutionflow.prepare_potcar import ORBITAL_LABELS
 from substitutionflow.prepare_potcar import (
     discover_required_elements,
     parse_selection_file,
@@ -30,12 +31,55 @@ class QePseudoCandidate:
     config_text: str
 
 
-def _format_float(value: Optional[float]) -> str:
-    if value is None:
-        return "unknown"
+def _format_occ(value: float) -> str:
     if abs(value - round(value)) < 1e-6:
         return str(int(round(value)))
     return f"{value:g}"
+
+
+def _format_float(value: Optional[float]) -> str:
+    if value is None:
+        return "unknown"
+    return _format_occ(value)
+
+
+def _orbital_label(l_value: int) -> str:
+    return ORBITAL_LABELS.get(l_value, f"l{l_value}")
+
+
+def _extract_numeric_configuration_entries(content: str) -> List[Tuple[int, int, float]]:
+    entries: List[Tuple[int, int, float]] = []
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        if not re.fullmatch(r"[0-9]+", parts[0]):
+            continue
+        if not re.fullmatch(r"[0-9]+", parts[1]):
+            continue
+        if not re.fullmatch(r"-?[0-9]+", parts[2]):
+            continue
+        if not re.fullmatch(r"[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[EeDd][-+]?[0-9]+)?", parts[3]):
+            continue
+        try:
+            n_value = int(parts[1])
+            l_value = int(parts[2])
+            occ_value = float(parts[3].replace("D", "E").replace("d", "e"))
+        except ValueError:
+            continue
+        entries.append((n_value, l_value, occ_value))
+    return entries
+
+
+def _format_configuration_entries(entries: List[Tuple[int, int, float]]) -> str:
+    return " ".join(
+        f"{n_value}{_orbital_label(l_value)}{_format_occ(occ_value)}"
+        for n_value, l_value, occ_value in entries
+        if occ_value > 1e-8
+    ) or "unknown"
 
 
 def parse_qe_pseudo_candidate(source_path: str, element: str) -> QePseudoCandidate:
@@ -72,7 +116,38 @@ def _extract_z_valence(content: str) -> Optional[float]:
 
 
 def _extract_valence_configuration(content: str) -> str:
+    valence_block = re.search(
+        r"Valence configuration:\s*(.*?)\s*(?:Generation configuration:|<PP_INPUTFILE>|</PP_INFO>)",
+        content,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if valence_block:
+        entries = []
+        for raw_line in valence_block.group(1).splitlines():
+            line = raw_line.strip()
+            if not line or line.lower().startswith("nl "):
+                continue
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            nl_match = re.fullmatch(r"(\d+)([A-Za-z])", parts[0])
+            if not nl_match:
+                continue
+            try:
+                n_value = int(parts[1])
+                l_value = int(parts[2])
+                occ_value = float(parts[3].replace("D", "E").replace("d", "e"))
+            except ValueError:
+                continue
+            if int(nl_match.group(1)) != n_value:
+                continue
+            entries.append((n_value, l_value, occ_value))
+        formatted = _format_configuration_entries(entries)
+        if formatted != "unknown":
+            return formatted
+
     patterns = (
+        r"\bvalence_configuration\b\s*=\s*[\"']([^\"']+)[\"']",
         r"\b(?:valence_configuration|electron_configuration|configuration)\b\s*=\s*[\"']([^\"']+)[\"']",
         r"<(?:valence_configuration|electron_configuration|configuration)>\s*([^<]+?)\s*</(?:valence_configuration|electron_configuration|configuration)>",
     )
@@ -82,6 +157,25 @@ def _extract_valence_configuration(content: str) -> str:
             text = " ".join(match.group(1).split())
             if text:
                 return text
+
+    z_valence = _extract_z_valence(content)
+    if z_valence is not None:
+        raw_entries = _extract_numeric_configuration_entries(content)
+        if raw_entries:
+            remaining = z_valence
+            valence_entries = []
+            for n_value, l_value, occ_value in reversed(raw_entries):
+                if remaining <= 1e-8:
+                    break
+                selected_occ = min(occ_value, remaining)
+                if selected_occ > 1e-8:
+                    valence_entries.append((n_value, l_value, selected_occ))
+                    remaining -= selected_occ
+            valence_entries.sort(key=lambda item: (item[0], item[1]))
+            formatted = _format_configuration_entries(valence_entries)
+            if formatted != "unknown":
+                return formatted
+
     return "unknown"
 
 

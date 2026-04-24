@@ -275,6 +275,25 @@ def _write_mock_upf(path: Path, element: str, z_valence: float, config_text: str
     )
 
 
+def _write_realistic_mock_upf(path: Path, element: str, z_valence: float, valence_lines: str, input_lines: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        (
+            '<UPF version="2.0.1">\n'
+            "  <PP_INFO>\n"
+            "    Valence configuration:\n"
+            "    nl pn  l   occ       Rcut    Rcut US       E pseu\n"
+            f"{valence_lines}\n"
+            "    Generation configuration:\n"
+            f"{input_lines}\n"
+            "  </PP_INFO>\n"
+            f'  <PP_HEADER element="{element}" z_valence="{z_valence:.6E}"/>\n'
+            "</UPF>\n"
+        ),
+        encoding="utf-8",
+    )
+
+
 def _set_submit_groups(config_path: Path, groups: int):
     config_text = config_path.read_text(encoding="utf-8")
     config_text = config_text.replace("submit_groups = 1", f"submit_groups = {groups}")
@@ -2062,6 +2081,29 @@ def test_prepare_qe_pseudo_discovers_candidates_and_parses_upf(chdir_work):
     assert [candidate.filename for candidate in groups["Li"]] == ["Li.upf", "li_pbe_v1.uspp"]
     assert groups["Li"][0].config_text == "2s1"
     assert groups["Li"][1].z_valence == 3.0
+
+
+def test_prepare_qe_pseudo_parses_valence_configuration_like_prepare_potcar(chdir_work):
+    from substitutionflow.prepare_qe_pseudo import parse_qe_pseudo_candidate
+
+    pseudo_path = Path("H.pbe-rrkjus_psl.1.0.0.UPF")
+    _write_realistic_mock_upf(
+        pseudo_path,
+        "H",
+        1.0,
+        "    1S  1  0  1.00      0.800      1.000    -0.477210",
+        (
+            "3\n"
+            "1S  1  0  1.00  0.00  0.80  1.00  0.0\n"
+            "1S  1  0  0.00  0.05  0.80  1.00  0.0\n"
+            "2P  2  1 -1.00  0.05  0.75  0.75  0.0"
+        ),
+    )
+
+    candidate = parse_qe_pseudo_candidate(str(pseudo_path), "H")
+
+    assert candidate.z_valence == 1.0
+    assert candidate.config_text == "1s1"
 
 
 def test_prepare_qe_pseudo_copies_files_reuses_log_and_updates_case_input(chdir_work, monkeypatch):
