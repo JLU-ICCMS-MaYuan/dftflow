@@ -262,6 +262,19 @@ def _make_potential_dir(root: Path, name: str, symbol: str, zval: float, config_
     (target / "PSCTR").write_text("psctr\n", encoding="utf-8")
 
 
+def _write_mock_upf(path: Path, element: str, z_valence: float, config_text: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        (
+            '<?xml version="1.0"?>\n'
+            f'<UPF element="{element}" z_valence="{z_valence}">\n'
+            f'  <PP_HEADER element="{element}" z_valence="{z_valence}" valence_configuration="{config_text}"/>\n'
+            "</UPF>\n"
+        ),
+        encoding="utf-8",
+    )
+
+
 def _set_submit_groups(config_path: Path, groups: int):
     config_text = config_path.read_text(encoding="utf-8")
     config_text = config_text.replace("submit_groups = 1", f"submit_groups = {groups}")
@@ -413,6 +426,11 @@ def test_case_input_supports_qe_phonon_prepare_from_pressure_directory(chdir_wor
     config_path.write_text(config_text, encoding="utf-8")
 
     generate_cases(str(structure_path), str(config_path), "ht_out")
+    pseudo_dir = Path(os.path.expanduser("~/pp_test"))
+    pseudo_dir.mkdir(parents=True, exist_ok=True)
+    _write_mock_upf(pseudo_dir / "Li.upf", "Li", 1.0, "2s1")
+    _write_mock_upf(pseudo_dir / "Be.upf", "Be", 2.0, "2s2")
+    _write_mock_upf(pseudo_dir / "H.upf", "H", 1.0, "1s1")
 
     pressure_dir = Path("ht_out/03.XA_Li/period_2/04.LiBeH7/20")
     vasp_opt_dir = pressure_dir / "vasp_opt"
@@ -2012,6 +2030,134 @@ def test_prepare_potcar_writes_log_incrementally(chdir_work, monkeypatch):
     log_text = Path("potcar_lib/potcar_lib.log").read_text(encoding="utf-8")
     assert "V = V" in log_text
     assert "Ce = Ce_GW" in log_text
+
+
+def test_prepare_qe_pseudo_discovers_candidates_and_parses_upf(chdir_work):
+    from substitutionflow.prepare_qe_pseudo import discover_qe_candidate_groups
+    from substitutionflow.prepare_potcar import discover_required_elements
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'structure_filename = "structure.vasp"',
+            'structure_filename = "XAXBH7-P63mmc.vasp"',
+        ),
+        encoding="utf-8",
+    )
+
+    pseudo_root = Path("qe_pseudo_source")
+    _write_mock_upf(pseudo_root / "Li.upf", "Li", 1.0, "2s1")
+    _write_mock_upf(pseudo_root / "li_pbe_v1.uspp", "Li", 3.0, "1s2 2s1")
+    _write_mock_upf(pseudo_root / "Be.upf", "Be", 2.0, "2s2")
+    _write_mock_upf(pseudo_root / "B.upf", "B", 3.0, "2s2 2p1")
+    _write_mock_upf(pseudo_root / "H.upf", "H", 1.0, "1s1")
+
+    elements = discover_required_elements(str(config_path))
+    assert elements == ["H", "Li", "Be", "B"]
+
+    groups = discover_qe_candidate_groups(str(pseudo_root), ["Li"])
+    assert [candidate.filename for candidate in groups["Li"]] == ["Li.upf", "li_pbe_v1.uspp"]
+    assert groups["Li"][0].config_text == "2s1"
+    assert groups["Li"][1].z_valence == 3.0
+
+
+def test_prepare_qe_pseudo_copies_files_reuses_log_and_updates_case_input(chdir_work, monkeypatch):
+    from substitutionflow.prepare_qe_pseudo import prepare_qe_pseudo_library
+    from substitutionflow.status import create_initial_status
+    from substitutionflow.structure_substitution import generate_cases
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    _append_qe_phonon_config(config_path)
+    config_text = config_path.read_text(encoding="utf-8").replace(
+        'structure_filename = "structure.vasp"',
+        'structure_filename = "XAXBH7-P63mmc.vasp"',
+    )
+    config_path.write_text(config_text, encoding="utf-8")
+
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    pseudo_root = Path("qe_pseudo_source")
+    _write_mock_upf(pseudo_root / "H.upf", "H", 1.0, "1s1")
+    _write_mock_upf(pseudo_root / "Li_a.upf", "Li", 1.0, "2s1")
+    _write_mock_upf(pseudo_root / "Li_b.upf", "Li", 3.0, "1s2 2s1")
+    _write_mock_upf(pseudo_root / "Be.upf", "Be", 2.0, "2s2")
+    _write_mock_upf(pseudo_root / "B.upf", "B", 3.0, "2s2 2p1")
+
+    answers = iter(["2"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    log_path = prepare_qe_pseudo_library(str(config_path), "ht_out", str(pseudo_root))
+
+    qe_lib_dir = Path("ht_out/qe_pseudo_lib")
+    assert Path(log_path).exists()
+    assert (qe_lib_dir / "Li_b.upf").exists()
+    assert (qe_lib_dir / "Be.upf").exists()
+    assert (qe_lib_dir / "B.upf").exists()
+    assert (qe_lib_dir / "H.upf").exists()
+
+    log_text = Path(log_path).read_text(encoding="utf-8")
+    assert "Li = Li_b.upf" in log_text
+
+    case_input = Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").read_text(encoding="utf-8")
+    assert f'pp_dir = "{Path("ht_out/qe_pseudo_lib").resolve()}"' in case_input
+
+    qe_case_input = Path("ht_out/03.XA_Li/period_2/03.Li2H7/input.toml").read_text(encoding="utf-8")
+    assert f'pp_dir = "{Path("ht_out/qe_pseudo_lib").resolve()}"' in qe_case_input
+
+    Path("ht_out/qe_pseudo_lib/qe_pseudo_lib.log").write_text("Li = Li_a.upf\nBe = Be.upf\nB = B.upf\nH = H.upf\n", encoding="utf-8")
+    monkeypatch.setattr("builtins.input", lambda _prompt="": (_ for _ in ()).throw(AssertionError("不应进入交互")))
+    prepare_qe_pseudo_library(str(config_path), "ht_out", str(pseudo_root))
+    assert (qe_lib_dir / "Li_a.upf").read_text(encoding="utf-8") == (pseudo_root / "Li_a.upf").read_text(encoding="utf-8")
+
+
+def test_prepare_qe_pseudo_supports_qe_phonon_generated_inputs(chdir_work, monkeypatch):
+    from qeflow.phonon._shared import create_context, prepare_root_scf_step
+    from substitutionflow.prepare_qe_pseudo import prepare_qe_pseudo_library
+    from substitutionflow.structure_substitution import generate_cases
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    _append_qe_phonon_config(config_path)
+    config_text = config_path.read_text(encoding="utf-8").replace(
+        'structure_filename = "structure.vasp"',
+        'structure_filename = "XAXBH7-P63mmc.vasp"',
+    )
+    config_path.write_text(config_text, encoding="utf-8")
+
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+
+    pseudo_root = Path("qe_pseudo_source")
+    _write_mock_upf(pseudo_root / "H.upf", "H", 1.0, "1s1")
+    _write_mock_upf(pseudo_root / "Li.upf", "Li", 1.0, "2s1")
+    _write_mock_upf(pseudo_root / "Be.upf", "Be", 2.0, "2s2")
+    _write_mock_upf(pseudo_root / "B.upf", "B", 3.0, "2s2 2p1")
+
+    monkeypatch.setattr("builtins.input", lambda _prompt="": (_ for _ in ()).throw(AssertionError("不应进入交互")))
+    prepare_qe_pseudo_library(str(config_path), "ht_out", str(pseudo_root))
+    expected_qe_dir = str(Path("ht_out/qe_pseudo_lib").resolve())
+
+    pressure_dir = Path("ht_out/03.XA_Li/period_2/03.Li2H7/20")
+    vasp_opt_dir = pressure_dir / "vasp_opt"
+    vasp_opt_dir.mkdir(parents=True, exist_ok=True)
+    (vasp_opt_dir / "CONTCAR").write_text(PLACEHOLDER_POSCAR.replace("XB", "Li").replace("XA", "Li"), encoding="utf-8")
+
+    os.chdir(pressure_dir)
+    context = create_context("../input.toml", "vasp_opt/CONTCAR", workflow_name="qe_phonon_split_index")
+    prepare_root_scf_step(context)
+
+    scf_text = (Path(context.workspace) / "scf.in").read_text(encoding="utf-8")
+    assert f"pseudo_dir = '{expected_qe_dir}'" in scf_text
+    assert "Li.upf" in scf_text
+    assert "H.upf" in scf_text
 
 
 def _write_at_ef_csv(path: Path, headers, values):
