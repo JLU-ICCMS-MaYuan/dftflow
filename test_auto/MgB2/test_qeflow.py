@@ -27,7 +27,9 @@ def test_qe_scf_api(chdir_work):
     assert "ATOMIC_POSITIONS" in scf_content
     assert "K_POINTS" in scf_content
     assert "ecutwfc" in scf_content
-    assert f"pseudo_dir = '{Path('~/pp_test').expanduser()}'" in scf_content
+    assert "pseudo_dir = './pp'" in scf_content
+    assert "Mg   24.3050 mg_pbe_v1.4.uspp" in scf_content
+    assert "B    10.8100 b_pbe_v1.4.uspp.F.UPF" in scf_content
 
 
 def test_qe_scf_cli(chdir_work):
@@ -100,7 +102,9 @@ def test_qe_nscf_api(chdir_work):
     nscf_content = (Path("qe_nscf") / "nscf.in").read_text()
     assert "calculation" in nscf_content
     assert "nscf" in nscf_content
-    assert f"pseudo_dir = '{Path('~/pp_test').expanduser()}'" in nscf_content
+    assert "pseudo_dir = './pp'" in nscf_content
+    assert "Mg   24.3050 mg_pbe_v1.4.uspp" in nscf_content
+    assert "B    10.8100 b_pbe_v1.4.uspp.F.UPF" in nscf_content
 
 
 def test_qe_nscf_cli(chdir_work):
@@ -153,7 +157,117 @@ def test_qe_eband_api(chdir_work):
     assert (Path("qe_eband") / "eband.in").exists()
     assert (Path("qe_eband") / "run_qe.sh").exists()
     eband_content = (Path("qe_eband") / "eband.in").read_text()
-    assert f"pseudo_dir = '{Path('~/pp_test').expanduser()}'" in eband_content
+    assert "pseudo_dir = './pp'" in eband_content
+    assert "Mg   24.3050 mg_pbe_v1.4.uspp" in eband_content
+    assert "B    10.8100 b_pbe_v1.4.uspp.F.UPF" in eband_content
+
+
+def test_extract_pseudo_element_token_supports_mixed_filename_prefixes():
+    from qeflow.common import extract_pseudo_element_token
+
+    assert extract_pseudo_element_token("Mg.pbe-n-kjpaw.UPF") == "Mg"
+    assert extract_pseudo_element_token("b_pbe_v1.4.uspp.F.UPF") == "b"
+    assert extract_pseudo_element_token("li_pbe_v1.4.uspp.F.UPF") == "li"
+    assert extract_pseudo_element_token("Ag_ONCV_PBE-1.0.upf") == "Ag"
+    assert extract_pseudo_element_token("Hf-sp.oncvpsp.upf") == "Hf"
+    assert extract_pseudo_element_token("123-invalid.upf") == ""
+
+
+def test_resolve_pseudo_files_matches_case_insensitive_prefixes(tmp_path):
+    from qeflow.common import resolve_pseudo_files
+
+    pp_dir = tmp_path / "pp_auto"
+    pp_dir.mkdir()
+    for filename in [
+        "Mg.pbe-n-kjpaw.UPF",
+        "b_pbe_v1.4.uspp.F.UPF",
+        "li_pbe_v1.4.uspp.F.UPF",
+        "Hf-sp.oncvpsp.upf",
+    ]:
+        (pp_dir / filename).write_text("", encoding="utf-8")
+
+    resolved = resolve_pseudo_files(str(pp_dir), ["Mg", "B", "Li", "Hf"])
+
+    assert resolved == {
+        "Mg": "Mg.pbe-n-kjpaw.UPF",
+        "B": "b_pbe_v1.4.uspp.F.UPF",
+        "Li": "li_pbe_v1.4.uspp.F.UPF",
+        "Hf": "Hf-sp.oncvpsp.upf",
+    }
+
+
+def test_qe_scf_requires_pp_dir_for_auto_pseudo_matching(chdir_work):
+    from qeflow.scf.qe_scf import QESetup
+
+    config_path = Path("missing_pp_dir.toml")
+    config_path.write_text(
+        """
+[qe]
+executable_path = "pw.x"
+
+[qe_scf.CONTROL]
+outdir = "'./tmp'"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="缺少 pp_dir 配置"):
+        QESetup(config_file=str(config_path), struct_file="MgB2.vasp").setup()
+
+
+def test_qe_scf_fails_when_element_pseudo_is_missing(chdir_work):
+    from qeflow.scf.qe_scf import QESetup
+
+    missing_dir = Path("pp_missing")
+    missing_dir.mkdir()
+    (missing_dir / "mg_pbe_v1.4.uspp").write_text("", encoding="utf-8")
+
+    config_path = Path("missing_pseudo.toml")
+    config_path.write_text(
+        f"""
+pp_dir = "{missing_dir}"
+
+[qe]
+executable_path = "pw.x"
+
+[qe_scf.CONTROL]
+outdir = "'./tmp'"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FileNotFoundError, match="元素 B"):
+        QESetup(config_file=str(config_path), struct_file="MgB2.vasp").setup()
+
+
+def test_qe_scf_fails_when_element_has_multiple_pseudos(chdir_work):
+    from qeflow.scf.qe_scf import QESetup
+
+    duplicate_dir = Path("pp_duplicate")
+    duplicate_dir.mkdir()
+    (duplicate_dir / "mg_pbe_v1.4.uspp").write_text("", encoding="utf-8")
+    (duplicate_dir / "Mg.UPF").write_text("", encoding="utf-8")
+    (duplicate_dir / "b_pbe_v1.4.uspp.F.UPF").write_text("", encoding="utf-8")
+
+    config_path = Path("duplicate_pseudo.toml")
+    config_path.write_text(
+        f"""
+pp_dir = "{duplicate_dir}"
+
+[qe]
+executable_path = "pw.x"
+
+[qe_scf.CONTROL]
+outdir = "'./tmp'"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="多个赝势文件"):
+        QESetup(config_file=str(config_path), struct_file="MgB2.vasp").setup()
 
 
 def test_qe_eband_cli(chdir_work):

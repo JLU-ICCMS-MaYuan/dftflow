@@ -3,7 +3,7 @@ from typing import Any, Dict, Iterable
 
 from public.config_templates import build_cli_config
 
-QE_SHARED_ALLOWED_KEYS = ("qe", "slurm", "pseudo_map", "pp_dir")
+QE_SHARED_ALLOWED_KEYS = ("qe", "slurm", "pp_dir")
 
 
 def _base_qe_template() -> Dict[str, Any]:
@@ -14,7 +14,6 @@ def _base_qe_template() -> Dict[str, Any]:
         "slurm": {
             "header": "",
         },
-        "pseudo_map": {},
         "pp_dir": None,
     }
 

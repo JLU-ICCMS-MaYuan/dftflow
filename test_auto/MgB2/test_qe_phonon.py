@@ -130,7 +130,7 @@ qpoints = [2, 3, 4]
     merged = apply_qe_config_overrides(
         get_qe_phonon_parameters_template(),
         load_config_file(str(config_path)),
-        ("qe", "slurm", "pseudo_map", "pp_dir", "qe_phonon"),
+        ("qe", "slurm", "pp_dir", "qe_phonon"),
     )
 
     assert merged["pp_dir"] == "/pseudo"
@@ -208,6 +208,9 @@ def test_qe_ph_nosplit_generates_ph_input_and_script(chdir_work):
     assert (workdir / "ph.in").exists()
     assert (workdir / "run_ph.sh").exists()
     assert "fildyn = 'Mg1B2.dyn'" in (workdir / "ph.in").read_text(encoding="utf-8")
+    scf_text = (workdir / "scf.in").read_text(encoding="utf-8")
+    assert "Mg   24.3050 mg_pbe_v1.4.uspp" in scf_text
+    assert "B    10.8100 b_pbe_v1.4.uspp.F.UPF" in scf_text
 
 
 def test_qe_ph_nosplit_dyn0_run_uses_background_stop(chdir_work, monkeypatch):

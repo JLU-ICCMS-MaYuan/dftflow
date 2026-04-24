@@ -133,10 +133,6 @@ header = """
 #SBATCH -J qe_phonon
 """
 
-[pseudo_map]
-Mg = { pseudo = "Mg.UPF" }
-B = { pseudo = "B.UPF" }
-
 [qe_phonon]
 work_dir = "custom_ph"
 
@@ -164,7 +160,8 @@ dos = true
 ```
 
 ## 9. 说明
-- `pseudo_map` 只强制要求 `pseudo`，质量会按元素自动补。
+- `pp_dir` 只扫描目录直下文件，并按“文件名开头连续字母串”自动匹配元素赝势，例如 `Mg...`、`b_...`、`li_...`、`Hf-...`。
+- 若某元素在 `pp_dir` 中没有匹配文件，或匹配到多个候选，程序会直接报错，不做自动择优。
 - `fildyn`、`flfrc`、`flfrq`、`fldos` 由程序按 `prefix` 自动派生，不建议手写。
 - `qe_ph_split_assign_index` 与 `qe_ph_split_assign_coords` 假定根目录 `scf.out` 已完成；若希望自动推进 SCF，请使用 `qe_phonon_split_index` 或 `qe_phonon_split_coords`。
 - `qe_merge` 可独立检查、执行或提交 split 结果回收；split 工作流内部也统一复用这一路径。

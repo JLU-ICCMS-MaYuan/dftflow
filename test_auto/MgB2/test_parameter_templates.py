@@ -100,7 +100,7 @@ ecutwfc = 60.0
     merged = apply_qe_config_overrides(
         get_qe_scf_parameters_template(),
         load_config_file(str(config_path)),
-        ("qe", "slurm", "pseudo_map", "qe_scf"),
+        ("qe", "slurm", "qe_scf"),
     )
 
     assert merged["qe_scf"]["k_points"]["kmesh"] == 0.04
@@ -134,7 +134,7 @@ qpoints = [2, 3, 4]
     merged = apply_qe_config_overrides(
         get_qe_phonon_parameters_template(),
         load_config_file(str(config_path)),
-        ("qe", "slurm", "pseudo_map", "pp_dir", "qe_phonon"),
+        ("qe", "slurm", "pp_dir", "qe_phonon"),
     )
 
     assert merged["pp_dir"] == "/pseudo"

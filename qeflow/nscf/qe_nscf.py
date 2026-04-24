@@ -9,7 +9,7 @@ import numpy as np
 from public.config_templates import load_config_file
 from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
-from qeflow.common import get_atomic_mass, get_pseudo_entry
+from qeflow.common import resolve_atomic_species_entries
 from qeflow.templates import (
     apply_qe_config_overrides,
     get_qe_nscf_allowed_keys,
@@ -184,11 +184,9 @@ class QENSCFSetup:
             
             # ATOMIC_SPECIES
             f.write("ATOMIC_SPECIES\n")
-            pseudo_map = self.config.get("pseudo_map", {})
-            for el in struct_info["elements"]:
-                info = get_pseudo_entry(pseudo_map, el)
-                mass = get_atomic_mass(el, info.get("mass"))
-                pseudo_file = str(info["pseudo"]).strip()
+            for el, mass, pseudo_file in resolve_atomic_species_entries(
+                self.config, struct_info["elements"]
+            ):
                 f.write(f"  {el:3} {mass:8.4f} {pseudo_file}\n")
             f.write("\n")
             

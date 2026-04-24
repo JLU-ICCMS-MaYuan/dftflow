@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-from typing import Dict, Optional
+import os
+import re
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 ATOMIC_MASSES = {
@@ -17,8 +19,54 @@ def get_atomic_mass(element: str, explicit_mass: Optional[float] = None) -> floa
     return float(ATOMIC_MASSES.get(element, 1.0))
 
 
-def get_pseudo_entry(pseudo_map: Dict, element: str) -> Dict:
-    info = pseudo_map.get(element)
-    if not info or "pseudo" not in info:
-        raise KeyError(f"pseudo_map 缺少元素 {element} 的 pseudo 配置")
-    return info
+def extract_pseudo_element_token(filename: str) -> str:
+    basename = os.path.basename(filename)
+    match = re.match(r"([A-Za-z]+)", basename)
+    return match.group(1) if match else ""
+
+
+def find_pseudo_file(pp_dir: Optional[str], element: str) -> str:
+    if not pp_dir:
+        raise ValueError("缺少 pp_dir 配置，无法自动匹配赝势文件")
+    expanded_pp_dir = os.path.expanduser(str(pp_dir))
+    if not os.path.isdir(expanded_pp_dir):
+        raise FileNotFoundError(f"找不到赝势目录: {expanded_pp_dir}")
+
+    candidates: List[str] = []
+    for entry in os.scandir(expanded_pp_dir):
+        if not entry.is_file():
+            continue
+        token = extract_pseudo_element_token(entry.name)
+        if token and token.lower() == element.lower():
+            candidates.append(entry.name)
+
+    if not candidates:
+        raise FileNotFoundError(
+            f"在 {expanded_pp_dir} 中找不到元素 {element} 对应的赝势文件"
+        )
+    if len(candidates) > 1:
+        candidate_list = ", ".join(sorted(candidates))
+        raise ValueError(
+            f"元素 {element} 在 {expanded_pp_dir} 中匹配到多个赝势文件: {candidate_list}"
+        )
+    return candidates[0]
+
+
+def resolve_pseudo_files(pp_dir: Optional[str], elements: Iterable[str]) -> Dict[str, str]:
+    resolved: Dict[str, str] = {}
+    for element in elements:
+        if element in resolved:
+            continue
+        resolved[element] = find_pseudo_file(pp_dir, element)
+    return resolved
+
+
+def resolve_atomic_species_entries(
+    config: Dict[str, Any],
+    elements: Sequence[str],
+) -> List[Tuple[str, float, str]]:
+    pseudo_files = resolve_pseudo_files(config.get("pp_dir"), elements)
+    return [
+        (element, get_atomic_mass(element), pseudo_files[element])
+        for element in elements
+    ]

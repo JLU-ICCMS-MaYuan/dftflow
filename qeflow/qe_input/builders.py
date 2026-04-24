@@ -7,7 +7,7 @@ import numpy as np
 
 from public.executables import resolve_qe_command
 from public.job import write_job_script
-from qeflow.common import get_atomic_mass, get_pseudo_entry
+from qeflow.common import resolve_atomic_species_entries
 from qeflow.qe_input.fileio import write_text
 from qeflow.qe_input.kpath import build_matdyn_band_path, run_vaspkit_for_kpath
 
@@ -124,12 +124,9 @@ def build_qe_commands(config: Dict[str, Any]) -> Dict[str, str]:
 
 
 def _write_atomic_species(handle, config: Dict[str, Any], elements: Iterable[str]) -> None:
-    pseudo_map = config.get("pseudo_map", {})
     handle.write("ATOMIC_SPECIES\n")
-    for element in elements:
-        entry = get_pseudo_entry(pseudo_map, element)
-        mass = get_atomic_mass(element, entry.get("mass"))
-        handle.write(f"  {element:3} {mass:8.4f} {str(entry['pseudo']).strip()}\n")
+    for element, mass, pseudo_file in resolve_atomic_species_entries(config, list(elements)):
+        handle.write(f"  {element:3} {mass:8.4f} {pseudo_file}\n")
     handle.write("\n")
 
 

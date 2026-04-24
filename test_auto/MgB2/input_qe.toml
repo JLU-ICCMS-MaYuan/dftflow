@@ -1,6 +1,6 @@
 # Quantum ESPRESSO 测试配置
 
-pp_dir = "~/pp_test"
+pp_dir = "./pp"
 
 [qe]
 executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
@@ -28,10 +28,6 @@ mixing_beta = 0.7
 [qe_scf.k_points]
 kpoints = [4, 4, 4]
 wan = false
-
-[pseudo_map]
-Mg = { pseudo = "mg_pbe_v1.4.uspp" }
-B = { pseudo = "b_pbe_v1.4.uspp.F.UPF" }
 
 [qe_eledos.eledos]
 DeltaE = 0.01
