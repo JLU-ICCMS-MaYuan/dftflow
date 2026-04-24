@@ -24,6 +24,19 @@
 
 ## 需求处理记录
 
+### [2026-04-24] 重构 substitution_continue 的状态重写与续算/提交边界
+- **需求**：
+    1. `substitution_continue` 中的“状态重写”和“续算/提交”必须彻底解耦。
+    2. 废弃旧的 `--fix-error`，新增独立参数 `--rewrite-states/-rws`，其语义固定为“只重写状态 JSON，不执行续算，也不生成/提交脚本”。
+    3. `-rws` 不能与 `-r/-s` 混用；`continue -r` 与 `continue -s` 必须始终先基于真实目录和运行状态刷新，而不是信任手工改写后的状态文件。
+    4. `running` 状态必须保留，并继续按真实运行中语义写回 `case_status.json` 与 `workflow_status.json`。
+- **方案**：
+    1. 修改 `substitutionflow/cli_continue.py`，删除 `--fix-error`，新增 `--rewrite-states/-rws` 并增加互斥校验。
+    2. 修改 `substitutionflow/workflow.py`，移除 `fix_error` 旁路，新增独立 `rewrite_workflow_states()`；默认模式只检查并输出摘要，`-r` 与 `-s` 都在真实刷新后推进。
+    3. 修改 `substitutionflow/status.py`，删除 `reset_error_statuses()`，保留 `refresh_status()` 作为唯一状态重写真源，并补充本地进程工作目录匹配的 `running` 检测。
+    4. 更新 `test_auto/MgB2/test_substitutionflow.py`，删除旧 `fix_error` 测试，新增 `-rws`、参数冲突、预刷新阻断和提交收集边界测试。
+- **状态**：已完成。
+
 ### [2026-04-10] 新增 vasp_plot_cohp 用于 orbital-resolved COHP/ICOHP 分析
 - **需求**：
     1. 新增一个 CLI，读取 `COHPCAR.lobster` 并对指定轨道对做 orbital-resolved `COHP / ICOHP` 分析。
