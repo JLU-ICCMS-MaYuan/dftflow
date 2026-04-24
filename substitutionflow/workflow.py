@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import os
+import shutil
 import subprocess
+import json
 from typing import Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
@@ -10,13 +12,30 @@ from substitutionflow.status import (
     case_uses_mattersim,
     create_initial_status,
     discover_cases,
+    get_case_phonon_workdir,
     get_case_phonon_workflow,
     get_case_step_order,
     load_case_status,
+    load_workflow_status,
     refresh_status,
+    save_case_status,
     summarize_status,
 )
-from substitutionflow.structure_substitution import generate_cases, resolve_input_structure_path
+from substitutionflow.structure_substitution import (
+    generate_cases,
+    load_substitutionflow_config,
+    resolve_input_structure_path,
+    write_case_input_config,
+)
+
+STEP_DISPLAY_NAME = {
+    "mattersim_opt": "mattersim",
+    "vasp_opt": "vasp_opt",
+    "vasp_scf": "vasp_scf",
+    "vasp_eledos": "vasp_eledos",
+    "vasp_process_eledos": "vasp_process_eledos",
+    "qe_phonon": "qe_phonon",
+}
 
 
 def run_cli_command(command: List[str], cwd: str) -> None:
@@ -105,16 +124,57 @@ def _first_unfinished_step(case_status: Dict, pressure_key: str, step_order: Tup
     return None
 
 
-def run_case_pressure(output_dir: str, case_meta: Dict, pressure) -> None:
-    refresh_status(output_dir)
+def _step_display(step_order: Tuple[str, ...], step: str) -> str:
+    step_index = step_order.index(step) + 1
+    step_name = STEP_DISPLAY_NAME.get(step, step)
+    return f"{step_index:02d}.{step_name:<13}"
+
+
+def _print_progress(
+    event: str,
+    state: str,
+    case_meta: Dict,
+    pressure,
+    step_order: Tuple[str, ...],
+    step: str,
+    **fields: str,
+) -> None:
+    case_display_path = os.path.join(case_meta["case_display_rel"], _pressure_key(pressure))
+    reason_value = fields.pop("reason", "")
+    extra_parts = [f"reason:{reason_value:<10}"]
+    for key, value in fields.items():
+        display_key = key[:-1] if key.endswith("_") else key
+        extra_parts.append(f"{display_key}:{value}")
+    line = (
+        f"{_step_display(step_order, step)} "
+        f"state:{state:<10} "
+        f"event:{event:<8} "
+        f"formula:{case_meta['formula']:<12} "
+        f"pressure:{_pressure_key(pressure):<4}"
+    )
+    if extra_parts:
+        line += " " + " ".join(extra_parts)
+    line += f" case:{case_display_path}"
+    print(line)
+
+
+def run_case_pressure(output_dir: str, case_meta: Dict, pressure, refresh_before: bool = True) -> None:
+    if refresh_before:
+        refresh_status(output_dir)
     pressure_key = _pressure_key(pressure)
     case_status = load_case_status(case_meta["case_dir"])
     step_order = get_case_step_order(case_meta["case_dir"])
     use_mattersim = case_uses_mattersim(case_meta["case_dir"])
     first_step = _first_unfinished_step(case_status, pressure_key, step_order)
     if first_step is None:
+        _print_progress("skip", "finished", case_meta, pressure, step_order, step_order[-1], reason="all_finished")
         return
-    if case_status["pressures"][pressure_key][first_step] == "running":
+    first_state = case_status["pressures"][pressure_key][first_step]
+    if first_state == "running":
+        _print_progress("skip", "running", case_meta, pressure, step_order, first_step, reason="running")
+        return
+    if first_state == "error":
+        _print_progress("break", "error", case_meta, pressure, step_order, first_step, reason="error")
         return
 
     commands = _run_commands(case_meta["case_dir"], case_meta["structure_filename"], pressure, use_mattersim)
@@ -124,15 +184,18 @@ def run_case_pressure(output_dir: str, case_meta: Dict, pressure) -> None:
             started = True
         if not started:
             continue
+        _print_progress("run", "running", case_meta, pressure, step_order, step)
         try:
             run_cli_command(commands[step], _step_cwd(case_meta["case_dir"], pressure, step, use_mattersim))
-            updated_status = refresh_status(output_dir)
+            refresh_status(output_dir)
             case_status = load_case_status(case_meta["case_dir"])
             step_state = case_status["pressures"][pressure_key][step]
             if step_state != "finished":
+                _print_progress("break", step_state, case_meta, pressure, step_order, step, reason="post_refresh")
                 break
         except Exception:
             refresh_status(output_dir)
+            _print_progress("break", "error", case_meta, pressure, step_order, step, reason="exception")
             raise
 
 
@@ -213,8 +276,9 @@ def _collect_configured_units(output_dir: str) -> List[Dict]:
     return units
 
 
-def _collect_pending_units(output_dir: str) -> List[Dict]:
-    refresh_status(output_dir)
+def _collect_pending_units(output_dir: str, refresh_before: bool = True) -> List[Dict]:
+    if refresh_before:
+        refresh_status(output_dir)
     cases = discover_cases(output_dir)
     units: List[Dict] = []
     for case_meta in cases.values():
@@ -299,8 +363,12 @@ def _build_submit_scripts_from_units(output_dir: str, submit_groups: int, units:
     }
 
 
-def build_submit_scripts(output_dir: str, submit_groups: int) -> Dict:
-    return _build_submit_scripts_from_units(output_dir, submit_groups, _collect_pending_units(output_dir))
+def build_submit_scripts(output_dir: str, submit_groups: int, refresh_before: bool = True) -> Dict:
+    return _build_submit_scripts_from_units(
+        output_dir,
+        submit_groups,
+        _collect_pending_units(output_dir, refresh_before=refresh_before),
+    )
 
 
 def build_configured_submit_scripts(output_dir: str, submit_groups: int) -> Dict:
@@ -336,12 +404,33 @@ def run_workflow(config_file: str, output_dir: str, run_calc: bool = False, subm
         for case_meta in cases.values():
             for pressure in case_meta["pressures"]:
                 try:
+                    refresh_status(output_dir)
+                    pressure_key = _pressure_key(pressure)
+                    case_status = load_case_status(case_meta["case_dir"])
+                    step_order = get_case_step_order(case_meta["case_dir"])
                     use_mattersim = case_uses_mattersim(case_meta["case_dir"])
                     commands = _run_commands(case_meta["case_dir"], case_meta["structure_filename"], pressure, use_mattersim)
-                    step_order = get_case_step_order(case_meta["case_dir"])
                     for step in step_order:
+                        current_state = case_status["pressures"][pressure_key][step]
+                        if current_state == "finished":
+                            _print_progress("skip", "finished", case_meta, pressure, step_order, step, reason="finished")
+                            continue
+                        if current_state == "running":
+                            _print_progress("skip", "running", case_meta, pressure, step_order, step, reason="running")
+                            break
+                        if current_state == "error":
+                            _print_progress("break", "error", case_meta, pressure, step_order, step, reason="error")
+                            break
+                        _print_progress("run", "running", case_meta, pressure, step_order, step)
                         run_cli_command(commands[step], _step_cwd(case_meta["case_dir"], pressure, step, use_mattersim))
+                        refresh_status(output_dir)
+                        case_status = load_case_status(case_meta["case_dir"])
+                        step_state = case_status["pressures"][pressure_key][step]
+                        if step_state != "finished":
+                            _print_progress("break", step_state, case_meta, pressure, step_order, step, reason="post_refresh")
+                            break
                 except Exception:
+                    refresh_status(output_dir)
                     continue
         return summarize_status(refresh_status(output_dir))
 
@@ -350,6 +439,103 @@ def run_workflow(config_file: str, output_dir: str, run_calc: bool = False, subm
     if submit:
         _submit_group_scripts(output_dir, script_bundle)
     return _format_submit_summary(script_bundle, "总生成单元数")
+
+
+def _repair_qe_phonon_inputs(case_dir: str, pressure_key: str) -> None:
+    pressure_dir = os.path.join(case_dir, pressure_key)
+    qe_workdir = os.path.join(pressure_dir, get_case_phonon_workdir(case_dir))
+    if not os.path.isdir(qe_workdir):
+        return
+
+    root_config = load_substitutionflow_config(os.path.join(case_dir, "input.toml"))
+    write_case_input_config(os.path.join(qe_workdir, "input.toml"), root_config)
+
+    contcar_path = os.path.join(pressure_dir, "vasp_opt", "CONTCAR")
+    if os.path.exists(contcar_path):
+        shutil.copyfile(contcar_path, os.path.join(qe_workdir, "POSCAR"))
+
+
+def _rewrite_qe_phonon_workflow_status_errors(case_dir: str, pressure_key: str) -> int:
+    pressure_dir = os.path.join(case_dir, pressure_key)
+    qe_workdir = os.path.join(pressure_dir, get_case_phonon_workdir(case_dir))
+    workflow_status_path = os.path.join(qe_workdir, "workflow_status.json")
+    if not os.path.exists(workflow_status_path):
+        return 0
+
+    try:
+        with open(workflow_status_path, "r", encoding="utf-8") as f:
+            workflow_status = json.load(f)
+    except Exception:
+        return 0
+
+    rewritten = 0
+
+    def rewrite_payload(payload):
+        nonlocal rewritten
+        if isinstance(payload, dict):
+            for key, value in payload.items():
+                if isinstance(value, str):
+                    if value == "error":
+                        payload[key] = "unstarted"
+                        rewritten += 1
+                else:
+                    rewrite_payload(value)
+        elif isinstance(payload, list):
+            for item in payload:
+                rewrite_payload(item)
+
+    rewrite_payload(workflow_status)
+    if rewritten > 0:
+        with open(workflow_status_path, "w", encoding="utf-8") as f:
+            json.dump(workflow_status, f, indent=2, ensure_ascii=False)
+    return rewritten
+
+
+def rewrite_workflow_states(output_dir: str) -> str:
+    refresh_status(output_dir)
+    cases = discover_cases(output_dir)
+    rewritten_count = 0
+    rewritten_qe_count = 0
+    repaired_pressures = 0
+
+    for case_meta in cases.values():
+        case_status = load_case_status(case_meta["case_dir"])
+        step_order = get_case_step_order(case_meta["case_dir"])
+        rewritten_pressures = set()
+        for pressure in case_meta["pressures"]:
+            pressure_key = _pressure_key(pressure)
+            pressure_status = case_status["pressures"][pressure_key]
+            for step in step_order:
+                if pressure_status.get(step) != "error":
+                    continue
+                pressure_status[step] = "unstarted"
+                rewritten_count += 1
+                rewritten_pressures.add(pressure_key)
+                _print_progress(
+                    "rewrite",
+                    "unstarted",
+                    case_meta,
+                    pressure,
+                    step_order,
+                    step,
+                    from_="error",
+                    to="unstarted",
+                )
+        for pressure_key in sorted(rewritten_pressures, key=lambda value: list(case_status["pressures"]).index(value)):
+            rewritten_qe_count += _rewrite_qe_phonon_workflow_status_errors(case_meta["case_dir"], pressure_key)
+            _repair_qe_phonon_inputs(case_meta["case_dir"], pressure_key)
+            repaired_pressures += 1
+        save_case_status(case_meta["case_dir"], case_status)
+
+    summary = create_initial_status(output_dir)
+    return "\n".join(
+        [
+            summarize_status(summary),
+            f"重写步骤数: {rewritten_count}",
+            f"重写 qe_phonon 子步骤数: {rewritten_qe_count}",
+            f"修复压强点数: {repaired_pressures}",
+        ]
+    )
 
 
 def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = False) -> str:
@@ -362,13 +548,15 @@ def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = Fa
         for case_meta in cases.values():
             for pressure in case_meta["pressures"]:
                 try:
-                    run_case_pressure(output_dir, case_meta, pressure)
+                    run_case_pressure(output_dir, case_meta, pressure, refresh_before=False)
                 except Exception:
                     continue
         return summarize_status(refresh_status(output_dir))
 
+    if not submit:
+        return summarize_status(load_workflow_status(output_dir))
+
     submit_groups = _load_submit_groups_from_output_dir(output_dir)
-    script_bundle = build_submit_scripts(output_dir, submit_groups)
-    if submit:
-        _submit_group_scripts(output_dir, script_bundle)
+    script_bundle = build_submit_scripts(output_dir, submit_groups, refresh_before=False)
+    _submit_group_scripts(output_dir, script_bundle)
     return _format_submit_summary(script_bundle, "总未完成单元数")

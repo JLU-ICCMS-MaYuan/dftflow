@@ -12,7 +12,7 @@ from substitutionflow.structure_substitution import (
 
 
 def main():
-    parser = argparse.ArgumentParser(description="生成 XA/XB 占位结构的高通量替换目录。")
+    parser = argparse.ArgumentParser(description="准备 XA/XB 占位结构的高通量工作流输入目录。")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径。")
     parser.add_argument("-o", "--output-dir", required=True, help="输出根目录。")
     args = parser.parse_args()

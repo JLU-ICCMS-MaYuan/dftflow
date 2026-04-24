@@ -199,10 +199,20 @@ def validate_placeholder_elements(elements: List[str]) -> None:
 
 
 def create_case_input_config(root_config: Dict) -> Dict:
+    # case input.toml 是后续各工作流的统一配置真源，默认完整继承根配置，
+    # 只在这里做与高通量目录结构绑定的局部路径重写。
     config = json.loads(json.dumps(root_config))
     config["chgcar_path"] = "./vasp_scf/CHGCAR"
     config["wavecar_path"] = "./vasp_scf/WAVECAR"
     return config
+
+
+def write_case_input_config(target_path: str, root_config: Dict) -> Dict:
+    case_config = create_case_input_config(root_config)
+    os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
+    with open(target_path, "w", encoding="utf-8") as f:
+        f.write(dump_toml(case_config).strip() + "\n")
+    return case_config
 
 
 def build_case_relative_path(xa_symbol: str, xb_symbol: str, formula: str) -> str:
@@ -240,9 +250,7 @@ def generate_cases(input_path: str, config_file: str, output_dir: str) -> Dict:
         structure_path = os.path.join(case_dir, structure_filename)
         write_poscar(structure_path, replaced)
 
-        case_input = create_case_input_config(root_config)
-        with open(os.path.join(case_dir, "input.toml"), "w", encoding="utf-8") as f:
-            f.write(dump_toml(case_input).strip() + "\n")
+        write_case_input_config(os.path.join(case_dir, "input.toml"), root_config)
 
         case_info = {
             "formula": formula,

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+from contextlib import suppress
 from collections import OrderedDict
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
@@ -12,6 +13,7 @@ from public.config_templates import load_config_file
 
 STEP_ORDER = ("mattersim_opt", "vasp_opt", "vasp_scf", "vasp_eledos", "vasp_process_eledos", "qe_phonon")
 STATUS_ORDER = ("finished", "running", "error", "unstarted")
+QE_PHONON_STATE_ORDER = ("finished", "running", "error", "unstarted")
 PHONON_MODE_TO_WORKFLOW = {
     "nosplit": "qe_phonon_nosplit",
     "split_index": "qe_phonon_split_index",
@@ -93,20 +95,23 @@ def _save_json(path: str, payload: Dict) -> None:
 
 def discover_cases(output_dir: str) -> "OrderedDict[str, Dict]":
     cases: "OrderedDict[str, Dict]" = OrderedDict()
+    output_dir_abs = os.path.abspath(output_dir)
+    output_dir_name = os.path.basename(output_dir_abs.rstrip(os.sep)) or os.path.basename(output_dir_abs)
     manifest_paths = sorted(
-        glob.glob(os.path.join(os.path.abspath(output_dir), "*", "period_*", "workflow_manifest.json"))
+        glob.glob(os.path.join(output_dir_abs, "*", "period_*", "workflow_manifest.json"))
     )
     for manifest_path in manifest_paths:
         manifest = _load_json(manifest_path)
         period_dir = os.path.dirname(manifest_path)
-        period_rel = os.path.relpath(period_dir, os.path.abspath(output_dir))
+        period_rel = os.path.relpath(period_dir, output_dir_abs)
         xa_dir_rel = os.path.dirname(period_rel)
         period_label = os.path.basename(period_dir)
         for case_entry in manifest.get("cases", []):
             case_dir = os.path.join(period_dir, case_entry["case_dir"])
-            case_rel = os.path.relpath(case_dir, os.path.abspath(output_dir))
+            case_rel = os.path.relpath(case_dir, output_dir_abs)
             cases[case_rel] = {
                 "case_rel": case_rel,
+                "case_display_rel": os.path.join(output_dir_name, case_rel),
                 "case_dir": case_dir,
                 "period_dir": period_dir,
                 "period_rel": period_rel,
@@ -252,14 +257,80 @@ def _parse_squeue_output(output: str) -> Set[str]:
 
 
 def get_active_workdirs(user: str = DEFAULT_SQUEUE_USER) -> Set[str]:
+    active_dirs = _get_local_active_workdirs()
     try:
         output = subprocess.check_output(
             ["squeue", "-u", user, "-h", "--format", SQUEUE_FORMAT],
             text=True,
         )
     except Exception:
-        return set()
-    return _parse_squeue_output(output)
+        return active_dirs
+    active_dirs.update(_parse_squeue_output(output))
+    return active_dirs
+
+
+def _is_same_uid_process(pid: str) -> bool:
+    status_path = os.path.join("/proc", pid, "status")
+    try:
+        with open(status_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if line.startswith("Uid:"):
+                    real_uid = line.split()[1]
+                    return int(real_uid) == os.getuid()
+    except Exception:
+        return False
+    return False
+
+
+def _read_proc_text(path: str) -> str:
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        return f.read()
+
+
+def _looks_like_workflow_process(cmdline: str) -> bool:
+    if not cmdline:
+        return False
+    keywords = (
+        "mattersim_opt",
+        "vasp_opt",
+        "vasp_scf",
+        "vasp_eledos",
+        "vasp_process_eledos",
+        "qe_phonon",
+        "vasp_std",
+        "vasp_gam",
+        "vasp_ncl",
+        "pw.x",
+        "ph.x",
+        "q2r.x",
+        "matdyn.x",
+    )
+    return any(keyword in cmdline for keyword in keywords)
+
+
+def _get_local_active_workdirs() -> Set[str]:
+    active_dirs: Set[str] = set()
+    proc_root = "/proc"
+    if not os.path.isdir(proc_root):
+        return active_dirs
+    current_pid = os.getpid()
+    parent_pid = os.getppid()
+    for pid in os.listdir(proc_root):
+        if not pid.isdigit():
+            continue
+        pid_int = int(pid)
+        if pid_int in {current_pid, parent_pid}:
+            continue
+        if not _is_same_uid_process(pid):
+            continue
+        cmdline_path = os.path.join(proc_root, pid, "cmdline")
+        cwd_path = os.path.join(proc_root, pid, "cwd")
+        with suppress(Exception):
+            cmdline = _read_proc_text(cmdline_path).replace("\x00", " ").strip()
+            if not _looks_like_workflow_process(cmdline):
+                continue
+            active_dirs.add(_normalize_path(os.readlink(cwd_path)))
+    return active_dirs
 
 
 def _path_matches_active_dir(target_dir: str, active_dirs: Set[str]) -> bool:
@@ -393,20 +464,69 @@ def _detect_vasp_process_eledos_status(pressure_dir: str) -> str:
     return "unstarted"
 
 
+def _normalize_qe_phonon_state(value: object) -> str:
+    state = str(value).strip() if value is not None else "unstarted"
+    if state not in QE_PHONON_STATE_ORDER:
+        return "unstarted"
+    return state
+
+
+def _summarize_qe_phonon_tasks(tasks_payload: object) -> str:
+    if not isinstance(tasks_payload, dict) or not tasks_payload:
+        return "unstarted"
+    states = [_normalize_qe_phonon_state(state) for state in tasks_payload.values()]
+    if states and all(state == "finished" for state in states):
+        return "finished"
+    if any(state == "running" for state in states):
+        return "running"
+    if any(state == "error" for state in states):
+        return "error"
+    return "unstarted"
+
+
+def reduce_qe_phonon_workflow_status(workflow_name: str, workflow_status: Dict) -> str:
+    ph_payload = workflow_status.get("ph", {})
+    if workflow_name == "qe_phonon_nosplit":
+        stage_states = (
+            _normalize_qe_phonon_state(workflow_status.get("scf")),
+            _normalize_qe_phonon_state(ph_payload.get("state") if isinstance(ph_payload, dict) else ph_payload),
+            _normalize_qe_phonon_state(workflow_status.get("q2r")),
+            _normalize_qe_phonon_state(workflow_status.get("matdyn_phband")),
+            _normalize_qe_phonon_state(workflow_status.get("matdyn_phdos")),
+        )
+    elif workflow_name in {"qe_phonon_split_index", "qe_phonon_split_coords"}:
+        tasks_payload = ph_payload.get("tasks") if isinstance(ph_payload, dict) else {}
+        stage_states = (
+            _normalize_qe_phonon_state(workflow_status.get("scf")),
+            _normalize_qe_phonon_state(ph_payload.get("dyn0") if isinstance(ph_payload, dict) else None),
+            _summarize_qe_phonon_tasks(tasks_payload),
+            _normalize_qe_phonon_state(workflow_status.get("merge")),
+            _normalize_qe_phonon_state(workflow_status.get("q2r")),
+            _normalize_qe_phonon_state(workflow_status.get("matdyn_phband")),
+            _normalize_qe_phonon_state(workflow_status.get("matdyn_phdos")),
+        )
+    else:
+        raise ValueError(f"不支持的 qe_phonon 工作流: {workflow_name}")
+
+    if stage_states and all(state == "finished" for state in stage_states):
+        return "finished"
+    for state in stage_states:
+        if state != "finished":
+            return state if state in {"running", "error", "unstarted"} else "unstarted"
+    return "unstarted"
+
+
 def _detect_qe_phonon_status(case_dir: str, pressure_dir: str, active_dirs: Set[str]) -> str:
     step_dir = os.path.join(pressure_dir, get_case_phonon_workdir(case_dir))
     workflow_status_path = os.path.join(step_dir, "workflow_status.json")
+    if _path_matches_active_dir(step_dir, active_dirs):
+        return "running"
     if _exists_and_nonempty(workflow_status_path):
         try:
             workflow_status = _load_json(workflow_status_path)
         except Exception:
             workflow_status = {}
-        if workflow_status.get("matdyn_phdos") == "finished":
-            return "finished"
-    if _path_matches_active_dir(step_dir, active_dirs):
-        return "running"
-    if _directory_has_any_file(step_dir):
-        return "error"
+        return reduce_qe_phonon_workflow_status(get_case_phonon_workflow(case_dir), workflow_status)
     return "unstarted"
 
 
@@ -430,48 +550,19 @@ def _detect_case_pressure_status(case_dir: str, pressure_key: str, active_dirs: 
     return status_map
 
 
-def _empty_step_counts() -> Dict[str, int]:
-    return {status: 0 for status in STATUS_ORDER}
-
-
 def _build_workflow_summary(output_dir: str, cases: "OrderedDict[str, Dict]") -> Dict:
-    step_totals: "OrderedDict[str, Dict[str, int]]" = OrderedDict()
-    groups: Dict[str, Dict] = OrderedDict()
     case_index: Dict[str, Dict] = OrderedDict()
     for case_rel, case_meta in cases.items():
         case_status = load_case_status(case_meta["case_dir"])
-        step_order = get_case_step_order(case_meta["case_dir"])
-        for step in step_order:
-            step_totals.setdefault(step, _empty_step_counts())
-        group_key = case_meta["period_rel"]
-        group_entry = groups.setdefault(
-            group_key,
-            {
-                "xa_symbol": case_meta["xa_symbol"],
-                "period": case_meta["period_label"],
-                "case_count": 0,
-                "steps": OrderedDict(),
-            },
-        )
-        for step in step_order:
-            group_entry["steps"].setdefault(step, _empty_step_counts())
-        group_entry["case_count"] += 1
         case_index[case_rel] = {
             "formula": case_meta["formula"],
             "xa_symbol": case_meta["xa_symbol"],
             "xb_symbol": case_meta["xb_symbol"],
-            "case_status_path": os.path.relpath(get_case_status_path(case_meta["case_dir"]), os.path.abspath(output_dir)),
+            "input_structure": case_status["input_structure"],
+            "pressures": case_status["pressures"],
         }
-        for pressure_status in case_status["pressures"].values():
-            for step in step_order:
-                step_status = pressure_status[step]
-                step_totals[step][step_status] += 1
-                group_entry["steps"][step][step_status] += 1
     return {
         "root_output_dir": os.path.abspath(output_dir),
-        "total_cases": len(cases),
-        "steps": step_totals,
-        "groups": groups,
         "cases": case_index,
     }
 
@@ -513,11 +604,21 @@ def refresh_status(output_dir: str, squeue_output: Optional[str] = None, squeue_
     return summary
 
 
+def _count_case_pressure_units(workflow_status: Dict) -> Dict[str, int]:
+    counts = {status: 0 for status in STATUS_ORDER}
+    for case_status in workflow_status.get("cases", {}).values():
+        for pressure_status in case_status.get("pressures", {}).values():
+            unit_state = "finished"
+            if any(step_state == "running" for step_state in pressure_status.values()):
+                unit_state = "running"
+            elif any(step_state == "error" for step_state in pressure_status.values()):
+                unit_state = "error"
+            elif any(step_state == "unstarted" for step_state in pressure_status.values()):
+                unit_state = "unstarted"
+            counts[unit_state] += 1
+    return counts
+
+
 def summarize_status(workflow_status: Dict) -> str:
-    lines = [f"总 case 数: {workflow_status['total_cases']}"]
-    for step, counts in workflow_status["steps"].items():
-        lines.append(
-            f"{step}: finished={counts['finished']} running={counts['running']} "
-            f"error={counts['error']} unstarted={counts['unstarted']}"
-        )
-    return "\n".join(lines)
+    total_cases = len(workflow_status.get("cases", {}))
+    return f"总 case 数: {total_cases}"
