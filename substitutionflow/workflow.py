@@ -10,6 +10,7 @@ from substitutionflow.status import (
     case_uses_mattersim,
     create_initial_status,
     discover_cases,
+    get_case_phonon_workflow,
     get_case_step_order,
     load_case_status,
     refresh_status,
@@ -58,6 +59,17 @@ def _build_process_eledos_command(case_dir: str, structure_filename: str) -> Lis
     ]
 
 
+def _build_qe_phonon_command(case_dir: str) -> List[str]:
+    return [
+        get_case_phonon_workflow(case_dir),
+        "-i",
+        "vasp_opt/CONTCAR",
+        "-c",
+        "../input.toml",
+        "-r",
+    ]
+
+
 def _setup_commands(structure_filename: str, pressure) -> Dict[str, List[str]]:
     pressure_key = _pressure_key(pressure)
     return {
@@ -75,6 +87,7 @@ def _run_commands(case_dir: str, structure_filename: str, pressure, use_mattersi
         "vasp_scf": ["vasp_scf", "-i", "vasp_opt/CONTCAR", "-c", "../input.toml", "-r"],
         "vasp_eledos": ["vasp_eledos", "-i", "vasp_scf/POSCAR", "-c", "../input.toml", "-r"],
         "vasp_process_eledos": _build_process_eledos_command(case_dir, structure_filename),
+        "qe_phonon": _build_qe_phonon_command(case_dir),
     }
 
 
@@ -113,7 +126,11 @@ def run_case_pressure(output_dir: str, case_meta: Dict, pressure) -> None:
             continue
         try:
             run_cli_command(commands[step], _step_cwd(case_meta["case_dir"], pressure, step, use_mattersim))
-            refresh_status(output_dir)
+            updated_status = refresh_status(output_dir)
+            case_status = load_case_status(case_meta["case_dir"])
+            step_state = case_status["pressures"][pressure_key][step]
+            if step_state != "finished":
+                break
         except Exception:
             refresh_status(output_dir)
             raise

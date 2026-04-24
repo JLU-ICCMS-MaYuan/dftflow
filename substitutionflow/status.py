@@ -10,8 +10,13 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 from public.config_templates import load_config_file
 
 
-STEP_ORDER = ("mattersim_opt", "vasp_opt", "vasp_scf", "vasp_eledos", "vasp_process_eledos")
+STEP_ORDER = ("mattersim_opt", "vasp_opt", "vasp_scf", "vasp_eledos", "vasp_process_eledos", "qe_phonon")
 STATUS_ORDER = ("finished", "running", "error", "unstarted")
+PHONON_MODE_TO_WORKFLOW = {
+    "nosplit": "qe_phonon_nosplit",
+    "split_index": "qe_phonon_split_index",
+    "split_coords": "qe_phonon_split_coords",
+}
 
 OPT_CONVERGED_MARKER = "reached required accuracy - stopping structural energy minimisation"
 SCF_REQUIRED_MARKERS = (
@@ -33,20 +38,46 @@ def get_case_status_path(case_dir: str) -> str:
 
 
 def case_uses_mattersim(case_dir: str) -> bool:
-    config_path = os.path.join(case_dir, "input.toml")
-    if not os.path.exists(config_path):
-        return False
     try:
-        config = load_config_file(config_path)
+        config = _load_case_config(case_dir)
     except Exception:
         return False
     return "mattersim_opt" in config
+
+
+def _load_case_config(case_dir: str) -> Dict:
+    return load_config_file(os.path.join(case_dir, "input.toml"))
 
 
 def get_case_step_order(case_dir: str) -> Tuple[str, ...]:
     if case_uses_mattersim(case_dir):
         return STEP_ORDER
     return tuple(step for step in STEP_ORDER if step != "mattersim_opt")
+
+
+def get_case_phonon_mode(case_dir: str) -> str:
+    config = _load_case_config(case_dir)
+    substitution_config = config.get("substitutionflow", {})
+    mode = substitution_config.get("phonon_mode", "split_index")
+    if mode is None:
+        mode = "split_index"
+    mode = str(mode).strip()
+    if mode not in PHONON_MODE_TO_WORKFLOW:
+        allowed = ", ".join(PHONON_MODE_TO_WORKFLOW)
+        raise ValueError(f"[substitutionflow].phonon_mode 只允许 {allowed}，当前值为 {mode!r}。")
+    return mode
+
+
+def get_case_phonon_workflow(case_dir: str) -> str:
+    return PHONON_MODE_TO_WORKFLOW[get_case_phonon_mode(case_dir)]
+
+
+def get_case_phonon_workdir(case_dir: str) -> str:
+    config = _load_case_config(case_dir)
+    qe_phonon_config = config.get("qe_phonon", {})
+    if isinstance(qe_phonon_config, dict) and "work_dir" in qe_phonon_config and qe_phonon_config["work_dir"] is not None:
+        return str(qe_phonon_config["work_dir"])
+    return get_case_phonon_workflow(case_dir)
 
 
 def _load_json(path: str) -> Dict:
@@ -362,6 +393,23 @@ def _detect_vasp_process_eledos_status(pressure_dir: str) -> str:
     return "unstarted"
 
 
+def _detect_qe_phonon_status(case_dir: str, pressure_dir: str, active_dirs: Set[str]) -> str:
+    step_dir = os.path.join(pressure_dir, get_case_phonon_workdir(case_dir))
+    workflow_status_path = os.path.join(step_dir, "workflow_status.json")
+    if _exists_and_nonempty(workflow_status_path):
+        try:
+            workflow_status = _load_json(workflow_status_path)
+        except Exception:
+            workflow_status = {}
+        if workflow_status.get("matdyn_phdos") == "finished":
+            return "finished"
+    if _path_matches_active_dir(step_dir, active_dirs):
+        return "running"
+    if _directory_has_any_file(step_dir):
+        return "error"
+    return "unstarted"
+
+
 def _detect_case_pressure_status(case_dir: str, pressure_key: str, active_dirs: Set[str]) -> Dict[str, str]:
     pressure_dir = os.path.join(case_dir, pressure_key)
     step_order = get_case_step_order(case_dir)
@@ -377,6 +425,8 @@ def _detect_case_pressure_status(case_dir: str, pressure_key: str, active_dirs: 
             status_map[step] = _detect_vasp_eledos_status(pressure_dir, active_dirs)
         elif step == "vasp_process_eledos":
             status_map[step] = _detect_vasp_process_eledos_status(pressure_dir)
+        elif step == "qe_phonon":
+            status_map[step] = _detect_qe_phonon_status(case_dir, pressure_dir, active_dirs)
     return status_map
 
 
