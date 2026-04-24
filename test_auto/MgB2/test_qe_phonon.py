@@ -560,6 +560,7 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
         submitted.append((os.path.basename(workdir), script_name))
 
     monkeypatch.setattr(module, "submit_script", fake_submit_script)
+    monkeypatch.setattr(_shared, "submit_script", fake_submit_script)
     module.run_phonon_split_assign_index_workflow("input_qe.toml", "MgB2.vasp", run_calc=False, submit_job=True)
 
     assert submitted == [("qe_phonon_split_index", "submit_pre_stage.sh")]
@@ -578,11 +579,9 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
     submitted.clear()
 
     module.run_phonon_split_assign_index_workflow("input_qe.toml", "MgB2.vasp", run_calc=False, submit_job=True)
-    assert submitted == [("qe_phonon_split_index", "submit_split_stage.sh")]
-    split_script = Path("qe_phonon_split_index/submit_split_stage.sh").read_text(encoding="utf-8")
-    assert "01" in split_script
-    assert "run_split.sh" in split_script
-    assert "run_q2r.sh" not in split_script
+    assert submitted
+    assert all(script_name == "run_split.sh" for _, script_name in submitted)
+    assert {workdir for workdir, _ in submitted} == {"01", "02", "03", "04"}
 
     for q_dir in sorted(path for path in workdir.glob("[0-9][0-9]") if path.is_dir()):
         content = (q_dir / "split_ph.in").read_text(encoding="utf-8")
@@ -616,6 +615,36 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
     assert "bash run_matdyn_phband.sh" in post_script
     assert "bash run_matdyn_phdos.sh" in post_script
     assert "run_merge.sh" not in post_script
+
+
+def test_qe_phonon_split_coords_submit_dispatches_each_q_task_directly(chdir_work, monkeypatch):
+    from qeflow.phonon import _shared
+    from qeflow.phonon import qe_ph_split_assign_coords as split_module
+    from qeflow.phonon import qe_phonon_split_assign_coords as module
+
+    submitted = []
+    monkeypatch.setattr("qeflow.qe_input.builders.run_vaspkit_for_kpath", lambda target_dir: _write_kpath(Path(target_dir) / "KPATH.in"))
+
+    def fake_submit_script(workdir, script_name):
+        submitted.append((os.path.basename(workdir), script_name))
+
+    monkeypatch.setattr(module, "submit_script", fake_submit_script)
+    monkeypatch.setattr(_shared, "submit_script", fake_submit_script)
+    module.run_phonon_split_assign_coords_workflow("input_qe.toml", "MgB2.vasp", run_calc=False, submit_job=False)
+
+    workdir = Path("qe_phonon_split_coords")
+    _write_job_done(workdir / "scf.out")
+    _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
+    _prepare_xml_fixture(Path("."))
+    split_module.prepare_split_assign_coords_step(
+        _shared.create_context("input_qe.toml", "MgB2.vasp", workflow_name="qe_phonon_split_coords")
+    )
+
+    module.run_phonon_split_assign_coords_workflow("input_qe.toml", "MgB2.vasp", run_calc=False, submit_job=True)
+
+    assert submitted
+    assert all(script_name == "run_split.sh" for _, script_name in submitted)
+    assert {workdir_name for workdir_name, _ in submitted} == {"01", "02", "03", "04"}
 
 
 def test_qe_phonon_split_run_merges_then_postprocesses_after_all_q_finished(chdir_work, monkeypatch):

@@ -18,8 +18,8 @@ from qeflow.phonon._shared import (
     root_step_scripts,
     run_root_scripts,
     split_task_needs_run,
+    submit_split_stage_tasks,
     write_aggregate_script,
-    write_split_stage_script,
 )
 from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step
 from qeflow.phonon.qe_matdyn_phdos import prepare_matdyn_phdos_step
@@ -102,8 +102,7 @@ def run_phonon_split_assign_coords_workflow(
                         split_task_no += 1
         elif submit_job and not any_split_task_running(workflow):
             print_stage(2, "提交 split 阶段")
-            aggregate = write_split_stage_script(context, workflow)
-            submit_script(context.workspace, os.path.basename(aggregate))
+            submit_split_stage_tasks(context, workflow)
             print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
             return 0
 

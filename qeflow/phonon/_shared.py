@@ -302,6 +302,19 @@ def write_split_stage_script(context: PhononStepContext, workflow: Dict[str, obj
     )
 
 
+def submit_split_stage_tasks(context: PhononStepContext, workflow: Dict[str, object]) -> int:
+    tasks = workflow.get("tasks", {})
+    submitted = 0
+    if not isinstance(tasks, dict):
+        return submitted
+    for q_name in iter_q_directory_names(context.workspace):
+        task_payload = tasks.get(q_name)
+        if isinstance(task_payload, dict) and task_payload.get("state") not in {"finished", "running"}:
+            submit_script(os.path.join(context.workspace, q_name), "run_split.sh")
+            submitted += 1
+    return submitted
+
+
 def run_root_scripts(context: PhononStepContext, scripts: Iterable[str], labels: Optional[Dict[str, str]] = None, stage_no: int = 1) -> int:
     mapping = labels or {}
     current_stage = stage_no
