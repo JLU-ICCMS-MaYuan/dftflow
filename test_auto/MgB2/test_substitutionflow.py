@@ -2131,13 +2131,15 @@ def test_prepare_qe_pseudo_copies_files_reuses_log_and_updates_case_input(chdir_
     _write_mock_upf(pseudo_root / "Li_b.upf", "Li", 3.0, "1s2 2s1")
     _write_mock_upf(pseudo_root / "Be.upf", "Be", 2.0, "2s2")
     _write_mock_upf(pseudo_root / "B.upf", "B", 3.0, "2s2 2p1")
+    pseudo_root_abs = pseudo_root.resolve()
 
     answers = iter(["2"])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
 
-    log_path = prepare_qe_pseudo_library(str(config_path), "ht_out", str(pseudo_root))
+    os.chdir("ht_out")
+    log_path = prepare_qe_pseudo_library(str(Path("..") / config_path), str(pseudo_root_abs))
 
-    qe_lib_dir = Path("ht_out/qe_pseudo_lib")
+    qe_lib_dir = Path("qe_pseudo_lib")
     assert Path(log_path).exists()
     assert (qe_lib_dir / "Li_b.upf").exists()
     assert (qe_lib_dir / "Be.upf").exists()
@@ -2147,16 +2149,16 @@ def test_prepare_qe_pseudo_copies_files_reuses_log_and_updates_case_input(chdir_
     log_text = Path(log_path).read_text(encoding="utf-8")
     assert "Li = Li_b.upf" in log_text
 
-    case_input = Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").read_text(encoding="utf-8")
-    assert f'pp_dir = "{Path("ht_out/qe_pseudo_lib").resolve()}"' in case_input
+    case_input = Path("03.XA_Li/period_2/04.LiBeH7/input.toml").read_text(encoding="utf-8")
+    assert f'pp_dir = "{Path("qe_pseudo_lib").resolve()}"' in case_input
 
-    qe_case_input = Path("ht_out/03.XA_Li/period_2/03.Li2H7/input.toml").read_text(encoding="utf-8")
-    assert f'pp_dir = "{Path("ht_out/qe_pseudo_lib").resolve()}"' in qe_case_input
+    qe_case_input = Path("03.XA_Li/period_2/03.Li2H7/input.toml").read_text(encoding="utf-8")
+    assert f'pp_dir = "{Path("qe_pseudo_lib").resolve()}"' in qe_case_input
 
-    Path("ht_out/qe_pseudo_lib/qe_pseudo_lib.log").write_text("Li = Li_a.upf\nBe = Be.upf\nB = B.upf\nH = H.upf\n", encoding="utf-8")
+    Path("qe_pseudo_lib/qe_pseudo_lib.log").write_text("Li = Li_a.upf\nBe = Be.upf\nB = B.upf\nH = H.upf\n", encoding="utf-8")
     monkeypatch.setattr("builtins.input", lambda _prompt="": (_ for _ in ()).throw(AssertionError("不应进入交互")))
-    prepare_qe_pseudo_library(str(config_path), "ht_out", str(pseudo_root))
-    assert (qe_lib_dir / "Li_a.upf").read_text(encoding="utf-8") == (pseudo_root / "Li_a.upf").read_text(encoding="utf-8")
+    prepare_qe_pseudo_library(str(Path("..") / config_path), str(pseudo_root_abs))
+    assert (qe_lib_dir / "Li_a.upf").read_text(encoding="utf-8") == (pseudo_root_abs / "Li_a.upf").read_text(encoding="utf-8")
 
 
 def test_prepare_qe_pseudo_supports_qe_phonon_generated_inputs(chdir_work, monkeypatch):
@@ -2182,12 +2184,14 @@ def test_prepare_qe_pseudo_supports_qe_phonon_generated_inputs(chdir_work, monke
     _write_mock_upf(pseudo_root / "Li.upf", "Li", 1.0, "2s1")
     _write_mock_upf(pseudo_root / "Be.upf", "Be", 2.0, "2s2")
     _write_mock_upf(pseudo_root / "B.upf", "B", 3.0, "2s2 2p1")
+    pseudo_root_abs = pseudo_root.resolve()
 
     monkeypatch.setattr("builtins.input", lambda _prompt="": (_ for _ in ()).throw(AssertionError("不应进入交互")))
-    prepare_qe_pseudo_library(str(config_path), "ht_out", str(pseudo_root))
-    expected_qe_dir = str(Path("ht_out/qe_pseudo_lib").resolve())
+    os.chdir("ht_out")
+    prepare_qe_pseudo_library(str(Path("..") / config_path), str(pseudo_root_abs))
+    expected_qe_dir = str(Path("qe_pseudo_lib").resolve())
 
-    pressure_dir = Path("ht_out/03.XA_Li/period_2/03.Li2H7/20")
+    pressure_dir = Path("03.XA_Li/period_2/03.Li2H7/20")
     vasp_opt_dir = pressure_dir / "vasp_opt"
     vasp_opt_dir.mkdir(parents=True, exist_ok=True)
     (vasp_opt_dir / "CONTCAR").write_text(PLACEHOLDER_POSCAR.replace("XB", "Li").replace("XA", "Li"), encoding="utf-8")

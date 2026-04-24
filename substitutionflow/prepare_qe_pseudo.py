@@ -315,8 +315,8 @@ def glob_paths(pattern: str) -> List[str]:
     return glob.glob(pattern)
 
 
-def prepare_qe_pseudo_library(config_file: str, output_dir: str, pseudo_root: str) -> str:
-    output_dir = os.path.abspath(output_dir)
+def prepare_qe_pseudo_library(config_file: str, pseudo_root: str) -> str:
+    output_dir = os.path.abspath(os.getcwd())
     if not os.path.isdir(output_dir):
         raise FileNotFoundError(f"找不到 substitution 输出目录: {output_dir}")
 
@@ -336,11 +336,10 @@ def prepare_qe_pseudo_library(config_file: str, output_dir: str, pseudo_root: st
 def main():
     parser = argparse.ArgumentParser(description="为 substitutionflow 准备本地 qe_pseudo_lib。")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径。")
-    parser.add_argument("-o", "--output-dir", required=True, help="substitution 输出根目录。")
     parser.add_argument("--pp", "--pseudo-dir", dest="pseudo_dir", required=True, help="原始 QE 赝势目录。")
     args = parser.parse_args()
 
-    prepare_qe_pseudo_library(args.config, args.output_dir, args.pseudo_dir)
+    prepare_qe_pseudo_library(args.config, args.pseudo_dir)
 
 
 if __name__ == "__main__":
