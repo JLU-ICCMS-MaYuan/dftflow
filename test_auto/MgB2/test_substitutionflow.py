@@ -870,9 +870,44 @@ def test_create_initial_status_writes_case_detail_workflow_status(chdir_work):
     assert target_case["formula"] == "LiBeH7"
     assert target_case["xa_symbol"] == "Li"
     assert target_case["xb_symbol"] == "Be"
-    assert target_case["input_structure"].endswith("XAXBH7-P63mmc.vasp")
+    assert target_case["input_structure"].endswith("structure.vasp")
     assert target_case["pressures"]["20"]["vasp_opt"] == "unstarted"
     assert target_case["pressures"]["20"]["qe_phonon"] == "unstarted"
+
+
+def test_refresh_status_rewrites_legacy_input_structure_to_local_case_structure(chdir_work):
+    from substitutionflow.status import create_initial_status, refresh_status
+    from substitutionflow.structure_substitution import generate_cases
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config(config_path)
+    config_text = config_path.read_text(encoding="utf-8").replace(
+        'structure_filename = "structure.vasp"',
+        'structure_filename = "XAXBH7-P63mmc.vasp"',
+    )
+    config_path.write_text(config_text, encoding="utf-8")
+
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    manifest_path = Path("ht_out/03.XA_Li/period_2/workflow_manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["input_structure"] = "/old/machine/work/XA_XB_7.vasp"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    case_status_path = Path("ht_out/03.XA_Li/period_2/03.Li2H7/case_status.json")
+    case_status = json.loads(case_status_path.read_text(encoding="utf-8"))
+    case_status["input_structure"] = "/old/machine/work/XA_XB_7.vasp"
+    case_status_path.write_text(json.dumps(case_status, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    workflow_status = refresh_status("ht_out", squeue_output="")
+
+    refreshed_case = json.loads(case_status_path.read_text(encoding="utf-8"))
+    expected_structure = str(Path("ht_out/03.XA_Li/period_2/03.Li2H7/XAXBH7-P63mmc.vasp").resolve())
+    assert refreshed_case["input_structure"] == expected_structure
+    assert workflow_status["cases"]["03.XA_Li/period_2/03.Li2H7"]["input_structure"] == expected_structure
 
 
 def test_build_submit_scripts_only_keeps_remaining_qe_phonon_when_previous_steps_finished(chdir_work, monkeypatch):

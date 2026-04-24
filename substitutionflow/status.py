@@ -51,6 +51,23 @@ def _load_case_config(case_dir: str) -> Dict:
     return load_config_file(os.path.join(case_dir, "input.toml"))
 
 
+def _resolve_case_input_structure(case_dir: str, fallback_input_structure: str) -> str:
+    try:
+        config = _load_case_config(case_dir)
+    except Exception:
+        return fallback_input_structure
+
+    substitution_config = config.get("substitutionflow", {})
+    structure_filename = substitution_config.get("structure_filename", "structure.vasp")
+    if structure_filename is None:
+        return fallback_input_structure
+
+    structure_path = os.path.join(case_dir, str(structure_filename))
+    if os.path.exists(structure_path):
+        return os.path.abspath(structure_path)
+    return fallback_input_structure
+
+
 def get_case_step_order(case_dir: str) -> Tuple[str, ...]:
     if case_uses_mattersim(case_dir):
         return STEP_ORDER
@@ -144,7 +161,7 @@ def build_default_case_status(case_meta: Dict) -> Dict:
         "formula": case_meta["formula"],
         "xa_symbol": case_meta["xa_symbol"],
         "xb_symbol": case_meta["xb_symbol"],
-        "input_structure": case_meta["input_structure"],
+        "input_structure": _resolve_case_input_structure(case_meta["case_dir"], case_meta["input_structure"]),
         "pressures": pressure_status,
     }
 
