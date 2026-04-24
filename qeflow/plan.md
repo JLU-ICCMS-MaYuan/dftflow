@@ -720,3 +720,106 @@ qe_phonon_split_assign_index 在开始计算前会先检查先前的声子计算
   - 模块文件名保持现状，不做 Python 文件重命名；只改 CLI 注册名、默认目录和文档
   - 旧命令不保留兼容别名，不做过渡期策略
   - 配置仍统一放在共享 [qe_phonon] 下，不新增 [qe_ph_full] / [qe_ph_split_coords] / [qe_ph_split_index] 三套独立块
+
+
+
+
+
+
+
+
+
+
+  # qeflow phonon 状态收敛方案（仅收敛状态真源，暂不拆分 _shared.py）
+
+  ## Summary
+
+  将 qe_phonon_split_* 的 split 子任务状态真源统一为 workflow_status.json -> ph.tasks，删除顶层重复的 tasks 字段；本次不拆分 qeflow/phonon/_shared.py，只
+  在现有结构内收敛状态读写边界，确保所有 split 调度、打印和续推逻辑都统一读取 ph.tasks。
+
+  ## Key Changes
+
+  ### 1. 收敛 workflow_status.json 结构
+
+  - workflow_status.json 顶层只保留阶段级状态：
+      - scf
+      - ph
+      - merge
+      - q2r
+      - matdyn_phband
+      - matdyn_phdos
+  - ph 固定为唯一承载 split 详情的对象：
+      - state
+      - dyn0
+      - tasks
+  - ph.tasks 的 value 固定为简单状态字符串：
+      - "01": "running"
+      - "02": "finished"
+  - 删除根级 tasks 字段，不再写入、不再读取、不再测试。
+  - q_XX/task_status.json 继续保留，仍作为子目录局部状态快照。
+
+  ### 2. 统一所有 split 调度代码读取 ph.tasks
+
+  - 修改以下入口和辅助逻辑，统一从 workflow["ph"]["tasks"] 读取 split 子任务状态：
+      - qe_phonon_split_assign_index.py
+      - qe_phonon_split_assign_coords.py
+      - qe_ph_split_assign_index.py
+      - qe_ph_split_assign_coords.py
+      - qe_merge.py
+      - qeflow/phonon/workflow.py
+  - 所有当前读取顶层 workflow["tasks"] 的逻辑全部改为读取 workflow["ph"]["tasks"]。
+  - 若调用侧需要目录名，直接使用 task key 作为目录名，不再存储冗余的 "directory": "01" 包装。
+  - 迭代顺序统一通过 iter_q_directory_names() 或排序后的 ph.tasks.keys()，避免目录发现逻辑散落。
+
+  ### 3. 明确状态刷新责任边界
+
+  - qeflow.qe_check.checks.check_ph() 继续负责生成完整的 ph 对象，包含：
+      - state
+      - dyn0
+      - tasks
+  - refresh_workflow_status() 只负责组装并落盘整个 workflow_status.json，不再额外生成第二份根级 tasks。
+  - refresh_split_task_status() 继续负责刷新每个 q_XX/task_status.json，但返回值与 ph.tasks 一致，统一为简单映射，不再返回 {"directory": ...,
+    "state": ...}。
+  - 若实现时容易收敛，优先提取一个内部共用的 split 状态收集逻辑，供 check_ph() 和 refresh_split_task_status() 共用，避免双重扫描和双份状态组装漂移。
+
+  ### 4. 保持 _shared.py 原地不拆，但清理其状态接口语义
+
+  - 本次不拆分 _shared.py，避免把“状态真源统一”和“模块拆分”两个变更绑在一起。
+  - _shared.py 内部与 split 状态相关的辅助函数统一改读 ph.tasks：
+      - all_split_tasks_finished()
+      - any_split_task_running()
+      - split_task_needs_run()
+      - print_status()
+      - 以及任何其他依赖 split 任务表的辅助逻辑
+  ### 5. 清理低价值重复表达
+  - directory/state 这种包装结构从根级 workflow 中彻底去掉。
+  - task_status.json 仍可保持当前局部文件结构；本次只要求根级 workflow_status.json 不再重复表达相同 split 状态。
+
+  ## Public Interfaces / Behavior
+
+  - workflow_status.json 的公开结构变更：
+      - 删除顶层 tasks
+      - 保留 ph.tasks 作为 split 子任务唯一真源
+  - ph.tasks 的对外语义固定为“q 子任务状态表”，value 为状态字符串。
+  - 不改变现有 CLI 名称、参数和阶段推进顺序。
+  - 不改变 task_status.json 文件名和子目录写出位置。
+
+  ## Test Plan
+
+  - 更新 test_auto/MgB2/test_qe_phonon.py，覆盖以下场景：
+      - refresh_workflow_status() 生成的 JSON 不再包含顶层 tasks
+      - ph.tasks 成为唯一 split 子任务来源
+      - split 工作流在 -r 和 -s 模式下统一从 ph.tasks 推进
+      - print_status() 仍能正确打印各 q 子任务状态
+      - all_split_tasks_finished()、any_split_task_running()、split_task_needs_run() 改读 ph.tasks 后行为不变
+      - merge 前置判定、post 阶段推进、split 阶段提交数量在结构收敛后不回归
+  - 增加一个回归测试锁定旧重复结构不会再出现：
+      - 断言 workflow_status.json 中不存在根级 tasks
+      - 断言 ph.tasks 为唯一 split 子任务来源
+  - 调整现有依赖 workflow["tasks"] 的测试夹具和断言，使其全部切换到 workflow["ph"]["tasks"]。
+
+  ## Assumptions
+
+  - ph.tasks 继续使用 "01" -> "running" 这种简单映射，不展开成 dyn1/dyn2/... 字段。
+  - split 子目录名与 task key 一一对应，调用方无需额外目录字段。
+  - 本次只做“状态真源统一”，不顺带拆模块、不改 CLI 语义、不调整 QE 物理流程。

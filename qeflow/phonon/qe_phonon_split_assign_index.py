@@ -10,6 +10,7 @@ from qeflow.phonon._shared import (
     create_context,
     dyn0_state,
     merge_state,
+    ph_tasks,
     prepare_root_scf_step,
     print_stage,
     print_status,
@@ -90,16 +91,14 @@ def run_phonon_split_assign_index_workflow(
 
     if split_task_needs_run(workflow):
         if run_calc:
-            tasks = workflow.get("tasks", {})
-            if isinstance(tasks, dict):
-                split_task_no = 1
-                for q_name in sorted(tasks):
-                    task_payload = tasks[q_name]
-                    if isinstance(task_payload, dict) and task_payload.get("state") != "finished":
-                        print_stage(f"3_{split_task_no}", f"运行 split 任务 {q_name}")
-                        split_run_shell("bash run_split.sh", os.path.join(context.workspace, q_name))
-                        workflow = refresh_workflow_status(context.workspace, context.prefix)
-                        split_task_no += 1
+            tasks = ph_tasks(workflow)
+            split_task_no = 1
+            for q_name in sorted(tasks):
+                if tasks.get(q_name) != "finished":
+                    print_stage(f"3_{split_task_no}", f"运行 split 任务 {q_name}")
+                    split_run_shell("bash run_split.sh", os.path.join(context.workspace, q_name))
+                    workflow = refresh_workflow_status(context.workspace, context.prefix)
+                    split_task_no += 1
         elif submit_job and not any_split_task_running(workflow):
             print_stage(2, "提交 split 阶段")
             submit_split_stage_tasks(context, workflow)

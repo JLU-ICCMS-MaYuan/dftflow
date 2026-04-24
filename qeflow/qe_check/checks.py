@@ -108,6 +108,24 @@ def _load_q_index_mode(workdir: str) -> str:
     return str(mode) if isinstance(mode, str) else ""
 
 
+def collect_split_task_states(workdir: str, running_dirs: Optional[Set[str]] = None) -> Dict[str, str]:
+    running = running_dirs or get_running_workdirs()
+    entries = _load_q_index_entries(workdir)
+    q_names: List[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        q_name = str(entry.get("directory", "")).strip()
+        if q_name:
+            q_names.append(q_name)
+    if not q_names:
+        q_names = sorted(os.path.basename(q_dir) for q_dir in list_split_directories(workdir))
+    return {
+        q_name: check_split_task(os.path.join(workdir, q_name), running)
+        for q_name in q_names
+    }
+
+
 def _resolve_merged_ph_root(workdir: str) -> str:
     tmp_ph0 = os.path.join(workdir, "tmp", "_ph0")
     if os.path.isdir(tmp_ph0) or os.path.isdir(os.path.join(workdir, "tmp")):
@@ -247,8 +265,8 @@ def check_ph(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None)
     dyn0_path = os.path.join(workdir, f"{prefix}.dyn0")
     dyn0_ready = os.path.exists(dyn0_path) and os.path.getsize(dyn0_path) > 0
     root_ph = PhOut(os.path.join(workdir, "ph.out"))
-    split_dirs = list_split_directories(workdir)
-    if not split_dirs:
+    task_states = collect_split_task_states(workdir, running)
+    if not task_states:
         if os.path.abspath(workdir) in running:
             state = "running"
         elif dyn0_ready and root_ph.is_finished():
@@ -267,10 +285,6 @@ def check_ph(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None)
             "tasks": {},
         }
 
-    task_states = {
-        os.path.basename(q_dir): check_split_task(q_dir, running)
-        for q_dir in split_dirs
-    }
     unique_states = set(task_states.values())
     if task_states and unique_states == {"finished"}:
         state = "finished"

@@ -933,3 +933,100 @@ def test_qe_ph_split_submit_stops_when_local_merge_fails(chdir_work, monkeypatch
 
     assert result == 1
     assert submitted == []
+
+
+def test_refresh_workflow_status_uses_ph_tasks_as_only_split_source(chdir_work):
+    from qeflow.phonon import _shared
+    from qeflow.phonon import qe_ph_split_assign_index as split_module
+    from qeflow.qe_input.fileio import load_json
+
+    workdir = Path("qe_phonon")
+    workdir.mkdir()
+    Path("MgB2.vasp").replace(workdir / "POSCAR")
+    Path("input_qe.toml").replace(workdir / "input.toml")
+    _prepare_xml_fixture(Path("."))
+    _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
+    _write_job_done(workdir / "scf.out")
+    split_module.prepare_split_assign_index_step(_shared.create_context(str(workdir / "input.toml"), None))
+
+    entries = _shared.load_q_index_entries(str(workdir))
+    first_q_dir = workdir / str(entries[0]["directory"])
+    _write_job_done(first_q_dir / "scf.out")
+    _write_job_done(first_q_dir / "split_ph.out")
+
+    status = _shared.refresh_workflow_status(str(workdir), "Mg1B2")
+    payload = load_json(str(workdir / "workflow_status.json"))
+
+    assert "tasks" not in status
+    assert "tasks" not in payload
+    assert status["ph"]["tasks"] == {"01": "finished", "02": "unstarted", "03": "unstarted", "04": "unstarted"}
+    assert payload["ph"]["tasks"] == status["ph"]["tasks"]
+
+
+def test_split_task_helpers_and_print_status_read_ph_tasks_only(chdir_work, capsys):
+    from qeflow.phonon import _shared
+
+    workflow = {
+        "scf": "finished",
+        "ph": {
+            "state": "running",
+            "dyn0": "finished",
+            "tasks": {
+                "01": "finished",
+                "02": "running",
+            },
+        },
+        "merge": "unstarted",
+        "q2r": "unstarted",
+        "matdyn_phband": "unstarted",
+        "matdyn_phdos": "unstarted",
+    }
+
+    assert _shared.all_split_tasks_finished(workflow) is False
+    assert _shared.any_split_task_running(workflow) is True
+    assert _shared.split_task_needs_run(workflow) is True
+
+    _shared.print_status("Mg1B2", workflow)
+    output = capsys.readouterr().out
+    assert "01: finished" in output
+    assert "02: running" in output
+    assert "prefix: Mg1B2" in output
+
+
+def test_write_split_stage_script_and_submit_use_ph_tasks_states(chdir_work, monkeypatch):
+    from qeflow.phonon import _shared
+
+    workdir = Path("qe_phonon")
+    workdir.mkdir()
+    for q_name in ("01", "02", "03"):
+        q_dir = workdir / q_name
+        q_dir.mkdir()
+        (q_dir / "run_split.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+    (workdir / "q_index_map.json").write_text(
+        '{"mode":"split_assign_index","qpoints":[{"directory":"01","index":1},{"directory":"02","index":2},{"directory":"03","index":3}]}',
+        encoding="utf-8",
+    )
+
+    context = _shared.create_context("input_qe.toml", "MgB2.vasp")
+    context.workspace = str(workdir)
+    context.config["slurm"]["header"] = ""
+    workflow = {
+        "ph": {
+            "tasks": {
+                "01": "finished",
+                "02": "running",
+                "03": "error",
+            }
+        }
+    }
+
+    script = _shared.write_split_stage_script(context, workflow)
+    content = Path(script).read_text(encoding="utf-8")
+    assert "cd 03" in content
+    assert "cd 01" not in content
+    assert "cd 02" not in content
+
+    submitted = []
+    monkeypatch.setattr(_shared, "submit_script", lambda cwd, script_name: submitted.append((os.path.basename(cwd), script_name)))
+    assert _shared.submit_split_stage_tasks(context, workflow) == 1
+    assert submitted == [("03", "run_split.sh")]

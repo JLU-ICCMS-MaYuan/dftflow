@@ -6,7 +6,14 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional
 
 from public.job import submit_script
-from qeflow.qe_check.checks import check_merge, check_ph, check_q2r, check_scf, summarize_task_states
+from qeflow.qe_check.checks import (
+    check_merge,
+    check_ph,
+    check_q2r,
+    check_scf,
+    collect_split_task_states,
+    summarize_task_states,
+)
 from qeflow.qe_input.builders import (
     build_qe_commands,
     parse_poscar,
@@ -14,7 +21,7 @@ from qeflow.qe_input.builders import (
     write_root_run_script,
     write_scf_input,
 )
-from qeflow.qe_input.fileio import dump_json, list_split_directories, load_json, resolve_workspace
+from qeflow.qe_input.fileio import dump_json, load_json, resolve_workspace
 
 
 WORKFLOW_STATUS_FILE = "workflow_status.json"
@@ -141,23 +148,30 @@ def iter_q_directory_names(workspace: str) -> List[str]:
     return names
 
 
-def refresh_split_task_status(workspace: str) -> Dict[str, Dict[str, str]]:
-    from qeflow.qe_check.checks import check_split_task, get_running_workdirs
+def ph_tasks(workflow: Dict[str, object]) -> Dict[str, str]:
+    ph_payload = workflow.get("ph", {})
+    if not isinstance(ph_payload, dict):
+        return {}
+    tasks = ph_payload.get("tasks", {})
+    if not isinstance(tasks, dict):
+        return {}
+    return {
+        str(q_name): str(state)
+        for q_name, state in tasks.items()
+        if isinstance(q_name, str) and isinstance(state, str)
+    }
+
+
+def refresh_split_task_status(workspace: str) -> Dict[str, str]:
+    from qeflow.qe_check.checks import get_running_workdirs
 
     running = get_running_workdirs()
-    task_payload: Dict[str, Dict[str, str]] = {}
-    q_names = iter_q_directory_names(workspace)
-    if not q_names:
-        q_names = [os.path.basename(q_dir) for q_dir in list_split_directories(workspace)]
-    for q_name in q_names:
+    task_states = collect_split_task_states(workspace, running)
+    for q_name, state in task_states.items():
         q_dir = os.path.join(workspace, q_name)
-        payload = {
-            "directory": q_name,
-            "state": check_split_task(q_dir, running),
-        }
+        payload = {"directory": q_name, "state": state}
         dump_json(os.path.join(q_dir, TASK_STATUS_FILE), payload)
-        task_payload[q_name] = payload
-    return task_payload
+    return task_states
 
 
 def refresh_workflow_status(workspace: str, prefix: str) -> Dict[str, object]:
@@ -182,7 +196,7 @@ def refresh_workflow_status(workspace: str, prefix: str) -> Dict[str, object]:
             running_dirs=running,
         ),
     }
-    workflow["tasks"] = refresh_split_task_status(workspace)
+    workflow["ph"]["tasks"] = refresh_split_task_status(workspace)
     dump_json(os.path.join(workspace, WORKFLOW_STATUS_FILE), workflow)
     return workflow
 
@@ -202,30 +216,24 @@ def merge_state(workflow: Dict[str, object]) -> str:
 
 
 def all_split_tasks_finished(workflow: Dict[str, object]) -> bool:
-    tasks = workflow.get("tasks", {})
-    if not isinstance(tasks, dict) or not tasks:
+    tasks = ph_tasks(workflow)
+    if not tasks:
         return False
-    return summarize_task_states(
-        str(task["state"]) for task in tasks.values() if isinstance(task, dict)
-    ) == "finished"
+    return summarize_task_states(tasks.values()) == "finished"
 
 
 def any_split_task_running(workflow: Dict[str, object]) -> bool:
-    tasks = workflow.get("tasks", {})
-    if not isinstance(tasks, dict) or not tasks:
+    tasks = ph_tasks(workflow)
+    if not tasks:
         return False
-    return summarize_task_states(
-        str(task["state"]) for task in tasks.values() if isinstance(task, dict)
-    ) == "running"
+    return summarize_task_states(tasks.values()) == "running"
 
 
 def split_task_needs_run(workflow: Dict[str, object]) -> bool:
-    tasks = workflow.get("tasks", {})
-    if not isinstance(tasks, dict) or not tasks:
+    tasks = ph_tasks(workflow)
+    if not tasks:
         return False
-    return summarize_task_states(
-        str(task["state"]) for task in tasks.values() if isinstance(task, dict)
-    ) != "finished"
+    return summarize_task_states(tasks.values()) != "finished"
 
 
 def print_status(prefix: str, workflow: Dict[str, object]) -> None:
@@ -238,12 +246,10 @@ def print_status(prefix: str, workflow: Dict[str, object]) -> None:
     print(f"q2r: {workflow['q2r']}")
     print(f"matdyn_phband: {workflow['matdyn_phband']}")
     print(f"matdyn_phdos: {workflow['matdyn_phdos']}")
-    tasks = workflow.get("tasks", {})
-    if isinstance(tasks, dict) and tasks:
+    tasks = ph_tasks(workflow)
+    if tasks:
         for q_name in sorted(tasks):
-            task_payload = tasks[q_name]
-            if isinstance(task_payload, dict):
-                print(f"{q_name}: {task_payload.get('state', 'unstarted')}")
+            print(f"{q_name}: {tasks.get(q_name, 'unstarted')}")
     print(f"prefix: {prefix}")
 
 
@@ -287,13 +293,12 @@ def write_aggregate_script(context: PhononStepContext, script_name: str, scripts
 
 
 def write_split_stage_script(context: PhononStepContext, workflow: Dict[str, object]) -> str:
-    tasks = workflow.get("tasks", {})
+    tasks = ph_tasks(workflow)
     commands: List[str] = []
-    if isinstance(tasks, dict):
-        for q_name in iter_q_directory_names(context.workspace):
-            task_payload = tasks.get(q_name)
-            if isinstance(task_payload, dict) and task_payload.get("state") not in {"finished", "running"}:
-                commands.append(f"(cd {shlex.quote(q_name)} && bash run_split.sh)")
+    for q_name in iter_q_directory_names(context.workspace):
+        state = tasks.get(q_name)
+        if state not in {"finished", "running"}:
+            commands.append(f"(cd {shlex.quote(q_name)} && bash run_split.sh)")
     return write_root_run_script(
         context.workspace,
         "submit_split_stage.sh",
@@ -303,13 +308,11 @@ def write_split_stage_script(context: PhononStepContext, workflow: Dict[str, obj
 
 
 def submit_split_stage_tasks(context: PhononStepContext, workflow: Dict[str, object]) -> int:
-    tasks = workflow.get("tasks", {})
+    tasks = ph_tasks(workflow)
     submitted = 0
-    if not isinstance(tasks, dict):
-        return submitted
     for q_name in iter_q_directory_names(context.workspace):
-        task_payload = tasks.get(q_name)
-        if isinstance(task_payload, dict) and task_payload.get("state") not in {"finished", "running"}:
+        state = tasks.get(q_name)
+        if state not in {"finished", "running"}:
             submit_script(os.path.join(context.workspace, q_name), "run_split.sh")
             submitted += 1
     return submitted
