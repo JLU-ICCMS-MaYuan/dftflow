@@ -531,7 +531,9 @@ def rewrite_workflow_states(output_dir: str) -> str:
 
 
 def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = False) -> str:
-    refresh_status(output_dir)
+    if not run_calc and not submit:
+        return summarize_status(refresh_status(output_dir))
+
     cases = discover_cases(output_dir)
     for case_meta in cases.values():
         case_meta["structure_filename"] = _infer_structure_filename(case_meta["case_dir"])
@@ -544,9 +546,6 @@ def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = Fa
                 except Exception:
                     continue
         return summarize_status(refresh_status(output_dir))
-
-    if not submit:
-        return summarize_status(load_workflow_status(output_dir))
 
     submit_groups = _load_submit_groups_from_output_dir(output_dir)
     script_bundle = build_submit_scripts(output_dir, submit_groups, refresh_before=False)

@@ -15,7 +15,7 @@ def main():
         action="store_true",
         help="先按真实状态刷新，再把全部 error 重置为 unstarted，并修复残留 qe_phonon_* 目录的 input.toml/POSCAR。",
     )
-    add_run_submit_arguments(parser, "检查后顺序续算缺失任务", "检查后按分组提交缺失任务脚本")
+    add_run_submit_arguments(parser, "从现有状态文件的第一个非 finished 步骤开始顺序续算", "从现有状态文件的第一个非 finished 步骤开始按分组提交缺失任务脚本")
     args = parser.parse_args()
 
     if args.rewrite_states and (args.run or args.submit):

@@ -1137,6 +1137,13 @@ def test_continue_does_not_advance_to_qe_phonon_when_previous_step_error(chdir_w
 
     calls = []
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", lambda command, cwd: calls.append((command, cwd)))
+    original_discover_cases = __import__("substitutionflow.workflow", fromlist=["discover_cases"]).discover_cases
+
+    def only_target_case(output_dir):
+        cases = original_discover_cases(output_dir)
+        return {key: value for key, value in cases.items() if Path(value["case_dir"]).resolve() == case_dir.resolve()}
+
+    monkeypatch.setattr("substitutionflow.workflow.discover_cases", only_target_case)
 
     continue_workflow("ht_out", run_calc=True, submit=False)
 
@@ -1419,7 +1426,7 @@ def test_continue_workflow_after_rewrite_states_advances_from_first_unfinished_s
     assert all(command[0] != "vasp_opt" for command, _ in target_calls)
 
 
-def test_continue_workflow_run_refreshes_real_status_before_blocking_error(chdir_work, monkeypatch):
+def test_continue_workflow_run_uses_existing_status_without_pre_refresh(chdir_work, monkeypatch):
     from substitutionflow.status import create_initial_status, load_case_status
     from substitutionflow.structure_substitution import generate_cases
     from substitutionflow.workflow import continue_workflow
@@ -1450,16 +1457,25 @@ def test_continue_workflow_run_refreshes_real_status_before_blocking_error(chdir
 
     calls = []
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", lambda command, cwd: calls.append((command, cwd)))
+    import substitutionflow.workflow as workflow_module
+
+    original_discover_cases = workflow_module.discover_cases
+
+    def only_target_case(output_dir):
+        cases = original_discover_cases(output_dir)
+        return {key: value for key, value in cases.items() if Path(value["case_dir"]).resolve() == case_dir.resolve()}
+
+    monkeypatch.setattr(workflow_module, "discover_cases", only_target_case)
 
     continue_workflow("ht_out", run_calc=True, submit=False)
 
     target_calls = [(command, cwd) for command, cwd in calls if Path(cwd).resolve() == pressure_dir.resolve()]
-    assert target_calls == []
+    assert [command[0] for command, _ in target_calls] == ["vasp_eledos"]
     updated_case = load_case_status(str(case_dir))
     assert updated_case["pressures"]["20"]["vasp_scf"] == "error"
 
 
-def test_continue_workflow_submit_refreshes_real_status_before_collecting_units(chdir_work, monkeypatch):
+def test_continue_workflow_submit_uses_existing_status_without_pre_refresh(chdir_work, monkeypatch):
     from substitutionflow.status import create_initial_status, load_case_status
     from substitutionflow.structure_substitution import generate_cases
     from substitutionflow.workflow import continue_workflow
@@ -1506,7 +1522,43 @@ def test_continue_workflow_submit_refreshes_real_status_before_collecting_units(
     target_index = script_lines.index(target_cd)
     assert "总未完成单元数" in summary
     assert submitted == [("ht_out", "submit_group_01.sh")]
-    assert script_lines[target_index + 1].startswith("vasp_scf ")
+    assert script_lines[target_index + 1].startswith("vasp_eledos ")
+
+
+def test_continue_workflow_default_mode_refreshes_status_summary(chdir_work):
+    from substitutionflow.status import create_initial_status, load_case_status
+    from substitutionflow.structure_substitution import generate_cases
+    from substitutionflow.workflow import continue_workflow
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    pressure_dir = Path("ht_out/03.XA_Li/period_2/04.LiBeH7/20")
+    case_dir = pressure_dir.parent
+    case_status = load_case_status(str(case_dir))
+    case_status["pressures"]["20"]["vasp_opt"] = "finished"
+    case_status["pressures"]["20"]["vasp_scf"] = "finished"
+    (case_dir / "case_status.json").write_text(json.dumps(case_status, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    opt_dir = pressure_dir / "vasp_opt"
+    opt_dir.mkdir(parents=True, exist_ok=True)
+    (opt_dir / "CONTCAR").write_text("contcar\n", encoding="utf-8")
+    _write_opt_outcar(opt_dir / "OUTCAR", converged=True)
+    scf_dir = pressure_dir / "vasp_scf"
+    scf_dir.mkdir(parents=True, exist_ok=True)
+    (scf_dir / "CHGCAR").write_text("chg\n", encoding="utf-8")
+    (scf_dir / "WAVECAR").write_text("wav\n", encoding="utf-8")
+    _write_scf_like_outcar(scf_dir / "OUTCAR", converged=False)
+
+    summary = continue_workflow("ht_out", run_calc=False, submit=False)
+
+    updated_case = load_case_status(str(case_dir))
+    assert "总 case 数" in summary
+    assert updated_case["pressures"]["20"]["vasp_scf"] == "error"
 
 def test_continue_workflow_run_prints_case_pressure_step_progress(chdir_work, monkeypatch):
     from substitutionflow.status import create_initial_status

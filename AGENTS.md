@@ -24,6 +24,17 @@
 
 ## 需求处理记录
 
+### [2026-04-25] 收紧 substitution_continue 的 refresh 边界到默认摘要模式
+- **需求**：
+    1. `substitution_continue -r` 与 `substitution_continue -s` 语义统一，二者都只从每个 pressure 当前状态文件中的第一个非 `finished` 步骤开始推进。
+    2. `-r/-s` 不再在入口自动执行 `refresh_status()`；真实刷新只保留给默认无参数模式。
+    3. 默认执行 `substitution_continue -o <dir>` 时，仍需先真实刷新再输出摘要，作为手工校准状态的专用入口。
+- **方案**：
+    1. 修改 `substitutionflow/workflow.py` 中的 `continue_workflow()`，将无条件入口刷新改为仅在 `run_calc=False` 且 `submit=False` 时执行。
+    2. 保持 `-r` 执行过程中的步后刷新不变，只删除运行前的预刷新；`-s` 继续基于现有状态文件收集待提交单元，不再预刷新。
+    3. 更新 `substitutionflow/cli_continue.py`、`README.md` 和 `test_auto/MgB2/test_substitutionflow.py`，把帮助文本、文档和回归测试同步收敛到新的 refresh 边界。
+- **状态**：已完成。
+
 ### [2026-04-25] 删除 substitution_prepare_qe_pseudo 的 case pp_dir 自动回写
 - **需求**：
     1. `substitution_prepare_qe_pseudo` 不再批量修改各 case `input.toml` 的 `pp_dir`。
