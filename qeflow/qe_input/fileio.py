@@ -5,6 +5,7 @@ import shutil
 from typing import Any, Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
+from qeflow.common import normalize_qe_config_paths
 from qeflow.templates import (
     apply_qe_config_overrides,
     get_qe_phonon_allowed_keys,
@@ -14,11 +15,12 @@ from qeflow.templates import (
 
 def load_phonon_config(config_file: str) -> Dict[str, Any]:
     template = get_qe_phonon_parameters_template()
-    return apply_qe_config_overrides(
+    config = apply_qe_config_overrides(
         template,
         load_config_file(config_file),
         get_qe_phonon_allowed_keys(),
     )
+    return normalize_qe_config_paths(config, config_file=config_file)
 
 
 WORKFLOW_DEFAULT_WORKDIRS = {
@@ -76,6 +78,7 @@ def resolve_workspace(
         raw_config,
         get_qe_phonon_allowed_keys(),
     )
+    config = normalize_qe_config_paths(config, config_file=config_file)
     qe_phonon_raw = raw_config.get("qe_phonon", {})
     has_explicit_work_dir = isinstance(qe_phonon_raw, dict) and "work_dir" in qe_phonon_raw
     if has_explicit_work_dir:

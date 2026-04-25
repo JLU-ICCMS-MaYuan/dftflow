@@ -8,6 +8,7 @@ from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
 import numpy as np
 from public.config_templates import load_config_file
+from qeflow.common import normalize_qe_config_paths
 from qeflow.templates import (
     apply_qe_config_overrides,
     get_qe_eledos_allowed_keys,
@@ -43,6 +44,7 @@ class QEEleDosSetup:
         self.config = apply_qe_config_overrides(
             self.parameter_template, self.input_config, get_qe_eledos_allowed_keys()
         )
+        self.config = normalize_qe_config_paths(self.config, config_file=config_file)
         self.struct_file = struct_file
         self.cli_config = copy.deepcopy(self.config["qe_eledos"])
         self.qe_params = {

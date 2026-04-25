@@ -7,7 +7,6 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from public.config_templates import load_config_file
 from qeflow.common import extract_pseudo_element_token
 from substitutionflow.prepare_potcar import ORBITAL_LABELS
 from substitutionflow.prepare_potcar import (
@@ -15,7 +14,6 @@ from substitutionflow.prepare_potcar import (
     parse_selection_file,
 )
 from substitutionflow.selection import symbol_to_atomic_number
-from substitutionflow.structure_substitution import dump_toml
 
 
 QE_PSEUDO_LIB_DIRNAME = "qe_pseudo_lib"
@@ -294,27 +292,6 @@ def copy_selected_qe_pseudos(selected: Dict[str, QePseudoCandidate], output_dir:
     return get_qe_log_path(output_dir)
 
 
-def update_case_input_pp_dir(case_input_path: str, output_dir: str) -> None:
-    shared_dir = get_qe_pseudo_lib_dir(os.path.abspath(output_dir))
-    config = load_config_file(case_input_path)
-    config["pp_dir"] = shared_dir
-    with open(case_input_path, "w", encoding="utf-8") as f:
-        f.write(dump_toml(config).strip() + "\n")
-
-
-def update_case_inputs_with_qe_pp_dir(output_dir: str) -> None:
-    output_dir = os.path.abspath(output_dir)
-    pattern = os.path.join(output_dir, "*", "period_*", "*", "input.toml")
-    for case_input_path in sorted(path for path in glob_paths(pattern)):
-        update_case_input_pp_dir(case_input_path, output_dir)
-
-
-def glob_paths(pattern: str) -> List[str]:
-    import glob
-
-    return glob.glob(pattern)
-
-
 def prepare_qe_pseudo_library(config_file: str, pseudo_root: str) -> str:
     output_dir = os.path.abspath(os.getcwd())
     if not os.path.isdir(output_dir):
@@ -327,7 +304,6 @@ def prepare_qe_pseudo_library(config_file: str, pseudo_root: str) -> str:
     preselected = load_existing_qe_selections(output_dir)
     selected = select_qe_candidates(candidate_groups, output_dir, preselected=preselected)
     log_path = copy_selected_qe_pseudos(selected, output_dir)
-    update_case_inputs_with_qe_pp_dir(output_dir)
     print(f"已生成 {get_qe_pseudo_lib_dir(output_dir)}")
     print(f"已写入 QE 赝势选择记录: {log_path}")
     return log_path

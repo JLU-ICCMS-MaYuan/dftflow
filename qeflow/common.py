@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import copy
 import os
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -23,6 +24,46 @@ def extract_pseudo_element_token(filename: str) -> str:
     basename = os.path.basename(filename)
     match = re.match(r"([A-Za-z]+)", basename)
     return match.group(1) if match else ""
+
+
+def resolve_pp_dir_path(pp_dir: Optional[str], config_file: Optional[str] = None) -> Optional[str]:
+    if not pp_dir:
+        return pp_dir
+    expanded = os.path.expanduser(str(pp_dir))
+    if os.path.isabs(expanded):
+        return expanded
+
+    candidates: List[str] = []
+    cwd_candidate = os.path.abspath(expanded)
+    candidates.append(cwd_candidate)
+
+    if config_file:
+        config_dir = os.path.dirname(os.path.abspath(config_file))
+        candidates.append(os.path.abspath(os.path.join(config_dir, expanded)))
+        current_dir = config_dir
+        while True:
+            parent_dir = os.path.dirname(current_dir)
+            if parent_dir == current_dir:
+                break
+            candidates.append(os.path.abspath(os.path.join(parent_dir, expanded)))
+            current_dir = parent_dir
+
+    seen = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if os.path.isdir(candidate):
+            return candidate
+    return candidates[0]
+
+
+def normalize_qe_config_paths(config: Dict[str, Any], config_file: Optional[str] = None) -> Dict[str, Any]:
+    normalized = copy.deepcopy(config)
+    normalized_pp_dir = resolve_pp_dir_path(normalized.get("pp_dir"), config_file=config_file)
+    if normalized_pp_dir:
+        normalized["pp_dir"] = normalized_pp_dir
+    return normalized
 
 
 def find_pseudo_file(pp_dir: Optional[str], element: str) -> str:
