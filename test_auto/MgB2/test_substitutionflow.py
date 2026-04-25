@@ -1346,6 +1346,8 @@ def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_inputs(chdi
     assert qe_workflow_status["ph"]["tasks"]["q_0002"] == "finished"
     assert repaired_poscar == "fresh contcar\n"
     assert (qe_dir / "scf.in").exists()
+    assert "刷新状态:" in rewritten_output
+    assert "重写状态:" in rewritten_output
 
 
 def test_continue_workflow_after_rewrite_states_advances_from_first_unfinished_step(chdir_work, monkeypatch):
@@ -1554,11 +1556,15 @@ def test_continue_workflow_default_mode_refreshes_status_summary(chdir_work):
     (scf_dir / "WAVECAR").write_text("wav\n", encoding="utf-8")
     _write_scf_like_outcar(scf_dir / "OUTCAR", converged=False)
 
-    summary = continue_workflow("ht_out", run_calc=False, submit=False)
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        summary = continue_workflow("ht_out", run_calc=False, submit=False)
 
     updated_case = load_case_status(str(case_dir))
+    progress_output = buffer.getvalue()
     assert "总 case 数" in summary
     assert updated_case["pressures"]["20"]["vasp_scf"] == "error"
+    assert "刷新状态:" in progress_output
 
 def test_continue_workflow_run_prints_case_pressure_step_progress(chdir_work, monkeypatch):
     from substitutionflow.status import create_initial_status
