@@ -3,6 +3,7 @@ import glob
 import json
 import os
 import re
+import sys
 from collections import OrderedDict
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -474,6 +475,24 @@ def _build_workflow_summary(output_dir: str, cases: "OrderedDict[str, Dict]") ->
     }
 
 
+def _render_progress_bar(current: int, total: int, width: int = 24) -> str:
+    safe_total = max(total, 1)
+    clamped_current = min(max(current, 0), safe_total)
+    filled = int(width * clamped_current / safe_total)
+    return f"[{'#' * filled}{'-' * (width - filled)}] {clamped_current}/{safe_total}"
+
+
+def _print_case_progress(stage: str, current: int, total: int, case_meta: Optional[Dict] = None) -> None:
+    label = _render_progress_bar(current, total)
+    details = ""
+    if case_meta is not None:
+        details = f" {case_meta.get('formula', '')} {case_meta.get('case_display_rel', case_meta.get('case_rel', ''))}".rstrip()
+    sys.stdout.write(f"\r{stage}: {label}{details}")
+    if current >= max(total, 1):
+        sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
 def save_workflow_status(output_dir: str, workflow_status: Dict) -> None:
     _save_json(get_workflow_status_path(output_dir), workflow_status)
 
@@ -491,9 +510,17 @@ def create_initial_status(output_dir: str) -> Dict:
     return summary
 
 
-def refresh_status(output_dir: str, squeue_output: Optional[str] = None, squeue_user: Optional[str] = None) -> Dict:
+def refresh_status(
+    output_dir: str,
+    squeue_output: Optional[str] = None,
+    squeue_user: Optional[str] = None,
+    show_progress: bool = False,
+) -> Dict:
     cases = discover_cases(output_dir)
-    for case_meta in cases.values():
+    total_cases = len(cases)
+    for index, case_meta in enumerate(cases.values(), start=1):
+        if show_progress:
+            _print_case_progress("刷新状态", index, total_cases, case_meta)
         case_status = _ensure_case_status_file(case_meta)
         updated = {
             "formula": case_status["formula"],

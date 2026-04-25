@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import json
+import sys
 from typing import Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
@@ -156,6 +157,19 @@ def _print_progress(
         line += " " + " ".join(extra_parts)
     line += f" case:{case_display_path}"
     print(line)
+
+
+def _print_case_stage_progress(stage: str, current: int, total: int, case_meta: Dict) -> None:
+    safe_total = max(total, 1)
+    width = 24
+    filled = int(width * min(current, safe_total) / safe_total)
+    bar = f"[{'#' * filled}{'-' * (width - filled)}] {min(current, safe_total)}/{safe_total}"
+    sys.stdout.write(
+        f"\r{stage}: {bar} {case_meta['formula']} {case_meta['case_display_rel']}"
+    )
+    if current >= safe_total:
+        sys.stdout.write("\n")
+    sys.stdout.flush()
 
 
 def run_case_pressure(output_dir: str, case_meta: Dict, pressure, refresh_before: bool = True) -> None:
@@ -484,13 +498,15 @@ def _rewrite_qe_phonon_workflow_status_errors(case_dir: str, pressure_key: str) 
 
 
 def rewrite_workflow_states(output_dir: str) -> str:
-    refresh_status(output_dir)
+    refresh_status(output_dir, show_progress=True)
     cases = discover_cases(output_dir)
     rewritten_count = 0
     rewritten_qe_count = 0
     repaired_pressures = 0
 
-    for case_meta in cases.values():
+    total_cases = len(cases)
+    for index, case_meta in enumerate(cases.values(), start=1):
+        _print_case_stage_progress("重写状态", index, total_cases, case_meta)
         case_status = load_case_status(case_meta["case_dir"])
         step_order = get_case_step_order(case_meta["case_dir"])
         rewritten_pressures = set()
@@ -532,7 +548,7 @@ def rewrite_workflow_states(output_dir: str) -> str:
 
 def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = False) -> str:
     if not run_calc and not submit:
-        return summarize_status(refresh_status(output_dir))
+        return summarize_status(refresh_status(output_dir, show_progress=True))
 
     cases = discover_cases(output_dir)
     for case_meta in cases.values():
