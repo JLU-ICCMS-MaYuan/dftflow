@@ -175,16 +175,10 @@ submit_groups = 1
 
 
 def _append_qe_phonon_config(path: Path):
-    pp_dir_text = '\npp_dir = "~/pp_test"\n'
+    pp_dir_text = '\npp_dir = "qe_pseudo_lib"\n'
     qe_text = """
 [qe]
 executable_path = "/opt/qe/bin"
-
-[pseudo_map]
-Li = { pseudo = "Li.upf", mass = 6.94 }
-Be = { pseudo = "Be.upf", mass = 9.0122 }
-B = { pseudo = "B.upf", mass = 10.81 }
-H = { pseudo = "H.upf", mass = 1.008 }
 
 [qe_phonon]
 prefix = "ht_ph"
@@ -413,10 +407,8 @@ def test_generate_cases_writes_full_case_input_config_for_qe_phonon(chdir_work):
     assert (case_dir.parent / "workflow_manifest.json").exists()
     assert (case_dir / "case_status.json").exists()
 
-    assert case_config["pp_dir"] == "~/pp_test"
+    assert case_config["pp_dir"] == "qe_pseudo_lib"
     assert case_config["qe"]["executable_path"] == "/opt/qe/bin"
-    assert case_config["pseudo_map"]["Li"]["pseudo"] == "Li.upf"
-    assert case_config["pseudo_map"]["Be"]["mass"] == 9.0122
     assert case_config["qe_phonon"]["prefix"] == "ht_ph"
     assert case_config["qe_phonon"]["scf"]["ecutwfc"] == 80.0
     assert case_config["qe_phonon"]["scf"]["kpoints"] == [3, 3, 2]
@@ -445,11 +437,12 @@ def test_case_input_supports_qe_phonon_prepare_from_pressure_directory(chdir_wor
     config_path.write_text(config_text, encoding="utf-8")
 
     generate_cases(str(structure_path), str(config_path), "ht_out")
-    pseudo_dir = Path(os.path.expanduser("~/pp_test"))
+    pseudo_dir = Path("ht_out/qe_pseudo_lib")
     pseudo_dir.mkdir(parents=True, exist_ok=True)
     _write_mock_upf(pseudo_dir / "Li.upf", "Li", 1.0, "2s1")
     _write_mock_upf(pseudo_dir / "Be.upf", "Be", 2.0, "2s2")
     _write_mock_upf(pseudo_dir / "H.upf", "H", 1.0, "1s1")
+    expected_pseudo_dir = str(pseudo_dir.resolve())
 
     pressure_dir = Path("ht_out/03.XA_Li/period_2/04.LiBeH7/20")
     vasp_opt_dir = pressure_dir / "vasp_opt"
@@ -469,7 +462,7 @@ def test_case_input_supports_qe_phonon_prepare_from_pressure_directory(chdir_wor
     assert work_dir.name == "qe_phonon_split_index"
     assert (work_dir / "input.toml").exists()
     assert (work_dir / "POSCAR").exists()
-    assert "pseudo_dir = '~/pp_test'" in scf_text
+    assert f"pseudo_dir = '{expected_pseudo_dir}'" in scf_text
     assert "prefix = 'ht_ph'" in scf_text
     assert "outdir = './qe_out'" in scf_text
     assert "Li.upf" in scf_text
@@ -1338,9 +1331,8 @@ def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_inputs(chdi
     assert "to:unstarted" in rewritten_output
     assert "formula:LiBeH7" in rewritten_output
     assert "case:ht_out/03.XA_Li/period_2/04.LiBeH7/20" in rewritten_output
-    assert 'pp_dir = "~/pp_test"' in repaired_config
+    assert 'pp_dir = "qe_pseudo_lib"' in repaired_config
     assert "[qe]" in repaired_config
-    assert "[pseudo_map]" in repaired_config
     assert "[qe_phonon]" in repaired_config
     assert qe_workflow_status["merge"] == "unstarted"
     assert qe_workflow_status["ph"]["tasks"]["q_0001"] == "unstarted"
@@ -2073,7 +2065,7 @@ def test_prepare_qe_pseudo_parses_valence_configuration_like_prepare_potcar(chdi
     assert candidate.config_text == "1s1"
 
 
-def test_prepare_qe_pseudo_copies_files_reuses_log_and_updates_case_input(chdir_work, monkeypatch):
+def test_prepare_qe_pseudo_copies_files_reuses_log_without_rewriting_case_input(chdir_work, monkeypatch):
     from substitutionflow.prepare_qe_pseudo import prepare_qe_pseudo_library
     from substitutionflow.status import create_initial_status
     from substitutionflow.structure_substitution import generate_cases
@@ -2117,10 +2109,10 @@ def test_prepare_qe_pseudo_copies_files_reuses_log_and_updates_case_input(chdir_
     assert "Li = Li_b.upf" in log_text
 
     case_input = Path("03.XA_Li/period_2/04.LiBeH7/input.toml").read_text(encoding="utf-8")
-    assert f'pp_dir = "{Path("qe_pseudo_lib").resolve()}"' in case_input
+    assert 'pp_dir = "qe_pseudo_lib"' in case_input
 
     qe_case_input = Path("03.XA_Li/period_2/03.Li2H7/input.toml").read_text(encoding="utf-8")
-    assert f'pp_dir = "{Path("qe_pseudo_lib").resolve()}"' in qe_case_input
+    assert 'pp_dir = "qe_pseudo_lib"' in qe_case_input
 
     Path("qe_pseudo_lib/qe_pseudo_lib.log").write_text("Li = Li_a.upf\nBe = Be.upf\nB = B.upf\nH = H.upf\n", encoding="utf-8")
     monkeypatch.setattr("builtins.input", lambda _prompt="": (_ for _ in ()).throw(AssertionError("不应进入交互")))

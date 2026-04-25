@@ -161,6 +161,7 @@ dos = true
 
 ## 9. 说明
 - `pp_dir` 只扫描目录直下文件，并按“文件名开头连续字母串”自动匹配元素赝势，例如 `Mg...`、`b_...`、`li_...`、`Hf-...`。
+- `pp_dir` 支持相对路径；程序会优先检查当前工作目录，再从配置文件所在目录向上逐级搜索同名目录，便于在批量工作流里统一写成 `qe_pseudo_lib`。
 - 若某元素在 `pp_dir` 中没有匹配文件，或匹配到多个候选，程序会直接报错，不做自动择优。
 - `fildyn`、`flfrc`、`flfrq`、`fldos` 由程序按 `prefix` 自动派生，不建议手写。
 - `qe_ph_split_assign_index` 与 `qe_ph_split_assign_coords` 假定根目录 `scf.out` 已完成；若希望自动推进 SCF，请使用 `qe_phonon_split_index` 或 `qe_phonon_split_coords`。
