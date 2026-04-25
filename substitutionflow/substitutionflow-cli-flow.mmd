@@ -14,7 +14,7 @@ flowchart TD
     D --> D1["推导全部必需元素"]
     D1 --> D2["扫描原始 QE 赝势目录"]
     D2 --> D3["必要时交互选择候选"]
-    D3 --> D4["写入 qe_pseudo_lib/ 和 qe_pseudo_lib.log"]
+    D3 --> D4["写入 qe_pseudo_lib/ 和 qe_pseudo_lib.log<br/>不回写 case input.toml"]
 
     B --> B1["解析 XA / XB 取值范围"]
     B1 --> B2["读取占位结构 XA/XB"]
@@ -43,8 +43,8 @@ flowchart TD
     B6 --> G["substitution_continue"]
     G --> G1{"模式"}
     G1 -->|默认| G2["refresh_status 后输出汇总"]
-    G1 -->| -r | G3["从每个 pressure 第一个非 finished 步开始续算"]
-    G1 -->| -s | G4["refresh_status 后收集未完成单元并分组提交"]
+    G1 -->| -r | G3["直接基于当前状态文件<br/>从每个 pressure 第一个非 finished 步开始续算"]
+    G1 -->| -s | G4["直接基于当前状态文件<br/>从每个 pressure 第一个非 finished 步收集并分组提交"]
     G1 -->| -rws | G5["refresh_status"]
     G5 --> G6["把全部 error 重写为 unstarted"]
     G6 --> G7["修复 qe_phonon 残留目录的 input.toml / POSCAR"]
