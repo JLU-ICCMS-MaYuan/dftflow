@@ -24,6 +24,28 @@
 
 ## 需求处理记录
 
+### [2026-04-25] 删除 substitution_prepare_qe_pseudo 的 case pp_dir 自动回写
+- **需求**：
+    1. `substitution_prepare_qe_pseudo` 不再批量修改各 case `input.toml` 的 `pp_dir`。
+    2. 根配置固定允许直接写 `pp_dir = "qe_pseudo_lib"`，`substitution_structure` 对该值原样继承。
+    3. `substitution_prepare_qe_pseudo` 的职责收敛为“推导元素 + 选择候选 + 写入共享 `qe_pseudo_lib/` 与 `qe_pseudo_lib.log`”，行为与 `substitution_prepare_potcar` 对齐。
+    4. QE 相关 CLI 需要支持在批量工作流中从相对 `pp_dir` 稳定定位共享赝势目录，避免依赖自动回写绝对路径。
+- **方案**：
+    1. 修改 `substitutionflow/prepare_qe_pseudo.py`，删除 case `input.toml` 回写逻辑，仅保留 QE 赝势库准备与记录文件维护。
+    2. 修改 `qeflow/common.py` 与 QE 各 CLI/config loader，把相对 `pp_dir` 规范化为可用目录路径，优先当前目录，再从配置文件所在目录向上逐级搜索，支持批量根目录共享 `qe_pseudo_lib/`。
+    3. 更新 `test_auto/MgB2/test_substitutionflow.py`，把 QE 测试前提收敛为根配置直接写 `pp_dir = "qe_pseudo_lib"`，删除对自动回写与 `[pseudo_map]` 的旧断言。
+    4. 更新 `README.md`、`qeflow/README.md` 与 `substitutionflow/substitutionflow-cli-flow.mmd`，删除自动回写描述，明确新的 `pp_dir` 约定。
+- **状态**：已完成。
+
+### [2026-04-25] Mermaid 流程图统一放入各自模块目录
+- **需求**：
+    1. `substitutionflow` 的流程图 `substitutionflow-cli-flow.mmd` 不再放在仓库根 `docs/` 目录。
+    2. 以后新增 `.mmd` 流程图时，统一放在对应模块的 `*flow/` 目录下，避免文档位置分散。
+- **方案**：
+    1. 将 `docs/substitutionflow-cli-flow.mmd` 迁移到 `substitutionflow/substitutionflow-cli-flow.mmd`。
+    2. 同步修正仓库内对该文件路径的文字记录，后续其它模块流程图遵循同一目录约定。
+- **状态**：已完成。
+
 ### [2026-04-24] 取消 substitutionflow 的 running 状态并收敛为三态
 - **需求**：
     1. `substitutionflow` 中不再保留 `running` 状态，状态集合统一收敛为 `finished / error / unstarted`。

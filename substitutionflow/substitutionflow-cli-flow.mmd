@@ -1,0 +1,56 @@
+---
+id: 61c1c106-7cba-4135-88e9-749bc5ab8a44
+---
+flowchart TD
+    A["input.toml<br/>[substitutionflow] + structure_filename"] --> B["substitution_structure"]
+    A --> C["substitution_prepare_potcar"]
+    A --> D["substitution_prepare_qe_pseudo"]
+
+    C --> C1["推导全部必需元素"]
+    C1 --> C2["扫描原始 POTCAR 库"]
+    C2 --> C3["必要时交互选择候选"]
+    C3 --> C4["写入 potcar_lib/ 和 potcar_lib.log"]
+
+    D --> D1["推导全部必需元素"]
+    D1 --> D2["扫描原始 QE 赝势目录"]
+    D2 --> D3["必要时交互选择候选"]
+    D3 --> D4["写入 qe_pseudo_lib/ 和 qe_pseudo_lib.log"]
+
+    B --> B1["解析 XA / XB 取值范围"]
+    B1 --> B2["读取占位结构 XA/XB"]
+    B2 --> B3["生成目录树<br/>&lt;XA&gt;.XA_元素/period_n/&lt;XB&gt;.formula"]
+    B3 --> B4["为每个 case 写结构文件 + case input.toml"]
+    B4 --> B5["写 period_*/workflow_manifest.json"]
+    B5 --> B6["初始化 case_status.json / workflow_status.json"]
+
+    B6 --> E["substitution"]
+
+    E --> E1["ensure_workflow_tree<br/>必要时再次补齐目录和状态"]
+    E1 --> E2["先为每个 case + pressure 执行 setup-only"]
+    E2 --> E3{"是否 -r?"}
+    E3 -->|否| E4{"是否 -s?"}
+    E3 -->|是| F["顺序执行完整工作流"]
+    E4 -->|否| E5["只生成 submit_group_*.sh 摘要"]
+    E4 -->|是| E6["按 submit_groups 分组并 sbatch 提交"]
+
+    F --> F1["每步执行后 refresh_status"]
+    F1 --> F2{"当前 step 状态"}
+    F2 -->|finished| F3["进入下一步"]
+    F2 -->|error| F4["当前 pressure 阻断"]
+    F2 -->|unstarted 但未完成| F4
+    F3 --> F5["主步骤链：<br/>mattersim_opt 可选 → vasp_opt → vasp_scf → vasp_eledos → vasp_process_eledos → qe_phonon 可选"]
+
+    B6 --> G["substitution_continue"]
+    G --> G1{"模式"}
+    G1 -->|默认| G2["refresh_status 后输出汇总"]
+    G1 -->| -r | G3["从每个 pressure 第一个非 finished 步开始续算"]
+    G1 -->| -s | G4["refresh_status 后收集未完成单元并分组提交"]
+    G1 -->| -rws | G5["refresh_status"]
+    G5 --> G6["把全部 error 重写为 unstarted"]
+    G6 --> G7["修复 qe_phonon 残留目录的 input.toml / POSCAR"]
+
+    F5 --> H["产生 DOS 后处理结果"]
+    H --> I["substitution_plot_eledos"]
+    I --> I1["扫描一个根目录或多个 XA 目录"]
+    I1 --> I2["读取各 case 的 *_at_ef.csv"]
+    I2 --> I3["按 pressure 输出 eledos_summary_*.png"]
