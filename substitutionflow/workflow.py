@@ -170,9 +170,6 @@ def run_case_pressure(output_dir: str, case_meta: Dict, pressure, refresh_before
         _print_progress("skip", "finished", case_meta, pressure, step_order, step_order[-1], reason="all_finished")
         return
     first_state = case_status["pressures"][pressure_key][first_step]
-    if first_state == "running":
-        _print_progress("skip", "running", case_meta, pressure, step_order, first_step, reason="running")
-        return
     if first_state == "error":
         _print_progress("break", "error", case_meta, pressure, step_order, first_step, reason="error")
         return
@@ -184,7 +181,7 @@ def run_case_pressure(output_dir: str, case_meta: Dict, pressure, refresh_before
             started = True
         if not started:
             continue
-        _print_progress("run", "running", case_meta, pressure, step_order, step)
+        _print_progress("run", "unstarted", case_meta, pressure, step_order, step)
         try:
             run_cli_command(commands[step], _step_cwd(case_meta["case_dir"], pressure, step, use_mattersim))
             refresh_status(output_dir)
@@ -290,8 +287,6 @@ def _collect_pending_units(output_dir: str, refresh_before: bool = True) -> List
             pressure_key = _pressure_key(pressure)
             first_step = _first_unfinished_step(case_status, pressure_key, step_order)
             if first_step is None:
-                continue
-            if case_status["pressures"][pressure_key][first_step] == "running":
                 continue
             commands: List[str] = []
             started = False
@@ -415,13 +410,10 @@ def run_workflow(config_file: str, output_dir: str, run_calc: bool = False, subm
                         if current_state == "finished":
                             _print_progress("skip", "finished", case_meta, pressure, step_order, step, reason="finished")
                             continue
-                        if current_state == "running":
-                            _print_progress("skip", "running", case_meta, pressure, step_order, step, reason="running")
-                            break
                         if current_state == "error":
                             _print_progress("break", "error", case_meta, pressure, step_order, step, reason="error")
                             break
-                        _print_progress("run", "running", case_meta, pressure, step_order, step)
+                        _print_progress("run", "unstarted", case_meta, pressure, step_order, step)
                         run_cli_command(commands[step], _step_cwd(case_meta["case_dir"], pressure, step, use_mattersim))
                         refresh_status(output_dir)
                         case_status = load_case_status(case_meta["case_dir"])

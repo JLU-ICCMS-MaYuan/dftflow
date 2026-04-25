@@ -478,7 +478,7 @@ def test_case_input_supports_qe_phonon_prepare_from_pressure_directory(chdir_wor
     assert "  3 3 2 0 0 0" in scf_text
 
 
-def test_refresh_status_detects_finished_error_and_running(chdir_work):
+def test_refresh_status_detects_finished_error_and_unstarted(chdir_work):
     from substitutionflow.status import create_initial_status, refresh_status
     from substitutionflow.structure_substitution import generate_cases
 
@@ -518,11 +518,11 @@ def test_refresh_status_detects_finished_error_and_running(chdir_work):
 
     _write_qe_phonon_workflow_status(case_dir / "20/qe_phonon_split_index", matdyn_phdos="finished")
 
-    running_step_dir = case_dir / "50/mattersim_opt"
-    running_step_dir.mkdir(parents=True, exist_ok=True)
-    (running_step_dir / "POSCAR").write_text("poscar\n", encoding="utf-8")
+    prepared_step_dir = case_dir / "50/mattersim_opt"
+    prepared_step_dir.mkdir(parents=True, exist_ok=True)
+    (prepared_step_dir / "POSCAR").write_text("poscar\n", encoding="utf-8")
 
-    workflow_status = refresh_status("ht_out", squeue_output=f"123 batch R job 00:01 {running_step_dir.resolve()}\n")
+    workflow_status = refresh_status("ht_out", squeue_output=f"123 batch R job 00:01 {prepared_step_dir.resolve()}\n")
     case_status = json.loads((case_dir / "case_status.json").read_text(encoding="utf-8"))
 
     assert case_status["pressures"]["20"]["mattersim_opt"] == "finished"
@@ -531,10 +531,10 @@ def test_refresh_status_detects_finished_error_and_running(chdir_work):
     assert case_status["pressures"]["20"]["vasp_eledos"] == "error"
     assert case_status["pressures"]["20"]["vasp_process_eledos"] == "error"
     assert case_status["pressures"]["20"]["qe_phonon"] == "finished"
-    assert case_status["pressures"]["50"]["mattersim_opt"] == "running"
+    assert case_status["pressures"]["50"]["mattersim_opt"] == "unstarted"
     assert workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]["pressures"]["20"]["mattersim_opt"] == "finished"
     assert workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]["pressures"]["20"]["vasp_eledos"] == "error"
-    assert workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]["pressures"]["50"]["mattersim_opt"] == "running"
+    assert workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]["pressures"]["50"]["mattersim_opt"] == "unstarted"
 
 
 def test_refresh_status_marks_prepared_mattersim_as_unstarted(chdir_work):
@@ -615,7 +615,6 @@ def test_run_workflow_generates_group_scripts_and_opt_dirs(chdir_work, monkeypat
             )
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     summary = run_workflow(str(config_path), "ht_out", run_calc=False, submit=False)
 
@@ -650,7 +649,6 @@ def test_run_workflow_without_mattersim_starts_from_vasp_opt(chdir_work, monkeyp
         calls.append((command, cwd))
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     summary = run_workflow(str(config_path), "ht_out", run_calc=False, submit=False)
 
@@ -713,7 +711,6 @@ def test_continue_updates_case_status_and_runs_missing_steps(chdir_work, monkeyp
             _write_qe_phonon_workflow_status(cwd_path / "qe_phonon_split_index", matdyn_phdos="finished")
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     summary = continue_workflow("ht_out", run_calc=True, submit=False)
     refresh_status("ht_out", squeue_output="")
@@ -775,7 +772,6 @@ def test_continue_without_mattersim_runs_from_vasp_opt(chdir_work, monkeypatch):
             _write_qe_phonon_workflow_status(cwd_path / "qe_phonon_split_index", matdyn_phdos="finished")
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     summary = continue_workflow("ht_out", run_calc=True, submit=False)
 
@@ -834,7 +830,7 @@ def test_case_status_upgrade_appends_qe_phonon_without_overwriting_existing_step
             "20": {
                 "mattersim_opt": "finished",
                 "vasp_opt": "finished",
-                "vasp_scf": "running",
+                "vasp_scf": "error",
                 "vasp_eledos": "unstarted",
                 "vasp_process_eledos": "unstarted",
             },
@@ -852,7 +848,7 @@ def test_case_status_upgrade_appends_qe_phonon_without_overwriting_existing_step
     upgraded = _ensure_case_status_file(case_meta)
 
     assert upgraded["pressures"]["20"]["mattersim_opt"] == "finished"
-    assert upgraded["pressures"]["20"]["vasp_scf"] == "running"
+    assert upgraded["pressures"]["20"]["vasp_scf"] == "error"
     assert upgraded["pressures"]["20"]["qe_phonon"] == "unstarted"
     assert upgraded["pressures"]["50"]["mattersim_opt"] == "error"
     assert upgraded["pressures"]["50"]["qe_phonon"] == "unstarted"
@@ -873,7 +869,7 @@ def test_refresh_status_rewrites_legacy_workflow_status_with_qe_phonon(chdir_wor
         "root_output_dir": str(Path("ht_out").resolve()),
         "total_cases": 1,
         "steps": {
-            "mattersim_opt": {"finished": 0, "running": 0, "error": 0, "unstarted": 12},
+            "mattersim_opt": {"finished": 0, "error": 0, "unstarted": 12},
         },
     }
     Path("ht_out/workflow_status.json").write_text(
@@ -982,7 +978,6 @@ def test_build_submit_scripts_only_keeps_remaining_qe_phonon_when_previous_steps
     _write_scf_like_outcar(eledos_dir / "OUTCAR", converged=True, iterations=4, nelm=60)
     (eledos_dir / "pdos_merged_at_ef.csv").write_text("csv\n", encoding="utf-8")
 
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
     bundle = build_submit_scripts("ht_out", 1)
     target_unit = next(
         unit
@@ -1026,7 +1021,6 @@ def test_phonon_mode_switches_qe_phonon_command(chdir_work, monkeypatch):
             )
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     run_workflow(str(config_path), "ht_out", run_calc=False, submit=False)
 
@@ -1102,7 +1096,6 @@ def test_continue_runs_only_qe_phonon_when_previous_steps_finished(chdir_work, m
             _write_qe_phonon_workflow_status(Path(cwd) / "qe_phonon_split_index", matdyn_phdos="finished")
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     continue_workflow("ht_out", run_calc=True, submit=False)
 
@@ -1151,7 +1144,6 @@ def test_continue_does_not_advance_to_qe_phonon_when_previous_step_error(chdir_w
 
     calls = []
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", lambda command, cwd: calls.append((command, cwd)))
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     continue_workflow("ht_out", run_calc=True, submit=False)
 
@@ -1186,7 +1178,6 @@ def test_rewrite_workflow_states_only_rewrites_status_files(chdir_work, monkeypa
     (opt_dir / "CONTCAR").write_text("contcar\n", encoding="utf-8")
     _write_opt_outcar(opt_dir / "OUTCAR", converged=True)
 
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     summary = rewrite_workflow_states("ht_out")
 
@@ -1250,14 +1241,14 @@ def test_reduce_qe_phonon_workflow_status_for_nosplit_and_split(chdir_work):
     }
 
     assert reduce_qe_phonon_workflow_status("qe_phonon_nosplit", nosplit_unstarted) == "unstarted"
-    assert reduce_qe_phonon_workflow_status("qe_phonon_nosplit", nosplit_running) == "running"
+    assert reduce_qe_phonon_workflow_status("qe_phonon_nosplit", nosplit_running) == "error"
     assert reduce_qe_phonon_workflow_status("qe_phonon_split_index", split_unstarted) == "unstarted"
-    assert reduce_qe_phonon_workflow_status("qe_phonon_split_index", split_running) == "running"
+    assert reduce_qe_phonon_workflow_status("qe_phonon_split_index", split_running) == "error"
     assert reduce_qe_phonon_workflow_status("qe_phonon_split_coords", split_error) == "error"
     assert reduce_qe_phonon_workflow_status("qe_phonon_split_index", split_finished) == "finished"
 
 
-def test_refresh_status_qe_phonon_uses_workflow_status_instead_of_directory_trace(chdir_work, monkeypatch):
+def test_refresh_status_qe_phonon_uses_workflow_status_instead_of_directory_trace(chdir_work):
     from substitutionflow.status import create_initial_status, refresh_status
     from substitutionflow.structure_substitution import generate_cases
 
@@ -1273,17 +1264,10 @@ def test_refresh_status_qe_phonon_uses_workflow_status_instead_of_directory_trac
     qe_dir.mkdir(parents=True, exist_ok=True)
     (qe_dir / "stale.txt").write_text("leftover\n", encoding="utf-8")
 
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
     workflow_status = refresh_status("ht_out", squeue_output="")
     assert workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]["pressures"]["20"]["qe_phonon"] == "unstarted"
 
-    running_dirs = {str(qe_dir.resolve())}
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": running_dirs)
-    workflow_status = refresh_status("ht_out")
-    assert workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]["pressures"]["20"]["qe_phonon"] == "running"
-
     _write_qe_phonon_workflow_status(qe_dir, tasks={"q_0001": "finished", "q_0002": "finished"})
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
     workflow_status = refresh_status("ht_out", squeue_output="")
     assert workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]["pressures"]["20"]["qe_phonon"] == "finished"
 
@@ -1307,7 +1291,7 @@ def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_inputs(chdi
     case_status["pressures"]["20"]["vasp_opt"] = "error"
     case_status["pressures"]["20"]["vasp_eledos"] = "finished"
     case_status["pressures"]["20"]["qe_phonon"] = "error"
-    case_status["pressures"]["50"]["vasp_scf"] = "running"
+    case_status["pressures"]["50"]["vasp_scf"] = "error"
     (case_dir / "case_status.json").write_text(json.dumps(case_status, ensure_ascii=False, indent=2), encoding="utf-8")
 
     opt_dir = pressure_dir / "vasp_opt"
@@ -1331,7 +1315,6 @@ def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_inputs(chdi
         matdyn_phdos="unstarted",
     )
 
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     buffer = io.StringIO()
     with redirect_stdout(buffer):
@@ -1425,7 +1408,6 @@ def test_continue_workflow_after_rewrite_states_advances_from_first_unfinished_s
             )
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     rewrite_workflow_states("ht_out")
     summary = continue_workflow("ht_out", run_calc=True, submit=False)
@@ -1476,7 +1458,6 @@ def test_continue_workflow_run_refreshes_real_status_before_blocking_error(chdir
 
     calls = []
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", lambda command, cwd: calls.append((command, cwd)))
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     continue_workflow("ht_out", run_calc=True, submit=False)
 
@@ -1524,7 +1505,6 @@ def test_continue_workflow_submit_refreshes_real_status_before_collecting_units(
     _write_scf_like_outcar(scf_dir / "OUTCAR", converged=False)
 
     submitted = []
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
     monkeypatch.setattr("substitutionflow.workflow.submit_script", lambda work_dir, script_name: submitted.append((work_dir, script_name)))
 
     summary = continue_workflow("ht_out", run_calc=False, submit=True)
@@ -1577,7 +1557,6 @@ def test_continue_workflow_run_prints_case_pressure_step_progress(chdir_work, mo
         calls.append((command, cwd))
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     output = io.StringIO()
     with redirect_stdout(output):
@@ -1632,7 +1611,6 @@ def test_run_workflow_run_prints_skip_run_stop_progress(chdir_work, monkeypatch)
             (cwd_path / "vasp_eledos/TDOS.dat").write_text("tdos\n", encoding="utf-8")
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
 
     output = io.StringIO()
     with redirect_stdout(output):
@@ -1649,7 +1627,7 @@ def test_run_workflow_run_prints_skip_run_stop_progress(chdir_work, monkeypatch)
     assert "state:error" in captured
 
 
-def test_continue_skips_running_qe_phonon(chdir_work, monkeypatch):
+def test_continue_treats_qe_phonon_trace_without_workflow_status_as_unstarted(chdir_work, monkeypatch):
     from substitutionflow.status import create_initial_status
     from substitutionflow.structure_substitution import generate_cases
     from substitutionflow.workflow import continue_workflow
@@ -1683,24 +1661,20 @@ def test_continue_skips_running_qe_phonon(chdir_work, monkeypatch):
     (eledos_dir / "DOSCAR").write_text("dos\n", encoding="utf-8")
     _write_scf_like_outcar(eledos_dir / "OUTCAR", converged=True, iterations=4, nelm=60)
     (eledos_dir / "pdos_merged_at_ef.csv").write_text("csv\n", encoding="utf-8")
-    running_qe_dir = pressure_dir / "qe_phonon_split_index"
-    running_qe_dir.mkdir(parents=True, exist_ok=True)
-    (running_qe_dir / "run_ph.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+    qe_dir = pressure_dir / "qe_phonon_split_index"
+    qe_dir.mkdir(parents=True, exist_ok=True)
+    (qe_dir / "run_ph.sh").write_text("#!/bin/bash\n", encoding="utf-8")
 
     calls = []
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", lambda command, cwd: calls.append((command, cwd)))
-    monkeypatch.setattr(
-        "substitutionflow.status.get_active_workdirs",
-        lambda user="mayuan": {str(running_qe_dir.resolve())},
-    )
 
     continue_workflow("ht_out", run_calc=True, submit=False)
 
     target_calls = [(command, cwd) for command, cwd in calls if Path(cwd).resolve() == pressure_dir.resolve()]
-    assert not any(command[0].startswith("qe_phonon") for command, _ in target_calls)
+    assert any(command[0].startswith("qe_phonon") for command, _ in target_calls)
 
 
-def test_build_submit_scripts_split_units_without_breaking_chain(chdir_work, monkeypatch):
+def test_build_submit_scripts_split_units_without_breaking_chain(chdir_work):
     from substitutionflow.structure_substitution import generate_cases
     from substitutionflow.status import create_initial_status
     from substitutionflow.workflow import build_submit_scripts
@@ -1726,29 +1700,25 @@ def test_build_submit_scripts_split_units_without_breaking_chain(chdir_work, mon
     (opt_dir / "CONTCAR").write_text("contcar\n", encoding="utf-8")
     _write_opt_outcar(opt_dir / "OUTCAR", converged=True)
 
-    running_step_dir = Path("ht_out/03.XA_Li/period_2/03.Li2H7/50/mattersim_opt")
-    running_step_dir.mkdir(parents=True, exist_ok=True)
-    (running_step_dir / "POSCAR").write_text("poscar\n", encoding="utf-8")
-    monkeypatch.setattr(
-        "substitutionflow.status.get_active_workdirs",
-        lambda user="mayuan": {str(running_step_dir.resolve())},
-    )
+    prepared_step_dir = Path("ht_out/03.XA_Li/period_2/03.Li2H7/50/mattersim_opt")
+    prepared_step_dir.mkdir(parents=True, exist_ok=True)
+    (prepared_step_dir / "POSCAR").write_text("poscar\n", encoding="utf-8")
 
     bundle = build_submit_scripts("ht_out", 3)
 
     assert bundle["configured_groups"] == 3
     assert bundle["actual_groups"] == 3
-    assert bundle["total_units"] == 11
+    assert bundle["total_units"] == 12
 
     group_texts = [
         Path(script_info["script_path"]).read_text(encoding="utf-8")
         for script_info in bundle["scripts"]
     ]
     joined = "\n".join(group_texts)
-    assert "03.Li2H7/50" not in joined
+    assert "03.Li2H7/50" in joined
 
     unit_hits = [text.count('cd "/work') + text.count('cd "') for text in group_texts]
-    assert sum(script_info["unit_count"] for script_info in bundle["scripts"]) == 11
+    assert sum(script_info["unit_count"] for script_info in bundle["scripts"]) == 12
     target_units = [
         unit
         for script_info in bundle["scripts"]
@@ -1800,7 +1770,6 @@ def test_submit_group_scripts_submits_each_group(chdir_work, monkeypatch):
     submitted = []
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
     monkeypatch.setattr("substitutionflow.workflow.submit_script", lambda work_dir, script_name: submitted.append((work_dir, script_name)))
 
     summary = run_workflow(str(config_path), "ht_out", run_calc=False, submit=True)
@@ -1829,7 +1798,6 @@ def test_continue_submit_uses_case_input_submit_groups(chdir_work, monkeypatch):
     create_initial_status("ht_out")
 
     submitted = []
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
     monkeypatch.setattr("substitutionflow.workflow.submit_script", lambda work_dir, script_name: submitted.append((work_dir, script_name)))
 
     summary = continue_workflow("ht_out", run_calc=False, submit=True)
@@ -1853,7 +1821,6 @@ def test_substitution_structure_reads_structure_from_config(chdir_work, monkeypa
     config_path.write_text(config_text, encoding="utf-8")
 
     monkeypatch.setattr(sys, "argv", ["substitution_structure", "-c", "input_ht.toml", "-o", "ht_out"])
-    monkeypatch.setattr("substitutionflow.status.get_active_workdirs", lambda user="mayuan": set())
     buffer = io.StringIO()
     with redirect_stdout(buffer):
         module.main()

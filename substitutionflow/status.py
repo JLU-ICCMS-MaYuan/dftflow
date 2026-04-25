@@ -3,17 +3,15 @@ import glob
 import json
 import os
 import re
-import subprocess
-from contextlib import suppress
 from collections import OrderedDict
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from public.config_templates import load_config_file
 
 
 STEP_ORDER = ("mattersim_opt", "vasp_opt", "vasp_scf", "vasp_eledos", "vasp_process_eledos", "qe_phonon")
-STATUS_ORDER = ("finished", "running", "error", "unstarted")
-QE_PHONON_STATE_ORDER = ("finished", "running", "error", "unstarted")
+STATUS_ORDER = ("finished", "error", "unstarted")
+QE_PHONON_STATE_ORDER = ("finished", "error", "unstarted")
 PHONON_MODE_TO_WORKFLOW = {
     "nosplit": "qe_phonon_nosplit",
     "split_index": "qe_phonon_split_index",
@@ -27,8 +25,6 @@ SCF_REQUIRED_MARKERS = (
     "aborting loop because EDIFF is reached",
 )
 SCF_FORBIDDEN_MARKER = "in kB  *"
-SQUEUE_FORMAT = "%12A %12P %5t %25R %8M %Z"
-DEFAULT_SQUEUE_USER = "mayuan"
 
 
 def get_workflow_status_path(output_dir: str) -> str:
@@ -151,6 +147,15 @@ def _default_pressure_status(pressures: Iterable) -> Dict[str, Dict[str, str]]:
     return result
 
 
+def _normalize_case_step_state(value: object) -> str:
+    state = str(value).strip() if value is not None else "unstarted"
+    if state == "running":
+        return "error"
+    if state not in STATUS_ORDER:
+        return "unstarted"
+    return state
+
+
 def build_default_case_status(case_meta: Dict) -> Dict:
     step_order = get_case_step_order(case_meta["case_dir"])
     pressure_status = OrderedDict()
@@ -196,7 +201,7 @@ def _ensure_case_status_file(case_meta: Dict) -> Dict:
         current_pressure = current.setdefault("pressures", {}).get(pressure_key, {})
         normalized_pressure = OrderedDict()
         for step in step_order:
-            normalized_pressure[step] = current_pressure.get(step, "unstarted")
+            normalized_pressure[step] = _normalize_case_step_state(current_pressure.get(step, "unstarted"))
         current["pressures"][pressure_key] = normalized_pressure
     save_case_status(case_meta["case_dir"], current)
     return current
@@ -257,111 +262,6 @@ def _is_scf_converged(outcar_path: str) -> bool:
     return _extract_iteration_count(outcar_path) < nelm
 
 
-def _normalize_path(path: str) -> str:
-    return os.path.normpath(os.path.abspath(path))
-
-
-def _parse_squeue_output(output: str) -> Set[str]:
-    workdirs: Set[str] = set()
-    for line in output.splitlines():
-        if not line.strip():
-            continue
-        parts = line.rstrip().split(maxsplit=5)
-        if len(parts) < 6:
-            continue
-        workdirs.add(_normalize_path(parts[5]))
-    return workdirs
-
-
-def get_active_workdirs(user: str = DEFAULT_SQUEUE_USER) -> Set[str]:
-    active_dirs = _get_local_active_workdirs()
-    try:
-        output = subprocess.check_output(
-            ["squeue", "-u", user, "-h", "--format", SQUEUE_FORMAT],
-            text=True,
-        )
-    except Exception:
-        return active_dirs
-    active_dirs.update(_parse_squeue_output(output))
-    return active_dirs
-
-
-def _is_same_uid_process(pid: str) -> bool:
-    status_path = os.path.join("/proc", pid, "status")
-    try:
-        with open(status_path, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                if line.startswith("Uid:"):
-                    real_uid = line.split()[1]
-                    return int(real_uid) == os.getuid()
-    except Exception:
-        return False
-    return False
-
-
-def _read_proc_text(path: str) -> str:
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        return f.read()
-
-
-def _looks_like_workflow_process(cmdline: str) -> bool:
-    if not cmdline:
-        return False
-    keywords = (
-        "mattersim_opt",
-        "vasp_opt",
-        "vasp_scf",
-        "vasp_eledos",
-        "vasp_process_eledos",
-        "qe_phonon",
-        "vasp_std",
-        "vasp_gam",
-        "vasp_ncl",
-        "pw.x",
-        "ph.x",
-        "q2r.x",
-        "matdyn.x",
-    )
-    return any(keyword in cmdline for keyword in keywords)
-
-
-def _get_local_active_workdirs() -> Set[str]:
-    active_dirs: Set[str] = set()
-    proc_root = "/proc"
-    if not os.path.isdir(proc_root):
-        return active_dirs
-    current_pid = os.getpid()
-    parent_pid = os.getppid()
-    for pid in os.listdir(proc_root):
-        if not pid.isdigit():
-            continue
-        pid_int = int(pid)
-        if pid_int in {current_pid, parent_pid}:
-            continue
-        if not _is_same_uid_process(pid):
-            continue
-        cmdline_path = os.path.join(proc_root, pid, "cmdline")
-        cwd_path = os.path.join(proc_root, pid, "cwd")
-        with suppress(Exception):
-            cmdline = _read_proc_text(cmdline_path).replace("\x00", " ").strip()
-            if not _looks_like_workflow_process(cmdline):
-                continue
-            active_dirs.add(_normalize_path(os.readlink(cwd_path)))
-    return active_dirs
-
-
-def _path_matches_active_dir(target_dir: str, active_dirs: Set[str]) -> bool:
-    target_norm = _normalize_path(target_dir)
-    for active_dir in active_dirs:
-        if target_norm == active_dir:
-            return True
-        if target_norm.startswith(active_dir + os.sep):
-            return True
-        if active_dir.startswith(target_norm + os.sep):
-            return True
-    return False
-
-
 def _opt_has_trace(step_dir: str) -> bool:
     tracked = ("INCAR", "POSCAR", "POTCAR", "OUTCAR", "CONTCAR", "run_vasp.sh", "oneopt.sh", "fouropt.sh", "fopt.sh")
     return any(os.path.exists(os.path.join(step_dir, name)) for name in tracked) or _directory_has_any_file(step_dir)
@@ -394,7 +294,7 @@ def _process_has_trace(eledos_dir: str) -> bool:
     return False
 
 
-def _detect_mattersim_opt_status(pressure_dir: str, active_dirs: Set[str]) -> str:
+def _detect_mattersim_opt_status(pressure_dir: str) -> str:
     step_dir = os.path.join(pressure_dir, "mattersim_opt")
     json_path = os.path.join(step_dir, "mattersim_opt.json")
     contcar_path = os.path.join(step_dir, "CONTCAR")
@@ -409,8 +309,6 @@ def _detect_mattersim_opt_status(pressure_dir: str, active_dirs: Set[str]) -> st
                 return "finished"
         elif bool(payload.get("stage1", {}).get("converged")) and bool(payload.get("stage2", {}).get("converged")):
                 return "finished"
-    if _path_matches_active_dir(step_dir, active_dirs):
-        return "running"
     if _mattersim_has_runtime_trace(step_dir):
         return "error"
     if _mattersim_has_trace(step_dir):
@@ -418,7 +316,7 @@ def _detect_mattersim_opt_status(pressure_dir: str, active_dirs: Set[str]) -> st
     return "unstarted"
 
 
-def _detect_vasp_opt_status(pressure_dir: str, active_dirs: Set[str]) -> str:
+def _detect_vasp_opt_status(pressure_dir: str) -> str:
     step_dir = os.path.join(pressure_dir, "vasp_opt")
     outcar_path = os.path.join(step_dir, "OUTCAR")
     contcar_path = os.path.join(step_dir, "CONTCAR")
@@ -428,14 +326,12 @@ def _detect_vasp_opt_status(pressure_dir: str, active_dirs: Set[str]) -> str:
         and OPT_CONVERGED_MARKER in _safe_read_text(outcar_path)
     ):
         return "finished"
-    if _path_matches_active_dir(step_dir, active_dirs):
-        return "running"
     if _opt_has_trace(step_dir):
         return "error"
     return "unstarted"
 
 
-def _detect_vasp_scf_status(pressure_dir: str, active_dirs: Set[str]) -> str:
+def _detect_vasp_scf_status(pressure_dir: str) -> str:
     step_dir = os.path.join(pressure_dir, "vasp_scf")
     outcar_path = os.path.join(step_dir, "OUTCAR")
     chgcar_path = os.path.join(step_dir, "CHGCAR")
@@ -447,14 +343,12 @@ def _detect_vasp_scf_status(pressure_dir: str, active_dirs: Set[str]) -> str:
         and _is_scf_converged(outcar_path)
     ):
         return "finished"
-    if _path_matches_active_dir(step_dir, active_dirs):
-        return "running"
     if _generic_step_has_trace(step_dir):
         return "error"
     return "unstarted"
 
 
-def _detect_vasp_eledos_status(pressure_dir: str, active_dirs: Set[str]) -> str:
+def _detect_vasp_eledos_status(pressure_dir: str) -> str:
     step_dir = os.path.join(pressure_dir, "vasp_eledos")
     outcar_path = os.path.join(step_dir, "OUTCAR")
     doscar_path = os.path.join(step_dir, "DOSCAR")
@@ -464,8 +358,6 @@ def _detect_vasp_eledos_status(pressure_dir: str, active_dirs: Set[str]) -> str:
         and _is_scf_converged(outcar_path)
     ):
         return "finished"
-    if _path_matches_active_dir(step_dir, active_dirs):
-        return "running"
     if _generic_step_has_trace(step_dir):
         return "error"
     return "unstarted"
@@ -483,6 +375,8 @@ def _detect_vasp_process_eledos_status(pressure_dir: str) -> str:
 
 def _normalize_qe_phonon_state(value: object) -> str:
     state = str(value).strip() if value is not None else "unstarted"
+    if state == "running":
+        return "error"
     if state not in QE_PHONON_STATE_ORDER:
         return "unstarted"
     return state
@@ -494,8 +388,6 @@ def _summarize_qe_phonon_tasks(tasks_payload: object) -> str:
     states = [_normalize_qe_phonon_state(state) for state in tasks_payload.values()]
     if states and all(state == "finished" for state in states):
         return "finished"
-    if any(state == "running" for state in states):
-        return "running"
     if any(state == "error" for state in states):
         return "error"
     return "unstarted"
@@ -529,15 +421,13 @@ def reduce_qe_phonon_workflow_status(workflow_name: str, workflow_status: Dict) 
         return "finished"
     for state in stage_states:
         if state != "finished":
-            return state if state in {"running", "error", "unstarted"} else "unstarted"
+            return state if state in {"error", "unstarted"} else "unstarted"
     return "unstarted"
 
 
-def _detect_qe_phonon_status(case_dir: str, pressure_dir: str, active_dirs: Set[str]) -> str:
+def _detect_qe_phonon_status(case_dir: str, pressure_dir: str) -> str:
     step_dir = os.path.join(pressure_dir, get_case_phonon_workdir(case_dir))
     workflow_status_path = os.path.join(step_dir, "workflow_status.json")
-    if _path_matches_active_dir(step_dir, active_dirs):
-        return "running"
     if _exists_and_nonempty(workflow_status_path):
         try:
             workflow_status = _load_json(workflow_status_path)
@@ -547,23 +437,23 @@ def _detect_qe_phonon_status(case_dir: str, pressure_dir: str, active_dirs: Set[
     return "unstarted"
 
 
-def _detect_case_pressure_status(case_dir: str, pressure_key: str, active_dirs: Set[str]) -> Dict[str, str]:
+def _detect_case_pressure_status(case_dir: str, pressure_key: str) -> Dict[str, str]:
     pressure_dir = os.path.join(case_dir, pressure_key)
     step_order = get_case_step_order(case_dir)
     status_map = OrderedDict()
     for step in step_order:
         if step == "mattersim_opt":
-            status_map[step] = _detect_mattersim_opt_status(pressure_dir, active_dirs)
+            status_map[step] = _detect_mattersim_opt_status(pressure_dir)
         elif step == "vasp_opt":
-            status_map[step] = _detect_vasp_opt_status(pressure_dir, active_dirs)
+            status_map[step] = _detect_vasp_opt_status(pressure_dir)
         elif step == "vasp_scf":
-            status_map[step] = _detect_vasp_scf_status(pressure_dir, active_dirs)
+            status_map[step] = _detect_vasp_scf_status(pressure_dir)
         elif step == "vasp_eledos":
-            status_map[step] = _detect_vasp_eledos_status(pressure_dir, active_dirs)
+            status_map[step] = _detect_vasp_eledos_status(pressure_dir)
         elif step == "vasp_process_eledos":
             status_map[step] = _detect_vasp_process_eledos_status(pressure_dir)
         elif step == "qe_phonon":
-            status_map[step] = _detect_qe_phonon_status(case_dir, pressure_dir, active_dirs)
+            status_map[step] = _detect_qe_phonon_status(case_dir, pressure_dir)
     return status_map
 
 
@@ -601,9 +491,8 @@ def create_initial_status(output_dir: str) -> Dict:
     return summary
 
 
-def refresh_status(output_dir: str, squeue_output: Optional[str] = None, squeue_user: str = DEFAULT_SQUEUE_USER) -> Dict:
+def refresh_status(output_dir: str, squeue_output: Optional[str] = None, squeue_user: Optional[str] = None) -> Dict:
     cases = discover_cases(output_dir)
-    active_dirs = _parse_squeue_output(squeue_output) if squeue_output is not None else get_active_workdirs(squeue_user)
     for case_meta in cases.values():
         case_status = _ensure_case_status_file(case_meta)
         updated = {
@@ -614,7 +503,7 @@ def refresh_status(output_dir: str, squeue_output: Optional[str] = None, squeue_
             "pressures": OrderedDict(),
         }
         for pressure_key in case_status["pressures"]:
-            updated["pressures"][pressure_key] = _detect_case_pressure_status(case_meta["case_dir"], pressure_key, active_dirs)
+            updated["pressures"][pressure_key] = _detect_case_pressure_status(case_meta["case_dir"], pressure_key)
         save_case_status(case_meta["case_dir"], updated)
     summary = _build_workflow_summary(output_dir, cases)
     save_workflow_status(output_dir, summary)
@@ -626,9 +515,7 @@ def _count_case_pressure_units(workflow_status: Dict) -> Dict[str, int]:
     for case_status in workflow_status.get("cases", {}).values():
         for pressure_status in case_status.get("pressures", {}).values():
             unit_state = "finished"
-            if any(step_state == "running" for step_state in pressure_status.values()):
-                unit_state = "running"
-            elif any(step_state == "error" for step_state in pressure_status.values()):
+            if any(step_state == "error" for step_state in pressure_status.values()):
                 unit_state = "error"
             elif any(step_state == "unstarted" for step_state in pressure_status.values()):
                 unit_state = "unstarted"

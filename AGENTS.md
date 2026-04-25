@@ -24,6 +24,32 @@
 
 ## 需求处理记录
 
+### [2026-04-24] 取消 substitutionflow 的 running 状态并收敛为三态
+- **需求**：
+    1. `substitutionflow` 中不再保留 `running` 状态，状态集合统一收敛为 `finished / error / unstarted`。
+    2. 删除基于 Slurm `squeue/%Z` 与本地活动工作目录的运行探测逻辑，不再因为“运行中”而特殊跳过续算或提交。
+    3. 纯 setup-only 目录仍应判为 `unstarted`，但存在明确未完成运行残留的目录应判为 `error`，以免破坏正常续算语义。
+    4. `qe_phonon` 旧历史状态或 task 中若仍出现 `running`，刷新后必须向三态模型收敛，并统一按 `error` 处理。
+- **方案**：
+    1. 修改 `substitutionflow/status.py`，删除 `running` 相关常量、探测函数和活动目录参数，所有步骤状态检测改为纯基于目录内容与输出文件判定。
+    2. 修改 `substitutionflow/workflow.py`，删除 `running` 跳过与过滤逻辑，使运行/提交流程只按 `finished / error / unstarted` 三态推进。
+    3. 更新 `README.md`，明确 `substitutionflow` 不再维护 `running` 状态，续算与提交也不再依赖 Slurm 或本地进程探测。
+    4. 更新 `test_auto/MgB2/test_substitutionflow.py`，删除 `running` 相关测试假设，并补充旧 `running` 历史值映射为 `error`、setup-only 保持 `unstarted` 等回归场景。
+- **状态**：已完成。
+
+### [2026-04-24] qeflow 废弃 pseudo_map 并统一从 pp_dir 自动匹配赝势
+- **需求**：
+    1. `qeflow` 中所有会写 QE `ATOMIC_SPECIES` 的 CLI 必须废弃 `[pseudo_map]`，统一仅依赖 `pp_dir` 自动解析赝势文件名。
+    2. 匹配规则固定为扫描 `pp_dir` 直下文件，并按文件名开头连续字母串与元素名做不区分大小写比较。
+    3. `qe_scf`、`qe_nscf`、`qe_eband` 以及 phonon builder 路径都要收敛到同一套公共解析逻辑，避免重复实现和行为分叉。
+    4. 模板、README 和自动化测试必须同步删除旧 `pseudo_map` 语义，并补足缺失/重名冲突/大小写匹配回归。
+- **方案**：
+    1. 在 `qeflow/common.py` 新增 `extract_pseudo_element_token()`、`find_pseudo_file()`、`resolve_pseudo_files()` 和 `resolve_atomic_species_entries()`，统一处理赝势自动匹配与错误报告。
+    2. 修改 `qeflow/qe_input/builders.py`、`qeflow/scf/qe_scf.py`、`qeflow/nscf/qe_nscf.py`、`qeflow/eband/qe_eband.py`，全部改为复用公共 `ATOMIC_SPECIES` 解析结果。
+    3. 修改 `qeflow/templates.py`、`qeflow/README.md` 和 `test_auto/MgB2/input_qe.toml`，移除 `[pseudo_map]`，统一改为仅保留 `pp_dir`。
+    4. 更新 `test_auto/MgB2/test_qeflow.py`、`test_auto/MgB2/test_qe_phonon.py`、`test_auto/MgB2/test_parameter_templates.py`，覆盖自动匹配、phonon builder 路径、大小写匹配、缺失赝势和重复候选报错。
+- **状态**：已完成。
+
 ### [2026-04-24] 重构 substitution_continue 的状态重写与续算/提交边界
 - **需求**：
     1. `substitution_continue` 中的“状态重写”和“续算/提交”必须彻底解耦。
