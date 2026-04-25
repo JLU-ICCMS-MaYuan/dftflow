@@ -1613,6 +1613,8 @@ def test_continue_workflow_run_prints_case_pressure_step_progress(chdir_work, mo
         continue_workflow("ht_out", run_calc=True, submit=False)
 
     captured = output.getvalue()
+    assert "运行进度:" in captured
+    assert "first:vasp_eledos" in captured
     assert "04.vasp_eledos" in captured
     assert "event:break" in captured
     assert "state:error" in captured
@@ -1667,6 +1669,8 @@ def test_run_workflow_run_prints_skip_run_stop_progress(chdir_work, monkeypatch)
         run_workflow(str(config_path), "ht_out", run_calc=True, submit=False)
 
     captured = output.getvalue()
+    assert "运行进度:" in captured
+    assert "first:vasp_opt" in captured
     assert "01.vasp_opt" in captured
     assert "event:run" in captured
     assert "reason:           case:ht_out/03.XA_Li/period_2/03.Li2H7/20" in captured
@@ -1822,10 +1826,15 @@ def test_submit_group_scripts_submits_each_group(chdir_work, monkeypatch):
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
     monkeypatch.setattr("substitutionflow.workflow.submit_script", lambda work_dir, script_name: submitted.append((work_dir, script_name)))
 
-    summary = run_workflow(str(config_path), "ht_out", run_calc=False, submit=True)
+    output = io.StringIO()
+    with redirect_stdout(output):
+        summary = run_workflow(str(config_path), "ht_out", run_calc=False, submit=True)
 
+    captured = output.getvalue()
     assert "计划分组数: 4" in summary
     assert len(submitted) == 4
+    assert "提交进度:" in captured
+    assert "unit:first:mattersim" in captured
     assert [script_name for _, script_name in submitted] == [
         "submit_group_01.sh",
         "submit_group_02.sh",
@@ -1850,10 +1859,15 @@ def test_continue_submit_uses_case_input_submit_groups(chdir_work, monkeypatch):
     submitted = []
     monkeypatch.setattr("substitutionflow.workflow.submit_script", lambda work_dir, script_name: submitted.append((work_dir, script_name)))
 
-    summary = continue_workflow("ht_out", run_calc=False, submit=True)
+    output = io.StringIO()
+    with redirect_stdout(output):
+        summary = continue_workflow("ht_out", run_calc=False, submit=True)
 
+    captured = output.getvalue()
     assert "计划分组数: 5" in summary
     assert len(submitted) == 5
+    assert "提交进度:" in captured
+    assert "unit:first:" in captured
     assert Path("ht_out/submit_group_05.sh").exists()
 
 
