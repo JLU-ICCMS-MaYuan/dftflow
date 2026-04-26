@@ -460,7 +460,6 @@ def test_case_input_supports_qe_phonon_prepare_from_pressure_directory(chdir_wor
     scf_text = (work_dir / "scf.in").read_text(encoding="utf-8")
 
     assert work_dir.name == "qe_phonon_split_index"
-    assert (work_dir / "input.toml").exists()
     assert (work_dir / "POSCAR").exists()
     assert f"pseudo_dir = '{expected_pseudo_dir}'" in scf_text
     assert "prefix = 'ht_ph'" in scf_text
@@ -617,8 +616,9 @@ def test_run_workflow_generates_group_scripts_and_opt_dirs(chdir_work, monkeypat
     assert any(command[0][0] == "mattersim_opt" for command in calls)
     assert Path("ht_out/03.XA_Li/period_2/04.LiBeH7/20/mattersim_opt/CONTCAR").exists()
     group_text = Path("ht_out/submit_group_01.sh").read_text(encoding="utf-8") + Path("ht_out/submit_group_02.sh").read_text(encoding="utf-8")
+    expected_case_config = str(Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").resolve())
     assert "vasp_opt -i 20/mattersim_opt/CONTCAR -c input.toml -p 20 -r" in group_text
-    assert "qe_phonon_split_index -i vasp_opt/CONTCAR -c ../input.toml -r" in group_text
+    assert f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -r" in group_text
 
 
 def test_run_workflow_without_mattersim_starts_from_vasp_opt(chdir_work, monkeypatch):
@@ -652,9 +652,10 @@ def test_run_workflow_without_mattersim_starts_from_vasp_opt(chdir_work, monkeyp
     assert all(Path(cwd).name != "20" for _, cwd in calls)
     assert not any(command[0] == "mattersim_opt" for command, _ in calls)
     script_text = Path("ht_out/submit_group_01.sh").read_text(encoding="utf-8")
+    expected_case_config = str(Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").resolve())
     assert "mattersim_opt" not in script_text
     assert "vasp_opt -i XAXBH7-P63mmc.vasp -c input.toml -p 20 -r" in script_text
-    assert "qe_phonon_split_index -i vasp_opt/CONTCAR -c ../input.toml -r" in script_text
+    assert f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -r" in script_text
 
 
 def test_continue_updates_case_status_and_runs_missing_steps(chdir_work, monkeypatch):
@@ -978,11 +979,12 @@ def test_build_submit_scripts_only_keeps_remaining_qe_phonon_when_previous_steps
         for unit in script_info["units"]
         if unit["case_rel"].endswith("04.LiBeH7") and unit["pressure_key"] == "20"
     )
+    expected_case_config = str(Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").resolve())
 
     assert target_unit["steps"] == ["qe_phonon"]
     assert target_unit["commands"] == [
         f'cd "{case_dir.resolve()}"',
-        "qe_phonon_split_index -i vasp_opt/CONTCAR -c ../input.toml -r",
+        f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -r",
     ]
 
 
@@ -1018,7 +1020,8 @@ def test_phonon_mode_switches_qe_phonon_command(chdir_work, monkeypatch):
     run_workflow(str(config_path), "ht_out", run_calc=False, submit=False)
 
     script_text = Path("ht_out/submit_group_01.sh").read_text(encoding="utf-8")
-    assert "qe_phonon_nosplit -i vasp_opt/CONTCAR -c ../input.toml -r" in script_text
+    expected_case_config = str(Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").resolve())
+    assert f"qe_phonon_nosplit -i vasp_opt/CONTCAR -c {expected_case_config} -r" in script_text
 
 
 def test_invalid_phonon_mode_raises_clear_error(chdir_work):
@@ -1091,13 +1094,14 @@ def test_continue_runs_only_qe_phonon_when_previous_steps_finished(chdir_work, m
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
 
     continue_workflow("ht_out", run_calc=True, submit=False)
+    expected_case_config = str((pressure_dir.parent / "input.toml").resolve())
 
     target_calls = [
         (command, cwd)
         for command, cwd in calls
         if Path(cwd).resolve() == pressure_dir.resolve() and command[0] == "qe_phonon_split_index"
     ]
-    assert target_calls == [(["qe_phonon_split_index", "-i", "vasp_opt/CONTCAR", "-c", "../input.toml", "-r"], str(pressure_dir.resolve()))]
+    assert target_calls == [(["qe_phonon_split_index", "-i", "vasp_opt/CONTCAR", "-c", expected_case_config, "-r"], str(pressure_dir.resolve()))]
 
 
 def test_continue_does_not_advance_to_qe_phonon_when_previous_step_error(chdir_work, monkeypatch):
@@ -1134,6 +1138,12 @@ def test_continue_does_not_advance_to_qe_phonon_when_previous_step_error(chdir_w
     (eledos_dir / "DOSCAR").write_text("dos\n", encoding="utf-8")
     _write_scf_like_outcar(eledos_dir / "OUTCAR", converged=False)
     (eledos_dir / "TDOS.dat").write_text("tdos\n", encoding="utf-8")
+    case_status = json.loads((pressure_dir.parent / "case_status.json").read_text(encoding="utf-8"))
+    case_status["pressures"]["20"]["mattersim_opt"] = "finished"
+    case_status["pressures"]["20"]["vasp_opt"] = "finished"
+    case_status["pressures"]["20"]["vasp_scf"] = "finished"
+    case_status["pressures"]["20"]["vasp_eledos"] = "error"
+    (pressure_dir.parent / "case_status.json").write_text(json.dumps(case_status, ensure_ascii=False, indent=2), encoding="utf-8")
 
     calls = []
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", lambda command, cwd: calls.append((command, cwd)))
@@ -1141,7 +1151,7 @@ def test_continue_does_not_advance_to_qe_phonon_when_previous_step_error(chdir_w
 
     def only_target_case(output_dir):
         cases = original_discover_cases(output_dir)
-        return {key: value for key, value in cases.items() if Path(value["case_dir"]).resolve() == case_dir.resolve()}
+        return {key: value for key, value in cases.items() if Path(value["case_dir"]).resolve() == pressure_dir.parent.resolve()}
 
     monkeypatch.setattr("substitutionflow.workflow.discover_cases", only_target_case)
 
@@ -1272,7 +1282,7 @@ def test_refresh_status_qe_phonon_uses_workflow_status_instead_of_directory_trac
     assert workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]["pressures"]["20"]["qe_phonon"] == "finished"
 
 
-def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_inputs(chdir_work, monkeypatch):
+def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_poscar_only(chdir_work, monkeypatch):
     from substitutionflow.status import create_initial_status, load_case_status
     from substitutionflow.structure_substitution import generate_cases
     from substitutionflow.workflow import rewrite_workflow_states
@@ -1322,7 +1332,6 @@ def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_inputs(chdi
 
     updated_case = load_case_status(str(case_dir))
     rewritten_output = buffer.getvalue()
-    repaired_config = (qe_dir / "input.toml").read_text(encoding="utf-8")
     repaired_poscar = (qe_dir / "POSCAR").read_text(encoding="utf-8")
     qe_workflow_status = json.loads((qe_dir / "workflow_status.json").read_text(encoding="utf-8"))
 
@@ -1338,9 +1347,7 @@ def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_inputs(chdi
     assert "to:unstarted" in rewritten_output
     assert "formula:LiBeH7" in rewritten_output
     assert "case:ht_out/03.XA_Li/period_2/04.LiBeH7/20" in rewritten_output
-    assert 'pp_dir = "qe_pseudo_lib"' in repaired_config
-    assert "[qe]" in repaired_config
-    assert "[qe_phonon]" in repaired_config
+    assert (qe_dir / "input.toml").read_text(encoding="utf-8") == "[qe]\n"
     assert qe_workflow_status["merge"] == "unstarted"
     assert qe_workflow_status["ph"]["tasks"]["q_0001"] == "unstarted"
     assert qe_workflow_status["ph"]["tasks"]["q_0002"] == "finished"
@@ -1348,6 +1355,79 @@ def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_inputs(chdi
     assert (qe_dir / "scf.in").exists()
     assert "刷新状态:" in rewritten_output
     assert "重写状态:" in rewritten_output
+
+
+def test_rewrite_workflow_states_with_config_rewrites_case_input_truth_sources(chdir_work):
+    from substitutionflow.status import create_initial_status
+    from substitutionflow.structure_substitution import generate_cases
+    from substitutionflow.workflow import rewrite_workflow_states
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'structure_filename = "structure.vasp"',
+            'structure_filename = "XAXBH7-P63mmc.vasp"',
+        ),
+        encoding="utf-8",
+    )
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    new_config_path = Path("input_ht_new.toml")
+    new_config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'potcar_dir = "potcar_lib"',
+            'potcar_dir = "potcar_lib_new"',
+        ),
+        encoding="utf-8",
+    )
+
+    summary = rewrite_workflow_states("ht_out", config_file=str(new_config_path))
+    case_input = Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").read_text(encoding="utf-8")
+
+    assert 'potcar_dir = "potcar_lib_new"' in case_input
+    assert "重写 case 配置数:" in summary
+
+
+def test_continue_workflow_submit_with_config_rewrites_case_inputs_before_submit(chdir_work, monkeypatch):
+    from substitutionflow.status import create_initial_status
+    from substitutionflow.structure_substitution import generate_cases
+    from substitutionflow.workflow import continue_workflow
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'structure_filename = "structure.vasp"',
+            'structure_filename = "XAXBH7-P63mmc.vasp"',
+        ),
+        encoding="utf-8",
+    )
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    new_config_path = Path("input_ht_new.toml")
+    new_config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'potcar_dir = "potcar_lib"',
+            'potcar_dir = "potcar_lib_new"',
+        ),
+        encoding="utf-8",
+    )
+
+    submitted = []
+    monkeypatch.setattr("substitutionflow.workflow._submit_group_scripts", lambda output_dir, bundle: submitted.append((output_dir, bundle["total_units"])))
+
+    continue_workflow("ht_out", run_calc=False, submit=True, config_file=str(new_config_path))
+    case_input = Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").read_text(encoding="utf-8")
+
+    assert submitted
+    assert 'potcar_dir = "potcar_lib_new"' in case_input
 
 
 def test_continue_workflow_after_rewrite_states_advances_from_first_unfinished_step(chdir_work, monkeypatch):
@@ -1782,12 +1862,13 @@ def test_build_submit_scripts_split_units_without_breaking_chain(chdir_work):
     assert len(target_units) == 1
     target_unit = target_units[0]
     target_text = "\n".join(target_unit["commands"])
+    expected_case_config = str(Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").resolve())
     assert 'cd "/tmp' in target_text or 'cd "' in target_text
     assert f'cd "{Path("ht_out/03.XA_Li/period_2/04.LiBeH7/20").resolve()}"' in target_text
     assert "vasp_scf -i vasp_opt/CONTCAR -c ../input.toml -r" in target_text
     assert "vasp_eledos -i vasp_scf/POSCAR -c ../input.toml -r" in target_text
     assert "vasp_process_eledos -d ./vasp_eledos --elements-total Li Be H" in target_text
-    assert "qe_phonon_split_index -i vasp_opt/CONTCAR -c ../input.toml -r" in target_text
+    assert f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -r" in target_text
     assert "mattersim_opt -i structure.vasp -c input.toml -p 20 -r" not in target_text
     assert "vasp_opt -i mattersim_opt/CONTCAR -c ../input.toml -p 20 -r" not in target_text
     assert all(script_info["unit_count"] > 0 for script_info in bundle["scripts"])
@@ -1928,7 +2009,7 @@ def test_substitution_continue_cli_rewrite_states_mode(chdir_work, monkeypatch):
 
     monkeypatch.setattr(
         "substitutionflow.cli_continue.rewrite_workflow_states",
-        lambda output_dir: f"rewrite:{output_dir}",
+        lambda output_dir, config_file=None: f"rewrite:{output_dir}:{config_file}",
     )
     monkeypatch.setattr(
         "substitutionflow.cli_continue.continue_workflow",
@@ -1940,7 +2021,27 @@ def test_substitution_continue_cli_rewrite_states_mode(chdir_work, monkeypatch):
     with redirect_stdout(buffer):
         module.main()
 
-    assert buffer.getvalue().strip() == "rewrite:ht_out"
+    assert buffer.getvalue().strip() == "rewrite:ht_out:None"
+
+
+def test_substitution_continue_cli_passes_config_to_continue_workflow(chdir_work, monkeypatch):
+    from substitutionflow import cli_continue as module
+
+    monkeypatch.setattr(
+        "substitutionflow.cli_continue.rewrite_workflow_states",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("不应调用 rewrite_workflow_states")),
+    )
+    monkeypatch.setattr(
+        "substitutionflow.cli_continue.continue_workflow",
+        lambda output_dir, run_calc=False, submit=False, config_file=None: f"{output_dir}|{run_calc}|{submit}|{config_file}",
+    )
+    monkeypatch.setattr(sys, "argv", ["substitution_continue", "-o", "ht_out", "-c", "new_input.toml", "-s"])
+
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        module.main()
+
+    assert buffer.getvalue().strip() == "ht_out|False|True|new_input.toml"
 
 
 def test_substitution_continue_cli_rewrite_states_conflicts_with_run(chdir_work, monkeypatch):

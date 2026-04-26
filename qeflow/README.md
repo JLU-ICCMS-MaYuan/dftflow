@@ -83,6 +83,7 @@ qe_phonon_nosplit/
 - 每个 `q_XX/run_split.sh` 只包含两步：
   - `pw.x < scf.in > scf.out`
   - `ph.x < split_ph.in > split_ph.out`
+- `qe_phonon_*` 工作目录只保留 `POSCAR` 副本，不再复制 `input.toml`；所有 CLI 都要求通过 `-c` 显式传入真实配置路径。
 
 ## 6. `qe_check`
 当前实现的检查开关：

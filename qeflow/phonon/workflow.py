@@ -33,7 +33,10 @@ def run_standalone_merge(config_file: str, struct_file: Optional[str], run_calc:
 
 
 def materialize_split_directories(workspace: str, config: dict, prefix: str, mode: str) -> int:
-    context = create_context(f"{workspace}/input.toml", None)
+    config_file = str(config.get("__config_file__", "")).strip()
+    if not config_file:
+        raise ValueError("缺少配置真源路径，无法物化 split q 点目录。")
+    context = create_context(config_file, None)
     context.config = config
     context.prefix = prefix
     if mode == "split_assign_coords":

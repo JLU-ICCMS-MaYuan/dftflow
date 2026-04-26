@@ -321,7 +321,7 @@ def prepare_merge_step(context: PhononStepContext) -> str:
         context.workspace,
         "run_merge.sh",
         str(context.config.get("slurm", {}).get("header", "")),
-        [f"{shlex.quote(sys.executable)} -m qeflow.phonon.qe_merge -c input.toml -r"],
+        [f"{shlex.quote(sys.executable)} -m qeflow.phonon.qe_merge -c {shlex.quote(context.config_file)} -r"],
     )
 
 

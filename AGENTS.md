@@ -24,6 +24,19 @@
 
 ## 需求处理记录
 
+### [2026-04-26] 废弃 qe_phonon 工作目录 input.toml 副本并为 substitution_continue 新增 -c
+- **需求**：
+    1. `substitutionflow + qeflow phonon` 的唯一配置真源固定为 `case/input.toml`，`qe_phonon_*` 工作目录不再生成、修复或依赖 `input.toml` 副本。
+    2. `substitution_continue` 新增 `-c/--config`，用于把新的根配置批量灌入已有 case 的 `input.toml`，并让后续续算/提交显式使用该真源配置。
+    3. `substitution_continue -rws` 收敛为“按需要重写 case 真源配置并重写状态”；`qe_phonon_*` 残留目录只修复 `POSCAR`，不再修复 `input.toml`。
+    4. `substitutionflow` 内部调用 `qe_phonon_*` 时必须显式透传 case 真源配置路径，旧目录中遗留的 `qe_phonon_*/input.toml` 一律忽略。
+- **方案**：
+    1. 修改 `substitutionflow/cli_continue.py` 与 `substitutionflow/workflow.py`，新增 `-c` 参数透传，并补充按已有 case 批量重写 `case/input.toml` 的公共逻辑，供 `continue_workflow()` 与 `rewrite_workflow_states()` 复用。
+    2. 修改 `qeflow/qe_input/fileio.py`、`qeflow/phonon/_shared.py`、`qeflow/phonon/qe_merge.py` 与 `qeflow/phonon/workflow.py`，移除 `qe_phonon_*` 工作目录中的 `input.toml` 复制假设，统一通过显式 `config_file` 工作。
+    3. 收敛 `_repair_qe_phonon_inputs()` 为仅修复 `POSCAR`，并把 `substitutionflow` 生成的 `qe_phonon_*` 命令改为显式传入 case 真源配置绝对路径。
+    4. 更新 `README.md`、`qeflow/README.md`、`substitutionflow/substitutionflow-cli-flow.mmd` 与 `test_auto/MgB2/test_substitutionflow.py`、`test_auto/MgB2/test_qe_phonon.py`，同步新语义与回归测试。
+- **状态**：已完成。
+
 ### [2026-04-25] 收紧 substitution_continue 的 refresh 边界到默认摘要模式
 - **需求**：
     1. `substitution_continue -r` 与 `substitution_continue -s` 语义统一，二者都只从每个 pressure 当前状态文件中的第一个非 `finished` 步骤开始推进。

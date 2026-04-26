@@ -601,6 +601,7 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
     merge_script = Path("qe_phonon_split_index/submit_merge_stage.sh").read_text(encoding="utf-8")
     assert "bash run_merge.sh" in merge_script
     assert "run_q2r.sh" not in merge_script
+    assert str(Path("input_qe.toml").resolve()) in (workdir / "run_merge.sh").read_text(encoding="utf-8")
 
     assert qe_merge.run_merge_step(
         "input_qe.toml",
@@ -732,6 +733,16 @@ def test_qe_phonon_nosplit_uses_short_default_workdir_when_not_configured(chdir_
 
     assert Path("qe_phonon_nosplit/scf.in").exists()
     assert Path("qe_phonon_nosplit/run_ph.sh").exists()
+
+
+def test_create_context_keeps_case_config_as_only_truth_source(chdir_work):
+    from qeflow.phonon import _shared
+
+    context = _shared.create_context("input_qe.toml", "MgB2.vasp", workflow_name="qe_phonon_split_index")
+
+    assert Path(context.workspace, "POSCAR").exists()
+    assert not Path(context.workspace, "input.toml").exists()
+    assert context.config_file == str(Path("input_qe.toml").resolve())
 
 
 def test_qe_phonon_explicit_workdir_overrides_all_default_workdirs(chdir_work, monkeypatch):

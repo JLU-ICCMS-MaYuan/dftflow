@@ -23,6 +23,10 @@ def load_phonon_config(config_file: str) -> Dict[str, Any]:
     return normalize_qe_config_paths(config, config_file=config_file)
 
 
+def resolve_config_path(config_file: str) -> str:
+    return os.path.abspath(config_file)
+
+
 WORKFLOW_DEFAULT_WORKDIRS = {
     "qe_phonon_nosplit": "qe_phonon_nosplit",
     "qe_phonon_split_coords": "qe_phonon_split_coords",
@@ -72,13 +76,14 @@ def resolve_workspace(
     workflow_name: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], str, str]:
     current_dir = os.getcwd()
-    raw_config = load_config_file(config_file)
+    resolved_config_file = resolve_config_path(config_file)
+    raw_config = load_config_file(resolved_config_file)
     config = apply_qe_config_overrides(
         get_qe_phonon_parameters_template(),
         raw_config,
         get_qe_phonon_allowed_keys(),
     )
-    config = normalize_qe_config_paths(config, config_file=config_file)
+    config = normalize_qe_config_paths(config, config_file=resolved_config_file)
     qe_phonon_raw = raw_config.get("qe_phonon", {})
     has_explicit_work_dir = isinstance(qe_phonon_raw, dict) and "work_dir" in qe_phonon_raw
     if has_explicit_work_dir:
@@ -102,9 +107,6 @@ def resolve_workspace(
             structure_source = ensure_structure_source(struct_file)
         if os.path.abspath(structure_source) != os.path.abspath(structure_target):
             shutil.copy2(structure_source, structure_target)
-        config_target = os.path.join(workspace, "input.toml")
-        if os.path.abspath(config_file) != os.path.abspath(config_target):
-            shutil.copy2(config_file, config_target)
 
     return config, current_dir, workspace
 

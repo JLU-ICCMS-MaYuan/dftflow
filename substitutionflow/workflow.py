@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import json
+import shlex
 import sys
 from typing import Dict, List, Optional, Tuple
 
@@ -80,12 +81,13 @@ def _build_process_eledos_command(case_dir: str, structure_filename: str) -> Lis
 
 
 def _build_qe_phonon_command(case_dir: str) -> List[str]:
+    case_config = os.path.abspath(os.path.join(case_dir, "input.toml"))
     return [
         get_case_phonon_workflow(case_dir),
         "-i",
         "vasp_opt/CONTCAR",
         "-c",
-        "../input.toml",
+        case_config,
         "-r",
     ]
 
@@ -312,7 +314,7 @@ def _collect_configured_units(output_dir: str) -> List[Dict]:
             for step in step_order:
                 step_names.append(step)
                 commands.append(f'cd "{_step_cwd(case_meta["case_dir"], pressure, step, use_mattersim)}"')
-                commands.append(" ".join(step_commands[step]))
+                commands.append(shlex.join(step_commands[step]))
             units.append(
                 {
                     "case_dir": case_meta["case_dir"],
@@ -355,7 +357,7 @@ def _collect_pending_units(output_dir: str, refresh_before: bool = True) -> List
                     continue
                 step_names.append(step)
                 commands.append(f'cd "{_step_cwd(case_meta["case_dir"], pressure, step, use_mattersim)}"')
-                commands.append(" ".join(step_commands[step]))
+                commands.append(shlex.join(step_commands[step]))
             units.append(
                 {
                     "case_dir": case_meta["case_dir"],
@@ -503,12 +505,21 @@ def _repair_qe_phonon_inputs(case_dir: str, pressure_key: str) -> None:
     if not os.path.isdir(qe_workdir):
         return
 
-    root_config = load_substitutionflow_config(os.path.join(case_dir, "input.toml"))
-    write_case_input_config(os.path.join(qe_workdir, "input.toml"), root_config)
-
     contcar_path = os.path.join(pressure_dir, "vasp_opt", "CONTCAR")
     if os.path.exists(contcar_path):
         shutil.copyfile(contcar_path, os.path.join(qe_workdir, "POSCAR"))
+
+
+def rewrite_case_input_configs(output_dir: str, config_file: str) -> int:
+    root_config = load_substitutionflow_config(config_file)
+    cases = discover_cases(output_dir)
+    rewritten = 0
+    total_cases = len(cases)
+    for index, case_meta in enumerate(cases.values(), start=1):
+        _print_case_stage_progress("重写配置", index, total_cases, case_meta)
+        write_case_input_config(os.path.join(case_meta["case_dir"], "input.toml"), root_config)
+        rewritten += 1
+    return rewritten
 
 
 def _rewrite_qe_phonon_workflow_status_errors(case_dir: str, pressure_key: str) -> int:
@@ -547,7 +558,10 @@ def _rewrite_qe_phonon_workflow_status_errors(case_dir: str, pressure_key: str) 
     return rewritten
 
 
-def rewrite_workflow_states(output_dir: str) -> str:
+def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) -> str:
+    rewritten_case_configs = 0
+    if config_file:
+        rewritten_case_configs = rewrite_case_input_configs(output_dir, config_file)
     refresh_status(output_dir, show_progress=True)
     cases = discover_cases(output_dir)
     rewritten_count = 0
@@ -592,13 +606,17 @@ def rewrite_workflow_states(output_dir: str) -> str:
             f"重写步骤数: {rewritten_count}",
             f"重写 qe_phonon 子步骤数: {rewritten_qe_count}",
             f"修复压强点数: {repaired_pressures}",
+            f"重写 case 配置数: {rewritten_case_configs}",
         ]
     )
 
 
-def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = False) -> str:
+def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = False, config_file: Optional[str] = None) -> str:
     if not run_calc and not submit:
         return summarize_status(refresh_status(output_dir, show_progress=True))
+
+    if config_file:
+        rewrite_case_input_configs(output_dir, config_file)
 
     cases = discover_cases(output_dir)
     for case_meta in cases.values():
