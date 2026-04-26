@@ -712,7 +712,17 @@ def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) 
 
 def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = False, config_file: Optional[str] = None) -> str:
     if not run_calc and not submit:
-        return summarize_status(refresh_status(output_dir, show_progress=True))
+        if config_file:
+            rewrite_case_input_configs(output_dir, config_file)
+        summary = refresh_status(output_dir, show_progress=True)
+        submit_groups = _load_submit_groups_from_output_dir(output_dir)
+        script_bundle = build_submit_scripts(output_dir, submit_groups, refresh_before=False)
+        return "\n".join(
+            [
+                summarize_status(summary),
+                _format_submit_summary(script_bundle, "总未完成单元数"),
+            ]
+        )
 
     if config_file:
         rewrite_case_input_configs(output_dir, config_file)

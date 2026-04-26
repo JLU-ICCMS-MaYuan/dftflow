@@ -42,7 +42,7 @@ flowchart TD
 
     B6 --> G["substitution_continue"]
     G --> G1{"模式"}
-    G1 -->|默认| G2["refresh_status 后输出汇总"]
+    G1 -->|默认| G2["refresh_status 后重新生成 submit_group_*.sh<br/>并输出状态摘要 + 提交脚本摘要"]
     G1 -->| -c | G2A["先批量重写已有 case/input.toml"]
     G1 -->| -r | G3["直接基于当前状态文件<br/>从每个 pressure 第一个非 finished 步开始续算"]
     G1 -->| -s | G4["直接基于当前状态文件<br/>从每个 pressure 第一个非 finished 步收集并分组提交"]

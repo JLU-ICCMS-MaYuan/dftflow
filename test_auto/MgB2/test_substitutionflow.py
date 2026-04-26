@@ -1719,8 +1719,39 @@ def test_continue_workflow_default_mode_refreshes_status_summary(chdir_work):
     updated_case = load_case_status(str(case_dir))
     progress_output = buffer.getvalue()
     assert "总 case 数" in summary
+    assert "总未完成单元数" in summary
     assert updated_case["pressures"]["20"]["vasp_scf"] == "error"
     assert "刷新状态:" in progress_output
+    assert Path("ht_out/submit_group_01.sh").exists()
+
+
+def test_continue_workflow_default_mode_with_config_rewrites_case_inputs_and_generates_submit_scripts(chdir_work):
+    from substitutionflow.status import create_initial_status
+    from substitutionflow.structure_substitution import generate_cases
+    from substitutionflow.workflow import continue_workflow
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    new_config_path = Path("input_ht_new.toml")
+    new_config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'potcar_dir = "potcar_lib"',
+            'potcar_dir = "potcar_lib_new"',
+        ),
+        encoding="utf-8",
+    )
+
+    summary = continue_workflow("ht_out", run_calc=False, submit=False, config_file=str(new_config_path))
+
+    case_input = Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").read_text(encoding="utf-8")
+    assert 'potcar_dir = "potcar_lib_new"' in case_input
+    assert "总未完成单元数" in summary
+    assert Path("ht_out/submit_group_01.sh").exists()
 
 def test_continue_workflow_run_prints_case_pressure_step_progress(chdir_work, monkeypatch):
     from substitutionflow.status import create_initial_status
