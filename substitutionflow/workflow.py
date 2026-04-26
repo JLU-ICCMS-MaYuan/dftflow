@@ -363,12 +363,20 @@ def _collect_configured_units(output_dir: str) -> List[Dict]:
     return units
 
 
-def _collect_pending_units(output_dir: str, refresh_before: bool = True) -> List[Dict]:
+def _collect_pending_units(
+    output_dir: str,
+    refresh_before: bool = True,
+    show_progress: bool = False,
+    progress_stage: str = "收集提交单元",
+) -> List[Dict]:
     if refresh_before:
         refresh_status(output_dir)
     cases = discover_cases(output_dir)
     units: List[Dict] = []
-    for case_meta in cases.values():
+    total_cases = len(cases)
+    for index, case_meta in enumerate(cases.values(), start=1):
+        if show_progress:
+            _print_compact_stage_progress(progress_stage, index, total_cases, case_meta["case_display_rel"])
         structure_filename = _infer_structure_filename(case_meta["case_dir"])
         case_status = load_case_status(case_meta["case_dir"])
         step_order = get_case_step_order(case_meta["case_dir"])
@@ -427,11 +435,20 @@ def _split_pending_units(units: List[Dict], submit_groups: int) -> List[List[Dic
     return groups
 
 
-def _build_submit_scripts_from_units(output_dir: str, submit_groups: int, units: List[Dict]) -> Dict:
+def _build_submit_scripts_from_units(
+    output_dir: str,
+    submit_groups: int,
+    units: List[Dict],
+    show_progress: bool = False,
+    progress_stage: str = "生成脚本",
+) -> Dict:
     header = _load_slurm_header(output_dir)
     groups = _split_pending_units(units, submit_groups)
     script_infos: List[Dict] = []
     for index, group in enumerate(groups, start=1):
+        if show_progress:
+            script_label = f"submit_group_{index:02d}.sh"
+            _print_compact_stage_progress(progress_stage, index, len(groups), script_label)
         script_name = f"submit_group_{index:02d}.sh"
         script_path = os.path.join(output_dir, script_name)
         commands: List[str] = []
@@ -454,11 +471,25 @@ def _build_submit_scripts_from_units(output_dir: str, submit_groups: int, units:
     }
 
 
-def build_submit_scripts(output_dir: str, submit_groups: int, refresh_before: bool = True) -> Dict:
+def build_submit_scripts(
+    output_dir: str,
+    submit_groups: int,
+    refresh_before: bool = True,
+    show_progress: bool = False,
+    collect_stage: str = "收集提交单元",
+    write_stage: str = "生成脚本",
+) -> Dict:
     return _build_submit_scripts_from_units(
         output_dir,
         submit_groups,
-        _collect_pending_units(output_dir, refresh_before=refresh_before),
+        _collect_pending_units(
+            output_dir,
+            refresh_before=refresh_before,
+            show_progress=show_progress,
+            progress_stage=collect_stage,
+        ),
+        show_progress=show_progress,
+        progress_stage=write_stage,
     )
 
 
@@ -719,9 +750,16 @@ def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) 
             rewritten_qe_count += _rewrite_qe_phonon_workflow_status_errors(case_meta["case_dir"], pressure_key)
         save_case_status(case_meta["case_dir"], case_status)
 
-    summary = create_initial_status(output_dir)
+    summary = create_initial_status(output_dir, show_progress=True, progress_stage="重建状态")
     submit_groups = _load_submit_groups_from_output_dir(output_dir)
-    script_bundle = build_submit_scripts(output_dir, submit_groups, refresh_before=False)
+    script_bundle = build_submit_scripts(
+        output_dir,
+        submit_groups,
+        refresh_before=False,
+        show_progress=True,
+        collect_stage="收集提交单元",
+        write_stage="生成脚本",
+    )
     lines = [
         summarize_status(summary),
         _format_submit_summary(script_bundle, "总未完成单元数"),

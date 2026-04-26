@@ -509,9 +509,17 @@ def load_workflow_status(output_dir: str) -> Dict:
     return _load_json(get_workflow_status_path(output_dir))
 
 
-def create_initial_status(output_dir: str) -> Dict:
+def create_initial_status(
+    output_dir: str,
+    show_progress: bool = False,
+    progress_stage: str = "重建状态",
+) -> Dict:
     cases = discover_cases(output_dir)
-    for case_meta in cases.values():
+    total_cases = len(cases)
+    for index, case_meta in enumerate(cases.values(), start=1):
+        if show_progress:
+            compact_label = case_meta.get("case_display_rel", case_meta.get("case_rel", ""))
+            _print_case_progress(progress_stage, index, total_cases, case_meta, compact_label=compact_label)
         _ensure_case_status_file(case_meta)
     summary = _build_workflow_summary(output_dir, cases)
     save_workflow_status(output_dir, summary)
