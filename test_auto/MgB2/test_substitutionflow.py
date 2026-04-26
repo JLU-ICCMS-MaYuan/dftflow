@@ -618,7 +618,7 @@ def test_run_workflow_generates_group_scripts_and_opt_dirs(chdir_work, monkeypat
     group_text = Path("ht_out/submit_group_01.sh").read_text(encoding="utf-8") + Path("ht_out/submit_group_02.sh").read_text(encoding="utf-8")
     expected_case_config = str(Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").resolve())
     assert "vasp_opt -i 20/mattersim_opt/CONTCAR -c input.toml -p 20 -r" in group_text
-    assert f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -r" in group_text
+    assert f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -s" in group_text
 
 
 def test_run_workflow_without_mattersim_starts_from_vasp_opt(chdir_work, monkeypatch):
@@ -655,7 +655,7 @@ def test_run_workflow_without_mattersim_starts_from_vasp_opt(chdir_work, monkeyp
     expected_case_config = str(Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").resolve())
     assert "mattersim_opt" not in script_text
     assert "vasp_opt -i XAXBH7-P63mmc.vasp -c input.toml -p 20 -r" in script_text
-    assert f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -r" in script_text
+    assert f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -s" in script_text
 
 
 def test_continue_updates_case_status_and_runs_missing_steps(chdir_work, monkeypatch):
@@ -984,7 +984,7 @@ def test_build_submit_scripts_only_keeps_remaining_qe_phonon_when_previous_steps
     assert target_unit["steps"] == ["qe_phonon"]
     assert target_unit["commands"] == [
         f'cd "{case_dir.resolve()}"',
-        f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -r",
+        f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -s",
     ]
 
 
@@ -1944,7 +1944,7 @@ def test_build_submit_scripts_split_units_without_breaking_chain(chdir_work):
     assert "vasp_scf -i vasp_opt/CONTCAR -c ../input.toml -r" in target_text
     assert "vasp_eledos -i vasp_scf/POSCAR -c ../input.toml -r" in target_text
     assert "vasp_process_eledos -d ./vasp_eledos --elements-total Li Be H" in target_text
-    assert f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -r" in target_text
+    assert f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -s" in target_text
     assert "mattersim_opt -i structure.vasp -c input.toml -p 20 -r" not in target_text
     assert "vasp_opt -i mattersim_opt/CONTCAR -c ../input.toml -p 20 -r" not in target_text
     assert all(script_info["unit_count"] > 0 for script_info in bundle["scripts"])

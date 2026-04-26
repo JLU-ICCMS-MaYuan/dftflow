@@ -82,14 +82,22 @@ def _build_process_eledos_command(case_dir: str, structure_filename: str) -> Lis
 
 
 def _build_qe_phonon_command(case_dir: str) -> List[str]:
+    return _build_qe_phonon_command_for_mode(case_dir, submit_mode=False)
+
+
+def _build_qe_phonon_command_for_mode(case_dir: str, submit_mode: bool) -> List[str]:
     case_config = os.path.abspath(os.path.join(case_dir, "input.toml"))
+    workflow_name = get_case_phonon_workflow(case_dir)
+    action_flag = "-r"
+    if submit_mode and workflow_name in {"qe_phonon_split_index", "qe_phonon_split_coords"}:
+        action_flag = "-s"
     return [
-        get_case_phonon_workflow(case_dir),
+        workflow_name,
         "-i",
         "vasp_opt/CONTCAR",
         "-c",
         case_config,
-        "-r",
+        action_flag,
     ]
 
 
@@ -102,6 +110,16 @@ def _setup_commands(structure_filename: str, pressure) -> Dict[str, List[str]]:
 
 
 def _run_commands(case_dir: str, structure_filename: str, pressure, use_mattersim: bool) -> Dict[str, List[str]]:
+    return _run_commands_for_mode(case_dir, structure_filename, pressure, use_mattersim, submit_mode=False)
+
+
+def _run_commands_for_mode(
+    case_dir: str,
+    structure_filename: str,
+    pressure,
+    use_mattersim: bool,
+    submit_mode: bool,
+) -> Dict[str, List[str]]:
     pressure_key = _pressure_key(pressure)
     vasp_opt_input = os.path.join(pressure_key, "mattersim_opt", "CONTCAR") if use_mattersim else structure_filename
     return {
@@ -110,7 +128,7 @@ def _run_commands(case_dir: str, structure_filename: str, pressure, use_mattersi
         "vasp_scf": ["vasp_scf", "-i", "vasp_opt/CONTCAR", "-c", "../input.toml", "-r"],
         "vasp_eledos": ["vasp_eledos", "-i", "vasp_scf/POSCAR", "-c", "../input.toml", "-r"],
         "vasp_process_eledos": _build_process_eledos_command(case_dir, structure_filename),
-        "qe_phonon": _build_qe_phonon_command(case_dir),
+        "qe_phonon": _build_qe_phonon_command_for_mode(case_dir, submit_mode=submit_mode),
     }
 
 
@@ -316,7 +334,13 @@ def _collect_configured_units(output_dir: str) -> List[Dict]:
         step_order = get_case_step_order(case_meta["case_dir"])
         use_mattersim = case_uses_mattersim(case_meta["case_dir"])
         for pressure in case_meta["pressures"]:
-            step_commands = _run_commands(case_meta["case_dir"], structure_filename, pressure, use_mattersim)
+            step_commands = _run_commands_for_mode(
+                case_meta["case_dir"],
+                structure_filename,
+                pressure,
+                use_mattersim,
+                submit_mode=True,
+            )
             commands: List[str] = []
             step_names: List[str] = []
             for step in step_order:
@@ -356,7 +380,13 @@ def _collect_pending_units(output_dir: str, refresh_before: bool = True) -> List
                 continue
             commands: List[str] = []
             started = False
-            step_commands = _run_commands(case_meta["case_dir"], structure_filename, pressure, use_mattersim)
+            step_commands = _run_commands_for_mode(
+                case_meta["case_dir"],
+                structure_filename,
+                pressure,
+                use_mattersim,
+                submit_mode=True,
+            )
             step_names: List[str] = []
             for step in step_order:
                 if step == first_step:

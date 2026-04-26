@@ -31,7 +31,7 @@ flowchart TD
     E3 -->|否| E4{"是否 -s?"}
     E3 -->|是| F["顺序执行完整工作流"]
     E4 -->|否| E5["只生成 submit_group_*.sh 摘要"]
-    E4 -->|是| E6["按 submit_groups 分组并 sbatch 提交"]
+    E4 -->|是| E6["按 submit_groups 分组并 sbatch 提交<br/>split 声子改用 qe_phonon_split_* -s<br/>使 q 点任务分别提交、可并行运行"]
 
     F --> F1["每步执行后 refresh_status"]
     F1 --> F2{"当前 step 状态"}
