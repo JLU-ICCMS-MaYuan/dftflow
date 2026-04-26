@@ -41,12 +41,12 @@ flowchart TD
     F3 --> F5["主步骤链：<br/>mattersim_opt 可选 → vasp_opt → vasp_scf → vasp_eledos → vasp_process_eledos → qe_phonon 可选"]
 
     B6 --> G["substitution_continue"]
-    G --> G1{"模式"}
-    G1 -->|默认| G2["refresh_status 后重新生成 submit_group_*.sh<br/>并输出状态摘要 + 提交脚本摘要"]
-    G1 -->| -c | G2A["先批量重写已有 case/input.toml"]
-    G1 -->| -r | G3["直接基于当前状态文件<br/>从每个 pressure 第一个非 finished 步开始续算"]
-    G1 -->| -s | G4["直接基于当前状态文件<br/>从每个 pressure 第一个非 finished 步收集并分组提交"]
-    G1 -->| -rws | G5["refresh_status"]
+    G --> G0["必须显式传入 -o <batch_dir> + -c <input.toml>"]
+    G0 --> G1{"模式"}
+    G1 -->|默认| G2["先批量重写已有 case/input.toml<br/>再 refresh_status + 重新生成 submit_group_*.sh<br/>并输出状态摘要 + 提交脚本摘要"]
+    G1 -->| -r | G3["先批量重写已有 case/input.toml<br/>再从每个 pressure 第一个非 finished 步开始续算"]
+    G1 -->| -s | G4["先批量重写已有 case/input.toml<br/>再从每个 pressure 第一个非 finished 步收集并分组提交"]
+    G1 -->| -rws | G5["先批量重写已有 case/input.toml<br/>再 refresh_status"]
     G5 --> G6["执行时只显示紧凑进度条<br/>保留当前 case 目录名，不打印逐条 rewrite 明细"]
     G6 --> G7["把全部 error 重写为 unstarted"]
     G7 --> G8["只修复 qe_phonon 残留目录的 POSCAR<br/>不再读写 qe_phonon_*/input.toml"]

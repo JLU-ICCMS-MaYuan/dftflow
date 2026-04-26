@@ -661,9 +661,9 @@ def _collect_pre_refresh_error_steps(output_dir: str) -> Dict[Tuple[str, str], s
 
 
 def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) -> str:
-    rewritten_case_configs = 0
-    if config_file:
-        rewritten_case_configs = _rewrite_case_input_configs(output_dir, config_file, compact_progress=True)
+    if not config_file:
+        raise ValueError("rewrite_workflow_states() 需要显式提供 config_file。")
+    rewritten_case_configs = _rewrite_case_input_configs(output_dir, config_file, compact_progress=True)
     pre_refresh_error_steps = _collect_pre_refresh_error_steps(output_dir)
     refresh_status(output_dir, show_progress=True, progress_style="compact")
     cases = discover_cases(output_dir)
@@ -711,9 +711,10 @@ def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) 
 
 
 def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = False, config_file: Optional[str] = None) -> str:
+    if not config_file:
+        raise ValueError("continue_workflow() 需要显式提供 config_file。")
     if not run_calc and not submit:
-        if config_file:
-            rewrite_case_input_configs(output_dir, config_file)
+        rewrite_case_input_configs(output_dir, config_file)
         summary = refresh_status(output_dir, show_progress=True)
         submit_groups = _load_submit_groups_from_output_dir(output_dir)
         script_bundle = build_submit_scripts(output_dir, submit_groups, refresh_before=False)
@@ -724,8 +725,7 @@ def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = Fa
             ]
         )
 
-    if config_file:
-        rewrite_case_input_configs(output_dir, config_file)
+    rewrite_case_input_configs(output_dir, config_file)
 
     cases = discover_cases(output_dir)
     for case_meta in cases.values():

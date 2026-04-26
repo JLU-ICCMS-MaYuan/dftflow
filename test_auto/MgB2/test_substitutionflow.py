@@ -706,7 +706,7 @@ def test_continue_updates_case_status_and_runs_missing_steps(chdir_work, monkeyp
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
 
-    summary = continue_workflow("ht_out", run_calc=True, submit=False)
+    summary = continue_workflow("ht_out", run_calc=True, submit=False, config_file=str(config_path))
     refresh_status("ht_out", squeue_output="")
     case_status = json.loads((case_dir / "case_status.json").read_text(encoding="utf-8"))
 
@@ -767,7 +767,7 @@ def test_continue_without_mattersim_runs_from_vasp_opt(chdir_work, monkeypatch):
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
 
-    summary = continue_workflow("ht_out", run_calc=True, submit=False)
+    summary = continue_workflow("ht_out", run_calc=True, submit=False, config_file=str(config_path))
 
     assert "总 case 数" in summary
     assert "mattersim_opt" not in summary
@@ -1093,7 +1093,7 @@ def test_continue_runs_only_qe_phonon_when_previous_steps_finished(chdir_work, m
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
 
-    continue_workflow("ht_out", run_calc=True, submit=False)
+    continue_workflow("ht_out", run_calc=True, submit=False, config_file=str(config_path))
     expected_case_config = str((pressure_dir.parent / "input.toml").resolve())
 
     target_calls = [
@@ -1155,7 +1155,7 @@ def test_continue_does_not_advance_to_qe_phonon_when_previous_step_error(chdir_w
 
     monkeypatch.setattr("substitutionflow.workflow.discover_cases", only_target_case)
 
-    continue_workflow("ht_out", run_calc=True, submit=False)
+    continue_workflow("ht_out", run_calc=True, submit=False, config_file=str(config_path))
 
     target_calls = [(command, cwd) for command, cwd in calls if Path(cwd).resolve() == pressure_dir.resolve()]
     assert target_calls == []
@@ -1189,7 +1189,7 @@ def test_rewrite_workflow_states_only_rewrites_status_files(chdir_work, monkeypa
     _write_opt_outcar(opt_dir / "OUTCAR", converged=True)
 
 
-    summary = rewrite_workflow_states("ht_out")
+    summary = rewrite_workflow_states("ht_out", config_file=str(config_path))
 
     updated_case = load_case_status(str(case_dir))
     workflow_status = load_workflow_status("ht_out")
@@ -1328,7 +1328,7 @@ def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_poscar_only
 
     buffer = io.StringIO()
     with redirect_stdout(buffer):
-        summary = rewrite_workflow_states("ht_out")
+        summary = rewrite_workflow_states("ht_out", config_file=str(config_path))
 
     updated_case = load_case_status(str(case_dir))
     rewritten_output = buffer.getvalue()
@@ -1430,7 +1430,7 @@ def test_rewrite_workflow_states_groups_multiple_steps_into_single_row(chdir_wor
     (scf_dir / "WAVECAR").write_text("wav\n", encoding="utf-8")
     _write_scf_like_outcar(scf_dir / "OUTCAR", converged=False)
 
-    summary = rewrite_workflow_states("ht_out")
+    summary = rewrite_workflow_states("ht_out", config_file=str(config_path))
 
     target_lines = [line for line in summary.splitlines() if "ht_out/03.XA_Li/period_2/04.LiBeH7" in line]
     assert len(target_lines) == 1
@@ -1461,7 +1461,7 @@ def test_rewrite_workflow_states_without_main_step_rewrites_omits_result_table(c
         matdyn_phdos="unstarted",
     )
 
-    summary = rewrite_workflow_states("ht_out")
+    summary = rewrite_workflow_states("ht_out", config_file=str(config_path))
 
     assert "重写 qe_phonon 子步骤数: 2" in summary
     assert "重写结果:" not in summary
@@ -1566,8 +1566,8 @@ def test_continue_workflow_after_rewrite_states_advances_from_first_unfinished_s
 
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
 
-    rewrite_workflow_states("ht_out")
-    summary = continue_workflow("ht_out", run_calc=True, submit=False)
+    rewrite_workflow_states("ht_out", config_file=str(config_path))
+    summary = continue_workflow("ht_out", run_calc=True, submit=False, config_file=str(config_path))
 
     target_calls = [
         (command, cwd)
@@ -1625,7 +1625,7 @@ def test_continue_workflow_run_uses_existing_status_without_pre_refresh(chdir_wo
 
     monkeypatch.setattr(workflow_module, "discover_cases", only_target_case)
 
-    continue_workflow("ht_out", run_calc=True, submit=False)
+    continue_workflow("ht_out", run_calc=True, submit=False, config_file=str(config_path))
 
     target_calls = [(command, cwd) for command, cwd in calls if Path(cwd).resolve() == pressure_dir.resolve()]
     assert [command[0] for command, _ in target_calls] == ["vasp_eledos"]
@@ -1673,7 +1673,7 @@ def test_continue_workflow_submit_uses_existing_status_without_pre_refresh(chdir
     submitted = []
     monkeypatch.setattr("substitutionflow.workflow.submit_script", lambda work_dir, script_name: submitted.append((work_dir, script_name)))
 
-    summary = continue_workflow("ht_out", run_calc=False, submit=True)
+    summary = continue_workflow("ht_out", run_calc=False, submit=True, config_file=str(config_path))
 
     script_lines = Path("ht_out/submit_group_01.sh").read_text(encoding="utf-8").splitlines()
     target_cd = f'cd "{pressure_dir.resolve()}"'
@@ -1714,7 +1714,7 @@ def test_continue_workflow_default_mode_refreshes_status_summary(chdir_work):
 
     buffer = io.StringIO()
     with redirect_stdout(buffer):
-        summary = continue_workflow("ht_out", run_calc=False, submit=False)
+        summary = continue_workflow("ht_out", run_calc=False, submit=False, config_file=str(config_path))
 
     updated_case = load_case_status(str(case_dir))
     progress_output = buffer.getvalue()
@@ -1797,7 +1797,7 @@ def test_continue_workflow_run_prints_case_pressure_step_progress(chdir_work, mo
 
     output = io.StringIO()
     with redirect_stdout(output):
-        continue_workflow("ht_out", run_calc=True, submit=False)
+        continue_workflow("ht_out", run_calc=True, submit=False, config_file=str(config_path))
 
     captured = output.getvalue()
     assert "运行进度:" in captured
@@ -1909,7 +1909,7 @@ def test_continue_treats_qe_phonon_trace_without_workflow_status_as_unstarted(ch
     calls = []
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", lambda command, cwd: calls.append((command, cwd)))
 
-    continue_workflow("ht_out", run_calc=True, submit=False)
+    continue_workflow("ht_out", run_calc=True, submit=False, config_file=str(config_path))
 
     target_calls = [(command, cwd) for command, cwd in calls if Path(cwd).resolve() == pressure_dir.resolve()]
     assert any(command[0].startswith("qe_phonon") for command, _ in target_calls)
@@ -2049,7 +2049,7 @@ def test_continue_submit_uses_case_input_submit_groups(chdir_work, monkeypatch):
 
     output = io.StringIO()
     with redirect_stdout(output):
-        summary = continue_workflow("ht_out", run_calc=False, submit=True)
+        summary = continue_workflow("ht_out", run_calc=False, submit=True, config_file=str(config_path))
 
     captured = output.getvalue()
     assert "计划分组数: 5" in summary
@@ -2122,13 +2122,13 @@ def test_substitution_continue_cli_rewrite_states_mode(chdir_work, monkeypatch):
         "substitutionflow.cli_continue.continue_workflow",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("不应调用 continue_workflow")),
     )
-    monkeypatch.setattr(sys, "argv", ["substitution_continue", "-o", "ht_out", "-rws"])
+    monkeypatch.setattr(sys, "argv", ["substitution_continue", "-o", "ht_out", "-c", "input_ht.toml", "-rws"])
 
     buffer = io.StringIO()
     with redirect_stdout(buffer):
         module.main()
 
-    assert buffer.getvalue().strip() == "rewrite:ht_out:None"
+    assert buffer.getvalue().strip() == "rewrite:ht_out:input_ht.toml"
 
 
 def test_substitution_continue_cli_passes_config_to_continue_workflow(chdir_work, monkeypatch):
@@ -2149,6 +2149,18 @@ def test_substitution_continue_cli_passes_config_to_continue_workflow(chdir_work
         module.main()
 
     assert buffer.getvalue().strip() == "ht_out|False|True|new_input.toml"
+
+
+def test_substitution_continue_cli_requires_config(chdir_work, monkeypatch):
+    from substitutionflow import cli_continue as module
+
+    monkeypatch.setattr(sys, "argv", ["substitution_continue", "-o", "ht_out"])
+
+    try:
+        module.main()
+        assert False, "预期缺少 -c/--config 时抛出 SystemExit"
+    except SystemExit as exc:
+        assert exc.code == 2
 
 
 def test_substitution_continue_cli_rewrite_states_conflicts_with_run(chdir_work, monkeypatch):
