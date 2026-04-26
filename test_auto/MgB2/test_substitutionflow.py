@@ -1194,10 +1194,11 @@ def test_rewrite_workflow_states_only_rewrites_status_files(chdir_work, monkeypa
     updated_case = load_case_status(str(case_dir))
     workflow_status = load_workflow_status("ht_out")
     assert summary.startswith("总 case 数: ")
+    assert "总未完成单元数" in summary
     assert updated_case["pressures"]["20"]["vasp_opt"] == "finished"
     assert updated_case["pressures"]["20"]["vasp_scf"] == "unstarted"
     assert workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]["pressures"]["20"]["vasp_scf"] == "unstarted"
-    assert not Path("ht_out/submit_group_01.sh").exists()
+    assert Path("ht_out/submit_group_01.sh").exists()
 
 
 def test_reduce_qe_phonon_workflow_status_for_nosplit_and_split(chdir_work):
@@ -1584,7 +1585,7 @@ def test_continue_workflow_after_rewrite_states_advances_from_first_unfinished_s
     assert all(command[0] != "vasp_opt" for command, _ in target_calls)
 
 
-def test_continue_workflow_run_uses_existing_status_without_pre_refresh(chdir_work, monkeypatch):
+def test_continue_workflow_run_refreshes_status_before_advancing(chdir_work, monkeypatch):
     from substitutionflow.status import create_initial_status, load_case_status
     from substitutionflow.structure_substitution import generate_cases
     from substitutionflow.workflow import continue_workflow
@@ -1628,12 +1629,12 @@ def test_continue_workflow_run_uses_existing_status_without_pre_refresh(chdir_wo
     continue_workflow("ht_out", run_calc=True, submit=False, config_file=str(config_path))
 
     target_calls = [(command, cwd) for command, cwd in calls if Path(cwd).resolve() == pressure_dir.resolve()]
-    assert [command[0] for command, _ in target_calls] == ["vasp_eledos"]
+    assert target_calls == []
     updated_case = load_case_status(str(case_dir))
     assert updated_case["pressures"]["20"]["vasp_scf"] == "error"
 
 
-def test_continue_workflow_submit_uses_existing_status_without_pre_refresh(chdir_work, monkeypatch):
+def test_continue_workflow_submit_refreshes_status_before_building_scripts(chdir_work, monkeypatch):
     from substitutionflow.status import create_initial_status, load_case_status
     from substitutionflow.structure_substitution import generate_cases
     from substitutionflow.workflow import continue_workflow
@@ -1680,7 +1681,7 @@ def test_continue_workflow_submit_uses_existing_status_without_pre_refresh(chdir
     target_index = script_lines.index(target_cd)
     assert "总未完成单元数" in summary
     assert submitted == [("ht_out", "submit_group_01.sh")]
-    assert script_lines[target_index + 1].startswith("vasp_eledos ")
+    assert script_lines[target_index + 1].startswith("vasp_scf ")
 
 
 def test_continue_workflow_default_mode_refreshes_status_summary(chdir_work):

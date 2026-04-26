@@ -548,6 +548,22 @@ def _repair_qe_phonon_inputs(case_dir: str, pressure_key: str) -> None:
         shutil.copyfile(contcar_path, os.path.join(qe_workdir, "POSCAR"))
 
 
+def _sync_qe_phonon_poscars(output_dir: str) -> int:
+    cases = discover_cases(output_dir)
+    repaired_pressures = 0
+    for case_meta in cases.values():
+        for pressure in case_meta["pressures"]:
+            pressure_key = _pressure_key(pressure)
+            pressure_dir = os.path.join(case_meta["case_dir"], pressure_key)
+            qe_workdir = os.path.join(pressure_dir, get_case_phonon_workdir(case_meta["case_dir"]))
+            contcar_path = os.path.join(pressure_dir, "vasp_opt", "CONTCAR")
+            if not os.path.isdir(qe_workdir) or not os.path.exists(contcar_path):
+                continue
+            _repair_qe_phonon_inputs(case_meta["case_dir"], pressure_key)
+            repaired_pressures += 1
+    return repaired_pressures
+
+
 def rewrite_case_input_configs(output_dir: str, config_file: str) -> int:
     return _rewrite_case_input_configs(output_dir, config_file, compact_progress=False)
 
@@ -660,16 +676,25 @@ def _collect_pre_refresh_error_steps(output_dir: str) -> Dict[Tuple[str, str], s
     return error_steps
 
 
+def _prepare_continue_workspace(output_dir: str, config_file: str) -> Tuple[Dict, Dict, int, Dict]:
+    rewrite_case_input_configs(output_dir, config_file)
+    summary = refresh_status(output_dir, show_progress=True)
+    repaired_pressures = _sync_qe_phonon_poscars(output_dir)
+    submit_groups = _load_submit_groups_from_output_dir(output_dir)
+    script_bundle = build_submit_scripts(output_dir, submit_groups, refresh_before=False)
+    return summary, script_bundle, repaired_pressures, discover_cases(output_dir)
+
+
 def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) -> str:
     if not config_file:
         raise ValueError("rewrite_workflow_states() 需要显式提供 config_file。")
     rewritten_case_configs = _rewrite_case_input_configs(output_dir, config_file, compact_progress=True)
     pre_refresh_error_steps = _collect_pre_refresh_error_steps(output_dir)
-    refresh_status(output_dir, show_progress=True, progress_style="compact")
+    summary = refresh_status(output_dir, show_progress=True, progress_style="compact")
+    repaired_pressures = _sync_qe_phonon_poscars(output_dir)
     cases = discover_cases(output_dir)
     rewritten_count = 0
     rewritten_qe_count = 0
-    repaired_pressures = 0
     grouped_results: "OrderedDict[Tuple[str, str], Dict[str, object]]" = OrderedDict()
 
     total_cases = len(cases)
@@ -692,16 +717,17 @@ def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) 
                     _record_rewrite_result(grouped_results, case_meta, pressure_key, step)
         for pressure_key in sorted(rewritten_pressures, key=lambda value: list(case_status["pressures"]).index(value)):
             rewritten_qe_count += _rewrite_qe_phonon_workflow_status_errors(case_meta["case_dir"], pressure_key)
-            _repair_qe_phonon_inputs(case_meta["case_dir"], pressure_key)
-            repaired_pressures += 1
         save_case_status(case_meta["case_dir"], case_status)
 
     summary = create_initial_status(output_dir)
+    submit_groups = _load_submit_groups_from_output_dir(output_dir)
+    script_bundle = build_submit_scripts(output_dir, submit_groups, refresh_before=False)
     lines = [
         summarize_status(summary),
+        _format_submit_summary(script_bundle, "总未完成单元数"),
         f"重写步骤数: {rewritten_count}",
         f"重写 qe_phonon 子步骤数: {rewritten_qe_count}",
-        f"修复压强点数: {repaired_pressures}",
+        f"同步 qe_phonon POSCAR 压强点数: {repaired_pressures}",
         f"重写 case 配置数: {rewritten_case_configs}",
     ]
     rewrite_results_table = _format_rewrite_results_table(grouped_results)
@@ -714,20 +740,16 @@ def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = Fa
     if not config_file:
         raise ValueError("continue_workflow() 需要显式提供 config_file。")
     if not run_calc and not submit:
-        rewrite_case_input_configs(output_dir, config_file)
-        summary = refresh_status(output_dir, show_progress=True)
-        submit_groups = _load_submit_groups_from_output_dir(output_dir)
-        script_bundle = build_submit_scripts(output_dir, submit_groups, refresh_before=False)
+        summary, script_bundle, repaired_pressures, _cases = _prepare_continue_workspace(output_dir, config_file)
         return "\n".join(
             [
                 summarize_status(summary),
                 _format_submit_summary(script_bundle, "总未完成单元数"),
+                f"同步 qe_phonon POSCAR 压强点数: {repaired_pressures}",
             ]
         )
 
-    rewrite_case_input_configs(output_dir, config_file)
-
-    cases = discover_cases(output_dir)
+    _summary, script_bundle, _repaired_pressures, cases = _prepare_continue_workspace(output_dir, config_file)
     for case_meta in cases.values():
         case_meta["structure_filename"] = _infer_structure_filename(case_meta["case_dir"])
 
@@ -746,7 +768,5 @@ def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = Fa
                 continue
         return summarize_status(refresh_status(output_dir))
 
-    submit_groups = _load_submit_groups_from_output_dir(output_dir)
-    script_bundle = build_submit_scripts(output_dir, submit_groups, refresh_before=False)
     _submit_group_scripts(output_dir, script_bundle)
     return _format_submit_summary(script_bundle, "总未完成单元数")

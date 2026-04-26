@@ -43,13 +43,13 @@ flowchart TD
     B6 --> G["substitution_continue"]
     G --> G0["必须显式传入 -o <batch_dir> + -c <input.toml>"]
     G0 --> G1{"模式"}
-    G1 -->|默认| G2["先批量重写已有 case/input.toml<br/>再 refresh_status + 重新生成 submit_group_*.sh<br/>并输出状态摘要 + 提交脚本摘要"]
-    G1 -->| -r | G3["先批量重写已有 case/input.toml<br/>再从每个 pressure 第一个非 finished 步开始续算"]
-    G1 -->| -s | G4["先批量重写已有 case/input.toml<br/>再从每个 pressure 第一个非 finished 步收集并分组提交"]
-    G1 -->| -rws | G5["先批量重写已有 case/input.toml<br/>再 refresh_status"]
+    G1 -->|默认| G2["先批量重写已有 case/input.toml<br/>再 refresh_status + 同步 qe_phonon POSCAR + 重新生成 submit_group_*.sh<br/>并输出状态摘要 + 提交脚本摘要"]
+    G1 -->| -r | G3["先执行默认校准流程<br/>再从每个 pressure 第一个非 finished 步开始续算"]
+    G1 -->| -s | G4["先执行默认校准流程<br/>再从每个 pressure 第一个非 finished 步收集并分组提交"]
+    G1 -->| -rws | G5["先执行默认校准流程"]
     G5 --> G6["执行时只显示紧凑进度条<br/>保留当前 case 目录名，不打印逐条 rewrite 明细"]
     G6 --> G7["把全部 error 重写为 unstarted"]
-    G7 --> G8["只修复 qe_phonon 残留目录的 POSCAR<br/>不再读写 qe_phonon_*/input.toml"]
+    G7 --> G8["继续忽略 qe_phonon_*/input.toml<br/>只维护已有 qe_phonon 目录的 POSCAR 副本"]
     G8 --> G9["结束后按 case + pressure 表格汇总<br/>输出本次被重写的主步骤"]
 
     F5 --> H["产生 DOS 后处理结果"]
