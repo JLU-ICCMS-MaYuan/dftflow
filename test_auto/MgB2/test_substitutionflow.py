@@ -1342,11 +1342,20 @@ def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_poscar_only
     assert updated_case["pressures"]["20"]["qe_phonon"] == "unstarted"
     assert updated_case["pressures"]["20"]["vasp_eledos"] == "finished"
     assert updated_case["pressures"]["50"]["vasp_scf"] == "unstarted"
-    assert "event:rewrite" in rewritten_output
-    assert "from:error" in rewritten_output
-    assert "to:unstarted" in rewritten_output
-    assert "formula:LiBeH7" in rewritten_output
-    assert "case:ht_out/03.XA_Li/period_2/04.LiBeH7/20" in rewritten_output
+    assert "event:rewrite" not in rewritten_output
+    assert "from:error" not in rewritten_output
+    assert "to:unstarted" not in rewritten_output
+    assert "formula:LiBeH7" not in rewritten_output
+    assert "case:ht_out/03.XA_Li/period_2/04.LiBeH7/20" not in rewritten_output
+    assert "FORMULA" in summary
+    assert "PRESSURE" in summary
+    assert "STEPS" in summary
+    assert "CASE" in summary
+    assert "重写结果:" in summary
+    assert "LiBeH7" in summary
+    assert "20" in summary
+    assert "vasp_opt,qe_phonon" in summary
+    assert "ht_out/03.XA_Li/period_2/04.LiBeH7" in summary
     assert (qe_dir / "input.toml").read_text(encoding="utf-8") == "[qe]\n"
     assert qe_workflow_status["merge"] == "unstarted"
     assert qe_workflow_status["ph"]["tasks"]["q_0001"] == "unstarted"
@@ -1355,6 +1364,7 @@ def test_rewrite_workflow_states_resets_errors_and_repairs_qe_phonon_poscar_only
     assert (qe_dir / "scf.in").exists()
     assert "刷新状态:" in rewritten_output
     assert "重写状态:" in rewritten_output
+    assert "ht_out/03.XA_Li/period_2/04.LiBeH7" in rewritten_output
 
 
 def test_rewrite_workflow_states_with_config_rewrites_case_input_truth_sources(chdir_work):
@@ -1390,6 +1400,72 @@ def test_rewrite_workflow_states_with_config_rewrites_case_input_truth_sources(c
 
     assert 'potcar_dir = "potcar_lib_new"' in case_input
     assert "重写 case 配置数:" in summary
+
+
+def test_rewrite_workflow_states_groups_multiple_steps_into_single_row(chdir_work):
+    from substitutionflow.status import create_initial_status, load_case_status
+    from substitutionflow.structure_substitution import generate_cases
+    from substitutionflow.workflow import rewrite_workflow_states
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    case_dir = Path("ht_out/03.XA_Li/period_2/04.LiBeH7")
+    case_status = load_case_status(str(case_dir))
+    case_status["pressures"]["20"]["vasp_opt"] = "error"
+    case_status["pressures"]["20"]["vasp_scf"] = "error"
+    (case_dir / "case_status.json").write_text(json.dumps(case_status, ensure_ascii=False, indent=2), encoding="utf-8")
+    pressure_dir = case_dir / "20"
+    opt_dir = pressure_dir / "vasp_opt"
+    opt_dir.mkdir(parents=True, exist_ok=True)
+    (opt_dir / "CONTCAR").write_text("contcar\n", encoding="utf-8")
+    _write_opt_outcar(opt_dir / "OUTCAR", converged=False)
+    scf_dir = pressure_dir / "vasp_scf"
+    scf_dir.mkdir(parents=True, exist_ok=True)
+    (scf_dir / "CHGCAR").write_text("chg\n", encoding="utf-8")
+    (scf_dir / "WAVECAR").write_text("wav\n", encoding="utf-8")
+    _write_scf_like_outcar(scf_dir / "OUTCAR", converged=False)
+
+    summary = rewrite_workflow_states("ht_out")
+
+    target_lines = [line for line in summary.splitlines() if "ht_out/03.XA_Li/period_2/04.LiBeH7" in line]
+    assert len(target_lines) == 1
+    assert "vasp_opt,vasp_scf" in target_lines[0]
+
+
+def test_rewrite_workflow_states_without_main_step_rewrites_omits_result_table(chdir_work):
+    from substitutionflow.status import create_initial_status
+    from substitutionflow.structure_substitution import generate_cases
+    from substitutionflow.workflow import rewrite_workflow_states
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    _append_qe_phonon_config(config_path)
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    qe_dir = Path("ht_out/03.XA_Li/period_2/04.LiBeH7/20/qe_phonon_split_index")
+    qe_dir.mkdir(parents=True, exist_ok=True)
+    _write_qe_phonon_workflow_status(
+        qe_dir,
+        tasks={"q_0001": "error", "q_0002": "finished"},
+        merge="error",
+        q2r="unstarted",
+        matdyn_phband="unstarted",
+        matdyn_phdos="unstarted",
+    )
+
+    summary = rewrite_workflow_states("ht_out")
+
+    assert "重写 qe_phonon 子步骤数: 2" in summary
+    assert "重写结果:" not in summary
+    assert "FORMULA" not in summary
 
 
 def test_continue_workflow_submit_with_config_rewrites_case_inputs_before_submit(chdir_work, monkeypatch):

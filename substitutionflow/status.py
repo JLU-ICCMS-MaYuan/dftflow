@@ -482,10 +482,18 @@ def _render_progress_bar(current: int, total: int, width: int = 24) -> str:
     return f"[{'#' * filled}{'-' * (width - filled)}] {clamped_current}/{safe_total}"
 
 
-def _print_case_progress(stage: str, current: int, total: int, case_meta: Optional[Dict] = None) -> None:
+def _print_case_progress(
+    stage: str,
+    current: int,
+    total: int,
+    case_meta: Optional[Dict] = None,
+    compact_label: str = "",
+) -> None:
     label = _render_progress_bar(current, total)
     details = ""
-    if case_meta is not None:
+    if compact_label:
+        details = f" {compact_label}"
+    elif case_meta is not None:
         details = f" {case_meta.get('formula', '')} {case_meta.get('case_display_rel', case_meta.get('case_rel', ''))}".rstrip()
     sys.stdout.write(f"\r{stage}: {label}{details}")
     if current >= max(total, 1):
@@ -515,12 +523,14 @@ def refresh_status(
     squeue_output: Optional[str] = None,
     squeue_user: Optional[str] = None,
     show_progress: bool = False,
+    progress_style: str = "detail",
 ) -> Dict:
     cases = discover_cases(output_dir)
     total_cases = len(cases)
     for index, case_meta in enumerate(cases.values(), start=1):
         if show_progress:
-            _print_case_progress("刷新状态", index, total_cases, case_meta)
+            compact_label = case_meta.get("case_display_rel", case_meta.get("case_rel", "")) if progress_style == "compact" else ""
+            _print_case_progress("刷新状态", index, total_cases, case_meta, compact_label=compact_label)
         case_status = _ensure_case_status_file(case_meta)
         updated = {
             "formula": case_status["formula"],

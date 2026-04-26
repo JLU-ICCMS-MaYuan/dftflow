@@ -47,8 +47,10 @@ flowchart TD
     G1 -->| -r | G3["直接基于当前状态文件<br/>从每个 pressure 第一个非 finished 步开始续算"]
     G1 -->| -s | G4["直接基于当前状态文件<br/>从每个 pressure 第一个非 finished 步收集并分组提交"]
     G1 -->| -rws | G5["refresh_status"]
-    G5 --> G6["把全部 error 重写为 unstarted"]
-    G6 --> G7["只修复 qe_phonon 残留目录的 POSCAR<br/>不再读写 qe_phonon_*/input.toml"]
+    G5 --> G6["执行时只显示紧凑进度条<br/>保留当前 case 目录名，不打印逐条 rewrite 明细"]
+    G6 --> G7["把全部 error 重写为 unstarted"]
+    G7 --> G8["只修复 qe_phonon 残留目录的 POSCAR<br/>不再读写 qe_phonon_*/input.toml"]
+    G8 --> G9["结束后按 case + pressure 表格汇总<br/>输出本次被重写的主步骤"]
 
     F5 --> H["产生 DOS 后处理结果"]
     H --> I["substitution_plot_eledos"]

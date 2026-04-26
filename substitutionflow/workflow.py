@@ -5,6 +5,7 @@ import subprocess
 import json
 import shlex
 import sys
+from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
@@ -170,6 +171,13 @@ def _print_case_stage_progress(stage: str, current: int, total: int, case_meta: 
         f"\r{stage}: {bar} {case_meta['formula']} {case_meta['case_display_rel']}"
     )
     if current >= safe_total:
+        sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
+def _print_compact_stage_progress(stage: str, current: int, total: int, case_label: str) -> None:
+    sys.stdout.write(f"\r{stage}: {_render_progress_bar(current, total)} {case_label}")
+    if current >= max(total, 1):
         sys.stdout.write("\n")
     sys.stdout.flush()
 
@@ -511,12 +519,19 @@ def _repair_qe_phonon_inputs(case_dir: str, pressure_key: str) -> None:
 
 
 def rewrite_case_input_configs(output_dir: str, config_file: str) -> int:
+    return _rewrite_case_input_configs(output_dir, config_file, compact_progress=False)
+
+
+def _rewrite_case_input_configs(output_dir: str, config_file: str, compact_progress: bool) -> int:
     root_config = load_substitutionflow_config(config_file)
     cases = discover_cases(output_dir)
     rewritten = 0
     total_cases = len(cases)
     for index, case_meta in enumerate(cases.values(), start=1):
-        _print_case_stage_progress("重写配置", index, total_cases, case_meta)
+        if compact_progress:
+            _print_compact_stage_progress("重写配置", index, total_cases, case_meta["case_display_rel"])
+        else:
+            _print_case_stage_progress("重写配置", index, total_cases, case_meta)
         write_case_input_config(os.path.join(case_meta["case_dir"], "input.toml"), root_config)
         rewritten += 1
     return rewritten
@@ -558,19 +573,78 @@ def _rewrite_qe_phonon_workflow_status_errors(case_dir: str, pressure_key: str) 
     return rewritten
 
 
+def _record_rewrite_result(
+    grouped_results: "OrderedDict[Tuple[str, str], Dict[str, object]]",
+    case_meta: Dict,
+    pressure_key: str,
+    step: str,
+) -> None:
+    key = (case_meta["case_display_rel"], pressure_key)
+    entry = grouped_results.setdefault(
+        key,
+        {
+            "formula": case_meta["formula"],
+            "case_display_rel": case_meta["case_display_rel"],
+            "pressure_key": pressure_key,
+            "steps": [],
+        },
+    )
+    steps = entry["steps"]
+    if isinstance(steps, list) and step not in steps:
+        steps.append(step)
+
+
+def _format_rewrite_results_table(grouped_results: "OrderedDict[Tuple[str, str], Dict[str, object]]") -> str:
+    if not grouped_results:
+        return ""
+    formula_width = 20
+    pressure_width = 10
+    steps_width = 25
+    lines = [
+        "重写结果:",
+        f"{'FORMULA':<{formula_width}} {'PRESSURE':<{pressure_width}} {'STEPS':<{steps_width}} CASE",
+    ]
+    for entry in grouped_results.values():
+        steps = ",".join(entry["steps"]) if isinstance(entry["steps"], list) else ""
+        lines.append(
+            f"{entry['formula']:<{formula_width}} "
+            f"{entry['pressure_key']:<{pressure_width}} "
+            f"{steps:<{steps_width}} "
+            f"{entry['case_display_rel']}"
+        )
+    return "\n".join(lines)
+
+
+def _collect_pre_refresh_error_steps(output_dir: str) -> Dict[Tuple[str, str], set]:
+    cases = discover_cases(output_dir)
+    error_steps: Dict[Tuple[str, str], set] = {}
+    for case_meta in cases.values():
+        case_status = load_case_status(case_meta["case_dir"])
+        for pressure_key, pressure_status in case_status["pressures"].items():
+            key = (case_meta["case_display_rel"], pressure_key)
+            error_steps[key] = {
+                step_name
+                for step_name, step_state in pressure_status.items()
+                if step_state == "error"
+            }
+    return error_steps
+
+
 def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) -> str:
     rewritten_case_configs = 0
     if config_file:
-        rewritten_case_configs = rewrite_case_input_configs(output_dir, config_file)
-    refresh_status(output_dir, show_progress=True)
+        rewritten_case_configs = _rewrite_case_input_configs(output_dir, config_file, compact_progress=True)
+    pre_refresh_error_steps = _collect_pre_refresh_error_steps(output_dir)
+    refresh_status(output_dir, show_progress=True, progress_style="compact")
     cases = discover_cases(output_dir)
     rewritten_count = 0
     rewritten_qe_count = 0
     repaired_pressures = 0
+    grouped_results: "OrderedDict[Tuple[str, str], Dict[str, object]]" = OrderedDict()
 
     total_cases = len(cases)
     for index, case_meta in enumerate(cases.values(), start=1):
-        _print_case_stage_progress("重写状态", index, total_cases, case_meta)
+        _print_compact_stage_progress("重写状态", index, total_cases, case_meta["case_display_rel"])
         case_status = load_case_status(case_meta["case_dir"])
         step_order = get_case_step_order(case_meta["case_dir"])
         rewritten_pressures = set()
@@ -583,16 +657,9 @@ def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) 
                 pressure_status[step] = "unstarted"
                 rewritten_count += 1
                 rewritten_pressures.add(pressure_key)
-                _print_progress(
-                    "rewrite",
-                    "unstarted",
-                    case_meta,
-                    pressure,
-                    step_order,
-                    step,
-                    from_="error",
-                    to="unstarted",
-                )
+                key = (case_meta["case_display_rel"], pressure_key)
+                if step in pre_refresh_error_steps.get(key, set()):
+                    _record_rewrite_result(grouped_results, case_meta, pressure_key, step)
         for pressure_key in sorted(rewritten_pressures, key=lambda value: list(case_status["pressures"]).index(value)):
             rewritten_qe_count += _rewrite_qe_phonon_workflow_status_errors(case_meta["case_dir"], pressure_key)
             _repair_qe_phonon_inputs(case_meta["case_dir"], pressure_key)
@@ -600,15 +667,17 @@ def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) 
         save_case_status(case_meta["case_dir"], case_status)
 
     summary = create_initial_status(output_dir)
-    return "\n".join(
-        [
-            summarize_status(summary),
-            f"重写步骤数: {rewritten_count}",
-            f"重写 qe_phonon 子步骤数: {rewritten_qe_count}",
-            f"修复压强点数: {repaired_pressures}",
-            f"重写 case 配置数: {rewritten_case_configs}",
-        ]
-    )
+    lines = [
+        summarize_status(summary),
+        f"重写步骤数: {rewritten_count}",
+        f"重写 qe_phonon 子步骤数: {rewritten_qe_count}",
+        f"修复压强点数: {repaired_pressures}",
+        f"重写 case 配置数: {rewritten_case_configs}",
+    ]
+    rewrite_results_table = _format_rewrite_results_table(grouped_results)
+    if rewrite_results_table:
+        lines.append(rewrite_results_table)
+    return "\n".join(lines)
 
 
 def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = False, config_file: Optional[str] = None) -> str:
