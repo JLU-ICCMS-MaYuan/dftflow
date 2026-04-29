@@ -24,6 +24,17 @@
 
 ## 需求处理记录
 
+### [2026-04-29] 新增 Codex 本地历史会话管理 skill
+- **需求**：
+    1. 设计并实现一个新的自定义 skill，用于管理 Codex 本地历史会话。
+    2. 功能覆盖对话归档、对话摘要、标题建议/重命名流程、删除前确认与记录。
+- **方案**：
+    1. 在 `~/.codex/skills/codex-history-manager/` 下新增 `SKILL.md`、`agents/openai.yaml` 与 `scripts/manage_history.py`，将 skill 触发范围限定为 `~/.codex` 下的本地 JSONL 会话历史。
+    2. 用统一 `argparse` 子命令实现 `list / summarize / suggest-title / archive / rename / delete` 六类操作；标题更新只改 `session_index.jsonl` 的 `thread_name`。
+    3. 删除采用“先归档、后硬删除、必须显式 --confirm”的安全流程；归档和审计记录默认写入 `~/.codex/archived_sessions/`，且不修改 SQLite 内部库。
+    4. 通过当前真实 `~/.codex` 的只读验证，以及临时 `codex_home` 的归档/重命名/删除闭环测试确认脚本行为。
+- **状态**：已完成。
+
 ### [2026-04-26] 废弃 qe_phonon 工作目录 input.toml 副本并为 substitution_continue 新增 -c
 - **需求**：
     1. `substitutionflow + qeflow phonon` 的唯一配置真源固定为 `case/input.toml`，`qe_phonon_*` 工作目录不再生成、修复或依赖 `input.toml` 副本。
