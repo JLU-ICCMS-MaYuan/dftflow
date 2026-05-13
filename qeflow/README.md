@@ -1,5 +1,15 @@
 # QEFLOW 使用说明
 
+- CLI 总览流程图见 [qeflow-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/qeflow-cli-flow.mmd)。
+- 分模块流程图：
+  - [scf/scf-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/scf/scf-cli-flow.mmd)
+  - [nscf/nscf-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/nscf/nscf-cli-flow.mmd)
+  - [eband/eband-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/eband/eband-cli-flow.mmd)
+  - [eledos/eledos-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/eledos/eledos-cli-flow.mmd)
+  - [phonon/phonon-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/phonon/phonon-cli-flow.mmd)
+  - [qe_check/qe-check-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/qe_check/qe-check-cli-flow.mmd)
+  - [qe_input/qe-input-flow.mmd](/home/mayuan/code/dftflow/qeflow/qe_input/qe-input-flow.mmd)
+
 ## 1. `executable_path` 语义
 - `[qe].executable_path` 填写的是“启动命令 + QE bin 目录”，不是某个单独的 `*.x` 可执行文件。
 - 典型写法：

@@ -24,6 +24,28 @@
 
 ## 需求处理记录
 
+### [2026-05-13] 为 substitution_plot_eledos 增加数值统计与进度条
+- **需求**：
+    1. `substitution_plot_eledos` 在生成 `eledos_summary_<pressure>.png` 的同级目录，同步输出费米能级处 DOS 数值统计 `eledos_summary_<pressure>.dat`。
+    2. `.dat` 使用空格分隔，列包含体系化学配比名称、XA/XB/H/TDOS 的费米能级处 DOS 和 `status`。
+    3. 统计过程中显示类似 `substitution_continue` 的紧凑进度条，便于跟踪处理到的 XA 目录和压强点。
+- **方案**：
+    1. 修改 `substitutionflow/plot_eledos.py`，复用现有 `*_at_ef.csv` 读取结果写出 `eledos_summary_<pressure>.dat`，缺失 CSV 或缺列统一记为 `error`。
+    2. 在 `substitution_plot_eledos` 主流程中按全部 XA 目录与 pressure 总数显示 `处理 eledos: [..] current/total` 进度条。
+    3. 更新 `test_auto/MgB2/test_substitutionflow.py`，覆盖 `.png/.dat` 同步生成、缺失 case 保留、数值写出和进度条输出。
+    4. 更新 `substitutionflow/substitutionflow-cli-flow.mmd`，同步新的 `png + dat` 输出语义。
+- **状态**：已完成。
+
+### [2026-05-13] 新增 qeflow CLI Mermaid 流程图索引
+- **需求**：
+    1. 为 qeflow 总体 CLI 和各子模块补充 Mermaid 流程图，便于从 README 快速定位各命令链路。
+    2. README 需要列出总览和分模块流程图入口。
+- **方案**：
+    1. 新增 `qeflow/qeflow-cli-flow.mmd` 作为 qeflow 总览图。
+    2. 新增 `scf/nscf/eband/eledos/phonon/qe_check/qe_input` 子模块流程图，分别描述各 CLI 输入、生成文件、运行/提交路径和输出。
+    3. 更新 `qeflow/README.md`，在开头补充 Mermaid 流程图索引。
+- **状态**：已完成。
+
 ### [2026-04-29] 新增 Codex 本地历史会话管理 skill
 - **需求**：
     1. 设计并实现一个新的自定义 skill，用于管理 Codex 本地历史会话。
