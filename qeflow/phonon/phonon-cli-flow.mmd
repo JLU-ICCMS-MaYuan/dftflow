@@ -1,0 +1,52 @@
+flowchart TD
+    A["输入<br/>-c input.toml<br/>-i POSCAR/CONTCAR"] --> B["resolve_workspace<br/>显式 -c 真源 + work_dir"]
+    B --> C["create_context / prepare_root_scf_step"]
+
+    subgraph P0["单步 CLI"]
+        direction TD
+        C --> P1["qe_ph_nosplit"]
+        P1 --> P1A["prepare_ph_nosplit_step"]
+        P1A --> P1B{"模式"}
+        P1B -->|默认| P1C["只写 ph.in + run_ph.sh"]
+        P1B -->| --dyn0 | P1D["只跑到 dyn0"]
+        P1B -->| -r / -s | P1E["执行或提交 ph.x"]
+
+        C --> P2["qe_ph_split_assign_index"]
+        C --> P3["qe_ph_split_assign_coords"]
+        P2 --> P2A["先准备 SCF + dyn0"]
+        P3 --> P3A["先准备 SCF + dyn0"]
+        P2A --> P2B["物化 q_index_map.json + q_XX/run_split.sh"]
+        P3A --> P3B["物化 q_index_map.json + q_XX/run_split.sh"]
+        P2B --> P2C["逐 q 点运行 / 提交 split ph.x"]
+        P3B --> P3C["逐 q 点运行 / 提交 split ph.x"]
+
+        P2C --> P4["qe_merge"]
+        P3C --> P4
+        P4 --> P4A["按 q_index_map.json.mode 回收 dyn / dvscf"]
+
+        P1E --> P5["qe_q2r"]
+        P4A --> P5
+        P5 --> P6["qe_matdyn_phband"]
+        P5 --> P7["qe_matdyn_phdos"]
+    end
+
+    subgraph P8["总工作流 CLI"]
+        direction TD
+        C --> W1["qe_phonon_nosplit"]
+        C --> W2["qe_phonon_split_index"]
+        C --> W3["qe_phonon_split_coords"]
+
+        W1 --> W1A["SCF -> ph -> q2r -> phband -> phdos"]
+        W2 --> W2A["SCF -> dyn0 -> split q_XX -> merge -> q2r -> phband -> phdos"]
+        W3 --> W3A["SCF -> dyn0 -> split q_XX -> merge -> q2r -> phband -> phdos"]
+
+        W1A --> WS["workflow_status.json<br/>run_*.sh submit_*.sh POSCAR"]
+        W2A --> WS
+        W3A --> WS
+    end
+
+    subgraph P9["状态与辅助"]
+        direction TD
+        H1["refresh_workflow_status"] --> H2["root_has_running_step / any_split_task_running"]
+        H2 --> H3["决定继续运行、提交下一阶段或仅打印状态"]
+    end

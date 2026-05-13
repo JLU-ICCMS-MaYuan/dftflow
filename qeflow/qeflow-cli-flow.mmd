@@ -1,0 +1,74 @@
+---
+id: 9d23b8b8-8985-4c98-9f55-d7b4e3a87670
+---
+flowchart TD
+    A["input.toml<br/>pp_dir + [qe] + [qe_phonon] + [slurm]"] --> B["POSCAR / CONTCAR"]
+
+    subgraph E0["电子结构主线 CLI"]
+        direction TD
+        B --> E1["qe_scf<br/>pw.x SCF"]
+        E1 --> E1O["qe_scf/<br/>scf.in scf.out CHGCAR-like 数据"]
+        E1O --> E2["qe_nscf<br/>pw.x NSCF"]
+        E2 --> E2O["qe_nscf/<br/>nscf.in nscf.out"]
+        E2O --> E3["qe_eband<br/>pw.x + bands.x + projwfc.x"]
+        E3 --> E3O["qe_eband/<br/>elebanddata.dat *.projwfc_*"]
+        E2O --> E4["qe_eledos<br/>pw.x + dos.x + projwfc.x"]
+        E4 --> E4O["qe_eledos/<br/>pwscf.dos pdos_*"]
+    end
+
+    subgraph E5["电子后处理 CLI"]
+        direction TD
+        E4O --> E6["qe_process_eledos<br/>汇总 DOS / PDOS"]
+        E6 --> E6O["CSV / DAT / 图表"]
+        E3O --> E7["qe_process_eband<br/>汇总 projwfc band 投影"]
+        E7 --> E7O["投影能带 DAT / 图表"]
+    end
+
+    subgraph P0["声子单步 CLI"]
+        direction TD
+        B --> P1["qe_ph_nosplit<br/>ph.x 单步 / dyn0-only"]
+        P1 --> P1O["qe_phonon_*/<br/>ph.in ph.out prefix.dyn*"]
+
+        B --> P2["qe_ph_split_assign_index<br/>按 q 点编号拆分 ph.x"]
+        B --> P3["qe_ph_split_assign_coords<br/>按 q 点坐标拆分 ph.x"]
+        P2 --> P2O["q_index_map.json + q_XX/run_split.sh"]
+        P3 --> P3O["q_index_map.json + q_XX/run_split.sh"]
+
+        P2O --> P4["qe_merge<br/>回收 split 结果"]
+        P3O --> P4
+        P4 --> P4O["合并后的 dyn / dvscf"]
+
+        P1O --> P5["qe_q2r<br/>q2r.x"]
+        P4O --> P5
+        P5 --> P5O["q2r.in q2r.out force_constants"]
+
+        P5O --> P6["qe_matdyn_phband<br/>matdyn.x 声子能带"]
+        P5O --> P7["qe_matdyn_phdos<br/>matdyn.x 声子 DOS"]
+        P6 --> P6O["频散文件 / band 数据"]
+        P7 --> P7O["phdos 文件 / DOS 数据"]
+    end
+
+    subgraph P8["声子总工作流 CLI"]
+        direction TD
+        B --> W1["qe_phonon_nosplit"]
+        B --> W2["qe_phonon_split_index"]
+        B --> W3["qe_phonon_split_coords"]
+
+        W1 --> W1S["自动串起<br/>SCF -> ph -> q2r -> phband -> phdos"]
+        W2 --> W2S["自动串起<br/>SCF -> dyn0 -> split q_XX -> merge -> q2r -> phband -> phdos"]
+        W3 --> W3S["自动串起<br/>SCF -> dyn0 -> split q_XX -> merge -> q2r -> phband -> phdos"]
+
+        W1S --> WS["workflow_status.json<br/>run_*.sh / submit_*.sh / POSCAR"]
+        W2S --> WS
+        W3S --> WS
+    end
+
+    subgraph C0["检查与辅助"]
+        direction TD
+        C1["qe_check<br/>检查 scf / relax / ph / q2r"] --> C2["输出 finished / running / error / unstarted"]
+    end
+
+    E1O -. 复用结构与配置 .-> P8
+    A -. 所有 CLI 共用统一配置块 .-> E0
+    A -. 所有声子 CLI 共用 [qe_phonon] .-> P0
+    A -. 所有总工作流显式通过 -c 指向真源配置 .-> P8

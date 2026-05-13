@@ -1,0 +1,19 @@
+flowchart TD
+    A["输入<br/>-c input.toml<br/>-i POSCAR/CONTCAR"] --> B["QENSCFSetup"]
+    B --> C["加载 [qe] + [qe_nscf]"]
+    C --> D["normalize_qe_config_paths"]
+    D --> E["解析 POSCAR"]
+    E --> F["从 qe_scf 拷贝 SCF save 数据"]
+    E --> G["resolve_atomic_species_entries"]
+    E --> H["生成 NSCF k 网格<br/>支持 wan 模式"]
+    F --> I["生成 qe_nscf/nscf.in"]
+    G --> I
+    H --> I
+    I --> J["写 qe_nscf/run_qe.sh"]
+    J --> K{"动作"}
+    K -->|默认| L["只完成 setup"]
+    K -->| -r | M["执行 pw.x < nscf.in > nscf.out"]
+    K -->| -s | N["提交 run_qe.sh"]
+    L --> O["输出目录<br/>qe_nscf/POSCAR nscf.in run_qe.sh"]
+    M --> P["输出结果<br/>qe_nscf/nscf.out"]
+    N --> P

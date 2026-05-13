@@ -1,0 +1,17 @@
+flowchart TD
+    A["输入<br/>-c input.toml<br/>-i POSCAR/CONTCAR"] --> B["QESetup"]
+    B --> C["加载模板与配置覆盖<br/>[qe] + [qe_scf] + pp_dir"]
+    C --> D["normalize_qe_config_paths"]
+    D --> E["解析 POSCAR<br/>lattice / elements / counts / positions"]
+    E --> F["resolve_atomic_species_entries<br/>从 pp_dir 自动匹配赝势"]
+    E --> G["计算自动 K_POINTS<br/>显式 kpoints 或按 kmesh 生成"]
+    F --> H["生成 qe_scf/scf.in"]
+    G --> H
+    H --> I["写 qe_scf/run_qe.sh"]
+    I --> J{"动作"}
+    J -->|默认| K["只完成 setup"]
+    J -->| -r | L["执行 pw.x < scf.in > scf.out"]
+    J -->| -s | M["提交 run_qe.sh"]
+    K --> N["输出目录<br/>qe_scf/POSCAR scf.in run_qe.sh"]
+    L --> O["输出结果<br/>qe_scf/scf.out"]
+    M --> O

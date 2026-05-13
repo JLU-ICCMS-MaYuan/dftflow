@@ -1,0 +1,25 @@
+---
+id: ceb1b219-0234-49b9-8ff6-3f078ad9a82b
+---
+flowchart TD
+    A["输入<br/>-c input.toml<br/>-i POSCAR/CONTCAR"] --> B["qe_eband"]
+    B --> C["加载 [qe] + [qe_eband]"]
+    C --> D["解析 POSCAR"]
+    D --> E["读取/生成 KPATH.in<br/>必要时调用 vaspkit 303"]
+    E --> F["parse_kpath_segments + flatten_segments"]
+    D --> G["resolve_atomic_species_entries"]
+    G --> H["生成 qe_eband/eband.in"]
+    F --> H
+    H --> I["写 run_qe.sh<br/>pw.x + bands.x + projwfc.x"]
+    I --> J{"动作"}
+    J -->|默认| K["只完成 setup"]
+    J -->| -r | L["运行能带链路"]
+    J -->| -s | M["提交 run_qe.sh"]
+    L --> N["输出<br/>elebanddata.dat<br/>*_band.projwfc_*<br/>*_band.labelinfo.dat"]
+    M --> N
+
+    O["qe_process_eband"] --> P["读取 projwfc 投影文件"]
+    P --> Q["读取 eband.in 里的 CELL_PARAMETERS / K_POINTS"]
+    Q --> R["重建 k 路径距离与高对称点"]
+    R --> S["汇总轨道投影"]
+    S --> T["输出投影能带 DAT / 图表"]

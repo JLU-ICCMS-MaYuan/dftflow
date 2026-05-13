@@ -1,0 +1,18 @@
+flowchart TD
+    A["输入<br/>-c input.toml<br/>-i POSCAR/CONTCAR"] --> B["qe_eledos"]
+    B --> C["加载 [qe] + [qe_eledos]"]
+    C --> D["解析 POSCAR"]
+    D --> E["从 qe_scf 拷贝 prefix.save"]
+    E --> F["生成 eletdos.in + elepdos.in"]
+    F --> G["写 run_qe.sh<br/>dos.x + projwfc.x"]
+    G --> H{"动作"}
+    H -->|默认| I["只完成 setup"]
+    H -->| -r | J["运行 dos.x / projwfc.x"]
+    H -->| -s | K["提交 run_qe.sh"]
+    J --> L["输出<br/>*.tdos *.pdos *.proj"]
+    K --> L
+
+    M["qe_process_eledos"] --> N["读取 TDOS / PDOS / projwfc shell 信息"]
+    N --> O["按元素-壳层-轨道汇总"]
+    O --> P["计算积分 DOS / 分轨道表"]
+    P --> Q["输出 CSV / DAT 表格"]
