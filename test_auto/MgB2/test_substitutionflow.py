@@ -2539,12 +2539,28 @@ def test_substitution_plot_eledos_generates_pressure_png_and_handles_missing_cel
     assert plot_data["cells"][("period_2", 2)]["values"]["XB"] == 2.3
     assert plot_data["cells"][("period_2", 13)]["values"] is None
     assert plot_data["ymax"] > 4.5
+    assert len(plot_data["summary_rows"]) == 3
+    finished_row = next(row for row in plot_data["summary_rows"] if row["status"] == "finished")
+    error_row = next(row for row in plot_data["summary_rows"] if row["status"] == "error")
+    assert finished_row["values"]["XA"] == 1.2
+    assert finished_row["values"]["XB"] == 2.3
+    assert finished_row["values"]["H"] == 3.4
+    assert finished_row["values"]["TDOS"] == 4.5
+    assert error_row["values"]["XA"] != error_row["values"]["XA"]
 
     outputs = generate_xa_dir_plots(str(xa_dir))
     assert str((xa_dir / "eledos_summary_50.png").resolve()) in [str(Path(item).resolve()) for item in outputs]
+    assert str((xa_dir / "eledos_summary_50.dat").resolve()) in [str(Path(item).resolve()) for item in outputs]
     assert str((xa_dir / "eledos_summary_100.png").resolve()) in [str(Path(item).resolve()) for item in outputs]
+    assert str((xa_dir / "eledos_summary_100.dat").resolve()) in [str(Path(item).resolve()) for item in outputs]
     assert (xa_dir / "eledos_summary_50.png").exists()
+    assert (xa_dir / "eledos_summary_50.dat").exists()
     assert (xa_dir / "eledos_summary_100.png").exists()
+    assert (xa_dir / "eledos_summary_100.dat").exists()
+
+    dat_content = (xa_dir / "eledos_summary_50.dat").read_text(encoding="utf-8")
+    assert "体系化学配比名称 元素XA的费米能级处DOS 元素XB的费米能级处DOS H的费米能级处DOS TDOS status" in dat_content
+    assert f"{error_row['formula']} nan nan nan nan error" in dat_content
 
 
 def test_substitution_plot_eledos_main_defaults_to_current_directory(chdir_work, monkeypatch):
@@ -2565,4 +2581,6 @@ def test_substitution_plot_eledos_main_defaults_to_current_directory(chdir_work,
         module.main()
 
     output = buffer.getvalue()
+    assert "处理 eledos:" in output
+    assert "[########################]" in output
     assert "03.XA_Li/eledos_summary_50.png" in output or "03.XA_Li/eledos_summary_100.png" in output

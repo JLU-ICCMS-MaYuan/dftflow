@@ -5,6 +5,7 @@ import glob
 import json
 import os
 import re
+import sys
 from collections import OrderedDict
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -39,6 +40,19 @@ def parse_arguments():
 def _load_json(path: str) -> Dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _render_progress_bar(current: int, total: int, width: int = 24) -> str:
+    safe_total = max(total, 1)
+    filled = int(width * min(current, safe_total) / safe_total)
+    return f"[{'#' * filled}{'-' * (width - filled)}] {min(current, safe_total)}/{safe_total}"
+
+
+def _print_compact_progress(stage: str, current: int, total: int, label: str) -> None:
+    sys.stdout.write(f"\r{stage}: {_render_progress_bar(current, total)} {label}")
+    if current >= max(total, 1):
+        sys.stdout.write("\n")
+    sys.stdout.flush()
 
 
 def _load_csv_row(path: str) -> Dict[str, float]:
@@ -152,7 +166,7 @@ def load_case_plot_record(case_entry: Dict, pressure: str) -> Dict:
     csv_path = _find_at_ef_csv(case_entry["case_dir"], pressure)
     if csv_path is None:
         return {
-            "status": status or "missing",
+            "status": "error",
             "values": None,
         }
 
@@ -162,7 +176,7 @@ def load_case_plot_record(case_entry: Dict, pressure: str) -> Dict:
     required = [xa_symbol, xb_symbol, "H", "TDOS"]
     if any(name not in row for name in required):
         return {
-            "status": "missing_columns",
+            "status": "error",
             "values": None,
         }
     return {
@@ -178,13 +192,32 @@ def load_case_plot_record(case_entry: Dict, pressure: str) -> Dict:
     }
 
 
+def _empty_summary_values() -> OrderedDict:
+    return OrderedDict(
+        [
+            ("XA", float("nan")),
+            ("XB", float("nan")),
+            ("H", float("nan")),
+            ("TDOS", float("nan")),
+        ]
+    )
+
+
 def collect_pressure_plot_data(xa_dir: str, pressure: str) -> Dict:
     entries = discover_case_entries(xa_dir)
     row_labels = OrderedDict()
     cells: Dict[Tuple[str, int], Dict] = {}
+    summary_rows: List[Dict] = []
 
     for entry in entries:
         record = load_case_plot_record(entry, pressure)
+        summary_rows.append(
+            {
+                "formula": entry["formula"],
+                "status": record["status"],
+                "values": record["values"] or _empty_summary_values(),
+            }
+        )
         for row_label, column in entry["positions"]:
             row_labels[row_label] = None
             cells[(row_label, column)] = {
@@ -205,8 +238,39 @@ def collect_pressure_plot_data(xa_dir: str, pressure: str) -> Dict:
         "pressure": pressure,
         "rows": ordered_rows,
         "cells": cells,
+        "summary_rows": summary_rows,
         "ymax": ymax,
     }
+
+
+def write_pressure_summary_dat(plot_data: Dict) -> str:
+    output_path = os.path.join(plot_data["xa_dir"], f"eledos_summary_{plot_data['pressure']}.dat")
+    headers = [
+        "体系化学配比名称",
+        "元素XA的费米能级处DOS",
+        "元素XB的费米能级处DOS",
+        "H的费米能级处DOS",
+        "TDOS",
+        "status",
+    ]
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(" ".join(headers) + "\n")
+        for row in plot_data["summary_rows"]:
+            values = row["values"]
+            f.write(
+                " ".join(
+                    [
+                        str(row["formula"]),
+                        str(values["XA"]),
+                        str(values["XB"]),
+                        str(values["H"]),
+                        str(values["TDOS"]),
+                        row["status"],
+                    ]
+                )
+                + "\n"
+            )
+    return output_path
 
 
 def plot_pressure_summary(plot_data: Dict) -> str:
@@ -269,18 +333,43 @@ def plot_pressure_summary(plot_data: Dict) -> str:
     return output_path
 
 
-def generate_xa_dir_plots(xa_dir: str) -> List[str]:
+def generate_xa_dir_plots(
+    xa_dir: str,
+    show_progress: bool = False,
+    progress_offset: int = 0,
+    progress_total: Optional[int] = None,
+) -> List[str]:
     entries = discover_case_entries(xa_dir)
     outputs = []
-    for pressure in discover_pressures(entries):
-        outputs.append(plot_pressure_summary(collect_pressure_plot_data(xa_dir, pressure)))
+    pressures = discover_pressures(entries)
+    total = progress_total or len(pressures)
+    for index, pressure in enumerate(pressures, start=1):
+        if show_progress:
+            current = progress_offset + index
+            label = f"{os.path.basename(os.path.abspath(xa_dir))} pressure={pressure}"
+            _print_compact_progress("处理 eledos", current, total, label)
+        plot_data = collect_pressure_plot_data(xa_dir, pressure)
+        outputs.append(plot_pressure_summary(plot_data))
+        outputs.append(write_pressure_summary_dat(plot_data))
     return outputs
 
 
 def run(directory_args: Sequence[str]) -> List[str]:
     outputs = []
-    for xa_dir in resolve_target_xa_dirs(directory_args):
-        outputs.extend(generate_xa_dir_plots(xa_dir))
+    xa_dirs = resolve_target_xa_dirs(directory_args)
+    pressure_counts = [len(discover_pressures(discover_case_entries(xa_dir))) for xa_dir in xa_dirs]
+    progress_total = sum(pressure_counts)
+    progress_offset = 0
+    for xa_dir, pressure_count in zip(xa_dirs, pressure_counts):
+        outputs.extend(
+            generate_xa_dir_plots(
+                xa_dir,
+                show_progress=True,
+                progress_offset=progress_offset,
+                progress_total=progress_total,
+            )
+        )
+        progress_offset += pressure_count
     return outputs
 
 
