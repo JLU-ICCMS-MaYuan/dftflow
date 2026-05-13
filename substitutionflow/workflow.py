@@ -21,6 +21,7 @@ from substitutionflow.status import (
     load_case_status,
     load_workflow_status,
     refresh_status,
+    _run_case_tasks_in_parallel,
     save_case_status,
     summarize_status,
 )
@@ -581,8 +582,8 @@ def _repair_qe_phonon_inputs(case_dir: str, pressure_key: str) -> None:
 
 def _sync_qe_phonon_poscars(output_dir: str) -> int:
     cases = discover_cases(output_dir)
-    repaired_pressures = 0
-    for case_meta in cases.values():
+    def _repair_case(case_meta: Dict) -> int:
+        repaired = 0
         for pressure in case_meta["pressures"]:
             pressure_key = _pressure_key(pressure)
             pressure_dir = os.path.join(case_meta["case_dir"], pressure_key)
@@ -591,8 +592,11 @@ def _sync_qe_phonon_poscars(output_dir: str) -> int:
             if not os.path.isdir(qe_workdir) or not os.path.exists(contcar_path):
                 continue
             _repair_qe_phonon_inputs(case_meta["case_dir"], pressure_key)
-            repaired_pressures += 1
-    return repaired_pressures
+            repaired += 1
+        return repaired
+
+    repaired_counts = _run_case_tasks_in_parallel(cases, _repair_case)
+    return sum(repaired_counts)
 
 
 def rewrite_case_input_configs(output_dir: str, config_file: str) -> int:
@@ -602,16 +606,18 @@ def rewrite_case_input_configs(output_dir: str, config_file: str) -> int:
 def _rewrite_case_input_configs(output_dir: str, config_file: str, compact_progress: bool) -> int:
     root_config = load_substitutionflow_config(config_file)
     cases = discover_cases(output_dir)
-    rewritten = 0
-    total_cases = len(cases)
-    for index, case_meta in enumerate(cases.values(), start=1):
-        if compact_progress:
-            _print_compact_stage_progress("重写配置", index, total_cases, case_meta["case_display_rel"])
-        else:
-            _print_case_stage_progress("重写配置", index, total_cases, case_meta)
+    def _rewrite_case(case_meta: Dict) -> int:
         write_case_input_config(os.path.join(case_meta["case_dir"], "input.toml"), root_config)
-        rewritten += 1
-    return rewritten
+        return 1
+
+    rewritten_counts = _run_case_tasks_in_parallel(
+        cases,
+        _rewrite_case,
+        show_progress=True,
+        progress_stage="重写配置" if compact_progress else "重写配置",
+        compact_label_fn=(lambda case_meta: case_meta["case_display_rel"]) if compact_progress else None,
+    )
+    return sum(rewritten_counts)
 
 
 def _rewrite_qe_phonon_workflow_status_errors(case_dir: str, pressure_key: str) -> int:
@@ -716,10 +722,8 @@ def _prepare_continue_workspace(output_dir: str, config_file: str) -> Tuple[Dict
     return summary, script_bundle, repaired_pressures, discover_cases(output_dir)
 
 
-def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) -> str:
-    if not config_file:
-        raise ValueError("rewrite_workflow_states() 需要显式提供 config_file。")
-    rewritten_case_configs = _rewrite_case_input_configs(output_dir, config_file, compact_progress=True)
+def _rewrite_workflow_states_core(output_dir: str, config_file: str, compact_progress: bool) -> Dict[str, object]:
+    rewritten_case_configs = _rewrite_case_input_configs(output_dir, config_file, compact_progress=compact_progress)
     pre_refresh_error_steps = _collect_pre_refresh_error_steps(output_dir)
     summary = refresh_status(output_dir, show_progress=True, progress_style="compact")
     repaired_pressures = _sync_qe_phonon_poscars(output_dir)
@@ -751,6 +755,27 @@ def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) 
         save_case_status(case_meta["case_dir"], case_status)
 
     summary = create_initial_status(output_dir, show_progress=True, progress_stage="重建状态")
+    return {
+        "summary": summary,
+        "rewritten_case_configs": rewritten_case_configs,
+        "repaired_pressures": repaired_pressures,
+        "rewritten_count": rewritten_count,
+        "rewritten_qe_count": rewritten_qe_count,
+        "grouped_results": grouped_results,
+        "cases": cases,
+    }
+
+
+def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) -> str:
+    if not config_file:
+        raise ValueError("rewrite_workflow_states() 需要显式提供 config_file。")
+    rewrite_result = _rewrite_workflow_states_core(output_dir, config_file, compact_progress=True)
+    summary = rewrite_result["summary"]
+    rewritten_case_configs = rewrite_result["rewritten_case_configs"]
+    repaired_pressures = rewrite_result["repaired_pressures"]
+    rewritten_count = rewrite_result["rewritten_count"]
+    rewritten_qe_count = rewrite_result["rewritten_qe_count"]
+    grouped_results = rewrite_result["grouped_results"]
     submit_groups = _load_submit_groups_from_output_dir(output_dir)
     script_bundle = build_submit_scripts(
         output_dir,
@@ -774,9 +799,22 @@ def rewrite_workflow_states(output_dir: str, config_file: Optional[str] = None) 
     return "\n".join(lines)
 
 
-def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = False, config_file: Optional[str] = None) -> str:
+def continue_workflow(
+    output_dir: str,
+    run_calc: bool = False,
+    submit: bool = False,
+    config_file: Optional[str] = None,
+    rewrite_states: bool = False,
+) -> str:
     if not config_file:
         raise ValueError("continue_workflow() 需要显式提供 config_file。")
+    if rewrite_states and not run_calc and not submit:
+        return rewrite_workflow_states(output_dir, config_file=config_file)
+
+    rewrite_result = None
+    if rewrite_states:
+        rewrite_result = _rewrite_workflow_states_core(output_dir, config_file, compact_progress=True)
+
     if not run_calc and not submit:
         summary, script_bundle, repaired_pressures, _cases = _prepare_continue_workspace(output_dir, config_file)
         return "\n".join(
@@ -787,7 +825,11 @@ def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = Fa
             ]
         )
 
-    _summary, script_bundle, _repaired_pressures, cases = _prepare_continue_workspace(output_dir, config_file)
+    if rewrite_states:
+        cases = rewrite_result["cases"] if isinstance(rewrite_result, dict) else discover_cases(output_dir)
+        script_bundle = None
+    else:
+        _summary, script_bundle, _repaired_pressures, cases = _prepare_continue_workspace(output_dir, config_file)
     for case_meta in cases.values():
         case_meta["structure_filename"] = _infer_structure_filename(case_meta["case_dir"])
 
@@ -806,5 +848,8 @@ def continue_workflow(output_dir: str, run_calc: bool = False, submit: bool = Fa
                 continue
         return summarize_status(refresh_status(output_dir))
 
+    if rewrite_states:
+        submit_groups = _load_submit_groups_from_output_dir(output_dir)
+        script_bundle = build_submit_scripts(output_dir, submit_groups, refresh_before=False)
     _submit_group_scripts(output_dir, script_bundle)
     return _format_submit_summary(script_bundle, "总未完成单元数")

@@ -4,8 +4,9 @@ import json
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import OrderedDict
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from public.config_templates import load_config_file
 
@@ -501,6 +502,39 @@ def _print_case_progress(
     sys.stdout.flush()
 
 
+def _run_case_tasks_in_parallel(
+    cases: "OrderedDict[str, Dict]",
+    worker: Callable[[Dict], Any],
+    *,
+    show_progress: bool = False,
+    progress_stage: str = "重建状态",
+    compact_label_fn: Optional[Callable[[Dict], str]] = None,
+) -> List[Any]:
+    case_items = list(cases.values())
+    total_cases = len(case_items)
+    if total_cases == 0:
+        return []
+
+    results: List[Any] = [None] * total_cases
+    max_workers = min(32, total_cases)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(worker, case_meta): (index, case_meta)
+            for index, case_meta in enumerate(case_items)
+        }
+        completed = 0
+        for future in as_completed(future_map):
+            index, case_meta = future_map[future]
+            results[index] = future.result()
+            completed += 1
+            if show_progress:
+                compact_label = ""
+                if compact_label_fn is not None:
+                    compact_label = compact_label_fn(case_meta)
+                _print_case_progress(progress_stage, completed, total_cases, case_meta, compact_label=compact_label)
+    return results
+
+
 def save_workflow_status(output_dir: str, workflow_status: Dict) -> None:
     _save_json(get_workflow_status_path(output_dir), workflow_status)
 
@@ -515,12 +549,13 @@ def create_initial_status(
     progress_stage: str = "重建状态",
 ) -> Dict:
     cases = discover_cases(output_dir)
-    total_cases = len(cases)
-    for index, case_meta in enumerate(cases.values(), start=1):
-        if show_progress:
-            compact_label = case_meta.get("case_display_rel", case_meta.get("case_rel", ""))
-            _print_case_progress(progress_stage, index, total_cases, case_meta, compact_label=compact_label)
-        _ensure_case_status_file(case_meta)
+    _run_case_tasks_in_parallel(
+        cases,
+        _ensure_case_status_file,
+        show_progress=show_progress,
+        progress_stage=progress_stage,
+        compact_label_fn=lambda case_meta: case_meta.get("case_display_rel", case_meta.get("case_rel", "")),
+    )
     summary = _build_workflow_summary(output_dir, cases)
     save_workflow_status(output_dir, summary)
     return summary
@@ -534,11 +569,7 @@ def refresh_status(
     progress_style: str = "detail",
 ) -> Dict:
     cases = discover_cases(output_dir)
-    total_cases = len(cases)
-    for index, case_meta in enumerate(cases.values(), start=1):
-        if show_progress:
-            compact_label = case_meta.get("case_display_rel", case_meta.get("case_rel", "")) if progress_style == "compact" else ""
-            _print_case_progress("刷新状态", index, total_cases, case_meta, compact_label=compact_label)
+    def _refresh_case(case_meta: Dict) -> None:
         case_status = _ensure_case_status_file(case_meta)
         updated = {
             "formula": case_status["formula"],
@@ -550,6 +581,18 @@ def refresh_status(
         for pressure_key in case_status["pressures"]:
             updated["pressures"][pressure_key] = _detect_case_pressure_status(case_meta["case_dir"], pressure_key)
         save_case_status(case_meta["case_dir"], updated)
+
+    _run_case_tasks_in_parallel(
+        cases,
+        _refresh_case,
+        show_progress=show_progress,
+        progress_stage="刷新状态",
+        compact_label_fn=(
+            lambda case_meta: case_meta.get("case_display_rel", case_meta.get("case_rel", ""))
+            if progress_style == "compact"
+            else ""
+        ),
+    )
     summary = _build_workflow_summary(output_dir, cases)
     save_workflow_status(output_dir, summary)
     return summary

@@ -1585,6 +1585,53 @@ def test_continue_workflow_after_rewrite_states_advances_from_first_unfinished_s
     assert all(command[0] != "vasp_opt" for command, _ in target_calls)
 
 
+def test_continue_workflow_rewrite_states_then_run_reuses_rewritten_unstarted_step(chdir_work, monkeypatch):
+    from substitutionflow.status import create_initial_status, load_case_status
+    from substitutionflow.structure_substitution import generate_cases
+    from substitutionflow.workflow import continue_workflow
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config_without_mattersim(config_path)
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    pressure_dir = Path("ht_out/03.XA_Li/period_2/04.LiBeH7/20")
+    case_dir = pressure_dir.parent
+    case_status = load_case_status(str(case_dir))
+    case_status["pressures"]["20"]["vasp_opt"] = "finished"
+    case_status["pressures"]["20"]["vasp_scf"] = "error"
+    (case_dir / "case_status.json").write_text(json.dumps(case_status, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    opt_dir = pressure_dir / "vasp_opt"
+    opt_dir.mkdir(parents=True, exist_ok=True)
+    (opt_dir / "CONTCAR").write_text("contcar\n", encoding="utf-8")
+    _write_opt_outcar(opt_dir / "OUTCAR", converged=True)
+
+    calls = []
+
+    def fake_run_cli_command(command, cwd):
+        calls.append((command, cwd))
+        cwd_path = Path(cwd)
+        if command[0] == "vasp_scf":
+            (cwd_path / "vasp_scf").mkdir(parents=True, exist_ok=True)
+            (cwd_path / "vasp_scf/CHGCAR").write_text("chg\n", encoding="utf-8")
+            (cwd_path / "vasp_scf/WAVECAR").write_text("wav\n", encoding="utf-8")
+            _write_scf_like_outcar(cwd_path / "vasp_scf/OUTCAR", converged=True, iterations=4, nelm=60)
+
+    monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
+
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        summary = continue_workflow("ht_out", run_calc=True, submit=False, config_file=str(config_path), rewrite_states=True)
+
+    assert "总 case 数" in summary
+    assert calls
+    assert calls[0][0][0] in {"vasp_opt", "vasp_scf"}
+    assert "first:" in buffer.getvalue()
+
+
 def test_continue_workflow_run_refreshes_status_before_advancing(chdir_work, monkeypatch):
     from substitutionflow.status import create_initial_status, load_case_status
     from substitutionflow.structure_substitution import generate_cases
@@ -2141,15 +2188,15 @@ def test_substitution_continue_cli_passes_config_to_continue_workflow(chdir_work
     )
     monkeypatch.setattr(
         "substitutionflow.cli_continue.continue_workflow",
-        lambda output_dir, run_calc=False, submit=False, config_file=None: f"{output_dir}|{run_calc}|{submit}|{config_file}",
+        lambda output_dir, run_calc=False, submit=False, config_file=None, rewrite_states=False: f"{output_dir}|{run_calc}|{submit}|{config_file}|{rewrite_states}",
     )
-    monkeypatch.setattr(sys, "argv", ["substitution_continue", "-o", "ht_out", "-c", "new_input.toml", "-s"])
+    monkeypatch.setattr(sys, "argv", ["substitution_continue", "-o", "ht_out", "-c", "new_input.toml", "-rfs"])
 
     buffer = io.StringIO()
     with redirect_stdout(buffer):
         module.main()
 
-    assert buffer.getvalue().strip() == "ht_out|False|True|new_input.toml"
+    assert buffer.getvalue().strip() == "ht_out|False|False|new_input.toml|False"
 
 
 def test_substitution_continue_cli_requires_config(chdir_work, monkeypatch):
@@ -2164,10 +2211,10 @@ def test_substitution_continue_cli_requires_config(chdir_work, monkeypatch):
         assert exc.code == 2
 
 
-def test_substitution_continue_cli_rewrite_states_conflicts_with_run(chdir_work, monkeypatch):
+def test_substitution_continue_cli_refresh_status_conflicts_with_rewrite_states(chdir_work, monkeypatch):
     from substitutionflow import cli_continue as module
 
-    monkeypatch.setattr(sys, "argv", ["substitution_continue", "-o", "ht_out", "-rws", "-r"])
+    monkeypatch.setattr(sys, "argv", ["substitution_continue", "-o", "ht_out", "-c", "input.toml", "-rfs", "-rws"])
 
     try:
         module.main()
@@ -2176,16 +2223,36 @@ def test_substitution_continue_cli_rewrite_states_conflicts_with_run(chdir_work,
         assert exc.code == 2
 
 
-def test_substitution_continue_cli_rewrite_states_conflicts_with_submit(chdir_work, monkeypatch):
+def test_substitution_continue_cli_rewrite_states_allows_run(chdir_work, monkeypatch):
     from substitutionflow import cli_continue as module
 
-    monkeypatch.setattr(sys, "argv", ["substitution_continue", "-o", "ht_out", "-rws", "-s"])
+    monkeypatch.setattr(
+        "substitutionflow.cli_continue.continue_workflow",
+        lambda output_dir, run_calc=False, submit=False, config_file=None, rewrite_states=False: f"{output_dir}|{run_calc}|{submit}|{config_file}|{rewrite_states}",
+    )
+    monkeypatch.setattr(sys, "argv", ["substitution_continue", "-o", "ht_out", "-c", "input.toml", "-rws", "-r"])
 
-    try:
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
         module.main()
-        assert False, "预期参数冲突时抛出 SystemExit"
-    except SystemExit as exc:
-        assert exc.code == 2
+
+    assert buffer.getvalue().strip() == "ht_out|True|False|input.toml|True"
+
+
+def test_substitution_continue_cli_rewrite_states_allows_submit(chdir_work, monkeypatch):
+    from substitutionflow import cli_continue as module
+
+    monkeypatch.setattr(
+        "substitutionflow.cli_continue.continue_workflow",
+        lambda output_dir, run_calc=False, submit=False, config_file=None, rewrite_states=False: f"{output_dir}|{run_calc}|{submit}|{config_file}|{rewrite_states}",
+    )
+    monkeypatch.setattr(sys, "argv", ["substitution_continue", "-o", "ht_out", "-c", "input.toml", "-rws", "-s"])
+
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        module.main()
+
+    assert buffer.getvalue().strip() == "ht_out|False|True|input.toml|True"
 
 
 def test_prepare_potcar_discovers_elements_and_parses_config(chdir_work):
