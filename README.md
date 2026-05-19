@@ -35,8 +35,6 @@ Available commands:
 - `qe_process_eledos`
 - `qe_process_eband`
 - `qe_ph_nosplit`
-- `qe_ph_split_assign_index`
-- `qe_ph_split_assign_coords`
 - `qe_q2r`
 - `qe_matdyn_phband`
 - `qe_matdyn_phdos`

@@ -11,18 +11,8 @@ flowchart TD
         P1B -->| --dyn0 | P1D["只跑到 dyn0"]
         P1B -->| -r / -s | P1E["执行或提交 ph.x"]
 
-        C --> P2["qe_ph_split_assign_index"]
-        C --> P3["qe_ph_split_assign_coords"]
-        P2 --> P2A["先准备 SCF + dyn0"]
-        P3 --> P3A["先准备 SCF + dyn0"]
-        P2A --> P2B["物化 q_index_map.json + q_XX/run_split.sh"]
-        P3A --> P3B["物化 q_index_map.json + q_XX/run_split.sh"]
-        P2B --> P2C["逐 q 点运行 / 提交 split ph.x"]
-        P3B --> P3C["逐 q 点运行 / 提交 split ph.x"]
-
-        P2C --> P4["qe_merge"]
-        P3C --> P4
-        P4 --> P4A["按 q_index_map.json.mode 回收 dyn / dvscf"]
+        C --> P4["qe_merge"]
+        P4 --> P4A["按 q_index_map.json.mode 直接回收 dyn / dvscf"]
 
         P1E --> P5["qe_q2r"]
         P4A --> P5

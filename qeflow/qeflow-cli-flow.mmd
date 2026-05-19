@@ -29,13 +29,7 @@ flowchart TD
         B --> P1["qe_ph_nosplit<br/>ph.x 单步 / dyn0-only"]
         P1 --> P1O["qe_phonon_*/<br/>ph.in ph.out prefix.dyn*"]
 
-        B --> P2["qe_ph_split_assign_index<br/>按 q 点编号拆分 ph.x"]
-        B --> P3["qe_ph_split_assign_coords<br/>按 q 点坐标拆分 ph.x"]
-        P2 --> P2O["q_index_map.json + q_XX/run_split.sh"]
-        P3 --> P3O["q_index_map.json + q_XX/run_split.sh"]
-
-        P2O --> P4["qe_merge<br/>回收 split 结果"]
-        P3O --> P4
+        P4["qe_merge<br/>直接回收已有 split 结果"]
         P4 --> P4O["合并后的 dyn / dvscf"]
 
         P1O --> P5["qe_q2r<br/>q2r.x"]

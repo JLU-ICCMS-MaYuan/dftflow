@@ -4,14 +4,12 @@ from typing import Optional
 from qeflow.phonon._shared import create_context, load_q_index_entries, refresh_workflow_status
 from qeflow.phonon.qe_matdyn_phband import run_matdyn_phband_step
 from qeflow.phonon.qe_matdyn_phdos import run_matdyn_phdos_step
-from qeflow.phonon.qe_merge import run_merge_step
 from qeflow.phonon.qe_ph_nosplit import run_ph_nosplit_step, run_ph_to_dyn0
-from qeflow.phonon.qe_ph_split_assign_coords import prepare_split_assign_coords_step, run_split_assign_coords_step
-from qeflow.phonon.qe_ph_split_assign_index import prepare_split_assign_index_step, run_split_assign_index_step
 from qeflow.phonon.qe_phonon_nosplit import run_phonon_nosplit_workflow
 from qeflow.phonon.qe_phonon_split_assign_coords import run_phonon_split_assign_coords_workflow
 from qeflow.phonon.qe_phonon_split_assign_index import run_phonon_split_assign_index_workflow
 from qeflow.phonon.qe_q2r import run_q2r_step
+from qeflow.phonon.split_prepare import prepare_split_assign_coords_step, prepare_split_assign_index_step
 
 
 def run_standalone_ph(config_file: str, struct_file: Optional[str], run_calc: bool, submit_job: bool, dyn0_only: bool) -> int:
@@ -26,10 +24,6 @@ def run_standalone_matdyn(config_file: str, struct_file: Optional[str], run_calc
     if target == "phband":
         return run_matdyn_phband_step(config_file, struct_file, run_calc, submit_job)
     return run_matdyn_phdos_step(config_file, struct_file, run_calc, submit_job)
-
-
-def run_standalone_merge(config_file: str, struct_file: Optional[str], run_calc: bool, submit_job: bool) -> int:
-    return run_merge_step(config_file, struct_file, run_calc, submit_job)
 
 
 def materialize_split_directories(workspace: str, config: dict, prefix: str, mode: str) -> int:

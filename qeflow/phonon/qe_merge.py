@@ -2,25 +2,19 @@
 import argparse
 import os
 import re
-import shlex
 import shutil
-import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
-from public.job import add_run_submit_arguments, submit_script
 from qeflow.phonon._shared import (
-    PhononStepContext,
     create_context,
     load_q_index_entries,
     load_q_index_mode,
     print_stage,
-    print_status,
     refresh_workflow_status,
 )
 from qeflow.qe_check.checks import check_merge
-from qeflow.qe_input.builders import write_root_run_script
 
 
 @dataclass
@@ -316,47 +310,25 @@ def _print_merge_result(prefix: str, result: MergeResult) -> None:
         print(f"  - {message}")
 
 
-def prepare_merge_step(context: PhononStepContext) -> str:
-    return write_root_run_script(
-        context.workspace,
-        "run_merge.sh",
-        str(context.config.get("slurm", {}).get("header", "")),
-        [f"{shlex.quote(sys.executable)} -m qeflow.phonon.qe_merge -c {shlex.quote(context.config_file)} -r"],
-    )
-
-
 def run_merge_step(
     config_file: str,
     struct_file: Optional[str],
-    run_calc: bool,
-    submit_job: bool,
     workflow_name: Optional[str] = None,
 ) -> int:
     context = create_context(config_file, struct_file, workflow_name=workflow_name)
-    script = prepare_merge_step(context)
-    workflow = refresh_workflow_status(context.workspace, context.prefix)
-    if not (run_calc or submit_job):
-        print_status(context.prefix, workflow)
-        return 0
-    if run_calc:
-        print_stage(1, "执行 merge")
-        result = merge_split_results(context.workspace, context.prefix)
-        _print_merge_result(context.prefix, result)
-        refresh_workflow_status(context.workspace, context.prefix)
-        return 0 if result.success else 1
-    print_stage(1, "提交 merge")
-    submit_script(context.workspace, os.path.basename(script))
+    print_stage(1, "执行 merge")
+    result = merge_split_results(context.workspace, context.prefix)
+    _print_merge_result(context.prefix, result)
     refresh_workflow_status(context.workspace, context.prefix)
-    return 0
+    return 0 if result.success else 1
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Quantum ESPRESSO split 声子 merge 回收")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径")
     parser.add_argument("-i", "--input", default=None, help="结构文件路径")
-    add_run_submit_arguments(parser, "直接执行 merge", "提交 merge 脚本")
     args = parser.parse_args()
-    raise SystemExit(run_merge_step(args.config, args.input, args.run, args.submit))
+    raise SystemExit(run_merge_step(args.config, args.input))
 
 
 if __name__ == "__main__":

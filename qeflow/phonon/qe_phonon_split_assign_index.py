@@ -17,6 +17,7 @@ from qeflow.phonon._shared import (
     refresh_workflow_status,
     root_has_running_step,
     root_step_scripts,
+    run_shell as split_run_shell,
     run_root_scripts,
     split_task_needs_run,
     submit_split_stage_tasks,
@@ -24,10 +25,10 @@ from qeflow.phonon._shared import (
 )
 from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step
 from qeflow.phonon.qe_matdyn_phdos import prepare_matdyn_phdos_step
-from qeflow.phonon.qe_merge import prepare_merge_step, run_merge_step
+from qeflow.phonon.qe_merge import run_merge_step
 from qeflow.phonon.qe_ph_nosplit import prepare_ph_nosplit_step, run_ph_to_dyn0
-from qeflow.phonon.qe_ph_split_assign_index import prepare_split_assign_index_step, _run_shell as split_run_shell
 from qeflow.phonon.qe_q2r import prepare_q2r_step
+from qeflow.phonon.split_prepare import prepare_split_assign_index_step
 
 
 def _ensure_split_materialized(config_file: str, struct_file: Optional[str]) -> dict:
@@ -49,7 +50,6 @@ def run_phonon_split_assign_index_workflow(
     context = create_context(config_file, struct_file, workflow_name="qe_phonon_split_index")
     prepare_root_scf_step(context)
     prepare_ph_nosplit_step(context, dyn0_only=True)
-    prepare_merge_step(context)
     prepare_q2r_step(context)
     prepare_matdyn_phband_step(context)
     prepare_matdyn_phdos_step(context)
@@ -113,8 +113,6 @@ def run_phonon_split_assign_index_workflow(
                 if run_merge_step(
                     config_file,
                     struct_file,
-                    run_calc=True,
-                    submit_job=False,
                     workflow_name="qe_phonon_split_index",
                 ) != 0:
                     print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
@@ -132,11 +130,15 @@ def run_phonon_split_assign_index_workflow(
             )
         elif submit_job and not root_has_running_step(workflow, include_ph=False):
             if merge_state(workflow) != "finished":
-                print_stage(3, "提交 merge 阶段")
-                aggregate = write_aggregate_script(context, "submit_merge_stage.sh", ["run_merge.sh"])
-                submit_script(context.workspace, os.path.basename(aggregate))
-                print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
-                return 0
+                print_stage(3, "执行 merge")
+                if run_merge_step(
+                    config_file,
+                    struct_file,
+                    workflow_name="qe_phonon_split_index",
+                ) != 0:
+                    print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
+                    return 1
+                workflow = refresh_workflow_status(context.workspace, context.prefix)
             remaining_scripts = root_step_scripts(workflow, include_ph=False)
             if remaining_scripts:
                 print_stage(4, "提交后处理阶段")

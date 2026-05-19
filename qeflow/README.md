@@ -22,7 +22,7 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 - 各 CLI 会自动拼接所需程序：
   - `qe_scf` / `qe_nscf` / `qe_eband` 的 `pw.x`
   - `qe_q2r` 的 `q2r.x`
-  - `qe_ph_nosplit` / `qe_ph_split_*` 的 `ph.x`
+  - `qe_ph_nosplit` / `qe_phonon_split_*` 的 `ph.x`
   - `qe_matdyn_phband` / `qe_matdyn_phdos` 的 `matdyn.x`
 
 ## 2. 模板与覆盖
@@ -33,8 +33,6 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 ## 3. 声子 CLI 体系
 ### 3.1 独立单步 CLI
 - `qe_ph_nosplit`
-- `qe_ph_split_assign_index`
-- `qe_ph_split_assign_coords`
 - `qe_merge`
 - `qe_q2r`
 - `qe_matdyn_phband`
@@ -72,7 +70,6 @@ qe_phonon_nosplit/
   matdyn_phband.out
   matdyn_phdos.in
   matdyn_phdos.out
-  run_merge.sh
   workflow_status.json
   Mg1B2.dyn0
   q_index_map.json
@@ -128,7 +125,7 @@ qe_phonon_nosplit/
 split 工作流现在固定为四阶段：
 - 前计算：`scf -> dyn0`
 - split：全部 `q_XX/run_split.sh`
-- merge：根目录 `run_merge.sh`
+- merge：程序内部直接执行 `qe_merge` 回收 split 结果
 - 后处理：`q2r -> matdyn_phband -> matdyn_phdos`
 
 ## 8. 最小配置示例
@@ -175,5 +172,5 @@ dos = true
 - `pp_dir` 支持相对路径；程序会优先检查当前工作目录，再从配置文件所在目录向上逐级搜索同名目录，便于在批量工作流里统一写成 `qe_pseudo_lib`。
 - 若某元素在 `pp_dir` 中没有匹配文件，或匹配到多个候选，程序会直接报错，不做自动择优。
 - `fildyn`、`flfrc`、`flfrq`、`fldos` 由程序按 `prefix` 自动派生，不建议手写。
-- `qe_ph_split_assign_index` 与 `qe_ph_split_assign_coords` 假定根目录 `scf.out` 已完成；若希望自动推进 SCF，请使用 `qe_phonon_split_index` 或 `qe_phonon_split_coords`。
-- `qe_merge` 可独立检查、执行或提交 split 结果回收；split 工作流内部也统一复用这一路径。
+- split q 点目录由 `qe_phonon_split_index` 或 `qe_phonon_split_coords` 内部物化，不再暴露独立 `qe_ph_split_assign_*` 命令。
+- `qe_merge` 调用即直接执行 split 结果回收；split 工作流内部也统一复用这一路径。
