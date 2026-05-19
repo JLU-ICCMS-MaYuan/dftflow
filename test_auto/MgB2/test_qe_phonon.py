@@ -188,19 +188,19 @@ def test_parse_dyn0_qpoints_uses_ph_generated_order(chdir_work):
 
 def test_qe_phonon_import_boundaries():
     phonon_root = Path("qeflow/phonon")
-    assert "from qeflow.phonon.workflow import" not in (phonon_root / "qe_ph_nosplit.py").read_text(encoding="utf-8")
+    assert "from qeflow.phonon.workflow import" not in (phonon_root / "ph_step.py").read_text(encoding="utf-8")
     assert "from qeflow.phonon.workflow import" not in (phonon_root / "split_prepare.py").read_text(encoding="utf-8")
     assert "from qeflow.phonon.workflow import" not in (phonon_root / "qe_merge.py").read_text(encoding="utf-8")
     assert "from qeflow.phonon.workflow import" not in (phonon_root / "qe_q2r.py").read_text(encoding="utf-8")
     assert "from qeflow.phonon.workflow import" not in (phonon_root / "qe_matdyn_phband.py").read_text(encoding="utf-8")
     assert "from qeflow.phonon.workflow import" not in (phonon_root / "qe_matdyn_phdos.py").read_text(encoding="utf-8")
-    assert "qe_ph_nosplit" in (phonon_root / "qe_phonon_nosplit.py").read_text(encoding="utf-8")
+    assert "ph_step" in (phonon_root / "qe_phonon_nosplit.py").read_text(encoding="utf-8")
     assert "split_prepare" in (phonon_root / "qe_phonon_split_assign_index.py").read_text(encoding="utf-8")
     assert "split_prepare" in (phonon_root / "qe_phonon_split_assign_coords.py").read_text(encoding="utf-8")
 
 
-def test_qe_ph_nosplit_generates_ph_input_and_script(chdir_work):
-    from qeflow.phonon.qe_ph_nosplit import run_ph_nosplit_step
+def test_ph_step_generates_ph_input_and_script(chdir_work):
+    from qeflow.phonon.ph_step import run_ph_nosplit_step
 
     run_ph_nosplit_step("input_qe.toml", "MgB2.vasp", run_calc=False, submit_job=False, dyn0_only=False)
 
@@ -214,8 +214,8 @@ def test_qe_ph_nosplit_generates_ph_input_and_script(chdir_work):
     assert "B    10.8100 b_pbe_v1.4.uspp.F.UPF" in scf_text
 
 
-def test_qe_ph_nosplit_dyn0_run_uses_background_stop(chdir_work, monkeypatch):
-    from qeflow.phonon import qe_ph_nosplit as module
+def test_ph_step_dyn0_run_uses_background_stop(chdir_work, monkeypatch):
+    from qeflow.phonon import ph_step as module
 
     captured = {}
 

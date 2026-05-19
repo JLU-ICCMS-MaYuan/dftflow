@@ -30,11 +30,13 @@
     2. `merge` 成功后，同一次 `-s` 调用继续生成并提交 `submit_post_stage.sh`；`merge` 失败时返回非零并停止后续提交。
     3. `qe_merge` 独立 CLI 删除 `-r/-s` 执行方式差异，调用即直接执行 merge，保留可选 `-c/-i` 上下文参数。
     4. 不再暴露旧的 `qe_ph_split_assign_index` 与 `qe_ph_split_assign_coords` console scripts，split q 点目录物化逻辑改为内部复用。
+    5. `qe_ph_nosplit.py` 重命名为 `ph_step.py`，但用户命令名 `qe_ph_nosplit` 保持不变。
 - **方案**：
     1. 新增 `qeflow/phonon/split_prepare.py`，集中维护 `prepare_split_assign_index_step()` 与 `prepare_split_assign_coords_step()`，总工作流从该内部模块复用 split q 点物化逻辑。
     2. 修改 `qeflow/phonon/qe_merge.py`，删除 `prepare_merge_step()`、`run_merge.sh` 写出与 `submit_script()` 分支，将 `run_merge_step()` 收敛为直接执行并按成功/失败返回状态码。
-    3. 修改 `qeflow/phonon/qe_phonon_split_assign_index.py` 与 `qeflow/phonon/qe_phonon_split_assign_coords.py`，在 `-s` 路径中直接执行 merge，成功后立即提交 post 阶段，失败则返回 `1`。
-    4. 从 `pyproject.toml`、README 与 Mermaid 流程图中移除旧 split CLI 入口，并更新 `test_auto/MgB2/test_qe_phonon.py` 覆盖新语义。
+    3. 将 `qeflow/phonon/qe_ph_nosplit.py` 重命名为 `qeflow/phonon/ph_step.py`，并同步更新 `pyproject.toml` 与内部 import。
+    4. 修改 `qeflow/phonon/qe_phonon_split_assign_index.py` 与 `qeflow/phonon/qe_phonon_split_assign_coords.py`，在 `-s` 路径中直接执行 merge，成功后立即提交 post 阶段，失败则返回 `1`。
+    5. 从 `pyproject.toml`、README 与 Mermaid 流程图中移除旧 split CLI 入口，并更新 `test_auto/MgB2/test_qe_phonon.py` 覆盖新语义。
 - **状态**：已完成。
 
 ### [2026-05-13] 为 substitution_plot_eledos 增加数值统计与进度条

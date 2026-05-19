@@ -17,7 +17,7 @@ from qeflow.phonon._shared import (
 )
 from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step
 from qeflow.phonon.qe_matdyn_phdos import prepare_matdyn_phdos_step
-from qeflow.phonon.qe_ph_nosplit import prepare_ph_nosplit_step
+from qeflow.phonon.ph_step import prepare_ph_nosplit_step
 from qeflow.phonon.qe_q2r import prepare_q2r_step
 
 
