@@ -42,7 +42,7 @@ def run_phonon_nosplit_workflow(
                 "run_ph.sh": "运行根目录 PH",
             },
         )
-        run_process_phonon_steps(context, include_plot=False)
+        run_process_phonon_steps(context, include_plot=True)
     elif submit_job and remaining_scripts and not root_has_running_step(workflow, include_ph=True):
         print_stage(1, "提交整链剩余步骤")
         pre_scripts = [script for script in remaining_scripts if script in {"run_scf.sh", "run_ph.sh"}]

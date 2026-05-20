@@ -45,6 +45,7 @@ Available commands:
 - `qe_matdyn_phband`
 - `qe_matdyn_phdos`
 - `qe_process_phonon`
+- `qe_split_submit`
 - `qe_check`
 - `qe_phonon_nosplit`
 - `qe_phonon_split_index`
@@ -61,8 +62,8 @@ Available commands:
 - 输出根目录保存一份汇总 `workflow_status.json`，供 `substitution_continue` 扫描、统计和续算使用；旧版不含 `qe_phonon` 的状态文件会在下一次刷新时自动补齐或重写，不需要手工删除。
 - `[substitutionflow].submit_groups` 控制 `-s/--submit` 时把未完成任务分成多少组；一个 `case + pressure` 视为一个不可拆分的完整提交单元，组内保持当前遍历顺序，`substitution` 和 `substitution_continue` 会分别对 `submit_group_01.sh`、`submit_group_02.sh` 等脚本逐组执行 `sbatch`。
 - `[substitutionflow].phonon_mode` 控制末尾 QE 声子总工作流，允许值只有 `nosplit / split_index / split_coords`，默认 `split_index`；建议在根配置里显式写出该字段，避免依赖默认值。`substitutionflow` 内部会显式把 case 真源配置 `case/input.toml` 传给 `qe_phonon_* -c`，不再依赖 `qe_phonon_*/input.toml` 副本。
-- 当 `phonon_mode = "split_index"` 或 `"split_coords"` 且使用 `substitution -s` / `substitution_continue -s` 时，提交脚本会调用 `qe_phonon_split_* -s`，使 split 阶段的各个 q 点任务分别提交、可并行排队运行；`nosplit` 仍保持原有单作业串行链路。该 staged submit 语义不变，后续 `merge/q2r/matdyn` 仍需在前一阶段完成后再次执行 `substitution_continue -s` 推进。
-- `qe_phonon` 的整体状态不再靠目录残留猜测，而是读取对应 `qe_phonon_* / workflow_status.json` 归约得到：`nosplit` 以 `scf -> ph -> q2r -> matdyn_phband -> matdyn_phdos` 为准，`split_index / split_coords` 以 `scf -> dyn0 -> split tasks -> merge -> q2r -> matdyn_phband -> matdyn_phdos` 为准；`matdyn_phband/matdyn_phdos` 完成状态要求结果已归档到 `phband/`、`phdos/`，绘图产物由 `phonon_plot` 单独标记。
+- 当 `phonon_mode = "split_index"` 或 `"split_coords"` 且使用 `substitution -s` / `substitution_continue -s` 时，提交脚本会调用 `qe_phonon_split_* -s`。第一次提交的 pre 脚本会在 Slurm 内顺序执行 `scf -> dyn0 -> qe_split_submit`，由 `qe_split_submit` 进入 `01/02/...` 目录并分别 `sbatch run_split.sh`，使 q 点任务可并行排队运行。q 点全部完成后，再次执行 `substitution_continue -s` 会提交 `merge -> q2r -> matdyn -> collect -> plot` 的回收脚本。
+- `qe_phonon` 的整体状态不再靠目录残留猜测，而是读取对应 `qe_phonon_* / workflow_status.json` 归约得到：`nosplit` 以 `scf -> ph -> q2r -> matdyn_phband -> matdyn_phdos -> phonon_plot` 为准，`split_index / split_coords` 以 `scf -> dyn0 -> split tasks -> merge -> q2r -> matdyn_phband -> matdyn_phdos -> phonon_plot` 为准；`matdyn_phband/matdyn_phdos` 完成状态要求结果已归档到 `phband/`、`phdos/`。
 - `substitution_continue` 现在要求显式同时传入 `-o <batch_dir>` 与 `-c <input.toml>`；`-c` 是所有模式下 `case/input.toml` 的唯一真源，不再是可选增强参数。
 - `substitution_continue` 的默认校准流程固定为：先按 `-c` 重写全部 case `input.toml`，再真实刷新状态、同步已有 `qe_phonon_*` 目录中的 `POSCAR` 副本、重新生成 `submit_group_*.sh`，最后输出“状态摘要 + 提交脚本摘要”。这里的 `POSCAR` 同步只会把同 pressure 下 `vasp_opt/CONTCAR` 拷到已有 `qe_phonon_* / POSCAR`，不会读写 `qe_phonon_*/input.toml`，也不会提前生成 `run_scf.sh / ph.in / q2r.in` 等中间文件。
 - `substitution_continue -rws` 继承整套默认校准流程，然后再把全部 `error` 重置为 `unstarted`，并在结束后输出按 `case + pressure` 分组的重写结果表。

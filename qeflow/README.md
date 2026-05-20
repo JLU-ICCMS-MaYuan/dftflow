@@ -39,6 +39,7 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 - `qe_matdyn_phband`
 - `qe_matdyn_phdos`
 - `qe_process_phonon`
+- `qe_split_submit`
 - `qe_check`
 
 ### 3.2 可恢复总工作流 CLI
@@ -127,24 +128,21 @@ qe_phonon_nosplit/
 
 ## 7. split 工作流行为
 - `qe_phonon_split_index`
-  - 根目录 `scf.out` 未完成时，只推进 SCF。
-  - `scf.out` 完成但 `dyn0` 未完成时，只推进 `dyn0`。
-  - `dyn0` 完成后，首次生成全部 `01/02/.../` 输入和脚本。
-  - 若 q 子任务部分完成，只刷新并打印各目录状态，不自动回收任务。
-  - 当全部 q 子任务完成后，先进入 `merge`，再执行 `q2r -> phband -> phdos`。
+  - `-r` 本地顺序执行 `scf -> dyn0 -> split 01/02/... -> merge -> q2r -> matdyn -> collect -> plot`。
+  - `-s` 第一次提交 `submit_pre_and_split_stage.sh`，脚本在 Slurm 内运行 `scf -> dyn0 -> qe_split_submit`。
+  - `qe_split_submit --mode index` 负责生成全部 `01/02/.../` 输入和脚本，并逐个进入 q 点目录执行 `sbatch run_split.sh`；只提交 `error/unstarted`，跳过 `finished`。
+  - q 点全部完成后，再次执行 `-s` 会提交 `submit_merge_and_process_phonon.sh`，脚本在 Slurm 内执行 `qe_merge -> qe_process_phonon` 完整回收。
 - `qe_phonon_split_coords`
-  - 与上面相同，但 `split_ph.in` 写入单个 q 点坐标而不是 `start_q/last_q`。
+  - 与上面相同，但 `split_ph.in` 写入单个 q 点坐标而不是 `start_q/last_q`，内部使用 `qe_split_submit --mode coords`。
 
-split 工作流现在固定为四阶段：
-- 前计算：`scf -> dyn0`
-- split：全部 `01/02/.../run_split.sh`
-- merge：程序内部直接执行 `qe_merge` 回收 split 结果
-- 后处理：`qe_process_phonon` 统一执行或提交 `q2r -> matdyn_phband -> 归档 phband -> matdyn_phdos -> 归档 phdos`
+split 工作流现在固定为两段 Slurm 提交：
+- pre 准备段：`scf -> dyn0 -> qe_split_submit`，提交完成后等待所有 q 点 Slurm 任务结束。
+- post 回收段：`qe_merge -> q2r -> matdyn_phband -> 归档 phband -> matdyn_phdos -> 归档 phdos -> plot`。
 
 ## 8. `qe_process_phonon`
 - `qe_process_phonon -r` 在当前声子工作目录内顺序执行 `q2r -> matdyn_phband -> collect phband -> matdyn_phdos -> collect phdos -> plot`。
-- `qe_process_phonon -s` 提交 `submit_process_phonon.sh`，脚本只负责 `q2r/matdyn/collect`，不会在 shell 中调用 Python 绘图。
-- `qe_process_phonon --collect` 只把根目录已有的 `<prefix>.phband.freq`、`<prefix>_band.labelinfo.dat`、`<prefix>.phdos.dat` 分别归档到 `phband/` 与 `phdos/`。
+- `qe_process_phonon -s` 提交 `submit_process_phonon.sh`，脚本在 Slurm 内顺序执行 `q2r -> matdyn_phband -> collect phband -> matdyn_phdos -> collect phdos -> plot`，每步开始前都会输出当前步骤。
+- `qe_process_phonon --collect phband` / `--collect phdos` 只把根目录已有的 `<prefix>.phband.freq`、`<prefix>_band.labelinfo.dat`、`<prefix>.phdos.dat` 分别归档到 `phband/` 与 `phdos/`；省略目标时同时归档二者。
 - `qe_process_phonon --plot` 只读取 `phband/` 与 `phdos/` 中已归档的数据并生成 CSV/PNG，不自动回头收集根目录文件。
 - `phband/phonon_band.csv` 保存 `point_index,distance,kx,ky,kz,mode_1_cm-1,...`；`phband/phonon_band_labels.csv` 保存高对称点标签、路径坐标和二维路径距离。
 - `phdos/phonon_dos_atoms.csv` 保存频率、`TDOS` 和按结构原子顺序排列的原子级 DOS；`phdos/phonon_dos_elements.csv` 保存频率、`TDOS` 和元素级求和 DOS。DOS 图只绘制 `TDOS + 元素级曲线`，横轴为 DOS，纵轴为 `Frequency (cm^-1)`。
@@ -195,4 +193,4 @@ dos = true
 - 若某元素在 `pp_dir` 中没有匹配文件，或匹配到多个候选，程序会直接报错，不做自动择优。
 - `fildyn`、`flfrc`、`flfrq`、`fldos` 由程序按 `prefix` 自动派生，不建议手写。
 - split q 点目录由 `qe_phonon_split_index` 或 `qe_phonon_split_coords` 内部物化，不再暴露独立 `qe_ph_split_assign_*` 命令。
-- `qe_merge` 调用即直接执行 split 结果回收；split 工作流内部也统一复用这一路径。
+- `qe_merge` 调用即直接执行 split 结果回收；`-s` 总工作流会把它写入 `submit_merge_and_process_phonon.sh`，避免在登录节点直接执行 merge。

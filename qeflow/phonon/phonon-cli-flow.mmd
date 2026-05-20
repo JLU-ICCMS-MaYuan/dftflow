@@ -13,13 +13,15 @@ flowchart TD
 
         C --> P4["qe_merge"]
         P4 --> P4A["按 q_index_map.json.mode 直接回收 dyn / dvscf"]
+        C --> P4B["qe_split_submit"]
+        P4B --> P4C["物化 01/02/...<br/>进入目录 sbatch run_split.sh"]
 
         P1E --> P5["qe_q2r"]
         P4A --> P5
         P1E --> P6["qe_process_phonon"]
         P4A --> P6
-        P6 --> P6A["q2r -> phband -> collect phband -> phdos -> collect phdos"]
-        P6A --> P6B["--plot<br/>CSV + PNG"]
+        P6 --> P6A["q2r -> phband -> collect phband -> phdos -> collect phdos -> plot"]
+        P6A --> P6B["CSV + PNG"]
     end
 
     subgraph P8["总工作流 CLI"]
@@ -28,9 +30,9 @@ flowchart TD
         C --> W2["qe_phonon_split_index"]
         C --> W3["qe_phonon_split_coords"]
 
-        W1 --> W1A["SCF -> ph -> qe_process_phonon"]
-        W2 --> W2A["SCF -> dyn0 -> split 01/02 -> merge -> qe_process_phonon"]
-        W3 --> W3A["SCF -> dyn0 -> split 01/02 -> merge -> qe_process_phonon"]
+        W1 --> W1A["SCF -> ph -> qe_process_phonon -> plot"]
+        W2 --> W2A["pre: SCF -> dyn0 -> qe_split_submit<br/>post: qe_merge -> qe_process_phonon -> plot"]
+        W3 --> W3A["pre: SCF -> dyn0 -> qe_split_submit<br/>post: qe_merge -> qe_process_phonon -> plot"]
 
         W1A --> WS["workflow_status.json<br/>run_*.sh submit_*.sh POSCAR"]
         W2A --> WS
@@ -39,6 +41,6 @@ flowchart TD
 
     subgraph P9["状态与辅助"]
         direction TD
-        H1["refresh_workflow_status"] --> H2["root_has_running_step / any_split_task_running"]
+        H1["refresh_workflow_status"] --> H2["root_has_running_step / split task states"]
         H2 --> H3["决定继续运行、提交下一阶段或仅打印状态"]
     end

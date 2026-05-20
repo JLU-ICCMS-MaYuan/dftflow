@@ -31,6 +31,8 @@ flowchart TD
 
         P4["qe_merge<br/>直接回收已有 split 结果"]
         P4 --> P4O["合并后的 dyn / dvscf"]
+        P4S["qe_split_submit<br/>物化并提交 split q 点任务"]
+        P4S --> P4SO["01/02/...<br/>sbatch run_split.sh"]
 
         P1O --> P5["qe_q2r<br/>q2r.x"]
         P4O --> P5
@@ -47,9 +49,9 @@ flowchart TD
         B --> W2["qe_phonon_split_index"]
         B --> W3["qe_phonon_split_coords"]
 
-        W1 --> W1S["自动串起<br/>SCF -> ph -> qe_process_phonon"]
-        W2 --> W2S["自动串起<br/>SCF -> dyn0 -> split 01/02 -> merge -> qe_process_phonon"]
-        W3 --> W3S["自动串起<br/>SCF -> dyn0 -> split 01/02 -> merge -> qe_process_phonon"]
+        W1 --> W1S["自动串起<br/>SCF -> ph -> qe_process_phonon -> plot"]
+        W2 --> W2S["两段提交<br/>pre: SCF -> dyn0 -> qe_split_submit<br/>post: qe_merge -> qe_process_phonon -> plot"]
+        W3 --> W3S["两段提交<br/>pre: SCF -> dyn0 -> qe_split_submit<br/>post: qe_merge -> qe_process_phonon -> plot"]
 
         W1S --> WS["workflow_status.json<br/>run_*.sh / submit_*.sh / POSCAR"]
         W2S --> WS

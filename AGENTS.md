@@ -24,6 +24,21 @@
 
 ## 需求处理记录
 
+### [2026-05-20] 收敛 qe_phonon -s 为 Slurm 内完整执行链
+- **需求**：
+    1. `qe_phonon_nosplit -r/-s` 与 `qe_phonon_split_index/coords -r/-s` 都要完整推进到 `plot`，不再把 Python 绘图留作人工续算点。
+    2. split `-s` 第一次提交后，应在 Slurm 脚本内顺序执行 `scf -> dyn0 -> split q 点提交`，把 dyn0 后的 Python 物化和提交逻辑也放入脚本。
+    3. split q 点提交继续保持逐目录 `cd 01 && sbatch run_split.sh`、`cd 02 && sbatch run_split.sh` 的并行排队语义，只提交 `error/unstarted`，跳过 `finished`。
+    4. q 点全部完成后的回收阶段不再在登录节点直接执行 merge，而是提交一个 Slurm 脚本顺序执行 `qe_merge -> q2r -> matdyn_phband -> collect phband -> matdyn_phdos -> collect phdos -> plot`。
+    5. 每个 Slurm 脚本步骤执行前输出当前步骤，便于从 `slurm-*.out` 判断进度。
+- **方案**：
+    1. 新增内部编排 CLI `qe_split_submit`，通过 `--mode index|coords` 复用 split 目录物化逻辑，并逐个进入 q 点目录提交 `run_split.sh`。
+    2. 修改 `qe_process_phonon -s` 生成的 `submit_process_phonon.sh`，把 `collect phband/phdos` 与 `plot` 都写入脚本，并支持 `--collect phband|phdos`。
+    3. 修改 `qe_phonon_nosplit` 的 `-r/-s`，使本地执行和 Slurm 提交都覆盖 `q2r/matdyn/collect/plot` 全链路。
+    4. 修改 `qe_phonon_split_index` 与 `qe_phonon_split_coords`，将 `-s` 收敛为 `submit_pre_and_split_stage.sh` 与 `submit_merge_and_process_phonon.sh` 两段脚本，merge 通过 `qe_merge` CLI 在 Slurm 内执行。
+    5. 更新 README、Mermaid 流程图和 `test_auto/MgB2/test_qe_phonon.py`，覆盖新脚本顺序、CLI 注册、自动绘图和 split 提交语义。
+- **状态**：已完成。
+
 ### [2026-05-20] 新增 qe_process_phonon 统一声子后处理编排
 - **需求**：
     1. 新增独立 CLI `qe_process_phonon`，统一编排 QE 声子后处理 `q2r / matdyn_phband / matdyn_phdos / plot`。

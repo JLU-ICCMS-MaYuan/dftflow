@@ -3,7 +3,7 @@ import os
 import shlex
 import subprocess
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from public.job import submit_script
 from qeflow.qe_check.checks import (
@@ -294,8 +294,31 @@ def root_has_running_step(workflow: Dict[str, object], include_ph: bool) -> bool
     return False
 
 
+def build_labeled_commands(steps: Sequence[Tuple[str, str]]) -> List[str]:
+    commands: List[str] = []
+    total = len(steps)
+    for index, (label, command) in enumerate(steps, start=1):
+        commands.append(f"echo {shlex.quote(f'[DFTFlow] step {index}/{total}: {label}')}")
+        commands.append(command)
+    return commands
+
+
+def write_labeled_script(context: PhononStepContext, script_name: str, steps: Sequence[Tuple[str, str]]) -> str:
+    return write_root_run_script(
+        context.workspace,
+        script_name,
+        str(context.config.get("slurm", {}).get("header", "")),
+        build_labeled_commands(steps),
+    )
+
+
 def write_aggregate_script(context: PhononStepContext, script_name: str, scripts: Iterable[str]) -> str:
-    commands = [f"bash {script}" for script in scripts]
+    commands = []
+    script_list = list(scripts)
+    total = len(script_list)
+    for index, script in enumerate(script_list, start=1):
+        commands.append(f"echo {shlex.quote(f'[DFTFlow] step {index}/{total}: bash {script}')}")
+        commands.append(f"bash {script}")
     return write_root_run_script(
         context.workspace,
         script_name,

@@ -13,6 +13,7 @@ from public.job import add_run_submit_arguments, submit_script
 from qeflow.phonon import _shared
 from qeflow.phonon._shared import (
     PhononStepContext,
+    build_labeled_commands,
     create_context,
     print_stage,
     print_status,
@@ -101,13 +102,17 @@ def prepare_process_phonon_step(context: PhononStepContext) -> str:
     prepare_q2r_step(context)
     prepare_matdyn_phband_step(context)
     prepare_matdyn_phdos_step(context)
-    commands = [
-        "bash run_q2r.sh",
-        "bash run_matdyn_phband.sh",
-        *build_collect_phband_commands(context.prefix),
-        "bash run_matdyn_phdos.sh",
-        *build_collect_phdos_commands(context.prefix),
-    ]
+    config_arg = shlex.quote(context.config_file)
+    commands = build_labeled_commands(
+        [
+            ("运行 q2r", "bash run_q2r.sh"),
+            ("运行 matdyn 声子谱", "bash run_matdyn_phband.sh"),
+            ("归档声子谱结果", f"qe_process_phonon -c {config_arg} --collect phband"),
+            ("运行 matdyn 声子 DOS", "bash run_matdyn_phdos.sh"),
+            ("归档声子 DOS 结果", f"qe_process_phonon -c {config_arg} --collect phdos"),
+            ("绘图并写出 CSV", f"qe_process_phonon -c {config_arg} --plot"),
+        ]
+    )
     return write_root_run_script(
         context.workspace,
         PROCESS_SCRIPT,
@@ -435,7 +440,7 @@ def run_process_phonon(
     struct_file: Optional[str],
     run_calc: bool,
     submit_job: bool,
-    collect_only: bool,
+    collect_only: object,
     plot_only: bool,
 ) -> int:
     context = create_context(config_file, struct_file)
@@ -446,10 +451,13 @@ def run_process_phonon(
         print_stage(1, "提交 process phonon")
         submit_script(context.workspace, PROCESS_SCRIPT)
     elif collect_only:
-        print_stage(1, "归档 phband")
-        collect_phband_outputs(context)
-        print_stage(2, "归档 phdos")
-        collect_phdos_outputs(context)
+        target = "all" if collect_only is True else str(collect_only)
+        if target in {"all", "phband"}:
+            print_stage(1, "归档 phband")
+            collect_phband_outputs(context)
+        if target in {"all", "phdos"}:
+            print_stage(2 if target == "all" else 1, "归档 phdos")
+            collect_phdos_outputs(context)
     elif plot_only:
         print_stage(1, "绘制声子谱和声子 DOS")
         plot_phonon_outputs(context)
@@ -463,7 +471,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Quantum ESPRESSO 声子 q2r/matdyn 后处理编排与绘图")
     parser.add_argument("-c", "--config", default="input.toml", help="配置文件路径")
     parser.add_argument("-i", "--input", default=None, help="结构文件路径")
-    parser.add_argument("--collect", action="store_true", help="只归档已有 phband/phdos 结果")
+    parser.add_argument(
+        "--collect",
+        nargs="?",
+        const="all",
+        choices=("all", "phband", "phdos"),
+        help="只归档已有结果，可选 phband/phdos；省略目标时同时归档二者",
+    )
     parser.add_argument("--plot", action="store_true", help="只读取 phband/phdos 归档结果并绘图")
     add_run_submit_arguments(parser, "本地运行 q2r/phband/phdos、归档并绘图", "提交 q2r/phband/phdos 与归档脚本")
     args = parser.parse_args()
