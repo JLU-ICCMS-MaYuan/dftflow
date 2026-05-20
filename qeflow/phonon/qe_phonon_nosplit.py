@@ -15,10 +15,8 @@ from qeflow.phonon._shared import (
     run_root_scripts,
     write_aggregate_script,
 )
-from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step
-from qeflow.phonon.qe_matdyn_phdos import prepare_matdyn_phdos_step
 from qeflow.phonon.ph_step import prepare_ph_nosplit_step
-from qeflow.phonon.qe_q2r import prepare_q2r_step
+from qeflow.phonon.process_phonon import PROCESS_SCRIPT, prepare_process_phonon_step, run_process_phonon_steps
 
 
 def run_phonon_nosplit_workflow(
@@ -30,27 +28,30 @@ def run_phonon_nosplit_workflow(
     context = create_context(config_file, struct_file, workflow_name="qe_phonon_nosplit")
     prepare_root_scf_step(context)
     prepare_ph_nosplit_step(context, dyn0_only=False)
-    prepare_q2r_step(context)
-    prepare_matdyn_phband_step(context)
-    prepare_matdyn_phdos_step(context)
+    prepare_process_phonon_step(context)
 
     workflow = refresh_workflow_status(context.workspace, context.prefix)
     remaining_scripts = root_step_scripts(workflow, include_ph=True)
     if run_calc:
+        pre_scripts = [script for script in remaining_scripts if script in {"run_scf.sh", "run_ph.sh"}]
         run_root_scripts(
             context,
-            remaining_scripts,
+            pre_scripts,
             labels={
                 "run_scf.sh": "运行根目录 SCF",
                 "run_ph.sh": "运行根目录 PH",
-                "run_q2r.sh": "运行 q2r",
-                "run_matdyn_phband.sh": "运行 matdyn_phband",
-                "run_matdyn_phdos.sh": "运行 matdyn_phdos",
             },
         )
+        run_process_phonon_steps(context, include_plot=False)
     elif submit_job and remaining_scripts and not root_has_running_step(workflow, include_ph=True):
         print_stage(1, "提交整链剩余步骤")
-        aggregate = write_aggregate_script(context, "submit_phonon_workflow.sh", remaining_scripts)
+        pre_scripts = [script for script in remaining_scripts if script in {"run_scf.sh", "run_ph.sh"}]
+        process_needed = any(script in set(remaining_scripts) for script in {"run_q2r.sh", "run_matdyn_phband.sh", "run_matdyn_phdos.sh"})
+        aggregate = write_aggregate_script(
+            context,
+            "submit_phonon_workflow.sh",
+            [*pre_scripts, *([PROCESS_SCRIPT] if process_needed else [])],
+        )
         submit_script(context.workspace, os.path.basename(aggregate))
     print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
     return 0

@@ -24,6 +24,21 @@
 
 ## 需求处理记录
 
+### [2026-05-20] 新增 qe_process_phonon 统一声子后处理编排
+- **需求**：
+    1. 新增独立 CLI `qe_process_phonon`，统一编排 QE 声子后处理 `q2r / matdyn_phband / matdyn_phdos / plot`。
+    2. `-r` 本地顺序执行 `q2r -> phband -> collect phband -> phdos -> collect phdos -> plot`；`-s` 只提交 `q2r/matdyn/collect` 脚本，不在 shell 中调用 Python 绘图。
+    3. 计算完成后立即按步骤归档，`phband` 结果进入 `phband/`，`phdos` 结果进入 `phdos/`，避免后一步 matdyn 输出覆盖前一步可绘图数据。
+    4. 绘图直接由 Python 实现，输出声子谱与声子 DOS 的 PNG 和 CSV；声子 DOS CSV 同时保存原子级与元素级数据，绘图只绘制 `TDOS + 元素级曲线`。
+    5. 状态继续复用 `workflow_status.json`，不新增独立状态 JSON；`matdyn_phband/matdyn_phdos` 要求计算输出和归档文件同时存在才算 `finished`，新增 `phonon_plot` 标记绘图状态。
+- **方案**：
+    1. 新增 `qeflow/phonon/process_phonon.py`，复用现有 `qe_q2r`、`qe_matdyn_phband`、`qe_matdyn_phdos` 的输入与脚本生成逻辑，并集中维护归档、绘图和 CSV 写出逻辑。
+    2. 修改 `qe_matdyn_phband` 与 `qe_matdyn_phdos`，使单步 `-r/-s` 在 matdyn 完成后复用统一归档逻辑。
+    3. 修改 `qe_phonon_nosplit`、`qe_phonon_split_index`、`qe_phonon_split_coords`，后处理阶段统一调用或提交 `submit_process_phonon.sh`。
+    4. 修改 `qeflow/qe_check/checks.py` 与 `qeflow/phonon/_shared.py`，把归档文件和 `phonon_plot` 纳入 `workflow_status.json` 刷新与打印。
+    5. 注册 `qe_process_phonon` console script，更新 README 与 Mermaid 流程图，并补充自动化测试覆盖脚本顺序、归档、CSV/PNG 和状态刷新。
+- **状态**：已完成。
+
 ### [2026-05-19] 收敛 qe_phonon split merge 为程序内直接执行
 - **需求**：
     1. `qe_phonon_split_index -s` 与 `qe_phonon_split_coords -s` 在 split q 点全部完成后，`merge` 步骤直接在程序内部执行，不再生成或提交 `run_merge.sh` / `submit_merge_stage.sh`。

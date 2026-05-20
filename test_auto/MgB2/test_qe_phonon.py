@@ -1,4 +1,5 @@
 import os
+import csv
 import re
 import shutil
 import subprocess
@@ -103,6 +104,57 @@ def _write_split_merge_outputs_coords(q_dir: Path, prefix: str, index: int, with
         (q_dir / "_ph0" / "dvscf").write_text("dvscf\n", encoding="utf-8")
 
 
+def _write_phband_fixture(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "freq (    1) = 0.100 [THz] = 3.3356 [cm-1]",
+                "freq (    2) = 0.200 [THz] = 6.6712 [cm-1]",
+                "freq (    3) = 0.300 [THz] = 10.0068 [cm-1]",
+                "freq (    4) = 0.400 [THz] = 13.3424 [cm-1]",
+                "freq (    5) = 0.500 [THz] = 16.6780 [cm-1]",
+                "freq (    6) = 0.600 [THz] = 20.0136 [cm-1]",
+                "freq (    7) = 0.700 [THz] = 23.3492 [cm-1]",
+                "freq (    8) = 0.800 [THz] = 26.6848 [cm-1]",
+                "freq (    9) = 0.900 [THz] = 30.0204 [cm-1]",
+                "freq (    1) = 0.150 [THz] = 5.0034 [cm-1]",
+                "freq (    2) = 0.250 [THz] = 8.3390 [cm-1]",
+                "freq (    3) = 0.350 [THz] = 11.6746 [cm-1]",
+                "freq (    4) = 0.450 [THz] = 15.0102 [cm-1]",
+                "freq (    5) = 0.550 [THz] = 18.3458 [cm-1]",
+                "freq (    6) = 0.650 [THz] = 21.6814 [cm-1]",
+                "freq (    7) = 0.750 [THz] = 25.0170 [cm-1]",
+                "freq (    8) = 0.850 [THz] = 28.3526 [cm-1]",
+                "freq (    9) = 0.950 [THz] = 31.6882 [cm-1]",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_labelinfo_fixture(path: Path) -> None:
+    path.write_text(
+        "GAMMA 1 0.000000 0.000000 0.000000 0.000000\nX 2 0.500000 0.500000 0.000000 0.000000\n",
+        encoding="utf-8",
+    )
+
+
+def _write_phdos_fixture(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "# freq TDOS Mg1 B1 B2",
+                "0.0 0.1 0.01 0.02 0.03",
+                "10.0 0.4 0.10 0.20 0.30",
+                "20.0 0.2 0.05 0.04 0.03",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_qe_phonon_template_override_priority(chdir_work):
     from public.config_templates import load_config_file
     from qeflow.templates import apply_qe_config_overrides, get_qe_phonon_parameters_template
@@ -159,6 +211,7 @@ def test_qe_phonon_cli_registration_uses_short_split_names(chdir_work):
     assert "qe_ph_split_assign_index" not in scripts
     assert "qe_phonon_split_assign_coords" not in scripts
     assert "qe_phonon_split_assign_index" not in scripts
+    assert scripts["qe_process_phonon"] == "qeflow.phonon.process_phonon:main"
 
 
 def test_parse_dyn0_qpoints_uses_ph_generated_order(chdir_work):
@@ -488,6 +541,93 @@ def test_qe_phonon_nosplit_run_continues_from_q2r_and_finishes(chdir_work, monke
     ]
 
 
+def test_qe_process_phonon_script_archives_after_each_matdyn_step(chdir_work, monkeypatch):
+    from qeflow.phonon import _shared
+    from qeflow.phonon import process_phonon as module
+
+    monkeypatch.setattr("qeflow.qe_input.builders.run_vaspkit_for_kpath", lambda target_dir: _write_kpath(Path(target_dir) / "KPATH.in"))
+    context = _shared.create_context("input_qe.toml", "MgB2.vasp")
+
+    script_path = Path(module.prepare_process_phonon_step(context))
+    script = script_path.read_text(encoding="utf-8")
+
+    assert script.index("bash run_q2r.sh") < script.index("bash run_matdyn_phband.sh")
+    assert script.index("bash run_matdyn_phband.sh") < script.index("mkdir -p phband")
+    assert script.index("mkdir -p phband") < script.index("bash run_matdyn_phdos.sh")
+    assert script.index("bash run_matdyn_phdos.sh") < script.index("mkdir -p phdos")
+
+
+def test_qe_process_phonon_collects_plots_and_marks_status(chdir_work, monkeypatch):
+    from qeflow.phonon import _shared
+    from qeflow.phonon import process_phonon as module
+
+    monkeypatch.setattr("qeflow.qe_input.builders.run_vaspkit_for_kpath", lambda target_dir: _write_kpath(Path(target_dir) / "KPATH.in"))
+    context = _shared.create_context("input_qe.toml", "MgB2.vasp")
+    workdir = Path(context.workspace)
+    _write_job_done(workdir / "matdyn_phband.out")
+    _write_job_done(workdir / "matdyn_phdos.out")
+    _write_phband_fixture(workdir / "Mg1B2.phband.freq")
+    _write_labelinfo_fixture(workdir / "Mg1B2_band.labelinfo.dat")
+    _write_phdos_fixture(workdir / "Mg1B2.phdos.dat")
+
+    module.collect_phband_outputs(context)
+    module.collect_phdos_outputs(context)
+
+    status = _shared.refresh_workflow_status(context.workspace, context.prefix)
+    assert status["matdyn_phband"] == "finished"
+    assert status["matdyn_phdos"] == "finished"
+    assert status["phonon_plot"] == "unstarted"
+
+    module.plot_phonon_outputs(context)
+    status = _shared.refresh_workflow_status(context.workspace, context.prefix)
+
+    assert status["phonon_plot"] == "finished"
+    band_rows = list(csv.DictReader((workdir / "phband" / "phonon_band.csv").open(encoding="utf-8")))
+    label_rows = list(csv.DictReader((workdir / "phband" / "phonon_band_labels.csv").open(encoding="utf-8")))
+    atom_rows = list(csv.DictReader((workdir / "phdos" / "phonon_dos_atoms.csv").open(encoding="utf-8")))
+    element_rows = list(csv.DictReader((workdir / "phdos" / "phonon_dos_elements.csv").open(encoding="utf-8")))
+
+    assert band_rows[0]["mode_9_cm-1"] == "30.0204"
+    assert label_rows[0]["label"] == "Γ"
+    assert list(atom_rows[0].keys()) == ["frequency_cm-1", "TDOS", "Mg_1", "B_1", "B_2"]
+    assert float(element_rows[1]["B"]) == 0.5
+    assert (workdir / "phband" / "phonon_band.png").exists()
+    assert (workdir / "phdos" / "phonon_dos.png").exists()
+
+
+def test_qe_process_phonon_run_executes_q2r_matdyn_collect_and_plot(chdir_work, monkeypatch):
+    from qeflow.phonon import _shared
+    from qeflow.phonon import process_phonon as module
+
+    monkeypatch.setattr("qeflow.qe_input.builders.run_vaspkit_for_kpath", lambda target_dir: _write_kpath(Path(target_dir) / "KPATH.in"))
+    executed = []
+
+    def fake_run_shell(command, cwd):
+        executed.append(command)
+        cwd_path = Path(cwd)
+        if command == "bash run_q2r.sh":
+            _write_job_done(cwd_path / "q2r.out")
+            (cwd_path / "Mg1B2.fc").write_text("fc\n", encoding="utf-8")
+        elif command == "bash run_matdyn_phband.sh":
+            _write_job_done(cwd_path / "matdyn_phband.out")
+            _write_phband_fixture(cwd_path / "Mg1B2.phband.freq")
+            _write_labelinfo_fixture(cwd_path / "Mg1B2_band.labelinfo.dat")
+        elif command == "bash run_matdyn_phdos.sh":
+            _write_job_done(cwd_path / "matdyn_phdos.out")
+            _write_phdos_fixture(cwd_path / "Mg1B2.phdos.dat")
+
+    monkeypatch.setattr(_shared, "run_shell", fake_run_shell)
+
+    result = module.run_process_phonon("input_qe.toml", "MgB2.vasp", True, False, False, False)
+
+    assert result == 0
+    assert executed == ["bash run_q2r.sh", "bash run_matdyn_phband.sh", "bash run_matdyn_phdos.sh"]
+    assert Path("qe_phonon/phband/Mg1B2.phband.freq").exists()
+    assert Path("qe_phonon/phdos/Mg1B2.phdos.dat").exists()
+    assert Path("qe_phonon/phband/phonon_band.csv").exists()
+    assert Path("qe_phonon/phdos/phonon_dos_elements.csv").exists()
+
+
 def test_qe_phonon_nosplit_submit_writes_remaining_chain_script(chdir_work, monkeypatch):
     from qeflow.phonon import qe_phonon_nosplit as module
 
@@ -504,9 +644,13 @@ def test_qe_phonon_nosplit_submit_writes_remaining_chain_script(chdir_work, monk
     script = Path("qe_phonon_nosplit/submit_phonon_workflow.sh").read_text(encoding="utf-8")
     assert "bash run_scf.sh" in script
     assert "bash run_ph.sh" in script
-    assert "bash run_q2r.sh" in script
-    assert "bash run_matdyn_phband.sh" in script
-    assert "bash run_matdyn_phdos.sh" in script
+    assert "bash submit_process_phonon.sh" in script
+    process_script = Path("qe_phonon_nosplit/submit_process_phonon.sh").read_text(encoding="utf-8")
+    assert "bash run_q2r.sh" in process_script
+    assert "bash run_matdyn_phband.sh" in process_script
+    assert "mkdir -p phband" in process_script
+    assert "bash run_matdyn_phdos.sh" in process_script
+    assert "mkdir -p phdos" in process_script
 
 
 def test_qe_phonon_split_prepares_all_root_inputs(chdir_work, monkeypatch):
@@ -603,9 +747,7 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
     assert not (workdir / "submit_merge_stage.sh").exists()
     assert not (workdir / "run_merge.sh").exists()
     post_script = Path("qe_phonon_split_index/submit_post_stage.sh").read_text(encoding="utf-8")
-    assert "bash run_q2r.sh" in post_script
-    assert "bash run_matdyn_phband.sh" in post_script
-    assert "bash run_matdyn_phdos.sh" in post_script
+    assert "bash submit_process_phonon.sh" in post_script
     assert "run_merge.sh" not in post_script
 
 

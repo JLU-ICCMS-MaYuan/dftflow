@@ -178,26 +178,34 @@ def refresh_split_task_status(workspace: str) -> Dict[str, str]:
 
 
 def refresh_workflow_status(workspace: str, prefix: str) -> Dict[str, object]:
-    from qeflow.qe_check.checks import check_matdyn, get_running_workdirs
+    from qeflow.qe_check.checks import check_matdyn, check_phonon_plot, get_running_workdirs
 
     running = get_running_workdirs()
+    matdyn_phband = check_matdyn(
+        workspace,
+        "matdyn_phband.out",
+        f"{prefix}.phband.freq",
+        archived_products=[
+            os.path.join("phband", f"{prefix}.phband.freq"),
+            os.path.join("phband", f"{prefix}_band.labelinfo.dat"),
+        ],
+        running_dirs=running,
+    )
+    matdyn_phdos = check_matdyn(
+        workspace,
+        "matdyn_phdos.out",
+        f"{prefix}.phdos.dat",
+        archived_products=[os.path.join("phdos", f"{prefix}.phdos.dat")],
+        running_dirs=running,
+    )
     workflow = {
         "scf": check_scf(workspace, running_dirs=running),
         "ph": check_ph(workspace, prefix, running_dirs=running),
         "merge": check_merge(workspace, prefix, running_dirs=running),
         "q2r": check_q2r(workspace, prefix, running_dirs=running),
-        "matdyn_phband": check_matdyn(
-            workspace,
-            "matdyn_phband.out",
-            f"{prefix}.phband.freq",
-            running_dirs=running,
-        ),
-        "matdyn_phdos": check_matdyn(
-            workspace,
-            "matdyn_phdos.out",
-            f"{prefix}.phdos.dat",
-            running_dirs=running,
-        ),
+        "matdyn_phband": matdyn_phband,
+        "matdyn_phdos": matdyn_phdos,
+        "phonon_plot": check_phonon_plot(workspace, prefix, matdyn_phband, matdyn_phdos),
     }
     workflow["ph"]["tasks"] = refresh_split_task_status(workspace)
     dump_json(os.path.join(workspace, WORKFLOW_STATUS_FILE), workflow)
@@ -249,6 +257,7 @@ def print_status(prefix: str, workflow: Dict[str, object]) -> None:
     print(f"q2r: {workflow['q2r']}")
     print(f"matdyn_phband: {workflow['matdyn_phband']}")
     print(f"matdyn_phdos: {workflow['matdyn_phdos']}")
+    print(f"phonon_plot: {workflow.get('phonon_plot', 'unstarted')}")
     tasks = ph_tasks(workflow)
     if tasks:
         for q_name in sorted(tasks):

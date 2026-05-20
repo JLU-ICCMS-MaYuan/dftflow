@@ -228,18 +228,41 @@ def check_matdyn(
     workdir: str,
     output_name: str,
     product_name: str,
+    archived_products: Optional[List[str]] = None,
     running_dirs: Optional[Set[str]] = None,
 ) -> str:
     running = running_dirs or get_running_workdirs()
     output = MatdynOut(os.path.join(workdir, output_name))
+    archived = archived_products or []
     if os.path.abspath(workdir) in running:
         return "running"
     if not output.exists():
         return "unstarted"
-    if output.is_finished() and os.path.exists(os.path.join(workdir, product_name)):
+    product_exists = os.path.exists(os.path.join(workdir, product_name))
+    archive_ready = all(os.path.exists(os.path.join(workdir, path)) for path in archived)
+    if output.is_finished() and product_exists and archive_ready:
         return "finished"
-    if output.has_error():
+    if output.has_error() or not product_exists or not archive_ready:
         return "error"
+    return "error"
+
+
+def check_phonon_plot(workdir: str, prefix: str, matdyn_phband_state: str, matdyn_phdos_state: str) -> str:
+    required = [
+        os.path.join(workdir, "phband", "phonon_band.csv"),
+        os.path.join(workdir, "phband", "phonon_band_labels.csv"),
+        os.path.join(workdir, "phband", "phonon_band.png"),
+        os.path.join(workdir, "phdos", "phonon_dos_atoms.csv"),
+        os.path.join(workdir, "phdos", "phonon_dos_elements.csv"),
+        os.path.join(workdir, "phdos", "phonon_dos.png"),
+    ]
+    existing_count = sum(os.path.exists(path) for path in required)
+    if matdyn_phband_state != "finished" or matdyn_phdos_state != "finished":
+        return "unstarted"
+    if existing_count == 0:
+        return "unstarted"
+    if existing_count == len(required):
+        return "finished"
     return "error"
 
 

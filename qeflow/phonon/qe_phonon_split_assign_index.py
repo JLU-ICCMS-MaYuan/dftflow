@@ -23,11 +23,9 @@ from qeflow.phonon._shared import (
     submit_split_stage_tasks,
     write_aggregate_script,
 )
-from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step
-from qeflow.phonon.qe_matdyn_phdos import prepare_matdyn_phdos_step
 from qeflow.phonon.qe_merge import run_merge_step
 from qeflow.phonon.ph_step import prepare_ph_nosplit_step, run_ph_to_dyn0
-from qeflow.phonon.qe_q2r import prepare_q2r_step
+from qeflow.phonon.process_phonon import PROCESS_SCRIPT, prepare_process_phonon_step, run_process_phonon_steps
 from qeflow.phonon.split_prepare import prepare_split_assign_index_step
 
 
@@ -50,9 +48,7 @@ def run_phonon_split_assign_index_workflow(
     context = create_context(config_file, struct_file, workflow_name="qe_phonon_split_index")
     prepare_root_scf_step(context)
     prepare_ph_nosplit_step(context, dyn0_only=True)
-    prepare_q2r_step(context)
-    prepare_matdyn_phband_step(context)
-    prepare_matdyn_phdos_step(context)
+    prepare_process_phonon_step(context)
 
     workflow = refresh_workflow_status(context.workspace, context.prefix)
     if workflow["scf"] != "finished" or dyn0_state(workflow) != "finished":
@@ -118,16 +114,7 @@ def run_phonon_split_assign_index_workflow(
                     print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
                     return 1
                 workflow = refresh_workflow_status(context.workspace, context.prefix)
-            run_root_scripts(
-                context,
-                root_step_scripts(workflow, include_ph=False),
-                labels={
-                    "run_q2r.sh": "运行 q2r",
-                    "run_matdyn_phband.sh": "运行 matdyn_phband",
-                    "run_matdyn_phdos.sh": "运行 matdyn_phdos",
-                },
-                stage_no=5,
-            )
+            run_process_phonon_steps(context, include_plot=False)
         elif submit_job and not root_has_running_step(workflow, include_ph=False):
             if merge_state(workflow) != "finished":
                 print_stage(3, "执行 merge")
@@ -142,7 +129,7 @@ def run_phonon_split_assign_index_workflow(
             remaining_scripts = root_step_scripts(workflow, include_ph=False)
             if remaining_scripts:
                 print_stage(4, "提交后处理阶段")
-                aggregate = write_aggregate_script(context, "submit_post_stage.sh", remaining_scripts)
+                aggregate = write_aggregate_script(context, "submit_post_stage.sh", [PROCESS_SCRIPT])
                 submit_script(context.workspace, os.path.basename(aggregate))
     print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
     return 0

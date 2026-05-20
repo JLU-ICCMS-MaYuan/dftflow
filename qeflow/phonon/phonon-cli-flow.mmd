@@ -16,8 +16,10 @@ flowchart TD
 
         P1E --> P5["qe_q2r"]
         P4A --> P5
-        P5 --> P6["qe_matdyn_phband"]
-        P5 --> P7["qe_matdyn_phdos"]
+        P1E --> P6["qe_process_phonon"]
+        P4A --> P6
+        P6 --> P6A["q2r -> phband -> collect phband -> phdos -> collect phdos"]
+        P6A --> P6B["--plot<br/>CSV + PNG"]
     end
 
     subgraph P8["总工作流 CLI"]
@@ -26,9 +28,9 @@ flowchart TD
         C --> W2["qe_phonon_split_index"]
         C --> W3["qe_phonon_split_coords"]
 
-        W1 --> W1A["SCF -> ph -> q2r -> phband -> phdos"]
-        W2 --> W2A["SCF -> dyn0 -> split q_XX -> merge -> q2r -> phband -> phdos"]
-        W3 --> W3A["SCF -> dyn0 -> split q_XX -> merge -> q2r -> phband -> phdos"]
+        W1 --> W1A["SCF -> ph -> qe_process_phonon"]
+        W2 --> W2A["SCF -> dyn0 -> split 01/02 -> merge -> qe_process_phonon"]
+        W3 --> W3A["SCF -> dyn0 -> split 01/02 -> merge -> qe_process_phonon"]
 
         W1A --> WS["workflow_status.json<br/>run_*.sh submit_*.sh POSCAR"]
         W2A --> WS

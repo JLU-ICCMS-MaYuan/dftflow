@@ -24,6 +24,7 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
   - `qe_q2r` 的 `q2r.x`
   - `qe_ph_nosplit` / `qe_phonon_split_*` 的 `ph.x`
   - `qe_matdyn_phband` / `qe_matdyn_phdos` 的 `matdyn.x`
+  - `qe_process_phonon` 复用 `q2r.x` 与 `matdyn.x`，并在 Python 内完成归档、CSV 整理和绘图
 
 ## 2. 模板与覆盖
 - 默认模板定义在 [templates.py](/home/mayuan/code/dftflow/qeflow/templates.py)。
@@ -37,6 +38,7 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 - `qe_q2r`
 - `qe_matdyn_phband`
 - `qe_matdyn_phdos`
+- `qe_process_phonon`
 - `qe_check`
 
 ### 3.2 可恢复总工作流 CLI
@@ -70,24 +72,35 @@ qe_phonon_nosplit/
   matdyn_phband.out
   matdyn_phdos.in
   matdyn_phdos.out
+  phband/
+    Mg1B2.phband.freq
+    Mg1B2_band.labelinfo.dat
+    phonon_band.csv
+    phonon_band_labels.csv
+    phonon_band.png
+  phdos/
+    Mg1B2.phdos.dat
+    phonon_dos_atoms.csv
+    phonon_dos_elements.csv
+    phonon_dos.png
   workflow_status.json
   Mg1B2.dyn0
   q_index_map.json
-  q_01/
+  01/
     scf.in
     split_ph.in
     run_split.sh
     task_status.json
-  q_02/
+  02/
   ...
 ```
 
-- split 子目录固定使用 `q_01`、`q_02`、`q_03` 命名。
+- split 子目录固定使用 `01`、`02`、`03` 命名。
 - `q_index_map.json` 顶层会显式记录 `mode = "split_assign_index"` 或 `mode = "split_assign_coords"`；`qe_merge` 与 `workflow_status.json.merge` 都以它为唯一模式来源。
 - `qe_merge` 会按 `q_index_map.json.mode` 自动切换 merge 规则：
   - `split_assign_coords`：允许子目录只产出 `<prefix>.dyn`，也允许 `dvscf` 直接位于子目录 `_ph0/`。
   - `split_assign_index`：主语义仍是 `<prefix>.dyn<index>` 与 `_ph0/<prefix>.q_<index>`；但第 1 个 q 点允许 `_ph0/dvscf` 特例。
-- 每个 `q_XX/run_split.sh` 只包含两步：
+- 每个 `01/run_split.sh` 只包含两步：
   - `pw.x < scf.in > scf.out`
   - `ph.x < split_ph.in > split_ph.out`
 - `qe_phonon_*` 工作目录只保留 `POSCAR` 副本，不再复制 `input.toml`；所有 CLI 都要求通过 `-c` 显式传入真实配置路径。
@@ -116,7 +129,7 @@ qe_phonon_nosplit/
 - `qe_phonon_split_index`
   - 根目录 `scf.out` 未完成时，只推进 SCF。
   - `scf.out` 完成但 `dyn0` 未完成时，只推进 `dyn0`。
-  - `dyn0` 完成后，首次生成全部 `q_XX/` 输入和脚本。
+  - `dyn0` 完成后，首次生成全部 `01/02/.../` 输入和脚本。
   - 若 q 子任务部分完成，只刷新并打印各目录状态，不自动回收任务。
   - 当全部 q 子任务完成后，先进入 `merge`，再执行 `q2r -> phband -> phdos`。
 - `qe_phonon_split_coords`
@@ -124,11 +137,20 @@ qe_phonon_nosplit/
 
 split 工作流现在固定为四阶段：
 - 前计算：`scf -> dyn0`
-- split：全部 `q_XX/run_split.sh`
+- split：全部 `01/02/.../run_split.sh`
 - merge：程序内部直接执行 `qe_merge` 回收 split 结果
-- 后处理：`q2r -> matdyn_phband -> matdyn_phdos`
+- 后处理：`qe_process_phonon` 统一执行或提交 `q2r -> matdyn_phband -> 归档 phband -> matdyn_phdos -> 归档 phdos`
 
-## 8. 最小配置示例
+## 8. `qe_process_phonon`
+- `qe_process_phonon -r` 在当前声子工作目录内顺序执行 `q2r -> matdyn_phband -> collect phband -> matdyn_phdos -> collect phdos -> plot`。
+- `qe_process_phonon -s` 提交 `submit_process_phonon.sh`，脚本只负责 `q2r/matdyn/collect`，不会在 shell 中调用 Python 绘图。
+- `qe_process_phonon --collect` 只把根目录已有的 `<prefix>.phband.freq`、`<prefix>_band.labelinfo.dat`、`<prefix>.phdos.dat` 分别归档到 `phband/` 与 `phdos/`。
+- `qe_process_phonon --plot` 只读取 `phband/` 与 `phdos/` 中已归档的数据并生成 CSV/PNG，不自动回头收集根目录文件。
+- `phband/phonon_band.csv` 保存 `point_index,distance,kx,ky,kz,mode_1_cm-1,...`；`phband/phonon_band_labels.csv` 保存高对称点标签、路径坐标和二维路径距离。
+- `phdos/phonon_dos_atoms.csv` 保存频率、`TDOS` 和按结构原子顺序排列的原子级 DOS；`phdos/phonon_dos_elements.csv` 保存频率、`TDOS` 和元素级求和 DOS。DOS 图只绘制 `TDOS + 元素级曲线`，横轴为 DOS，纵轴为 `Frequency (cm^-1)`。
+- `workflow_status.json` 复用 `matdyn_phband`、`matdyn_phdos` 记录归档后的计算状态，并用 `phonon_plot` 记录绘图状态。
+
+## 9. 最小配置示例
 ```toml
 pp_dir = "/path/to/pseudo"
 
@@ -167,7 +189,7 @@ ndos = 200
 dos = true
 ```
 
-## 9. 说明
+## 10. 说明
 - `pp_dir` 只扫描目录直下文件，并按“文件名开头连续字母串”自动匹配元素赝势，例如 `Mg...`、`b_...`、`li_...`、`Hf-...`。
 - `pp_dir` 支持相对路径；程序会优先检查当前工作目录，再从配置文件所在目录向上逐级搜索同名目录，便于在批量工作流里统一写成 `qe_pseudo_lib`。
 - 若某元素在 `pp_dir` 中没有匹配文件，或匹配到多个候选，程序会直接报错，不做自动择优。
