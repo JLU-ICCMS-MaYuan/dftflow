@@ -8,6 +8,12 @@ VASP calculation workflow automation scripts.
 pip install .
 ```
 
+本地开发安装：
+
+```bash
+pip install --no-index --no-build-isolation -e .
+```
+
 ## Usage
 
 Available commands:
