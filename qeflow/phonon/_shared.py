@@ -60,11 +60,12 @@ def create_context(
     config_file: str,
     struct_file: Optional[str],
     workflow_name: Optional[str] = None,
+    prepare_inputs: bool = True,
 ) -> PhononStepContext:
     config, _root_dir, workspace = resolve_workspace(
         config_file,
         struct_file,
-        prepare_inputs=True,
+        prepare_inputs=prepare_inputs,
         workflow_name=workflow_name,
     )
     config["__config_file__"] = os.path.abspath(config_file)
@@ -294,21 +295,34 @@ def root_has_running_step(workflow: Dict[str, object], include_ph: bool) -> bool
     return False
 
 
-def build_labeled_commands(steps: Sequence[Tuple[str, str]]) -> List[str]:
+def build_labeled_commands(
+    steps: Sequence[Tuple[str, str]],
+    *,
+    start_index: int = 1,
+    total_steps: Optional[int] = None,
+) -> List[str]:
     commands: List[str] = []
-    total = len(steps)
+    total = total_steps or len(steps)
     for index, (label, command) in enumerate(steps, start=1):
-        commands.append(f"echo {shlex.quote(f'[DFTFlow] step {index}/{total}: {label}')}")
+        step_no = start_index + index - 1
+        commands.append(f"echo {shlex.quote(f'[DFTFlow] step {step_no}/{total}: {label}')}")
         commands.append(command)
     return commands
 
 
-def write_labeled_script(context: PhononStepContext, script_name: str, steps: Sequence[Tuple[str, str]]) -> str:
+def write_labeled_script(
+    context: PhononStepContext,
+    script_name: str,
+    steps: Sequence[Tuple[str, str]],
+    *,
+    start_index: int = 1,
+    total_steps: Optional[int] = None,
+) -> str:
     return write_root_run_script(
         context.workspace,
         script_name,
         str(context.config.get("slurm", {}).get("header", "")),
-        build_labeled_commands(steps),
+        build_labeled_commands(steps, start_index=start_index, total_steps=total_steps),
     )
 
 

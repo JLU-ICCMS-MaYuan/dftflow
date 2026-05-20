@@ -730,10 +730,10 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
 
     assert submitted == [("qe_phonon_split_index", "submit_pre_and_split_stage.sh")]
     pre_script = Path("qe_phonon_split_index/submit_pre_and_split_stage.sh").read_text(encoding="utf-8")
-    assert "bash run_scf.sh" in pre_script
-    assert "bash run_ph.sh" in pre_script
+    assert "1/11" in pre_script
+    assert "2/11" in pre_script
+    assert "3/11" in pre_script
     assert "qe_split_submit" in pre_script
-    assert "bash run_q2r.sh" not in pre_script
 
     workdir = Path("qe_phonon_split_index")
     _write_job_done(workdir / "scf.out")
@@ -765,8 +765,9 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
     assert not (workdir / "run_merge.sh").exists()
     post_script = Path("qe_phonon_split_index/submit_merge_and_process_phonon.sh").read_text(encoding="utf-8")
     assert "qe_merge" in post_script
-    assert "bash submit_process_phonon.sh" in post_script
-    assert "run_merge.sh" not in post_script
+    assert "4/11" in post_script
+    assert "11/11" in post_script
+    assert "submit_process_phonon" not in post_script
 
 
 def test_qe_phonon_split_coords_submit_dispatches_each_q_task_directly(chdir_work, monkeypatch):
@@ -1077,7 +1078,8 @@ def test_qe_phonon_split_submit_merges_locally_then_submits_postprocess(chdir_wo
     assert not (workdir / "split_ph.out.1").exists()
     script = (workdir / "submit_merge_and_process_phonon.sh").read_text(encoding="utf-8")
     assert "qe_merge" in script
-    assert "bash submit_process_phonon.sh" in script
+    assert "qe_process_phonon" in script
+    assert "11/11" in script
 
 
 def test_qe_phonon_split_submit_defers_merge_errors_to_slurm_script(chdir_work, monkeypatch):

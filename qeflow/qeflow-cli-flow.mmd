@@ -50,8 +50,8 @@ flowchart TD
         B --> W3["qe_phonon_split_coords"]
 
         W1 --> W1S["自动串起<br/>SCF -> ph -> qe_process_phonon -> plot"]
-        W2 --> W2S["两段提交<br/>pre: SCF -> dyn0 -> qe_split_submit<br/>post: qe_merge -> qe_process_phonon -> plot"]
-        W3 --> W3S["两段提交<br/>pre: SCF -> dyn0 -> qe_split_submit<br/>post: qe_merge -> qe_process_phonon -> plot"]
+        W2 --> W2S["两段提交<br/>pre: SCF -> dyn0 -> qe_split_submit<br/>post: qe_merge -> q2r -> matdyn -> collect -> plot"]
+        W3 --> W3S["两段提交<br/>pre: SCF -> dyn0 -> qe_split_submit<br/>post: qe_merge -> q2r -> matdyn -> collect -> plot"]
 
         W1S --> WS["workflow_status.json<br/>run_*.sh / submit_*.sh / POSCAR"]
         W2S --> WS

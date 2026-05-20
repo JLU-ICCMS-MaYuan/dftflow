@@ -24,6 +24,20 @@
 
 ## 需求处理记录
 
+### [2026-05-20] 修复 qe_merge 当前目录解析并收敛 split 脚本编号
+- **需求**：
+    1. `qe_merge -c <config>` 在 `qe_phonon_split_index/coords` 当前目录内直接执行时，必须读取当前目录下的 `q_index_map.json`，不能误落到默认 `qe_phonon/` 目录。
+    2. `qe_phonon_split_index/coords -s` 只保留两个顶层提交脚本：`submit_pre_and_split_stage.sh` 与 `submit_merge_and_process_phonon.sh`。
+    3. 两个脚本的进度编号统一扩展为全局 `1/11` 到 `11/11`，pre 段覆盖 `1/11` 到 `3/11`，post 段覆盖 `4/11` 到 `11/11`。
+    4. post 回收阶段直接展开 `qe_merge -> q2r -> matdyn_phband -> collect phband -> matdyn_phdos -> collect phdos -> plot`，不再依赖中间的 `submit_process_phonon.sh`。
+- **方案**：
+    1. 修改 `qeflow/qe_input/fileio.py` 与 `qeflow/phonon/qe_merge.py`，让 merge 在当前工作目录存在 `q_index_map.json/workflow_status.json` 时直接读取当前目录，并且以只读上下文运行。
+    2. 修改 `qeflow/phonon/_shared.py`，让脚本生成器支持显式 `start_index` 与 `total_steps`，便于固定 11 步编号。
+    3. 修改 `qeflow/phonon/qe_phonon_split_assign_index.py` 与 `qeflow/phonon/qe_phonon_split_assign_coords.py`，只生成 pre/post 两个脚本，并把 post 脚本展开为完整回收链。
+    4. 修改 `qeflow/phonon/process_phonon.py`，让 `run_process_phonon_steps()` 只负责输入与执行，不再额外生成 `submit_process_phonon.sh`。
+    5. 更新 `README.md`、`qeflow/README.md`、Mermaid 流程图与 `test_auto/MgB2/test_qe_phonon.py`，同步新脚本边界、编号和回收语义。
+- **状态**：已完成。
+
 ### [2026-05-20] 收敛 qe_phonon -s 为 Slurm 内完整执行链
 - **需求**：
     1. `qe_phonon_nosplit -r/-s` 与 `qe_phonon_split_index/coords -r/-s` 都要完整推进到 `plot`，不再把 Python 绘图留作人工续算点。

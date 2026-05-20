@@ -25,7 +25,12 @@ from qeflow.phonon._shared import (
 from qeflow.phonon.qe_merge import run_merge_step
 from qeflow.phonon.qe_split_submit import run_split_submit
 from qeflow.phonon.ph_step import prepare_ph_nosplit_step, run_ph_to_dyn0
-from qeflow.phonon.process_phonon import PROCESS_SCRIPT, prepare_process_phonon_step, run_process_phonon_steps
+from qeflow.phonon.process_phonon import (
+    prepare_matdyn_phband_step,
+    prepare_matdyn_phdos_step,
+    prepare_q2r_step,
+    run_process_phonon_steps,
+)
 from qeflow.phonon.split_prepare import prepare_split_assign_index_step
 
 
@@ -51,15 +56,21 @@ def _write_pre_and_split_stage_script(context, workflow) -> str:
             f"qe_split_submit -c {shlex.quote(context.config_file)} --mode index",
         )
     )
-    return write_labeled_script(context, "submit_pre_and_split_stage.sh", steps)
+    return write_labeled_script(context, "submit_pre_and_split_stage.sh", steps, start_index=1, total_steps=11)
 
 
 def _write_merge_and_process_stage_script(context, workflow) -> str:
-    steps = []
-    if merge_state(workflow) != "finished":
-        steps.append(("合并 split q 点结果", f"qe_merge -c {shlex.quote(context.config_file)}"))
-    steps.append(("运行声子后处理和绘图", f"bash {PROCESS_SCRIPT}"))
-    return write_labeled_script(context, "submit_merge_and_process_phonon.sh", steps)
+    steps = [
+        ("合并 split q 点结果", f"qe_merge -c {shlex.quote(context.config_file)}"),
+        ("运行 q2r", "bash run_q2r.sh"),
+        ("运行 matdyn 声子谱", "bash run_matdyn_phband.sh"),
+        ("归档声子谱结果", f"qe_process_phonon -c {shlex.quote(context.config_file)} --collect phband"),
+        ("运行 matdyn 声子 DOS", "bash run_matdyn_phdos.sh"),
+        ("归档声子 DOS 结果", f"qe_process_phonon -c {shlex.quote(context.config_file)} --collect phdos"),
+        ("绘图并写出 CSV", f"qe_process_phonon -c {shlex.quote(context.config_file)} --plot"),
+        ("完成声子回收", "echo '[DFTFlow] phonon workflow complete'"),
+    ]
+    return write_labeled_script(context, "submit_merge_and_process_phonon.sh", steps, start_index=4, total_steps=11)
 
 
 def run_phonon_split_assign_index_workflow(
@@ -71,7 +82,9 @@ def run_phonon_split_assign_index_workflow(
     context = create_context(config_file, struct_file, workflow_name="qe_phonon_split_index")
     prepare_root_scf_step(context)
     prepare_ph_nosplit_step(context, dyn0_only=True)
-    prepare_process_phonon_step(context)
+    prepare_q2r_step(context)
+    prepare_matdyn_phband_step(context)
+    prepare_matdyn_phdos_step(context)
 
     workflow = refresh_workflow_status(context.workspace, context.prefix)
     if workflow["scf"] != "finished" or dyn0_state(workflow) != "finished":

@@ -131,7 +131,7 @@ qe_phonon_nosplit/
   - `-r` 本地顺序执行 `scf -> dyn0 -> split 01/02/... -> merge -> q2r -> matdyn -> collect -> plot`。
   - `-s` 第一次提交 `submit_pre_and_split_stage.sh`，脚本在 Slurm 内运行 `scf -> dyn0 -> qe_split_submit`。
   - `qe_split_submit --mode index` 负责生成全部 `01/02/.../` 输入和脚本，并逐个进入 q 点目录执行 `sbatch run_split.sh`；只提交 `error/unstarted`，跳过 `finished`。
-  - q 点全部完成后，再次执行 `-s` 会提交 `submit_merge_and_process_phonon.sh`，脚本在 Slurm 内执行 `qe_merge -> qe_process_phonon` 完整回收。
+  - q 点全部完成后，再次执行 `-s` 会提交 `submit_merge_and_process_phonon.sh`，脚本在 Slurm 内直接展开 `qe_merge -> q2r -> matdyn_phband -> collect phband -> matdyn_phdos -> collect phdos -> plot`。
 - `qe_phonon_split_coords`
   - 与上面相同，但 `split_ph.in` 写入单个 q 点坐标而不是 `start_q/last_q`，内部使用 `qe_split_submit --mode coords`。
 

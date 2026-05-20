@@ -92,7 +92,18 @@ def resolve_workspace(
         work_dir_name = WORKFLOW_DEFAULT_WORKDIRS[str(workflow_name)]
     else:
         work_dir_name = "qe_phonon"
+    current_markers = (
+        "q_index_map.json",
+        "workflow_status.json",
+        "run_scf.sh",
+        "run_ph.sh",
+        "run_q2r.sh",
+        "run_matdyn_phband.sh",
+        "run_matdyn_phdos.sh",
+    )
     if os.path.basename(os.path.abspath(current_dir)) == work_dir_name:
+        workspace = current_dir
+    elif not prepare_inputs and any(os.path.exists(os.path.join(current_dir, marker)) for marker in current_markers):
         workspace = current_dir
     else:
         workspace = os.path.join(current_dir, work_dir_name)

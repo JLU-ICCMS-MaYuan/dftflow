@@ -142,7 +142,9 @@ def prepare_matdyn_phdos_collect_step(context: PhononStepContext) -> str:
 
 
 def run_process_phonon_steps(context: PhononStepContext, include_plot: bool) -> int:
-    prepare_process_phonon_step(context)
+    prepare_q2r_step(context)
+    prepare_matdyn_phband_step(context)
+    prepare_matdyn_phdos_step(context)
     stage_no = 1
     workflow = refresh_workflow_status(context.workspace, context.prefix)
     if workflow["q2r"] != "finished":

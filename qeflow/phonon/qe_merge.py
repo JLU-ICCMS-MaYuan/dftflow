@@ -315,7 +315,7 @@ def run_merge_step(
     struct_file: Optional[str],
     workflow_name: Optional[str] = None,
 ) -> int:
-    context = create_context(config_file, struct_file, workflow_name=workflow_name)
+    context = create_context(config_file, struct_file, workflow_name=workflow_name, prepare_inputs=False)
     print_stage(1, "执行 merge")
     result = merge_split_results(context.workspace, context.prefix)
     _print_merge_result(context.prefix, result)
