@@ -702,6 +702,26 @@ def test_qe_phonon_nosplit_submit_writes_remaining_chain_script(chdir_work, monk
     assert "--plot" in process_script
 
 
+def test_phonon_console_submit_script_uses_safe_sbatch(chdir_work, monkeypatch):
+    from qeflow.phonon import console
+
+    calls = []
+
+    class Result:
+        stdout = "Submitted batch job 12345\n"
+
+    def fake_run(command, shell, check, cwd, text, capture_output):
+        calls.append((command, shell, check, cwd, text, capture_output))
+        return Result()
+
+    monkeypatch.setattr(console.subprocess, "run", fake_run)
+
+    job_id = console.submit_script("qe_phonon", "run_split.sh", announce=False)
+
+    assert job_id == "12345"
+    assert calls == [("safe_sbatch run_split.sh", True, True, "qe_phonon", True, True)]
+
+
 def test_qe_phonon_split_prepares_all_root_inputs(chdir_work, monkeypatch):
     from qeflow.phonon import qe_phonon_split_assign_index as module
 

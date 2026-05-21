@@ -14,7 +14,7 @@ flowchart TD
         C --> P4["qe_merge"]
         P4 --> P4A["按 q_index_map.json.mode 直接回收 dyn / dvscf"]
         C --> P4B["qe_split_submit"]
-        P4B --> P4C["物化 01/02/...<br/>进入目录 sbatch run_split.sh"]
+        P4B --> P4C["物化 01/02/...<br/>进入目录 safe_sbatch run_split.sh"]
 
         P1E --> P5["qe_q2r"]
         P4A --> P5

@@ -67,7 +67,7 @@ def echo_completion(message: str) -> str:
 
 
 def submit_script(work_dir: str, script_name: str, announce: bool = True) -> Optional[str]:
-    cmd = f"sbatch {shlex.quote(script_name)}"
+    cmd = f"safe_sbatch {shlex.quote(script_name)}"
     try:
         result = subprocess.run(
             cmd,
