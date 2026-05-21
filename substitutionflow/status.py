@@ -404,6 +404,7 @@ def reduce_qe_phonon_workflow_status(workflow_name: str, workflow_status: Dict) 
             _normalize_qe_phonon_state(workflow_status.get("q2r")),
             _normalize_qe_phonon_state(workflow_status.get("matdyn_phband")),
             _normalize_qe_phonon_state(workflow_status.get("matdyn_phdos")),
+            _normalize_qe_phonon_state(workflow_status.get("phonon_plot")),
         )
     elif workflow_name in {"qe_phonon_split_index", "qe_phonon_split_coords"}:
         tasks_payload = ph_payload.get("tasks") if isinstance(ph_payload, dict) else {}
@@ -415,6 +416,7 @@ def reduce_qe_phonon_workflow_status(workflow_name: str, workflow_status: Dict) 
             _normalize_qe_phonon_state(workflow_status.get("q2r")),
             _normalize_qe_phonon_state(workflow_status.get("matdyn_phband")),
             _normalize_qe_phonon_state(workflow_status.get("matdyn_phdos")),
+            _normalize_qe_phonon_state(workflow_status.get("phonon_plot")),
         )
     else:
         raise ValueError(f"不支持的 qe_phonon 工作流: {workflow_name}")

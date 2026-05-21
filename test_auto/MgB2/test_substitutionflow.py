@@ -313,6 +313,7 @@ def _write_qe_phonon_workflow_status(
     q2r: str = "finished",
     matdyn_phband: str = "finished",
     matdyn_phdos: str = "finished",
+    phonon_plot: str = "finished",
 ):
     work_dir.mkdir(parents=True, exist_ok=True)
     if tasks is None:
@@ -324,6 +325,7 @@ def _write_qe_phonon_workflow_status(
         "q2r": q2r,
         "matdyn_phband": matdyn_phband,
         "matdyn_phdos": matdyn_phdos,
+        "phonon_plot": phonon_plot,
     }
     if workflow_name == "qe_phonon_nosplit":
         payload["ph"] = {"state": ph_state, "dyn0": dyn0, "tasks": {}}
@@ -1210,6 +1212,7 @@ def test_reduce_qe_phonon_workflow_status_for_nosplit_and_split(chdir_work):
         "q2r": "unstarted",
         "matdyn_phband": "unstarted",
         "matdyn_phdos": "unstarted",
+        "phonon_plot": "unstarted",
     }
     nosplit_running = {
         "scf": "finished",
@@ -1217,6 +1220,7 @@ def test_reduce_qe_phonon_workflow_status_for_nosplit_and_split(chdir_work):
         "q2r": "running",
         "matdyn_phband": "unstarted",
         "matdyn_phdos": "unstarted",
+        "phonon_plot": "unstarted",
     }
     split_unstarted = {
         "scf": "finished",
@@ -1225,6 +1229,7 @@ def test_reduce_qe_phonon_workflow_status_for_nosplit_and_split(chdir_work):
         "q2r": "unstarted",
         "matdyn_phband": "unstarted",
         "matdyn_phdos": "unstarted",
+        "phonon_plot": "unstarted",
     }
     split_running = {
         "scf": "finished",
@@ -1233,6 +1238,7 @@ def test_reduce_qe_phonon_workflow_status_for_nosplit_and_split(chdir_work):
         "q2r": "unstarted",
         "matdyn_phband": "unstarted",
         "matdyn_phdos": "unstarted",
+        "phonon_plot": "unstarted",
     }
     split_error = {
         "scf": "finished",
@@ -1241,6 +1247,7 @@ def test_reduce_qe_phonon_workflow_status_for_nosplit_and_split(chdir_work):
         "q2r": "unstarted",
         "matdyn_phband": "unstarted",
         "matdyn_phdos": "unstarted",
+        "phonon_plot": "unstarted",
     }
     split_finished = {
         "scf": "finished",
@@ -1249,6 +1256,16 @@ def test_reduce_qe_phonon_workflow_status_for_nosplit_and_split(chdir_work):
         "q2r": "finished",
         "matdyn_phband": "finished",
         "matdyn_phdos": "finished",
+        "phonon_plot": "finished",
+    }
+    split_plot_unstarted = {
+        "scf": "finished",
+        "ph": {"state": "finished", "dyn0": "finished", "tasks": {"q_0001": "finished", "q_0002": "finished"}},
+        "merge": "finished",
+        "q2r": "finished",
+        "matdyn_phband": "finished",
+        "matdyn_phdos": "finished",
+        "phonon_plot": "unstarted",
     }
 
     assert reduce_qe_phonon_workflow_status("qe_phonon_nosplit", nosplit_unstarted) == "unstarted"
@@ -1257,6 +1274,7 @@ def test_reduce_qe_phonon_workflow_status_for_nosplit_and_split(chdir_work):
     assert reduce_qe_phonon_workflow_status("qe_phonon_split_index", split_running) == "error"
     assert reduce_qe_phonon_workflow_status("qe_phonon_split_coords", split_error) == "error"
     assert reduce_qe_phonon_workflow_status("qe_phonon_split_index", split_finished) == "finished"
+    assert reduce_qe_phonon_workflow_status("qe_phonon_split_index", split_plot_unstarted) == "unstarted"
 
 
 def test_refresh_status_qe_phonon_uses_workflow_status_instead_of_directory_trace(chdir_work):
