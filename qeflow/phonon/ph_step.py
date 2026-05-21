@@ -25,6 +25,7 @@ def prepare_ph_nosplit_step(context: PhononStepContext, dyn0_only: bool = False)
         "run_ph.sh",
         str(context.config.get("slurm", {}).get("header", "")),
         [f"{context.commands['ph']} < ph.in > ph.out"],
+        announce=False,
     )
 
 

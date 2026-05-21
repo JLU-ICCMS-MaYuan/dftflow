@@ -3,7 +3,8 @@ import argparse
 import os
 from typing import Optional
 
-from public.job import add_run_submit_arguments, submit_script
+from public.job import add_run_submit_arguments
+from qeflow.phonon import console
 from qeflow.phonon._shared import (
     PhononStepContext,
     create_context,
@@ -21,6 +22,7 @@ def prepare_matdyn_phband_step(context: PhononStepContext) -> str:
         "run_matdyn_phband.sh",
         str(context.config.get("slurm", {}).get("header", "")),
         [f"{context.commands['matdyn']} < matdyn_phband.in > matdyn_phband.out"],
+        announce=False,
     )
 
 
@@ -43,7 +45,9 @@ def run_matdyn_phband_step(
         from qeflow.phonon.process_phonon import prepare_matdyn_phband_collect_step
 
         print_stage(1, "提交 matdyn_phband")
-        submit_script(context.workspace, os.path.basename(prepare_matdyn_phband_collect_step(context)))
+        script = os.path.basename(prepare_matdyn_phband_collect_step(context))
+        console.generated(script)
+        console.submit_script(context.workspace, script)
     refresh_workflow_status(context.workspace, context.prefix)
     return 0
 

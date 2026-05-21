@@ -103,7 +103,7 @@ def resolve_workspace(
     )
     if os.path.basename(os.path.abspath(current_dir)) == work_dir_name:
         workspace = current_dir
-    elif not prepare_inputs and any(os.path.exists(os.path.join(current_dir, marker)) for marker in current_markers):
+    elif any(os.path.exists(os.path.join(current_dir, marker)) for marker in current_markers):
         workspace = current_dir
     else:
         workspace = os.path.join(current_dir, work_dir_name)

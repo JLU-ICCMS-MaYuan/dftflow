@@ -7,11 +7,11 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
+from qeflow.phonon import console
 from qeflow.phonon._shared import (
     create_context,
     load_q_index_entries,
     load_q_index_mode,
-    print_stage,
     refresh_workflow_status,
 )
 from qeflow.qe_check.checks import check_merge
@@ -300,14 +300,16 @@ def merge_split_results(workspace: str, prefix: str) -> MergeResult:
 
 def _print_merge_result(prefix: str, result: MergeResult) -> None:
     if result.success:
-        print("merge 成功，dyn 文件最低前 5 个频率如下：")
+        console.info("merge 检查: dyn 文件最低前 5 个频率")
         for q_index, values in result.dyn_summaries:
             formatted = ", ".join(f"{value:.6f}" for value in values) if values else "无可解析频率"
-            print(f"  {prefix}.dyn{q_index}: {formatted}")
+            console.info(f"  {prefix}.dyn{q_index}: {formatted}")
         return
-    print("merge 失败，发现以下问题：")
-    for message in result.errors:
-        print(f"  - {message}")
+    console.failure(
+        "4/11 merge",
+        result.errors,
+        "修复上述 split q 点结果后，重新执行 qe_phonon_split_index -s 或 qe_phonon_split_coords -s",
+    )
 
 
 def run_merge_step(
@@ -316,7 +318,6 @@ def run_merge_step(
     workflow_name: Optional[str] = None,
 ) -> int:
     context = create_context(config_file, struct_file, workflow_name=workflow_name, prepare_inputs=False)
-    print_stage(1, "执行 merge")
     result = merge_split_results(context.workspace, context.prefix)
     _print_merge_result(context.prefix, result)
     refresh_workflow_status(context.workspace, context.prefix)

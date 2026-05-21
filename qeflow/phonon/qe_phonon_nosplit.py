@@ -3,20 +3,21 @@ import argparse
 import os
 from typing import Optional
 
-from public.job import add_run_submit_arguments, submit_script
+from public.job import add_run_submit_arguments
+from qeflow.phonon import console
 from qeflow.phonon._shared import (
     create_context,
     prepare_root_scf_step,
     print_stage,
-    print_status,
     refresh_workflow_status,
-    root_has_running_step,
     root_step_scripts,
     run_root_scripts,
     write_aggregate_script,
 )
 from qeflow.phonon.ph_step import prepare_ph_nosplit_step
 from qeflow.phonon.process_phonon import PROCESS_SCRIPT, prepare_process_phonon_step, run_process_phonon_steps
+
+submit_script = console.submit_script
 
 
 def run_phonon_nosplit_workflow(
@@ -29,6 +30,7 @@ def run_phonon_nosplit_workflow(
     prepare_root_scf_step(context)
     prepare_ph_nosplit_step(context, dyn0_only=False)
     prepare_process_phonon_step(context)
+    console.generated_scripts(["run_scf.sh", "run_ph.sh", "run_q2r.sh", "run_matdyn_phband.sh", "run_matdyn_phdos.sh"])
 
     workflow = refresh_workflow_status(context.workspace, context.prefix)
     remaining_scripts = root_step_scripts(workflow, include_ph=True)
@@ -43,8 +45,7 @@ def run_phonon_nosplit_workflow(
             },
         )
         run_process_phonon_steps(context, include_plot=True)
-    elif submit_job and remaining_scripts and not root_has_running_step(workflow, include_ph=True):
-        print_stage(1, "提交整链剩余步骤")
+    elif submit_job and remaining_scripts:
         pre_scripts = [script for script in remaining_scripts if script in {"run_scf.sh", "run_ph.sh"}]
         process_needed = any(script in set(remaining_scripts) for script in {"run_q2r.sh", "run_matdyn_phband.sh", "run_matdyn_phdos.sh"})
         aggregate = write_aggregate_script(
@@ -52,8 +53,12 @@ def run_phonon_nosplit_workflow(
             "submit_phonon_workflow.sh",
             [*pre_scripts, *([PROCESS_SCRIPT] if process_needed else [])],
         )
+        console.generated(os.path.basename(aggregate))
         submit_script(context.workspace, os.path.basename(aggregate))
-    print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
+        console.next_step("查看对应 slurm 输出，等待声子工作流完成")
+    else:
+        console.next_step("声子工作流已完成或没有待提交步骤")
+    refresh_workflow_status(context.workspace, context.prefix)
     return 0
 
 

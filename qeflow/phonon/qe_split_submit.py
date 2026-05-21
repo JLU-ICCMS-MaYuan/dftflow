@@ -3,17 +3,25 @@ import argparse
 import os
 from typing import Optional
 
-from public.job import submit_script
+from qeflow.phonon import console
 from qeflow.phonon._shared import (
     create_context,
     dyn0_state,
     iter_q_directory_names,
     ph_tasks,
     print_stage,
-    print_status,
+    print_resume_point,
     refresh_workflow_status,
 )
 from qeflow.phonon.split_prepare import prepare_split_assign_coords_step, prepare_split_assign_index_step
+
+submit_script = console.submit_script
+
+
+def _submit_q_point(work_dir: str) -> Optional[str]:
+    if submit_script is console.submit_script:
+        return submit_script(work_dir, "run_split.sh", announce=False)
+    return submit_script(work_dir, "run_split.sh")
 
 
 def _prepare_split_by_mode(context, mode: str) -> int:
@@ -33,31 +41,41 @@ def run_split_submit(
     context = create_context(config_file, struct_file, workflow_name=workflow_name)
     workflow = refresh_workflow_status(context.workspace, context.prefix)
     if dyn0_state(workflow) != "finished":
-        print(f"dyn0 未完成，不能提交 split q 点任务: {dyn0_state(workflow)}")
-        print_status(context.prefix, workflow)
+        console.failure(
+            "3/11 split q 点提交",
+            [f"dyn0 未完成: {dyn0_state(workflow)}"],
+            "等待 dyn0 完成后重新执行 qe_phonon_split_index -s 或 qe_phonon_split_coords -s",
+        )
+        print_resume_point(workflow)
         return 1
 
-    print_stage(1, "准备 split q 点目录")
     _prepare_split_by_mode(context, mode)
+    console.generated_scripts(["run_split.sh"])
     workflow = refresh_workflow_status(context.workspace, context.prefix)
     tasks = ph_tasks(workflow)
 
-    print_stage(2, "提交 split q 点任务")
-    submitted = 0
+    submitted_names = []
+    skipped_finished = []
+    job_ids = []
     for q_name in iter_q_directory_names(context.workspace):
         state = tasks.get(q_name, "unstarted")
         if state == "finished":
-            print(f"[DFTFlow] skip: q-point {q_name} finished")
+            skipped_finished.append(q_name)
             continue
-        if state not in {"error", "unstarted"}:
-            print(f"[DFTFlow] skip: q-point {q_name} state={state}")
-            continue
-        print(f"[DFTFlow] submit: q-point {q_name}")
-        submit_script(os.path.join(context.workspace, q_name), "run_split.sh")
-        submitted += 1
+        job_id = _submit_q_point(os.path.join(context.workspace, q_name))
+        submitted_names.append(q_name)
+        if job_id:
+            job_ids.append(f"{q_name}={job_id}")
 
-    print(f"[DFTFlow] submitted split q-point tasks: {submitted}")
-    print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
+    parts = []
+    if submitted_names:
+        parts.append("提交 " + ", ".join(submitted_names))
+    if skipped_finished:
+        parts.append("跳过 finished: " + ", ".join(skipped_finished))
+    console.info("split q 点: " + ("; ".join(parts) if parts else "无待提交任务"))
+    if job_ids:
+        console.info("split jobs: " + ", ".join(job_ids))
+    print_resume_point(refresh_workflow_status(context.workspace, context.prefix))
     return 0
 
 

@@ -9,14 +9,14 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from public.job import add_run_submit_arguments, submit_script
+from public.job import add_run_submit_arguments
 from qeflow.phonon import _shared
+from qeflow.phonon import console
 from qeflow.phonon._shared import (
     PhononStepContext,
     build_labeled_commands,
     create_context,
     print_stage,
-    print_status,
     refresh_workflow_status,
 )
 from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step
@@ -118,6 +118,7 @@ def prepare_process_phonon_step(context: PhononStepContext) -> str:
         PROCESS_SCRIPT,
         str(context.config.get("slurm", {}).get("header", "")),
         commands,
+        announce=False,
     )
 
 
@@ -128,6 +129,7 @@ def prepare_matdyn_phband_collect_step(context: PhononStepContext) -> str:
         "submit_matdyn_phband.sh",
         str(context.config.get("slurm", {}).get("header", "")),
         ["bash run_matdyn_phband.sh", *build_collect_phband_commands(context.prefix)],
+        announce=False,
     )
 
 
@@ -138,6 +140,7 @@ def prepare_matdyn_phdos_collect_step(context: PhononStepContext) -> str:
         "submit_matdyn_phdos.sh",
         str(context.config.get("slurm", {}).get("header", "")),
         ["bash run_matdyn_phdos.sh", *build_collect_phdos_commands(context.prefix)],
+        announce=False,
     )
 
 
@@ -155,7 +158,7 @@ def run_process_phonon_steps(context: PhononStepContext, include_plot: bool) -> 
         else:
             stage_no = _run_process_action(context, stage_no, "运行 matdyn_phband", lambda: _shared.run_shell("bash run_matdyn_phband.sh", context.workspace))
             stage_no = _run_process_action(context, stage_no, "归档 phband", lambda: collect_phband_outputs(context))
-    workflow = refresh_workflow_status(context.workspace, context.prefix)
+    refresh_workflow_status(context.workspace, context.prefix)
     if workflow["matdyn_phdos"] != "finished":
         if _root_phdos_outputs_exist(context):
             stage_no = _run_process_action(context, stage_no, "归档 phdos", lambda: collect_phdos_outputs(context))
@@ -335,6 +338,13 @@ def _lerp(left: float, right: float, fraction: float) -> float:
 
 
 def _read_band_frequencies(path: str, expected_modes: int) -> List[List[float]]:
+    with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+        lines = handle.readlines()
+
+    qe_plot_rows = _read_qe_plot_frequencies(lines, expected_modes, path)
+    if qe_plot_rows is not None:
+        return qe_plot_rows
+
     freq_pattern = re.compile(
         r"freq\s*\(\s*\d+\s*\)\s*=\s*[-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?\s*(?:\[?[A-Za-z]+\]?)?\s*=\s*([-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?)",
         flags=re.IGNORECASE,
@@ -342,18 +352,17 @@ def _read_band_frequencies(path: str, expected_modes: int) -> List[List[float]]:
     grouped: List[List[float]] = []
     current: List[float] = []
     numeric_rows: List[List[float]] = []
-    with open(path, "r", encoding="utf-8", errors="ignore") as handle:
-        for line in handle:
-            match = freq_pattern.search(line)
-            if match is not None:
-                current.append(float(match.group(1)))
-                if len(current) == expected_modes:
-                    grouped.append(current)
-                    current = []
-                continue
-            values = [float(item) for item in re.findall(r"[-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?", line)]
-            if len(values) >= expected_modes:
-                numeric_rows.append(values[-expected_modes:])
+    for line in lines:
+        match = freq_pattern.search(line)
+        if match is not None:
+            current.append(float(match.group(1)))
+            if len(current) == expected_modes:
+                grouped.append(current)
+                current = []
+            continue
+        values = _float_values(line)
+        if len(values) >= expected_modes:
+            numeric_rows.append(values[-expected_modes:])
     if grouped:
         return grouped
     if current:
@@ -363,6 +372,62 @@ def _read_band_frequencies(path: str, expected_modes: int) -> List[List[float]]:
     raise ValueError(f"无法从声子谱文件解析频率: {path}")
 
 
+def _read_qe_plot_frequencies(lines: Sequence[str], expected_modes: int, path: str) -> Optional[List[List[float]]]:
+    header_pattern = re.compile(r"&plot\s+nbnd\s*=\s*(\d+)\s*,\s*nks\s*=\s*(\d+)", flags=re.IGNORECASE)
+    header_index = -1
+    nbnd = 0
+    nks = 0
+    for index, line in enumerate(lines):
+        match = header_pattern.search(line)
+        if match is None:
+            continue
+        header_index = index
+        nbnd = int(match.group(1))
+        nks = int(match.group(2))
+        break
+    if header_index < 0:
+        return None
+    if nbnd != expected_modes:
+        raise ValueError(f"声子谱模式数与结构不一致: 文件 nbnd={nbnd}，结构期望 {expected_modes}")
+
+    rows: List[List[float]] = []
+    line_index = header_index + 1
+    for point_index in range(1, nks + 1):
+        line_index = _next_nonempty_line(lines, line_index)
+        if line_index >= len(lines):
+            raise ValueError(f"声子谱文件缺少第 {point_index} 个 q 点坐标: {path}")
+        coord_values = _float_values(lines[line_index])
+        if len(coord_values) < 3:
+            raise ValueError(f"声子谱文件第 {point_index} 个 q 点坐标无法解析: {lines[line_index].strip()}")
+        line_index += 1
+
+        modes: List[float] = []
+        while len(modes) < nbnd:
+            line_index = _next_nonempty_line(lines, line_index)
+            if line_index >= len(lines):
+                raise ValueError(f"声子谱文件第 {point_index} 个 q 点频率数量不足: 期望 {nbnd}，实际 {len(modes)}")
+            modes.extend(_float_values(lines[line_index]))
+            line_index += 1
+        if len(modes) != nbnd:
+            raise ValueError(f"声子谱文件第 {point_index} 个 q 点频率数量错误: 期望 {nbnd}，实际 {len(modes)}")
+        rows.append(modes)
+
+    if len(rows) != nks:
+        raise ValueError(f"声子谱 q 点数量与 header 不一致: {len(rows)} != {nks}")
+    return rows
+
+
+def _next_nonempty_line(lines: Sequence[str], start_index: int) -> int:
+    index = start_index
+    while index < len(lines) and not lines[index].strip():
+        index += 1
+    return index
+
+
+def _float_values(line: str) -> List[float]:
+    return [float(item) for item in re.findall(r"[-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?", line)]
+
+
 def _read_numeric_rows(path: str) -> List[List[float]]:
     rows: List[List[float]] = []
     with open(path, "r", encoding="utf-8", errors="ignore") as handle:
@@ -370,7 +435,7 @@ def _read_numeric_rows(path: str) -> List[List[float]]:
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
                 continue
-            values = [float(item) for item in re.findall(r"[-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?", stripped)]
+            values = _float_values(stripped)
             if values:
                 rows.append(values)
     return rows
@@ -450,22 +515,21 @@ def run_process_phonon(
         run_process_phonon_steps(context, include_plot=True)
     elif submit_job:
         prepare_process_phonon_step(context)
-        print_stage(1, "提交 process phonon")
-        submit_script(context.workspace, PROCESS_SCRIPT)
+        console.generated(PROCESS_SCRIPT)
+        console.submit_script(context.workspace, PROCESS_SCRIPT)
     elif collect_only:
         target = "all" if collect_only is True else str(collect_only)
         if target in {"all", "phband"}:
-            print_stage(1, "归档 phband")
             collect_phband_outputs(context)
         if target in {"all", "phdos"}:
-            print_stage(2 if target == "all" else 1, "归档 phdos")
             collect_phdos_outputs(context)
     elif plot_only:
-        print_stage(1, "绘制声子谱和声子 DOS")
         plot_phonon_outputs(context)
     else:
         prepare_process_phonon_step(context)
-    print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
+    refresh_workflow_status(context.workspace, context.prefix)
+    if run_calc:
+        console.completion("q2r + matdyn + collect + plot")
     return 0
 
 

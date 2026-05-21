@@ -4,7 +4,8 @@ import os
 import shlex
 from typing import Optional
 
-from public.job import add_run_submit_arguments, submit_script
+from public.job import add_run_submit_arguments
+from qeflow.phonon import console
 from qeflow.phonon._shared import (
     all_split_tasks_finished,
     create_context,
@@ -13,9 +14,8 @@ from qeflow.phonon._shared import (
     ph_tasks,
     prepare_root_scf_step,
     print_stage,
-    print_status,
+    print_resume_point,
     refresh_workflow_status,
-    root_has_running_step,
     root_step_scripts,
     run_shell as split_run_shell,
     run_root_scripts,
@@ -32,6 +32,15 @@ from qeflow.phonon.process_phonon import (
     run_process_phonon_steps,
 )
 from qeflow.phonon.split_prepare import prepare_split_assign_coords_step
+
+submit_script = console.submit_script
+ROOT_SCRIPT_NAMES = [
+    "run_scf.sh",
+    "run_ph.sh",
+    "run_q2r.sh",
+    "run_matdyn_phband.sh",
+    "run_matdyn_phdos.sh",
+]
 
 
 def _ensure_split_materialized(config_file: str, struct_file: Optional[str]) -> dict:
@@ -56,21 +65,35 @@ def _write_pre_and_split_stage_script(context, workflow) -> str:
             f"qe_split_submit -c {shlex.quote(context.config_file)} --mode coords",
         )
     )
-    return write_labeled_script(context, "submit_pre_and_split_stage.sh", steps, start_index=1, total_steps=11)
+    return write_labeled_script(
+        context,
+        "submit_pre_and_split_stage.sh",
+        steps,
+        start_index=1,
+        total_steps=11,
+        completion_message="1/11-3/11 pre + split 提交阶段",
+    )
 
 
 def _write_merge_and_process_stage_script(context, workflow) -> str:
     steps = [
-        ("合并 split q 点结果", f"qe_merge -c {shlex.quote(context.config_file)}"),
-        ("运行 q2r", "bash run_q2r.sh"),
-        ("运行 matdyn 声子谱", "bash run_matdyn_phband.sh"),
-        ("归档声子谱结果", f"qe_process_phonon -c {shlex.quote(context.config_file)} --collect phband"),
-        ("运行 matdyn 声子 DOS", "bash run_matdyn_phdos.sh"),
-        ("归档声子 DOS 结果", f"qe_process_phonon -c {shlex.quote(context.config_file)} --collect phdos"),
-        ("绘图并写出 CSV", f"qe_process_phonon -c {shlex.quote(context.config_file)} --plot"),
-        ("完成声子回收", "echo '[DFTFlow] phonon workflow complete'"),
+        ("merge", f"qe_merge -c {shlex.quote(context.config_file)}"),
+        ("q2r", "bash run_q2r.sh"),
+        ("matdyn_phband", "bash run_matdyn_phband.sh"),
+        ("collect phband", f"qe_process_phonon -c {shlex.quote(context.config_file)} --collect phband"),
+        ("matdyn_phdos", "bash run_matdyn_phdos.sh"),
+        ("collect phdos", f"qe_process_phonon -c {shlex.quote(context.config_file)} --collect phdos"),
+        ("plot", f"qe_process_phonon -c {shlex.quote(context.config_file)} --plot"),
+        ("done", "true"),
     ]
-    return write_labeled_script(context, "submit_merge_and_process_phonon.sh", steps, start_index=4, total_steps=11)
+    return write_labeled_script(
+        context,
+        "submit_merge_and_process_phonon.sh",
+        steps,
+        start_index=4,
+        total_steps=11,
+        completion_message="4/11-11/11 merge + phonon 后处理阶段",
+    )
 
 
 def run_phonon_split_assign_coords_workflow(
@@ -85,6 +108,7 @@ def run_phonon_split_assign_coords_workflow(
     prepare_q2r_step(context)
     prepare_matdyn_phband_step(context)
     prepare_matdyn_phdos_step(context)
+    console.generated_scripts(ROOT_SCRIPT_NAMES)
 
     workflow = refresh_workflow_status(context.workspace, context.prefix)
     if workflow["scf"] != "finished" or dyn0_state(workflow) != "finished":
@@ -107,11 +131,11 @@ def run_phonon_split_assign_coords_workflow(
                 )
                 workflow = refresh_workflow_status(context.workspace, context.prefix)
         elif submit_job:
-            if workflow["scf"] not in {"finished", "running"} or dyn0_state(workflow) not in {"finished", "running"}:
-                print_stage(1, "提交前计算和 split 提交阶段")
+            if workflow["scf"] != "finished" or dyn0_state(workflow) != "finished":
                 aggregate = _write_pre_and_split_stage_script(context, workflow)
+                console.generated(os.path.basename(aggregate))
                 submit_script(context.workspace, os.path.basename(aggregate))
-            print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
+            console.next_step("等待 split q 点任务完成后，再执行 qe_phonon_split_coords -s")
             return 0
 
     workflow = _ensure_split_materialized(config_file, struct_file)
@@ -127,9 +151,8 @@ def run_phonon_split_assign_coords_workflow(
                     workflow = refresh_workflow_status(context.workspace, context.prefix)
                     split_task_no += 1
         elif submit_job:
-            print_stage(2, "提交 split 阶段")
             run_split_submit(config_file, struct_file, "coords")
-            print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
+            print_resume_point(refresh_workflow_status(context.workspace, context.prefix))
             return 0
 
     workflow = refresh_workflow_status(context.workspace, context.prefix)
@@ -142,18 +165,20 @@ def run_phonon_split_assign_coords_workflow(
                     struct_file,
                     workflow_name="qe_phonon_split_coords",
                 ) != 0:
-                    print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
+                    print_resume_point(refresh_workflow_status(context.workspace, context.prefix))
                     return 1
                 workflow = refresh_workflow_status(context.workspace, context.prefix)
             run_process_phonon_steps(context, include_plot=True)
-        elif submit_job and not root_has_running_step(workflow, include_ph=False):
+        elif submit_job:
             remaining_scripts = root_step_scripts(workflow, include_ph=False)
             process_needed = bool(remaining_scripts) or workflow.get("phonon_plot") != "finished"
             if merge_state(workflow) != "finished" or process_needed:
-                print_stage(3, "提交 merge 和后处理回收阶段")
                 aggregate = _write_merge_and_process_stage_script(context, workflow)
+                console.generated(os.path.basename(aggregate))
                 submit_script(context.workspace, os.path.basename(aggregate))
-    print_status(context.prefix, refresh_workflow_status(context.workspace, context.prefix))
+                console.next_step("查看对应 slurm 输出，等待 4/11-11/11 完成")
+                return 0
+    print_resume_point(refresh_workflow_status(context.workspace, context.prefix))
     return 0
 
 

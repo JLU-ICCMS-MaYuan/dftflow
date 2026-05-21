@@ -108,6 +108,24 @@ def _write_phband_fixture(path: Path) -> None:
     path.write_text(
         "\n".join(
             [
+                " &plot nbnd=   9, nks=   2 /",
+                "            0.000000  0.000000  0.000000",
+                "    3.3356    6.6712   10.0068   13.3424   16.6780   20.0136",
+                "   23.3492   26.6848   30.0204",
+                "            0.500000  0.000000  0.000000",
+                "    5.0034    8.3390   11.6746   15.0102   18.3458   21.6814",
+                "   25.0170   28.3526   31.6882",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_phband_legacy_fixture(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
                 "freq (    1) = 0.100 [THz] = 3.3356 [cm-1]",
                 "freq (    2) = 0.200 [THz] = 6.6712 [cm-1]",
                 "freq (    3) = 0.300 [THz] = 10.0068 [cm-1]",
@@ -117,15 +135,6 @@ def _write_phband_fixture(path: Path) -> None:
                 "freq (    7) = 0.700 [THz] = 23.3492 [cm-1]",
                 "freq (    8) = 0.800 [THz] = 26.6848 [cm-1]",
                 "freq (    9) = 0.900 [THz] = 30.0204 [cm-1]",
-                "freq (    1) = 0.150 [THz] = 5.0034 [cm-1]",
-                "freq (    2) = 0.250 [THz] = 8.3390 [cm-1]",
-                "freq (    3) = 0.350 [THz] = 11.6746 [cm-1]",
-                "freq (    4) = 0.450 [THz] = 15.0102 [cm-1]",
-                "freq (    5) = 0.550 [THz] = 18.3458 [cm-1]",
-                "freq (    6) = 0.650 [THz] = 21.6814 [cm-1]",
-                "freq (    7) = 0.750 [THz] = 25.0170 [cm-1]",
-                "freq (    8) = 0.850 [THz] = 28.3526 [cm-1]",
-                "freq (    9) = 0.950 [THz] = 31.6882 [cm-1]",
             ]
         )
         + "\n",
@@ -608,6 +617,39 @@ def test_qe_process_phonon_collects_plots_and_marks_status(chdir_work, monkeypat
     assert (workdir / "phdos" / "phonon_dos.png").exists()
 
 
+def test_qe_process_phonon_keeps_legacy_freq_line_compatibility(chdir_work):
+    from qeflow.phonon import process_phonon as module
+
+    freq_path = Path("legacy.phband.freq")
+    _write_phband_legacy_fixture(freq_path)
+
+    rows = module._read_band_frequencies(str(freq_path), 9)
+
+    assert rows == [[3.3356, 6.6712, 10.0068, 13.3424, 16.6780, 20.0136, 23.3492, 26.6848, 30.0204]]
+
+
+def test_qe_process_phonon_collect_uses_current_split_index_workspace(chdir_work, monkeypatch):
+    from qeflow.phonon import process_phonon as module
+
+    workdir = Path("qe_phonon_split_index")
+    workdir.mkdir()
+    Path("MgB2.vasp").replace(workdir / "POSCAR")
+    Path("input_qe.toml").replace(workdir / "input.toml")
+    (workdir / "q_index_map.json").write_text('{"mode":"split_assign_index","qpoints":[]}', encoding="utf-8")
+    _write_job_done(workdir / "matdyn_phband.out")
+    _write_phband_fixture(workdir / "Mg1B2.phband.freq")
+    _write_labelinfo_fixture(workdir / "Mg1B2_band.labelinfo.dat")
+
+    monkeypatch.chdir(workdir)
+
+    result = module.run_process_phonon("input.toml", None, False, False, "phband", False)
+
+    assert result == 0
+    assert Path("phband/Mg1B2.phband.freq").exists()
+    assert Path("phband/Mg1B2_band.labelinfo.dat").exists()
+    assert not Path("qe_phonon/phband/Mg1B2.phband.freq").exists()
+
+
 def test_qe_process_phonon_run_executes_q2r_matdyn_collect_and_plot(chdir_work, monkeypatch):
     from qeflow.phonon import _shared
     from qeflow.phonon import process_phonon as module
@@ -733,6 +775,9 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
     assert "1/11" in pre_script
     assert "2/11" in pre_script
     assert "3/11" in pre_script
+    assert "[qeflow] 1/11" in pre_script
+    assert "[qeflow] 完成: 1/11-3/11" in pre_script
+    assert "DFTFlow" not in pre_script
     assert "qe_split_submit" in pre_script
 
     workdir = Path("qe_phonon_split_index")
@@ -767,6 +812,9 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
     assert "qe_merge" in post_script
     assert "4/11" in post_script
     assert "11/11" in post_script
+    assert "[qeflow] 4/11 merge:" in post_script
+    assert "[qeflow] 完成: 4/11-11/11" in post_script
+    assert "DFTFlow" not in post_script
     assert "submit_process_phonon" not in post_script
 
 
@@ -1162,14 +1210,41 @@ def test_split_task_helpers_and_print_status_read_ph_tasks_only(chdir_work, caps
     }
 
     assert _shared.all_split_tasks_finished(workflow) is False
-    assert _shared.any_split_task_running(workflow) is True
     assert _shared.split_task_needs_run(workflow) is True
 
     _shared.print_status("Mg1B2", workflow)
     output = capsys.readouterr().out
-    assert "01: finished" in output
-    assert "02: running" in output
-    assert "prefix: Mg1B2" in output
+    assert "[qeflow] 下一步:" in output
+    assert "running" not in output
+
+
+def test_split_resume_point_skips_running_states_in_output(chdir_work, capsys):
+    from qeflow.phonon import _shared
+
+    workflow = {
+        "scf": "finished",
+        "ph": {
+            "state": "finished",
+            "dyn0": "finished",
+            "tasks": {
+                "01": "finished",
+                "02": "finished",
+                "03": "finished",
+                "04": "finished",
+            },
+        },
+        "merge": "finished",
+        "q2r": "running",
+        "matdyn_phband": "running",
+        "matdyn_phdos": "running",
+        "phonon_plot": "unstarted",
+    }
+
+    _shared.print_resume_point(workflow)
+    output = capsys.readouterr().out
+
+    assert "下一步: 从 5/11 运行 q2r 开始" in output
+    assert "running" not in output
 
 
 def test_write_split_stage_script_and_submit_use_ph_tasks_states(chdir_work, monkeypatch):
@@ -1203,9 +1278,9 @@ def test_write_split_stage_script_and_submit_use_ph_tasks_states(chdir_work, mon
     content = Path(script).read_text(encoding="utf-8")
     assert "cd 03" in content
     assert "cd 01" not in content
-    assert "cd 02" not in content
+    assert "cd 02" in content
 
     submitted = []
     monkeypatch.setattr(_shared, "submit_script", lambda cwd, script_name: submitted.append((os.path.basename(cwd), script_name)))
-    assert _shared.submit_split_stage_tasks(context, workflow) == 1
-    assert submitted == [("03", "run_split.sh")]
+    assert _shared.submit_split_stage_tasks(context, workflow) == 2
+    assert submitted == [("02", "run_split.sh"), ("03", "run_split.sh")]

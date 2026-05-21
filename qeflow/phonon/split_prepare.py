@@ -22,7 +22,7 @@ def prepare_split_assign_index_step(context: PhononStepContext) -> int:
         os.makedirs(q_dir, exist_ok=True)
         write_scf_input(q_dir, context.config, context.struct_info, context.prefix)
         write_split_ph_input_assign_index(q_dir, context.config, context.prefix, int(qpoint["index"]))
-        write_split_run_script(q_dir, slurm_header, context.commands["pw"], context.commands["ph"])
+        write_split_run_script(q_dir, slurm_header, context.commands["pw"], context.commands["ph"], announce=False)
         q_map_payload["qpoints"].append(
             {
                 "directory": q_name,
@@ -45,7 +45,7 @@ def prepare_split_assign_coords_step(context: PhononStepContext) -> int:
         os.makedirs(q_dir, exist_ok=True)
         write_scf_input(q_dir, context.config, context.struct_info, context.prefix)
         write_split_ph_input_assign_coords(q_dir, context.config, context.prefix, qpoint["q_crystal"])
-        write_split_run_script(q_dir, slurm_header, context.commands["pw"], context.commands["ph"])
+        write_split_run_script(q_dir, slurm_header, context.commands["pw"], context.commands["ph"], announce=False)
         q_map_payload["qpoints"].append(
             {
                 "directory": q_name,

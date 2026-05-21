@@ -3,7 +3,7 @@ import os
 import subprocess
 
 
-def write_job_script(script_path, header, commands, default_header="#!/bin/bash"):
+def write_job_script(script_path, header, commands, default_header="#!/bin/bash", announce=True):
     with open(script_path, "w") as f:
         if header:
             f.write(header.strip() + "\n\n")
@@ -12,7 +12,8 @@ def write_job_script(script_path, header, commands, default_header="#!/bin/bash"
         for command in commands:
             f.write(command if command.endswith("\n") else command + "\n")
     os.chmod(script_path, 0o755)
-    print(f"生成运行脚本: {script_path}")
+    if announce:
+        print(f"生成运行脚本: {script_path}")
 
 
 def _capture_output_states(work_dir, expected_outputs):

@@ -5,7 +5,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-from public.job import submit_script
+from qeflow.phonon import console
 from qeflow.qe_check.checks import (
     check_merge,
     check_ph,
@@ -26,6 +26,7 @@ from qeflow.qe_input.fileio import dump_json, load_json, resolve_workspace
 
 WORKFLOW_STATUS_FILE = "workflow_status.json"
 TASK_STATUS_FILE = "task_status.json"
+submit_script = console.submit_script
 
 
 @dataclass
@@ -53,7 +54,7 @@ def submit_or_run(run_calc: bool, submit_job: bool, cwd: str, script_name: str) 
 
 
 def print_stage(stage_no: int, message: str) -> None:
-    print(f"{stage_no}. {message}")
+    console.stage(stage_no, message)
 
 
 def create_context(
@@ -122,6 +123,7 @@ def prepare_root_scf_step(context: PhononStepContext) -> str:
         "run_scf.sh",
         str(context.config.get("slurm", {}).get("header", "")),
         [f"{context.commands['pw']} < scf.in > scf.out"],
+        announce=False,
     )
 
 
@@ -167,10 +169,7 @@ def ph_tasks(workflow: Dict[str, object]) -> Dict[str, str]:
 
 
 def refresh_split_task_status(workspace: str) -> Dict[str, str]:
-    from qeflow.qe_check.checks import get_running_workdirs
-
-    running = get_running_workdirs()
-    task_states = collect_split_task_states(workspace, running)
+    task_states = collect_split_task_states(workspace, set())
     for q_name, state in task_states.items():
         q_dir = os.path.join(workspace, q_name)
         payload = {"directory": q_name, "state": state}
@@ -179,9 +178,9 @@ def refresh_split_task_status(workspace: str) -> Dict[str, str]:
 
 
 def refresh_workflow_status(workspace: str, prefix: str) -> Dict[str, object]:
-    from qeflow.qe_check.checks import check_matdyn, check_phonon_plot, get_running_workdirs
+    from qeflow.qe_check.checks import check_matdyn, check_phonon_plot
 
-    running = get_running_workdirs()
+    running = set()
     matdyn_phband = check_matdyn(
         workspace,
         "matdyn_phband.out",
@@ -234,13 +233,6 @@ def all_split_tasks_finished(workflow: Dict[str, object]) -> bool:
     return summarize_task_states(tasks.values()) == "finished"
 
 
-def any_split_task_running(workflow: Dict[str, object]) -> bool:
-    tasks = ph_tasks(workflow)
-    if not tasks:
-        return False
-    return summarize_task_states(tasks.values()) == "running"
-
-
 def split_task_needs_run(workflow: Dict[str, object]) -> bool:
     tasks = ph_tasks(workflow)
     if not tasks:
@@ -249,50 +241,47 @@ def split_task_needs_run(workflow: Dict[str, object]) -> bool:
 
 
 def print_status(prefix: str, workflow: Dict[str, object]) -> None:
-    print(f"scf: {workflow['scf']}")
-    ph_payload = workflow["ph"]
-    if isinstance(ph_payload, dict):
-        print(f"ph: {ph_payload['state']}")
-        print(f"dyn0: {ph_payload['dyn0']}")
-    print(f"merge: {merge_state(workflow)}")
-    print(f"q2r: {workflow['q2r']}")
-    print(f"matdyn_phband: {workflow['matdyn_phband']}")
-    print(f"matdyn_phdos: {workflow['matdyn_phdos']}")
-    print(f"phonon_plot: {workflow.get('phonon_plot', 'unstarted')}")
-    tasks = ph_tasks(workflow)
-    if tasks:
-        for q_name in sorted(tasks):
-            print(f"{q_name}: {tasks.get(q_name, 'unstarted')}")
-    print(f"prefix: {prefix}")
+    print_resume_point(workflow)
+
+
+def split_resume_step(workflow: Dict[str, object]) -> Tuple[int, str]:
+    if workflow["scf"] != "finished":
+        return 1, "运行 SCF"
+    if dyn0_state(workflow) != "finished":
+        return 2, "运行 dyn0"
+    if not all_split_tasks_finished(workflow):
+        return 3, "提交 split q 点任务"
+    if merge_state(workflow) != "finished":
+        return 4, "合并 split q 点结果"
+    if workflow["q2r"] != "finished":
+        return 5, "运行 q2r"
+    if workflow["matdyn_phband"] != "finished":
+        return 6, "运行 matdyn 声子谱"
+    if workflow["matdyn_phdos"] != "finished":
+        return 8, "运行 matdyn 声子 DOS"
+    if workflow.get("phonon_plot", "unstarted") != "finished":
+        return 10, "绘图并写出 CSV"
+    return 11, "完成声子回收"
+
+
+def print_resume_point(workflow: Dict[str, object]) -> None:
+    step_no, label = split_resume_step(workflow)
+    console.resume(step_no, 11, label)
 
 
 def root_step_scripts(workflow: Dict[str, object], include_ph: bool) -> List[str]:
     steps: List[str] = []
-    if workflow["scf"] not in {"finished", "running"}:
+    if workflow["scf"] != "finished":
         steps.append("run_scf.sh")
-    if include_ph and ph_state(workflow) not in {"finished", "running"}:
+    if include_ph and ph_state(workflow) != "finished":
         steps.append("run_ph.sh")
-    if workflow["q2r"] not in {"finished", "running"}:
+    if workflow["q2r"] != "finished":
         steps.append("run_q2r.sh")
-    if workflow["matdyn_phband"] not in {"finished", "running"}:
+    if workflow["matdyn_phband"] != "finished":
         steps.append("run_matdyn_phband.sh")
-    if workflow["matdyn_phdos"] not in {"finished", "running"}:
+    if workflow["matdyn_phdos"] != "finished":
         steps.append("run_matdyn_phdos.sh")
     return steps
-
-
-def root_has_running_step(workflow: Dict[str, object], include_ph: bool) -> bool:
-    if workflow["scf"] == "running":
-        return True
-    if include_ph and ph_state(workflow) == "running":
-        return True
-    if workflow["q2r"] == "running":
-        return True
-    if workflow["matdyn_phband"] == "running":
-        return True
-    if workflow["matdyn_phdos"] == "running":
-        return True
-    return False
 
 
 def build_labeled_commands(
@@ -305,7 +294,7 @@ def build_labeled_commands(
     total = total_steps or len(steps)
     for index, (label, command) in enumerate(steps, start=1):
         step_no = start_index + index - 1
-        commands.append(f"echo {shlex.quote(f'[DFTFlow] step {step_no}/{total}: {label}')}")
+        commands.append(console.echo_command_step(step_no, total, label, command))
         commands.append(command)
     return commands
 
@@ -317,12 +306,17 @@ def write_labeled_script(
     *,
     start_index: int = 1,
     total_steps: Optional[int] = None,
+    completion_message: Optional[str] = None,
 ) -> str:
+    commands = build_labeled_commands(steps, start_index=start_index, total_steps=total_steps)
+    if completion_message:
+        commands.append(console.echo_completion(completion_message))
     return write_root_run_script(
         context.workspace,
         script_name,
         str(context.config.get("slurm", {}).get("header", "")),
-        build_labeled_commands(steps, start_index=start_index, total_steps=total_steps),
+        commands,
+        announce=False,
     )
 
 
@@ -331,13 +325,14 @@ def write_aggregate_script(context: PhononStepContext, script_name: str, scripts
     script_list = list(scripts)
     total = len(script_list)
     for index, script in enumerate(script_list, start=1):
-        commands.append(f"echo {shlex.quote(f'[DFTFlow] step {index}/{total}: bash {script}')}")
+        commands.append(console.echo_command_step(index, total, script, f"bash {script}"))
         commands.append(f"bash {script}")
     return write_root_run_script(
         context.workspace,
         script_name,
         str(context.config.get("slurm", {}).get("header", "")),
         commands,
+        announce=False,
     )
 
 
@@ -346,13 +341,14 @@ def write_split_stage_script(context: PhononStepContext, workflow: Dict[str, obj
     commands: List[str] = []
     for q_name in iter_q_directory_names(context.workspace):
         state = tasks.get(q_name)
-        if state not in {"finished", "running"}:
+        if state != "finished":
             commands.append(f"(cd {shlex.quote(q_name)} && bash run_split.sh)")
     return write_root_run_script(
         context.workspace,
         "submit_split_stage.sh",
         str(context.config.get("slurm", {}).get("header", "")),
         commands,
+        announce=False,
     )
 
 
@@ -361,7 +357,7 @@ def submit_split_stage_tasks(context: PhononStepContext, workflow: Dict[str, obj
     submitted = 0
     for q_name in iter_q_directory_names(context.workspace):
         state = tasks.get(q_name)
-        if state not in {"finished", "running"}:
+        if state != "finished":
             submit_script(os.path.join(context.workspace, q_name), "run_split.sh")
             submitted += 1
     return submitted

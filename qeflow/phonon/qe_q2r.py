@@ -21,6 +21,7 @@ def prepare_q2r_step(context: PhononStepContext) -> str:
         "run_q2r.sh",
         str(context.config.get("slurm", {}).get("header", "")),
         [f"{context.commands['q2r']} < q2r.in > q2r.out"],
+        announce=False,
     )
 
 

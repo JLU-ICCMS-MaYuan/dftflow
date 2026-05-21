@@ -41,6 +41,6 @@ flowchart TD
 
     subgraph P9["状态与辅助"]
         direction TD
-        H1["refresh_workflow_status"] --> H2["root_has_running_step / split task states"]
+        H1["refresh_workflow_status"] --> H2["split_resume_step / split task states"]
         H2 --> H3["决定继续运行、提交下一阶段或仅打印状态"]
     end
