@@ -118,13 +118,10 @@ qe_phonon_nosplit/
 - `qe_check -matdyn-dos`
 - `qe_check -eph`
 
-返回值统一收敛为四态：
+返回值统一收敛为三态：
 - `unstarted`
-- `running`
 - `finished`
 - `error`
-
-`running` 统一通过 `squeue -u <user> -h --format='%12A %12P %5t %25R %8M %Z'` 的工作目录 `%Z` 判定，不靠文件猜测。
 
 ## 7. split 工作流行为
 - `qe_phonon_split_index`

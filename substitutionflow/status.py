@@ -151,8 +151,6 @@ def _default_pressure_status(pressures: Iterable) -> Dict[str, Dict[str, str]]:
 
 def _normalize_case_step_state(value: object) -> str:
     state = str(value).strip() if value is not None else "unstarted"
-    if state == "running":
-        return "error"
     if state not in STATUS_ORDER:
         return "unstarted"
     return state
@@ -377,8 +375,6 @@ def _detect_vasp_process_eledos_status(pressure_dir: str) -> str:
 
 def _normalize_qe_phonon_state(value: object) -> str:
     state = str(value).strip() if value is not None else "unstarted"
-    if state == "running":
-        return "error"
     if state not in QE_PHONON_STATE_ORDER:
         return "unstarted"
     return state
@@ -565,8 +561,6 @@ def create_initial_status(
 
 def refresh_status(
     output_dir: str,
-    squeue_output: Optional[str] = None,
-    squeue_user: Optional[str] = None,
     show_progress: bool = False,
     progress_style: str = "detail",
 ) -> Dict:

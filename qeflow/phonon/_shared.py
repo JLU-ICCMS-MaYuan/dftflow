@@ -169,7 +169,7 @@ def ph_tasks(workflow: Dict[str, object]) -> Dict[str, str]:
 
 
 def refresh_split_task_status(workspace: str) -> Dict[str, str]:
-    task_states = collect_split_task_states(workspace, set())
+    task_states = collect_split_task_states(workspace)
     for q_name, state in task_states.items():
         q_dir = os.path.join(workspace, q_name)
         payload = {"directory": q_name, "state": state}
@@ -180,7 +180,6 @@ def refresh_split_task_status(workspace: str) -> Dict[str, str]:
 def refresh_workflow_status(workspace: str, prefix: str) -> Dict[str, object]:
     from qeflow.qe_check.checks import check_matdyn, check_phonon_plot
 
-    running = set()
     matdyn_phband = check_matdyn(
         workspace,
         "matdyn_phband.out",
@@ -189,20 +188,18 @@ def refresh_workflow_status(workspace: str, prefix: str) -> Dict[str, object]:
             os.path.join("phband", f"{prefix}.phband.freq"),
             os.path.join("phband", f"{prefix}_band.labelinfo.dat"),
         ],
-        running_dirs=running,
     )
     matdyn_phdos = check_matdyn(
         workspace,
         "matdyn_phdos.out",
         f"{prefix}.phdos.dat",
         archived_products=[os.path.join("phdos", f"{prefix}.phdos.dat")],
-        running_dirs=running,
     )
     workflow = {
-        "scf": check_scf(workspace, running_dirs=running),
-        "ph": check_ph(workspace, prefix, running_dirs=running),
-        "merge": check_merge(workspace, prefix, running_dirs=running),
-        "q2r": check_q2r(workspace, prefix, running_dirs=running),
+        "scf": check_scf(workspace),
+        "ph": check_ph(workspace, prefix),
+        "merge": check_merge(workspace, prefix),
+        "q2r": check_q2r(workspace, prefix),
         "matdyn_phband": matdyn_phband,
         "matdyn_phdos": matdyn_phdos,
         "phonon_plot": check_phonon_plot(workspace, prefix, matdyn_phband, matdyn_phdos),

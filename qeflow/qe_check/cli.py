@@ -4,7 +4,7 @@ import os
 import sys
 from typing import Any, Dict, Tuple
 
-from qeflow.qe_check.checks import check_ph, check_q2r, check_relax, check_scf, get_running_workdirs
+from qeflow.qe_check.checks import check_ph, check_q2r, check_relax, check_scf
 from qeflow.qe_input.builders import parse_poscar, resolve_prefix
 from qeflow.qe_input.fileio import resolve_workspace
 
@@ -43,15 +43,14 @@ def main() -> None:
         return
 
     config, root_dir, workspace = _resolve_target_directory(args.config)
-    running = get_running_workdirs()
 
     if args.scf:
         target = workspace if os.path.isdir(workspace) else root_dir
-        print(check_scf(target, running_dirs=running))
+        print(check_scf(target))
         return
 
     if args.relax:
-        print(check_relax(root_dir, running_dirs=running))
+        print(check_relax(root_dir))
         return
 
     prefix = config["qe_phonon"].get("prefix")
@@ -63,11 +62,11 @@ def main() -> None:
             prefix = "qe"
 
     if args.ph:
-        print(check_ph(workspace, str(prefix), running_dirs=running)["state"])
+        print(check_ph(workspace, str(prefix))["state"])
         return
 
     if args.q2r:
-        print(check_q2r(workspace, str(prefix), running_dirs=running))
+        print(check_q2r(workspace, str(prefix)))
         return
 
     sys.exit(1)

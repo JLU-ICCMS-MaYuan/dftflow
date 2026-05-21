@@ -1,54 +1,19 @@
 #!/usr/bin/env python3
 import os
-import subprocess
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from qeflow.qe_check.outputs import MatdynOut, PhOut, Q2rOut, RelaxOut, ScfOut
 from qeflow.qe_input.fileio import list_split_directories, load_json
 
 
-VALID_STATES = ("unstarted", "running", "finished", "error")
-
-
-def get_running_workdirs(user: Optional[str] = None) -> Set[str]:
-    target_user = user or os.environ.get("USER", "")
-    if not target_user:
-        return set()
-    cmd = f"squeue -u {target_user} -h --format='%12A %12P %5t %25R %8M %Z'"
-    result = subprocess.run(
-        cmd,
-        shell=True,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return set()
-    workdirs: Set[str] = set()
-    for raw_line in result.stdout.splitlines():
-        line = raw_line.rstrip()
-        if not line:
-            continue
-        parts = line.split(maxsplit=5)
-        if len(parts) < 6:
-            continue
-        state = parts[2].strip()
-        workdir = parts[5].strip()
-        if state in {"R", "PD"} and workdir:
-            workdirs.add(os.path.abspath(workdir))
-    return workdirs
+VALID_STATES = ("unstarted", "finished", "error")
 
 
 def _finalize_state(
     output_exists: bool,
     finished: bool,
     errored: bool,
-    workdir: str,
-    running_dirs: Set[str],
 ) -> str:
-    workdir_abs = os.path.abspath(workdir)
-    if workdir_abs in running_dirs:
-        return "running"
     if not output_exists:
         return "unstarted"
     if finished:
@@ -58,28 +23,23 @@ def _finalize_state(
     return "error"
 
 
-def check_scf(workdir: str, filename: str = "scf.out", running_dirs: Optional[Set[str]] = None) -> str:
-    running = running_dirs or get_running_workdirs()
+def check_scf(workdir: str, filename: str = "scf.out") -> str:
     target = ScfOut(os.path.join(workdir, filename))
-    return _finalize_state(target.exists(), target.is_finished(), target.has_error(), workdir, running)
+    return _finalize_state(target.exists(), target.is_finished(), target.has_error())
 
 
-def check_relax(workdir: str, running_dirs: Optional[Set[str]] = None) -> str:
-    running = running_dirs or get_running_workdirs()
+def check_relax(workdir: str) -> str:
     for candidate in ("relax.out", "vc-relax.out"):
         path = os.path.join(workdir, candidate)
         if os.path.exists(path):
             target = RelaxOut(path)
-            return _finalize_state(True, target.is_finished(), target.has_error(), workdir, running)
-    return "running" if os.path.abspath(workdir) in running else "unstarted"
+            return _finalize_state(True, target.is_finished(), target.has_error())
+    return "unstarted"
 
 
-def check_q2r(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None) -> str:
-    running = running_dirs or get_running_workdirs()
+def check_q2r(workdir: str, prefix: str) -> str:
     output = Q2rOut(os.path.join(workdir, "q2r.out"))
     fc_path = os.path.join(workdir, f"{prefix}.fc")
-    if os.path.abspath(workdir) in running:
-        return "running"
     if not output.exists():
         return "unstarted"
     if output.is_finished() and os.path.exists(fc_path):
@@ -108,8 +68,7 @@ def _load_q_index_mode(workdir: str) -> str:
     return str(mode) if isinstance(mode, str) else ""
 
 
-def collect_split_task_states(workdir: str, running_dirs: Optional[Set[str]] = None) -> Dict[str, str]:
-    running = running_dirs or get_running_workdirs()
+def collect_split_task_states(workdir: str) -> Dict[str, str]:
     entries = _load_q_index_entries(workdir)
     q_names: List[str] = []
     for entry in entries:
@@ -121,7 +80,7 @@ def collect_split_task_states(workdir: str, running_dirs: Optional[Set[str]] = N
     if not q_names:
         q_names = sorted(os.path.basename(q_dir) for q_dir in list_split_directories(workdir))
     return {
-        q_name: check_split_task(os.path.join(workdir, q_name), running)
+        q_name: check_split_task(os.path.join(workdir, q_name))
         for q_name in q_names
     }
 
@@ -191,8 +150,7 @@ def _merge_patterns_ready(workdir: str, prefix: str, entries: List[Dict[str, obj
     return True
 
 
-def check_merge(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None) -> str:
-    running = running_dirs or get_running_workdirs()
+def check_merge(workdir: str, prefix: str) -> str:
     entries = _load_q_index_entries(workdir)
     if not entries:
         return "unstarted"
@@ -207,7 +165,7 @@ def check_merge(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = No
         q_name = str(entry.get("directory", "")).strip()
         if not q_name:
             continue
-        split_states.append(check_split_task(os.path.join(workdir, q_name), running))
+        split_states.append(check_split_task(os.path.join(workdir, q_name)))
 
     if summarize_task_states(split_states) != "finished":
         return "unstarted"
@@ -229,13 +187,9 @@ def check_matdyn(
     output_name: str,
     product_name: str,
     archived_products: Optional[List[str]] = None,
-    running_dirs: Optional[Set[str]] = None,
 ) -> str:
-    running = running_dirs or get_running_workdirs()
     output = MatdynOut(os.path.join(workdir, output_name))
     archived = archived_products or []
-    if os.path.abspath(workdir) in running:
-        return "running"
     if not output.exists():
         return "unstarted"
     product_exists = os.path.exists(os.path.join(workdir, product_name))
@@ -266,14 +220,10 @@ def check_phonon_plot(workdir: str, prefix: str, matdyn_phband_state: str, matdy
     return "error"
 
 
-def check_split_task(q_dir: str, running_dirs: Optional[Set[str]] = None) -> str:
-    running = running_dirs or get_running_workdirs()
-    q_dir_abs = os.path.abspath(q_dir)
+def check_split_task(q_dir: str) -> str:
     scf = ScfOut(os.path.join(q_dir, "scf.out"))
     ph = PhOut(os.path.join(q_dir, "split_ph.out"))
     has_any_output = scf.exists() or ph.exists()
-    if q_dir_abs in running:
-        return "running"
     if ph.is_finished() and scf.is_finished():
         return "finished"
     if ph.has_error() or scf.has_error():
@@ -283,16 +233,13 @@ def check_split_task(q_dir: str, running_dirs: Optional[Set[str]] = None) -> str
     return "error"
 
 
-def check_ph(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None) -> Dict[str, object]:
-    running = running_dirs or get_running_workdirs()
+def check_ph(workdir: str, prefix: str) -> Dict[str, object]:
     dyn0_path = os.path.join(workdir, f"{prefix}.dyn0")
     dyn0_ready = os.path.exists(dyn0_path) and os.path.getsize(dyn0_path) > 0
     root_ph = PhOut(os.path.join(workdir, "ph.out"))
-    task_states = collect_split_task_states(workdir, running)
+    task_states = collect_split_task_states(workdir)
     if not task_states:
-        if os.path.abspath(workdir) in running:
-            state = "running"
-        elif dyn0_ready and root_ph.is_finished():
+        if dyn0_ready and root_ph.is_finished():
             state = "finished"
         elif dyn0_ready:
             state = "finished"
@@ -304,7 +251,7 @@ def check_ph(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None)
             state = "unstarted"
         return {
             "state": state,
-            "dyn0": "finished" if dyn0_ready else ("running" if os.path.abspath(workdir) in running else "unstarted"),
+            "dyn0": "finished" if dyn0_ready else "unstarted",
             "tasks": {},
         }
 
@@ -313,8 +260,6 @@ def check_ph(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None)
         state = "finished"
     elif "error" in unique_states:
         state = "error"
-    elif "running" in unique_states:
-        state = "running"
     elif task_states:
         state = "unstarted" if unique_states == {"unstarted"} else "error"
     elif dyn0_ready:
@@ -323,7 +268,7 @@ def check_ph(workdir: str, prefix: str, running_dirs: Optional[Set[str]] = None)
         state = "unstarted"
     return {
         "state": state,
-        "dyn0": "finished" if dyn0_ready else ("running" if os.path.abspath(workdir) in running else "unstarted"),
+        "dyn0": "finished" if dyn0_ready else "unstarted",
         "tasks": task_states,
     }
 
@@ -336,6 +281,4 @@ def summarize_task_states(task_states: Iterable[str]) -> str:
         return "finished"
     if "error" in states:
         return "error"
-    if "running" in states:
-        return "running"
     return "unstarted"

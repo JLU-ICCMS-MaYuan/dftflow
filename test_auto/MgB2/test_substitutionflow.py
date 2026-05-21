@@ -516,7 +516,7 @@ def test_refresh_status_detects_finished_error_and_unstarted(chdir_work):
     prepared_step_dir.mkdir(parents=True, exist_ok=True)
     (prepared_step_dir / "POSCAR").write_text("poscar\n", encoding="utf-8")
 
-    workflow_status = refresh_status("ht_out", squeue_output=f"123 batch R job 00:01 {prepared_step_dir.resolve()}\n")
+    workflow_status = refresh_status("ht_out")
     case_status = json.loads((case_dir / "case_status.json").read_text(encoding="utf-8"))
 
     assert case_status["pressures"]["20"]["mattersim_opt"] == "finished"
@@ -549,7 +549,7 @@ def test_refresh_status_marks_prepared_mattersim_as_unstarted(chdir_work):
     (mattersim_dir / "run_mattersim.sh").write_text("#!/bin/bash\n", encoding="utf-8")
     (mattersim_dir / "run_mattersim_opt.py").write_text("print('run')\n", encoding="utf-8")
 
-    workflow_status = refresh_status("ht_out", squeue_output="")
+    workflow_status = refresh_status("ht_out")
     case_status = json.loads((case_dir / "case_status.json").read_text(encoding="utf-8"))
 
     assert case_status["pressures"]["50"]["mattersim_opt"] == "unstarted"
@@ -568,7 +568,7 @@ def test_refresh_status_without_mattersim_marks_step_finished(chdir_work):
     create_initial_status("ht_out")
 
     case_dir = Path("ht_out/03.XA_Li/period_2/04.LiBeH7")
-    workflow_status = refresh_status("ht_out", squeue_output="")
+    workflow_status = refresh_status("ht_out")
     case_status = json.loads((case_dir / "case_status.json").read_text(encoding="utf-8"))
 
     assert "mattersim_opt" not in case_status["pressures"]["20"]
@@ -709,7 +709,7 @@ def test_continue_updates_case_status_and_runs_missing_steps(chdir_work, monkeyp
     monkeypatch.setattr("substitutionflow.workflow.run_cli_command", fake_run_cli_command)
 
     summary = continue_workflow("ht_out", run_calc=True, submit=False, config_file=str(config_path))
-    refresh_status("ht_out", squeue_output="")
+    refresh_status("ht_out")
     case_status = json.loads((case_dir / "case_status.json").read_text(encoding="utf-8"))
 
     assert "总 case 数" in summary
@@ -796,7 +796,7 @@ def test_refresh_status_without_mattersim_removes_legacy_mattersim_key(chdir_wor
     payload["pressures"]["50"]["mattersim_opt"] = "error"
     case_status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    workflow_status = refresh_status("ht_out", squeue_output="")
+    workflow_status = refresh_status("ht_out")
     refreshed = json.loads(case_status_path.read_text(encoding="utf-8"))
 
     assert "mattersim_opt" not in refreshed["pressures"]["20"]
@@ -873,7 +873,7 @@ def test_refresh_status_rewrites_legacy_workflow_status_with_qe_phonon(chdir_wor
         encoding="utf-8",
     )
 
-    workflow_status = refresh_status("ht_out", squeue_output="")
+    workflow_status = refresh_status("ht_out")
 
     target_case = workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]
     assert target_case["pressures"]["20"]["qe_phonon"] == "unstarted"
@@ -931,7 +931,7 @@ def test_refresh_status_rewrites_legacy_input_structure_to_local_case_structure(
     case_status["input_structure"] = "/old/machine/work/XA_XB_7.vasp"
     case_status_path.write_text(json.dumps(case_status, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    workflow_status = refresh_status("ht_out", squeue_output="")
+    workflow_status = refresh_status("ht_out")
 
     refreshed_case = json.loads(case_status_path.read_text(encoding="utf-8"))
     expected_structure = str(Path("ht_out/03.XA_Li/period_2/03.Li2H7/XAXBH7-P63mmc.vasp").resolve())
@@ -1214,26 +1214,9 @@ def test_reduce_qe_phonon_workflow_status_for_nosplit_and_split(chdir_work):
         "matdyn_phdos": "unstarted",
         "phonon_plot": "unstarted",
     }
-    nosplit_running = {
-        "scf": "finished",
-        "ph": {"state": "finished", "dyn0": "finished"},
-        "q2r": "running",
-        "matdyn_phband": "unstarted",
-        "matdyn_phdos": "unstarted",
-        "phonon_plot": "unstarted",
-    }
     split_unstarted = {
         "scf": "finished",
         "ph": {"state": "finished", "dyn0": "finished", "tasks": {"q_0001": "unstarted", "q_0002": "unstarted"}},
-        "merge": "unstarted",
-        "q2r": "unstarted",
-        "matdyn_phband": "unstarted",
-        "matdyn_phdos": "unstarted",
-        "phonon_plot": "unstarted",
-    }
-    split_running = {
-        "scf": "finished",
-        "ph": {"state": "finished", "dyn0": "finished", "tasks": {"q_0001": "finished", "q_0002": "running"}},
         "merge": "unstarted",
         "q2r": "unstarted",
         "matdyn_phband": "unstarted",
@@ -1269,9 +1252,7 @@ def test_reduce_qe_phonon_workflow_status_for_nosplit_and_split(chdir_work):
     }
 
     assert reduce_qe_phonon_workflow_status("qe_phonon_nosplit", nosplit_unstarted) == "unstarted"
-    assert reduce_qe_phonon_workflow_status("qe_phonon_nosplit", nosplit_running) == "error"
     assert reduce_qe_phonon_workflow_status("qe_phonon_split_index", split_unstarted) == "unstarted"
-    assert reduce_qe_phonon_workflow_status("qe_phonon_split_index", split_running) == "error"
     assert reduce_qe_phonon_workflow_status("qe_phonon_split_coords", split_error) == "error"
     assert reduce_qe_phonon_workflow_status("qe_phonon_split_index", split_finished) == "finished"
     assert reduce_qe_phonon_workflow_status("qe_phonon_split_index", split_plot_unstarted) == "unstarted"
@@ -1293,11 +1274,11 @@ def test_refresh_status_qe_phonon_uses_workflow_status_instead_of_directory_trac
     qe_dir.mkdir(parents=True, exist_ok=True)
     (qe_dir / "stale.txt").write_text("leftover\n", encoding="utf-8")
 
-    workflow_status = refresh_status("ht_out", squeue_output="")
+    workflow_status = refresh_status("ht_out")
     assert workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]["pressures"]["20"]["qe_phonon"] == "unstarted"
 
     _write_qe_phonon_workflow_status(qe_dir, tasks={"q_0001": "finished", "q_0002": "finished"})
-    workflow_status = refresh_status("ht_out", squeue_output="")
+    workflow_status = refresh_status("ht_out")
     assert workflow_status["cases"]["03.XA_Li/period_2/04.LiBeH7"]["pressures"]["20"]["qe_phonon"] == "finished"
 
 

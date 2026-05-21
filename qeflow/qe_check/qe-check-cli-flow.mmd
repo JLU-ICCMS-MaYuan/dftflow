@@ -1,13 +1,12 @@
 flowchart TD
     A["输入<br/>qe_check -c input.toml<br/>并且只能选一个检查开关"] --> B["resolve_workspace<br/>prepare_inputs=False"]
-    B --> C["get_running_workdirs<br/>读取 squeue 工作目录"]
-    C --> D{"检查目标"}
+    B --> D{"检查目标"}
     D -->| -scf | E["check_scf(workspace 或 root_dir)"]
     D -->| -relax | F["check_relax(root_dir)"]
     D -->| -ph | G["check_ph(workspace, prefix)"]
     D -->| -q2r | H["check_q2r(workspace, prefix)"]
     D -->| -matdyn-band / -matdyn-dos / -eph | I["当前只打印 暂未支持"]
-    E --> J["输出四态<br/>unstarted / running / finished / error"]
+    E --> J["输出三态<br/>unstarted / finished / error"]
     F --> J
     G --> J
     H --> J

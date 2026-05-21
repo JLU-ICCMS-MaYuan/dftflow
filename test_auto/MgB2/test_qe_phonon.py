@@ -2,7 +2,6 @@ import os
 import csv
 import re
 import shutil
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -376,7 +375,7 @@ def test_qe_q2r_and_matdyn_generate_inputs(chdir_work, monkeypatch):
     assert (workdir / "matdyn_phdos.in").exists()
 
 
-def test_output_checks_and_running_detection(chdir_work, monkeypatch):
+def test_output_checks_use_three_states(chdir_work):
     from qeflow.qe_check.checks import check_ph, check_q2r, check_relax, check_scf
 
     workdir = Path("qe_phonon")
@@ -392,15 +391,9 @@ def test_output_checks_and_running_detection(chdir_work, monkeypatch):
     assert check_ph(str(workdir), "Mg1B2")["dyn0"] == "finished"
     assert check_q2r(str(workdir), "Mg1B2") == "finished"
 
-    def fake_run(*args, **kwargs):
-        class Result:
-            returncode = 0
-            stdout = f"123 debug R node 00:01 {(workdir / 'running_only').resolve()}\n"
-        return Result()
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    (workdir / "running_only").mkdir()
-    assert check_scf(str(workdir / "running_only")) == "running"
+    empty_dir = workdir / "empty"
+    empty_dir.mkdir()
+    assert check_scf(str(empty_dir)) == "unstarted"
 
 
 def test_qe_check_cli_reports_supported_status(chdir_work, monkeypatch, capsys):
@@ -1196,11 +1189,11 @@ def test_split_task_helpers_and_print_status_read_ph_tasks_only(chdir_work, caps
     workflow = {
         "scf": "finished",
         "ph": {
-            "state": "running",
+            "state": "unstarted",
             "dyn0": "finished",
             "tasks": {
                 "01": "finished",
-                "02": "running",
+                "02": "unstarted",
             },
         },
         "merge": "unstarted",
@@ -1215,10 +1208,10 @@ def test_split_task_helpers_and_print_status_read_ph_tasks_only(chdir_work, caps
     _shared.print_status("Mg1B2", workflow)
     output = capsys.readouterr().out
     assert "[qeflow] 下一步:" in output
-    assert "running" not in output
+    assert "unstarted" not in output
 
 
-def test_split_resume_point_skips_running_states_in_output(chdir_work, capsys):
+def test_split_resume_point_uses_first_non_finished_step(chdir_work, capsys):
     from qeflow.phonon import _shared
 
     workflow = {
@@ -1234,9 +1227,9 @@ def test_split_resume_point_skips_running_states_in_output(chdir_work, capsys):
             },
         },
         "merge": "finished",
-        "q2r": "running",
-        "matdyn_phband": "running",
-        "matdyn_phdos": "running",
+        "q2r": "unstarted",
+        "matdyn_phband": "unstarted",
+        "matdyn_phdos": "unstarted",
         "phonon_plot": "unstarted",
     }
 
@@ -1244,7 +1237,7 @@ def test_split_resume_point_skips_running_states_in_output(chdir_work, capsys):
     output = capsys.readouterr().out
 
     assert "下一步: 从 5/11 运行 q2r 开始" in output
-    assert "running" not in output
+    assert "[qeflow] 下一步:" in output
 
 
 def test_write_split_stage_script_and_submit_use_ph_tasks_states(chdir_work, monkeypatch):
@@ -1268,7 +1261,7 @@ def test_write_split_stage_script_and_submit_use_ph_tasks_states(chdir_work, mon
         "ph": {
             "tasks": {
                 "01": "finished",
-                "02": "running",
+                "02": "unstarted",
                 "03": "error",
             }
         }
