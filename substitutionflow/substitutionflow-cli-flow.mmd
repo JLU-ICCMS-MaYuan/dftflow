@@ -31,7 +31,7 @@ flowchart TD
     E3 -->|否| E4{"是否 -s?"}
     E3 -->|是| F["顺序执行完整工作流"]
     E4 -->|否| E5["只生成 submit_group_*.sh 摘要"]
-    E4 -->|是| E6["按 submit_groups 分组并 sbatch 提交<br/>split 声子改用 qe_phonon_split_* -s<br/>使 q 点任务分别提交、可并行运行"]
+    E4 -->|是| E6["按 submit_groups 分组并 safe_sbatch 提交<br/>split 声子改用 qe_phonon_split_* -s<br/>使 q 点任务分别提交、可并行运行"]
 
     F --> F1["每步执行后 refresh_status"]
     F1 --> F2{"当前 step 状态"}
@@ -48,7 +48,7 @@ flowchart TD
     G5 --> G6["把刷新得到的 error 重写为 unstarted"]
     G6 --> G7["按重写后的 unstarted 状态写入 submit_group_*.sh<br/>并输出重写摘要"]
     G1 -->| -r | G3["从当前状态文件的第一个非 finished 步开始顺序运行"]
-    G1 -->| -s | G4["直接 sbatch 提交已有的 submit_group_*.sh"]
+    G1 -->| -s | G4["直接 safe_sbatch 提交已有的 submit_group_*.sh"]
 
     F5 --> H["产生 DOS 后处理结果"]
     H --> I["substitution_plot_eledos"]

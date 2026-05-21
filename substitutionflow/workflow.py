@@ -9,7 +9,7 @@ from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
-from public.job import submit_script, write_job_script
+from public.job import write_job_script
 
 from substitutionflow.status import (
     case_uses_mattersim,
@@ -44,6 +44,15 @@ STEP_DISPLAY_NAME = {
 
 def run_cli_command(command: List[str], cwd: str) -> None:
     subprocess.run(command, cwd=cwd, check=True)
+
+
+def submit_script(work_dir: str, script_name: str) -> None:
+    cmd = f"safe_sbatch {shlex.quote(script_name)}"
+    print(f"\n正在进入 {work_dir} 目录提交: {cmd}")
+    try:
+        subprocess.run(cmd, shell=True, check=True, cwd=work_dir)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"{work_dir} 目录中的 Slurm 提交失败: {cmd}") from exc
 
 
 def _pressure_key(pressure) -> str:

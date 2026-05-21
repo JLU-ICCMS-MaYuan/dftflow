@@ -2078,6 +2078,21 @@ def test_submit_group_scripts_submits_each_group(chdir_work, monkeypatch):
     ]
 
 
+def test_submit_script_uses_safe_sbatch(chdir_work, monkeypatch):
+    from substitutionflow.workflow import submit_script
+
+    commands = []
+
+    def fake_run(command, shell, check, cwd):
+        commands.append((command, shell, check, cwd))
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    submit_script("ht_out", "submit_group_01.sh")
+
+    assert commands == [("safe_sbatch submit_group_01.sh", True, True, "ht_out")]
+
+
 def test_continue_submit_uses_case_input_submit_groups(chdir_work, monkeypatch):
     from substitutionflow.structure_substitution import generate_cases
     from substitutionflow.status import create_initial_status
