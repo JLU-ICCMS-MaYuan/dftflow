@@ -336,6 +336,39 @@ def _load_slurm_header(output_dir: str) -> str:
         return ""
 
 
+def _echo_qeflow(message: str) -> str:
+    return f"echo {shlex.quote(f'[qeflow] {message}')}"
+
+
+def _append_submit_step_commands(
+    commands: List[str],
+    unit: Dict[str, object],
+    step: str,
+    work_dir: str,
+    command: str,
+) -> None:
+    commands.extend(
+        [
+            _echo_qeflow("-" * 60),
+            _echo_qeflow(f"case: {unit['case_rel']}"),
+            _echo_qeflow(f"formula: {unit['formula']}"),
+            _echo_qeflow(f"pressure: {unit['pressure_key']}"),
+            _echo_qeflow(f"step: {STEP_DISPLAY_NAME.get(step, step)}"),
+            _echo_qeflow(f"work_dir: {work_dir}"),
+            _echo_qeflow(f"command: {command}"),
+            f'if ! cd "{work_dir}"; then',
+            _echo_qeflow(f"failed: {STEP_DISPLAY_NAME.get(step, step)}"),
+            "  exit 1",
+            "fi",
+            f"if ! {command}; then",
+            _echo_qeflow(f"failed: {STEP_DISPLAY_NAME.get(step, step)}"),
+            "  exit 1",
+            "fi",
+            _echo_qeflow(f"done: {STEP_DISPLAY_NAME.get(step, step)}"),
+        ]
+    )
+
+
 def _collect_configured_units(output_dir: str) -> List[Dict]:
     cases = discover_cases(output_dir)
     units: List[Dict] = []
@@ -353,23 +386,27 @@ def _collect_configured_units(output_dir: str) -> List[Dict]:
             )
             commands: List[str] = []
             step_names: List[str] = []
+            unit = {
+                "case_dir": case_meta["case_dir"],
+                "case_rel": case_meta["case_rel"],
+                "formula": case_meta["formula"],
+                "pressure": pressure,
+                "pressure_key": _pressure_key(pressure),
+                "structure_filename": structure_filename,
+                "first_step": step_order[0],
+                "steps": step_names,
+                "commands": commands,
+            }
             for step in step_order:
                 step_names.append(step)
-                commands.append(f'cd "{_step_cwd(case_meta["case_dir"], pressure, step, use_mattersim)}"')
-                commands.append(shlex.join(step_commands[step]))
-            units.append(
-                {
-                    "case_dir": case_meta["case_dir"],
-                    "case_rel": case_meta["case_rel"],
-                    "formula": case_meta["formula"],
-                    "pressure": pressure,
-                    "pressure_key": _pressure_key(pressure),
-                    "structure_filename": structure_filename,
-                    "first_step": step_order[0],
-                    "steps": step_names,
-                    "commands": commands,
-                }
-            )
+                _append_submit_step_commands(
+                    commands,
+                    unit,
+                    step,
+                    _step_cwd(case_meta["case_dir"], pressure, step, use_mattersim),
+                    shlex.join(step_commands[step]),
+                )
+            units.append(unit)
     return units
 
 
@@ -406,27 +443,31 @@ def _collect_pending_units(
                 submit_mode=True,
             )
             step_names: List[str] = []
+            unit = {
+                "case_dir": case_meta["case_dir"],
+                "case_rel": case_meta["case_rel"],
+                "formula": case_meta["formula"],
+                "pressure": pressure,
+                "pressure_key": pressure_key,
+                "structure_filename": structure_filename,
+                "first_step": first_step,
+                "steps": step_names,
+                "commands": commands,
+            }
             for step in step_order:
                 if step == first_step:
                     started = True
                 if not started:
                     continue
                 step_names.append(step)
-                commands.append(f'cd "{_step_cwd(case_meta["case_dir"], pressure, step, use_mattersim)}"')
-                commands.append(shlex.join(step_commands[step]))
-            units.append(
-                {
-                    "case_dir": case_meta["case_dir"],
-                    "case_rel": case_meta["case_rel"],
-                    "formula": case_meta["formula"],
-                    "pressure": pressure,
-                    "pressure_key": pressure_key,
-                    "structure_filename": structure_filename,
-                    "first_step": first_step,
-                    "steps": step_names,
-                    "commands": commands,
-                }
-            )
+                _append_submit_step_commands(
+                    commands,
+                    unit,
+                    step,
+                    _step_cwd(case_meta["case_dir"], pressure, step, use_mattersim),
+                    shlex.join(step_commands[step]),
+                )
+            units.append(unit)
     return units
 
 
@@ -461,7 +502,7 @@ def _build_submit_scripts_from_units(
             _print_compact_stage_progress(progress_stage, index, len(groups), script_label)
         script_name = f"submit_group_{index:02d}.sh"
         script_path = os.path.join(output_dir, script_name)
-        commands: List[str] = []
+        commands: List[str] = ["set -e"]
         for unit in group:
             commands.extend(unit["commands"])
         write_job_script(script_path, header, commands)

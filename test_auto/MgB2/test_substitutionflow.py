@@ -984,10 +984,17 @@ def test_build_submit_scripts_only_keeps_remaining_qe_phonon_when_previous_steps
     expected_case_config = str(Path("ht_out/03.XA_Li/period_2/04.LiBeH7/input.toml").resolve())
 
     assert target_unit["steps"] == ["qe_phonon"]
-    assert target_unit["commands"] == [
-        f'cd "{case_dir.resolve()}"',
-        f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -s",
-    ]
+    target_text = "\n".join(target_unit["commands"])
+    assert "[qeflow] case: 03.XA_Li/period_2/04.LiBeH7" in target_text
+    assert "[qeflow] formula: LiBeH7" in target_text
+    assert "[qeflow] pressure: 20" in target_text
+    assert "[qeflow] step: qe_phonon" in target_text
+    assert f"[qeflow] work_dir: {case_dir.resolve()}" in target_text
+    assert f"[qeflow] command: qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -s" in target_text
+    assert f'if ! cd "{case_dir.resolve()}"; then' in target_text
+    assert f"if ! qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -s; then" in target_text
+    assert "[qeflow] failed: qe_phonon" in target_text
+    assert "[qeflow] done: qe_phonon" in target_text
 
 
 def test_phonon_mode_switches_qe_phonon_command(chdir_work, monkeypatch):
@@ -1723,11 +1730,14 @@ def test_continue_workflow_submit_refreshes_status_before_building_scripts(chdir
     summary = continue_workflow("ht_out", run_calc=False, submit=True, config_file=str(config_path))
 
     script_lines = Path("ht_out/submit_group_01.sh").read_text(encoding="utf-8").splitlines()
-    target_cd = f'cd "{pressure_dir.resolve()}"'
+    assert "set -e" in script_lines
+    target_cd = f'if ! cd "{pressure_dir.resolve()}"; then'
     target_index = script_lines.index(target_cd)
     assert "总未完成单元数" in summary
     assert submitted == [("ht_out", "submit_group_01.sh")]
-    assert script_lines[target_index + 1].startswith("vasp_scf ")
+    assert "[qeflow] failed: vasp_scf" in script_lines[target_index + 1]
+    assert any(line.startswith("if ! vasp_scf ") for line in script_lines[target_index:])
+    assert any("[qeflow] done: vasp_scf" in line for line in script_lines[target_index:])
 
 
 def test_continue_workflow_default_mode_refreshes_status_summary(chdir_work):
