@@ -788,7 +788,15 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
     assert "1/11" in pre_script
     assert "2/11" in pre_script
     assert "3/11" in pre_script
-    assert "[qeflow] 1/11" in pre_script
+    assert "set -e" in pre_script
+    assert "[qeflow] workflow: qe_phonon_split_index" in pre_script
+    assert "[qeflow] prefix: Mg1B2" in pre_script
+    assert "[qeflow] stage: pre_and_split" in pre_script
+    assert "[qeflow] step: 1/11 运行 SCF" in pre_script
+    assert "[qeflow] work_dir:" in pre_script
+    assert "[qeflow] command: bash run_scf.sh" in pre_script
+    assert "[qeflow] failed: 1/11 运行 SCF" in pre_script
+    assert "[qeflow] done: 3/11 准备并提交 split q 点任务" in pre_script
     assert "[qeflow] 完成: 1/11-3/11" in pre_script
     assert "DFTFlow" not in pre_script
     assert "qe_split_submit" in pre_script
@@ -806,6 +814,16 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
     assert submitted
     assert all(script_name == "run_split.sh" for _, script_name in submitted)
     assert {workdir for workdir, _ in submitted} == {"01", "02", "03", "04"}
+    split_script = Path("qe_phonon_split_index/01/run_split.sh").read_text(encoding="utf-8")
+    assert "set -e" in split_script
+    assert "[qeflow] workflow: qe_phonon_split_index" in split_script
+    assert "[qeflow] prefix: Mg1B2" in split_script
+    assert "[qeflow] q_dir: 01" in split_script
+    assert "[qeflow] step: split_scf" in split_script
+    assert "[qeflow] step: split_ph" in split_script
+    assert "[qeflow] work_dir:" in split_script
+    assert "[qeflow] failed: split_ph" in split_script
+    assert "[qeflow] done: split_scf" in split_script
 
     for q_dir in sorted(path for path in workdir.glob("[0-9][0-9]") if path.is_dir()):
         content = (q_dir / "split_ph.in").read_text(encoding="utf-8")
@@ -825,7 +843,12 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
     assert "qe_merge" in post_script
     assert "4/11" in post_script
     assert "11/11" in post_script
-    assert "[qeflow] 4/11 merge:" in post_script
+    assert "set -e" in post_script
+    assert "[qeflow] workflow: qe_phonon_split_index" in post_script
+    assert "[qeflow] stage: merge_and_process" in post_script
+    assert "[qeflow] step: 4/11 merge" in post_script
+    assert "[qeflow] failed: 4/11 merge" in post_script
+    assert "[qeflow] done: 11/11 done" in post_script
     assert "[qeflow] 完成: 4/11-11/11" in post_script
     assert "DFTFlow" not in post_script
     assert "submit_process_phonon" not in post_script

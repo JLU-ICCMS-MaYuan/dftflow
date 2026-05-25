@@ -58,6 +58,10 @@ def command_step_line(step_no: int, total: int, label: str, command: str) -> str
     return f"{PREFIX} {step_no}/{total} {label}: {command}"
 
 
+def echo_qeflow(message: str) -> str:
+    return f"echo {shlex.quote(f'{PREFIX} {message}')}"
+
+
 def echo_command_step(step_no: int, total: int, label: str, command: str) -> str:
     return f"echo {shlex.quote(command_step_line(step_no, total, label, command))}"
 

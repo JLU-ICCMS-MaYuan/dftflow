@@ -71,6 +71,7 @@ def _write_pre_and_split_stage_script(context, workflow) -> str:
         steps,
         start_index=1,
         total_steps=11,
+        stage="pre_and_split",
         completion_message="1/11-3/11 pre + split 提交阶段",
     )
 
@@ -92,6 +93,7 @@ def _write_merge_and_process_stage_script(context, workflow) -> str:
         steps,
         start_index=4,
         total_steps=11,
+        stage="merge_and_process",
         completion_message="4/11-11/11 merge + phonon 后处理阶段",
     )
 

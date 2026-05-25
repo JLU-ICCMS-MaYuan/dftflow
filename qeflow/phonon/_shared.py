@@ -286,13 +286,45 @@ def build_labeled_commands(
     *,
     start_index: int = 1,
     total_steps: Optional[int] = None,
+    workflow_name: Optional[str] = None,
+    prefix: Optional[str] = None,
+    work_dir: Optional[str] = None,
+    stage: Optional[str] = None,
 ) -> List[str]:
     commands: List[str] = []
     total = total_steps or len(steps)
     for index, (label, command) in enumerate(steps, start=1):
         step_no = start_index + index - 1
-        commands.append(console.echo_command_step(step_no, total, label, command))
-        commands.append(command)
+        step_label = f"{step_no}/{total} {label}"
+        if workflow_name and prefix and work_dir:
+            commands.extend(
+                [
+                    console.echo_qeflow("-" * 60),
+                    console.echo_qeflow(f"workflow: {workflow_name}"),
+                    console.echo_qeflow(f"prefix: {prefix}"),
+                ]
+            )
+            if stage:
+                commands.append(console.echo_qeflow(f"stage: {stage}"))
+            commands.extend(
+                [
+                    console.echo_qeflow(f"step: {step_label}"),
+                    console.echo_qeflow(f"work_dir: {work_dir}"),
+                    console.echo_qeflow(f"command: {command}"),
+                    f'if ! cd "{work_dir}"; then',
+                    console.echo_qeflow(f"failed: {step_label}"),
+                    "  exit 1",
+                    "fi",
+                    f"if ! {command}; then",
+                    console.echo_qeflow(f"failed: {step_label}"),
+                    "  exit 1",
+                    "fi",
+                    console.echo_qeflow(f"done: {step_label}"),
+                ]
+            )
+        else:
+            commands.append(console.echo_command_step(step_no, total, label, command))
+            commands.append(command)
     return commands
 
 
@@ -303,9 +335,21 @@ def write_labeled_script(
     *,
     start_index: int = 1,
     total_steps: Optional[int] = None,
+    stage: Optional[str] = None,
     completion_message: Optional[str] = None,
 ) -> str:
-    commands = build_labeled_commands(steps, start_index=start_index, total_steps=total_steps)
+    commands = [
+        "set -e",
+        *build_labeled_commands(
+            steps,
+            start_index=start_index,
+            total_steps=total_steps,
+            workflow_name=os.path.basename(context.workspace),
+            prefix=context.prefix,
+            work_dir=context.workspace,
+            stage=stage,
+        ),
+    ]
     if completion_message:
         commands.append(console.echo_completion(completion_message))
     return write_root_run_script(
@@ -318,12 +362,17 @@ def write_labeled_script(
 
 
 def write_aggregate_script(context: PhononStepContext, script_name: str, scripts: Iterable[str]) -> str:
-    commands = []
     script_list = list(scripts)
-    total = len(script_list)
-    for index, script in enumerate(script_list, start=1):
-        commands.append(console.echo_command_step(index, total, script, f"bash {script}"))
-        commands.append(f"bash {script}")
+    commands = [
+        "set -e",
+        *build_labeled_commands(
+            [(script, f"bash {script}") for script in script_list],
+            workflow_name=os.path.basename(context.workspace),
+            prefix=context.prefix,
+            work_dir=context.workspace,
+            stage=os.path.splitext(script_name)[0],
+        ),
+    ]
     return write_root_run_script(
         context.workspace,
         script_name,

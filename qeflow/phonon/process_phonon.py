@@ -111,13 +111,17 @@ def prepare_process_phonon_step(context: PhononStepContext) -> str:
             ("运行 matdyn 声子 DOS", "bash run_matdyn_phdos.sh"),
             ("归档声子 DOS 结果", f"qe_process_phonon -c {config_arg} --collect phdos"),
             ("绘图并写出 CSV", f"qe_process_phonon -c {config_arg} --plot"),
-        ]
+        ],
+        workflow_name=os.path.basename(context.workspace),
+        prefix=context.prefix,
+        work_dir=context.workspace,
+        stage="process_phonon",
     )
     return write_root_run_script(
         context.workspace,
         PROCESS_SCRIPT,
         str(context.config.get("slurm", {}).get("header", "")),
-        commands,
+        ["set -e", *commands],
         announce=False,
     )
 
