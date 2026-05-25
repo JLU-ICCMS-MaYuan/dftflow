@@ -475,6 +475,7 @@ def test_qe_phonon_nosplit_run_pushes_full_chain_from_scf(chdir_work, monkeypatc
         "bash run_matdyn_phdos.sh",
     ]
     assert (workdir / "Mg1B2.phdos.dat").exists()
+    assert not (workdir / "submit_process_phonon.sh").exists()
 
 
 def test_qe_phonon_nosplit_run_continues_from_ph_and_finishes(chdir_work, monkeypatch):

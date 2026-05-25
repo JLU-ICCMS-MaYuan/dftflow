@@ -16,6 +16,9 @@ from qeflow.phonon._shared import (
 )
 from qeflow.phonon.ph_step import prepare_ph_nosplit_step
 from qeflow.phonon.process_phonon import PROCESS_SCRIPT, prepare_process_phonon_step, run_process_phonon_steps
+from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step
+from qeflow.phonon.qe_matdyn_phdos import prepare_matdyn_phdos_step
+from qeflow.phonon.qe_q2r import prepare_q2r_step
 
 submit_script = console.submit_script
 
@@ -29,7 +32,9 @@ def run_phonon_nosplit_workflow(
     context = create_context(config_file, struct_file, workflow_name="qe_phonon_nosplit")
     prepare_root_scf_step(context)
     prepare_ph_nosplit_step(context, dyn0_only=False)
-    prepare_process_phonon_step(context)
+    prepare_q2r_step(context)
+    prepare_matdyn_phband_step(context)
+    prepare_matdyn_phdos_step(context)
     console.generated_scripts(["run_scf.sh", "run_ph.sh", "run_q2r.sh", "run_matdyn_phband.sh", "run_matdyn_phdos.sh"])
 
     workflow = refresh_workflow_status(context.workspace, context.prefix)
@@ -48,6 +53,8 @@ def run_phonon_nosplit_workflow(
     elif submit_job and remaining_scripts:
         pre_scripts = [script for script in remaining_scripts if script in {"run_scf.sh", "run_ph.sh"}]
         process_needed = any(script in set(remaining_scripts) for script in {"run_q2r.sh", "run_matdyn_phband.sh", "run_matdyn_phdos.sh"})
+        if process_needed:
+            prepare_process_phonon_step(context)
         aggregate = write_aggregate_script(
             context,
             "submit_phonon_workflow.sh",
