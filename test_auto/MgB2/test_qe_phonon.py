@@ -435,6 +435,20 @@ def test_qe_phonon_nosplit_prepares_all_root_inputs(chdir_work, monkeypatch):
         "run_matdyn_phdos.sh",
     ):
         assert (workdir / filename).exists()
+    scf_text = (workdir / "scf.in").read_text(encoding="utf-8")
+    assert "restart_mode = 'from_scratch'" in scf_text
+    assert "verbosity = 'high'" in scf_text
+    assert "forc_conv_thr = 1.0d-6" in scf_text
+    assert "etot_conv_thr = 1.0d-7" in scf_text
+    assert "tstress = .true." in scf_text
+    assert "tprnfor = .true." in scf_text
+
+
+def test_qe_value_keeps_fortran_float_literals_unquoted():
+    from qeflow.qe_input.builders import to_qe_value
+
+    assert to_qe_value("1.0d-6") == "1.0d-6"
+    assert to_qe_value("1.0D-7") == "1.0D-7"
 
 
 def test_qe_phonon_nosplit_run_pushes_full_chain_from_scf(chdir_work, monkeypatch):

@@ -84,6 +84,12 @@ executable_path = "/opt/qe/bin"
 prefix = "ht_ph"
 
 [qe_phonon.scf]
+restart_mode = "from_scratch"
+verbosity = "high"
+forc_conv_thr = "1.0d-6"
+etot_conv_thr = "1.0d-7"
+tstress = true
+tprnfor = true
 ecutwfc = 80.0
 ecutrho = 640.0
 outdir = "./qe_out"

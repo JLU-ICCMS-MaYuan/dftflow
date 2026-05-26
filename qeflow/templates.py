@@ -174,6 +174,12 @@ def get_qe_phonon_parameters_template() -> Dict[str, Any]:
         "prefix": None,
         "scf": {
             "calculation": "scf",
+            "restart_mode": "from_scratch",
+            "verbosity": "high",
+            "tprnfor": True,
+            "tstress": True,
+            "forc_conv_thr": "1.0d-6",
+            "etot_conv_thr": "1.0d-7",
             "ecutwfc": 50.0,
             "ecutrho": 400.0,
             "occupations": "smearing",

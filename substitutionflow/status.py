@@ -102,6 +102,16 @@ def _load_json(path: str) -> Dict:
         return json.load(f)
 
 
+def _backup_invalid_json(path: str) -> str:
+    backup_path = f"{path}.bad"
+    index = 1
+    while os.path.exists(backup_path):
+        backup_path = f"{path}.bad.{index}"
+        index += 1
+    os.replace(path, backup_path)
+    return backup_path
+
+
 def _save_json(path: str, payload: Dict) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -187,7 +197,18 @@ def _ensure_case_status_file(case_meta: Dict) -> Dict:
         save_case_status(case_meta["case_dir"], expected)
         return expected
 
-    current = _load_json(status_path)
+    try:
+        current = _load_json(status_path)
+    except json.JSONDecodeError:
+        backup_path = _backup_invalid_json(status_path)
+        print(f"发现损坏的 case_status.json，已备份并重建: {backup_path}")
+        save_case_status(case_meta["case_dir"], expected)
+        return expected
+    if not isinstance(current, dict):
+        backup_path = _backup_invalid_json(status_path)
+        print(f"发现结构异常的 case_status.json，已备份并重建: {backup_path}")
+        save_case_status(case_meta["case_dir"], expected)
+        return expected
     current_pressures = current.get("pressures", {})
     if sorted(current_pressures.keys()) != sorted(expected["pressures"].keys()):
         save_case_status(case_meta["case_dir"], expected)

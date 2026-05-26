@@ -162,6 +162,12 @@ header = """
 work_dir = "custom_ph"
 
 [qe_phonon.scf]
+restart_mode = "from_scratch"
+verbosity = "high"
+forc_conv_thr = "1.0d-6"
+etot_conv_thr = "1.0d-7"
+tstress = true
+tprnfor = true
 outdir = "./out"
 kmesh = 0.04
 ecutwfc = 60.0

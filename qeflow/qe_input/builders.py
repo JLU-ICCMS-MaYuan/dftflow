@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import copy
 import os
+import re
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 import numpy as np
@@ -40,6 +41,8 @@ def to_qe_value(value: Any) -> str:
         return text.lower()
     if text.lower() in {"true", "false"}:
         return ".true." if text.lower() == "true" else ".false."
+    if re.fullmatch(r"[+-]?(\d+(\.\d*)?|\.\d+)([deDE][+-]?\d+)?", text):
+        return text
     return f"'{text}'"
 
 

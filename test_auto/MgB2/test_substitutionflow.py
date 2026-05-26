@@ -850,6 +850,29 @@ def test_case_status_upgrade_appends_qe_phonon_without_overwriting_existing_step
     assert upgraded["pressures"]["50"]["qe_phonon"] == "unstarted"
 
 
+def test_refresh_status_backs_up_and_rebuilds_empty_case_status(chdir_work):
+    from substitutionflow.status import create_initial_status, refresh_status
+    from substitutionflow.structure_substitution import generate_cases
+
+    structure_path = Path("XAXBH7-P63mmc.vasp")
+    structure_path.write_text(PLACEHOLDER_POSCAR, encoding="utf-8")
+    config_path = Path("input_ht.toml")
+    _write_ht_config(config_path)
+    generate_cases(str(structure_path), str(config_path), "ht_out")
+    create_initial_status("ht_out")
+
+    case_dir = Path("ht_out/03.XA_Li/period_2/04.LiBeH7")
+    status_path = case_dir / "case_status.json"
+    status_path.write_text("", encoding="utf-8")
+
+    refresh_status("ht_out")
+
+    rebuilt = json.loads(status_path.read_text(encoding="utf-8"))
+    assert rebuilt["formula"] == "LiBeH7"
+    assert rebuilt["pressures"]["20"]["vasp_opt"] == "unstarted"
+    assert (case_dir / "case_status.json.bad").exists()
+
+
 def test_refresh_status_rewrites_legacy_workflow_status_with_qe_phonon(chdir_work):
     from substitutionflow.status import create_initial_status, refresh_status
     from substitutionflow.structure_substitution import generate_cases
