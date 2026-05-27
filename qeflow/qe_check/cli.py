@@ -5,8 +5,9 @@ import sys
 from typing import Any, Dict, Tuple
 
 from qeflow.qe_check.checks import check_ph, check_q2r, check_relax, check_scf
-from qeflow.qe_input.builders import parse_poscar, resolve_prefix
+from qeflow.qe_input.builders import resolve_prefix
 from qeflow.qe_input.fileio import resolve_workspace
+from qeflow.qe_input.structure import parse_poscar
 
 
 def _resolve_target_directory(config_file: str) -> Tuple[Dict[str, Any], str, str]:

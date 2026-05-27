@@ -9,9 +9,9 @@ from qeflow.phonon._shared import (
     PhononStepContext,
     create_context,
     print_stage,
-    refresh_workflow_status,
     run_shell,
 )
+from qeflow.phonon.status_machine import refresh_workflow_status
 from qeflow.qe_input.builders import write_matdyn_phband_input, write_root_run_script
 
 

@@ -24,6 +24,20 @@
 
 ## 需求处理记录
 
+### [2026-05-27] 重构 QE Calculation Setup
+- **需求**：
+    1. 先从 qeflow 架构候选 1 开始，收敛 `qe_scf/qe_nscf/qe_eband/qe_eledos` 中重复的 setup 生命周期。
+    2. 新 Module 使用对象式 Interface，不保留旧 `QESetup/QENSCFSetup/QEEBandSetup/QEEleDosSetup` 类名。
+    3. CLI 命令名和 `-i/-c/-r/-s` 行为保持不变。
+    4. 第一阶段不纳入 phonon SCF、不拆 `templates.py`、不重构 split workflow 状态机。
+- **方案**：
+    1. 在 `CONTEXT.md` 中新增 **QE Calculation Setup** 领域词，作为命名锚点。
+    2. 新增 `qeflow/qe_input/structure.py`，集中维护 POSCAR 解析、化学式和 kmesh 派生。
+    3. 新增 `qeflow/qe_input/calculation_setup.py`，用 `QECalculationSetup` + `QECalculationSpec` 注册表统一 SCF/NSCF/EBAND/ELEDOS 的配置加载、结构准备、依赖准备、输入写出、运行脚本和执行命令。
+    4. 将 `qe_scf.py`、`qe_nscf.py`、`qe_eband.py`、`qe_eledos.py` 收敛为薄 CLI Adapter，测试改为直接验证 `create_qe_calculation_setup()`。
+    5. 把 KPATH 解析从 `qe_eband.py` 移到 `qeflow/qe_input/kpath.py`，避免公共工具反向依赖 CLI 模块。
+- **状态**：已完成。
+
 ### [2026-05-27] 为 QE 输入增加自动 ibrav 晶格写出模式
 - **需求**：
     1. `qe_scf`、`qe_nscf`、`qe_eband` 和 `qe_phonon` 的 `pw.x` 输入需要支持三种晶格写法：自动 `ibrav + A/B/C/cos*`、自动 `ibrav + celldm(n)`、旧版 `ibrav = 0 + CELL_PARAMETERS {angstrom}`。

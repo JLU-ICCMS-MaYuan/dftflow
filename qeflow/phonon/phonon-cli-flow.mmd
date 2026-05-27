@@ -31,16 +31,19 @@ flowchart TD
         C --> W3["qe_phonon_split_coords"]
 
         W1 --> W1A["SCF -> ph -> qe_process_phonon -> plot"]
-        W2 --> W2A["pre: SCF -> dyn0 -> qe_split_submit<br/>post: qe_merge -> q2r -> matdyn -> collect -> plot"]
-        W3 --> W3A["pre: SCF -> dyn0 -> qe_split_submit<br/>post: qe_merge -> q2r -> matdyn -> collect -> plot"]
+        W2 --> SW["split_workflow<br/>mode=index|coords"]
+        W3 --> SW
+        SW --> W2A["pre: SCF -> dyn0 -> qe_split_submit<br/>post: qe_merge -> q2r -> matdyn -> collect -> plot"]
 
         W1A --> WS["workflow_status.json<br/>run_*.sh submit_*.sh POSCAR"]
         W2A --> WS
-        W3A --> WS
     end
 
-    subgraph P9["状态与辅助"]
+    subgraph P9["Phonon Workflow Status Machine"]
         direction TD
-        H1["refresh_workflow_status"] --> H2["split_resume_step / split task states"]
-        H2 --> H3["决定继续运行、提交下一阶段或仅打印状态"]
+        H1["status_machine.refresh_workflow_status"] --> H2["workflow_status.json"]
+        H1 --> H3["split task states / task_status.json"]
+        H2 --> H4["split_resume_step / root_step_scripts"]
+        H3 --> H4
+        H4 --> H5["决定继续运行、提交下一阶段或仅打印状态"]
     end

@@ -17,8 +17,8 @@ from qeflow.phonon._shared import (
     build_labeled_commands,
     create_context,
     print_stage,
-    refresh_workflow_status,
 )
+from qeflow.phonon.status_machine import refresh_workflow_status
 from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step
 from qeflow.phonon.qe_matdyn_phdos import prepare_matdyn_phdos_step
 from qeflow.phonon.qe_q2r import prepare_q2r_step

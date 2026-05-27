@@ -12,8 +12,8 @@ from qeflow.phonon._shared import (
     create_context,
     load_q_index_entries,
     load_q_index_mode,
-    refresh_workflow_status,
 )
+from qeflow.phonon.status_machine import refresh_workflow_status
 from qeflow.qe_check.checks import check_merge
 
 

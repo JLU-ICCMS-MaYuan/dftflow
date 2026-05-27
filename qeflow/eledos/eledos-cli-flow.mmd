@@ -1,6 +1,6 @@
 flowchart TD
     A["输入<br/>-c input.toml<br/>-i POSCAR/CONTCAR"] --> B["qe_eledos"]
-    B --> C["加载 [qe] + [qe_eledos]"]
+    B --> C["QE Calculation Setup<br/>kind=eledos"]
     C --> D["解析 POSCAR"]
     D --> E["从 qe_scf 拷贝 prefix.save"]
     E --> F["生成 eletdos.in + elepdos.in"]

@@ -12,10 +12,10 @@ from pathlib import Path
 
 def test_qe_scf_api(chdir_work):
     """API 测试：qe_scf 文件生成"""
-    from qeflow.scf.qe_scf import QESetup
+    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
 
-    setup = QESetup(config_file="input_qe.toml", struct_file="MgB2.vasp")
-    setup.setup()
+    setup = create_qe_calculation_setup("scf", config_file="input_qe.toml", struct_file="MgB2.vasp")
+    setup.prepare()
 
     # 验证文件生成
     assert (Path("qe_scf") / "scf.in").exists()
@@ -37,7 +37,7 @@ def test_qe_scf_api(chdir_work):
 
 
 def test_qe_scf_supports_cell_parameters_lattice_mode(chdir_work):
-    from qeflow.scf.qe_scf import QESetup
+    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
 
     config_path = Path("input_qe.toml")
     config_path.write_text(
@@ -49,8 +49,8 @@ def test_qe_scf_supports_cell_parameters_lattice_mode(chdir_work):
         encoding="utf-8",
     )
 
-    setup = QESetup(config_file="input_qe.toml", struct_file="MgB2.vasp")
-    setup.setup()
+    setup = create_qe_calculation_setup("scf", config_file="input_qe.toml", struct_file="MgB2.vasp")
+    setup.prepare()
 
     scf_content = (Path("qe_scf") / "scf.in").read_text()
     assert "ibrav = 0" in scf_content
@@ -58,7 +58,7 @@ def test_qe_scf_supports_cell_parameters_lattice_mode(chdir_work):
 
 
 def test_qe_scf_supports_celldm_lattice_mode(chdir_work):
-    from qeflow.scf.qe_scf import QESetup
+    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
 
     config_path = Path("input_qe.toml")
     config_path.write_text(
@@ -70,8 +70,8 @@ def test_qe_scf_supports_celldm_lattice_mode(chdir_work):
         encoding="utf-8",
     )
 
-    setup = QESetup(config_file="input_qe.toml", struct_file="MgB2.vasp")
-    setup.setup()
+    setup = create_qe_calculation_setup("scf", config_file="input_qe.toml", struct_file="MgB2.vasp")
+    setup.prepare()
 
     scf_content = (Path("qe_scf") / "scf.in").read_text()
     assert "ibrav = 4" in scf_content
@@ -81,7 +81,7 @@ def test_qe_scf_supports_celldm_lattice_mode(chdir_work):
 
 
 def test_qe_scf_rejects_manual_lattice_parameters(chdir_work):
-    from qeflow.scf.qe_scf import QESetup
+    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
 
     config_path = Path("input_qe.toml")
     config_path.write_text(
@@ -94,17 +94,17 @@ def test_qe_scf_rejects_manual_lattice_parameters(chdir_work):
     )
 
     with pytest.raises(ValueError, match="qe_scf.SYSTEM.ibrav"):
-        QESetup(config_file="input_qe.toml", struct_file="MgB2.vasp")
+        create_qe_calculation_setup("scf", config_file="input_qe.toml", struct_file="MgB2.vasp")
 
 
 def test_python_lattice_fallback_matches_qe_cell2ibrav_when_available(chdir_work):
-    from qeflow.qe_input.builders import parse_poscar
     from qeflow.qe_input.lattice import (
         BOHR_RADIUS_ANGS,
         _find_cell2ibrav_executable,
         _python_cell2ibrav,
         _run_cell2ibrav,
     )
+    from qeflow.qe_input.structure import parse_poscar
 
     exe = _find_cell2ibrav_executable("mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin")
     if exe is None:
@@ -179,10 +179,10 @@ def test_qe_nscf_api(chdir_work):
     os.makedirs("qe_scf/tmp", exist_ok=True)
     Path("qe_scf/scf.out").touch()
 
-    from qeflow.nscf.qe_nscf import QENSCFSetup
+    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
 
-    setup = QENSCFSetup(config_file="input_qe.toml", struct_file="MgB2.vasp")
-    setup.setup()
+    setup = create_qe_calculation_setup("nscf", config_file="input_qe.toml", struct_file="MgB2.vasp")
+    setup.prepare()
 
     assert (Path("qe_nscf") / "nscf.in").exists()
     assert (Path("qe_nscf") / "run_qe.sh").exists()
@@ -241,10 +241,10 @@ def test_qe_eband_api(chdir_work):
     os.makedirs("qe_nscf/tmp", exist_ok=True)
     Path("qe_nscf/nscf.out").touch()
 
-    from qeflow.eband.qe_eband import QEEBandSetup
+    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
 
-    setup = QEEBandSetup(config_file="input_qe.toml", struct_file="MgB2.vasp")
-    setup.setup()
+    setup = create_qe_calculation_setup("eband", config_file="input_qe.toml", struct_file="MgB2.vasp")
+    setup.prepare()
 
     assert (Path("qe_eband") / "eband.in").exists()
     assert (Path("qe_eband") / "run_qe.sh").exists()
@@ -292,7 +292,7 @@ def test_resolve_pseudo_files_matches_case_insensitive_prefixes(tmp_path):
 
 
 def test_qe_scf_requires_pp_dir_for_auto_pseudo_matching(chdir_work):
-    from qeflow.scf.qe_scf import QESetup
+    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
 
     config_path = Path("missing_pp_dir.toml")
     config_path.write_text(
@@ -308,11 +308,11 @@ outdir = "'./tmp'"
     )
 
     with pytest.raises(ValueError, match="缺少 pp_dir 配置"):
-        QESetup(config_file=str(config_path), struct_file="MgB2.vasp").setup()
+        create_qe_calculation_setup("scf", config_file=str(config_path), struct_file="MgB2.vasp").prepare()
 
 
 def test_qe_scf_fails_when_element_pseudo_is_missing(chdir_work):
-    from qeflow.scf.qe_scf import QESetup
+    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
 
     missing_dir = Path("pp_missing")
     missing_dir.mkdir()
@@ -334,11 +334,11 @@ outdir = "'./tmp'"
     )
 
     with pytest.raises(FileNotFoundError, match="元素 B"):
-        QESetup(config_file=str(config_path), struct_file="MgB2.vasp").setup()
+        create_qe_calculation_setup("scf", config_file=str(config_path), struct_file="MgB2.vasp").prepare()
 
 
 def test_qe_scf_fails_when_element_has_multiple_pseudos(chdir_work):
-    from qeflow.scf.qe_scf import QESetup
+    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
 
     duplicate_dir = Path("pp_duplicate")
     duplicate_dir.mkdir()
@@ -362,7 +362,7 @@ outdir = "'./tmp'"
     )
 
     with pytest.raises(ValueError, match="多个赝势文件"):
-        QESetup(config_file=str(config_path), struct_file="MgB2.vasp").setup()
+        create_qe_calculation_setup("scf", config_file=str(config_path), struct_file="MgB2.vasp").prepare()
 
 
 def test_qe_eband_cli(chdir_work):
@@ -406,10 +406,10 @@ def test_qe_eledos_api(chdir_work):
     os.makedirs("qe_scf/tmp", exist_ok=True)
     Path("qe_scf/scf.out").touch()
 
-    from qeflow.eledos.qe_eledos import QEEleDosSetup
+    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
 
-    setup = QEEleDosSetup(config_file="input_qe.toml", struct_file="MgB2.vasp")
-    setup.setup()
+    setup = create_qe_calculation_setup("eledos", config_file="input_qe.toml", struct_file="MgB2.vasp")
+    setup.prepare()
 
     assert (Path("qe_eledos") / "eletdos.in").exists()
     assert (Path("qe_eledos") / "elepdos.in").exists()

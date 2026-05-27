@@ -5,11 +5,54 @@ from typing import List, Sequence, Tuple
 
 import numpy as np
 
-from qeflow.eband.qe_eband import flatten_segments, parse_kpath_segments
-
 
 def run_vaspkit_for_kpath(work_dir: str) -> None:
     subprocess.run(["vaspkit"], input="3\n303\n", text=True, check=True, cwd=work_dir)
+
+
+def parse_kpath_segments(path: str, tol: float = 1.0e-6):
+    points = []
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) != 4:
+                continue
+            try:
+                kx, ky, kz = map(float, parts[:3])
+            except ValueError:
+                continue
+            points.append(([kx, ky, kz], parts[3]))
+    if len(points) % 2 != 0:
+        raise ValueError(f"KPATH.in 格式异常，点数为奇数: {len(points)}")
+    segments = []
+    for index in range(0, len(points), 2):
+        (k1, l1), (k2, l2) = points[index], points[index + 1]
+        if not segments:
+            segments.append([(k1, l1), (k2, l2)])
+            continue
+        previous_end = segments[-1][-1][0]
+        if (
+            abs(previous_end[0] - k1[0]) < tol
+            and abs(previous_end[1] - k1[1]) < tol
+            and abs(previous_end[2] - k1[2]) < tol
+        ):
+            segments[-1].append((k2, l2))
+        else:
+            segments.append([(k1, l1), (k2, l2)])
+    return segments
+
+
+def flatten_segments(segments):
+    path_points = []
+    for segment in segments:
+        for index, (coords, label) in enumerate(segment):
+            if index == 0 and path_points and path_points[-1][0] == coords and path_points[-1][1] == label:
+                continue
+            path_points.append((coords, label))
+    return path_points
 
 
 def compute_reciprocal_lattice(lattice: Sequence[Sequence[float]]) -> np.ndarray:

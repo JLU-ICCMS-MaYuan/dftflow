@@ -30,6 +30,8 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 - 默认模板定义在 [templates.py](/home/mayuan/code/dftflow/qeflow/templates.py)。
 - 递归覆盖逻辑定义在 [config_templates.py](/home/mayuan/code/dftflow/public/config_templates.py)。
 - `qe_phonon` 相关新 CLI 继续共用同一个 `[qe_phonon]` 配置块，不为每个命令单独拆 TOML 节。
+- `qe_scf`、`qe_nscf`、`qe_eband`、`qe_eledos` 统一通过 [qe_input/calculation_setup.py](/home/mayuan/code/dftflow/qeflow/qe_input/calculation_setup.py) 的 **QE Calculation Setup** 准备目录；各 CLI 只保留命令行 Adapter。
+- POSCAR 解析、化学式和 kmesh 派生集中在 [qe_input/structure.py](/home/mayuan/code/dftflow/qeflow/qe_input/structure.py)，避免各计算类型重复维护结构读取规则。
 - `[qe].lattice_mode` 控制 `pw.x` 输入里的晶格写法，默认 `ibrav_angstrom`。允许值：
   - `ibrav_angstrom`：自动调用 QE `cell2ibrav.x` 判断 `ibrav`，写出 `ibrav + A/B/C/cos*`，不写 `CELL_PARAMETERS`。
   - `ibrav_celldm`：自动判断 `ibrav`，写出 `ibrav + celldm(n)`。
@@ -110,6 +112,8 @@ qe_phonon_nosplit/
   - `pw.x < scf.in > scf.out`
   - `ph.x < split_ph.in > split_ph.out`
 - `qe_phonon_*` 工作目录只保留 `POSCAR` 副本，不再复制 `input.toml`；所有 CLI 都要求通过 `-c` 显式传入真实配置路径。
+- 声子工作流状态统一由 `qeflow.phonon.status_machine` 维护；`qe_check.checks` 只负责低层输出文件检查，`workflow_status.json` 的刷新、split task 汇总和续算阶段判断集中在状态机 Module。
+- `qe_phonon_split_index` 与 `qe_phonon_split_coords` 共用 `qeflow.phonon.split_workflow` 的对象式编排；两个 CLI 文件只保留 argparse 和 mode 选择，避免两条 split 链路行为分叉。
 
 ## 6. `qe_check`
 当前实现的检查开关：

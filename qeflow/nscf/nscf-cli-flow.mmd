@@ -1,5 +1,5 @@
 flowchart TD
-    A["输入<br/>-c input.toml<br/>-i POSCAR/CONTCAR"] --> B["QENSCFSetup"]
+    A["输入<br/>-c input.toml<br/>-i POSCAR/CONTCAR"] --> B["QE Calculation Setup<br/>kind=nscf"]
     B --> C["加载 [qe] + [qe_nscf]"]
     C --> D["normalize_qe_config_paths"]
     D --> E["解析 POSCAR"]

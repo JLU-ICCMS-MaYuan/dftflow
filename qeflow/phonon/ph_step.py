@@ -12,9 +12,9 @@ from qeflow.phonon._shared import (
     create_context,
     prepare_root_scf_step,
     print_stage,
-    refresh_workflow_status,
     submit_or_run,
 )
+from qeflow.phonon.status_machine import refresh_workflow_status
 from qeflow.qe_input.builders import write_ph_input, write_root_run_script
 
 

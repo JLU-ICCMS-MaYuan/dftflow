@@ -9,11 +9,10 @@ from qeflow.phonon._shared import (
     create_context,
     prepare_root_scf_step,
     print_stage,
-    refresh_workflow_status,
-    root_step_scripts,
     run_root_scripts,
     write_aggregate_script,
 )
+from qeflow.phonon.status_machine import refresh_workflow_status, root_step_scripts
 from qeflow.phonon.ph_step import prepare_ph_nosplit_step
 from qeflow.phonon.process_phonon import PROCESS_SCRIPT, prepare_process_phonon_step, run_process_phonon_steps
 from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step

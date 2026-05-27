@@ -6,10 +6,12 @@ from typing import Optional
 from qeflow.phonon import console
 from qeflow.phonon._shared import (
     create_context,
-    dyn0_state,
     iter_q_directory_names,
-    ph_tasks,
     print_stage,
+)
+from qeflow.phonon.status_machine import (
+    dyn0_state,
+    ph_tasks,
     print_resume_point,
     refresh_workflow_status,
 )

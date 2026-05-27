@@ -265,8 +265,9 @@ def test_qe_phonon_import_boundaries():
     assert "from qeflow.phonon.workflow import" not in (phonon_root / "qe_matdyn_phband.py").read_text(encoding="utf-8")
     assert "from qeflow.phonon.workflow import" not in (phonon_root / "qe_matdyn_phdos.py").read_text(encoding="utf-8")
     assert "ph_step" in (phonon_root / "qe_phonon_nosplit.py").read_text(encoding="utf-8")
-    assert "split_prepare" in (phonon_root / "qe_phonon_split_assign_index.py").read_text(encoding="utf-8")
-    assert "split_prepare" in (phonon_root / "qe_phonon_split_assign_coords.py").read_text(encoding="utf-8")
+    assert "split_workflow" in (phonon_root / "qe_phonon_split_assign_index.py").read_text(encoding="utf-8")
+    assert "split_workflow" in (phonon_root / "qe_phonon_split_assign_coords.py").read_text(encoding="utf-8")
+    assert "split_prepare" in (phonon_root / "split_workflow.py").read_text(encoding="utf-8")
 
 
 def test_ph_step_generates_ph_input_and_script(chdir_work):
@@ -1247,6 +1248,7 @@ def test_qe_phonon_split_submit_defers_merge_errors_to_slurm_script(chdir_work, 
 
 def test_refresh_workflow_status_uses_ph_tasks_as_only_split_source(chdir_work):
     from qeflow.phonon import _shared
+    from qeflow.phonon import status_machine
     from qeflow.phonon import split_prepare as split_module
     from qeflow.qe_input.fileio import load_json
 
@@ -1264,7 +1266,7 @@ def test_refresh_workflow_status_uses_ph_tasks_as_only_split_source(chdir_work):
     _write_job_done(first_q_dir / "scf.out")
     _write_job_done(first_q_dir / "split_ph.out")
 
-    status = _shared.refresh_workflow_status(str(workdir), "Mg1B2")
+    status = status_machine.refresh_workflow_status(str(workdir), "Mg1B2")
     payload = load_json(str(workdir / "workflow_status.json"))
 
     assert "tasks" not in status
@@ -1274,7 +1276,7 @@ def test_refresh_workflow_status_uses_ph_tasks_as_only_split_source(chdir_work):
 
 
 def test_split_task_helpers_and_print_status_read_ph_tasks_only(chdir_work, capsys):
-    from qeflow.phonon import _shared
+    from qeflow.phonon import status_machine
 
     workflow = {
         "scf": "finished",
@@ -1292,17 +1294,17 @@ def test_split_task_helpers_and_print_status_read_ph_tasks_only(chdir_work, caps
         "matdyn_phdos": "unstarted",
     }
 
-    assert _shared.all_split_tasks_finished(workflow) is False
-    assert _shared.split_task_needs_run(workflow) is True
+    assert status_machine.all_split_tasks_finished(workflow) is False
+    assert status_machine.split_task_needs_run(workflow) is True
 
-    _shared.print_status("Mg1B2", workflow)
+    status_machine.print_status("Mg1B2", workflow)
     output = capsys.readouterr().out
     assert "[qeflow] 下一步:" in output
     assert "unstarted" not in output
 
 
 def test_split_resume_point_uses_first_non_finished_step(chdir_work, capsys):
-    from qeflow.phonon import _shared
+    from qeflow.phonon import status_machine
 
     workflow = {
         "scf": "finished",
@@ -1323,7 +1325,7 @@ def test_split_resume_point_uses_first_non_finished_step(chdir_work, capsys):
         "phonon_plot": "unstarted",
     }
 
-    _shared.print_resume_point(workflow)
+    status_machine.print_resume_point(workflow)
     output = capsys.readouterr().out
 
     assert "下一步: 从 5/11 运行 q2r 开始" in output
