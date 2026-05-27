@@ -24,6 +24,18 @@
 
 ## 需求处理记录
 
+### [2026-05-28] 新增 qeflow 架构 ADR 记录
+- **需求**：
+    1. 新增 `docs/adr/`，用于记录架构决策，并按 `qeflow`、`vaspflow` 等子系统分区。
+    2. 将 qeflow 当前模块边界、依赖方向和后续扩展约束沉淀为可追溯文档。
+    3. 保持 README 与 ADR 入口可互相定位。
+- **方案**：
+    1. 新增 `docs/adr/README.md`，定义 ADR 编号、状态、子系统分区和使用规则。
+    2. 新增 `docs/adr/0000-template.md`，作为后续架构决策记录模板。
+    3. 新增 `docs/adr/qeflow/README.md` 与 `docs/adr/qeflow/0001-architecture-boundaries.md`，记录 `setup/crystal/input_deck/io_reader/phonon/check` 的职责边界和依赖方向。
+    4. 更新 `qeflow/README.md`，补充 qeflow 分区 ADR 入口。
+- **状态**：已完成。
+
 ### [2026-05-28] 去除 qeflow 内部 QE 模块目录前缀
 - **需求**：
     1. 将 `qeflow/qe_check` 改名为 `qeflow/check`。

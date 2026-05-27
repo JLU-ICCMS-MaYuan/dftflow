@@ -1,5 +1,6 @@
 # QEFLOW 使用说明
 
+- qeflow 架构决策记录见 [docs/adr/qeflow/README.md](/home/mayuan/code/dftflow/docs/adr/qeflow/README.md)。
 - CLI 总览流程图见 [qeflow-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/qeflow-cli-flow.mmd)。
 - 分模块流程图：
   - [scf/scf-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/scf/scf-cli-flow.mmd)
