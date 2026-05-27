@@ -10,6 +10,12 @@ from public.config_templates import load_config_file
 from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
 from qeflow.common import normalize_qe_config_paths, resolve_atomic_species_entries
+from qeflow.qe_input.lattice import (
+    validate_no_manual_lattice_params,
+    write_atomic_positions,
+    write_cell_parameters_if_needed,
+    write_system_lattice,
+)
 from qeflow.templates import (
     apply_qe_config_overrides,
     get_qe_eband_allowed_keys,
@@ -91,6 +97,7 @@ class QEEBandSetup:
         self.scf_dir = "qe_scf"
         self.parameter_template = get_qe_eband_parameters_template()
         self.input_config = load_config_file(config_file)
+        validate_no_manual_lattice_params(self.input_config)
         self.config = apply_qe_config_overrides(
             self.parameter_template, self.input_config, get_qe_eband_allowed_keys()
         )
@@ -254,6 +261,7 @@ class QEEBandSetup:
                 if section == "SYSTEM":
                     f.write(f"  nat  = {struct_info['positions'].shape[0]}\n")
                     f.write(f"  ntyp = {len(struct_info['elements'])}\n")
+                    write_system_lattice(f, self.config, struct_info)
 
                 params = self.qe_params.get(section, {})
                 for key, value in params.items():
@@ -268,24 +276,8 @@ class QEEBandSetup:
                 f.write(f"  {el:3} {mass:8.4f} {pseudo_file}\n")
             f.write("\n")
 
-            coord_type = struct_info["coord_type"]
-            if coord_type.lower().startswith("d"):
-                f.write("ATOMIC_POSITIONS {crystal}\n")
-            else:
-                f.write("ATOMIC_POSITIONS {angstrom}\n")
-
-            atom_idx = 0
-            for el_idx, el in enumerate(struct_info["elements"]):
-                for _ in range(struct_info["counts"][el_idx]):
-                    pos = struct_info["positions"][atom_idx]
-                    f.write(f"  {el:3} {pos[0]:12.8f} {pos[1]:12.8f} {pos[2]:12.8f}\n")
-                    atom_idx += 1
-            f.write("\n")
-
-            f.write("CELL_PARAMETERS {angstrom}\n")
-            for vec in struct_info["lattice"]:
-                f.write(f"  {vec[0]:12.8f} {vec[1]:12.8f} {vec[2]:12.8f}\n")
-            f.write("\n")
+            write_atomic_positions(f, struct_info, precision=8)
+            write_cell_parameters_if_needed(f, self.config, struct_info, precision=8)
 
             kpath_path = self.kpath_file
             if not os.path.isabs(kpath_path):

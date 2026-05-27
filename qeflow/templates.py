@@ -10,6 +10,7 @@ def _base_qe_template() -> Dict[str, Any]:
     return {
         "qe": {
             "executable_path": None,
+            "lattice_mode": "ibrav_angstrom",
         },
         "slurm": {
             "header": "",
@@ -34,7 +35,6 @@ def get_qe_scf_parameters_template() -> Dict[str, Any]:
             "etot_conv_thr": "1.0e-7",
         },
         "SYSTEM": {
-            "ibrav": 0,
             "ecutwfc": 50.0,
             "ecutrho": 400.0,
             "occupations": "'smearing'",
@@ -71,7 +71,6 @@ def get_qe_nscf_parameters_template() -> Dict[str, Any]:
             "etot_conv_thr": "1.0e-7",
         },
         "SYSTEM": {
-            "ibrav": 0,
             "ecutwfc": 50.0,
             "ecutrho": 400.0,
             "occupations": "'tetrahedra'",
@@ -106,7 +105,6 @@ def get_qe_eband_parameters_template() -> Dict[str, Any]:
             "etot_conv_thr": "1.0e-7",
         },
         "SYSTEM": {
-            "ibrav": 0,
             "ecutwfc": 50.0,
             "ecutrho": 400.0,
             "occupations": "'tetrahedra'",

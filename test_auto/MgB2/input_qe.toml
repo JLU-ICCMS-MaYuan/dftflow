@@ -4,6 +4,7 @@ pp_dir = "./pp"
 
 [qe]
 executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
+lattice_mode = "ibrav_angstrom"
 
 [slurm]
 header = """

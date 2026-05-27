@@ -280,6 +280,10 @@ def test_ph_step_generates_ph_input_and_script(chdir_work):
     assert (workdir / "run_ph.sh").exists()
     assert "fildyn = 'Mg1B2.dyn'" in (workdir / "ph.in").read_text(encoding="utf-8")
     scf_text = (workdir / "scf.in").read_text(encoding="utf-8")
+    assert "ibrav = 4" in scf_text
+    assert "A = 3.0736999512" in scf_text
+    assert "C = 3.5343999863" in scf_text
+    assert "CELL_PARAMETERS" not in scf_text
     assert "Mg   24.3050 mg_pbe_v1.4.uspp" in scf_text
     assert "B    10.8100 b_pbe_v1.4.uspp.F.UPF" in scf_text
 
@@ -443,6 +447,8 @@ def test_qe_phonon_nosplit_prepares_all_root_inputs(chdir_work, monkeypatch):
     assert "etot_conv_thr = 1.0d-7" in scf_text
     assert "tstress = .true." in scf_text
     assert "tprnfor = .true." in scf_text
+    assert "ibrav = 4" in scf_text
+    assert "CELL_PARAMETERS" not in scf_text
 
 
 def test_qe_value_keeps_fortran_float_literals_unquoted():

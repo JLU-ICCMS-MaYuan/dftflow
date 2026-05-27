@@ -19,7 +19,7 @@ flowchart TD
     M --> N
 
     O["qe_process_eband"] --> P["读取 projwfc 投影文件"]
-    P --> Q["读取 eband.in 里的 CELL_PARAMETERS / K_POINTS"]
+    P --> Q["读取 eband.in / POSCAR 晶胞与 K_POINTS"]
     Q --> R["重建 k 路径距离与高对称点"]
     R --> S["汇总轨道投影"]
     S --> T["输出投影能带 DAT / 图表"]

@@ -23,13 +23,102 @@ def test_qe_scf_api(chdir_work):
 
     # 验证 scf.in 内容
     scf_content = (Path("qe_scf") / "scf.in").read_text()
-    assert "CELL_PARAMETERS" in scf_content
+    assert "ibrav = 4" in scf_content
+    assert "A = 3.0736999512" in scf_content
+    assert "C = 3.5343999863" in scf_content
+    assert "CELL_PARAMETERS" not in scf_content
     assert "ATOMIC_POSITIONS" in scf_content
     assert "K_POINTS" in scf_content
     assert "ecutwfc" in scf_content
-    assert "pseudo_dir = './pp'" in scf_content
+    assert "pseudo_dir = '" in scf_content
+    assert "/pp'" in scf_content
     assert "Mg   24.3050 mg_pbe_v1.4.uspp" in scf_content
     assert "B    10.8100 b_pbe_v1.4.uspp.F.UPF" in scf_content
+
+
+def test_qe_scf_supports_cell_parameters_lattice_mode(chdir_work):
+    from qeflow.scf.qe_scf import QESetup
+
+    config_path = Path("input_qe.toml")
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'lattice_mode = "ibrav_angstrom"',
+            'lattice_mode = "cell_parameters"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    setup = QESetup(config_file="input_qe.toml", struct_file="MgB2.vasp")
+    setup.setup()
+
+    scf_content = (Path("qe_scf") / "scf.in").read_text()
+    assert "ibrav = 0" in scf_content
+    assert "CELL_PARAMETERS {angstrom}" in scf_content
+
+
+def test_qe_scf_supports_celldm_lattice_mode(chdir_work):
+    from qeflow.scf.qe_scf import QESetup
+
+    config_path = Path("input_qe.toml")
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'lattice_mode = "ibrav_angstrom"',
+            'lattice_mode = "ibrav_celldm"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    setup = QESetup(config_file="input_qe.toml", struct_file="MgB2.vasp")
+    setup.setup()
+
+    scf_content = (Path("qe_scf") / "scf.in").read_text()
+    assert "ibrav = 4" in scf_content
+    assert "celldm(1)" in scf_content
+    assert "celldm(3)" in scf_content
+    assert "CELL_PARAMETERS" not in scf_content
+
+
+def test_qe_scf_rejects_manual_lattice_parameters(chdir_work):
+    from qeflow.scf.qe_scf import QESetup
+
+    config_path = Path("input_qe.toml")
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            "[qe_scf.SYSTEM]\n",
+            "[qe_scf.SYSTEM]\nibrav = 0\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="qe_scf.SYSTEM.ibrav"):
+        QESetup(config_file="input_qe.toml", struct_file="MgB2.vasp")
+
+
+def test_python_lattice_fallback_matches_qe_cell2ibrav_when_available(chdir_work):
+    from qeflow.qe_input.builders import parse_poscar
+    from qeflow.qe_input.lattice import (
+        BOHR_RADIUS_ANGS,
+        _find_cell2ibrav_executable,
+        _python_cell2ibrav,
+        _run_cell2ibrav,
+    )
+
+    exe = _find_cell2ibrav_executable("mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin")
+    if exe is None:
+        pytest.skip("当前环境未找到 cell2ibrav.x")
+    struct_info = parse_poscar("MgB2.vasp")
+    lattice_bohr = struct_info["lattice"] / BOHR_RADIUS_ANGS
+    try:
+        qe_result = _run_cell2ibrav(exe, lattice_bohr)
+    except Exception as exc:
+        pytest.skip(f"当前环境无法运行 cell2ibrav.x: {exc}")
+
+    fallback = _python_cell2ibrav(lattice_bohr)
+    assert fallback.ibrav == qe_result.ibrav
+    assert fallback.celldm == pytest.approx(qe_result.celldm, rel=1e-7, abs=1e-7)
 
 
 def test_qe_scf_cli(chdir_work):
@@ -102,7 +191,10 @@ def test_qe_nscf_api(chdir_work):
     nscf_content = (Path("qe_nscf") / "nscf.in").read_text()
     assert "calculation" in nscf_content
     assert "nscf" in nscf_content
-    assert "pseudo_dir = './pp'" in nscf_content
+    assert "ibrav = 4" in nscf_content
+    assert "CELL_PARAMETERS" not in nscf_content
+    assert "pseudo_dir = '" in nscf_content
+    assert "/pp'" in nscf_content
     assert "Mg   24.3050 mg_pbe_v1.4.uspp" in nscf_content
     assert "B    10.8100 b_pbe_v1.4.uspp.F.UPF" in nscf_content
 
@@ -157,7 +249,10 @@ def test_qe_eband_api(chdir_work):
     assert (Path("qe_eband") / "eband.in").exists()
     assert (Path("qe_eband") / "run_qe.sh").exists()
     eband_content = (Path("qe_eband") / "eband.in").read_text()
-    assert "pseudo_dir = './pp'" in eband_content
+    assert "ibrav = 4" in eband_content
+    assert "CELL_PARAMETERS" not in eband_content
+    assert "pseudo_dir = '" in eband_content
+    assert "/pp'" in eband_content
     assert "Mg   24.3050 mg_pbe_v1.4.uspp" in eband_content
     assert "B    10.8100 b_pbe_v1.4.uspp.F.UPF" in eband_content
 

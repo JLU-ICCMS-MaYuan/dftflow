@@ -11,6 +11,11 @@ from public.job import write_job_script
 from qeflow.common import resolve_atomic_species_entries
 from qeflow.qe_input.fileio import write_text
 from qeflow.qe_input.kpath import build_matdyn_band_path, run_vaspkit_for_kpath
+from qeflow.qe_input.lattice import (
+    write_atomic_positions,
+    write_cell_parameters_if_needed,
+    write_system_lattice,
+)
 
 
 SCF_CONTROL_KEYS = (
@@ -25,7 +30,7 @@ SCF_CONTROL_KEYS = (
     "forc_conv_thr",
     "etot_conv_thr",
 )
-SCF_SYSTEM_KEYS = ("ibrav", "ecutwfc", "ecutrho", "occupations", "smearing", "degauss")
+SCF_SYSTEM_KEYS = ("ecutwfc", "ecutrho", "occupations", "smearing", "degauss")
 SCF_ELECTRON_KEYS = ("conv_thr", "mixing_beta", "electron_maxstep")
 
 
@@ -133,27 +138,6 @@ def _write_atomic_species(handle, config: Dict[str, Any], elements: Iterable[str
     handle.write("\n")
 
 
-def _write_positions_and_cell(handle, struct_info: Dict[str, Any]) -> None:
-    coord_type = str(struct_info["coord_type"]).lower()
-    if coord_type.startswith("d"):
-        handle.write("ATOMIC_POSITIONS {crystal}\n")
-    else:
-        handle.write("ATOMIC_POSITIONS {angstrom}\n")
-    atom_index = 0
-    for element_index, element in enumerate(struct_info["elements"]):
-        for _ in range(struct_info["counts"][element_index]):
-            pos = struct_info["positions"][atom_index]
-            handle.write(
-                f"  {element:3} {pos[0]:21.17f} {pos[1]:21.17f} {pos[2]:21.17f}\n"
-            )
-            atom_index += 1
-    handle.write("\n")
-    handle.write("CELL_PARAMETERS {angstrom}\n")
-    for vec in struct_info["lattice"]:
-        handle.write(f"  {vec[0]:21.17f} {vec[1]:21.17f} {vec[2]:21.17f}\n")
-    handle.write("\n")
-
-
 def write_scf_input(workspace: str, config: Dict[str, Any], struct_info: Dict[str, Any], prefix: str) -> str:
     scf_cfg = copy.deepcopy(config["qe_phonon"]["scf"])
     path = os.path.join(workspace, "scf.in")
@@ -172,10 +156,8 @@ def write_scf_input(workspace: str, config: Dict[str, Any], struct_info: Dict[st
         handle.write("&SYSTEM\n")
         handle.write(f"  nat = {struct_info['positions'].shape[0]}\n")
         handle.write(f"  ntyp = {len(struct_info['elements'])}\n")
-        handle.write("  ibrav = 0\n")
+        write_system_lattice(handle, config, struct_info)
         for key in SCF_SYSTEM_KEYS:
-            if key == "ibrav":
-                continue
             value = scf_cfg.get(key)
             if value is not None:
                 handle.write(f"  {key} = {to_qe_value(value)}\n")
@@ -187,7 +169,8 @@ def write_scf_input(workspace: str, config: Dict[str, Any], struct_info: Dict[st
                 handle.write(f"  {key} = {to_qe_value(value)}\n")
         handle.write("/\n\n")
         _write_atomic_species(handle, config, struct_info["elements"])
-        _write_positions_and_cell(handle, struct_info)
+        write_atomic_positions(handle, struct_info)
+        write_cell_parameters_if_needed(handle, config, struct_info)
         kpoints = scf_cfg.get("kpoints")
         final_kmesh = (
             [int(kpoints[0]), int(kpoints[1]), int(kpoints[2])]

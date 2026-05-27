@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
 from qeflow.common import normalize_qe_config_paths
+from qeflow.qe_input.lattice import validate_no_manual_lattice_params
 from qeflow.templates import (
     apply_qe_config_overrides,
     get_qe_phonon_allowed_keys,
@@ -15,9 +16,11 @@ from qeflow.templates import (
 
 def load_phonon_config(config_file: str) -> Dict[str, Any]:
     template = get_qe_phonon_parameters_template()
+    raw_config = load_config_file(config_file)
+    validate_no_manual_lattice_params(raw_config)
     config = apply_qe_config_overrides(
         template,
-        load_config_file(config_file),
+        raw_config,
         get_qe_phonon_allowed_keys(),
     )
     return normalize_qe_config_paths(config, config_file=config_file)
@@ -78,6 +81,7 @@ def resolve_workspace(
     current_dir = os.getcwd()
     resolved_config_file = resolve_config_path(config_file)
     raw_config = load_config_file(resolved_config_file)
+    validate_no_manual_lattice_params(raw_config)
     config = apply_qe_config_overrides(
         get_qe_phonon_parameters_template(),
         raw_config,

@@ -24,6 +24,19 @@
 
 ## 需求处理记录
 
+### [2026-05-27] 为 QE 输入增加自动 ibrav 晶格写出模式
+- **需求**：
+    1. `qe_scf`、`qe_nscf`、`qe_eband` 和 `qe_phonon` 的 `pw.x` 输入需要支持三种晶格写法：自动 `ibrav + A/B/C/cos*`、自动 `ibrav + celldm(n)`、旧版 `ibrav = 0 + CELL_PARAMETERS {angstrom}`。
+    2. 默认使用 `ibrav_angstrom`，并通过 `[qe].lattice_mode` 选择模式。
+    3. 不允许用户手动指定 `ibrav`、`A/B/C`、`cosAB/cosAC/cosBC` 或 `celldm(1..6)`，避免和自动判断结果冲突。
+    4. 自动判断优先调用 QE 官方 `cell2ibrav.x`；不可用时使用 Python fallback，便于和 QE 结果对照。
+- **方案**：
+    1. 新增 `qeflow/qe_input/lattice.py`，集中实现 lattice mode 校验、`cell2ibrav.x` 调用、QE `latgen.f90` 风格 Python fallback 和 QE 输入写出 helper。
+    2. 修改 `qeflow/templates.py`，在 `[qe]` 模板增加 `lattice_mode = "ibrav_angstrom"`，并移除各 `SYSTEM` 模板中的默认 `ibrav = 0`。
+    3. 修改 `qe_scf/qe_nscf/qe_eband/qe_phonon` 输入生成路径，统一复用公共晶格写出逻辑；`cell_parameters` 模式保持旧输出。
+    4. 更新 README、qeflow README、Mermaid 流程图与自动化测试，覆盖三种模式、手动参数报错、phonon 默认输出和 fallback 对照测试。
+- **状态**：已完成。
+
 ### [2026-05-27] 新增 substitution_check_phonon_stability 周期表式声子稳定性检查
 - **需求**：
     1. 新增 CLI `substitution_check_phonon_stability`，用于批量检查 substitutionflow 声子计算体系是否稳定。

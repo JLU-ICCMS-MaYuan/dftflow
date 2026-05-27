@@ -81,6 +81,13 @@ pp_dir = "qe_pseudo_lib"
 
 [qe]
 executable_path = "/opt/qe/bin"
+lattice_mode = "ibrav_angstrom"
+
+# lattice_mode 允许：
+# - "ibrav_angstrom"：默认，自动判断 ibrav 并写 A/B/C/cos*
+# - "ibrav_celldm"：自动判断 ibrav 并写 celldm(n)
+# - "cell_parameters"：旧格式，写 ibrav = 0 + CELL_PARAMETERS {angstrom}
+# 不要手动写 ibrav、A/B/C、cosAB/cosAC/cosBC 或 celldm(1..6)。
 
 [qe_phonon]
 prefix = "ht_ph"

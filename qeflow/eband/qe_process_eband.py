@@ -63,7 +63,16 @@ def read_cell_from_eband(path):
                     raise ValueError("CELL_PARAMETERS 行格式错误。")
                 cell.append([float(parts[0]), float(parts[1]), float(parts[2])])
             return np.array(cell, dtype=float)
-    raise ValueError("eband.in 中未找到 CELL_PARAMETERS 段。")
+    poscar_path = os.path.join(os.path.dirname(path) or ".", "POSCAR")
+    if os.path.exists(poscar_path):
+        with open(poscar_path, "r", encoding="utf-8") as f:
+            poscar_lines = f.readlines()
+        scale = float(poscar_lines[1].strip())
+        return np.array(
+            [[float(value) * scale for value in poscar_lines[index].split()[:3]] for index in range(2, 5)],
+            dtype=float,
+        )
+    raise ValueError("eband.in 中未找到 CELL_PARAMETERS 段，且同目录没有 POSCAR。")
 
 
 def read_kpath_points_from_eband(path):
@@ -458,7 +467,7 @@ def main():
     parser = argparse.ArgumentParser(description="Process QE projwfc band projections.")
     parser.add_argument("-i", "--input", required=True, help="projwfc 投影文件（如 *.projwfc_up）")
     parser.add_argument("-b", "--bandfile", default="elebanddata.dat", help="bands.x 输出文件")
-    parser.add_argument("--cell", default="eband.in", help="包含 CELL_PARAMETERS 的 eband.in")
+    parser.add_argument("--cell", default="eband.in", help="包含晶胞信息的 eband.in；若未写 CELL_PARAMETERS，则读取同目录 POSCAR")
     parser.add_argument("-o", "--output", help="输出文件名，默认 <prefix>_eleband_proj.dat")
     parser.add_argument("--prefix", help="输出文件前缀（覆盖自动推断）")
     args = parser.parse_args()

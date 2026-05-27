@@ -30,6 +30,11 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 - 默认模板定义在 [templates.py](/home/mayuan/code/dftflow/qeflow/templates.py)。
 - 递归覆盖逻辑定义在 [config_templates.py](/home/mayuan/code/dftflow/public/config_templates.py)。
 - `qe_phonon` 相关新 CLI 继续共用同一个 `[qe_phonon]` 配置块，不为每个命令单独拆 TOML 节。
+- `[qe].lattice_mode` 控制 `pw.x` 输入里的晶格写法，默认 `ibrav_angstrom`。允许值：
+  - `ibrav_angstrom`：自动调用 QE `cell2ibrav.x` 判断 `ibrav`，写出 `ibrav + A/B/C/cos*`，不写 `CELL_PARAMETERS`。
+  - `ibrav_celldm`：自动判断 `ibrav`，写出 `ibrav + celldm(n)`。
+  - `cell_parameters`：兼容旧行为，写出 `ibrav = 0 + CELL_PARAMETERS {angstrom}`。
+- 不允许在 `input.toml` 手动填写 `ibrav`、`A/B/C`、`cosAB/cosAC/cosBC` 或 `celldm(1..6)`；这些参数统一由结构文件自动生成。若 `[qe].executable_path` 指向的 QE bin 目录中找不到或无法运行 `cell2ibrav.x`，程序会使用内置 Python fallback。
 
 ## 3. 声子 CLI 体系
 ### 3.1 独立单步 CLI
@@ -151,6 +156,7 @@ pp_dir = "/path/to/pseudo"
 
 [qe]
 executable_path = "mpirun -np 8 /path/to/qe/bin"
+lattice_mode = "ibrav_angstrom"
 
 [slurm]
 header = """

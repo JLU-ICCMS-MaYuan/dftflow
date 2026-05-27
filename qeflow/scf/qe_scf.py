@@ -10,6 +10,12 @@ from public.config_templates import load_config_file
 from public.executables import resolve_qe_command
 from public.job import add_run_submit_arguments, handle_job_action, write_job_script, execute_commands
 from qeflow.common import normalize_qe_config_paths, resolve_atomic_species_entries
+from qeflow.qe_input.lattice import (
+    validate_no_manual_lattice_params,
+    write_atomic_positions,
+    write_cell_parameters_if_needed,
+    write_system_lattice,
+)
 from qeflow.templates import (
     apply_qe_config_overrides,
     get_qe_scf_allowed_keys,
@@ -39,6 +45,7 @@ class QESetup:
         self.work_dir = "qe_scf"
         self.parameter_template = get_qe_scf_parameters_template()
         self.input_config = load_config_file(config_file)
+        validate_no_manual_lattice_params(self.input_config)
         self.config = apply_qe_config_overrides(
             self.parameter_template, self.input_config, get_qe_scf_allowed_keys()
         )
@@ -147,6 +154,7 @@ class QESetup:
                 if section == "SYSTEM":
                     f.write(f"  nat  = {struct_info['positions'].shape[0]}\n")
                     f.write(f"  ntyp = {len(struct_info['elements'])}\n")
+                    write_system_lattice(f, self.config, struct_info)
                 
                 params = self.qe_params.get(section, {})
                 for key, value in params.items():
@@ -162,26 +170,8 @@ class QESetup:
                 f.write(f"  {el:3} {mass:8.4f} {pseudo_file}\n")
             f.write("\n")
             
-            # ATOMIC_POSITIONS
-            coord_type = struct_info["coord_type"]
-            if coord_type.lower().startswith('d'):
-                f.write("ATOMIC_POSITIONS {crystal}\n")
-            else:
-                f.write("ATOMIC_POSITIONS {angstrom}\n")
-                
-            atom_idx = 0
-            for el_idx, el in enumerate(struct_info["elements"]):
-                for _ in range(struct_info["counts"][el_idx]):
-                    pos = struct_info["positions"][atom_idx]
-                    f.write(f"  {el:3} {pos[0]:21.17f} {pos[1]:21.17f} {pos[2]:21.17f}\n")
-                    atom_idx += 1
-            f.write("\n")
-            
-            # CELL_PARAMETERS
-            f.write("CELL_PARAMETERS {angstrom}\n")
-            for vec in struct_info["lattice"]:
-                f.write(f"  {vec[0]:21.17f} {vec[1]:21.17f} {vec[2]:21.17f}\n")
-            f.write("\n")
+            write_atomic_positions(f, struct_info)
+            write_cell_parameters_if_needed(f, self.config, struct_info)
             
             # K_POINTS：支持显式 kpoints 或按 kmesh 生成自动网格
             kpoints_list = self.k_points_config.get("kpoints")
