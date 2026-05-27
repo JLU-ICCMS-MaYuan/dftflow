@@ -389,6 +389,7 @@ def test_output_checks_use_three_states(chdir_work):
     assert check_scf(str(workdir)) == "finished"
     assert check_relax(str(Path("."))) == "finished"
     assert check_ph(str(workdir), "Mg1B2")["dyn0"] == "finished"
+    assert check_ph(str(workdir), "Mg1B2")["state"] == "unstarted"
     assert check_q2r(str(workdir), "Mg1B2") == "finished"
 
     empty_dir = workdir / "empty"
@@ -715,6 +716,31 @@ def test_qe_phonon_nosplit_submit_writes_remaining_chain_script(chdir_work, monk
     assert "bash run_matdyn_phdos.sh" in process_script
     assert "--collect phdos" in process_script
     assert "--plot" in process_script
+
+
+def test_qe_phonon_nosplit_submit_does_not_skip_unfinished_ph(chdir_work, monkeypatch):
+    from qeflow.phonon import qe_phonon_nosplit as module
+
+    submitted = []
+    monkeypatch.setattr("qeflow.qe_input.builders.run_vaspkit_for_kpath", lambda target_dir: _write_kpath(Path(target_dir) / "KPATH.in"))
+
+    def fake_submit_script(workdir, script_name):
+        submitted.append((os.path.basename(workdir), script_name))
+
+    monkeypatch.setattr(module, "submit_script", fake_submit_script)
+    workdir = Path("qe_phonon_nosplit")
+    workdir.mkdir()
+    Path("MgB2.vasp").replace(workdir / "POSCAR")
+    Path("input_qe.toml").replace(workdir / "input.toml")
+    _write_job_done(workdir / "scf.out")
+    _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
+
+    module.run_phonon_nosplit_workflow(str(workdir / "input.toml"), None, run_calc=False, submit_job=True)
+
+    assert submitted == [("qe_phonon_nosplit", "submit_phonon_workflow.sh")]
+    script = (workdir / "submit_phonon_workflow.sh").read_text(encoding="utf-8")
+    assert "bash run_ph.sh" in script
+    assert script.index("bash run_ph.sh") < script.index("bash submit_process_phonon.sh")
 
 
 def test_phonon_console_submit_script_uses_safe_sbatch(chdir_work, monkeypatch):

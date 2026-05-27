@@ -4,9 +4,9 @@
 [submodule "external/mattersim"]
 	path = external/mattersim
 	url = git@github.com:JLU-ICCMS-MaYuan/mattersim.git
-[submodule "external/quantum-espresso"]
-	path = external/quantum-espresso
-	url = git@gitlab.com:mirsakhawathossain/quantum-espresso.git
 [submodule "external/a2f"]
 	path = external/a2f
 	url = git@github.com:JLU-ICCMS-MaYuan/a2f.git
+[submodule "external/q-e"]
+	path = external/q-e
+	url = https://gitlab.com/madegan/q-e.git

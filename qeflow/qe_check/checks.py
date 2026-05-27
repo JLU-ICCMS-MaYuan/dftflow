@@ -241,8 +241,6 @@ def check_ph(workdir: str, prefix: str) -> Dict[str, object]:
     if not task_states:
         if dyn0_ready and root_ph.is_finished():
             state = "finished"
-        elif dyn0_ready:
-            state = "finished"
         elif root_ph.has_error():
             state = "error"
         elif root_ph.exists():
