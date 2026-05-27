@@ -1,0 +1,10 @@
+flowchart TD
+    A["POSCAR / CONTCAR"] --> B["poscar.py<br/>parse_poscar"]
+    B --> C["formula.py<br/>get_formula"]
+    B --> D["kmesh.py<br/>get_kpoints_from_spacing"]
+    B --> E["lattice.py<br/>resolve_lattice_parameters"]
+    E --> F["cell2ibrav.x 优先"]
+    E --> G["Python fallback"]
+    C --> H["QE prefix"]
+    D --> I["K_POINTS automatic 网格"]
+    E --> J["QE input deck 的 ibrav/celldm/A-B-C 来源"]

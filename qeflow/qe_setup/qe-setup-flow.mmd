@@ -1,0 +1,14 @@
+flowchart TD
+    A["CLI<br/>qe_scf / qe_nscf / qe_eband / qe_eledos"] --> B["qe_setup.cli_adapter"]
+    B --> C["QECalculationSetup"]
+    C --> D["读取 input.toml 并套用模板"]
+    C --> E["crystal.poscar 解析 POSCAR/CONTCAR"]
+    E --> F["crystal.formula 派生 prefix"]
+    C --> G["准备依赖数据<br/>SCF save / KPATH / outdir"]
+    C --> H["调用 qe_input_deck 写 .in 输入"]
+    H --> I["写 run_qe.sh"]
+    I --> J{"动作"}
+    J -->|默认| K["只完成 setup"]
+    J -->| -r | L["本地执行"]
+    J -->| -s | M["提交 run_qe.sh"]
+

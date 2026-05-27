@@ -2,7 +2,7 @@
 import os
 from typing import Dict, List
 
-from qeflow.qe_input.fileio import load_json
+from qeflow.io_utils import load_json
 
 
 def load_q_index_entries(workspace: str) -> List[Dict[str, object]]:

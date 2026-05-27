@@ -1,0 +1,15 @@
+flowchart TD
+    A["QE Input Deck Writer"] --> B["pw.py<br/>scf.in / nscf.in / eband.in"]
+    A --> C["bands.py<br/>elebanddata.in / elebandprojdata.in"]
+    A --> D["dos.py<br/>eletdos.in / elepdos.in"]
+    A --> E["ph.py<br/>ph.in / split_ph.in"]
+    A --> F["q2r.py<br/>q2r.in"]
+    A --> G["matdyn.py<br/>matdyn_phband.in / matdyn_phdos.in"]
+    A --> H["scripts.py<br/>run_*.sh"]
+
+    I["crystal.lattice<br/>ibrav/celldm 参数推导"] --> J["lattice.py<br/>写 QE 晶格语法"]
+    J --> B
+    J --> E
+    K["kpath.py<br/>KPATH 解析 / label 写出"] --> B
+    K --> G
+

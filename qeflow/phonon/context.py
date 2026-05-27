@@ -3,9 +3,10 @@ import os
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from qeflow.qe_input.fileio import resolve_workspace
-from qeflow.qe_input.phonon_input import build_qe_commands, resolve_prefix
-from qeflow.qe_input.structure import parse_poscar
+from qeflow.phonon.workspace import resolve_workspace
+from qeflow.qe_input_deck.executables import build_qe_commands
+from qeflow.qe_input_deck.prefix import resolve_prefix
+from qeflow.crystal.poscar import parse_poscar
 
 
 @dataclass

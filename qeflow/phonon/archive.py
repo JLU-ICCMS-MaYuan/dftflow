@@ -5,7 +5,7 @@ import shutil
 from typing import List, Sequence
 
 from qeflow.phonon.context import PhononStepContext
-from qeflow.qe_input.phonon_input import derive_filenames
+from qeflow.qe_input_deck.filenames import derive_filenames
 
 
 PHBAND_DIR = "phband"

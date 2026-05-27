@@ -2,7 +2,7 @@
 import argparse
 
 from public.job import add_run_submit_arguments, handle_job_action
-from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
+from qeflow.qe_setup.calculation_setup import create_qe_calculation_setup
 
 
 def run_qe_calculation_cli(kind: str, description: str, action_handler=handle_job_action) -> None:

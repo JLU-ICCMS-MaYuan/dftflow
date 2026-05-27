@@ -11,7 +11,7 @@ from qeflow.qe_check.checks import (
     collect_split_task_states,
     summarize_task_states,
 )
-from qeflow.qe_input.fileio import dump_json
+from qeflow.io_utils import dump_json
 
 
 WORKFLOW_STATUS_FILE = "workflow_status.json"

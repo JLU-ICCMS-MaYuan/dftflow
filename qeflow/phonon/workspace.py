@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
-import json
 import os
 import shutil
 from typing import Any, Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
 from qeflow.common import normalize_qe_config_paths
-from qeflow.qe_input.lattice import validate_no_manual_lattice_params
+from qeflow.qe_input_deck.lattice import validate_no_manual_lattice_params
 from qeflow.templates import (
     apply_qe_config_overrides,
     get_qe_phonon_allowed_keys,
     get_qe_phonon_parameters_template,
 )
+
+
+WORKFLOW_DEFAULT_WORKDIRS = {
+    "qe_phonon_nosplit": "qe_phonon_nosplit",
+    "qe_phonon_split_coords": "qe_phonon_split_coords",
+    "qe_phonon_split_index": "qe_phonon_split_index",
+}
 
 
 def load_phonon_config(config_file: str) -> Dict[str, Any]:
@@ -28,37 +34,6 @@ def load_phonon_config(config_file: str) -> Dict[str, Any]:
 
 def resolve_config_path(config_file: str) -> str:
     return os.path.abspath(config_file)
-
-
-WORKFLOW_DEFAULT_WORKDIRS = {
-    "qe_phonon_nosplit": "qe_phonon_nosplit",
-    "qe_phonon_split_coords": "qe_phonon_split_coords",
-    "qe_phonon_split_index": "qe_phonon_split_index",
-}
-
-
-def read_text(path: str) -> str:
-    with open(path, "r", encoding="utf-8") as handle:
-        return handle.read()
-
-
-def write_text(path: str, content: str) -> None:
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(content)
-
-
-def load_json(path: str, default: Optional[Any] = None) -> Any:
-    if not os.path.exists(path):
-        return default
-    with open(path, "r", encoding="utf-8") as handle:
-        return json.load(handle)
-
-
-def dump_json(path: str, payload: Any) -> None:
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, ensure_ascii=False)
 
 
 def ensure_structure_source(struct_file: Optional[str]) -> str:

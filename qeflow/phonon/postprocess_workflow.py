@@ -21,7 +21,7 @@ from qeflow.phonon.qe_q2r import prepare_q2r_step
 from qeflow.phonon.runner import print_stage
 from qeflow.phonon.script_plan import build_labeled_commands
 from qeflow.phonon.status_machine import refresh_workflow_status
-from qeflow.qe_input.phonon_input import write_root_run_script
+from qeflow.qe_input_deck.scripts import write_root_run_script
 
 
 PROCESS_SCRIPT = "submit_process_phonon.sh"

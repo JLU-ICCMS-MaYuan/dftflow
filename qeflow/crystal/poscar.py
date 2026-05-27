@@ -1,17 +1,8 @@
 #!/usr/bin/env python3
 import os
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict
 
 import numpy as np
-
-
-def get_formula(elements: Sequence[str], counts: Sequence[int]) -> str:
-    formula = ""
-    for element, count in zip(elements, counts):
-        formula += str(element)
-        if int(count) >= 1:
-            formula += str(int(count))
-    return formula
 
 
 def parse_poscar(poscar_path: str) -> Dict[str, Any]:
@@ -50,11 +41,3 @@ def parse_poscar(poscar_path: str) -> Dict[str, Any]:
         "positions": pos_array,
     }
 
-
-def get_kpoints_from_spacing(lattice: np.ndarray, kmesh: Any, default_spacing: float) -> List[int]:
-    if isinstance(kmesh, list) and len(kmesh) == 3:
-        return [int(kmesh[0]), int(kmesh[1]), int(kmesh[2])]
-    reciprocal = 2 * np.pi * np.linalg.inv(lattice).T
-    lengths = np.linalg.norm(reciprocal, axis=1)
-    spacing = float(kmesh) if isinstance(kmesh, (int, float)) else default_spacing
-    return [int(max(1, np.ceil(length / (spacing * 2 * np.pi)))) for length in lengths]

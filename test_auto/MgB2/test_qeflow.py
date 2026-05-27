@@ -12,7 +12,7 @@ from pathlib import Path
 
 def test_qe_scf_api(chdir_work):
     """API 测试：qe_scf 文件生成"""
-    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
+    from qeflow.qe_setup.calculation_setup import create_qe_calculation_setup
 
     setup = create_qe_calculation_setup("scf", config_file="input_qe.toml", struct_file="MgB2.vasp")
     setup.prepare()
@@ -37,7 +37,7 @@ def test_qe_scf_api(chdir_work):
 
 
 def test_qe_scf_supports_cell_parameters_lattice_mode(chdir_work):
-    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
+    from qeflow.qe_setup.calculation_setup import create_qe_calculation_setup
 
     config_path = Path("input_qe.toml")
     config_path.write_text(
@@ -58,7 +58,7 @@ def test_qe_scf_supports_cell_parameters_lattice_mode(chdir_work):
 
 
 def test_qe_scf_supports_celldm_lattice_mode(chdir_work):
-    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
+    from qeflow.qe_setup.calculation_setup import create_qe_calculation_setup
 
     config_path = Path("input_qe.toml")
     config_path.write_text(
@@ -81,7 +81,7 @@ def test_qe_scf_supports_celldm_lattice_mode(chdir_work):
 
 
 def test_qe_scf_rejects_manual_lattice_parameters(chdir_work):
-    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
+    from qeflow.qe_setup.calculation_setup import create_qe_calculation_setup
 
     config_path = Path("input_qe.toml")
     config_path.write_text(
@@ -98,13 +98,13 @@ def test_qe_scf_rejects_manual_lattice_parameters(chdir_work):
 
 
 def test_python_lattice_fallback_matches_qe_cell2ibrav_when_available(chdir_work):
-    from qeflow.qe_input.lattice import (
+    from qeflow.crystal.lattice import (
         BOHR_RADIUS_ANGS,
         _find_cell2ibrav_executable,
         _python_cell2ibrav,
         _run_cell2ibrav,
     )
-    from qeflow.qe_input.structure import parse_poscar
+    from qeflow.crystal.poscar import parse_poscar
 
     exe = _find_cell2ibrav_executable("mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin")
     if exe is None:
@@ -179,7 +179,7 @@ def test_qe_nscf_api(chdir_work):
     os.makedirs("qe_scf/tmp", exist_ok=True)
     Path("qe_scf/scf.out").touch()
 
-    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
+    from qeflow.qe_setup.calculation_setup import create_qe_calculation_setup
 
     setup = create_qe_calculation_setup("nscf", config_file="input_qe.toml", struct_file="MgB2.vasp")
     setup.prepare()
@@ -241,7 +241,7 @@ def test_qe_eband_api(chdir_work):
     os.makedirs("qe_nscf/tmp", exist_ok=True)
     Path("qe_nscf/nscf.out").touch()
 
-    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
+    from qeflow.qe_setup.calculation_setup import create_qe_calculation_setup
 
     setup = create_qe_calculation_setup("eband", config_file="input_qe.toml", struct_file="MgB2.vasp")
     setup.prepare()
@@ -292,7 +292,7 @@ def test_resolve_pseudo_files_matches_case_insensitive_prefixes(tmp_path):
 
 
 def test_qe_scf_requires_pp_dir_for_auto_pseudo_matching(chdir_work):
-    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
+    from qeflow.qe_setup.calculation_setup import create_qe_calculation_setup
 
     config_path = Path("missing_pp_dir.toml")
     config_path.write_text(
@@ -312,7 +312,7 @@ outdir = "'./tmp'"
 
 
 def test_qe_scf_fails_when_element_pseudo_is_missing(chdir_work):
-    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
+    from qeflow.qe_setup.calculation_setup import create_qe_calculation_setup
 
     missing_dir = Path("pp_missing")
     missing_dir.mkdir()
@@ -338,7 +338,7 @@ outdir = "'./tmp'"
 
 
 def test_qe_scf_fails_when_element_has_multiple_pseudos(chdir_work):
-    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
+    from qeflow.qe_setup.calculation_setup import create_qe_calculation_setup
 
     duplicate_dir = Path("pp_duplicate")
     duplicate_dir.mkdir()
@@ -406,7 +406,7 @@ def test_qe_eledos_api(chdir_work):
     os.makedirs("qe_scf/tmp", exist_ok=True)
     Path("qe_scf/scf.out").touch()
 
-    from qeflow.qe_input.calculation_setup import create_qe_calculation_setup
+    from qeflow.qe_setup.calculation_setup import create_qe_calculation_setup
 
     setup = create_qe_calculation_setup("eledos", config_file="input_qe.toml", struct_file="MgB2.vasp")
     setup.prepare()

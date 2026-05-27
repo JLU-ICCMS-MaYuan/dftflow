@@ -24,6 +24,18 @@
 
 ## 需求处理记录
 
+### [2026-05-27] 删除 qeflow qe_input 并重建 QE 输入边界
+- **需求**：
+    1. `qeflow/qe_input` 名称和职责过于混杂，需要彻底删除，不保留兼容 facade。
+    2. 新边界需要清晰区分 QE Calculation Setup 生命周期、QE 原生 input deck 写出、晶体结构模型与声子 workspace。
+    3. `scf.in` 中三种晶格写法相关的晶格参数推导应进入 `qeflow/crystal`，QE 语法写出留在 input deck writer。
+- **方案**：
+    1. 新增 `qeflow/qe_setup/`，迁移 `calculation_setup.py` 与 `cli_adapter.py`，仅负责计算目录生命周期编排。
+    2. 新增 `qeflow/qe_input_deck/`，按 `pw.py`、`ph.py`、`q2r.py`、`matdyn.py`、`bands.py`、`dos.py`、`lattice.py`、`scripts.py` 等拆分 QE 输入 deck 写出职责。
+    3. 新增 `qeflow/crystal/`，承载 POSCAR 解析、化学式、kmesh 与 `cell2ibrav` 晶格参数推导；`qe_input_deck/lattice.py` 只负责 QE 语法序列化。
+    4. 将旧 `qe_input/fileio.py` 拆为 `qeflow/phonon/workspace.py` 与 `qeflow/io_utils.py`，同步更新生产代码、测试、README、CONTEXT 和 Mermaid 流程图。
+- **状态**：已完成。
+
 ### [2026-05-27] 删除 qeflow 旧 facade 并新增 QE IO Reader
 - **需求**：
     1. 删除 qeflow 中旧版本遗留的 Python facade 和旧导入接口，内部全部使用解耦后的最新模块。

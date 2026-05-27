@@ -4,12 +4,9 @@ import os
 from public.job import write_job_script
 from qeflow.phonon import console
 from qeflow.phonon.context import PhononStepContext
-from qeflow.qe_input.phonon_input import (
-    write_scf_input,
-    write_split_ph_input_assign_coords,
-    write_split_ph_input_assign_index,
-)
-from qeflow.qe_input.fileio import dump_json
+from qeflow.io_utils import dump_json
+from qeflow.qe_input_deck.ph import write_split_ph_input_assign_coords, write_split_ph_input_assign_index
+from qeflow.qe_input_deck.pw import write_phonon_scf_input
 from qeflow.qe_io_reader.ph import parse_dyn0_qpoints
 
 
@@ -56,7 +53,7 @@ def prepare_split_assign_index_step(context: PhononStepContext) -> int:
         q_name = f"{dir_index + 1:02d}"
         q_dir = os.path.join(context.workspace, q_name)
         os.makedirs(q_dir, exist_ok=True)
-        write_scf_input(q_dir, context.config, context.struct_info, context.prefix)
+        write_phonon_scf_input(q_dir, context.config, context.struct_info, context.prefix)
         write_split_ph_input_assign_index(q_dir, context.config, context.prefix, int(qpoint["index"]))
         _write_split_run_script(context, q_dir, q_name, slurm_header)
         q_map_payload["qpoints"].append(
@@ -79,7 +76,7 @@ def prepare_split_assign_coords_step(context: PhononStepContext) -> int:
         q_name = f"{dir_index + 1:02d}"
         q_dir = os.path.join(context.workspace, q_name)
         os.makedirs(q_dir, exist_ok=True)
-        write_scf_input(q_dir, context.config, context.struct_info, context.prefix)
+        write_phonon_scf_input(q_dir, context.config, context.struct_info, context.prefix)
         write_split_ph_input_assign_coords(q_dir, context.config, context.prefix, qpoint["q_crystal"])
         _write_split_run_script(context, q_dir, q_name, slurm_header)
         q_map_payload["qpoints"].append(

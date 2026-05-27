@@ -48,6 +48,18 @@ QE split 声子结果回收 Module，负责按 `split_assign_index` 或 `split_a
 为 QE 声子链路写出 `scf.in/ph.in/q2r.in/matdyn_*.in/run_*.sh` 的输入文件 Module。
 *Avoid*：builder, input helper, file writer
 
+**Crystal Structure Model**：
+负责结构文件解析、化学式派生、kmesh 派生和晶格参数识别，为 QE/VASP/Wannier 等上层工作流提供与具体输入 deck 语法无关的晶体结构语义。
+*Avoid*：structure helper, input parser, qe input structure
+
+**QE Input Deck Writer**：
+负责把配置、结构模型和计算参数写成 QE 原生 `.in` 输入 deck；按 `pw/ph/q2r/matdyn/bands/dos` 等 QE 程序拆分职责。
+*Avoid*：builder, facade, setup helper
+
+**Phonon Workspace**：
+负责 QE 声子工作目录定位、配置真源解析、结构副本准备和 split 子目录发现。
+*Avoid*：fileio, path helper, input resolver
+
 **Phonon Stability**：  
 一个 **Pressure Point** 基于最小声子 DOS 频率得到的二元稳定性分类：`stable` 或 `unstable`。  
 *Avoid*：dynamical stability, imaginary-frequency status
@@ -61,7 +73,7 @@ QE split 声子结果回收 Module，负责按 `split_assign_index` 或 `split_a
 *Avoid*：has imaginary frequency, failed phonon
 
 **QE Calculation Setup**：  
-为一个 Quantum ESPRESSO 计算目录准备可执行输入的一次生命周期，包括读取配置、解析结构、派生 prefix、准备依赖数据、写 QE input deck、写运行脚本，以及按需运行或提交。  
+为一个 Quantum ESPRESSO 计算目录准备可执行输入的一次生命周期，包括读取配置、解析结构、派生 prefix、准备依赖数据、委托 **QE Input Deck Writer** 写输入、写运行脚本，以及按需运行或提交。  
 *Avoid*：input writer, setup class, QE service
 
 ## Relationships
@@ -71,6 +83,8 @@ QE split 声子结果回收 Module，负责按 `split_assign_index` 或 `split_a
 - 一个 **Substituted Structure** 包含一个或多个 **Pressure Point**。
 - 一个 **Pressure Point** 有一组 **Workflow Status**，并且最多有一个 **Phonon Stability** 结果。
 - 一个 QE 声子 **QE Calculation Setup** 由 **Phonon Workflow Status Machine** 维护 `workflow_status.json` 并给出续算阶段。
+- 一个 **QE Calculation Setup** 依赖 **Crystal Structure Model** 解析结构，并依赖 **QE Input Deck Writer** 生成 QE 原生输入文件。
+- 一个 **Phonon Workspace** 为 **Split Phonon Workflow** 与 **Phonon Postprocess Workflow** 提供工作目录定位与配置真源解析。
 - 一个 **Split Phonon Workflow** 依赖 **Phonon Workflow Status Machine** 判断当前阶段，并按拆分方式选择 q 点输入物化策略。
 - 一个 **Phonon Postprocess Workflow** 依赖 **QE Phonon Input Deck** 准备后处理输入，并依赖 **Phonon Workflow Status Machine** 刷新后处理阶段。
 - 一个 **Split Merge Workflow** 是 **Split Phonon Workflow** 的回收阶段。
