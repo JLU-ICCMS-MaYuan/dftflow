@@ -6,7 +6,7 @@ flowchart TD
     B --> C["QE Calculation Setup<br/>kind=eband"]
     C --> D["解析 POSCAR"]
     D --> E["读取/生成 KPATH.in<br/>必要时调用 vaspkit 303"]
-    E --> F["qe_input_deck.kpath 解析高对称路径"]
+    E --> F["input_deck.kpath 解析高对称路径"]
     D --> G["resolve_atomic_species_entries"]
     G --> H["生成 qe_eband/eband.in"]
     F --> H

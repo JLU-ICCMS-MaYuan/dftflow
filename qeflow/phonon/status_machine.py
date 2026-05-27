@@ -3,7 +3,7 @@ import os
 from typing import Dict, List, Tuple
 
 from qeflow.phonon import console
-from qeflow.qe_check.checks import (
+from qeflow.check.checks import (
     check_merge,
     check_ph,
     check_q2r,
@@ -42,7 +42,7 @@ def refresh_split_task_status(workspace: str) -> Dict[str, str]:
 
 
 def refresh_workflow_status(workspace: str, prefix: str) -> Dict[str, object]:
-    from qeflow.qe_check.checks import check_matdyn, check_phonon_plot
+    from qeflow.check.checks import check_matdyn, check_phonon_plot
 
     matdyn_phband = check_matdyn(
         workspace,

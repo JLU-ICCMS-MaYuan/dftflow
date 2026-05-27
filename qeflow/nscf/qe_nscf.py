@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from public.job import handle_job_action
-from qeflow.qe_setup.cli_adapter import run_qe_calculation_cli
+from qeflow.setup.cli_adapter import run_qe_calculation_cli
 
 
 def main() -> None:

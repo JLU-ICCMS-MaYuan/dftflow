@@ -11,11 +11,11 @@ from public.job import execute_commands, write_job_script
 from qeflow.common import normalize_qe_config_paths
 from qeflow.crystal.formula import get_formula
 from qeflow.crystal.poscar import parse_poscar
-from qeflow.qe_input_deck.bands import write_eband_inputs
-from qeflow.qe_input_deck.dos import write_eledos_inputs
-from qeflow.qe_input_deck.kpath import run_vaspkit_for_kpath
-from qeflow.qe_input_deck.lattice import validate_no_manual_lattice_params
-from qeflow.qe_input_deck.pw import PW_SECTIONS, write_nscf_inputs, write_scf_inputs
+from qeflow.input_deck.bands import write_eband_inputs
+from qeflow.input_deck.dos import write_eledos_inputs
+from qeflow.input_deck.kpath import run_vaspkit_for_kpath
+from qeflow.input_deck.lattice import validate_no_manual_lattice_params
+from qeflow.input_deck.pw import PW_SECTIONS, write_nscf_inputs, write_scf_inputs
 from qeflow.templates import (
     apply_qe_config_overrides,
     get_qe_eband_allowed_keys,

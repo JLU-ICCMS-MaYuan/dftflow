@@ -5,7 +5,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from qeflow.qe_io_reader.common import is_float
+from qeflow.io_reader.common import is_float
 
 
 def orbital_from_lm(l_val: int, m_val: int) -> str:

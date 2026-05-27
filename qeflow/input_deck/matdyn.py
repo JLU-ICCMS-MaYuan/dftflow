@@ -3,10 +3,10 @@ import copy
 import os
 from typing import Any, Dict
 
-from qeflow.qe_input_deck.filenames import derive_filenames
-from qeflow.qe_input_deck.kpath import build_matdyn_band_path, run_vaspkit_for_kpath
-from qeflow.qe_input_deck.ph import resolve_grid
-from qeflow.qe_input_deck.values import to_qe_value
+from qeflow.input_deck.filenames import derive_filenames
+from qeflow.input_deck.kpath import build_matdyn_band_path, run_vaspkit_for_kpath
+from qeflow.input_deck.ph import resolve_grid
+from qeflow.input_deck.values import to_qe_value
 
 
 def write_matdyn_phband_input(

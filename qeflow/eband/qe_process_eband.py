@@ -4,7 +4,7 @@ import argparse
 import re
 import numpy as np
 
-from qeflow.qe_io_reader.bands import (
+from qeflow.io_reader.bands import (
     parse_elebanddata,
     parse_projwfc_file,
     read_cell_from_pw_input,

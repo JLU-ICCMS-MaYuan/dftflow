@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from qeflow.phonon.context import PhononStepContext
-from qeflow.qe_input_deck.pw import write_phonon_scf_input
-from qeflow.qe_input_deck.scripts import write_root_run_script
+from qeflow.input_deck.pw import write_phonon_scf_input
+from qeflow.input_deck.scripts import write_root_run_script
 
 
 def prepare_root_scf_step(context: PhononStepContext) -> str:

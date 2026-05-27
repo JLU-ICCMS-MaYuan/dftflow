@@ -8,8 +8,8 @@ from qeflow.phonon import console
 from qeflow.phonon.context import PhononStepContext, create_context
 from qeflow.phonon.runner import print_stage, run_shell
 from qeflow.phonon.status_machine import refresh_workflow_status
-from qeflow.qe_input_deck.matdyn import write_matdyn_phdos_input
-from qeflow.qe_input_deck.scripts import write_root_run_script
+from qeflow.input_deck.matdyn import write_matdyn_phdos_input
+from qeflow.input_deck.scripts import write_root_run_script
 
 
 def prepare_matdyn_phdos_step(context: PhononStepContext) -> str:

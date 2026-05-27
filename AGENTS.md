@@ -24,15 +24,28 @@
 
 ## 需求处理记录
 
+### [2026-05-28] 去除 qeflow 内部 QE 模块目录前缀
+- **需求**：
+    1. 将 `qeflow/qe_check` 改名为 `qeflow/check`。
+    2. 将 `qeflow/qe_input_deck` 改名为 `qeflow/input_deck`。
+    3. 将 `qeflow/qe_io_reader` 改名为 `qeflow/io_reader`。
+    4. 将 `qeflow/qe_setup` 改名为 `qeflow/setup`。
+    5. 保持用户命令名兼容，例如 `qe_check` console script 不改名。
+- **方案**：
+    1. 直接移动四个目录，并全仓库更新 Python import、测试 monkeypatch、`pyproject.toml` console script 模块路径。
+    2. 更新 qeflow README 与 Mermaid 流程图索引，流程图文件名同步收敛为 `setup-flow.mmd` 与 `input-deck-flow.mmd`。
+    3. 运行聚焦 qeflow 测试，确认目录重命名不影响现有 CLI 行为。
+- **状态**：已完成。
+
 ### [2026-05-27] 删除 qeflow qe_input 并重建 QE 输入边界
 - **需求**：
     1. `qeflow/qe_input` 名称和职责过于混杂，需要彻底删除，不保留兼容 facade。
     2. 新边界需要清晰区分 QE Calculation Setup 生命周期、QE 原生 input deck 写出、晶体结构模型与声子 workspace。
     3. `scf.in` 中三种晶格写法相关的晶格参数推导应进入 `qeflow/crystal`，QE 语法写出留在 input deck writer。
 - **方案**：
-    1. 新增 `qeflow/qe_setup/`，迁移 `calculation_setup.py` 与 `cli_adapter.py`，仅负责计算目录生命周期编排。
-    2. 新增 `qeflow/qe_input_deck/`，按 `pw.py`、`ph.py`、`q2r.py`、`matdyn.py`、`bands.py`、`dos.py`、`lattice.py`、`scripts.py` 等拆分 QE 输入 deck 写出职责。
-    3. 新增 `qeflow/crystal/`，承载 POSCAR 解析、化学式、kmesh 与 `cell2ibrav` 晶格参数推导；`qe_input_deck/lattice.py` 只负责 QE 语法序列化。
+    1. 新增 `qeflow/setup/`，迁移 `calculation_setup.py` 与 `cli_adapter.py`，仅负责计算目录生命周期编排。
+    2. 新增 `qeflow/input_deck/`，按 `pw.py`、`ph.py`、`q2r.py`、`matdyn.py`、`bands.py`、`dos.py`、`lattice.py`、`scripts.py` 等拆分 QE 输入 deck 写出职责。
+    3. 新增 `qeflow/crystal/`，承载 POSCAR 解析、化学式、kmesh 与 `cell2ibrav` 晶格参数推导；`input_deck/lattice.py` 只负责 QE 语法序列化。
     4. 将旧 `qe_input/fileio.py` 拆为 `qeflow/phonon/workspace.py` 与 `qeflow/io_utils.py`，同步更新生产代码、测试、README、CONTEXT 和 Mermaid 流程图。
 - **状态**：已完成。
 
@@ -40,11 +53,11 @@
 - **需求**：
     1. 删除 qeflow 中旧版本遗留的 Python facade 和旧导入接口，内部全部使用解耦后的最新模块。
     2. 保留现有 CLI 命令名兼容，不破坏已有脚本入口。
-    3. 新增 `qe_io_reader` 模块，集中读取 QE 原生输入输出文件与 QE 后处理生成文件，包括 `pw.x` 的 `scf.out/nscf.out/eband.out`。
+    3. 新增 `io_reader` 模块，集中读取 QE 原生输入输出文件与 QE 后处理生成文件，包括 `pw.x` 的 `scf.out/nscf.out/eband.out`。
 - **方案**：
-    1. 新增 `qeflow/qe_io_reader/`，按 `common.py`、`pw.py`、`ph.py`、`bands.py`、`dos.py`、`matdyn.py` 拆分读取职责。
-    2. 删除 `qeflow/phonon/_shared.py`、`qeflow/qe_input/builders.py` 与 `qeflow/qe_check/outputs.py` 旧导入层，测试和生产代码改为直接依赖真实模块或 reader。
-    3. 将 `dyn0`、`qe_process_eband`、`qe_process_dos`、`phonon_tables`、`qe_check.checks` 的读取/解析路径收敛到 `qe_io_reader`，并删除 `qeflow/phonon/dyn0.py` 旧读取入口。
+    1. 新增 `qeflow/io_reader/`，按 `common.py`、`pw.py`、`ph.py`、`bands.py`、`dos.py`、`matdyn.py` 拆分读取职责。
+    2. 删除 `qeflow/phonon/_shared.py`、`qeflow/qe_input/builders.py` 与 `qeflow/check/outputs.py` 旧导入层，测试和生产代码改为直接依赖真实模块或 reader。
+    3. 将 `dyn0`、`qe_process_eband`、`qe_process_dos`、`phonon_tables`、`qe_check.checks` 的读取/解析路径收敛到 `io_reader`，并删除 `qeflow/phonon/dyn0.py` 旧读取入口。
     4. 保留 `qe_phonon_nosplit`、`qe_ph_nosplit` 等 CLI 命令名兼容，更新 qeflow README 中旧 facade 描述。
 - **状态**：已完成。
 
@@ -152,7 +165,7 @@
     1. 新增 `qeflow/phonon/process_phonon.py`，复用现有 `qe_q2r`、`qe_matdyn_phband`、`qe_matdyn_phdos` 的输入与脚本生成逻辑，并集中维护归档、绘图和 CSV 写出逻辑。
     2. 修改 `qe_matdyn_phband` 与 `qe_matdyn_phdos`，使单步 `-r/-s` 在 matdyn 完成后复用统一归档逻辑。
     3. 修改 `qe_phonon_nosplit`、`qe_phonon_split_index`、`qe_phonon_split_coords`，后处理阶段统一调用或提交 `submit_process_phonon.sh`。
-    4. 修改 `qeflow/qe_check/checks.py` 与 `qeflow/phonon/_shared.py`，把归档文件和 `phonon_plot` 纳入 `workflow_status.json` 刷新与打印。
+    4. 修改 `qeflow/check/checks.py` 与 `qeflow/phonon/_shared.py`，把归档文件和 `phonon_plot` 纳入 `workflow_status.json` 刷新与打印。
     5. 注册 `qe_process_phonon` console script，更新 README 与 Mermaid 流程图，并补充自动化测试覆盖脚本顺序、归档、CSV/PNG 和状态刷新。
 - **状态**：已完成。
 
@@ -189,7 +202,7 @@
     2. README 需要列出总览和分模块流程图入口。
 - **方案**：
     1. 新增 `qeflow/qeflow-cli-flow.mmd` 作为 qeflow 总览图。
-    2. 新增 `scf/nscf/eband/eledos/phonon/qe_check/qe_input` 子模块流程图，分别描述各 CLI 输入、生成文件、运行/提交路径和输出。
+    2. 新增 `scf/nscf/eband/eledos/phonon/check/qe_input` 子模块流程图，分别描述各 CLI 输入、生成文件、运行/提交路径和输出。
     3. 更新 `qeflow/README.md`，在开头补充 Mermaid 流程图索引。
 - **状态**：已完成。
 
@@ -1237,7 +1250,7 @@
     4. `qe_ph_split_assign_* -s` 在 split 全部完成后，需要先本地 merge；成功后再提交 `q2r + matdyn`，失败则打印完整缺失明细并停止。
 - **方案**：
     1. 在 `qeflow/phonon/workflow.py` 中新增 merge 检测、`run_merge.sh` 生成、根目录回收实现以及 split 四阶段推进逻辑。
-    2. 在 `qeflow/qe_check/checks.py` 中新增 `check_merge()`，通过 `q_index_map.json + 根目录 merge 产物` 判断 merge 状态，不再让 `q2r` 隐含承担“尚未 merge”语义。
+    2. 在 `qeflow/check/checks.py` 中新增 `check_merge()`，通过 `q_index_map.json + 根目录 merge 产物` 判断 merge 状态，不再让 `q2r` 隐含承担“尚未 merge”语义。
     3. 新增 `qeflow/phonon/qe_merge.py` 并在 `pyproject.toml` 注册 `qe_merge` 入口，`-r/-s` 对齐 `qe_q2r` 等单步 CLI。
     4. 更新 `qeflow/README.md` 与 `test_auto/MgB2/test_qe_phonon.py`，覆盖 merge 状态、四阶段提交、独立 `qe_merge`、split 本地 merge 后再提后处理等场景。
 - **状态**：已完成。

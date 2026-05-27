@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from public.config_templates import load_config_file
 from qeflow.common import normalize_qe_config_paths
-from qeflow.qe_input_deck.lattice import validate_no_manual_lattice_params
+from qeflow.input_deck.lattice import validate_no_manual_lattice_params
 from qeflow.templates import (
     apply_qe_config_overrides,
     get_qe_phonon_allowed_keys,

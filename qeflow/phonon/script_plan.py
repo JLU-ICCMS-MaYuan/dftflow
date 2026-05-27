@@ -7,7 +7,7 @@ from qeflow.phonon import console
 from qeflow.phonon.context import PhononStepContext
 from qeflow.phonon.q_index_map import iter_q_directory_names
 from qeflow.phonon.status_machine import ph_tasks
-from qeflow.qe_input_deck.scripts import write_root_run_script
+from qeflow.input_deck.scripts import write_root_run_script
 
 
 submit_script = console.submit_script

@@ -5,8 +5,8 @@ import re
 
 import numpy as np
 
-from qeflow.qe_io_reader.common import find_first_file, is_float
-from qeflow.qe_io_reader.dos import orbital_components, parse_pdos_filename, parse_projwfc_shells, parse_tdos
+from qeflow.io_reader.common import find_first_file, is_float
+from qeflow.io_reader.dos import orbital_components, parse_pdos_filename, parse_projwfc_shells, parse_tdos
 
 
 def parse_label(label):

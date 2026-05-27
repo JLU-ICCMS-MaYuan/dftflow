@@ -5,9 +5,9 @@ from public.job import write_job_script
 from qeflow.phonon import console
 from qeflow.phonon.context import PhononStepContext
 from qeflow.io_utils import dump_json
-from qeflow.qe_input_deck.ph import write_split_ph_input_assign_coords, write_split_ph_input_assign_index
-from qeflow.qe_input_deck.pw import write_phonon_scf_input
-from qeflow.qe_io_reader.ph import parse_dyn0_qpoints
+from qeflow.input_deck.ph import write_split_ph_input_assign_coords, write_split_ph_input_assign_index
+from qeflow.input_deck.pw import write_phonon_scf_input
+from qeflow.io_reader.ph import parse_dyn0_qpoints
 
 
 def _append_split_step_commands(commands, context: PhononStepContext, q_dir: str, q_name: str, step: str, command: str) -> None:

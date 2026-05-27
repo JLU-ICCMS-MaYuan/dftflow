@@ -4,8 +4,8 @@ import os
 import sys
 from typing import Any, Dict, Tuple
 
-from qeflow.qe_check.checks import check_ph, check_q2r, check_relax, check_scf
-from qeflow.qe_input_deck.prefix import resolve_prefix
+from qeflow.check.checks import check_ph, check_q2r, check_relax, check_scf
+from qeflow.input_deck.prefix import resolve_prefix
 from qeflow.phonon.workspace import resolve_workspace
 from qeflow.crystal.poscar import parse_poscar
 

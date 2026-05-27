@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
 
-from qeflow.qe_io_reader.common import float_values, has_error_marker, read_text_if_exists
+from qeflow.io_reader.common import float_values, has_error_marker, read_text_if_exists
 
 
 @dataclass

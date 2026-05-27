@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 
 from qeflow.phonon.workspace import resolve_workspace
-from qeflow.qe_input_deck.executables import build_qe_commands
-from qeflow.qe_input_deck.prefix import resolve_prefix
+from qeflow.input_deck.executables import build_qe_commands
+from qeflow.input_deck.prefix import resolve_prefix
 from qeflow.crystal.poscar import parse_poscar
 
 

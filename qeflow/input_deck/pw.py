@@ -6,12 +6,12 @@ import numpy as np
 
 from qeflow.common import resolve_atomic_species_entries
 from qeflow.crystal.kmesh import get_kpoints_from_spacing
-from qeflow.qe_input_deck.lattice import (
+from qeflow.input_deck.lattice import (
     write_atomic_positions,
     write_cell_parameters_if_needed,
     write_system_lattice,
 )
-from qeflow.qe_input_deck.values import to_qe_value
+from qeflow.input_deck.values import to_qe_value
 
 
 PW_SECTIONS = ("CONTROL", "SYSTEM", "ELECTRONS")

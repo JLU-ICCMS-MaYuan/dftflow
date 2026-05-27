@@ -6,7 +6,7 @@ from typing import List, Optional
 
 import numpy as np
 
-from qeflow.qe_io_reader.common import has_error_marker, read_text_if_exists
+from qeflow.io_reader.common import has_error_marker, read_text_if_exists
 
 
 @dataclass(frozen=True)

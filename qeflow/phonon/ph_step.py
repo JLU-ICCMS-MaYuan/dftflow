@@ -11,8 +11,8 @@ from qeflow.phonon.context import PhononStepContext, create_context
 from qeflow.phonon.root_steps import prepare_root_scf_step
 from qeflow.phonon.runner import print_stage, submit_or_run
 from qeflow.phonon.status_machine import refresh_workflow_status
-from qeflow.qe_input_deck.ph import write_ph_input
-from qeflow.qe_input_deck.scripts import write_root_run_script
+from qeflow.input_deck.ph import write_ph_input
+from qeflow.input_deck.scripts import write_root_run_script
 
 
 def prepare_ph_nosplit_step(context: PhononStepContext, dyn0_only: bool = False) -> str:

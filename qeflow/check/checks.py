@@ -2,9 +2,9 @@
 import os
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from qeflow.qe_io_reader.matdyn import MatdynOut, Q2rOut
-from qeflow.qe_io_reader.ph import PhOut
-from qeflow.qe_io_reader.pw import RelaxOut, ScfOut
+from qeflow.io_reader.matdyn import MatdynOut, Q2rOut
+from qeflow.io_reader.ph import PhOut
+from qeflow.io_reader.pw import RelaxOut, ScfOut
 from qeflow.io_utils import load_json
 from qeflow.phonon.workspace import list_split_directories
 

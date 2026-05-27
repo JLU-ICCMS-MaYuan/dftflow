@@ -7,9 +7,9 @@
   - [eband/eband-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/eband/eband-cli-flow.mmd)
   - [eledos/eledos-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/eledos/eledos-cli-flow.mmd)
   - [phonon/phonon-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/phonon/phonon-cli-flow.mmd)
-  - [qe_check/qe-check-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/qe_check/qe-check-cli-flow.mmd)
-  - [qe_setup/qe-setup-flow.mmd](/home/mayuan/code/dftflow/qeflow/qe_setup/qe-setup-flow.mmd)
-  - [qe_input_deck/qe-input-deck-flow.mmd](/home/mayuan/code/dftflow/qeflow/qe_input_deck/qe-input-deck-flow.mmd)
+  - [check/qe-check-cli-flow.mmd](/home/mayuan/code/dftflow/qeflow/check/qe-check-cli-flow.mmd)
+  - [setup/setup-flow.mmd](/home/mayuan/code/dftflow/qeflow/setup/setup-flow.mmd)
+  - [input_deck/input-deck-flow.mmd](/home/mayuan/code/dftflow/qeflow/input_deck/input-deck-flow.mmd)
   - [crystal/crystal-flow.mmd](/home/mayuan/code/dftflow/qeflow/crystal/crystal-flow.mmd)
 
 ## 1. `executable_path` 语义
@@ -32,9 +32,9 @@ executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
 - 默认模板定义在 [templates.py](/home/mayuan/code/dftflow/qeflow/templates.py)。
 - 递归覆盖逻辑定义在 [config_templates.py](/home/mayuan/code/dftflow/public/config_templates.py)。
 - `qe_phonon` 相关新 CLI 继续共用同一个 `[qe_phonon]` 配置块，不为每个命令单独拆 TOML 节。
-- `qe_scf`、`qe_nscf`、`qe_eband`、`qe_eledos` 统一通过 [qe_setup/calculation_setup.py](/home/mayuan/code/dftflow/qeflow/qe_setup/calculation_setup.py) 的 **QE Calculation Setup** 准备目录；各 CLI 只保留命令行 Adapter。
+- `qe_scf`、`qe_nscf`、`qe_eband`、`qe_eledos` 统一通过 [setup/calculation_setup.py](/home/mayuan/code/dftflow/qeflow/setup/calculation_setup.py) 的 **QE Calculation Setup** 准备目录；各 CLI 只保留命令行 Adapter。
 - POSCAR 解析、化学式、kmesh 派生和晶格参数推导集中在 [crystal/](/home/mayuan/code/dftflow/qeflow/crystal)，避免各计算类型重复维护结构读取规则。
-- QE 原生 `.in` 输入 deck 写出集中在 [qe_input_deck/](/home/mayuan/code/dftflow/qeflow/qe_input_deck)，`qe_setup` 只负责生命周期编排，不直接承载 deck 细节。
+- QE 原生 `.in` 输入 deck 写出集中在 [input_deck/](/home/mayuan/code/dftflow/qeflow/input_deck)，`setup` 只负责生命周期编排，不直接承载 deck 细节。
 - `[qe].lattice_mode` 控制 `pw.x` 输入里的晶格写法，默认 `ibrav_angstrom`。允许值：
   - `ibrav_angstrom`：自动调用 QE `cell2ibrav.x` 判断 `ibrav`，写出 `ibrav + A/B/C/cos*`，不写 `CELL_PARAMETERS`。
   - `ibrav_celldm`：自动判断 `ibrav`，写出 `ibrav + celldm(n)`。
@@ -117,10 +117,10 @@ qe_phonon_nosplit/
 - `qe_phonon_*` 工作目录只保留 `POSCAR` 副本，不再复制 `input.toml`；所有 CLI 都要求通过 `-c` 显式传入真实配置路径。
 - 声子工作流状态统一由 `qeflow.phonon.status_machine` 维护；`qe_check.checks` 只负责低层输出文件检查，`workflow_status.json` 的刷新、split task 汇总和续算阶段判断集中在状态机 Module。
 - `qe_phonon_split_index` 与 `qe_phonon_split_coords` 共用 `qeflow.phonon.split_workflow` 的对象式编排；两个 CLI 文件只保留 argparse 和 mode 选择，避免两条 split 链路行为分叉。
-- 声子工作流内部直接依赖 `context.py`、`runner.py`、`script_plan.py`、`q_index_map.py`、`root_steps.py`；QE 文件读取统一依赖 `qeflow.qe_io_reader`。
+- 声子工作流内部直接依赖 `context.py`、`runner.py`、`script_plan.py`、`q_index_map.py`、`root_steps.py`；QE 文件读取统一依赖 `qeflow.io_reader`。
 - 声子后处理拆分为 `postprocess_workflow.py`、`archive.py`、`phonon_tables.py`、`phonon_plot.py`；`process_phonon.py` 仅保留 CLI 和兼容 re-export。
 - split merge 规则集中在 `split_merge.py`，`qe_merge.py` 仅保留 CLI 输出与状态刷新。
-- 声子输入 deck 写出按 QE 程序拆分在 `qeflow.qe_input_deck.ph/q2r/matdyn/pw/scripts`；QE 文件读取集中在 `qeflow.qe_io_reader`。
+- 声子输入 deck 写出按 QE 程序拆分在 `qeflow.input_deck.ph/q2r/matdyn/pw/scripts`；QE 文件读取集中在 `qeflow.io_reader`。
 
 ## 6. `qe_check`
 当前实现的检查开关：

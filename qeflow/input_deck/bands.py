@@ -4,8 +4,8 @@ from typing import Any, Sequence
 
 import numpy as np
 
-from qeflow.qe_input_deck.kpath import compute_reciprocal_lattice, parse_kpath_segments
-from qeflow.qe_input_deck.pw import write_pw_input
+from qeflow.input_deck.kpath import compute_reciprocal_lattice, parse_kpath_segments
+from qeflow.input_deck.pw import write_pw_input
 
 
 def write_eband_inputs(setup: Any) -> None:

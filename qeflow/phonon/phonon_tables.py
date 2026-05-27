@@ -6,8 +6,8 @@ import numpy as np
 
 from qeflow.phonon.archive import PHBAND_DIR, PHDOS_DIR
 from qeflow.phonon.context import PhononStepContext
-from qeflow.qe_io_reader.matdyn import read_band_frequencies, read_labelinfo, read_numeric_rows
-from qeflow.qe_input_deck.filenames import derive_filenames
+from qeflow.io_reader.matdyn import read_band_frequencies, read_labelinfo, read_numeric_rows
+from qeflow.input_deck.filenames import derive_filenames
 
 
 def build_phonon_band_tables(context: PhononStepContext) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:

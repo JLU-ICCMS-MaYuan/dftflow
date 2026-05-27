@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
 from qeflow.phonon.q_index_map import load_q_index_entries, load_q_index_mode
-from qeflow.qe_check.checks import check_merge
+from qeflow.check.checks import check_merge
 
 
 @dataclass
@@ -166,7 +166,7 @@ def _resolve_ph_root(workdir: str) -> str:
 
 
 def _split_output_finished(path: str) -> bool:
-    from qeflow.qe_io_reader.ph import PhOut
+    from qeflow.io_reader.ph import PhOut
 
     return PhOut(path).is_finished()
 

@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-from qeflow.qe_io_reader.common import is_float
+from qeflow.io_reader.common import is_float
 
 
 def parse_tdos(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[float]]:
