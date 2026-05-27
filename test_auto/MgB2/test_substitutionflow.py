@@ -5,6 +5,9 @@ import sys
 from contextlib import redirect_stdout
 from pathlib import Path
 
+from qeflow.phonon.context import create_context
+from qeflow.phonon.root_steps import prepare_root_scf_step
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -424,7 +427,6 @@ def test_generate_cases_writes_full_case_input_config_for_qe_phonon(chdir_work):
 
 
 def test_case_input_supports_qe_phonon_prepare_from_pressure_directory(chdir_work):
-    from qeflow.phonon._shared import create_context, prepare_root_scf_step
     from substitutionflow.structure_substitution import generate_cases
 
     structure_path = Path("XAXBH7-P63mmc.vasp")
@@ -2528,7 +2530,6 @@ def test_prepare_qe_pseudo_copies_files_reuses_log_without_rewriting_case_input(
 
 
 def test_prepare_qe_pseudo_supports_qe_phonon_generated_inputs(chdir_work, monkeypatch):
-    from qeflow.phonon._shared import create_context, prepare_root_scf_step
     from substitutionflow.prepare_qe_pseudo import prepare_qe_pseudo_library
     from substitutionflow.structure_substitution import generate_cases
 

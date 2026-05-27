@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import shlex
-import sys
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from qeflow.phonon import console
@@ -143,9 +142,4 @@ def submit_split_stage_tasks(context: PhononStepContext, workflow: Dict[str, obj
 
 
 def _active_submit_script():
-    shared = sys.modules.get("qeflow.phonon._shared")
-    if shared is not None:
-        patched = getattr(shared, "submit_script", submit_script)
-        if patched is not submit_script:
-            return patched
     return submit_script

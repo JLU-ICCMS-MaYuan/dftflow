@@ -166,7 +166,7 @@ def _resolve_ph_root(workdir: str) -> str:
 
 
 def _split_output_finished(path: str) -> bool:
-    from qeflow.qe_check.outputs import PhOut
+    from qeflow.qe_io_reader.ph import PhOut
 
     return PhOut(path).is_finished()
 

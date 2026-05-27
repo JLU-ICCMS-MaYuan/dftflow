@@ -114,10 +114,10 @@ qe_phonon_nosplit/
 - `qe_phonon_*` 工作目录只保留 `POSCAR` 副本，不再复制 `input.toml`；所有 CLI 都要求通过 `-c` 显式传入真实配置路径。
 - 声子工作流状态统一由 `qeflow.phonon.status_machine` 维护；`qe_check.checks` 只负责低层输出文件检查，`workflow_status.json` 的刷新、split task 汇总和续算阶段判断集中在状态机 Module。
 - `qe_phonon_split_index` 与 `qe_phonon_split_coords` 共用 `qeflow.phonon.split_workflow` 的对象式编排；两个 CLI 文件只保留 argparse 和 mode 选择，避免两条 split 链路行为分叉。
-- `qeflow.phonon._shared` 已收敛为兼容 facade；新的内部调用应直接依赖 `context.py`、`runner.py`、`script_plan.py`、`q_index_map.py`、`dyn0.py`、`root_steps.py`。
+- 声子工作流内部直接依赖 `context.py`、`runner.py`、`script_plan.py`、`q_index_map.py`、`root_steps.py`；QE 文件读取统一依赖 `qeflow.qe_io_reader`。
 - 声子后处理拆分为 `postprocess_workflow.py`、`archive.py`、`phonon_tables.py`、`phonon_plot.py`；`process_phonon.py` 仅保留 CLI 和兼容 re-export。
 - split merge 规则集中在 `split_merge.py`，`qe_merge.py` 仅保留 CLI 输出与状态刷新。
-- 声子输入 deck 写出集中在 `qeflow.qe_input.phonon_input`；`qeflow.qe_input.builders` 仅作为旧导入路径的兼容 facade。
+- 声子输入 deck 写出集中在 `qeflow.qe_input.phonon_input`；QE 文件读取集中在 `qeflow.qe_io_reader`。
 
 ## 6. `qe_check`
 当前实现的检查开关：

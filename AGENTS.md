@@ -24,6 +24,18 @@
 
 ## 需求处理记录
 
+### [2026-05-27] 删除 qeflow 旧 facade 并新增 QE IO Reader
+- **需求**：
+    1. 删除 qeflow 中旧版本遗留的 Python facade 和旧导入接口，内部全部使用解耦后的最新模块。
+    2. 保留现有 CLI 命令名兼容，不破坏已有脚本入口。
+    3. 新增 `qe_io_reader` 模块，集中读取 QE 原生输入输出文件与 QE 后处理生成文件，包括 `pw.x` 的 `scf.out/nscf.out/eband.out`。
+- **方案**：
+    1. 新增 `qeflow/qe_io_reader/`，按 `common.py`、`pw.py`、`ph.py`、`bands.py`、`dos.py`、`matdyn.py` 拆分读取职责。
+    2. 删除 `qeflow/phonon/_shared.py`、`qeflow/qe_input/builders.py` 与 `qeflow/qe_check/outputs.py` 旧导入层，测试和生产代码改为直接依赖真实模块或 reader。
+    3. 将 `dyn0`、`qe_process_eband`、`qe_process_dos`、`phonon_tables`、`qe_check.checks` 的读取/解析路径收敛到 `qe_io_reader`，并删除 `qeflow/phonon/dyn0.py` 旧读取入口。
+    4. 保留 `qe_phonon_nosplit`、`qe_ph_nosplit` 等 CLI 命令名兼容，更新 qeflow README 中旧 facade 描述。
+- **状态**：已完成。
+
 ### [2026-05-27] 深化 qeflow 架构并解耦 phonon 公共模块
 - **需求**：
     1. 按架构巡检候选 1-5 继续重构 qeflow，改善函数名称、模块名称、复用边界和耦合情况。

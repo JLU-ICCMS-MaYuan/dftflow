@@ -6,6 +6,12 @@ import sys
 import tomllib
 from pathlib import Path
 
+from qeflow.phonon.context import create_context
+from qeflow.phonon.q_index_map import load_q_index_entries
+from qeflow.phonon.root_steps import prepare_root_scf_step
+from qeflow.phonon.script_plan import submit_split_stage_tasks, write_split_stage_script
+from qeflow.phonon.status_machine import refresh_workflow_status
+
 
 MINIMAL_QGRID_XML = """<root>
   <output>
@@ -232,7 +238,7 @@ def test_qe_phonon_cli_registration_uses_short_split_names(chdir_work):
 
 
 def test_parse_dyn0_qpoints_uses_ph_generated_order(chdir_work):
-    from qeflow.phonon._shared import parse_dyn0_qpoints
+    from qeflow.qe_io_reader.ph import parse_dyn0_qpoints
 
     dyn0_path = Path("Mg1B2.dyn0")
     dyn0_path.write_text(
@@ -309,7 +315,6 @@ def test_ph_step_dyn0_run_uses_background_stop(chdir_work, monkeypatch):
 
 
 def test_split_prepare_index_materializes_split_dirs(chdir_work):
-    from qeflow.phonon import _shared
     from qeflow.phonon.split_prepare import prepare_split_assign_index_step
     from qeflow.qe_input.fileio import load_json
 
@@ -321,7 +326,7 @@ def test_split_prepare_index_materializes_split_dirs(chdir_work):
     _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
     _write_job_done(workdir / "scf.out")
 
-    prepare_split_assign_index_step(_shared.create_context(str(workdir / "input.toml"), None))
+    prepare_split_assign_index_step(create_context(str(workdir / "input.toml"), None))
 
     assert (workdir / "01" / "scf.in").exists()
     assert (workdir / "01" / "split_ph.in").exists()
@@ -333,7 +338,6 @@ def test_split_prepare_index_materializes_split_dirs(chdir_work):
 
 
 def test_split_prepare_coords_writes_single_q_coordinate(chdir_work):
-    from qeflow.phonon import _shared
     from qeflow.phonon.split_prepare import prepare_split_assign_coords_step
     from qeflow.qe_input.fileio import load_json
 
@@ -345,7 +349,7 @@ def test_split_prepare_coords_writes_single_q_coordinate(chdir_work):
     _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
     _write_job_done(workdir / "scf.out")
 
-    prepare_split_assign_coords_step(_shared.create_context(str(workdir / "input.toml"), None))
+    prepare_split_assign_coords_step(create_context(str(workdir / "input.toml"), None))
 
     content = (workdir / "01" / "split_ph.in").read_text(encoding="utf-8")
     assert "ldisp = .false." in content
@@ -453,14 +457,13 @@ def test_qe_phonon_nosplit_prepares_all_root_inputs(chdir_work, monkeypatch):
 
 
 def test_qe_value_keeps_fortran_float_literals_unquoted():
-    from qeflow.qe_input.builders import to_qe_value
+    from qeflow.qe_input.phonon_input import to_qe_value
 
     assert to_qe_value("1.0d-6") == "1.0d-6"
     assert to_qe_value("1.0D-7") == "1.0D-7"
 
 
 def test_qe_phonon_nosplit_run_pushes_full_chain_from_scf(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_phonon_nosplit as module
 
     workdir = Path("qe_phonon_nosplit")
@@ -486,7 +489,7 @@ def test_qe_phonon_nosplit_run_pushes_full_chain_from_scf(chdir_work, monkeypatc
             _write_job_done(cwd_path / "matdyn_phdos.out")
             _write_phdos_fixture(cwd_path / "Mg1B2.phdos.dat")
 
-    monkeypatch.setattr(_shared, "run_shell", fake_run_shell)
+    monkeypatch.setattr("qeflow.phonon.runner.run_shell", fake_run_shell)
     module.run_phonon_nosplit_workflow("input_qe.toml", "MgB2.vasp", run_calc=True, submit_job=False)
 
     assert executed == [
@@ -501,7 +504,6 @@ def test_qe_phonon_nosplit_run_pushes_full_chain_from_scf(chdir_work, monkeypatc
 
 
 def test_qe_phonon_nosplit_run_continues_from_ph_and_finishes(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_phonon_nosplit as module
 
     workdir = Path("qe_phonon_nosplit")
@@ -530,7 +532,7 @@ def test_qe_phonon_nosplit_run_continues_from_ph_and_finishes(chdir_work, monkey
             _write_job_done(cwd_path / "matdyn_phdos.out")
             _write_phdos_fixture(cwd_path / "Mg1B2.phdos.dat")
 
-    monkeypatch.setattr(_shared, "run_shell", fake_run_shell)
+    monkeypatch.setattr("qeflow.phonon.runner.run_shell", fake_run_shell)
     module.run_phonon_nosplit_workflow(str(workdir / "input.toml"), None, run_calc=True, submit_job=False)
 
     assert executed == [
@@ -542,7 +544,6 @@ def test_qe_phonon_nosplit_run_continues_from_ph_and_finishes(chdir_work, monkey
 
 
 def test_qe_phonon_nosplit_run_continues_from_q2r_and_finishes(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_phonon_nosplit as module
 
     workdir = Path("qe_phonon_nosplit")
@@ -569,7 +570,7 @@ def test_qe_phonon_nosplit_run_continues_from_q2r_and_finishes(chdir_work, monke
             _write_job_done(cwd_path / "matdyn_phdos.out")
             _write_phdos_fixture(cwd_path / "Mg1B2.phdos.dat")
 
-    monkeypatch.setattr(_shared, "run_shell", fake_run_shell)
+    monkeypatch.setattr("qeflow.phonon.runner.run_shell", fake_run_shell)
     module.run_phonon_nosplit_workflow(str(workdir / "input.toml"), None, run_calc=True, submit_job=False)
 
     assert executed == [
@@ -579,11 +580,10 @@ def test_qe_phonon_nosplit_run_continues_from_q2r_and_finishes(chdir_work, monke
 
 
 def test_qe_process_phonon_script_archives_after_each_matdyn_step(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import process_phonon as module
 
     monkeypatch.setattr("qeflow.qe_input.phonon_input.run_vaspkit_for_kpath", lambda target_dir: _write_kpath(Path(target_dir) / "KPATH.in"))
-    context = _shared.create_context("input_qe.toml", "MgB2.vasp")
+    context = create_context("input_qe.toml", "MgB2.vasp")
 
     script_path = Path(module.prepare_process_phonon_step(context))
     script = script_path.read_text(encoding="utf-8")
@@ -596,11 +596,10 @@ def test_qe_process_phonon_script_archives_after_each_matdyn_step(chdir_work, mo
 
 
 def test_qe_process_phonon_collects_plots_and_marks_status(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import process_phonon as module
 
     monkeypatch.setattr("qeflow.qe_input.phonon_input.run_vaspkit_for_kpath", lambda target_dir: _write_kpath(Path(target_dir) / "KPATH.in"))
-    context = _shared.create_context("input_qe.toml", "MgB2.vasp")
+    context = create_context("input_qe.toml", "MgB2.vasp")
     workdir = Path(context.workspace)
     _write_job_done(workdir / "matdyn_phband.out")
     _write_job_done(workdir / "matdyn_phdos.out")
@@ -611,13 +610,13 @@ def test_qe_process_phonon_collects_plots_and_marks_status(chdir_work, monkeypat
     module.collect_phband_outputs(context)
     module.collect_phdos_outputs(context)
 
-    status = _shared.refresh_workflow_status(context.workspace, context.prefix)
+    status = refresh_workflow_status(context.workspace, context.prefix)
     assert status["matdyn_phband"] == "finished"
     assert status["matdyn_phdos"] == "finished"
     assert status["phonon_plot"] == "unstarted"
 
     module.plot_phonon_outputs(context)
-    status = _shared.refresh_workflow_status(context.workspace, context.prefix)
+    status = refresh_workflow_status(context.workspace, context.prefix)
 
     assert status["phonon_plot"] == "finished"
     band_rows = list(csv.DictReader((workdir / "phband" / "phonon_band.csv").open(encoding="utf-8")))
@@ -634,12 +633,12 @@ def test_qe_process_phonon_collects_plots_and_marks_status(chdir_work, monkeypat
 
 
 def test_qe_process_phonon_keeps_legacy_freq_line_compatibility(chdir_work):
-    from qeflow.phonon import process_phonon as module
+    from qeflow.qe_io_reader.matdyn import read_band_frequencies
 
     freq_path = Path("legacy.phband.freq")
     _write_phband_legacy_fixture(freq_path)
 
-    rows = module._read_band_frequencies(str(freq_path), 9)
+    rows = read_band_frequencies(str(freq_path), 9)
 
     assert rows == [[3.3356, 6.6712, 10.0068, 13.3424, 16.6780, 20.0136, 23.3492, 26.6848, 30.0204]]
 
@@ -667,7 +666,6 @@ def test_qe_process_phonon_collect_uses_current_split_index_workspace(chdir_work
 
 
 def test_qe_process_phonon_run_executes_q2r_matdyn_collect_and_plot(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import process_phonon as module
 
     monkeypatch.setattr("qeflow.qe_input.phonon_input.run_vaspkit_for_kpath", lambda target_dir: _write_kpath(Path(target_dir) / "KPATH.in"))
@@ -687,7 +685,7 @@ def test_qe_process_phonon_run_executes_q2r_matdyn_collect_and_plot(chdir_work, 
             _write_job_done(cwd_path / "matdyn_phdos.out")
             _write_phdos_fixture(cwd_path / "Mg1B2.phdos.dat")
 
-    monkeypatch.setattr(_shared, "run_shell", fake_run_shell)
+    monkeypatch.setattr("qeflow.phonon.runner.run_shell", fake_run_shell)
 
     result = module.run_process_phonon("input_qe.toml", "MgB2.vasp", True, False, False, False)
 
@@ -815,7 +813,6 @@ def test_qe_phonon_split_coords_uses_short_default_workdir_when_not_configured(c
 
 
 def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_split_submit
     from qeflow.phonon import split_prepare as split_module
     from qeflow.phonon import qe_phonon_split_assign_index as module
@@ -827,7 +824,7 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
         submitted.append((os.path.basename(workdir), script_name))
 
     monkeypatch.setattr(module, "submit_script", fake_submit_script)
-    monkeypatch.setattr(_shared, "submit_script", fake_submit_script)
+    monkeypatch.setattr("qeflow.phonon.script_plan.submit_script", fake_submit_script)
     monkeypatch.setattr(qe_split_submit, "submit_script", fake_submit_script)
     module.run_phonon_split_assign_index_workflow("input_qe.toml", "MgB2.vasp", run_calc=False, submit_job=True)
 
@@ -854,7 +851,7 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
     _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
     _prepare_xml_fixture(Path("."))
     split_module.prepare_split_assign_index_step(
-        _shared.create_context("input_qe.toml", "MgB2.vasp", workflow_name="qe_phonon_split_index")
+        create_context("input_qe.toml", "MgB2.vasp", workflow_name="qe_phonon_split_index")
     )
     submitted.clear()
 
@@ -883,7 +880,7 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
 
     module.run_phonon_split_assign_index_workflow("input_qe.toml", "MgB2.vasp", run_calc=False, submit_job=True)
     assert submitted == [("qe_phonon_split_index", "submit_merge_and_process_phonon.sh")]
-    status = _shared.refresh_workflow_status(str(workdir), "Mg1B2")
+    status = refresh_workflow_status(str(workdir), "Mg1B2")
     assert status["merge"] == "unstarted"
     assert not (workdir / "submit_merge_stage.sh").exists()
     assert not (workdir / "run_merge.sh").exists()
@@ -903,7 +900,6 @@ def test_qe_phonon_split_submit_uses_four_stage_progression(chdir_work, monkeypa
 
 
 def test_qe_phonon_split_coords_submit_dispatches_each_q_task_directly(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_split_submit
     from qeflow.phonon import split_prepare as split_module
     from qeflow.phonon import qe_phonon_split_assign_coords as module
@@ -915,7 +911,7 @@ def test_qe_phonon_split_coords_submit_dispatches_each_q_task_directly(chdir_wor
         submitted.append((os.path.basename(workdir), script_name))
 
     monkeypatch.setattr(module, "submit_script", fake_submit_script)
-    monkeypatch.setattr(_shared, "submit_script", fake_submit_script)
+    monkeypatch.setattr("qeflow.phonon.script_plan.submit_script", fake_submit_script)
     monkeypatch.setattr(qe_split_submit, "submit_script", fake_submit_script)
     module.run_phonon_split_assign_coords_workflow("input_qe.toml", "MgB2.vasp", run_calc=False, submit_job=False)
 
@@ -924,7 +920,7 @@ def test_qe_phonon_split_coords_submit_dispatches_each_q_task_directly(chdir_wor
     _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
     _prepare_xml_fixture(Path("."))
     split_module.prepare_split_assign_coords_step(
-        _shared.create_context("input_qe.toml", "MgB2.vasp", workflow_name="qe_phonon_split_coords")
+        create_context("input_qe.toml", "MgB2.vasp", workflow_name="qe_phonon_split_coords")
     )
 
     module.run_phonon_split_assign_coords_workflow("input_qe.toml", "MgB2.vasp", run_calc=False, submit_job=True)
@@ -935,7 +931,6 @@ def test_qe_phonon_split_coords_submit_dispatches_each_q_task_directly(chdir_wor
 
 
 def test_qe_phonon_split_run_merges_then_postprocesses_after_all_q_finished(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import split_prepare as split_module
     from qeflow.phonon import qe_phonon_split_assign_index as module
 
@@ -949,9 +944,9 @@ def test_qe_phonon_split_run_merges_then_postprocesses_after_all_q_finished(chdi
     _write_kpath(workdir / "KPATH.in")
     monkeypatch.setattr("qeflow.qe_input.phonon_input.run_vaspkit_for_kpath", lambda target_dir: None)
     split_module.prepare_split_assign_index_step(
-        _shared.create_context(str(workdir / "input.toml"), None, workflow_name="qe_phonon_split_index")
+        create_context(str(workdir / "input.toml"), None, workflow_name="qe_phonon_split_index")
     )
-    q_map = _shared.load_q_index_entries(str(workdir))
+    q_map = load_q_index_entries(str(workdir))
     for entry in q_map:
         q_dir = workdir / str(entry["directory"])
         _write_split_merge_outputs(q_dir, "Mg1B2", int(entry["index"]))
@@ -970,7 +965,7 @@ def test_qe_phonon_split_run_merges_then_postprocesses_after_all_q_finished(chdi
             _write_job_done(Path(cwd) / "matdyn_phdos.out")
             _write_phdos_fixture(Path(cwd) / "Mg1B2.phdos.dat")
 
-    monkeypatch.setattr(_shared, "run_shell", fake_run_shell)
+    monkeypatch.setattr("qeflow.phonon.runner.run_shell", fake_run_shell)
     module.run_phonon_split_assign_index_workflow(str(workdir / "input.toml"), None, run_calc=True, submit_job=False)
 
     assert commands == [
@@ -983,7 +978,6 @@ def test_qe_phonon_split_run_merges_then_postprocesses_after_all_q_finished(chdi
 
 
 def test_qe_phonon_split_run_materializes_split_inputs_after_dyn0(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_phonon_split_assign_index as module
 
     workdir = Path("qe_phonon_split_index")
@@ -998,7 +992,7 @@ def test_qe_phonon_split_run_materializes_split_inputs_after_dyn0(chdir_work, mo
         Path(output_path).write_text("partial\n", encoding="utf-8")
         _prepare_xml_fixture(Path("."))
 
-    monkeypatch.setattr(_shared, "run_shell", fake_run_shell)
+    monkeypatch.setattr("qeflow.phonon.runner.run_shell", fake_run_shell)
     monkeypatch.setattr(module, "split_run_shell", fake_run_shell)
     monkeypatch.setattr(module, "run_ph_to_dyn0", fake_dyn0)
     module.run_phonon_split_assign_index_workflow("input_qe.toml", "MgB2.vasp", run_calc=True, submit_job=False)
@@ -1020,9 +1014,8 @@ def test_qe_phonon_nosplit_uses_short_default_workdir_when_not_configured(chdir_
 
 
 def test_create_context_keeps_case_config_as_only_truth_source(chdir_work):
-    from qeflow.phonon import _shared
-
-    context = _shared.create_context("input_qe.toml", "MgB2.vasp", workflow_name="qe_phonon_split_index")
+    
+    context = create_context("input_qe.toml", "MgB2.vasp", workflow_name="qe_phonon_split_index")
 
     assert Path(context.workspace, "POSCAR").exists()
     assert not Path(context.workspace, "input.toml").exists()
@@ -1054,7 +1047,6 @@ def test_qe_phonon_explicit_workdir_overrides_all_default_workdirs(chdir_work, m
 
 
 def test_qe_merge_collects_outputs_by_q_index_map(chdir_work, capsys):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_merge as module
     from qeflow.phonon import split_prepare as split_module
 
@@ -1065,9 +1057,9 @@ def test_qe_merge_collects_outputs_by_q_index_map(chdir_work, capsys):
     _prepare_xml_fixture(Path("."))
     _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
     _write_job_done(workdir / "scf.out")
-    split_module.prepare_split_assign_index_step(_shared.create_context(str(workdir / "input.toml"), None))
+    split_module.prepare_split_assign_index_step(create_context(str(workdir / "input.toml"), None))
 
-    for entry in _shared.load_q_index_entries(str(workdir)):
+    for entry in load_q_index_entries(str(workdir)):
         _write_split_merge_outputs(workdir / str(entry["directory"]), "Mg1B2", int(entry["index"]))
 
     result = module.run_merge_step(str(workdir / "input.toml"), None)
@@ -1079,12 +1071,11 @@ def test_qe_merge_collects_outputs_by_q_index_map(chdir_work, capsys):
     assert (workdir / "_ph0" / "Mg1B2.phsave" / "control_ph.xml").exists()
     assert (workdir / "_ph0" / "Mg1B2.q_1" / "dvscf").exists()
     assert "Mg1B2.dyn1" in capsys.readouterr().out
-    status = _shared.refresh_workflow_status(str(workdir), "Mg1B2")
+    status = refresh_workflow_status(str(workdir), "Mg1B2")
     assert status["merge"] == "finished"
 
 
 def test_qe_merge_coords_accepts_plain_dyn_and_root_ph0_dvscf(chdir_work, capsys):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_merge as module
     from qeflow.phonon import split_prepare as split_module
 
@@ -1095,9 +1086,9 @@ def test_qe_merge_coords_accepts_plain_dyn_and_root_ph0_dvscf(chdir_work, capsys
     _prepare_xml_fixture(Path("."))
     _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
     _write_job_done(workdir / "scf.out")
-    split_module.prepare_split_assign_coords_step(_shared.create_context(str(workdir / "input.toml"), None))
+    split_module.prepare_split_assign_coords_step(create_context(str(workdir / "input.toml"), None))
 
-    for entry in _shared.load_q_index_entries(str(workdir)):
+    for entry in load_q_index_entries(str(workdir)):
         _write_split_merge_outputs_coords(workdir / str(entry["directory"]), "Mg1B2", int(entry["index"]))
 
     result = module.run_merge_step(str(workdir / "input.toml"), None)
@@ -1108,12 +1099,11 @@ def test_qe_merge_coords_accepts_plain_dyn_and_root_ph0_dvscf(chdir_work, capsys
     assert not (workdir / "_ph0" / "Mg1B2.q_1").exists()
     assert (workdir / "_ph0" / "Mg1B2.phsave" / "patterns.1.xml").exists()
     assert "Mg1B2.dyn1" in capsys.readouterr().out
-    status = _shared.refresh_workflow_status(str(workdir), "Mg1B2")
+    status = refresh_workflow_status(str(workdir), "Mg1B2")
     assert status["merge"] == "finished"
 
 
 def test_qe_merge_index_accepts_first_q_root_dvscf_special_case(chdir_work):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_merge as module
     from qeflow.phonon import split_prepare as split_module
 
@@ -1124,9 +1114,9 @@ def test_qe_merge_index_accepts_first_q_root_dvscf_special_case(chdir_work):
     _prepare_xml_fixture(Path("."))
     _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
     _write_job_done(workdir / "scf.out")
-    split_module.prepare_split_assign_index_step(_shared.create_context(str(workdir / "input.toml"), None))
+    split_module.prepare_split_assign_index_step(create_context(str(workdir / "input.toml"), None))
 
-    for entry in _shared.load_q_index_entries(str(workdir)):
+    for entry in load_q_index_entries(str(workdir)):
         q_dir = workdir / str(entry["directory"])
         index = int(entry["index"])
         _write_split_merge_outputs(q_dir, "Mg1B2", index)
@@ -1142,12 +1132,11 @@ def test_qe_merge_index_accepts_first_q_root_dvscf_special_case(chdir_work):
     assert (workdir / "_ph0" / "Mg1B2.q_2" / "dvscf").exists()
     assert (workdir / "_ph0" / "Mg1B2.phsave" / "patterns.1.xml").exists()
     assert (workdir / "_ph0" / "Mg1B2.phsave" / "patterns.2.xml").exists()
-    status = _shared.refresh_workflow_status(str(workdir), "Mg1B2")
+    status = refresh_workflow_status(str(workdir), "Mg1B2")
     assert status["merge"] == "finished"
 
 
 def test_qe_merge_reports_all_missing_items_without_early_exit(chdir_work, capsys):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_merge as module
     from qeflow.phonon import split_prepare as split_module
 
@@ -1158,9 +1147,9 @@ def test_qe_merge_reports_all_missing_items_without_early_exit(chdir_work, capsy
     _prepare_xml_fixture(Path("."))
     _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
     _write_job_done(workdir / "scf.out")
-    split_module.prepare_split_assign_index_step(_shared.create_context(str(workdir / "input.toml"), None))
+    split_module.prepare_split_assign_index_step(create_context(str(workdir / "input.toml"), None))
 
-    q_map = _shared.load_q_index_entries(str(workdir))
+    q_map = load_q_index_entries(str(workdir))
     first = q_map[0]
     first_dir = workdir / str(first["directory"])
     _write_job_done(first_dir / "scf.out")
@@ -1173,12 +1162,11 @@ def test_qe_merge_reports_all_missing_items_without_early_exit(chdir_work, capsy
     assert "缺少 split_ph.in" not in captured
     assert "缺少候选源文件" in captured
     assert "未完成，禁止 merge" in captured
-    status = _shared.refresh_workflow_status(str(workdir), "Mg1B2")
+    status = refresh_workflow_status(str(workdir), "Mg1B2")
     assert status["merge"] == "unstarted"
 
 
 def test_qe_phonon_split_submit_merges_locally_then_submits_postprocess(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_phonon_split_assign_index as module
     from qeflow.phonon import split_prepare
 
@@ -1192,9 +1180,9 @@ def test_qe_phonon_split_submit_merges_locally_then_submits_postprocess(chdir_wo
     _write_kpath(workdir / "KPATH.in")
     monkeypatch.setattr("qeflow.qe_input.phonon_input.run_vaspkit_for_kpath", lambda target_dir: None)
     split_prepare.prepare_split_assign_index_step(
-        _shared.create_context(str(workdir / "input.toml"), None, workflow_name="qe_phonon_split_index")
+        create_context(str(workdir / "input.toml"), None, workflow_name="qe_phonon_split_index")
     )
-    for entry in _shared.load_q_index_entries(str(workdir)):
+    for entry in load_q_index_entries(str(workdir)):
         _write_split_merge_outputs(workdir / str(entry["directory"]), "Mg1B2", int(entry["index"]))
 
     submitted = []
@@ -1215,7 +1203,6 @@ def test_qe_phonon_split_submit_merges_locally_then_submits_postprocess(chdir_wo
 
 
 def test_qe_phonon_split_submit_defers_merge_errors_to_slurm_script(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
     from qeflow.phonon import qe_phonon_split_assign_index as module
     from qeflow.phonon import split_prepare
 
@@ -1227,9 +1214,9 @@ def test_qe_phonon_split_submit_defers_merge_errors_to_slurm_script(chdir_work, 
     _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
     _write_job_done(workdir / "scf.out")
     split_prepare.prepare_split_assign_index_step(
-        _shared.create_context(str(workdir / "input.toml"), None, workflow_name="qe_phonon_split_index")
+        create_context(str(workdir / "input.toml"), None, workflow_name="qe_phonon_split_index")
     )
-    for entry in _shared.load_q_index_entries(str(workdir)):
+    for entry in load_q_index_entries(str(workdir)):
         q_dir = workdir / str(entry["directory"])
         _write_job_done(q_dir / "scf.out")
         _write_job_done(q_dir / "split_ph.out")
@@ -1247,7 +1234,6 @@ def test_qe_phonon_split_submit_defers_merge_errors_to_slurm_script(chdir_work, 
 
 
 def test_refresh_workflow_status_uses_ph_tasks_as_only_split_source(chdir_work):
-    from qeflow.phonon import _shared
     from qeflow.phonon import status_machine
     from qeflow.phonon import split_prepare as split_module
     from qeflow.qe_input.fileio import load_json
@@ -1259,9 +1245,9 @@ def test_refresh_workflow_status_uses_ph_tasks_as_only_split_source(chdir_work):
     _prepare_xml_fixture(Path("."))
     _write_dyn0_fixture(workdir / "Mg1B2.dyn0")
     _write_job_done(workdir / "scf.out")
-    split_module.prepare_split_assign_index_step(_shared.create_context(str(workdir / "input.toml"), None))
+    split_module.prepare_split_assign_index_step(create_context(str(workdir / "input.toml"), None))
 
-    entries = _shared.load_q_index_entries(str(workdir))
+    entries = load_q_index_entries(str(workdir))
     first_q_dir = workdir / str(entries[0]["directory"])
     _write_job_done(first_q_dir / "scf.out")
     _write_job_done(first_q_dir / "split_ph.out")
@@ -1333,8 +1319,7 @@ def test_split_resume_point_uses_first_non_finished_step(chdir_work, capsys):
 
 
 def test_write_split_stage_script_and_submit_use_ph_tasks_states(chdir_work, monkeypatch):
-    from qeflow.phonon import _shared
-
+    
     workdir = Path("qe_phonon")
     workdir.mkdir()
     for q_name in ("01", "02", "03"):
@@ -1346,7 +1331,7 @@ def test_write_split_stage_script_and_submit_use_ph_tasks_states(chdir_work, mon
         encoding="utf-8",
     )
 
-    context = _shared.create_context("input_qe.toml", "MgB2.vasp")
+    context = create_context("input_qe.toml", "MgB2.vasp")
     context.workspace = str(workdir)
     context.config["slurm"]["header"] = ""
     workflow = {
@@ -1359,13 +1344,13 @@ def test_write_split_stage_script_and_submit_use_ph_tasks_states(chdir_work, mon
         }
     }
 
-    script = _shared.write_split_stage_script(context, workflow)
+    script = write_split_stage_script(context, workflow)
     content = Path(script).read_text(encoding="utf-8")
     assert "cd 03" in content
     assert "cd 01" not in content
     assert "cd 02" in content
 
     submitted = []
-    monkeypatch.setattr(_shared, "submit_script", lambda cwd, script_name: submitted.append((os.path.basename(cwd), script_name)))
-    assert _shared.submit_split_stage_tasks(context, workflow) == 2
+    monkeypatch.setattr("qeflow.phonon.script_plan.submit_script", lambda cwd, script_name: submitted.append((os.path.basename(cwd), script_name)))
+    assert submit_split_stage_tasks(context, workflow) == 2
     assert submitted == [("02", "run_split.sh"), ("03", "run_split.sh")]

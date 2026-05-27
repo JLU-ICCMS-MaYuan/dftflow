@@ -14,7 +14,7 @@ from qeflow.phonon.archive import (
     phonon_plot_files,
 )
 from qeflow.phonon.phonon_plot import plot_phonon_outputs
-from qeflow.phonon.phonon_tables import _read_band_frequencies, build_phonon_band_tables, build_phonon_dos_tables
+from qeflow.phonon.phonon_tables import build_phonon_band_tables, build_phonon_dos_tables
 from qeflow.phonon.postprocess_workflow import (
     PROCESS_SCRIPT,
     prepare_matdyn_phband_collect_step,

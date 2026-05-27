@@ -2,7 +2,6 @@
 import os
 import shlex
 import subprocess
-import sys
 from typing import Dict, Iterable, Optional
 
 from qeflow.phonon import console
@@ -48,9 +47,4 @@ def run_root_scripts(
 
 
 def _active_run_shell():
-    shared = sys.modules.get("qeflow.phonon._shared")
-    if shared is not None:
-        patched = getattr(shared, "run_shell", run_shell)
-        if patched is not run_shell:
-            return patched
     return run_shell

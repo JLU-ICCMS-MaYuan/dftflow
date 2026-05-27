@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import os
 import shlex
-import sys
 from typing import Optional
 
 from qeflow.phonon import console
+from qeflow.phonon import runner as runner_module
 from qeflow.phonon.archive import (
     build_collect_phband_commands,
     build_collect_phdos_commands,
@@ -18,7 +18,7 @@ from qeflow.phonon.phonon_plot import plot_phonon_outputs
 from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step
 from qeflow.phonon.qe_matdyn_phdos import prepare_matdyn_phdos_step
 from qeflow.phonon.qe_q2r import prepare_q2r_step
-from qeflow.phonon.runner import print_stage, run_shell
+from qeflow.phonon.runner import print_stage
 from qeflow.phonon.script_plan import build_labeled_commands
 from qeflow.phonon.status_machine import refresh_workflow_status
 from qeflow.qe_input.phonon_input import write_root_run_script
@@ -119,12 +119,7 @@ def _run_process_action(context: PhononStepContext, stage_no: int, label: str, a
 
 
 def _active_run_shell():
-    shared = sys.modules.get("qeflow.phonon._shared")
-    if shared is not None:
-        patched = getattr(shared, "run_shell", run_shell)
-        if patched is not run_shell:
-            return patched
-    return run_shell
+    return runner_module.run_shell
 
 
 def run_process_phonon(

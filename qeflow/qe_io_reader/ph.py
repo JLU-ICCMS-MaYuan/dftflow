@@ -1,6 +1,27 @@
 #!/usr/bin/env python3
 import os
+from dataclasses import dataclass
 from typing import Dict, List
+
+from qeflow.qe_io_reader.common import has_error_marker, read_text_if_exists
+
+
+@dataclass
+class PhOut:
+    path: str
+
+    def exists(self) -> bool:
+        return os.path.exists(self.path)
+
+    def text(self) -> str:
+        return read_text_if_exists(self.path)
+
+    def is_finished(self) -> bool:
+        return "JOB DONE" in self.text()
+
+    def has_error(self) -> bool:
+        text = self.text()
+        return bool(text) and has_error_marker(text)
 
 
 def parse_dyn0_qpoints(dyn0_path: str) -> List[Dict[str, object]]:
