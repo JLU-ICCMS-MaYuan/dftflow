@@ -2580,6 +2580,14 @@ def _write_at_ef_csv(path: Path, headers, values):
     )
 
 
+def _write_phonon_dos_elements_csv(path: Path, frequencies_cm):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = ["frequency_cm-1,TDOS,Li,B,H"]
+    for index, frequency in enumerate(frequencies_cm, start=1):
+        rows.append(f"{frequency},{index}.0,0.1,0.2,0.3")
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
 def _prepare_plot_cases(root_dir: Path):
     from substitutionflow.status import create_initial_status
     from substitutionflow.structure_substitution import generate_cases
@@ -2698,3 +2706,61 @@ def test_substitution_plot_eledos_main_defaults_to_current_directory(chdir_work,
     assert "处理 eledos:" in output
     assert "[########################]" in output
     assert "03.XA_Li/eledos_summary_50.png" in output or "03.XA_Li/eledos_summary_100.png" in output
+
+
+def test_substitution_check_phonon_stability_classifies_from_phdos_frequency_grid(chdir_work):
+    from substitutionflow.check_phonon_stability import collect_pressure_stability_data, generate_xa_dir_stability_plots
+
+    out_dir = _prepare_plot_cases(Path("."))
+    xa_dir = out_dir / "03.XA_Li"
+    stable_case = xa_dir / "period_2" / "04.LiBeH7"
+    unstable_case = xa_dir / "period_2" / "05.LiBH7"
+
+    _write_phonon_dos_elements_csv(
+        stable_case / "50" / "qe_phonon_split_index" / "phdos" / "phonon_dos_elements.csv",
+        [-20.0, 0.0, 30.0],
+    )
+    _write_phonon_dos_elements_csv(
+        unstable_case / "50" / "qe_phonon_split_index" / "phdos" / "phonon_dos_elements.csv",
+        [-40.0, 0.0, 30.0],
+    )
+
+    plot_data = collect_pressure_stability_data(str(xa_dir), "50")
+    stable_cell = plot_data["cells"][("period_2", 2)]
+    unstable_cell = plot_data["cells"][("period_2", 13)]
+    unfinished_cell = plot_data["cells"][("period_2", 1)]
+
+    assert stable_cell["status"] == "stable"
+    assert round(stable_cell["min_frequency_THz"], 2) == -0.60
+    assert unstable_cell["status"] == "unstable"
+    assert round(unstable_cell["min_frequency_THz"], 2) == -1.20
+    assert unfinished_cell["status"] == "unfinished"
+    assert unfinished_cell["min_frequency_THz"] is None
+
+    outputs = generate_xa_dir_stability_plots(str(xa_dir))
+    assert str((xa_dir / "phonon_stability_summary_50.png").resolve()) in [str(Path(item).resolve()) for item in outputs]
+    assert str((xa_dir / "phonon_stability_summary_100.png").resolve()) in [str(Path(item).resolve()) for item in outputs]
+    assert (xa_dir / "phonon_stability_summary_50.png").exists()
+    assert not (xa_dir / "phonon_stability_summary_50.dat").exists()
+
+
+def test_substitution_check_phonon_stability_main_defaults_to_current_directory(chdir_work, monkeypatch):
+    from substitutionflow import check_phonon_stability as module
+
+    out_dir = _prepare_plot_cases(Path("."))
+    xa_dir = out_dir / "03.XA_Li"
+    _write_phonon_dos_elements_csv(
+        xa_dir / "period_2" / "04.LiBeH7" / "50" / "qe_phonon_split_index" / "phdos" / "phonon_dos_elements.csv",
+        [-10.0, 0.0, 30.0],
+    )
+
+    monkeypatch.chdir(out_dir)
+    monkeypatch.setattr(sys, "argv", ["substitution_check_phonon_stability"])
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        module.main()
+
+    output = buffer.getvalue()
+    assert "检查 phonon stability:" in output
+    assert "[########################]" in output
+    assert "03.XA_Li/phonon_stability_summary_50.png" in output or "03.XA_Li/phonon_stability_summary_100.png" in output

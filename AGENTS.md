@@ -24,6 +24,19 @@
 
 ## 需求处理记录
 
+### [2026-05-27] 新增 substitution_check_phonon_stability 周期表式声子稳定性检查
+- **需求**：
+    1. 新增 CLI `substitution_check_phonon_stability`，用于批量检查 substitutionflow 声子计算体系是否稳定。
+    2. 展示方式复用周期表式布局，按 XA 目录和 pressure 分别输出 `phonon_stability_summary_<pressure>.png`。
+    3. 只输出 PNG，不生成 `.dat` 或其它汇总文件。
+    4. 稳定性状态分为 `stable / unstable / unfinished`；读取 `phdos/phonon_dos_elements.csv` 的频率网格，最小频率换算为 THz 后若 `< -1.0 THz` 判为 `unstable`，否则判为 `stable`；缺失或无法解析判为 `unfinished`。
+- **方案**：
+    1. 新增 `substitutionflow/check_phonon_stability.py`，复用 `substitution_plot_eledos` 的 XA 目录发现、pressure 发现和周期表布局逻辑。
+    2. 通过 `substitutionflow.status.get_case_phonon_workdir()` 定位每个 case 的 QE 声子工作目录，兼容 `phonon_mode` 默认目录与显式 `[qe_phonon].work_dir`。
+    3. 在图中用绿色、红色、灰色分别展示 `stable / unstable / unfinished`，并显示元素符号、状态和最小频率 THz 数值。
+    4. 注册 `pyproject.toml` console script，更新 README、Mermaid 流程图和自动化测试。
+- **状态**：已完成。
+
 ### [2026-05-20] 修复 qe_merge 当前目录解析并收敛 split 脚本编号
 - **需求**：
     1. `qe_merge -c <config>` 在 `qe_phonon_split_index/coords` 当前目录内直接执行时，必须读取当前目录下的 `q_index_map.json`，不能误落到默认 `qe_phonon/` 目录。

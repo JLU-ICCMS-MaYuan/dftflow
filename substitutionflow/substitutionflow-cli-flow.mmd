@@ -55,3 +55,9 @@ flowchart TD
     I --> I1["扫描一个根目录或多个 XA 目录"]
     I1 --> I2["读取各 case 的 *_at_ef.csv"]
     I2 --> I3["按 pressure 输出 eledos_summary_*.png + eledos_summary_*.dat"]
+
+    F5 --> J["产生 QE 声子 DOS 后处理结果"]
+    J --> K["substitution_check_phonon_stability"]
+    K --> K1["扫描一个根目录或多个 XA 目录"]
+    K1 --> K2["读取各 case 的 phdos/phonon_dos_elements.csv"]
+    K2 --> K3["按 pressure 输出 phonon_stability_summary_*.png<br/>stable / unstable / unfinished"]
