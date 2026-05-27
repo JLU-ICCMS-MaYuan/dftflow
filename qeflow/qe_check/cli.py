@@ -5,7 +5,7 @@ import sys
 from typing import Any, Dict, Tuple
 
 from qeflow.qe_check.checks import check_ph, check_q2r, check_relax, check_scf
-from qeflow.qe_input.builders import resolve_prefix
+from qeflow.qe_input.phonon_input import resolve_prefix
 from qeflow.qe_input.fileio import resolve_workspace
 from qeflow.qe_input.structure import parse_poscar
 

@@ -3,8 +3,9 @@ import os
 
 from public.job import write_job_script
 from qeflow.phonon import console
-from qeflow.phonon._shared import PhononStepContext, parse_dyn0_qpoints
-from qeflow.qe_input.builders import (
+from qeflow.phonon.context import PhononStepContext
+from qeflow.phonon.dyn0 import parse_dyn0_qpoints
+from qeflow.qe_input.phonon_input import (
     write_scf_input,
     write_split_ph_input_assign_coords,
     write_split_ph_input_assign_index,

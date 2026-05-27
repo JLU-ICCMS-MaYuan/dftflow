@@ -5,22 +5,15 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Optional
 
 from qeflow.phonon import console
-from qeflow.phonon._shared import (
-    PhononStepContext,
-    create_context,
-    prepare_root_scf_step,
-    print_stage,
-    run_root_scripts,
-    run_shell,
-    write_labeled_script,
-)
+from qeflow.phonon.context import PhononStepContext, create_context
+from qeflow.phonon.root_steps import prepare_root_scf_step
+from qeflow.phonon.runner import print_stage, run_root_scripts, run_shell
+from qeflow.phonon.script_plan import write_labeled_script
 from qeflow.phonon.ph_step import prepare_ph_nosplit_step, run_ph_to_dyn0
-from qeflow.phonon.process_phonon import (
-    prepare_matdyn_phband_step,
-    prepare_matdyn_phdos_step,
-    prepare_q2r_step,
-    run_process_phonon_steps,
-)
+from qeflow.phonon.postprocess_workflow import run_process_phonon_steps
+from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step
+from qeflow.phonon.qe_matdyn_phdos import prepare_matdyn_phdos_step
+from qeflow.phonon.qe_q2r import prepare_q2r_step
 from qeflow.phonon.qe_merge import run_merge_step
 from qeflow.phonon.qe_split_submit import run_split_submit
 from qeflow.phonon.split_prepare import prepare_split_assign_coords_step, prepare_split_assign_index_step

@@ -4,8 +4,8 @@ from typing import Optional
 
 from public.job import add_run_submit_arguments
 from qeflow.phonon import console
-from qeflow.phonon._shared import run_shell as split_run_shell
 from qeflow.phonon.ph_step import run_ph_to_dyn0
+from qeflow.phonon.runner import run_shell as split_run_shell
 from qeflow.phonon.split_workflow import SPLIT_WORKFLOW_SPECS, create_split_phonon_workflow
 
 

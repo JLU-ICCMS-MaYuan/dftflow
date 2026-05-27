@@ -24,6 +24,19 @@
 
 ## 需求处理记录
 
+### [2026-05-27] 深化 qeflow 架构并解耦 phonon 公共模块
+- **需求**：
+    1. 按架构巡检候选 1-5 继续重构 qeflow，改善函数名称、模块名称、复用边界和耦合情况。
+    2. 重点迁移并解耦 `qeflow/phonon` 中公共的 `_shared.py`、后处理、merge、split 和输入写出逻辑。
+    3. 保持现有 CLI 名称、参数和 `workflow_status.json` 行为兼容。
+- **方案**：
+    1. 将 `_shared.py` 收敛为兼容 facade，新增 `context.py`、`dyn0.py`、`q_index_map.py`、`runner.py`、`root_steps.py`、`script_plan.py` 承载真实职责。
+    2. 将 `process_phonon.py` 拆为 `postprocess_workflow.py`、`archive.py`、`phonon_tables.py`、`phonon_plot.py`，保留旧函数 re-export 和 CLI。
+    3. 将 `qe_merge.py` 的 split merge 策略迁移到 `split_merge.py`，CLI Adapter 只负责输出与状态刷新。
+    4. 新增 `qeflow/qe_input/phonon_input.py` 作为 **QE Phonon Input Deck** Module，`builders.py` 仅保留兼容导出。
+    5. 新增 `qeflow/qe_input/cli_adapter.py`，统一 `qe_scf/qe_nscf/qe_eband/qe_eledos` 的 CLI Adapter。
+- **状态**：已完成。
+
 ### [2026-05-27] 重构 QE Calculation Setup
 - **需求**：
     1. 先从 qeflow 架构候选 1 开始，收敛 `qe_scf/qe_nscf/qe_eband/qe_eledos` 中重复的 setup 生命周期。

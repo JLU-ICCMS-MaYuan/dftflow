@@ -4,11 +4,8 @@ import os
 from typing import Optional
 
 from qeflow.phonon import console
-from qeflow.phonon._shared import (
-    create_context,
-    iter_q_directory_names,
-    print_stage,
-)
+from qeflow.phonon.context import create_context
+from qeflow.phonon.q_index_map import iter_q_directory_names
 from qeflow.phonon.status_machine import (
     dyn0_state,
     ph_tasks,

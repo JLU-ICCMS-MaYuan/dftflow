@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 from typing import Optional
 
-from qeflow.phonon._shared import create_context, load_q_index_entries
+from qeflow.phonon.context import create_context
+from qeflow.phonon.q_index_map import load_q_index_entries
 from qeflow.phonon.status_machine import refresh_workflow_status
 from qeflow.phonon.qe_matdyn_phband import run_matdyn_phband_step
 from qeflow.phonon.qe_matdyn_phdos import run_matdyn_phdos_step

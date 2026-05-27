@@ -36,6 +36,18 @@ DFTFlow 用于组织高通量第一性原理计算工作流，并把结构替换
 QE 声子 split 总工作流的统一编排 Module，覆盖 `split_assign_index` 与 `split_assign_coords` 两种 q 点拆分方式，并保持二者共享同一套 `scf -> dyn0 -> split -> merge -> process -> plot` 生命周期。  
 *Avoid*：split index workflow, split coords workflow, split script driver
 
+**Phonon Postprocess Workflow**：
+QE 声子后处理的统一编排 Module，负责 `q2r -> matdyn_phband -> collect phband -> matdyn_phdos -> collect phdos -> plot` 生命周期，并把归档、表格解析和绘图委托给专门 Module。
+*Avoid*：process helper, plotting script, post script
+
+**Split Merge Workflow**：
+QE split 声子结果回收 Module，负责按 `split_assign_index` 或 `split_assign_coords` 策略合并 dyn、dvscf、phsave 和 patterns 文件，并输出 merge 结果。
+*Avoid*：merge helper, dyn copier, split collector
+
+**QE Phonon Input Deck**：
+为 QE 声子链路写出 `scf.in/ph.in/q2r.in/matdyn_*.in/run_*.sh` 的输入文件 Module。
+*Avoid*：builder, input helper, file writer
+
 **Phonon Stability**：  
 一个 **Pressure Point** 基于最小声子 DOS 频率得到的二元稳定性分类：`stable` 或 `unstable`。  
 *Avoid*：dynamical stability, imaginary-frequency status
@@ -60,6 +72,8 @@ QE 声子 split 总工作流的统一编排 Module，覆盖 `split_assign_index`
 - 一个 **Pressure Point** 有一组 **Workflow Status**，并且最多有一个 **Phonon Stability** 结果。
 - 一个 QE 声子 **QE Calculation Setup** 由 **Phonon Workflow Status Machine** 维护 `workflow_status.json` 并给出续算阶段。
 - 一个 **Split Phonon Workflow** 依赖 **Phonon Workflow Status Machine** 判断当前阶段，并按拆分方式选择 q 点输入物化策略。
+- 一个 **Phonon Postprocess Workflow** 依赖 **QE Phonon Input Deck** 准备后处理输入，并依赖 **Phonon Workflow Status Machine** 刷新后处理阶段。
+- 一个 **Split Merge Workflow** 是 **Split Phonon Workflow** 的回收阶段。
 - **Stable Phonon Case** 与 **Unstable Phonon Case** 是 **Phonon Stability** 的互斥结果。
 - 一个 **Pressure Point** 可以包含一个或多个 **QE Calculation Setup**，例如 SCF、NSCF、EBAND、ELEDOS 或声子前置 SCF。
 

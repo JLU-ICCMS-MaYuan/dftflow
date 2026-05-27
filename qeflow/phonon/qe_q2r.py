@@ -4,14 +4,10 @@ import os
 from typing import Optional
 
 from public.job import add_run_submit_arguments
-from qeflow.phonon._shared import (
-    PhononStepContext,
-    create_context,
-    print_stage,
-    submit_or_run,
-)
+from qeflow.phonon.context import PhononStepContext, create_context
+from qeflow.phonon.runner import print_stage, submit_or_run
 from qeflow.phonon.status_machine import refresh_workflow_status
-from qeflow.qe_input.builders import write_q2r_input, write_root_run_script
+from qeflow.qe_input.phonon_input import write_q2r_input, write_root_run_script
 
 
 def prepare_q2r_step(context: PhononStepContext) -> str:

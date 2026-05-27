@@ -5,13 +5,10 @@ from typing import Optional
 
 from public.job import add_run_submit_arguments
 from qeflow.phonon import console
-from qeflow.phonon._shared import (
-    create_context,
-    prepare_root_scf_step,
-    print_stage,
-    run_root_scripts,
-    write_aggregate_script,
-)
+from qeflow.phonon.context import create_context
+from qeflow.phonon.root_steps import prepare_root_scf_step
+from qeflow.phonon.runner import print_stage, run_root_scripts
+from qeflow.phonon.script_plan import write_aggregate_script
 from qeflow.phonon.status_machine import refresh_workflow_status, root_step_scripts
 from qeflow.phonon.ph_step import prepare_ph_nosplit_step
 from qeflow.phonon.process_phonon import PROCESS_SCRIPT, prepare_process_phonon_step, run_process_phonon_steps
