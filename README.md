@@ -72,7 +72,7 @@ Available commands:
 - `substitution_prepare_potcar` 从 `[substitutionflow]` 推导需要的元素集合，按 `--pot` 指定的原始赝势库筛选并复制所需 `POTCAR` 到当前目录的 `potcar_lib/`，默认读取已有 `potcar_lib/potcar_lib.log` 续选，并在每次完成单个元素选择后立即更新该记录文件。
 - `substitution_prepare_qe_pseudo` 从 `[substitutionflow]` 推导需要的元素集合，按 `--pp` 指定的原始 QE 赝势目录筛选并复制所需文件到当前目录的 `qe_pseudo_lib/`。它不会再回写各 case `input.toml`；推荐在根配置中直接写 `pp_dir = "qe_pseudo_lib"`，并让 `substitution_structure` 原样继承。
 - `substitution_plot_eledos` 是独立的批量汇总绘图 CLI；省略 `-d` 时默认扫描当前目录下全部 `[Z].XA_*` 目录，也支持传入一个批量根目录或一个/多个指定的 `[Z].XA_*` 目录，并在每个 XA 目录下按 pressure 输出 `eledos_summary_<pressure>.png`，每个格子固定绘制 `XA / XB / H / TDOS` 四柱。
-- `substitution_check_phonon_stability` 是独立的批量声子稳定性检查 CLI；省略 `-d` 时默认扫描当前目录下全部 `[Z].XA_*` 目录，也支持传入一个批量根目录或一个/多个指定的 `[Z].XA_*` 目录，并在每个 XA 目录下按 pressure 输出 `phonon_stability_summary_<pressure>.png`。它读取 `qe_phonon_*/phdos/phonon_dos_elements.csv` 的 `frequency_cm-1` 列，换算为 THz 后以最小频率 `< -1.0 THz` 判为 `unstable`，否则判为 `stable`；缺失或无法解析的数据展示为 `unfinished`。
+- `substitution_check_phonon_stability` 是独立的批量声子稳定性检查 CLI；省略 `-d` 时默认扫描当前目录下全部 `[Z].XA_*` 目录，也支持传入一个批量根目录或一个/多个指定的 `[Z].XA_*` 目录，并在每个 XA 目录下按 pressure 输出 `phonon_stability_summary_<pressure>.png`。它读取 `qe_phonon_*/phdos/phonon_dos_elements.csv` 的 `frequency_cm-1` 列，换算为 THz 后以最小频率 `< -1.0 THz` 判为 `unstable`，否则判为 `stable`；缺失或无法解析的数据展示为 `unfinished`。读取 case 结果时默认自动并行，也可用 `-j/--jobs` 指定线程数。
 
 示例 `input_substitution.toml` 片段：
 

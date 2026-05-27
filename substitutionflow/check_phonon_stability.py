@@ -3,6 +3,7 @@ import argparse
 import csv
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from substitutionflow.plot_eledos import (
@@ -37,6 +38,13 @@ def parse_arguments():
         nargs="*",
         default=[],
         help="统计目录；省略时默认扫描当前目录下全部 [Z].XA_* 目录。",
+    )
+    parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=None,
+        help="并行读取 case 结果的线程数；默认按 CPU 数自动选择。",
     )
     return parser.parse_args()
 
@@ -79,13 +87,12 @@ def _read_min_frequency_cm(path: str) -> float:
     return min(values)
 
 
-def collect_pressure_stability_data(xa_dir: str, pressure: str) -> Dict:
+def collect_pressure_stability_data(xa_dir: str, pressure: str, jobs: Optional[int] = None) -> Dict:
     entries = discover_case_entries(xa_dir)
     row_labels = {}
     cells: Dict[Tuple[str, int], Dict] = {}
 
-    for entry in entries:
-        record = load_case_stability_record(entry, pressure)
+    for entry, record in _load_pressure_records(entries, pressure, jobs):
         for row_label, column in entry["positions"]:
             row_labels[row_label] = None
             cells[(row_label, column)] = {
@@ -102,6 +109,32 @@ def collect_pressure_stability_data(xa_dir: str, pressure: str) -> Dict:
         "rows": ordered_rows,
         "cells": cells,
     }
+
+
+def _load_pressure_records(entries: Sequence[Dict], pressure: str, jobs: Optional[int]) -> List[Tuple[Dict, Dict]]:
+    if not entries:
+        return []
+    max_workers = _resolve_worker_count(jobs, len(entries))
+    if max_workers <= 1:
+        return [(entry, load_case_stability_record(entry, pressure)) for entry in entries]
+
+    indexed_results: Dict[int, Tuple[Dict, Dict]] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(load_case_stability_record, entry, pressure): (index, entry)
+            for index, entry in enumerate(entries)
+        }
+        for future in as_completed(future_map):
+            index, entry = future_map[future]
+            indexed_results[index] = (entry, future.result())
+    return [indexed_results[index] for index in range(len(entries))]
+
+
+def _resolve_worker_count(jobs: Optional[int], task_count: int) -> int:
+    if jobs is not None:
+        return max(1, min(int(jobs), task_count))
+    cpu_count = os.cpu_count() or 1
+    return max(1, min(task_count, cpu_count + 4, 32))
 
 
 def plot_pressure_stability(plot_data: Dict) -> str:
@@ -167,6 +200,7 @@ def generate_xa_dir_stability_plots(
     show_progress: bool = False,
     progress_offset: int = 0,
     progress_total: Optional[int] = None,
+    jobs: Optional[int] = None,
 ) -> List[str]:
     entries = discover_case_entries(xa_dir)
     pressures = discover_pressures(entries)
@@ -177,12 +211,12 @@ def generate_xa_dir_stability_plots(
             current = progress_offset + index
             label = f"{os.path.basename(os.path.abspath(xa_dir))} pressure={pressure}"
             _print_compact_progress("检查 phonon stability", current, total, label)
-        plot_data = collect_pressure_stability_data(xa_dir, pressure)
+        plot_data = collect_pressure_stability_data(xa_dir, pressure, jobs=jobs)
         outputs.append(plot_pressure_stability(plot_data))
     return outputs
 
 
-def run(directory_args: Sequence[str]) -> List[str]:
+def run(directory_args: Sequence[str], jobs: Optional[int] = None) -> List[str]:
     outputs = []
     xa_dirs = resolve_target_xa_dirs(directory_args)
     pressure_counts = [len(discover_pressures(discover_case_entries(xa_dir))) for xa_dir in xa_dirs]
@@ -195,6 +229,7 @@ def run(directory_args: Sequence[str]) -> List[str]:
                 show_progress=True,
                 progress_offset=progress_offset,
                 progress_total=progress_total,
+                jobs=jobs,
             )
         )
         progress_offset += pressure_count
@@ -203,6 +238,6 @@ def run(directory_args: Sequence[str]) -> List[str]:
 
 def main():
     args = parse_arguments()
-    outputs = run(args.directory)
+    outputs = run(args.directory, jobs=args.jobs)
     for path in outputs:
         print(path)

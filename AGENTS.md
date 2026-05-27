@@ -37,6 +37,17 @@
     4. 注册 `pyproject.toml` console script，更新 README、Mermaid 流程图和自动化测试。
 - **状态**：已完成。
 
+### [2026-05-27] 为 substitution_check_phonon_stability 增加并行读取
+- **需求**：
+    1. `substitution_check_phonon_stability` 在检查大量 case 的声子稳定性时需要提高效率。
+    2. 并行范围应覆盖 case 结果读取与稳定性判定，不应并行调用 matplotlib 绘图。
+- **方案**：
+    1. 在 `substitutionflow/check_phonon_stability.py` 中新增 `-j/--jobs` 参数，默认按 CPU 数自动选择线程数。
+    2. 使用 `ThreadPoolExecutor` 并行读取同一 XA 目录、同一 pressure 下各 case 的 `phonon_dos_elements.csv`，并保持输出格子顺序稳定。
+    3. 绘图继续按 XA 目录与 pressure 顺序串行执行，避免 matplotlib 全局状态并发风险。
+    4. 更新 README 与自动化测试，覆盖显式 `-j` 参数和并行读取路径。
+- **状态**：已完成。
+
 ### [2026-05-20] 修复 qe_merge 当前目录解析并收敛 split 脚本编号
 - **需求**：
     1. `qe_merge -c <config>` 在 `qe_phonon_split_index/coords` 当前目录内直接执行时，必须读取当前目录下的 `q_index_map.json`，不能误落到默认 `qe_phonon/` 目录。

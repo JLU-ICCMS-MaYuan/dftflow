@@ -2725,7 +2725,7 @@ def test_substitution_check_phonon_stability_classifies_from_phdos_frequency_gri
         [-40.0, 0.0, 30.0],
     )
 
-    plot_data = collect_pressure_stability_data(str(xa_dir), "50")
+    plot_data = collect_pressure_stability_data(str(xa_dir), "50", jobs=2)
     stable_cell = plot_data["cells"][("period_2", 2)]
     unstable_cell = plot_data["cells"][("period_2", 13)]
     unfinished_cell = plot_data["cells"][("period_2", 1)]
@@ -2737,7 +2737,7 @@ def test_substitution_check_phonon_stability_classifies_from_phdos_frequency_gri
     assert unfinished_cell["status"] == "unfinished"
     assert unfinished_cell["min_frequency_THz"] is None
 
-    outputs = generate_xa_dir_stability_plots(str(xa_dir))
+    outputs = generate_xa_dir_stability_plots(str(xa_dir), jobs=2)
     assert str((xa_dir / "phonon_stability_summary_50.png").resolve()) in [str(Path(item).resolve()) for item in outputs]
     assert str((xa_dir / "phonon_stability_summary_100.png").resolve()) in [str(Path(item).resolve()) for item in outputs]
     assert (xa_dir / "phonon_stability_summary_50.png").exists()
@@ -2755,7 +2755,7 @@ def test_substitution_check_phonon_stability_main_defaults_to_current_directory(
     )
 
     monkeypatch.chdir(out_dir)
-    monkeypatch.setattr(sys, "argv", ["substitution_check_phonon_stability"])
+    monkeypatch.setattr(sys, "argv", ["substitution_check_phonon_stability", "-j", "2"])
     buffer = io.StringIO()
     with redirect_stdout(buffer):
         module.main()
