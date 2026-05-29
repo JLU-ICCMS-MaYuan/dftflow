@@ -25,8 +25,8 @@ ADR 只记录仍然影响后续开发的决策，不替代 README、Mermaid 流�
 ## 子系统索引
 
 - [qeflow](qeflow/README.md)：Quantum ESPRESSO 工作流架构决策。
+- [vaspflow](vaspflow/README.md)：VASP 工作流架构决策。
 
 后续新增分区建议：
 
-- `vaspflow/`：VASP 工作流架构决策。
 - `substitutionflow/`：结构替换与批量调度架构决策。

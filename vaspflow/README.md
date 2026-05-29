@@ -1,5 +1,7 @@
 # VASPFlow 参数模板说明
 
+架构决策记录：[`docs/adr/vaspflow`](../docs/adr/vaspflow/README.md)
+
 ## 1. 模板与 `input.toml` 的关系
 - `vaspflow` 现在把“运行时默认模板”和“`input.toml` 用户覆盖”拆开处理。
 - 默认模板只放在代码里的模板函数中，例如：

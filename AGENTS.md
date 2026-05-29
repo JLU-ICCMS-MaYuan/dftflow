@@ -24,6 +24,17 @@
 
 ## 需求处理记录
 
+### [2026-05-29] 新增 vaspflow 架构 ADR 记录
+- **需求**：
+    1. 通读 `vaspflow` 源码，梳理 VASP 运行型 CLI、纯后处理 CLI 和公共基础设施边界。
+    2. 新增 vaspflow ADR 文档，沉淀当前模块职责、依赖方向和后续扩展约束。
+    3. 保持 ADR 顶层索引与 vaspflow README 可互相定位。
+- **方案**：
+    1. 使用 `explore` skill 的本地 fallback 流程巡检 `vaspflow/`、`public/`、`pyproject.toml` 与相关测试。
+    2. 新增 `docs/adr/vaspflow/README.md` 与 `docs/adr/vaspflow/0001-architecture-boundaries.md`，记录 setup、postprocess、templates、job/config/executable helpers 的职责边界。
+    3. 更新 `docs/adr/README.md` 与 `vaspflow/README.md`，补充 vaspflow ADR 入口。
+- **状态**：已完成。
+
 ### [2026-05-29] vaspkit 调用输出改为静默模式
 - **需求**：
     1. qeflow 和 vaspflow 中通过 shell 子进程调用 `vaspkit` 时，不再把 `vaspkit` 菜单、banner 或运行输出打印到屏幕。
