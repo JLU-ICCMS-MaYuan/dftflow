@@ -183,8 +183,9 @@ def run_vaspkit(cwd, user_input):
         ["vaspkit"],
         cwd=cwd,
         stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         text=True,
     )
-    return process.communicate(input=user_input)
+    process.communicate(input=user_input)
+    return "", ""

@@ -40,6 +40,37 @@ def _write_kpath(path: Path) -> None:
     path.write_text("0.0 0.0 0.0 G\n0.5 0.0 0.0 X\n", encoding="utf-8")
 
 
+def test_run_vaspkit_for_kpath_suppresses_output(monkeypatch, tmp_path):
+    from qeflow.input_deck import kpath as module
+
+    captured = {}
+
+    def fake_run(cmd, input=None, text=None, check=None, cwd=None, stdout=None, stderr=None):
+        captured.update(
+            {
+                "cmd": cmd,
+                "input": input,
+                "text": text,
+                "check": check,
+                "cwd": cwd,
+                "stdout": stdout,
+                "stderr": stderr,
+            }
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    module.run_vaspkit_for_kpath(str(tmp_path))
+
+    assert captured["cmd"] == ["vaspkit"]
+    assert captured["input"] == "3\n303\n"
+    assert captured["text"] is True
+    assert captured["check"] is True
+    assert captured["cwd"] == str(tmp_path)
+    assert captured["stdout"] is module.subprocess.DEVNULL
+    assert captured["stderr"] is module.subprocess.DEVNULL
+
+
 def _prepare_xml_fixture(root: Path, prefix: str = "Mg1B2") -> None:
     save_dir = root / "qe_phonon" / "out" / f"{prefix}.save"
     save_dir.mkdir(parents=True, exist_ok=True)

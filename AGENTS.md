@@ -24,6 +24,17 @@
 
 ## 需求处理记录
 
+### [2026-05-29] vaspkit 调用输出改为静默模式
+- **需求**：
+    1. qeflow 和 vaspflow 中通过 shell 子进程调用 `vaspkit` 时，不再把 `vaspkit` 菜单、banner 或运行输出打印到屏幕。
+    2. 保持现有 `vaspkit` 菜单输入序列、生成文件和工作流提示不变。
+    3. 失败时仍保留明确错误状态，不因静默输出改变原有生成逻辑。
+- **方案**：
+    1. 修改 `qeflow/input_deck/kpath.py`，让 `vaspkit 3 -> 303` 调用将 stdout/stderr 重定向到 `subprocess.DEVNULL`。
+    2. 修改 vaspflow 中 SCF/ELEDOS/EBAND/ELF/LOCPOT/FERMI/CHARGE/COHP 相关 `vaspkit` 调用，统一屏蔽 stdout/stderr。
+    3. 对纯后处理的 `vasp_process_eband` 与 `vasp_process_eledos` 保留退出码检查，失败时只报告退出码，不回显 `vaspkit` 原始输出。
+- **状态**：已完成。
+
 ### [2026-05-28] 新增 qeflow 架构 ADR 记录
 - **需求**：
     1. 新增 `docs/adr/`，用于记录架构决策，并按 `qeflow`、`vaspflow` 等子系统分区。

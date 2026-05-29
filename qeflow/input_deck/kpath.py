@@ -7,7 +7,15 @@ import numpy as np
 
 
 def run_vaspkit_for_kpath(work_dir: str) -> None:
-    subprocess.run(["vaspkit"], input="3\n303\n", text=True, check=True, cwd=work_dir)
+    subprocess.run(
+        ["vaspkit"],
+        input="3\n303\n",
+        text=True,
+        check=True,
+        cwd=work_dir,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def parse_kpath_segments(path: str, tol: float = 1.0e-6):

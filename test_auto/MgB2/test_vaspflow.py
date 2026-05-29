@@ -1491,6 +1491,8 @@ def test_vasp_fermisurface_uses_vaspkit_261(chdir_work, monkeypatch):
     def fake_popen(cmd, cwd=None, stdin=None, stdout=None, stderr=None, text=None):
         captured["cmd"] = cmd
         captured["cwd"] = cwd
+        captured["stdout"] = stdout
+        captured["stderr"] = stderr
         return FakeProcess()
 
     monkeypatch.setattr("vaspflow.fermisurface.vasp_fermisurface.subprocess.Popen", fake_popen)
@@ -1501,6 +1503,8 @@ def test_vasp_fermisurface_uses_vaspkit_261(chdir_work, monkeypatch):
     assert captured["cmd"] == ["vaspkit"]
     assert captured["cwd"].endswith("vasp_fermisurface")
     assert captured["input"] == "261\n0.04\n"
+    assert captured["stdout"] is subprocess.DEVNULL
+    assert captured["stderr"] is subprocess.DEVNULL
     assert (Path("vasp_fermisurface") / "KPOINTS").exists()
 
 

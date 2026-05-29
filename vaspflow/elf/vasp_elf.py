@@ -82,19 +82,16 @@ class VaspElfSetup:
                 ["vaspkit"],
                 cwd=self.work_dir,
                 stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 text=True,
             )
-            stdout, stderr = process.communicate(input=f"102\n2\n{kmesh}\n")
+            process.communicate(input=f"102\n2\n{kmesh}\n")
             kpoints_file = os.path.join(self.work_dir, "KPOINTS")
             if os.path.exists(kpoints_file):
                 print("KPOINTS 已通过 vaspkit 生成完成。")
             else:
                 print("错误: vaspkit 未生成 KPOINTS。")
-                print(f"vaspkit 输出: {stdout}")
-                if stderr:
-                    print(f"vaspkit 错误: {stderr}")
         except Exception as e:
             print(f"调用 vaspkit 出错: {e}")
 

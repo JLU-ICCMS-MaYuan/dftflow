@@ -81,11 +81,11 @@ class VaspBandSetup:
                 ["vaspkit"],
                 cwd=self.work_dir,
                 stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 text=True
             )
-            stdout, stderr = process.communicate(input="303\n")
+            process.communicate(input="303\n")
             
             kpath_file = os.path.join(self.work_dir, "KPATH.in")
             kpoints_file = os.path.join(self.work_dir, "KPOINTS")
@@ -95,7 +95,6 @@ class VaspBandSetup:
                 print(f"KPOINTS 已从 KPATH.in 拷贝完成。")
             else:
                 print(f"错误: vaspkit 未生成 KPATH.in。")
-                print(f"vaspkit 输出: {stdout}")
                 
         except Exception as e:
             print(f"调用 vaspkit 出错: {e}")

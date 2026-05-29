@@ -118,14 +118,14 @@ def run_vaspkit(work_dir, command_text):
         ["vaspkit"],
         cwd=work_dir,
         stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         text=True,
     )
-    stdout, stderr = process.communicate(input=command_text)
+    process.communicate(input=command_text)
     if process.returncode != 0:
-        raise RuntimeError(f"vaspkit 执行失败。\nstdout:\n{stdout}\nstderr:\n{stderr}")
-    return stdout, stderr
+        raise RuntimeError(f"vaspkit 执行失败，退出码: {process.returncode}")
+    return "", ""
 
 
 def generate_vaspkit_band_files(work_dir):
