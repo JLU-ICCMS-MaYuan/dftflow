@@ -24,6 +24,31 @@
 
 ## 需求处理记录
 
+### [2026-05-30] vasp_eledos KPOINTS 按 kmesh 比例校准
+- **需求**：
+    1. `vasp_eledos` 仍优先使用 `[vasp_eledos].kmesh` 调用 `vaspkit` 生成 `KPOINTS`。
+    2. 生成后自动读取 `vasp_scf/KPOINTS`，按 `vasp_scf.kmesh / vasp_eledos.kmesh` 推导整数网格倍数，检查 DOS 网格是否逐轴满足该倍数。
+    3. 若 `vaspkit` 生成的网格不满足整数倍关系，例如 `12 12 6 -> 24 24 13`，自动修正为可整除网格，例如 `24 24 12`。
+    4. 保持 `wavecar_path` 复制和 `ISTART = 1` 语义不变。
+- **方案**：
+    1. 新增 `vaspflow/kpoints.py`，集中解析、写出 automatic mesh KPOINTS，并按 kmesh 密度比推导整数倍。
+    2. 修改 `vaspflow/eledos/vasp_eledos.py`，在 `vaspkit 102 -> 2 -> kmesh` 后校准 `vasp_eledos/KPOINTS` 到 SCF 网格整数倍。
+    3. 对非整数 kmesh 密度比采用向上取整，保证最终 DOS 网格逐轴都是 SCF 网格的整数倍。
+    4. 补充自动化测试覆盖 `24 24 13 -> 24 24 12` 修正和非整数密度比向上取整。
+- **状态**：已完成。
+
+### [2026-05-29] 新增 wannier90 与 VASP 6.4.3 外部子模块
+- **需求**：
+    1. 将 `external/wannier90` 作为 dftflow 的 Git submodule 管理。
+    2. 将本地 `external/vasp.6.4.3` 推送到私有 Gitee 仓库，并作为 dftflow 的 Git submodule 管理。
+    3. 避免把 VASP 编译产物作为源码提交到私有仓库。
+- **方案**：
+    1. 在 `external/vasp.6.4.3` 初始化独立 Git 仓库，新增子仓库 `.gitignore` 忽略 `build/`、`bin/`、`bin-omp/` 与常见编译产物，提交源码并推送到 `git@gitee.com:mayuan_JLUPHY/vasp.6.4.3.git`。
+    2. 在父仓库 `.gitmodules` 中登记 `external/vasp.6.4.3`，指向该私有 Gitee 仓库。
+    3. 在父仓库 `.gitmodules` 中登记 `external/wannier90`，指向官方 `git@github.com:wannier-developers/wannier90.git`，并记录 master 当前提交。
+    4. 原本损坏的 `external/wannier90` 工作树已保留为本地备份目录 `external/wannier90.local-backup-20260529-1650`。
+- **状态**：已完成。
+
 ### [2026-05-29] 新增 vaspflow 架构 ADR 记录
 - **需求**：
     1. 通读 `vaspflow` 源码，梳理 VASP 运行型 CLI、纯后处理 CLI 和公共基础设施边界。

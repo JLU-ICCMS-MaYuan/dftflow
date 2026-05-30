@@ -33,6 +33,7 @@ CLI Adapter
 | --- | --- | --- |
 | `vaspflow/templates.py` | 保存 VASP CLI 的默认参数模板、共享键、允许覆盖键和模板合并入口 | 不写输入文件，不执行外部命令 |
 | `vaspflow/scf` | SCF 输入准备、`KPOINTS` 生成、`run_vasp.sh` 和 SCF 输出存在性校验 | 不承载其它计算类型的公共生命周期 |
+| `vaspflow/kpoints.py` | VASP automatic mesh `KPOINTS` 的解析、写出和整数倍网格推导 | 不调用 VASPKIT，不读取结构或执行计算 |
 | `vaspflow/opt` | 结构优化 `rv1/rv4/rvf` 模式、压力 GPa 到 kbar 转换、多压力目录和批量脚本 | 不生成 KPOINTS；k 点精度通过 `KSPACING` 管理 |
 | `vaspflow/eband` | 能带输入准备和 `vasp_process_eband` 后处理 | setup 不解析绘图数据；后处理不读取模板配置 |
 | `vaspflow/eledos` | DOS 输入准备、`vasp_process_eledos` 与 `vasp_idos_computed` 后处理 | setup 不承担 PDOS 聚合；后处理不生成 VASP 输入 |
@@ -86,4 +87,3 @@ CLI Adapter
 - 评估新增 `vaspflow/setup/` 或等价共享 helper，逐步收敛 POSCAR/POTCAR/INCAR/KPOINTS/SCF 依赖文件和脚本写出逻辑。
 - 评估新增 `vaspflow/io_reader/`，集中承载 OUTCAR、DOSCAR、PBAND、TDOS/PDOS、体数据和 LOBSTER 文本读取，避免后处理 CLI 内继续膨胀解析函数。
 - 为 `vaspflow` 补充 Mermaid CLI 流程图索引，使用户文档与 ADR 分工和 qeflow 保持一致。
-

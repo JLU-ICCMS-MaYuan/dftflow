@@ -1027,6 +1027,87 @@ def test_vasp_eledos_cli(chdir_work):
     assert (Path("vasp_eledos") / "INCAR").exists()
 
 
+def test_vasp_eledos_corrects_kpoints_to_kmesh_multiplier(chdir_work, monkeypatch):
+    """vasp_eledos 先用 vaspkit 生成，再按 kmesh 比例修正为 SCF 网格整数倍。"""
+    os.makedirs("vasp_scf", exist_ok=True)
+    os.makedirs("vasp_eledos", exist_ok=True)
+    Path("vasp_scf/KPOINTS").write_text(
+        "\n".join(["SCF mesh", "0", "Gamma", "12 12 6", "0 0 0"]) + "\n",
+        encoding="utf-8",
+    )
+    Path("input_vasp.toml").write_text(
+        Path("input_vasp.toml").read_text(encoding="utf-8").replace(
+            "[vasp_eledos]\nkmesh = 0.04",
+            "[vasp_eledos]\nkmesh = 0.02",
+        ),
+        encoding="utf-8",
+    )
+
+    from vaspflow.eledos import vasp_eledos as module
+
+    class FakeProcess:
+        def __init__(self, cmd, cwd=None, **kwargs):
+            self.cwd = Path(cwd)
+
+        def communicate(self, input=None):
+            (self.cwd / "KPOINTS").write_text(
+                "\n".join(["vaspkit mesh", "0", "Gamma", "24 24 13", "0 0 0"]) + "\n",
+                encoding="utf-8",
+            )
+            return "", ""
+
+    monkeypatch.setattr(module.subprocess, "Popen", FakeProcess)
+
+    setup = module.VaspDosSetup(config_file="input_vasp.toml", struct_file="MgB2.vasp")
+    setup.generate_kpoints()
+
+    kpoints_lines = Path("vasp_eledos/KPOINTS").read_text(encoding="utf-8").splitlines()
+    assert kpoints_lines[2] == "Gamma"
+    assert kpoints_lines[3] == "24 24 12"
+
+
+def test_vasp_eledos_uses_ceiled_kmesh_multiplier(chdir_work, monkeypatch):
+    """非整数 kmesh 密度比向上取整，避免生成不能被 SCF 网格整除的 DOS 网格。"""
+    os.makedirs("vasp_scf", exist_ok=True)
+    os.makedirs("vasp_eledos", exist_ok=True)
+    Path("vasp_scf/KPOINTS").write_text(
+        "\n".join(["SCF mesh", "0", "Monkhorst-Pack", "10 10 5", "0 0 0"]) + "\n",
+        encoding="utf-8",
+    )
+    Path("input_vasp.toml").write_text(
+        Path("input_vasp.toml").read_text(encoding="utf-8").replace(
+            "[vasp_scf]\nkmesh = 0.04",
+            "[vasp_scf]\nkmesh = 0.03",
+        ).replace(
+            "[vasp_eledos]\nkmesh = 0.04",
+            "[vasp_eledos]\nkmesh = 0.02",
+        ),
+        encoding="utf-8",
+    )
+
+    from vaspflow.eledos import vasp_eledos as module
+
+    class FakeProcess:
+        def __init__(self, cmd, cwd=None, **kwargs):
+            self.cwd = Path(cwd)
+
+        def communicate(self, input=None):
+            (self.cwd / "KPOINTS").write_text(
+                "\n".join(["vaspkit mesh", "0", "Monkhorst-Pack", "15 15 8", "0 0 0"]) + "\n",
+                encoding="utf-8",
+            )
+            return "", ""
+
+    monkeypatch.setattr(module.subprocess, "Popen", FakeProcess)
+
+    setup = module.VaspDosSetup(config_file="input_vasp.toml", struct_file="MgB2.vasp")
+    setup.generate_kpoints()
+
+    kpoints_lines = Path("vasp_eledos/KPOINTS").read_text(encoding="utf-8").splitlines()
+    assert kpoints_lines[2] == "Monkhorst-Pack"
+    assert kpoints_lines[3] == "20 20 10"
+
+
 def test_vasp_process_eledos_generates_csv_and_png(chdir_work, monkeypatch):
     pytest.importorskip("matplotlib")
     from vaspflow.eledos import vasp_process_eledos as module

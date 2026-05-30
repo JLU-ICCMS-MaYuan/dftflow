@@ -2,7 +2,6 @@
 import os
 import shutil
 import argparse
-import math
 import subprocess
 from public.config_templates import load_config_file
 from public.executables import resolve_vasp_command
@@ -11,6 +10,14 @@ from vaspflow.templates import (
     apply_vasp_config_overrides,
     get_vasp_eledos_allowed_keys,
     get_vasp_eledos_parameters_template,
+    get_vasp_scf_parameters_template,
+)
+from vaspflow.kpoints import (
+    AutomaticKpoints,
+    derive_integer_kmesh_multiplier,
+    expected_scaled_mesh,
+    read_automatic_kpoints,
+    write_automatic_kpoints,
 )
 
 try:
@@ -78,32 +85,89 @@ class VaspDosSetup:
         print(f"POTCAR 已在 {self.work_dir} 中准备就绪。")
 
     def generate_kpoints(self):
-        """使用 vaspkit 生成 KPOINTS 文件"""
+        """使用 vaspkit 生成 KPOINTS 文件，并校准到 SCF 网格的整数倍。"""
         kmesh = self.config["vasp_eledos"].get("kmesh")
-        if not kmesh:
-            print("未在配置文件中找到 'kmesh'，跳过生成 KPOINTS。")
-            return
+        if kmesh:
+            print(f"检测到 kmesh = {kmesh}，正在使用 vaspkit 生成 KPOINTS...")
+            try:
+                process = subprocess.Popen(
+                    ["vaspkit"],
+                    cwd=self.work_dir,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    text=True
+                )
+                # vaspkit 102 -> 2 -> kmesh
+                process.communicate(input=f"102\n2\n{kmesh}\n")
+                
+                kpoints_file = os.path.join(self.work_dir, "KPOINTS")
+                if os.path.exists(kpoints_file):
+                    print(f"KPOINTS 已通过 vaspkit 生成完成。")
+                else:
+                    print(f"错误: vaspkit 未生成 KPOINTS。")
+            except Exception as e:
+                print(f"调用 vaspkit 出错: {e}")
+        else:
+            print("未在配置文件中找到 'kmesh'，将直接根据 vasp_scf/KPOINTS 生成 KPOINTS。")
 
-        print(f"检测到 kmesh = {kmesh}，正在使用 vaspkit 生成 KPOINTS...")
-        try:
-            process = subprocess.Popen(
-                ["vaspkit"],
-                cwd=self.work_dir,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                text=True
+        self.ensure_kpoints_integer_multiple_of_scf()
+
+    def ensure_kpoints_integer_multiple_of_scf(self):
+        """确保 DOS KPOINTS 是 SCF KPOINTS 按 kmesh 比例得到的整数倍。"""
+        scf_kpoints_path = self.get_scf_kpoints_path()
+        eledos_kpoints_path = os.path.join(self.work_dir, "KPOINTS")
+        scf_kpoints = read_automatic_kpoints(scf_kpoints_path)
+
+        multiplier = self.get_eledos_kmesh_multiplier()
+        expected_mesh = expected_scaled_mesh(scf_kpoints.mesh, multiplier)
+
+        if os.path.exists(eledos_kpoints_path):
+            eledos_kpoints = read_automatic_kpoints(eledos_kpoints_path)
+            if eledos_kpoints.mesh == expected_mesh:
+                print(
+                    "KPOINTS 网格已满足 "
+                    f"vasp_scf {scf_kpoints.mesh} -> vasp_eledos {eledos_kpoints.mesh} "
+                    f"的 {multiplier} 倍关系。"
+                )
+                return
+            print(
+                "KPOINTS 网格未满足按 kmesh 推导的整数倍关系，"
+                f"将从 {eledos_kpoints.mesh} 修正为 {expected_mesh}。"
             )
-            # vaspkit 102 -> 2 -> kmesh
-            process.communicate(input=f"102\n2\n{kmesh}\n")
-            
-            kpoints_file = os.path.join(self.work_dir, "KPOINTS")
-            if os.path.exists(kpoints_file):
-                print(f"KPOINTS 已通过 vaspkit 生成完成。")
-            else:
-                print(f"错误: vaspkit 未生成 KPOINTS。")
-        except Exception as e:
-            print(f"调用 vaspkit 出错: {e}")
+
+        corrected = AutomaticKpoints(
+            title=f"Automatic mesh scaled from {os.path.basename(os.path.dirname(scf_kpoints_path))}",
+            style=scf_kpoints.style,
+            mesh=expected_mesh,
+            shift=scf_kpoints.shift,
+        )
+        write_automatic_kpoints(eledos_kpoints_path, corrected)
+        print(
+            f"KPOINTS 已按 vasp_scf 网格 {scf_kpoints.mesh} 的 {multiplier} 倍写入: {expected_mesh}"
+        )
+
+    def get_scf_kpoints_path(self):
+        """优先从 CHGCAR 路径定位同目录 KPOINTS，失败时使用默认 vasp_scf/KPOINTS。"""
+        chgcar_src = self.config.get("chgcar_path")
+        candidates = []
+        if chgcar_src:
+            candidates.append(os.path.join(os.path.dirname(os.path.expanduser(chgcar_src)), "KPOINTS"))
+        candidates.append(os.path.join("vasp_scf", "KPOINTS"))
+
+        for candidate in candidates:
+            if candidate and os.path.exists(candidate):
+                return candidate
+        raise FileNotFoundError("找不到 vasp_scf 的 KPOINTS，无法校准 vasp_eledos 网格。")
+
+    def get_eledos_kmesh_multiplier(self):
+        """根据 vasp_scf.kmesh 与 vasp_eledos.kmesh 推导整数网格倍数。"""
+        scf_default = get_vasp_scf_parameters_template()["vasp_scf"]["kmesh"]
+        scf_kmesh = self.input_config.get("vasp_scf", {}).get("kmesh", scf_default)
+        eledos_kmesh = self.config["vasp_eledos"].get("kmesh")
+        if not eledos_kmesh:
+            return 1
+        return derive_integer_kmesh_multiplier(scf_kmesh, eledos_kmesh)
 
     def copy_scf_files(self):
         """从配置文件指定的路径拷贝 CHGCAR 和 WAVECAR"""
