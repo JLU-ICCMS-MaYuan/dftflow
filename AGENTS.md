@@ -24,6 +24,17 @@
 
 ## 需求处理记录
 
+### [2026-06-02] vasp_opt rv4 分步日志与归档强化
+- **需求**：
+    1. 排查 `substitutionflow` 链路中 `vasp_opt` 优化后看不到 `CONTCAR_n`、`OUTCAR_n` 的原因。
+    2. `vasp_opt` 的 rv4 分步优化应按 `INCAR_n -> INCAR`、运行 VASP、归档 `CONTCAR/OUTCAR`、再用 `CONTCAR` 更新 `POSCAR` 的顺序循环。
+    3. 每一轮 VASP 运行需要重定向输出到 `vasp.log_n`，便于定位具体优化阶段的问题。
+- **方案**：
+    1. 确认 `substitutionflow` 通过 `vasp_opt -r` 间接调用 `vasp_opt`，最终仍复用 `vaspflow/opt/vasp_opt.py` 的 rv4 命令序列。
+    2. 修改 rv4 命令序列为 `vasp_std > vasp.log_$i 2>&1` 风格，并对 `INCAR/CONTCAR_n/OUTCAR_n/POSCAR` 拷贝使用 `cp -f` 明确覆盖。
+    3. 补充 `vasp_opt` 测试断言，锁定 `fouropt.sh` 中的分步日志和归档命令。
+- **状态**：已完成。
+
 ### [2026-05-30] vasp_eledos KPOINTS 按 kmesh 比例校准
 - **需求**：
     1. `vasp_eledos` 仍优先使用 `[vasp_eledos].kmesh` 调用 `vaspkit` 生成 `KPOINTS`。

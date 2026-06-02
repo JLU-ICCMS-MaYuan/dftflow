@@ -280,11 +280,11 @@ class VaspOptSetup:
         if mode == "rv4":
             return [
                 "for i in {1..4}; do",
-                "cp INCAR_$i INCAR",
-                vasp_execmd,
-                "cp CONTCAR CONTCAR_$i",
-                "cp OUTCAR OUTCAR_$i",
-                "cp CONTCAR POSCAR",
+                "cp -f INCAR_$i INCAR",
+                f"{vasp_execmd} > vasp.log_$i 2>&1",
+                "cp -f CONTCAR CONTCAR_$i",
+                "cp -f OUTCAR OUTCAR_$i",
+                "cp -f CONTCAR POSCAR",
                 "done",
             ]
         if mode == "rv1":

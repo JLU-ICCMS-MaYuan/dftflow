@@ -1949,11 +1949,16 @@ def test_vasp_opt_rv4_api(chdir_work):
     incar_2 = (Path("vasp_opt") / "INCAR_2").read_text(encoding="utf-8")
     incar_3 = (Path("vasp_opt") / "INCAR_3").read_text(encoding="utf-8")
     incar_4 = (Path("vasp_opt") / "INCAR_4").read_text(encoding="utf-8")
+    script_content = (Path("vasp_opt") / "fouropt.sh").read_text(encoding="utf-8")
 
     assert "KSPACING = 0.8" in incar_1
     assert "KSPACING = 0.6" in incar_2
     assert "KSPACING = 0.4" in incar_3
     assert f"KSPACING = {0.04 * 2 * 3.1415926}" in incar_4
+    assert "/home/mayuan/soft/vasp.6.3.2/bin/vasp_std > vasp.log_$i 2>&1" in script_content
+    assert "cp -f CONTCAR CONTCAR_$i" in script_content
+    assert "cp -f OUTCAR OUTCAR_$i" in script_content
+    assert "cp -f CONTCAR POSCAR" in script_content
 
 
 def test_vasp_opt_rv1_api(chdir_work):
