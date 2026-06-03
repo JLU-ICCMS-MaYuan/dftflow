@@ -24,6 +24,27 @@
 
 ## 需求处理记录
 
+### [2026-06-03] vasp_opt rv4 四步 INCAR 模板更新
+- **需求**：
+    1. `vasp_opt` 的 `rv4` 四步优化参数按新的 `INCAR_1` 到 `INCAR_4` 模板写出。
+    2. 第 3/4 步固定使用 `NCORE = 1`，避免高精度优化阶段触发 VASP Davidson 并行数值不稳定。
+    3. 模板中的 `PSTRESS = 500.0` 不固定采纳，继续沿用配置或 `-p` 压强覆盖逻辑动态写入。
+- **方案**：
+    1. 更新 `vaspflow/templates.py` 中 `opt_stage_templates` 的四步默认参数，新增 `stage4`。
+    2. 修改 `vaspflow/opt/vasp_opt.py`，让 `rv4` 的 `INCAR_4` 也从 `stage4` 生成，`rv1/rvf` 继续使用 `[vasp_opt]` 参数。
+    3. 更新 `vasp_opt` 自动化测试和 `vaspflow` README，锁定新四步模板、动态 `PSTRESS` 与第 3/4 步 `NCORE = 1`。
+- **状态**：已完成。
+
+### [2026-06-03] vasp_opt rv4 使用 VASP 6.4.3 MPI 完整命令
+- **需求**：
+    1. `vasp_opt` rv4 分步脚本中的 VASP 运行命令应为 `mpirun -np 48 /work/home/mayuan/software/vasp.6.4.3/bin/vasp_std > vasp.log_$i 2>&1`。
+    2. 保持 `CONTCAR_i`、`OUTCAR_i` 和 `POSCAR` 分步归档语义不变。
+- **方案**：
+    1. 确认 `vaspflow` 的 `[vasp].executable_path` 语义是完整执行命令，`vasp_opt` 会原样写入 rv4 脚本。
+    2. 更新测试配置中的 `[vasp].executable_path` 为 VASP 6.4.3 MPI 完整命令。
+    3. 更新 `vasp_opt` rv4 与多压强总脚本断言，锁定完整 MPI 命令。
+- **状态**：已完成。
+
 ### [2026-06-02] vasp_opt rv4 分步日志与归档强化
 - **需求**：
     1. 排查 `substitutionflow` 链路中 `vasp_opt` 优化后看不到 `CONTCAR_n`、`OUTCAR_n` 的原因。

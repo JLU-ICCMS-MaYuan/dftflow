@@ -5,7 +5,7 @@ wavecar_path = "vasp_scf/WAVECAR"
 lobster_executable_path = "/home/mayuan/bin/lobster-5.1.1"
 
 [vasp]
-executable_path = "/home/mayuan/soft/vasp.6.3.2/bin/vasp_std"
+executable_path = "mpirun -np 48 /work/home/mayuan/software/vasp.6.4.3/bin/vasp_std"
 
 [slurm]
 header = """

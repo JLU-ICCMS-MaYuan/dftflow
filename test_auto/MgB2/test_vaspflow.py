@@ -1951,11 +1951,36 @@ def test_vasp_opt_rv4_api(chdir_work):
     incar_4 = (Path("vasp_opt") / "INCAR_4").read_text(encoding="utf-8")
     script_content = (Path("vasp_opt") / "fouropt.sh").read_text(encoding="utf-8")
 
-    assert "KSPACING = 0.8" in incar_1
-    assert "KSPACING = 0.6" in incar_2
-    assert "KSPACING = 0.4" in incar_3
-    assert f"KSPACING = {0.04 * 2 * 3.1415926}" in incar_4
-    assert "/home/mayuan/soft/vasp.6.3.2/bin/vasp_std > vasp.log_$i 2>&1" in script_content
+    assert "ENCUT    = 400" in incar_1
+    assert "KSPACING = 0.5" in incar_1
+    assert "EDIFF    = 0.0001" in incar_1
+    assert "EDIFFG   = -0.1" in incar_1
+    assert "ISIF     = 2" in incar_1
+    assert "POTIM" not in incar_1
+    assert "PSTRESS  = 0.0" in incar_1
+
+    assert "ENCUT    = 500" in incar_2
+    assert "KSPACING = 0.4" in incar_2
+    assert "EDIFF    = 1e-05" in incar_2
+    assert "EDIFFG   = -0.1" in incar_2
+    assert "ISIF     = 4" in incar_2
+    assert "POTIM    = 0.1" in incar_2
+
+    assert "ENCUT    = 600" in incar_3
+    assert "NCORE    = 1" in incar_3
+    assert "KSPACING = 0.3" in incar_3
+    assert "EDIFF    = 1e-06" in incar_3
+    assert "EDIFFG   = -0.05" in incar_3
+    assert "NSW      = 300" in incar_3
+
+    assert "ENCUT    = 800" in incar_4
+    assert "NCORE    = 1" in incar_4
+    assert "KSPACING = 0.15707963000000003" in incar_4
+    assert "EDIFF    = 1e-07" in incar_4
+    assert "EDIFFG   = -0.01" in incar_4
+    assert "NSW      = 500" in incar_4
+    assert "POTIM    = 0.01" in incar_4
+    assert "mpirun -np 48 /work/home/mayuan/software/vasp.6.4.3/bin/vasp_std > vasp.log_$i 2>&1" in script_content
     assert "cp -f CONTCAR CONTCAR_$i" in script_content
     assert "cp -f OUTCAR OUTCAR_$i" in script_content
     assert "cp -f CONTCAR POSCAR" in script_content
@@ -2061,4 +2086,4 @@ def test_vasp_opt_multiple_pressures_generate_multiple_cases(chdir_work):
     assert 'cd "' in submit_script
     assert "bash oneopt.sh" not in submit_script
     assert "bash fouropt.sh" not in submit_script
-    assert "/home/mayuan/soft/vasp.6.3.2/bin/vasp_std" in submit_script
+    assert "mpirun -np 48 /work/home/mayuan/software/vasp.6.4.3/bin/vasp_std" in submit_script
