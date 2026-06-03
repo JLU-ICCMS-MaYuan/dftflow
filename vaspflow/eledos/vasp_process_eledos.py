@@ -10,7 +10,7 @@ import numpy as np
 
 
 P_COMPONENTS = ("py", "pz", "px")
-D_COMPONENTS = ("dxy", "dyz", "dz2", "dxz", "dx2")
+D_COMPONENTS = ("dxy", "dyz", "dz2", "dxz", "dx2-y2")
 F_COMPONENTS = ("fy3x2", "fxyz", "fyz2", "fz3", "fxz2", "fzx2", "fx3")
 COARSE_ORBITALS = ("s", "p", "d", "f")
 FINE_ORBITALS = ("s",) + P_COMPONENTS + D_COMPONENTS + F_COMPONENTS
@@ -29,7 +29,7 @@ ORBITAL_GROUPS = {
     "dyz": ("dyz",),
     "dz2": ("dz2",),
     "dxz": ("dxz",),
-    "dx2": ("dx2",),
+    "dx2-y2": ("dx2-y2",),
     "fy3x2": ("fy3x2",),
     "fxyz": ("fxyz",),
     "fyz2": ("fyz2",),
@@ -101,7 +101,7 @@ def parse_element_specs(items):
             if orbital not in SUPPORTED_ORBITALS:
                 raise ValueError(
                     f"不支持的轨道类型: {orbital}，支持粗粒度 s/p/d/f 与精细轨道 "
-                    "s/py/pz/px/dxy/dyz/dz2/dxz/dx2/fy3x2/fxyz/fyz2/fz3/fxz2/fzx2/fx3"
+                    "s/py/pz/px/dxy/dyz/dz2/dxz/dx2-y2/fy3x2/fxyz/fyz2/fz3/fxz2/fzx2/fx3"
                 )
             if orbital not in orbitals:
                 orbitals.append(orbital)
@@ -211,7 +211,7 @@ def is_float(text):
 
 
 def _normalize_header(name):
-    return name.strip().lstrip("#").replace("(", "").replace(")", "").replace("-", "").lower()
+    return name.strip().lstrip("#").replace("(", "").replace(")", "").lower()
 
 
 def read_dat_table(path):

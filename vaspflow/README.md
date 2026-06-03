@@ -50,7 +50,7 @@
 - `vasp_process_eledos` 是一个纯后处理 CLI，不读取 `input.toml` 模板；它默认在 `vasp_eledos` 目录中先同步 `DOSCAR` 的费米能到 `../vasp_scf/OUTCAR`，再调用 `vaspkit` 生成 `TDOS.dat` 与 `PDOS_<元素>.dat`，按 `--elements "元素:轨道"` 聚合后输出 `CSV + PNG`。
 - `vasp_process_eledos` 也支持 `--elements-total Mg B H` 这种总投影模式，此时只输出元素总投影 `tot` 列与 `TDOS`。
 - `vasp_idos_computed` 是一个纯后处理 CLI，不读取 `input.toml` 模板；它默认在 `vasp_eledos` 目录中同步 `DOSCAR` 的费米能到 `../vasp_scf/OUTCAR`，再对 `TDOS` 与指定 `PDOS` 在 `[--low, --up]` 能量区间内做 IDOS 数值积分，并输出 `CSV` 与终端摘要。
-- `vasp_process_eledos`、`vasp_process_eband` 和 `vasp_idos_computed` 的 `--elements` 同时支持粗粒度轨道 `s/p/d/f` 与精细轨道 `s/py/pz/px/dxy/dyz/dz2/dxz/dx2/fy3x2/fxyz/fyz2/fz3/fxz2/fzx2/fx3`。
+- `vasp_process_eledos`、`vasp_process_eband` 和 `vasp_idos_computed` 的 `--elements` 同时支持粗粒度轨道 `s/p/d/f` 与精细轨道 `s/py/pz/px/dxy/dyz/dz2/dxz/dx2-y2/fy3x2/fxyz/fyz2/fz3/fxz2/fzx2/fx3`。
 - `vasp_opt` 的 `rv1/rvf` 使用 `INCAR`，`rv4` 使用 `INCAR_1` 到 `INCAR_4`。
 - `rv1/rvf` 和 `rv4` 的最终高精度参数来自 `vasp_opt`。
 - `vasp_opt` 不生成也不复制 `KPOINTS`；其 k 点精度完全通过 `KSPACING` 控制。若 `[vasp_opt].KSPACING` 未设置，则仅对最终步用 `[vasp_opt].kmesh * 2π` 换算。

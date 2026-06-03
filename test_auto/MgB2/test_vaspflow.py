@@ -704,14 +704,14 @@ def test_vasp_process_eband_supports_fine_grained_orbitals(chdir_work):
 
     setup = VaspProcessBandSetup(
         directory=str(work_dir),
-        element_specs=["Mg:px,dz2,dx2"],
+        element_specs=["Mg:px,dz2,dx2-y2"],
         skip_vaspkit=True,
         out_prefix="mgb2_band_fine",
     )
     csv_path, _ = setup.run()
 
     csv_content = Path(csv_path).read_text(encoding="utf-8")
-    assert "weight_Mg_px,weight_Mg_dz2,weight_Mg_dx2" in csv_content
+    assert "weight_Mg_px,weight_Mg_dz2,weight_Mg_dx2-y2" in csv_content
     assert "1,1,0.0,-1.0,0.4,0.7,0.9,GAMMA,0.0" in csv_content
 
 
@@ -1290,7 +1290,7 @@ def test_vasp_process_eledos_supports_fine_grained_orbitals(chdir_work, monkeypa
                 (self.cwd / "PDOS_Mg.dat").write_text(
                     "\n".join(
                         [
-                            "Energy s py pz px dxy dyz dz2 dxz dx2 tot",
+                            "Energy s py pz px dxy dyz dz2 dxz dx2-y2 tot",
                             "-1.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 45.0",
                             "0.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 54.0",
                             "1.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 63.0",
@@ -1318,17 +1318,17 @@ def test_vasp_process_eledos_supports_fine_grained_orbitals(chdir_work, monkeypa
 
     setup = module.VaspProcessDosSetup(
         directory=str(work_dir),
-        element_specs=["Mg:px,dz2,dx2"],
+        element_specs=["Mg:px,dz2,dx2-y2"],
         out_prefix="mgb2_dos_fine",
     )
     merged_csv, at_ef_csv, _ = setup.run()
 
     merged_content = Path(merged_csv).read_text(encoding="utf-8")
-    assert "Energy(eV),Mg_px,Mg_dz2,Mg_dx2,Mg,TDOS" in merged_content
+    assert "Energy(eV),Mg_px,Mg_dz2,Mg_dx2-y2,Mg,TDOS" in merged_content
     assert "0.0,5.0,8.0,10.0,54.0,24.0" in merged_content
 
     ef_content = Path(at_ef_csv).read_text(encoding="utf-8")
-    assert "Energy(eV),Mg_px,Mg_dz2,Mg_dx2,Mg,TDOS" in ef_content
+    assert "Energy(eV),Mg_px,Mg_dz2,Mg_dx2-y2,Mg,TDOS" in ef_content
     assert "0.0,5.0,8.0,10.0,54.0,24.0" in ef_content
 
 

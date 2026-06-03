@@ -177,7 +177,7 @@ PBAND_COMPONENT_INDEX = {
     "dyz": 7,
     "dz2": 8,
     "dxz": 9,
-    "dx2": 10,
+    "dx2-y2": 10,
     "fy3x2": 11,
     "fxyz": 12,
     "fyz2": 13,

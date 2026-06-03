@@ -24,6 +24,17 @@
 
 ## 需求处理记录
 
+### [2026-06-03] vasp_process_eledos d 轨道分量命名收敛为 dx2-y2
+- **需求**：
+    1. `vasp_process_eledos -e "Yb:s,p,d"` 处理 VASPKit 生成的 `PDOS_Yb.dat` 时报 `缺少轨道分量列: dx2`。
+    2. 真实 `PDOS_*.dat` 表头中第五个 d 分量为 `dx2-y2`，脚本不需要兼容 `dx2` 等旧写法。
+    3. `vasp_process_eledos`、复用轨道解析的 `vasp_process_eband` 和文档中的精细轨道命名应统一只保留 `dx2-y2`。
+- **方案**：
+    1. 将 `D_COMPONENTS` 与 `ORBITAL_GROUPS` 的第五个 d 分量从 `dx2` 改为 `dx2-y2`。
+    2. 调整 PDOS 表头归一化逻辑，保留连字符，使 `dx2-y2` 表头可被直接识别。
+    3. 同步 `vasp_process_eband` 的 PBAND 分量键、自动化测试和 `vaspflow` README。
+- **状态**：已完成。
+
 ### [2026-06-03] vasp_opt rv4 四步 INCAR 模板更新
 - **需求**：
     1. `vasp_opt` 的 `rv4` 四步优化参数按新的 `INCAR_1` 到 `INCAR_4` 模板写出。
