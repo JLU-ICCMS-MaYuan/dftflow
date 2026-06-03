@@ -60,6 +60,48 @@ class VaspOptSetup:
             for line in lines:
                 incar.write(line if line.endswith("\n") else line + "\n")
 
+    def _write_final_opt_incar(self, filepath):
+        params = self.opt_params
+        kspacing = params.get("KSPACING")
+        if kspacing is None:
+            kmesh = params.get("kmesh")
+            kspacing = None if kmesh is None else kmesh * 2 * 3.1415926
+        if kspacing is None:
+            raise ValueError("缺少 KSPACING 且未设置 [vasp_opt].kmesh")
+
+        lines = [
+            f"ISTART   = {params['ISTART']}",
+            f"ICHARG   = {params['ICHARG']}",
+            f"ISYM     = {params['ISYM']}",
+            f"ENCUT    = {params['ENCUT']}",
+            f"PREC     = {params['PREC']}",
+            f"SYMPREC  = {params['SYMPREC']}",
+        ]
+        if params.get("NPAR") is not None:
+            lines.append(f"NPAR   = {params['NPAR']}")
+        if params.get("NCORE") is not None:
+            lines.append(f"NCORE    = {params['NCORE']}")
+        if params.get("KPAR") is not None:
+            lines.append(f"KPAR   = {params['KPAR']}")
+        lines.extend([
+            f"KSPACING = {kspacing}",
+            f"ISMEAR   = {params['ISMEAR']}",
+            f"SIGMA    = {params['SIGMA']}",
+            f"NELM     = {params['NELM']}",
+            f"NELMIN   = {params['NELMIN']}",
+            f"EDIFF    = {params['EDIFF']}",
+            f"EDIFFG   = {params['EDIFFG']}",
+            f"NSW      = {params['NSW']}",
+            f"IBRION   = {params['IBRION']}",
+            f"ISIF     = {params['ISIF']}",
+            f"POTIM    = {params['POTIM']}",
+            f"LWAVE    = {params['LWAVE']}",
+            f"LCHARG   = {params['LCHARG']}",
+            f"PSTRESS  = {float(self.pstress_value)}",
+        ])
+        self._write_incar(filepath, lines)
+        return filepath
+
     def get_elements_from_poscar(self):
         poscar_path = os.path.join(self.work_dir, "POSCAR")
         if not os.path.exists(poscar_path):
@@ -111,11 +153,12 @@ class VaspOptSetup:
             f"NSW      = {params['NSW']}",
             f"IBRION   = {params['IBRION']}",
             f"ISIF     = {params['ISIF']}",
-            f"POTIM    = {params['POTIM']}",
             f"LWAVE    = {params['LWAVE']}",
             f"LCHARG   = {params['LCHARG']}",
             f"PSTRESS  = {float(self.pstress_value)}",
         ]
+        if params.get("POTIM") is not None:
+            lines.insert(-3, f"POTIM    = {params['POTIM']}")
         self._write_incar(incar_filepath, lines)
         return incar_filepath
 
@@ -179,93 +222,11 @@ class VaspOptSetup:
 
     def opt_incar4(self, incar_dirpath):
         incar_filepath = os.path.join(incar_dirpath, "INCAR_4")
-        lines = [
-            "ISTART   = 0",
-            "ICHARG   = 2",
-            f"ISYM     = {self.opt_params['ISYM']}",
-            f"ENCUT    = {self.opt_params['ENCUT']}",
-            "PREC     = Accurate",
-            f"SYMPREC  = {self.opt_params['SYMPREC']}",
-        ]
-        if self.opt_params.get("NPAR") is not None:
-            lines.append(f"NPAR   = {self.opt_params['NPAR']}")
-        if self.opt_params.get("NCORE") is not None:
-            lines.append(f"NCORE  = {self.opt_params['NCORE']}")
-        if self.opt_params.get("KPAR") is not None:
-            lines.append(f"KPAR   = {self.opt_params['KPAR']}")
-        kspacing = self.opt_params.get("KSPACING")
-        if kspacing is None:
-            kmesh = self.opt_params.get("kmesh")
-            kspacing = None if kmesh is None else kmesh * 2 * 3.1415926
-        if kspacing is None:
-            raise ValueError("缺少 KSPACING 且未设置 [vasp_opt].kmesh")
-        ediff = self.opt_params.get("EDIFF", 1e-7)
-        ediffg = self.opt_params.get("EDIFFG", -0.01)
-        ibrion = self.opt_params.get("IBRION", 2)
-        isif = self.opt_params.get("ISIF", 3)
-        lines.extend([
-            f"KSPACING = {kspacing}",
-            f"ISMEAR   = {self.opt_params['ISMEAR']}",
-            f"SIGMA    = {self.opt_params['SIGMA']}",
-            f"NELM     = {self.opt_params['NELM']}",
-            "NELMIN   = 6",
-            f"EDIFF    = {ediff}",
-            f"EDIFFG   = {ediffg}",
-            "NSW      = 500",
-            f"IBRION   = {ibrion}",
-            f"ISIF     = {isif}",
-            f"POTIM    = {self.opt_params['POTIM']}",
-            "LWAVE  = .FALSE.",
-            "LCHARG = .FALSE.",
-            f"PSTRESS  = {float(self.pstress_value)}",
-        ])
-        self._write_incar(incar_filepath, lines)
-        return incar_filepath
+        return self._write_final_opt_incar(incar_filepath)
 
     def opt_incar(self, incar_dirpath):
         incar_filepath = os.path.join(incar_dirpath, "INCAR")
-        lines = [
-            "ISTART   = 0",
-            "ICHARG   = 2",
-            f"ISYM     = {self.opt_params['ISYM']}",
-            f"ENCUT    = {self.opt_params['ENCUT']}",
-            "PREC     = Accurate",
-            f"SYMPREC  = {self.opt_params['SYMPREC']}",
-        ]
-        if self.opt_params.get("NPAR") is not None:
-            lines.append(f"NPAR   = {self.opt_params['NPAR']}")
-        if self.opt_params.get("NCORE") is not None:
-            lines.append(f"NCORE  = {self.opt_params['NCORE']}")
-        if self.opt_params.get("KPAR") is not None:
-            lines.append(f"KPAR   = {self.opt_params['KPAR']}")
-        kspacing = self.opt_params.get("KSPACING")
-        if kspacing is None:
-            kmesh = self.opt_params.get("kmesh")
-            kspacing = None if kmesh is None else kmesh * 2 * 3.1415926
-        if kspacing is None:
-            raise ValueError("缺少 KSPACING 且未设置 [vasp_opt].kmesh")
-        ediff = self.opt_params.get("EDIFF", 1e-7)
-        ediffg = self.opt_params.get("EDIFFG", -0.01)
-        ibrion = self.opt_params.get("IBRION", 2)
-        isif = self.opt_params.get("ISIF", 3)
-        lines.extend([
-            f"KSPACING = {kspacing}",
-            f"ISMEAR   = {self.opt_params['ISMEAR']}",
-            f"SIGMA    = {self.opt_params['SIGMA']}",
-            f"NELM     = {self.opt_params['NELM']}",
-            "NELMIN   = 6",
-            f"EDIFF    = {ediff}",
-            f"EDIFFG   = {ediffg}",
-            "NSW      = 500",
-            f"IBRION   = {ibrion}",
-            f"ISIF     = {isif}",
-            f"POTIM    = {self.opt_params['POTIM']}",
-            "LWAVE  = .FALSE.",
-            "LCHARG = .FALSE.",
-            f"PSTRESS  = {float(self.pstress_value)}",
-        ])
-        self._write_incar(incar_filepath, lines)
-        return incar_filepath
+        return self._write_final_opt_incar(incar_filepath)
 
     def _get_vasp_execmd(self):
         vasp_config = self.config.get("vasp", {})
