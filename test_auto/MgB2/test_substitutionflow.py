@@ -1760,9 +1760,9 @@ def test_continue_workflow_submit_refreshes_status_before_building_scripts(chdir
     target_index = script_lines.index(target_cd)
     assert "总未完成单元数" in summary
     assert submitted == [("ht_out", "submit_group_01.sh")]
-    assert "[qeflow] failed: vasp_scf" in script_lines[target_index + 1]
+    assert "[vaspflow] failed: vasp_scf" in script_lines[target_index + 1]
     assert any(line.startswith("if ! vasp_scf ") for line in script_lines[target_index:])
-    assert any("[qeflow] done: vasp_scf" in line for line in script_lines[target_index:])
+    assert any("[vaspflow] done: vasp_scf" in line for line in script_lines[target_index:])
 
 
 def test_continue_workflow_default_mode_refreshes_status_summary(chdir_work):
@@ -1884,6 +1884,7 @@ def test_continue_workflow_run_prints_case_pressure_step_progress(chdir_work, mo
     captured = output.getvalue()
     assert "运行进度:" in captured
     assert "first:vasp_eledos" in captured
+    assert "[vaspflow] 03.vasp_eledos" in captured
     assert "04.vasp_eledos" in captured
     assert "event:break" in captured
     assert "state:error" in captured
@@ -1940,6 +1941,7 @@ def test_run_workflow_run_prints_skip_run_stop_progress(chdir_work, monkeypatch)
     captured = output.getvalue()
     assert "运行进度:" in captured
     assert "first:vasp_opt" in captured
+    assert "[vaspflow] 01.vasp_opt" in captured
     assert "01.vasp_opt" in captured
     assert "event:run" in captured
     assert "reason:           case:ht_out/03.XA_Li/period_2/03.Li2H7/20" in captured
@@ -2055,9 +2057,11 @@ def test_build_submit_scripts_split_units_without_breaking_chain(chdir_work):
     assert 'cd "/tmp' in target_text or 'cd "' in target_text
     assert f'cd "{Path("ht_out/03.XA_Li/period_2/04.LiBeH7/20").resolve()}"' in target_text
     assert "vasp_scf -i vasp_opt/CONTCAR -c ../input.toml -r" in target_text
+    assert "[vaspflow] command: vasp_scf -i vasp_opt/CONTCAR -c ../input.toml -r" in target_text
     assert "vasp_eledos -i vasp_scf/POSCAR -c ../input.toml -r" in target_text
     assert "vasp_process_eledos -d ./vasp_eledos --elements-total Li Be H" in target_text
     assert f"qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -s" in target_text
+    assert f"[qeflow] command: qe_phonon_split_index -i vasp_opt/CONTCAR -c {expected_case_config} -s" in target_text
     assert "mattersim_opt -i structure.vasp -c input.toml -p 20 -r" not in target_text
     assert "vasp_opt -i mattersim_opt/CONTCAR -c ../input.toml -p 20 -r" not in target_text
     assert all(script_info["unit_count"] > 0 for script_info in bundle["scripts"])

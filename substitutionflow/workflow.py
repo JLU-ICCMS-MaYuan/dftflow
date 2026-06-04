@@ -178,6 +178,7 @@ def _print_progress(
         display_key = key[:-1] if key.endswith("_") else key
         extra_parts.append(f"{display_key}:{value}")
     line = (
+        f"[{_step_cli_family(step)}] "
         f"{_step_display(step_order, step)} "
         f"state:{state:<10} "
         f"event:{event:<8} "
@@ -336,8 +337,16 @@ def _load_slurm_header(output_dir: str) -> str:
         return ""
 
 
-def _echo_qeflow(message: str) -> str:
-    return f"echo {shlex.quote(f'[qeflow] {message}')}"
+def _step_cli_family(step: str) -> str:
+    if step.startswith("vasp_"):
+        return "vaspflow"
+    if step.startswith("qe_"):
+        return "qeflow"
+    return "substitutionflow"
+
+
+def _echo_step(step: str, message: str) -> str:
+    return f"echo {shlex.quote(f'[{_step_cli_family(step)}] {message}')}"
 
 
 def _append_submit_step_commands(
@@ -349,22 +358,22 @@ def _append_submit_step_commands(
 ) -> None:
     commands.extend(
         [
-            _echo_qeflow("-" * 60),
-            _echo_qeflow(f"case: {unit['case_rel']}"),
-            _echo_qeflow(f"formula: {unit['formula']}"),
-            _echo_qeflow(f"pressure: {unit['pressure_key']}"),
-            _echo_qeflow(f"step: {STEP_DISPLAY_NAME.get(step, step)}"),
-            _echo_qeflow(f"work_dir: {work_dir}"),
-            _echo_qeflow(f"command: {command}"),
+            _echo_step(step, "-" * 60),
+            _echo_step(step, f"case: {unit['case_rel']}"),
+            _echo_step(step, f"formula: {unit['formula']}"),
+            _echo_step(step, f"pressure: {unit['pressure_key']}"),
+            _echo_step(step, f"step: {STEP_DISPLAY_NAME.get(step, step)}"),
+            _echo_step(step, f"work_dir: {work_dir}"),
+            _echo_step(step, f"command: {command}"),
             f'if ! cd "{work_dir}"; then',
-            _echo_qeflow(f"failed: {STEP_DISPLAY_NAME.get(step, step)}"),
+            _echo_step(step, f"failed: {STEP_DISPLAY_NAME.get(step, step)}"),
             "  exit 1",
             "fi",
             f"if ! {command}; then",
-            _echo_qeflow(f"failed: {STEP_DISPLAY_NAME.get(step, step)}"),
+            _echo_step(step, f"failed: {STEP_DISPLAY_NAME.get(step, step)}"),
             "  exit 1",
             "fi",
-            _echo_qeflow(f"done: {STEP_DISPLAY_NAME.get(step, step)}"),
+            _echo_step(step, f"done: {STEP_DISPLAY_NAME.get(step, step)}"),
         ]
     )
 
