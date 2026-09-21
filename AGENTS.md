@@ -24,6 +24,15 @@
 
 ## 需求处理记录
 
+### [2026-09-21] 全局安装 Big-Project-Skill 技能集合
+- **需求**：将 `JLU-ICCMS-MaYuan/Big-Project-Skill` 安装到当前用户的全局技能目录，供 DFTFlow 和其他项目使用。
+- **方案**：
+    1. 从上游提交 `3377d2735d38984b8a27dd317a5665c4f5f07c32` 安装到 `~/.codex/skills/`。
+    2. 新增 `big-project-planer`、`big-project-contractor`、`big-project-spec-runner`、`big-project-translator`，更新 `big-project-issue-manager` 与 `big-project-overview-maintainer`。
+    3. 更新前将两个同名技能备份到 `~/.codex/skill-backups/big-project-skill-20260921-223323/`，保留已有 `big-project-spec`。
+    4. 校验全部 20 个技能文件与上游内容一致、技能入口及其相对链接完整；安装文件位于项目仓库之外，本仓库只记录安装结果。
+- **状态**：已完成；安装范围为当前用户跨项目使用，不涉及其他系统用户。
+
 ### [2026-06-03] vasp_process_eledos d 轨道分量命名收敛为 dx2-y2
 - **需求**：
     1. `vasp_process_eledos -e "Yb:s,p,d"` 处理 VASPKit 生成的 `PDOS_Yb.dat` 时报 `缺少轨道分量列: dx2`。
