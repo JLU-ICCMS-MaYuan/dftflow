@@ -157,7 +157,9 @@ split 工作流现在固定为两段 Slurm 提交：
 - `qe_process_phonon -r` 在当前声子工作目录内顺序执行 `q2r -> matdyn_phband -> collect phband -> matdyn_phdos -> collect phdos -> plot`。
 - `qe_process_phonon -s` 提交 `submit_process_phonon.sh`，脚本在 Slurm 内顺序执行 `q2r -> matdyn_phband -> collect phband -> matdyn_phdos -> collect phdos -> plot`，每步开始前都会输出当前步骤。
 - `qe_process_phonon --collect phband` / `--collect phdos` 只把根目录已有的 `<prefix>.phband.freq`、`<prefix>_band.labelinfo.dat`、`<prefix>.phdos.dat` 分别归档到 `phband/` 与 `phdos/`；省略目标时同时归档二者。
-- `qe_process_phonon --plot` 只读取 `phband/` 与 `phdos/` 中已归档的数据并生成 CSV/PNG，不自动回头收集根目录文件。
+- `qe_process_phonon --plot` 只读取 `phband/` 与 `phdos/` 中已归档的数据并生成原有 CSV/PNG，额外在工作区根目录生成 `phonon_band_dos.jpg`，不自动回头收集根目录文件。
+- 联合 JPG 使用左侧声子谱、右侧 `TDOS + 元素分波` 布局，共享 `Frequency (cm^-1)` y 轴；范围包含两类数据的全部频率，保留虚频。输出为白底、300 dpi，不更改数值或平滑曲线。所有调用现有同时绘图函数的路径均会增加该产物，无需新参数。
+- JPG 是额外产物，不改变历史 `phonon_plot` 完成状态的六文件判定；旧工作区若需联合图，请重新执行 `--plot`。重复绘图会覆盖生成文件，重要结果应使用新的独立工作区。
 - `phband/phonon_band.csv` 保存 `point_index,distance,kx,ky,kz,mode_1_cm-1,...`；`phband/phonon_band_labels.csv` 保存高对称点标签、路径坐标和二维路径距离。
 - `phdos/phonon_dos_atoms.csv` 保存频率、`TDOS` 和按结构原子顺序排列的原子级 DOS；`phdos/phonon_dos_elements.csv` 保存频率、`TDOS` 和元素级求和 DOS。DOS 图只绘制 `TDOS + 元素级曲线`，横轴为 DOS，纵轴为 `Frequency (cm^-1)`。
 - `workflow_status.json` 复用 `matdyn_phband`、`matdyn_phdos` 记录归档后的计算状态，并用 `phonon_plot` 记录绘图状态。

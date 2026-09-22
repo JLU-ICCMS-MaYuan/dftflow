@@ -52,6 +52,13 @@ Available commands:
 - `qe_phonon_split_index`
 - `qe_phonon_split_coords`
 
+## QE 声子绘图
+
+`qe_process_phonon -c /absolute/path/to/input.json --plot` 读取已有归档，保留原有独立 PNG/CSV，
+并额外在声子工作区生成 `phonon_band_dos.jpg`：左声子谱、右总 DOS 与元素分波，共享频率 y 轴并保留负频。
+不新增 CLI、不启动 QE。输入格式见 [qeflow 使用说明](qeflow/README.md#8-qe_process_phonon)，
+当前功能边界见 [绘图总览](docs/overview/qe-phonon-plot.md)。
+
 ## High Throughput Substitution
 
 - `mattersim_opt` 通过外部 MatterSim Python 环境运行两阶段预优化：先只优化原子坐标，再在目标压力下联合优化晶格和原子坐标，输出 `mattersim_opt/CONTCAR` 供后续 `vasp_opt` 使用。

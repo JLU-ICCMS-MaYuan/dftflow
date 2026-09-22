@@ -24,6 +24,13 @@
 
 ## 需求处理记录
 
+### [2026-09-22] 声子谱与态密度联合 JPG（Issue IKHQNI）
+- **需求**：沿用 `qe_process_phonon`，同时绘图时增加左声子谱、右总 DOS / 元素分波、共享频率轴的 JPG；保留旧 PNG/CSV。
+- **方案**：仅扩展 `qeflow/phonon/phonon_plot.py`，提取轴绘制 helper；联合范围覆盖全部频率并保留虚频，不改变计算、读取及旧状态判定。
+- **语言例外**：用户已明确确认本功能沿用现有 Python，不适用本文通用 TypeScript 规则。
+- **追踪**：[Gitee IKHQNI](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHQNI)；规格位于 `docs/specs/IKHQNI-phonon-band-dos-combined/`。Gitee 类型标签使用合法的 `type-feature`。
+- **状态**：实现与本地测试完成；真实归档验收和交付记录见该 Feature 的验收文档。
+
 ### [2026-09-21] 全局安装 Big-Project-Skill 技能集合
 - **需求**：将 `JLU-ICCMS-MaYuan/Big-Project-Skill` 安装到当前用户的全局技能目录，供 DFTFlow 和其他项目使用。
 - **方案**：
