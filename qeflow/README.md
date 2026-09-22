@@ -154,6 +154,7 @@ split 工作流现在固定为两段 Slurm 提交：
 - post 回收段：`qe_merge -> q2r -> matdyn_phband -> 归档 phband -> matdyn_phdos -> 归档 phdos -> plot`。
 
 ## 8. `qe_process_phonon`
+- 声子谱路径 `KPATH.in` 使用倒格子基矢下的晶体分数坐标。输入生成器明确写出 `q_in_cryst_coord = .true.`，与路径标签和距离计算一致；不新增坐标模式开关。历史输入不会自动修复：曾用旧生成器且未声明晶体坐标的结果应核查实际路径，必要时重算 matdyn，不能只改标签或重绘。仅绘制已有正确归档不受影响。
 - `qe_process_phonon -r` 在当前声子工作目录内顺序执行 `q2r -> matdyn_phband -> collect phband -> matdyn_phdos -> collect phdos -> plot`。
 - `qe_process_phonon -s` 提交 `submit_process_phonon.sh`，脚本在 Slurm 内顺序执行 `q2r -> matdyn_phband -> collect phband -> matdyn_phdos -> collect phdos -> plot`，每步开始前都会输出当前步骤。
 - `qe_process_phonon --collect phband` / `--collect phdos` 只把根目录已有的 `<prefix>.phband.freq`、`<prefix>_band.labelinfo.dat`、`<prefix>.phdos.dat` 分别归档到 `phband/` 与 `phdos/`；省略目标时同时归档二者。

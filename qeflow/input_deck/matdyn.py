@@ -33,6 +33,7 @@ def write_matdyn_phband_input(
         handle.write(f"  asr = {to_qe_value(config['qe_phonon']['q2r'].get('zasr', 'simple'))}\n")
         handle.write(f"  flfrc = {to_qe_value(names['flfrc'])}\n")
         handle.write(f"  flfrq = {to_qe_value(names['flfrq'])}\n")
+        handle.write("  q_in_cryst_coord = .true.\n")
         if band_cfg.get("q_in_band_form", True):
             handle.write("  q_in_band_form = .true.\n")
         handle.write("/\n")

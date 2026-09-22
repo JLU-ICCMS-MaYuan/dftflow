@@ -24,6 +24,12 @@
 
 ## 需求处理记录
 
+### [2026-09-22] matdyn 声子谱晶体坐标声明（Issue IKHSA0）
+- **需求与确认**：用户同意在现有 Python 声子谱输入生成器中明确声明晶体坐标，增加非立方晶胞回归并更新说明；本修复沿用 Python，不采用通用 TypeScript 规则。
+- **方案**：仅在 `qeflow/input_deck/matdyn.py` 增加 `q_in_cryst_coord = .true.`；不新增 CLI/配置开关，不改绘图层、DOS 输入、计算数据或工作流结构。
+- **追踪**：[Gitee IKHSA0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHSA0)；规格 `docs/specs/IKHSA0-matdyn-crystal-coordinates/`。
+- **验收边界**：非立方路径与原有声子测试本地验证；历史结果核查、ISIF2/ISIF3 实际后处理和外部 QE 环境另行验收；不处理未完成的 SC-07。
+
 ### [2026-09-22] 声子谱与态密度联合 JPG（Issue IKHQNI）
 - **需求**：沿用 `qe_process_phonon`，同时绘图时增加左声子谱、右总 DOS / 元素分波、共享频率轴的 JPG；保留旧 PNG/CSV。
 - **方案**：仅扩展 `qeflow/phonon/phonon_plot.py`，提取轴绘制 helper；联合范围覆盖全部频率并保留虚频，不改变计算、读取及旧状态判定。

@@ -9,5 +9,11 @@
 - 数据读取与计算调度边界不变；单项输入缺失继续失败，不自动补计算。
 - 旧工作流完成状态不要求新 JPG；需要联合图的消费方应直接检查该文件或执行绘图命令。
 
+## 上游声子谱输入约定
+
+`qeflow/input_deck/matdyn.py` 按 KPATH 晶体分数坐标写出 `q_in_cryst_coord = .true.`；与标签的倒格子距离约定一致。该修复不改变 DOS 输入或绘图层，不新增命令。旧输入与旧计算结果不会自动迁移，错误路径的频率不能靠重新绘图修复。
+
+修复规格：[IKHSA0](../specs/IKHSA0-matdyn-crystal-coordinates/spec.md)。
+
 使用说明：[qeflow README](../../qeflow/README.md#8-qe_process_phonon)。
 功能规格：[IKHQNI](../specs/IKHQNI-phonon-band-dos-combined/spec.md)。
