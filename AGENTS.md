@@ -24,6 +24,14 @@
 
 ## 需求处理记录
 
+### [2026-09-23] SiP2 的 scflow / A2F / QE 真实归档对照（Issue IKHZT0）
+- **需求**：对 SiP2 各相的已有 QE EPC 输出使用当前 scflow、原版 A2F 与 QE 后处理代码比较 Tc。
+- **方案**：冻结程序版本，在独立报告目录复制并哈希验证输入，统一 μ*=0.10；保留归档 μ* 对照，区分原样执行与零频/q 权重诊断。
+- **结果**：10 组 × 10 个展宽；成功的 102 组核心配对数值相同。暴露零频、结构字段、q 点舍入和 Tc 下限等问题，SC-004 部分失败，Issue 保持开放。
+- **记录**：规格验收见 `docs/specs/IKHZT0-scflow-qe-superconductivity/acceptance.md`；数据项目报告位于 `docs/scflow-comparison-2026-09-23/`。
+- **边界**：本次只提交已完成的对照报告/验收文档；没有修改程序源码、原始计算数据或全局环境，没有重跑第一性原理计算。
+
+
 ### [2026-09-23] 将 A2F QE 超导后处理迁移为 scflow（Issue IKHZT0）
 - **需求**：把 `external/a2f/src` 的全部计算代码复制到 dftflow 内部，命名为 `scflow`，通过 CLI 读取 `input.toml` 和 QE EPC 输出并计算超导转变温度。
 - **方案**：新增 `scflow/` 包、`scflow -c/--config` 入口、`[scflow]` 配置段和 `scflow` 可选依赖组；保留 A2F 完整输出，运行时不导入 `external/a2f`。
