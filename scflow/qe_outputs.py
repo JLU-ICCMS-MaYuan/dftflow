@@ -24,36 +24,36 @@ class Folder(object):
         self.dyn_elph_paths = self.dyn_elphs()
         self.ph_outs_paths = self.ph_outs()
 
+    def _matching_files(self, directory, pattern):
+        if not os.path.isdir(directory):
+            return []
+        return sorted(
+            os.path.join(directory, name) for name in os.listdir(directory)
+            if re.fullmatch(pattern, name) and os.path.isfile(os.path.join(directory, name))
+        )
+
     def dyns(self):
-        dyn_paths = list(filter(lambda x: 'dyn' in x and 'elph' not in x and 'dyn0' not in x, os.listdir(self.__path)))
-        full_dyns_paths = sorted([os.path.join(self.__path, dyn_path) for dyn_path in dyn_paths])
-        if full_dyns_paths:
-            print(f'Found dyns in {", ".join(full_dyns_paths)}')
-            return full_dyns_paths
-        else:
-            print(f'WARNING: Unable to detect *dyn* files in {self.__path}')
+        paths = self._matching_files(self.__path, r".*dyn[1-9][0-9]*")
+        print(f"Found {len(paths)} dynamical matrices")
+        return paths
 
     def dyn_elphs(self):
-        dyn_elphs_paths = list(filter(lambda x: 'dyn' in x and 'elph' in x,
-                                      os.listdir(self.__path)))
-        full_dyn_elphs_paths = sorted([os.path.join(self.__path, dyn_elphs_path) for dyn_elphs_path in dyn_elphs_paths])
-        if full_dyn_elphs_paths:
-            print(f'Found dyn_elphs in {", ".join(full_dyn_elphs_paths)}')
-            return full_dyn_elphs_paths
-        else:
-            print(f'ERROR: Unable to detect *dyn*.elph* files in {self.__path}')
-            raise FileNotFoundError
+        legacy = self._matching_files(self.__path, r".*dyn[0-9]+\.elph(?:\.?[0-9]+)?")
+        native = self._matching_files(
+            os.path.join(self.__path, "elph_dir"), r"elph\.inp_lambda\.[1-9][0-9]*"
+        )
+        if legacy and native:
+            raise ValueError("Both legacy and native EPC files found; select one input layout")
+        paths = legacy or native
+        if not paths:
+            raise FileNotFoundError(f"No QE EPC files found in {self.__path}")
+        print(f"Found {len(paths)} EPC files")
+        return paths
 
     def ph_outs(self):
-        ph_outs_paths = list(filter(lambda x: '.ph' in x and 'out' in x,
-                                    os.listdir(self.__path)))
-        full_ph_outs_paths = [os.path.join(self.__path, ph_outs_path) for ph_outs_path in ph_outs_paths]
-        if full_ph_outs_paths:
-            print(f'Found ph.outs in {", ".join(full_ph_outs_paths)}')
-            return full_ph_outs_paths
-        else:
-            print('Warning: Unable to detect ph.out files in ', self.__path)
-            return list()
+        return self._matching_files(
+            self.__path, r"(?:.*\.ph\.out|ph_no_split\.out|split_ph\.out\.[1-9][0-9]*)"
+        )
 
     def a2f_dats(self, *p):
         a2f_dats_paths = list(filter(lambda x: 'a2F.dat' in x, os.listdir(self.__path)))

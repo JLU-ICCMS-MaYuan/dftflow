@@ -11,6 +11,8 @@ def tc_mcm_formula(wlog, _lambda, mu):
     :param mu: Coulomb pseudopotential
     :return: McMillan Tc
     """
+    wlog = np.asarray(wlog, dtype=np.float64)
+    _lambda = np.asarray(_lambda, dtype=np.float64)
     den = _lambda * (1 - 0.62 * mu) - mu
     pos = den > 0
     tc = wlog[pos] / 1.2 * np.exp(-1.04 * (1 + _lambda[pos]) / den[pos])
@@ -27,6 +29,9 @@ def tc_ad_formula(wlog, w2, _lambda, mu):
     :param mu: Coulomb pseudopotential
     :return:
     """
+    wlog = np.asarray(wlog, dtype=np.float64)
+    w2 = np.asarray(w2, dtype=np.float64)
+    _lambda = np.asarray(_lambda, dtype=np.float64)
     pos = wlog > 0
     f1 = np.cbrt(1 + np.power(_lambda / (2.46 * (1 + 3.8 * mu)), 1.5))
     f2 = 1 - (np.power(_lambda[pos], 2) * (1 - w2[pos] / wlog[pos])) / (

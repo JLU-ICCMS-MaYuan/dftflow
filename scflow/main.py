@@ -2,6 +2,8 @@
 
 import argparse
 import os
+
+import numpy as np
 from copy import deepcopy
 from typing import Optional, Sequence
 
@@ -20,6 +22,17 @@ from .utils import (
     save_structure,
     update_summary,
 )
+
+
+
+def eliashberg_solver_metadata(superconducting):
+    """Distinguish the inherited search floor from a resolved transition."""
+    return {
+        "status": "resolution_limit" if superconducting.tc_e <= 0.001 else "resolved",
+        "resolution_K": 0.001,
+        "minimum_reported_Tc_K": 0.001,
+        "matrix_size": superconducting.dim + 1,
+    }
 
 
 def run(config: ScflowConfig) -> None:
@@ -105,6 +118,18 @@ def run(config: ScflowConfig) -> None:
             dyn_elph.DOS = dyn_elph.DOS[index]
             dyn_elph.E_F = dyn_elph.E_F[index]
 
+        zero_modes = []
+        for path, dyn_elph in zip(folder.dyn_elph_paths, selected_dyn_elphs):
+            for mode in np.flatnonzero(dyn_elph.sqr_freqs == 0):
+                zero_modes.append({
+                    "file": path, "q_point": list(dyn_elph.q_point),
+                    "mode_1based": int(mode) + 1,
+                    "lambda": float(dyn_elph.lambdas[mode]),
+                    "gamma_GHz": float(dyn_elph.gammas[mode]),
+                })
+        if zero_modes:
+            print(f"WARNING: {len(zero_modes)} exact-zero modes: excluding only if lambda=0; "
+                  "original gamma is recorded in result.json")
         system = System(selected_dyn_elphs, weights)
         system.get_direct(smoothing)
         print_direct(system)
@@ -125,6 +150,11 @@ def run(config: ScflowConfig) -> None:
         nef = selected_dyn_elphs[0].DOS
         print("nef: ", nef)
         result = superconducting.get_all(system, nef, structure)
+        result["eliashberg_solver"] = eliashberg_solver_metadata(superconducting)
+        result["zero_frequency_handling"] = {
+            "policy": "exclude_exact_zero_modes_only_if_lambda_is_zero",
+            "modes": zero_modes,
+        }
         if broadening > 0:
             result.update({"Broadening, Ry": broadening})
         save_result(result, result_dir_text)

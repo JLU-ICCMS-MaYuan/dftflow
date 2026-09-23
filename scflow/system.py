@@ -24,6 +24,8 @@ class System(object):
         :param dyn_elphs: list of DynElph objects (the class is defined in qe_outputs)
         :param weights: the list of weights taken from ph.out
         """
+        self.direct = {}
+        self.a2f = {}
         self.q_points = list()
         for dyn_elph in dyn_elphs:
             q_point = dyn_elph.q_point

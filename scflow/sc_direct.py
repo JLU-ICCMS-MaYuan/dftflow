@@ -4,6 +4,23 @@ from .constants import *
 from .utils import stairs
 
 
+
+def _frequencies_and_smoothing(dyn_elph, smoothing):
+    """Exclude exact-zero, zero-lambda modes without changing input arrays."""
+    freqs = np.sqrt(np.abs(dyn_elph.sqr_freqs)) * np.sign(dyn_elph.sqr_freqs) * k_Ry_THz
+    nonzero = freqs != 0
+    if np.any(dyn_elph.lambdas[~nonzero] != 0):
+        raise ValueError("A zero-frequency mode has nonzero lambda; cannot exclude it")
+    smooth = np.zeros_like(freqs)
+    smooth[nonzero] = np.exp(-np.square(smoothing / freqs[nonzero]))
+    return freqs, smooth
+
+
+def _divide_nonzero(numerator, denominator):
+    return np.divide(numerator, denominator, out=np.zeros_like(denominator),
+                     where=denominator != 0)
+
+
 def a2f_direct(qpoints, smoothing, dtype=np.float16):
     """
     Computes Eliashberg functions a2F directly from lambdas and gammas without any integration.
@@ -15,10 +32,9 @@ def a2f_direct(qpoints, smoothing, dtype=np.float16):
         gammas = dyn_elph.gammas
         nef = dyn_elph.DOS
         weight = q_point['weight']
-        q_freqs = np.sqrt(np.abs(dyn_elph.sqr_freqs)) * np.sign(dyn_elph.sqr_freqs) * k_Ry_THz
-        smooth = np.exp(-np.square(smoothing / q_freqs))
+        q_freqs, smooth = _frequencies_and_smoothing(dyn_elph, smoothing)
         q_a2f_lambda = smooth * lambdas * q_freqs / 2 * weight
-        q_a2f_gamma = smooth * gammas / q_freqs / nef / k_Ry_GHz / np.pi / 2 * weight * k_Ry_THz ** 2
+        q_a2f_gamma = _divide_nonzero(smooth * gammas, q_freqs) / nef / k_Ry_GHz / np.pi / 2 * weight * k_Ry_THz ** 2
         a2f_lambda.append(q_a2f_lambda)
         a2f_gamma.append(q_a2f_gamma)
         freqs.append(q_freqs)
@@ -51,12 +67,11 @@ def lambdas_direct(qpoints, smoothing, dtype=np.float16):
         gammas = dyn_elph.gammas
         nef = dyn_elph.DOS
         weight = q_point['weight']
-        q_freqs = np.sqrt(np.abs(dyn_elph.sqr_freqs)) * np.sign(dyn_elph.sqr_freqs) * k_Ry_THz
-        smooth = np.exp(-np.square(smoothing / q_freqs))
+        q_freqs, smooth = _frequencies_and_smoothing(dyn_elph, smoothing)
         q_lambdas_lambda_smooth = smooth * lambdas * weight
-        q_lambdas_gamma_smooth = smooth * gammas * weight / np.square(q_freqs) / nef * k_Ry_THz / 1000 / np.pi
+        q_lambdas_gamma_smooth = _divide_nonzero(smooth * gammas * weight, np.square(q_freqs)) / nef * k_Ry_THz / 1000 / np.pi
         q_lambdas_lambda = lambdas * weight
-        q_lambdas_gamma = gammas * weight / np.square(q_freqs) / nef * k_Ry_THz / 1000 / np.pi
+        q_lambdas_gamma = _divide_nonzero(gammas * weight, np.square(q_freqs)) / nef * k_Ry_THz / 1000 / np.pi
         lambdas_lambda_smooth.append(q_lambdas_lambda_smooth)
         lambdas_gamma_smooth.append(q_lambdas_gamma_smooth)
         lambdas_lambda.append(q_lambdas_lambda)
