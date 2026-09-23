@@ -18,6 +18,12 @@ dependencies = [
 analysis = [
     "pymatgen",
 ]
+scflow = [
+    "scipy",
+    "pandas",
+    "matplotlib",
+    "pymatgen",
+]
 
 [project.scripts]
 vasp_scf = "vaspflow.scf.vasp_scf:main"
@@ -47,6 +53,7 @@ substitution_prepare_potcar = "substitutionflow.prepare_potcar:main"
 substitution_prepare_qe_pseudo = "substitutionflow.prepare_qe_pseudo:main"
 substitution_plot_eledos = "substitutionflow.plot_eledos:main"
 substitution_check_phonon_stability = "substitutionflow.check_phonon_stability:main"
+scflow = "scflow.main:main"
 qe_scf = "qeflow.scf.qe_scf:main"
 qe_nscf = "qeflow.nscf.qe_nscf:main"
 qe_eband = "qeflow.eband.qe_eband:main"

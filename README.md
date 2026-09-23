@@ -51,6 +51,17 @@ Available commands:
 - `qe_phonon_nosplit`
 - `qe_phonon_split_index`
 - `qe_phonon_split_coords`
+- `scflow`
+
+## scflow 超导后处理
+
+安装 scflow 的科学计算和绘图依赖：
+
+```bash
+pip install -e ".[scflow]"
+```
+
+`scflow -c input.toml` 读取 `[scflow]` 配置和 QE EPC 输出，计算 McMillan、Allen-Dynes 与 Eliashberg 超导转变温度，并保留 A2F 的 CSV、JSON、PDF 和结构文件输出。它只处理已有结果，不启动 QE。详细配置见 [scflow README](scflow/README.md) 和 [功能总览](docs/overview/scflow.md)。
 
 ## QE 声子绘图
 

@@ -24,6 +24,13 @@
 
 ## 需求处理记录
 
+### [2026-09-23] 将 A2F QE 超导后处理迁移为 scflow（Issue IKHZT0）
+- **需求**：把 `external/a2f/src` 的全部计算代码复制到 dftflow 内部，命名为 `scflow`，通过 CLI 读取 `input.toml` 和 QE EPC 输出并计算超导转变温度。
+- **方案**：新增 `scflow/` 包、`scflow -c/--config` 入口、`[scflow]` 配置段和 `scflow` 可选依赖组；保留 A2F 完整输出，运行时不导入 `external/a2f`。
+- **兼容性**：适配当前 SciPy 的 `simpson`、pymatgen CIF 文本写出和 NumPy 标量 JSON 序列化；不改物理公式和 QE 输入输出。
+- **追踪**：[Gitee IKHZT0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHZT0)；Spec 位于 `docs/specs/IKHZT0-scflow-qe-superconductivity/`；真实 QE 归档路径待补。
+- **状态**：公开 `La2H20` QE EPC 归档已通过 scflow CLI 回归；真实材料 Tc 验收未执行。
+
 ### [2026-09-22] matdyn 声子谱晶体坐标声明（Issue IKHSA0）
 - **需求与确认**：用户同意在现有 Python 声子谱输入生成器中明确声明晶体坐标，增加非立方晶胞回归并更新说明；本修复沿用 Python，不采用通用 TypeScript 规则。
 - **方案**：仅在 `qeflow/input_deck/matdyn.py` 增加 `q_in_cryst_coord = .true.`；不新增 CLI/配置开关，不改绘图层、DOS 输入、计算数据或工作流结构。
