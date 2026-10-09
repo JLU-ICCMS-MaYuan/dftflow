@@ -1,6 +1,6 @@
 # Feature 规格：声子谱与态密度联合绘图
 
-**Gitee Issue**：[IKHQNI](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHQNI)
+**Issue**：0003（Gitee：[IKHQNI](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHQNI)）
 **创建日期**：2026-09-22
 **状态**：实现与本地验收完成；远端代码尚未推送
 

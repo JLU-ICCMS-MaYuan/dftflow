@@ -1,6 +1,6 @@
 # 本地验收记录
 
-日期：2026-09-22；Issue：[IKHSA0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHSA0)。
+日期：2026-09-22；Issue：0002（Gitee：[IKHSA0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHSA0)）。
 
 ## 测试先行
 

@@ -1,6 +1,6 @@
 # 规格：matdyn 声子谱晶体坐标声明
 
-**Issue**：[IKHSA0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHSA0)（type-bug）
+**Issue**：0002（Gitee：[IKHSA0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHSA0)，type-bug）
 
 **日期**：2026-09-22
 

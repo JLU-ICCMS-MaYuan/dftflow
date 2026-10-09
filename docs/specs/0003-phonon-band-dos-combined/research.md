@@ -1,6 +1,6 @@
 # 技术决策
 
-**Issue**：[IKHQNI](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHQNI)
+**Issue**：0003（Gitee：[IKHQNI](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHQNI)）
 
 | 决策 | 理由与现状证据 | 未采用方案 |
 | --- | --- | --- |

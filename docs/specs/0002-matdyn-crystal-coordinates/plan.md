@@ -1,6 +1,6 @@
 # 实施计划
 
-Issue：[IKHSA0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHSA0)；规格：[spec.md](spec.md)。
+Issue：0002（Gitee：[IKHSA0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHSA0)）；规格：[spec.md](spec.md)。
 
 ## 技术与边界
 

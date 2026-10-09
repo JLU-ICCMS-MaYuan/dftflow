@@ -1,6 +1,6 @@
 # 实施计划：声子谱与态密度联合绘图
 
-**Issue**：[IKHQNI](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHQNI)
+**Issue**：0003（Gitee：[IKHQNI](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHQNI)）
 **日期**：2026-09-22；**Spec**：[spec.md](spec.md)
 
 ## 目标与结构

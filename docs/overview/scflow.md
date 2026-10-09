@@ -7,7 +7,7 @@
 - 输出：direct/a2f CSV、`result.json`、Tc 曲线和文章视图 PDF，以及从 `ph.out` 提取的 CIF/VASP 结构。
 - 运行边界：只做后处理，不调用 QE，不修改原始计算文件。
 
-功能规格：[IKHZT0](../specs/IKHZT0-scflow-qe-superconductivity/spec.md)。
+功能规格：[0001](../specs/0001-scflow-qe-superconductivity/spec.md)。
 
 - 精确零频：只允许对 λ=0 的模按零贡献处理，并在 result.json 记录原始 γ；λ 非零则报错。
 - 各展宽状态隔离；McMillan / Allen–Dynes 公式使用 float64 运算。

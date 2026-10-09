@@ -1,6 +1,6 @@
 # 规格：将 A2F QE 后处理迁移为 scflow
 
-**Issue**：[IKHZT0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHZT0)（`type-feature`）
+**Issue**：0001（Gitee：[IKHZT0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHZT0)，`type-feature`）
 
 ## 背景与目标
 

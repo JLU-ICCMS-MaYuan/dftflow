@@ -1,6 +1,6 @@
 # 本地验收记录
 
-日期：2026-09-22；Issue：[IKHQNI](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHQNI)。
+日期：2026-09-22；Issue：0003（Gitee：[IKHQNI](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHQNI)）。
 
 ## 自动化测试
 

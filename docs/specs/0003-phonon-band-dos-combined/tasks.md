@@ -4,7 +4,7 @@
 
 ## 准备
 
-- [x] T001 创建并核验 Issue IKHQNI，完成本目录 Spec/Plan/Research/Contracts 与需求检查表。
+- [x] T001 创建并核验 Issue 0003，完成本目录 Spec/Plan/Research/Contracts 与需求检查表。
 
 ## US1：共享频率轴 JPG（P1，MVP）
 

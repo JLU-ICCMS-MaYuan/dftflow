@@ -13,7 +13,7 @@
 
 `qeflow/input_deck/matdyn.py` 按 KPATH 晶体分数坐标写出 `q_in_cryst_coord = .true.`；与标签的倒格子距离约定一致。该修复不改变 DOS 输入或绘图层，不新增命令。旧输入与旧计算结果不会自动迁移，错误路径的频率不能靠重新绘图修复。
 
-修复规格：[IKHSA0](../specs/IKHSA0-matdyn-crystal-coordinates/spec.md)。
+修复规格：[0002](../specs/0002-matdyn-crystal-coordinates/spec.md)。
 
 使用说明：[qeflow README](../../qeflow/README.md#8-qe_process_phonon)。
-功能规格：[IKHQNI](../specs/IKHQNI-phonon-band-dos-combined/spec.md)。
+功能规格：[0003](../specs/0003-phonon-band-dos-combined/spec.md)。
