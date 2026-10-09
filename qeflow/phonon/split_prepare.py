@@ -5,7 +5,7 @@ from public.job import write_job_script
 from qeflow.phonon import console
 from qeflow.phonon.context import PhononStepContext
 from qeflow.io_utils import dump_json
-from qeflow.phonon.q_index_map import load_q_index_entries
+from qeflow.phonon.q_index_map import load_q_points_entries
 from qeflow.input_deck.ph import write_split_ph_input_assign_coords, write_split_ph_input_assign_index
 from qeflow.input_deck.pw import write_phonon_scf_input
 from qeflow.io_reader.ph import parse_dyn0_qpoints
@@ -14,12 +14,11 @@ from qeflow.io_reader.ph import parse_dyn0_qpoints
 def _load_split_q_entries(context: PhononStepContext) -> list:
     """加载拆分所需的 q 点列表。
 
-    优先使用 Rust 工具 `qf-gen-dyn0` 产出的 `q_index_map.json`（其中 `q_crystal` 是
+    优先使用 Rust 工具 `qf-gen-dyn0` 产出的 `q_points.json`（其中 `q_crystal` 是
     真正的晶体坐标，与 ph.x 输入的 `q` 同坐标系）。若缺失则回退到旧流程：从 `dyn0`
-    解析（注意 ph.x 生成的 dyn0 坐标为笛卡尔坐标，旧 coords 模式拆分会受影响，建议
-    改用 `qf-gen-dyn0` 以避免“跑 ph.x 仅出 dyn0 再杀掉”的环节）。
+    解析（注意 ph.x 生成的 dyn0 坐标为笛卡尔坐标，旧 coords 模式拆分会受影响）。
     """
-    entries = load_q_index_entries(context.workspace)
+    entries = load_q_points_entries(context.workspace)
     if entries:
         return entries
     dyn0_path = os.path.join(context.workspace, f"{context.prefix}.dyn0")

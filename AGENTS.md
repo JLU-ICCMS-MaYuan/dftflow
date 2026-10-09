@@ -1449,5 +1449,5 @@
   4. 同时产出 `q_index_map.json`（含**晶体坐标** q_crystal），作为拆分步骤的规范来源，避免下游 coords 模式把 dyn0 的笛卡尔坐标误当晶体坐标。
   5. 适配 `qeflow/phonon/split_prepare.py`：优先从 `q_index_map.json` 读取晶体坐标，缺失时回退旧逻辑，并避免覆盖 Rust 产出的规范文件。
 - **验证**：用 Python 预言机（`qeflow-rust/tools/validate_dyn0.py`）复刻完全相同算法 + `E24.15` 格式，对真实 `MgB2.dyn0` 逐字节比对通过（`BYTE-EXACT MATCH`）。本机未安装 Rust 工具链，Rust 代码经人工复核 + 预言机证明算法/格式正确，构建命令为 `cargo build -p qf-phonon --bin qf-gen-dyn0`。
-- **待办**：在 `split_workflow.py` 用 `qf-gen-dyn0` 替代 `prepare_ph_nosplit_step(dyn0_only=True)+run_ph_to_dyn0` 环节（需先 `cargo build` 出二进制并放在 PATH）。
-- **状态**：Rust 模块与 Python 接线已完成；Rust 二进制待实际编译/接入工作流。
+- **收尾**：已在本机 `cargo build -p qf-phonon --bin qf-gen-dyn0` 通过，Rust 产出的 `Mg1B2.dyn0` 与真实 `Mg1B2.dyn0` **字节级一致**；已在 `split_workflow.py` 用 `run_dyn0_via_rust` 替代 `prepare_ph_nosplit_step(dyn0_only=True)+run_ph_to_dyn0`，两个 split CLI（`qe_phonon_split_index/coords`）与 standalone `qe_phonon --dyn0` 亦切换为 Rust；`split_prepare` 从 Rust 产出的 `q_points.json` 读取晶体坐标（拆分流 `dyn0` 状态仍由 `prefix.dyn0` 非空判定）。Rust 二进制可通过 `[qe_phonon].qf_gen_dyn0` 或环境变量 `QF_GEN_DYN0` 或 PATH 定位。
+- **状态**：已完成。

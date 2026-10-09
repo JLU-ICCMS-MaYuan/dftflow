@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import shlex
+import shutil
 import signal
 import subprocess
 import time
@@ -11,7 +13,7 @@ from qeflow.phonon.context import PhononStepContext, create_context
 from qeflow.phonon.root_steps import prepare_root_scf_step
 from qeflow.phonon.runner import print_stage, submit_or_run
 from qeflow.phonon.status_machine import refresh_workflow_status
-from qeflow.input_deck.ph import write_ph_input
+from qeflow.input_deck.ph import resolve_grid, write_ph_input
 from qeflow.input_deck.scripts import write_root_run_script
 
 
@@ -60,6 +62,45 @@ def run_ph_to_dyn0(workspace: str, ph_command: str, dyn0_path: str, output_path:
             process.wait(timeout=10)
 
 
+def build_qf_gen_dyn0_command(context: PhononStepContext) -> str:
+    """构造 qf-gen-dyn0 的 shell 命令，供本地运行或写进聚合提交脚本使用。"""
+    ph_cfg = context.config["qe_phonon"]["ph"]
+    nq1, nq2, nq3 = resolve_grid(ph_cfg, "qpoints", ("nq1", "nq2", "nq3"))
+    outdir = context.config["qe_phonon"]["scf"].get("outdir", "./out")
+    xml_path = os.path.join(context.workspace, outdir, f"{context.prefix}.save", "data-file-schema.xml")
+    binary = (
+        context.config["qe_phonon"].get("qf_gen_dyn0")
+        or os.environ.get("QF_GEN_DYN0")
+        or "qf-gen-dyn0"
+    )
+    resolved = shutil.which(binary) or binary
+    return (
+        f"{shlex.quote(resolved)} --xml {shlex.quote(xml_path)} "
+        f"--nq1 {nq1} --nq2 {nq2} --nq3 {nq3} "
+        f"--prefix {shlex.quote(context.prefix)} --out-dir {shlex.quote(context.workspace)}"
+    )
+
+
+def run_dyn0_via_rust(context: PhononStepContext) -> None:
+    """用 Rust 工具 qf-gen-dyn0 生成 dyn0 + q_points.json，替代原先“跑 ph.x 仅出 dyn0 再杀掉”。"""
+    binary = (
+        context.config["qe_phonon"].get("qf_gen_dyn0")
+        or os.environ.get("QF_GEN_DYN0")
+        or "qf-gen-dyn0"
+    )
+    if not (os.path.isabs(binary) and os.path.exists(binary)) and shutil.which(binary) is None:
+        raise RuntimeError(
+            "找不到 qf-gen-dyn0 二进制：请先 `cargo build -p qf-phonon --bin qf-gen-dyn0` "
+            "并把可执行文件放到 PATH，或在 input.toml 的 [qe_phonon] 配置 qf_gen_dyn0 绝对路径。"
+        )
+    command = build_qf_gen_dyn0_command(context)
+    print_stage(2, "运行根目录 dyn0 预处理（qf-gen-dyn0）")
+    subprocess.run(command, shell=True, cwd=context.workspace, check=True)
+    dyn0_path = os.path.join(context.workspace, f"{context.prefix}.dyn0")
+    if not (os.path.exists(dyn0_path) and os.path.getsize(dyn0_path) > 0):
+        raise RuntimeError("qf-gen-dyn0 未生成有效的 dyn0 文件。")
+
+
 def run_ph_nosplit_step(
     config_file: str,
     struct_file: Optional[str],
@@ -68,22 +109,18 @@ def run_ph_nosplit_step(
     dyn0_only: bool = False,
 ) -> int:
     context = create_context(config_file, struct_file)
-    prepare_root_scf_step(context)
-    script = prepare_ph_nosplit_step(context, dyn0_only=dyn0_only)
-    if dyn0_only and run_calc:
-        print_stage(1, "运行根目录 dyn0 预处理")
-        run_ph_to_dyn0(
-            context.workspace,
-            context.commands["ph"],
-            os.path.join(context.workspace, f"{context.prefix}.dyn0"),
-            os.path.join(context.workspace, "ph.out"),
-        )
-    else:
+    if dyn0_only:
         if run_calc:
-            print_stage(1, "运行根目录 PH")
-        elif submit_job:
-            print_stage(1, "提交根目录 PH")
-        submit_or_run(run_calc, submit_job, context.workspace, os.path.basename(script))
+            run_dyn0_via_rust(context)
+        refresh_workflow_status(context.workspace, context.prefix)
+        return 0
+    prepare_root_scf_step(context)
+    script = prepare_ph_nosplit_step(context, dyn0_only=False)
+    if run_calc:
+        print_stage(1, "运行根目录 PH")
+    elif submit_job:
+        print_stage(1, "提交根目录 PH")
+    submit_or_run(run_calc, submit_job, context.workspace, os.path.basename(script))
     refresh_workflow_status(context.workspace, context.prefix)
     return 0
 

@@ -4,7 +4,7 @@ from typing import Optional
 
 from public.job import add_run_submit_arguments
 from qeflow.phonon import console
-from qeflow.phonon.ph_step import run_ph_to_dyn0
+from qeflow.phonon.ph_step import run_dyn0_via_rust
 from qeflow.phonon.runner import run_shell as split_run_shell
 from qeflow.phonon.split_workflow import SPLIT_WORKFLOW_SPECS, create_split_phonon_workflow
 
@@ -22,7 +22,7 @@ def run_phonon_split_assign_index_workflow(
         "index",
         submit_script=submit_script,
         split_run_shell=split_run_shell,
-        run_dyn0=run_ph_to_dyn0,
+        run_dyn0=run_dyn0_via_rust,
     )
     return workflow.run(config_file, struct_file, run_calc, submit_job)
 

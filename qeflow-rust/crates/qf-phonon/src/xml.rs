@@ -17,7 +17,7 @@ pub struct QeGridInfo {
     pub time_reversal: bool,
 }
 
-fn with_s(text: &str, pattern: &str) -> anyhow::Result<Regex> {
+fn with_s(_text: &str, pattern: &str) -> anyhow::Result<Regex> {
     Regex::new(&format!("(?s){}", pattern)).with_context(|| format!("正则编译失败: {pattern}"))
 }
 
@@ -34,13 +34,15 @@ fn parse_three_floats(body: &str) -> anyhow::Result<[f64; 3]> {
 }
 
 fn parse_nine_ints(body: &str) -> anyhow::Result<[[i32; 3]; 3]> {
+    // QE 把晶体轴旋转矩阵以浮点（如 1.000000000000000E+000）写出，这里按浮点解析后四舍五入为整数。
     let mut vals = [0i32; 9];
     let mut it = body.split_whitespace();
     for slot in vals.iter_mut() {
         let tok = it.next().context("旋转矩阵分量不足九个")?;
-        *slot = tok
-            .parse::<i32>()
-            .with_context(|| format!("无法解析整数: {tok}"))?;
+        let f = tok
+            .parse::<f64>()
+            .with_context(|| format!("无法解析浮点数: {tok}"))?;
+        *slot = f.round() as i32;
     }
     Ok([vals[0..3].try_into().unwrap(), vals[3..6].try_into().unwrap(), vals[6..9].try_into().unwrap()])
 }

@@ -9,7 +9,7 @@ from qeflow.phonon.context import PhononStepContext, create_context
 from qeflow.phonon.root_steps import prepare_root_scf_step
 from qeflow.phonon.runner import print_stage, run_root_scripts, run_shell
 from qeflow.phonon.script_plan import write_labeled_script
-from qeflow.phonon.ph_step import prepare_ph_nosplit_step, run_ph_to_dyn0
+from qeflow.phonon.ph_step import build_qf_gen_dyn0_command, run_dyn0_via_rust
 from qeflow.phonon.postprocess_workflow import run_process_phonon_steps
 from qeflow.phonon.qe_matdyn_phband import prepare_matdyn_phband_step
 from qeflow.phonon.qe_matdyn_phdos import prepare_matdyn_phdos_step
@@ -31,7 +31,6 @@ from qeflow.phonon.status_machine import (
 
 ROOT_SCRIPT_NAMES = [
     "run_scf.sh",
-    "run_ph.sh",
     "run_q2r.sh",
     "run_matdyn_phband.sh",
     "run_matdyn_phdos.sh",
@@ -40,7 +39,7 @@ ROOT_SCRIPT_NAMES = [
 SplitPrepare = Callable[[PhononStepContext], int]
 SubmitScript = Callable[[str, str], object]
 RunShell = Callable[[str, str], None]
-RunDyn0 = Callable[[str, str, str, str], None]
+RunDyn0 = Callable[[PhononStepContext], None]
 
 
 @dataclass(frozen=True)
@@ -62,7 +61,7 @@ class SplitPhononWorkflow:
         *,
         submit_script: SubmitScript = console.submit_script,
         split_run_shell: RunShell = run_shell,
-        run_dyn0: RunDyn0 = run_ph_to_dyn0,
+        run_dyn0: RunDyn0 = run_dyn0_via_rust,
     ) -> None:
         self.spec = spec
         self.submit_script = submit_script
@@ -78,7 +77,6 @@ class SplitPhononWorkflow:
     ) -> int:
         context = create_context(config_file, struct_file, workflow_name=self.spec.workflow_name)
         prepare_root_scf_step(context)
-        prepare_ph_nosplit_step(context, dyn0_only=True)
         prepare_q2r_step(context)
         prepare_matdyn_phband_step(context)
         prepare_matdyn_phdos_step(context)
@@ -122,7 +120,7 @@ class SplitPhononWorkflow:
         if workflow["scf"] != "finished":
             steps.append(("运行 SCF", "bash run_scf.sh"))
         if dyn0_state(workflow) != "finished":
-            steps.append(("运行 dyn0", "bash run_ph.sh"))
+            steps.append(("运行 dyn0（qf-gen-dyn0）", build_qf_gen_dyn0_command(context)))
         steps.append(
             (
                 "准备并提交 split q 点任务",
@@ -177,13 +175,7 @@ class SplitPhononWorkflow:
                 )
                 workflow = refresh_workflow_status(context.workspace, context.prefix)
             if dyn0_state(workflow) != "finished":
-                print_stage(2, "运行根目录 dyn0 预处理")
-                self.run_dyn0(
-                    context.workspace,
-                    context.commands["ph"],
-                    os.path.join(context.workspace, f"{context.prefix}.dyn0"),
-                    os.path.join(context.workspace, "ph.out"),
-                )
+                self.run_dyn0(context)
             return None
 
         if submit_job:
@@ -273,7 +265,7 @@ def create_split_phonon_workflow(
     *,
     submit_script: SubmitScript = console.submit_script,
     split_run_shell: RunShell = run_shell,
-    run_dyn0: RunDyn0 = run_ph_to_dyn0,
+    run_dyn0: RunDyn0 = run_dyn0_via_rust,
 ) -> SplitPhononWorkflow:
     return SplitPhononWorkflow(
         SPLIT_WORKFLOW_SPECS[mode],

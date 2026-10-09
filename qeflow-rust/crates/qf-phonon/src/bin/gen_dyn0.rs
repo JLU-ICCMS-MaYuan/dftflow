@@ -55,14 +55,14 @@ fn main() -> anyhow::Result<()> {
     };
     let qpoints = generate_dyn0(&cli.xml, &cli.out_dir, &cli.prefix, &params)?;
     println!(
-        "生成 {} 个不可约 q 点 -> {}/{}.dyn0, q_index_map.json",
+        "生成 {} 个不可约 q 点 -> {}/{}.dyn0, q_points.json",
         qpoints.len(),
         cli.out_dir.display(),
         cli.prefix
     );
     for q in &qpoints {
         println!(
-            "  #{:<3} crystal=({: .6}, {: .6}, {: .6})  cart=({: .8}, {: .8}, {: .8})  w={:.6}",
+            "  #{:<3} crystal=({:.6}, {:.6}, {:.6})  cart=({:.8}, {:.8}, {:.8})  w={:.6}",
             q.index,
             q.q_crystal[0],
             q.q_crystal[1],

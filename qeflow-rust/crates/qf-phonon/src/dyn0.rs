@@ -99,8 +99,9 @@ struct QIndexMap {
     qpoints: Vec<QIndexEntry>,
 }
 
-/// 写出 `q_index_map.json`：以晶体坐标作为拆分步骤的规范来源（ph.x 输入 `q` 为晶体坐标）。
-pub fn write_q_index_map(path: &Path, qpoints: &[QPoint], params: &QGridParams) -> anyhow::Result<()> {
+/// 写出 `q_points.json`：以晶体坐标作为拆分步骤的规范来源（ph.x 输入 `q` 为晶体坐标）。
+/// 注意：不直接写 `q_index_map.json`，那是拆分步骤自身写出的运行时索引文件。
+pub fn write_q_points(path: &Path, qpoints: &[QPoint], params: &QGridParams) -> anyhow::Result<()> {
     let map = QIndexMap {
         mode: "kpoint_grid".to_string(),
         nk1: params.nk1,

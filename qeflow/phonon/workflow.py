@@ -6,7 +6,7 @@ from qeflow.phonon.q_index_map import load_q_index_entries
 from qeflow.phonon.status_machine import refresh_workflow_status
 from qeflow.phonon.qe_matdyn_phband import run_matdyn_phband_step
 from qeflow.phonon.qe_matdyn_phdos import run_matdyn_phdos_step
-from qeflow.phonon.ph_step import run_ph_nosplit_step, run_ph_to_dyn0
+from qeflow.phonon.ph_step import run_ph_nosplit_step
 from qeflow.phonon.qe_phonon_nosplit import run_phonon_nosplit_workflow
 from qeflow.phonon.qe_phonon_split_assign_coords import run_phonon_split_assign_coords_workflow
 from qeflow.phonon.qe_phonon_split_assign_index import run_phonon_split_assign_index_workflow

@@ -18,7 +18,7 @@ pub mod dyn0;
 pub mod qgrid;
 pub mod xml;
 
-pub use dyn0::{format_e24_15, write_dyn0, write_q_index_map};
+pub use dyn0::{format_e24_15, write_dyn0, write_q_points};
 pub use qgrid::{generate_q_points, QGridParams, QPoint};
 pub use xml::{parse_qe_save_xml, QeGridInfo};
 
@@ -33,13 +33,26 @@ pub fn generate_dyn0(
     params: &QGridParams,
 ) -> anyhow::Result<Vec<QPoint>> {
     let info = parse_qe_save_xml(xml_path)?;
+    // 规范拆分流：Rust 写出 dyn0（与 ph.x 字节一致）+ q_points.json（晶体坐标规范源，
+    // 供 split_prepare 读取），不直接写 q_index_map.json（那是拆分步骤自身写出的运行时索引）。
     let effective = QGridParams {
-        time_reversal: params.time_reversal.unwrap_or(info.time_reversal),
-        ..*params
+        nk1: params.nk1,
+        nk2: params.nk2,
+        nk3: params.nk3,
+        k1: params.k1,
+        k2: params.k2,
+        k3: params.k3,
+        time_reversal: Some(params.time_reversal.unwrap_or(info.time_reversal)),
     };
     let qpoints = generate_q_points(&info, &effective);
     std::fs::create_dir_all(out_dir)?;
-    write_dyn0(&out_dir.join(format!("{prefix}.dyn0")), &qpoints, params.nk1, params.nk2, params.nk3)?;
-    write_q_index_map(&out_dir.join("q_index_map.json"), &qpoints, params)?;
+    write_dyn0(
+        &out_dir.join(format!("{prefix}.dyn0")),
+        &qpoints,
+        params.nk1,
+        params.nk2,
+        params.nk3,
+    )?;
+    write_q_points(&out_dir.join("q_points.json"), &qpoints, params)?;
     Ok(qpoints)
 }
