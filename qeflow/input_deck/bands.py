@@ -120,10 +120,14 @@ def write_banddata_inputs(setup: Any) -> None:
         handle.write(f" filband = '{band_prefix}',\n")
         handle.write(" lp = .true.\n")
         handle.write("/\n")
+    if isinstance(lsym, bool):
+        lsym_str = "true" if lsym else "false"
+    else:
+        lsym_str = "true" if str(lsym).strip(".").lower() in ("true", "t", "1") else "false"
     with open(os.path.join(setup.work_dir, "elebandprojdata.in"), "w", encoding="utf-8") as handle:
         handle.write("&projwfc\n")
         handle.write(f" prefix = '{setup.prefix}',\n")
         handle.write(f" outdir = '{outdir_val}',\n")
-        handle.write(f" lsym = .{str(lsym).lower()}.,\n")
+        handle.write(f" lsym = .{lsym_str}.,\n")
         handle.write(f" filproj = '{band_prefix}'\n")
         handle.write("/\n")

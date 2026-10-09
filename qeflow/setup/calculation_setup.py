@@ -212,8 +212,8 @@ def _nscf_run_commands(setup: QECalculationSetup) -> List[str]:
 def _eband_run_commands(setup: QECalculationSetup) -> List[str]:
     bands_cfg = setup.cli_config.get("bands", {})
     proj_cfg = setup.cli_config.get("projwfc", {})
-    bands_exec = resolve_qe_command(bands_cfg.get("executable_path", setup.qe_bin), "bands.x")
-    proj_exec = resolve_qe_command(proj_cfg.get("executable_path", setup.qe_bin), "projwfc.x")
+    bands_exec = resolve_qe_command(bands_cfg.get("executable_path") or setup.qe_bin, "bands.x")
+    proj_exec = resolve_qe_command(proj_cfg.get("executable_path") or setup.qe_bin, "projwfc.x")
     bands_args = bands_cfg.get("args", "-pd .true.")
     proj_args = proj_cfg.get("args", "-pd .true.")
     bands_cmd = f"{bands_exec} {bands_args}".strip() if bands_args else bands_exec
@@ -228,8 +228,8 @@ def _eband_run_commands(setup: QECalculationSetup) -> List[str]:
 def _eledos_run_commands(setup: QECalculationSetup) -> List[str]:
     dos_cfg = setup.cli_config.get("dos", {})
     proj_cfg = setup.cli_config.get("projwfc", {})
-    dos_exec = resolve_qe_command(dos_cfg.get("executable_path", setup.qe_bin), "dos.x")
-    proj_exec = resolve_qe_command(proj_cfg.get("executable_path", setup.qe_bin), "projwfc.x")
+    dos_exec = resolve_qe_command(dos_cfg.get("executable_path") or setup.qe_bin, "dos.x")
+    proj_exec = resolve_qe_command(proj_cfg.get("executable_path") or setup.qe_bin, "projwfc.x")
     dos_args = dos_cfg.get("args", "-pd .true.")
     proj_args = proj_cfg.get("args", "-pd .true.")
     dos_cmd = f"{dos_exec} {dos_args}".strip() if dos_args else dos_exec

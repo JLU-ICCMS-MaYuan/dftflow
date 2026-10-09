@@ -3,7 +3,7 @@
 pp_dir = "./pp"
 
 [qe]
-executable_path = "mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin"
+executable_path = "mpirun -np 6 /Users/mayuan/Codes/dftflow/external/q-e/build/bin"
 lattice_mode = "ibrav_angstrom"
 
 [slurm]
@@ -27,8 +27,17 @@ conv_thr = 1.0e-6
 mixing_beta = 0.7
 
 [qe_scf.k_points]
-kpoints = [4, 4, 4]
+kpoints = [4, 4, 2]
 wan = false
+
+[qe_nscf.k_points]
+kpoints = [4, 4, 2]
+
+[qe_nscf.SYSTEM]
+ecutwfc = 40.0
+ecutrho = 320.0
+occupations = "'smearing'"
+degauss = 0.02
 
 [qe_eledos.eledos]
 DeltaE = 0.01
@@ -37,11 +46,32 @@ emax = 30
 ngauss = 0
 degauss = 0.0
 
+[qe_eledos.dos]
+args = ""
+
+[qe_eledos.projwfc]
+args = ""
+
+[qe_eband.SYSTEM]
+ecutwfc = 40.0
+ecutrho = 320.0
+occupations = "'smearing'"
+degauss = 0.02
+
+[qe_eband.bands]
+args = ""
+
+[qe_eband.projwfc]
+args = ""
+
+[qe_eband.k_points]
+kpath_points = 20
+
 [qe_phonon]
 
 [qe_phonon.scf]
 outdir = "./out"
-kpoints = [4, 4, 4]
+kpoints = [4, 4, 2]
 ecutwfc = 40.0
 ecutrho = 320.0
 occupations = "smearing"
@@ -69,6 +99,6 @@ kpath_points = 20
 q_in_band_form = true
 
 [qe_phonon.phdos]
-qpoints = [4, 4, 4]
+qpoints = [2, 2, 2]
 ndos = 100
 dos = true
