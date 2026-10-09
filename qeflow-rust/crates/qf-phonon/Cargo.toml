@@ -1,0 +1,10 @@
+[package]
+name = "qf-phonon"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+anyhow = { workspace = true }
+qf-state = { path = "../qf-state" }
+qf-runner = { path = "../qf-runner" }

@@ -1,0 +1,17 @@
+# qeflow-rust 示例配置（用于 `qeflow scflow -c examples/input.toml`）
+# 注意：[qe].executable_path 为"启动命令 + QE bin 目录"，qeflow 自动拼接 pw.x/ph.x/q2r.x/matdyn.x
+
+[qe]
+executable_path = "mpirun -np 8 /Users/mayuan/Codes/dftflow/external/q-e/build/bin"
+
+[scflow]
+# 工作目录（相对本配置文件所在目录）
+work_dir = "."
+# 单点 α²F 曲线文件：3 列空格分隔 freq(THz) a2f_lambda(THz) a2f_gamma(THz)
+a2f_file = "a2F.dat"
+# Coulomb 赝势参数
+mu = 0.1
+# 积分模式：sum 或 simps
+integration = "sum"
+# Eliashberg 矩阵维度（dim+1 阶）
+eliashberg_dim = 24

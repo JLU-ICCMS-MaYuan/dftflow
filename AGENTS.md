@@ -24,39 +24,46 @@
 
 ## 需求处理记录
 
-### [2026-09-23] ISIF4 的 scflow 完整真实数据验收（Issue IKHZT0）
+### [2026-10-09] 将 qeflow 用 Rust 全量重写为单一静态二进制（Issue 0004）
+- **需求**：用 Rust 重写现有 Python 版 `qeflow`，产出单一 musl 静态二进制，仅作编排层 spawn 外部 QE/VASP，避免 Python 启动/导入开销；在 `qeflow-rust` 分支开发。
+- **方案**：以 FireWorks 状态机 + 队列适配器 + Workflow DAG 为主骨架，吸收 jobflow 类型化数据流，文件系统状态文件替代 daemon/数据库；cargo workspace 拆为 `qf-config`/`qf-crystal`/`qf-input`/`qf-io`/`qf-state`/`qf-runner`/`qf-phonon`/`qf-scflow`/`qf-cli`；复刻 `input.toml` 递归覆盖、状态机续算与 Slurm 两段提交；scflow 数学用 `ndarray`+静态 OpenBLAS 自实现，绘图用 `plotters`。
+- **结果**：已完成六维度框架调研与架构大纲、cargo workspace 骨架、`qf-config`/`qf-io`/`qf-state`/`qf-runner` 与 `qe-scf→qe-nscf` + `scflow` 垂直切片，musl 静态二进制构建路径搭通；建立 Spec `docs/specs/0004-qeflow-rust/`。
+- **追踪**：Gitee Issue 待创建（本机无 glab/Gitee token，需手动创建后回填）；Spec 位于 `docs/specs/0004-qeflow-rust/`；Overview 见 `docs/overview/qeflow-rust.md`。
+- **状态**：进行中（plan building）；全量迁移（输入 deck / phonon split-merge / scflow 绘图 / CLI）待做，尚未替代现有 Python `qeflow`。
+
+### [2026-09-23] ISIF4 的 scflow 完整真实数据验收（Issue 0001）
 - **需求**：直接用 SiP2-19p2/vasp_opt_ISIF4/Tc-236 完成 scflow 全部展宽的真实数据验收；沿用 Python。
 - **方案**：原生 QE 文件发现、精确零频且 λ=0 的零贡献规则与原始 γ 记录、实例状态隔离、Tc float64 运算及 Eliashberg 下限状态；在独立目录运行 μ*=0.10/0.16。
 - **结果**：20 份 CLI 结果、49 个输入哈希、独立公式与全部输出校验通过，24 项回归通过；μ*=0.16 有 6 个 Eliashberg 点触及搜索下限，不能视为有效物理 Tc。
 - **追踪**：现有 Spec 的 SC-005/SC-006；报告位于数据项目 `docs/scflow-isif4-acceptance-2026-09-23/`。其他相问题保留，Issue 不关闭。
 
 
-### [2026-09-23] SiP2 的 scflow / A2F / QE 真实归档对照（Issue IKHZT0）
+### [2026-09-23] SiP2 的 scflow / A2F / QE 真实归档对照（Issue 0001）
 - **需求**：对 SiP2 各相的已有 QE EPC 输出使用当前 scflow、原版 A2F 与 QE 后处理代码比较 Tc。
 - **方案**：冻结程序版本，在独立报告目录复制并哈希验证输入，统一 μ*=0.10；保留归档 μ* 对照，区分原样执行与零频/q 权重诊断。
 - **结果**：10 组 × 10 个展宽；成功的 102 组核心配对数值相同。暴露零频、结构字段、q 点舍入和 Tc 下限等问题，SC-004 部分失败，Issue 保持开放。
-- **记录**：规格验收见 `docs/specs/IKHZT0-scflow-qe-superconductivity/acceptance.md`；数据项目报告位于 `docs/scflow-comparison-2026-09-23/`。
+- **记录**：规格验收见 `docs/specs/0001-scflow-qe-superconductivity/acceptance.md`；数据项目报告位于 `docs/scflow-comparison-2026-09-23/`。
 - **边界**：本次只提交已完成的对照报告/验收文档；没有修改程序源码、原始计算数据或全局环境，没有重跑第一性原理计算。
 
 
-### [2026-09-23] 将 A2F QE 超导后处理迁移为 scflow（Issue IKHZT0）
+### [2026-09-23] 将 A2F QE 超导后处理迁移为 scflow（Issue 0001）
 - **需求**：把 `external/a2f/src` 的全部计算代码复制到 dftflow 内部，命名为 `scflow`，通过 CLI 读取 `input.toml` 和 QE EPC 输出并计算超导转变温度。
 - **方案**：新增 `scflow/` 包、`scflow -c/--config` 入口、`[scflow]` 配置段和 `scflow` 可选依赖组；保留 A2F 完整输出，运行时不导入 `external/a2f`。
 - **兼容性**：适配当前 SciPy 的 `simpson`、pymatgen CIF 文本写出和 NumPy 标量 JSON 序列化；不改物理公式和 QE 输入输出。
-- **追踪**：[Gitee IKHZT0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHZT0)；Spec 位于 `docs/specs/IKHZT0-scflow-qe-superconductivity/`；真实 QE 归档路径待补。
+- **追踪**：[Gitee IKHZT0（编号 0001）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHZT0)；Spec 位于 `docs/specs/0001-scflow-qe-superconductivity/`；真实 QE 归档路径待补。
 - **状态**：公开 `La2H20` QE EPC 归档已通过 scflow CLI 回归；真实材料 Tc 验收未执行。
 
-### [2026-09-22] matdyn 声子谱晶体坐标声明（Issue IKHSA0）
+### [2026-09-22] matdyn 声子谱晶体坐标声明（Issue 0002）
 - **需求与确认**：用户同意在现有 Python 声子谱输入生成器中明确声明晶体坐标，增加非立方晶胞回归并更新说明；本修复沿用 Python，不采用通用 TypeScript 规则。
 - **方案**：仅在 `qeflow/input_deck/matdyn.py` 增加 `q_in_cryst_coord = .true.`；不新增 CLI/配置开关，不改绘图层、DOS 输入、计算数据或工作流结构。
-- **追踪**：[Gitee IKHSA0](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHSA0)；规格 `docs/specs/IKHSA0-matdyn-crystal-coordinates/`。
+- **追踪**：[Gitee IKHSA0（编号 0002）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHSA0)；规格 `docs/specs/0002-matdyn-crystal-coordinates/`。
 - **验收边界**：非立方路径与原有声子测试本地验证；历史结果核查、ISIF2/ISIF3 实际后处理和外部 QE 环境另行验收；不处理未完成的 SC-07。
 
-### [2026-09-22] 声子谱与态密度联合 JPG（Issue IKHQNI）
+### [2026-09-22] 声子谱与态密度联合 JPG（Issue 0003）
 - **需求**：沿用 `qe_process_phonon`，同时绘图时增加左声子谱、右总 DOS / 元素分波、共享频率轴的 JPG；保留旧 PNG/CSV。
 - **方案**：仅扩展 `qeflow/phonon/phonon_plot.py`，提取轴绘制 helper；联合范围覆盖全部频率并保留虚频，不改变计算、读取及旧状态判定。
 - **语言例外**：用户已明确确认本功能沿用现有 Python，不适用本文通用 TypeScript 规则。
-- **追踪**：[Gitee IKHQNI](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHQNI)；规格位于 `docs/specs/IKHQNI-phonon-band-dos-combined/`。Gitee 类型标签使用合法的 `type-feature`。
+- **追踪**：[Gitee IKHQNI（编号 0003）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKHQNI)；规格位于 `docs/specs/0003-phonon-band-dos-combined/`。Gitee 类型标签使用合法的 `type-feature`。
 - **状态**：实现与本地测试完成；真实归档验收和交付记录见该 Feature 的验收文档。
 
 ### [2026-09-21] 全局安装 Big-Project-Skill 技能集合

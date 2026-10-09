@@ -1,0 +1,12 @@
+[package]
+name = "qf-scflow"
+version = "0.1.0"
+edition = "2021"
+description = "QE 超导后处理：a2F 读取、λ/wlog/w2、McMillan/Allen-Dynes/Eliashberg Tc（复刻 scflow）"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+qf-config = { path = "../qf-config" }
+ndarray = { workspace = true }

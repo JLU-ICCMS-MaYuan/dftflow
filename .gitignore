@@ -11,3 +11,14 @@ wannier90flow/solution_booklet.pdf
 wannier90flow/tutorial.pdf
 wannier90flow/user_guide.pdf
 .vscode/settings.json
+
+# macOS
+.DS_Store
+
+# auto-generated test working dirs (QE/VASP/SCFlow run outputs)
+test_auto/**/MgB2_calc/
+test_auto/MgB2/qeflow/
+test_auto/MgB2/scflow/
+test_auto/MgB2/substitutionflow/
+test_auto/MgB2/vaspflow/
+test_auto/MgB2/wannier90flow/
