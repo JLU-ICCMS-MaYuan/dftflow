@@ -8,6 +8,7 @@
 - 调度：`std::process::Command` spawn 外部 QE/VASP；Slurm 两段提交（pre: scf→dyn0→split；post: merge→q2r→matdyn→plot）1:1 对齐现有 `qe_phonon_split_*`。
 
 功能规格：[0004](../specs/0004-qeflow-rust/spec.md)；调研与架构：[`docs/qeflow-rust/`](../../qeflow-rust/../docs/qeflow-rust/)。
+- 远端 Issue：[Gitee IKKGLP（编号 0004）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)。
 
 - 已落地：cargo workspace 骨架与内部 crate `qf-config`/`qf-crystal`/`qf-input`/`qf-io`/`qf-phonon`/`qf-runner`/`qf-scflow`/`qf-state`；其中 `qf-config`（递归覆盖 TOML）、`qf-io`（QE 输出读取）、`qf-state`（状态机/续算）、`qf-runner`（spawn/Slurm 两段提交）已实现。
 - 已验证：垂直切片 `qe-scf → qe-nscf` 与 `scflow` 单点已跑通；musl 静态二进制构建路径已搭通骨架；调研与架构文档已写入 `docs/qeflow-rust/`。

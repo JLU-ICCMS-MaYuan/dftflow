@@ -22,3 +22,6 @@ test_auto/MgB2/scflow/
 test_auto/MgB2/substitutionflow/
 test_auto/MgB2/vaspflow/
 test_auto/MgB2/wannier90flow/
+
+# CodeBuddy project data (local tool state)
+.codebuddy/

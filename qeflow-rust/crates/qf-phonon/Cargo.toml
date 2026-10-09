@@ -5,6 +5,11 @@ edition = "2021"
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
+regex = { workspace = true }
 anyhow = { workspace = true }
-qf-state = { path = "../qf-state" }
-qf-runner = { path = "../qf-runner" }
+clap = { workspace = true }
+
+[[bin]]
+name = "qf-gen-dyn0"
+path = "src/bin/gen_dyn0.rs"

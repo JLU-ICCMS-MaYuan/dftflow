@@ -28,7 +28,7 @@
 - **需求**：用 Rust 重写现有 Python 版 `qeflow`，产出单一 musl 静态二进制，仅作编排层 spawn 外部 QE/VASP，避免 Python 启动/导入开销；在 `qeflow-rust` 分支开发。
 - **方案**：以 FireWorks 状态机 + 队列适配器 + Workflow DAG 为主骨架，吸收 jobflow 类型化数据流，文件系统状态文件替代 daemon/数据库；cargo workspace 拆为 `qf-config`/`qf-crystal`/`qf-input`/`qf-io`/`qf-state`/`qf-runner`/`qf-phonon`/`qf-scflow`/`qf-cli`；复刻 `input.toml` 递归覆盖、状态机续算与 Slurm 两段提交；scflow 数学用 `ndarray`+静态 OpenBLAS 自实现，绘图用 `plotters`。
 - **结果**：已完成六维度框架调研与架构大纲、cargo workspace 骨架、`qf-config`/`qf-io`/`qf-state`/`qf-runner` 与 `qe-scf→qe-nscf` + `scflow` 垂直切片，musl 静态二进制构建路径搭通；建立 Spec `docs/specs/0004-qeflow-rust/`。
-- **追踪**：Gitee Issue 待创建（本机无 glab/Gitee token，需手动创建后回填）；Spec 位于 `docs/specs/0004-qeflow-rust/`；Overview 见 `docs/overview/qeflow-rust.md`。
+- **追踪**：[Gitee IKKGLP（编号 0004）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)；Spec 位于 `docs/specs/0004-qeflow-rust/`；Overview 见 `docs/overview/qeflow-rust.md`。
 - **状态**：进行中（plan building）；全量迁移（输入 deck / phonon split-merge / scflow 绘图 / CLI）待做，尚未替代现有 Python `qeflow`。
 
 ### [2026-09-23] ISIF4 的 scflow 完整真实数据验收（Issue 0001）
@@ -1439,3 +1439,15 @@
     4. 更新 `vaspflow/input.toml` 中的 `chgcar_path` 和 `wavecar_path` 引用路径。
     5. 在 `pyproject.toml` 中注册 `qe_scf` 脚本。
 - **状态**：已完成。
+
+### [2026-10-09] 用 Rust 复刻 QE ph.x 的 dyn0 不可约 q 点生成（Issue 0004 子任务）
+- **需求**：现行 split 声子流程要先“跑一次 ph.x 仅生成 dyn0 再杀掉”才能拿到不可约 q 点列表，打断点且不流畅。要求把 ph.x 生成 dyn0 的算法单独抽取，用 Rust 重写，使生成的 q 点**数量与坐标（含精确小数位）与 ph.x 字节级一致**，从而跳过 ph.x 的 dyn0 阶段，从 scf 一个脚本即可一口气推进到各分 q 点计算。
+- **方案**：
+  1. 阅读 `external/q-e`：`PHonon/PH/q_points.f90`（dyn0 写出驱动）、`PW/src/kpoint_grid.f90`（Monkhorst-Pack 网格 + 对称折叠）、`Modules/cryst_to_car.f90`（`cryst_to_cart`）。
+  2. 关键结论经真实 `test_auto/MgB2/.../Mg1B2.dyn0` 字节级验证：(a) dyn0 坐标为**笛卡尔坐标**（tpiba），由 `cryst_to_cart` 得到，并非晶体坐标；(b) `kpoint_grid` 内部 `NINT` 为**半数远离零**取整（与 Rust `f64::round()` 一致）；(c) 字段格式为 Fortran `(3i4)/(i4)/(3e24.15)`，`E24.15` 用半数取偶舍入。
+  3. 在 `qeflow-rust/crates/qf-phonon` 新增 `xml.rs`（解析 `data-file-schema.xml` 的倒格矢/对称矩阵/time_reversal）、`qgrid.rs`（复刻 `kpoint_grid`）、`dyn0.rs`（`E24.15` 格式化器 + dyn0 写出 + `q_index_map.json` 写出）、`bin/gen_dyn0.rs`（CLI `qf-gen-dyn0`）。
+  4. 同时产出 `q_index_map.json`（含**晶体坐标** q_crystal），作为拆分步骤的规范来源，避免下游 coords 模式把 dyn0 的笛卡尔坐标误当晶体坐标。
+  5. 适配 `qeflow/phonon/split_prepare.py`：优先从 `q_index_map.json` 读取晶体坐标，缺失时回退旧逻辑，并避免覆盖 Rust 产出的规范文件。
+- **验证**：用 Python 预言机（`qeflow-rust/tools/validate_dyn0.py`）复刻完全相同算法 + `E24.15` 格式，对真实 `MgB2.dyn0` 逐字节比对通过（`BYTE-EXACT MATCH`）。本机未安装 Rust 工具链，Rust 代码经人工复核 + 预言机证明算法/格式正确，构建命令为 `cargo build -p qf-phonon --bin qf-gen-dyn0`。
+- **待办**：在 `split_workflow.py` 用 `qf-gen-dyn0` 替代 `prepare_ph_nosplit_step(dyn0_only=True)+run_ph_to_dyn0` 环节（需先 `cargo build` 出二进制并放在 PATH）。
+- **状态**：Rust 模块与 Python 接线已完成；Rust 二进制待实际编译/接入工作流。
