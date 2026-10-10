@@ -31,6 +31,21 @@
 - **追踪**：[Gitee IKKGLP（编号 0004）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)；Spec 位于 `docs/specs/0004-qeflow-rust/`；Overview 见 `docs/overview/qeflow-rust.md`。
 - **状态**：进行中（plan building）；全量迁移（输入 deck / phonon split-merge / scflow 绘图 / CLI）待做，尚未替代现有 Python `qeflow`。
 
+### [2026-10-10] 扩大 Rust 重写范围至全量 Python 包（Issue 0004 范围变更）
+- **需求**：在 qeflow 单一重写基础上，把项目内剩余 Python 包（vaspflow、wannier90flow、substitutionflow、scflow、public）也完整迁移为 Rust；mattersimflow 除外。
+- **决策**：① 最终仓库目录仍叫 `dftflow`（不叫 dftflow-rust），过渡期每个 flow 用 `xxx-rust/`，删 Python 后改名 `xxx/`；② 绘图用 Rust `plotters` 重绘，内容/布局等价（非像素级），CSV/DAT 数值严格 1:1 对齐，不再依赖 Python 调库；③ 保留 `test_auto/` pytest 黄金基线作对照，Rust 侧补集成测试；④ 科学库替代：scflow 对称化 CIF 用 `spglib`，COHPCAR.lobster 用 Rust 手写解析，mattersimflow 生成的 ML 脚本仍由目标机 Python 运行（登记为 Python 例外）；⑤ Gitee 线上 Issue 由用户自管，Spec 内用 Markdown 双向链接回退记录 Epic→子 Issue 拆分（P0–P5）。
+- **范围排除**：`mattersimflow` 不迁移为 Rust，保留其原有 Python 实现、不删、不改。
+- **追踪**：Gitee [IKKGLP（编号 0004）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)；总体计划 `docs/plan/dftflow-rust-full-migration.md`；详细 Spec `docs/specs/0004-qeflow-rust/`。
+- **状态**：当时的 plan building 记录；目录切换时机、数值容差与 MatterSim 边界已由下条「复核并修正」记录更新，尚未进入分阶段实现。
+
+### [2026-10-10] 复核并修正 Rust 全量迁移文档（Issue 0004）
+- **需求**：客观审查并完善总体计划、0004 Spec 全套与本地 Issue 草稿；本次只更新文档并提交，不执行 Rust 迁移或操作线上 Gitee Issue。
+- **已查明问题**：P0 将 `qeflow-rust/` 改成已存在的 `qeflow/` 会冲突；Python `substitutionflow` 仍导入 `qeflow.common`，Wannier/substitution/MatterSim 仍导入 `public`；`pyproject.toml` 实为 48 个待迁移 CLI 加 1 个保留的 `mattersim_opt`；`test_auto/MgB2/` 的 11 个 pytest 脚本被 `.gitignore` 忽略，原文引用的 `validate_scflow_isif4.py` 不存在；现有 Rust `qf-gen-dyn0` 会形成第六个可执行文件。
+- **用户澄清**：0004 按 Epic 加 P0–P5 子 Issue 管理，线上创建与编号由用户负责；允许仅为移除 `public` 依赖对 `mattersimflow` 作等价调整，保留 Python CLI 及 substitution 可选 ML 链路；浮点按预定容差验收；`scflow` 仍须在弱机完整 Rust 化，Eliashberg 本征值选择静态 OpenBLAS；性能只记录，不设通过门槛。
+- **修订方案**：P0 冻结可跟踪的 pytest 基线并验证 musl 静态 OpenBLAS/spglib、PNG/JPG/PDF 与 CIF；P0–P4 让 Python 与 Rust 并存，P5 反向依赖清零后集中删除被替换 Python、改名并交付五个家族二进制与 48 个旧命令兼容入口；`pyproject.toml` 最终保留 `mattersim_opt` 的最小 Python 安装内容。原始用户需求逐字记录不改写，当前 0004 Spec 仅为跨阶段过渡资料，P1–P4 待真实子 Issue 编号后建立正式 Feature Spec。
+- **追踪**：总体计划 `docs/plan/dftflow-rust-full-migration.md`；跨阶段 Spec 与子 Issue 草稿 `docs/specs/0004-qeflow-rust/`。线上 Issue 与双向链接尚待用户建立，不记为完成。
+- **状态**：仅文档修订；Rust 源码、pytest 文件纳管、目录迁移和线上 Issue 均待用户在另一台机器启动后实施。
+
 ### [2026-09-23] ISIF4 的 scflow 完整真实数据验收（Issue 0001）
 - **需求**：直接用 SiP2-19p2/vasp_opt_ISIF4/Tc-236 完成 scflow 全部展宽的真实数据验收；沿用 Python。
 - **方案**：原生 QE 文件发现、精确零频且 λ=0 的零贡献规则与原始 γ 记录、实例状态隔离、Tc float64 运算及 Eliashberg 下限状态；在独立目录运行 μ*=0.10/0.16。
