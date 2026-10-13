@@ -24,6 +24,17 @@
 
 ## 需求处理记录
 
+### [2026-10-13] Git 卫生治理与手动计算操作文档（Issue 0005）
+- **需求**：处理所有未提交文件：编译/测试产物不入 Git；测试运行输出不保留；机器登录与软件配置只留本地；测试输入文件、命令与操作步骤完整写入文档供手动计算查对。经澄清确认：local_run 166MB 运行输出移出 Git 保留本地；vasp.6.4.3 推用户私有 Gitee；q-e 推用户 fork（gitlab.com/madegan/q-e）并先同步上游；input_*.toml 用占位符提交、真实路径存 docs/local/paths.toml 由 conftest 自动注入；以 0005 新 Spec 管理。
+- **结果**：
+    1. `.gitignore` 补 `.pytest_cache/`、`docs/local/`、`*.bak` 与 local_run 黑白名单；106 个运行输出 `git rm --cached`（磁盘保留），local_run 仅剩 8 个输入/脚本/potcar_lib 跟踪文件；`validate_scflow_isif4.py` 补跟踪。
+    2. 输入文件占位符化：input_*.toml、local_run/{toml,sh}、qeflow/examples/input.toml 全部改 `@KEY@`；新建 `docs/local/paths.toml`（8 键真实路径）、`test_auto/MgB2/_local_paths.py`（替换工具）；conftest 拷贝时自动注入，残留占位符即 pytest.exit。
+    3. 文档：新建 `docs/manual-testing.md`（占位符机制/资产清单/命令序列/手动步骤）、`docs/local/remote-machines.md` 模板；`docs/qe-environment.md` 通用化；`docs/overview/qe-install-m5.md` 移至 `docs/local/` 并在总览索引留说明；测试断言按 SC-002 范围细化最小调整（paths.toml 读值/中性串）。
+    4. 子模块：vasp.6.4.3 提交 `7a82340`（makefile.include + BUILD_MACOS.md，排除 .bak）并推送成功（origin/master 已同步）；q-e 已加 upstream 并 fetch（upstream/master = ee7f72e8f，可 fast-forward），但 fork 推送与 `macos-memusage-fix` 分支推送被凭据阻断（无 HTTPS 存储凭据/SSH 公钥/glab），按 Spec 留档停止，待用户执行 `cd external/q-e && git push origin upstream/master:master && git push origin macos-memusage-fix`。
+    5. 验证：pytest 收集 248 项、冒烟 48 通过（6 个非 run 失败为 0005 之前已存在的环境性失败，与本次改动无关）；SC-002 机器路径检索仅剩冻结黄金基线豁免项。
+- **追踪**：Spec `docs/specs/0005-git-hygiene-manual-testing/`；关联 Issue 0004（[IKKGLP](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)）。
+- **状态**：除 q-e fork 推送（凭据阻断，已留档待用户执行）外全部完成。
+
 ### [2026-10-13] 0005 Git 卫生治理与手动计算操作文档
 - **需求**：处理所有尚未提交/误跟踪的文件：编译临时文件不入 Git；测试输出不保留；远程机器登录与软件配置（含路径）只记本地；测试输入、命令与操作步骤完整写入文档。经澄清确认：local_run 运行输出 `git rm --cached` 保留本地；vasp.6.4.3 推私有 Gitee；q-e 推自己的 GitLab fork `madegan/q-e`（需先同步上游）；输入文件机器路径改占位符 + `docs/local/paths.toml` 本地注入（conftest 自动替换）。
 - **结果**：
