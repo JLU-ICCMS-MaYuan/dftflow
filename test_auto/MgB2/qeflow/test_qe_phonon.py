@@ -252,7 +252,8 @@ def test_qe_phonon_template_default_work_dir_is_deferred(chdir_work):
 
 
 def test_qe_phonon_cli_registration_uses_short_split_names(chdir_work):
-    scripts = tomllib.loads(Path("/home/mayuan/code/dftflow/pyproject.toml").read_text(encoding="utf-8"))["project"]["scripts"]
+    repo_root = Path(__file__).resolve().parents[3]
+    scripts = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["scripts"]
 
     assert "qe_phonon_nosplit" in scripts
     assert scripts["qe_phonon_nosplit"] == "qeflow.phonon.qe_phonon_nosplit:main"

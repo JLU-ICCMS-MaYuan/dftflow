@@ -6,7 +6,7 @@ from public.job import execute_commands
 
 
 def test_vasp_executable_path_is_treated_as_full_command():
-    command = "mpirun -np 8 /home/mayuan/soft/vasp.6.3.2/bin/vasp_std"
+    command = "mpirun -np 8 /opt/vasp.6.3.2/bin/vasp_std"
     assert resolve_vasp_command(command) == command
 
 

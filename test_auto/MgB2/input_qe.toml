@@ -3,7 +3,7 @@
 pp_dir = "./pp"
 
 [qe]
-executable_path = "mpirun -np 6 /Users/mayuan/Codes/dftflow/external/q-e/build/bin"
+executable_path = "@QE_EXEC@"
 lattice_mode = "ibrav_angstrom"
 
 [slurm]

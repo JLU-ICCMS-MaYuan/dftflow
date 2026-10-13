@@ -106,7 +106,7 @@ def test_python_lattice_fallback_matches_qe_cell2ibrav_when_available(chdir_work
     )
     from qeflow.crystal.poscar import parse_poscar
 
-    exe = _find_cell2ibrav_executable("mpirun -np 8 /home/mayuan/soft/qe-7.4.1/bin")
+    exe = _find_cell2ibrav_executable("mpirun -np 8 /opt/qe-7.4.1/bin")
     if exe is None:
         pytest.skip("当前环境未找到 cell2ibrav.x")
     struct_info = parse_poscar("MgB2.vasp")

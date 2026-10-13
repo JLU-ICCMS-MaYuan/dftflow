@@ -5,6 +5,8 @@ __pycache__/
 *.egg-info/
 node_modules/
 external/
+.pytest_cache/
+docs/local/
 
 # files
 package-lock.json
@@ -29,6 +31,18 @@ test_auto/MgB2/vaspflow/*
 !test_auto/MgB2/vaspflow/test_*.py
 test_auto/MgB2/wannier90flow/*
 !test_auto/MgB2/wannier90flow/test_*.py
+!test_auto/MgB2/scflow/validate_scflow_isif4.py
+
+# local_run：真实运行输出不保留在 Git（输入/脚本/结构/赝势库白名单放行）
+test_auto/MgB2/local_run/*
+!test_auto/MgB2/local_run/*.toml
+!test_auto/MgB2/local_run/*.sh
+!test_auto/MgB2/local_run/*.vasp
+!test_auto/MgB2/local_run/potcar_lib/
+!test_auto/MgB2/local_run/potcar_lib/**
+
+# 本机备份类文件
+*.bak
 
 # CodeBuddy project data (local tool state)
 .codebuddy/

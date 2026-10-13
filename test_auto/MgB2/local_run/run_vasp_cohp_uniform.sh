@@ -5,12 +5,12 @@ echo '[qeflow] workflow: '
 echo '[qeflow] prefix: vasp_cohp_uniform'
 echo '[qeflow] step: 1/1 运行 vasp_cohp_uniform'
 echo '[qeflow] work_dir: .'
-echo '[qeflow] command: cd vasp_cohp_uniform && mpirun -np 4 /Users/mayuan/Codes/dftflow/external/vasp.6.4.3/bin/vasp_std > vasp.log && cd ..'
+echo '[qeflow] command: cd vasp_cohp_uniform && @LOCAL_VASP_EXEC@ > vasp.log && cd ..'
 if ! cd "."; then
 echo '[qeflow] failed: 1/1 运行 vasp_cohp_uniform'
   exit 1
 fi
-if ! ( cd vasp_cohp_uniform && mpirun -np 4 /Users/mayuan/Codes/dftflow/external/vasp.6.4.3/bin/vasp_std > vasp.log && cd .. ); then
+if ! ( cd vasp_cohp_uniform && @LOCAL_VASP_EXEC@ > vasp.log && cd .. ); then
 echo '[qeflow] failed: 1/1 运行 vasp_cohp_uniform'
   exit 1
 fi

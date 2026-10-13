@@ -2,10 +2,10 @@
 potcar_dir = "potcar_lib"
 chgcar_path = "vasp_scf/CHGCAR"
 wavecar_path = "vasp_scf/WAVECAR"
-lobster_executable_path = "arch -x86_64 /Users/mayuan/software/lobster-6.0.0/OSX/lobster-6.0.0-OSX"
+lobster_executable_path = "@LOCAL_LOBSTER_EXEC@"
 
 [vasp]
-executable_path = "mpirun -np 4 /Users/mayuan/Codes/dftflow/external/vasp.6.4.3/bin/vasp_std"
+executable_path = "@LOCAL_VASP_EXEC@"
 
 [vasp_cohp_uniform]
 kmesh = 0.25

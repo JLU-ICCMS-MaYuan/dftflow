@@ -2,10 +2,10 @@
 potcar_dir = "potcar_lib"
 chgcar_path = "vasp_scf/CHGCAR"
 wavecar_path = "vasp_scf/WAVECAR"
-lobster_executable_path = "/home/mayuan/bin/lobster-5.1.1"
+lobster_executable_path = "@LOBSTER_EXEC@"
 
 [vasp]
-executable_path = "mpirun -np 48 /work/home/mayuan/software/vasp.6.4.3/bin/vasp_std"
+executable_path = "@VASP_EXEC@"
 
 [slurm]
 header = """

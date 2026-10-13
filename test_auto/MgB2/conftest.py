@@ -1,8 +1,31 @@
 """pytest fixtures for MgB2 tests."""
 import os
 import shutil
+import sys
 import pytest
 from pathlib import Path
+
+# 占位符注入：仓库内 input_*.toml 使用 @NAME@ 占位符（不含机器真实路径），
+# 拷贝到工作目录时从 gitignored 的 docs/local/paths.toml 读真实路径替换。
+sys.path.insert(0, str(Path(__file__).parent))
+from _local_paths import apply_placeholders, load_local_paths  # noqa: E402
+
+_INPUT_TOMLS = ("input_vasp.toml", "input_qe.toml", "input_w90.toml")
+
+
+def _copy_inputs(target_dir: Path) -> None:
+    """拷贝三个输入配置并注入本机真实路径。"""
+    for name in _INPUT_TOMLS:
+        shutil.copy2(Path(__file__).parent / name, target_dir / name)
+        apply_placeholders(target_dir / name)
+    if load_local_paths():
+        for name in _INPUT_TOMLS:
+            text = (target_dir / name).read_text(encoding="utf-8")
+            if "@" in text and any(token in text for token in ("@QE_", "@VASP_", "@LOBSTER_", "@WANNIER90_", "@PW2WANNIER90_", "@POSTW90_")):
+                pytest.exit(
+                    f"[conftest] {name} 仍含未替换的机器路径占位符，请检查 docs/local/paths.toml",
+                    returncode=4,
+                )
 
 
 def pytest_configure(config):
@@ -35,10 +58,8 @@ def shared_work_dir(tmp_path_factory, base_dir):
     # 拷贝 QE 赝势
     shutil.copytree(base_dir / "pp", work_dir / "pp")
 
-    # 拷贝配置文件
-    shutil.copy2(base_dir / "input_vasp.toml", work_dir / "input_vasp.toml")
-    shutil.copy2(base_dir / "input_qe.toml", work_dir / "input_qe.toml")
-    shutil.copy2(base_dir / "input_w90.toml", work_dir / "input_w90.toml")
+    # 拷贝配置文件（含占位符注入）
+    _copy_inputs(work_dir)
 
     return work_dir
 
@@ -57,10 +78,8 @@ def work_dir(tmp_path, base_dir):
     # 拷贝 QE 赝势
     shutil.copytree(base_dir / "pp", tmp_path / "pp")
 
-    # 拷贝配置文件
-    shutil.copy2(base_dir / "input_vasp.toml", tmp_path / "input_vasp.toml")
-    shutil.copy2(base_dir / "input_qe.toml", tmp_path / "input_qe.toml")
-    shutil.copy2(base_dir / "input_w90.toml", tmp_path / "input_w90.toml")
+    # 拷贝配置文件（含占位符注入）
+    _copy_inputs(tmp_path)
 
     return tmp_path
 

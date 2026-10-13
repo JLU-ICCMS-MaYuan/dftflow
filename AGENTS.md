@@ -24,6 +24,18 @@
 
 ## 需求处理记录
 
+### [2026-10-13] 0005 Git 卫生治理与手动计算操作文档
+- **需求**：处理所有尚未提交/误跟踪的文件：编译临时文件不入 Git；测试输出不保留；远程机器登录与软件配置（含路径）只记本地；测试输入、命令与操作步骤完整写入文档。经澄清确认：local_run 运行输出 `git rm --cached` 保留本地；vasp.6.4.3 推私有 Gitee；q-e 推自己的 GitLab fork `madegan/q-e`（需先同步上游）；输入文件机器路径改占位符 + `docs/local/paths.toml` 本地注入（conftest 自动替换）。
+- **结果**：
+    1. `.gitignore` 补 `.pytest_cache/`、`docs/local/`、`*.bak` 与 local_run 白名单（放行输入/脚本/potcar_lib）；105 个（166MB）local_run 运行输出移出跟踪、磁盘保留；`validate_scflow_isif4.py` 显式放行纳管。
+    2. `input_qe/vasp/w90.toml`、local_run 输入与 run 脚本机器路径全部改 `@KEY@` 占位符；新建 `test_auto/MgB2/_local_paths.py` 注入模块；`conftest.py` 拷贝时自动从 `docs/local/paths.toml`（gitignored）注入真实路径，pytest 冒烟通过；`test_vaspflow.py` 三处断言改读路径表，合成测试串中性化，`test_qe_phonon.py` pyproject 路径改相对定位。
+    3. `docs/qe-environment.md` 通用化；`docs/overview/qe-install-m5.md` 移入 `docs/local/`（机器软件配置本地留档）；新建 `docs/manual-testing.md` 手动计算操作手册与 `docs/local/remote-machines.md` 留档模板。
+    4. vasp.6.4.3 提交 makefile.include（macOS arm64 构建）+ BUILD_MACOS.md 并推私有 Gitee master（`6e06f68..7a82340`，父仓库指针同步）；q-e 添加 upstream `QEF/q-e` 并 fetch（upstream/master=`ee7f72e8f`）。
+    5. 全库检索确认已跟踪文件无机器路径残留（AGENTS 历史条目、0001–0003 spec 历史记录、冻结 golden 基线按 spec 澄清保留不改写）。
+- **留档/阻断**：q-e fork master 同步与 `macos-memusage-fix`（`51fdfbd13`）推送被凭据阻断（HTTPS 非交互无凭据、SSH 公钥未注册、钥匙串无项、无 glab），待用户提供 GitLab PAT 或自行推送；`external/mbd` 指针变动与 `.DS_Store` 按约定不提交、仅本地留档。
+- **追踪**：Spec `docs/specs/0005-git-hygiene-manual-testing/`；手册 `docs/manual-testing.md`；线上 Gitee Issue 由用户自建（issue-draft.md 已留草稿）。
+- **状态**：本地实施完成并已提交；q-e 推送待补验收（acceptance.md SC-004 部分通过）。
+
 ### [2026-10-13] 彻底完成 0004 全量迁移（P0–P5 收尾）
 - **需求**：用户要求"彻底完成 0004 的所有需求"；经确认按全量 P5 收尾执行（补齐缺失 CLI、删被替换 Python、改名、清 pyproject、建 48 个旧名入口），musl 静态/离线验证如实留档为待 Linux 节点项；`qeflow-python-backup/` 随 P5 删除；48 个旧名入口采用多调用二进制 + 安装期链接。
 - **结果**：

@@ -7,6 +7,8 @@ import numpy as np
 import pytest
 from pathlib import Path
 
+from _local_paths import load_local_paths
+
 
 # ============================================================================
 # mattersim_opt 测试
@@ -357,7 +359,7 @@ def test_vasp_lobsterin_api(chdir_work):
     assert "kSpaceCOHP" not in lobsterin_content
 
     run_script_content = (work_dir / "run_lobster.sh").read_text(encoding="utf-8")
-    assert "/home/mayuan/bin/lobster-5.1.1" in run_script_content
+    assert load_local_paths()["LOBSTER_EXEC"] in run_script_content
 
 
 def test_vasp_lobsterin_api_optional_cohp_suffixes(chdir_work):
@@ -1980,7 +1982,7 @@ def test_vasp_opt_rv4_api(chdir_work):
     assert "EDIFFG   = -0.01" in incar_4
     assert "NSW      = 500" in incar_4
     assert "POTIM    = 0.01" in incar_4
-    assert "mpirun -np 48 /work/home/mayuan/software/vasp.6.4.3/bin/vasp_std > vasp.log_$i 2>&1" in script_content
+    assert f"{load_local_paths()['VASP_EXEC']} > vasp.log_$i 2>&1" in script_content
     assert "cp -f CONTCAR CONTCAR_$i" in script_content
     assert "cp -f OUTCAR OUTCAR_$i" in script_content
     assert "cp -f CONTCAR POSCAR" in script_content
@@ -2086,4 +2088,4 @@ def test_vasp_opt_multiple_pressures_generate_multiple_cases(chdir_work):
     assert 'cd "' in submit_script
     assert "bash oneopt.sh" not in submit_script
     assert "bash fouropt.sh" not in submit_script
-    assert "mpirun -np 48 /work/home/mayuan/software/vasp.6.4.3/bin/vasp_std" in submit_script
+    assert load_local_paths()["VASP_EXEC"] in submit_script

@@ -2,7 +2,7 @@
 # 注意：[qe].executable_path 为"启动命令 + QE bin 目录"，qeflow 自动拼接 pw.x/ph.x/q2r.x/matdyn.x
 
 [qe]
-executable_path = "mpirun -np 8 /Users/mayuan/Codes/dftflow/external/q-e/build/bin"
+executable_path = "mpirun -np 8 /path/to/q-e/build/bin"
 
 [scflow]
 # 工作目录（相对本配置文件所在目录）

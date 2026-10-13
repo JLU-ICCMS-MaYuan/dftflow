@@ -21,16 +21,16 @@ header = """
 """
 
 [wannier90]
-executable_path = "/home/mayuan/soft/qe-7.4.1/external/wannier90/wannier90.x"
+executable_path = "@WANNIER90_EXEC@"
 
 [pw2wannier90]
-executable_path = "/home/mayuan/soft/qe-7.4.1/PP/src/pw2wannier90.x"
+executable_path = "@PW2WANNIER90_EXEC@"
 prefix = "MgB2"
 outdir = "../qe_nscf/tmp"
 seedname = "MgB2"
 
 [postw90]
-executable_path = "/home/mayuan/soft/qe-7.4.1/external/wannier90/postw90.x"
+executable_path = "@POSTW90_EXEC@"
 
 [wannier_init.projections]
 list = ["Mg:s", "B:p"]
