@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from typing import Any, Dict, Iterable
 
-from public.config_templates import build_cli_config
+from mattersimflow._public_compat import build_cli_config
 
 
 MATTERSIM_SHARED_ALLOWED_KEYS = (

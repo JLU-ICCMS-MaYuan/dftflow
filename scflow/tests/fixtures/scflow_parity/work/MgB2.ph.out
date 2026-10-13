@@ -1,0 +1,18 @@
+     Program PHONON v.7.2 starts
+     lattice parameter (alat)  =  5.8316  (a.u.)
+     a(1) = (   5.8316   0.0000   0.0000 )
+     a(2) = (  -2.9158   5.0503   0.0000 )
+     a(3) = (   0.0000   0.0000   6.6594 )
+     site n.     atom          positions (alat units)
+          1           Mg  tau(   1) = (   0.0000   0.0000   0.0000 )
+          2           B   tau(   2) = (   0.0000   0.5774   0.5710 )
+          3           B   tau(   3) = (   0.0000  -0.5774  0.5710 )
+     number of atoms/cell      =           3
+     number of k points=     4                       method=MP
+     Number of q in the star:  1
+     (star of q points)
+                            q = ( 0.0000000 0.0000000 0.0000000
+     Number of q in the star:  2
+     (star of q points)
+                            q = ( 0.0179539 0.0000000 0.0000000
+     END OF PHONON

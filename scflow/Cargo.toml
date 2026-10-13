@@ -1,0 +1,18 @@
+[package]
+name = "scflow"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "scflow"
+path = "src/bin/scflow.rs"
+
+[dependencies]
+qf-config = { path = "../crates/qf-config" }
+qf-scflow = { path = "../crates/qf-scflow" }
+qf-crystal = { path = "../crates/qf-crystal" }
+anyhow = { workspace = true }
+clap = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

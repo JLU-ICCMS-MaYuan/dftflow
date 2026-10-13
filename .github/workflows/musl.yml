@@ -1,0 +1,46 @@
+name: musl-static-build
+
+on:
+  push:
+    branches: [qeflow-rust, main]
+  pull_request:
+    branches: [qeflow-rust, main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: rust:1.81-alpine
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install musl toolchain & static OpenBLAS deps
+        run: |
+          apk add --no-cache musl-dev pkgconfig gfortran openssl-libs-static
+
+      - name: Add x86_64-unknown-linux-musl target
+        run: rustup target add x86_64-unknown-linux-musl
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-musl-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build workspace
+        run: cargo build --workspace --target x86_64-unknown-linux-musl --release
+
+      - name: Strip binaries
+        run: |
+          strip target/x86_64-unknown-linux-musl/release/qeflow \
+          target/x86_64-unknown-linux-musl/release/vaspflow \
+          target/x86_64-unknown-linux-musl/release/scflow \
+          target/x86_64-unknown-linux-musl/release/wannier90 \
+          target/x86_64-unknown-linux-musl/release/substitution
+          ls -lh target/x86_64-unknown-linux-musl/release/{qeflow,vaspflow,scflow,wannier90,substitution}
+
+      - name: Run tests
+        run: cargo test --workspace --target x86_64-unknown-linux-musl

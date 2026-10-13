@@ -1,0 +1,12 @@
+[qeflow] ------------------------------------------------------------
+[qeflow] workflow: 
+[qeflow] prefix: vasp_cohp_uniform
+[qeflow] step: 1/1 运行 vasp_cohp_uniform
+[qeflow] work_dir: .
+[qeflow] command: cd vasp_cohp_uniform && mpirun -np 4 /Users/mayuan/Codes/dftflow/external/vasp.6.4.3/bin/vasp_std > vasp.log && cd ..
+Note: The following floating-point exceptions are signalling: IEEE_INVALID_FLAG IEEE_DIVIDE_BY_ZERO
+Note: The following floating-point exceptions are signalling: IEEE_INVALID_FLAG IEEE_DIVIDE_BY_ZERO
+Note: The following floating-point exceptions are signalling: IEEE_INVALID_FLAG IEEE_DIVIDE_BY_ZERO
+Note: The following floating-point exceptions are signalling: IEEE_INVALID_FLAG IEEE_DIVIDE_BY_ZERO
+[qeflow] done: 1/1 运行 vasp_cohp_uniform
+[qeflow] 完成: vasp_cohp_uniform 完成

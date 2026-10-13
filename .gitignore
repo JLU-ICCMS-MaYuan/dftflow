@@ -1,4 +1,5 @@
 # directory
+target/
 test_manual/
 __pycache__/
 *.egg-info/
@@ -17,11 +18,17 @@ wannier90flow/user_guide.pdf
 
 # auto-generated test working dirs (QE/VASP/SCFlow run outputs)
 test_auto/**/MgB2_calc/
-test_auto/MgB2/qeflow/
-test_auto/MgB2/scflow/
-test_auto/MgB2/substitutionflow/
-test_auto/MgB2/vaspflow/
-test_auto/MgB2/wannier90flow/
+# 跟踪黄金基线 pytest：忽略各 flow 运行时生成目录，仅放行 test_*.py
+test_auto/MgB2/qeflow/*
+!test_auto/MgB2/qeflow/test_*.py
+test_auto/MgB2/scflow/*
+!test_auto/MgB2/scflow/test_*.py
+test_auto/MgB2/substitutionflow/*
+!test_auto/MgB2/substitutionflow/test_*.py
+test_auto/MgB2/vaspflow/*
+!test_auto/MgB2/vaspflow/test_*.py
+test_auto/MgB2/wannier90flow/*
+!test_auto/MgB2/wannier90flow/test_*.py
 
 # CodeBuddy project data (local tool state)
 .codebuddy/

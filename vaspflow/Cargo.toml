@@ -1,0 +1,15 @@
+[package]
+name = "vaspflow"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "vaspflow"
+path = "src/bin/vaspflow.rs"
+
+[dependencies]
+df-vasp = { path = "../crates/df-vasp" }
+qf-config = { path = "../crates/qf-config" }
+qf-runner = { path = "../crates/qf-runner" }
+anyhow = { workspace = true }
+clap = { workspace = true }

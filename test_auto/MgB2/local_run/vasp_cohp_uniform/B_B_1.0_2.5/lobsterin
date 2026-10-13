@@ -1,0 +1,4 @@
+COHPstartEnergy  -10
+COHPendEnergy    5
+usebasisset pbeVaspFit2015
+cohpGenerator from 1 to 2.5 type B type B orbitalWise

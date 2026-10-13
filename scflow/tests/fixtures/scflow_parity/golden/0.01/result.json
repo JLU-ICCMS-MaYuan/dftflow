@@ -1,0 +1,162 @@
+{
+    "volume, A^3": 5763.771,
+    "density, g/cm^3": 0.013,
+    "volume of chemical formula unit, A^3": 5763.771,
+    "formula": "MgB2",
+    "# of chemical formula units (f.u.)": 1,
+    "Smoothing, THz": 3,
+    "Resolution, pts": 60,
+    "mu": 0.1,
+    "lambda": {
+        "direct": {
+            "lambda": 0.439,
+            "gamma": 12.016
+        },
+        "a2f": {
+            "lambda": 0.44,
+            "gamma": 12.031
+        }
+    },
+    "wlog, K": {
+        "direct": {
+            "lambda": {
+                "K": 164,
+                "THz": 3
+            },
+            "gamma": {
+                "K": 149,
+                "THz": 3
+            }
+        },
+        "a2f": {
+            "lambda": {
+                "K": 269,
+                "THz": 5
+            },
+            "gamma": {
+                "K": 269,
+                "THz": 5
+            }
+        }
+    },
+    "w2, K": {
+        "direct": {
+            "lambda": {
+                "K": 248,
+                "THz": 5
+            },
+            "gamma": {
+                "K": 265,
+                "THz": 5
+            }
+        },
+        "a2f": {
+            "lambda": {
+                "K": 298,
+                "THz": 6
+            },
+            "gamma": {
+                "K": 298,
+                "THz": 6
+            }
+        }
+    },
+    "Tc, K": {
+        "McMillan": {
+            "direct": {
+                "lambda": 1.129,
+                "gamma": 37.116
+            },
+            "a2f": {
+                "lambda": 1.861,
+                "gamma": 66.923
+            }
+        },
+        "Allen-Dynes": {
+            "direct": {
+                "lambda": 1.159,
+                "gamma": 126.367
+            },
+            "a2f": {
+                "lambda": 1.894,
+                "gamma": 145.248
+            }
+        },
+        "Eliashberg": 159.738
+    },
+    "Sommerfeld gamma": {
+        "mJ/mol/K^2": 14.168,
+        "mJ/g/K^2": 0.30849,
+        "mJ/cm^3/K^2": 0.0041
+    },
+    "DeltaC/Tc": {
+        "mJ/mol/K^2": -1404.325,
+        "mJ/g/K^2": -30.577,
+        "mJ/cm^3/K^2": -0.4046
+    },
+    "Delta": {
+        "meV": -238.264,
+        "2Delta/kBTc": -34.618,
+        "J": "-3.817415E-20"
+    },
+    "Hc2, T": [
+        0.085
+    ],
+    "beta (McMillan isotope coefficient)": 0.49542,
+    "DOS": {
+        "per Unit cell": {
+            "states/spin/Ry": 3.1416,
+            "states/spin/eV": 0.2309
+        },
+        "per chemical formula unit (MgB2)": {
+            "states/spin/Ry": 3.1416,
+            "states/spin/eV": 0.2309
+        },
+        "per A^3": {
+            "states/spin/Ry": 0.0005,
+            "states/spin/eV": 0.0
+        },
+        "per mole of MgB2": {
+            "states/spin/Ry": "1.891911E+24",
+            "states/spin/eV": "1.390529E+23"
+        },
+        "per g": {
+            "states/spin/Ry": "4.119388E+22",
+            "states/spin/eV": "3.027693E+21"
+        }
+    },
+    "eliashberg_solver": {
+        "status": "resolved",
+        "resolution_K": 0.001,
+        "minimum_reported_Tc_K": 0.001,
+        "matrix_size": 25
+    },
+    "zero_frequency_handling": {
+        "policy": "exclude_exact_zero_modes_only_if_lambda_is_zero",
+        "modes": [
+            {
+                "file": "/private/tmp/scfix/py/work/MgB2.dyn1.elph",
+                "q_point": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "mode_1based": 1,
+                "lambda": 0.0,
+                "gamma_GHz": 108.216
+            },
+            {
+                "file": "/private/tmp/scfix/py/work/MgB2.dyn2.elph",
+                "q_point": [
+                    0.0179539,
+                    0.0,
+                    0.0
+                ],
+                "mode_1based": 1,
+                "lambda": 0.0,
+                "gamma_GHz": 96.192
+            }
+        ]
+    },
+    "Broadening, Ry": 0.01
+}

@@ -1,0 +1,11 @@
+[package]
+name = "qf-crystal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+spglib = { workspace = true }
+serde = { workspace = true }
+anyhow = { workspace = true }
+qf-config = { path = "../qf-config" }
+regex = { workspace = true }

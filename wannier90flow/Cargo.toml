@@ -1,0 +1,21 @@
+[package]
+name = "wannier90flow"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "wannier90"
+path = "src/bin/wannier90.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+qf-config = { path = "../crates/qf-config" }
+qf-runner = { path = "../crates/qf-runner" }
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+roxmltree = { workspace = true }
+plotters = { workspace = true }

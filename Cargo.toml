@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "vaspflow",
+    "wannier90flow",
+    "substitutionflow",
+    "scflow",
+    "crates/*",
+    "qeflow",
+]
+
+# 共享依赖版本（由成员 crate 通过 workspace = true 引用）
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "0.8"
+roxmltree = "0.20"
+clap = { version = "4", features = ["derive"] }
+ndarray = "0.16"
+ndarray-linalg = { version = "0.16", features = ["openblas-static"] }
+plotters = "0.3"
+rayon = "1"
+regex = "1"
+anyhow = "1"
+thiserror = "1"
+
+# P0 已启用的原生依赖；spglib 用于 scflow/substitution CIF 对称化，plotters 用于绘图
+spglib = "0.1"
+svg2pdf = "0.12"

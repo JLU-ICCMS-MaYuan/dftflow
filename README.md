@@ -1,96 +1,50 @@
-# vaspflow
+# dftflow
 
-VASP calculation workflow automation scripts.
+DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
-## Installation
+当前分支 `qeflow-rust` 已完成 `qeflow / vaspflow / scflow / wannier90flow / substitutionflow / public` 六个 Python 包的全量 Rust 迁移（P0–P5）：交付五个家族静态二进制（`qeflow` / `vaspflow` / `scflow` / `wannier90` / `substitution`），48 个旧命令名经 `scripts/install-compat.sh` 创建的硬链接入口直接可用；`mattersimflow` 保留 Python（`mattersim_opt`）。
 
-```bash
-pip install .
-```
-
-本地开发安装：
+## 构建
 
 ```bash
-pip install --no-index --no-build-isolation -e .
+cargo build --release
+# Linux musl 静态交付（目标机）
+rustup target add x86_64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-musl
+strip target/x86_64-unknown-linux-musl/release/{qeflow,vaspflow,scflow,wannier90,substitution}
 ```
 
-## Usage
-
-Available commands:
-
-- `vasp_scf`
-- `vasp_eband`
-- `vasp_eledos`
-- `vasp_fermisurface`
-- `vasp_cohp_uniform`
-- `vasp_cohp_fatband`
-- `vasp_lobsterin`
-- `vasp_plot_cohp`
-- `vasp_plot_kcohp`
-- `mattersim_opt`
-- `substitution_structure`
-- `substitution`
-- `substitution_continue`
-- `substitution_prepare_potcar`
-- `substitution_prepare_qe_pseudo`
-- `substitution_plot_eledos`
-- `substitution_check_phonon_stability`
-- `qe_scf`
-- `qe_nscf`
-- `qe_eband`
-- `qe_eledos`
-- `qe_process_eledos`
-- `qe_process_eband`
-- `qe_ph_nosplit`
-- `qe_q2r`
-- `qe_matdyn_phband`
-- `qe_matdyn_phdos`
-- `qe_process_phonon`
-- `qe_split_submit`
-- `qe_check`
-- `qe_phonon_nosplit`
-- `qe_phonon_split_index`
-- `qe_phonon_split_coords`
-- `scflow`
-
-## scflow 超导后处理
-
-安装 scflow 的科学计算和绘图依赖：
+## 安装旧命令兼容入口
 
 ```bash
-pip install -e ".[scflow]"
+./scripts/install-compat.sh target/release ~/.local/bin
 ```
 
-`scflow -c input.toml` 读取 `[scflow]` 配置和 QE EPC 输出，计算 McMillan、Allen-Dynes 与 Eliashberg 超导转变温度，并保留 A2F 的 CSV、JSON、PDF 和结构文件输出。它只处理已有结果，不启动 QE。详细配置见 [scflow README](scflow/README.md) 和 [功能总览](docs/overview/scflow.md)。
+为 48 个旧命令名（17 个 `qe_*`、19 个 `vasp_*`、4 个 `wannier_*`、7 个 `substitution*`、1 个 `scflow`，含 `qf-gen-dyn0` 别名）创建指向五个家族二进制的硬链接，二进制按 `argv[0]` 分派，现有 Slurm/脚本调用方式不变。
 
-## QE 声子绘图
+## 命令速查
 
-`qe_process_phonon -c /absolute/path/to/input.json --plot` 读取已有归档，保留原有独立 PNG/CSV，
-并额外在声子工作区生成 `phonon_band_dos.jpg`：左声子谱、右总 DOS 与元素分波，共享频率 y 轴并保留负频。
-不新增 CLI、不启动 QE。输入格式见 [qeflow 使用说明](qeflow/README.md#8-qe_process_phonon)，
-当前功能边界见 [绘图总览](docs/overview/qe-phonon-plot.md)。
+- **QE**：`qe_scf` `qe_nscf` `qe_eband` `qe_eledos` `qe_process_eband` `qe_process_eledos` `qe_ph_nosplit` `qe_merge` `qe_q2r` `qe_matdyn_phband` `qe_matdyn_phdos` `qe_process_phonon` `qe_split_submit` `qe_check` `qe_phonon_nosplit` `qe_phonon_split_index` `qe_phonon_split_coords`
+- **VASP**：`vasp_scf` `vasp_scf_converge` `vasp_eband` `vasp_process_eband` `vasp_eledos` `vasp_process_eledos` `vasp_idos_computed` `vasp_fermi` `vasp_cohp_uniform` `vasp_cohp_fatband` `vasp_lobsterin` `vasp_plot_cohp` `vasp_plot_kcohp` `vasp_locpot` `vasp_process_locpot` `vasp_charge` `vasp_charge_diff` `vasp_opt` `vasp_elf`
+- **Wannier**：`wannier_init` `wannier_post` `wannier_window` `wannier_plot`
+- **Substitution**：`substitution` `substitution_structure` `substitution_continue` `substitution_prepare_potcar` `substitution_prepare_qe_pseudo` `substitution_plot_eledos` `substitution_check_phonon_stability`
+- **scflow**：`scflow -c input.toml`（λ/ω_log/Tc、a2F、Eliashberg；详见 [scflow README](scflow/README.md) 与 [功能总览](docs/overview/scflow.md)）
+- **MatterSim（Python 例外）**：`pip install .` 后使用 `mattersim_opt`
+
+配置契约（`input.toml` 递归覆盖、状态机、容差）见 [0004 契约](docs/specs/0004-dftflow-rust/contracts/config-and-output.md)。
 
 ## High Throughput Substitution
 
 - `mattersim_opt` 通过外部 MatterSim Python 环境运行两阶段预优化：先只优化原子坐标，再在目标压力下联合优化晶格和原子坐标，输出 `mattersim_opt/CONTCAR` 供后续 `vasp_opt` 使用。
 - `substitution_structure` 是高通量替换工作流的 prepare 步骤：从 `[substitutionflow]` 读取 `XA/XB` 原子序号范围，生成 `<Z>.XA_<元素>/period_n/<Z>.<formula>` 目录树，并同时写出替换结构、case `input.toml` 与初始状态文件。
 - 每个 `period_n/` 目录保存一份静态 `workflow_manifest.json`，只记录输入结构、`XA` 元素、压力列表和该组 case 清单。
-- 每个 case 下生成的 `input.toml` 是后续 `vasp_*`、`qe_phonon_*` 和 `substitution_continue` 的统一配置真源；它默认完整继承根 `input_substitution.toml` 中的共享块和子工作流参数块，只对 `chgcar_path`、`wavecar_path` 做 case 级相对路径重写。
-- 如果根配置中包含 QE 声子相关设置，`substitution_structure` 会原样带入每个 case `input.toml`，包括 `pp_dir`、`[qe]`、`[qe_phonon]` 及其子块。
-- 每个实际体系目录保存一份 `case_status.json`，记录各压力点在 `mattersim_opt / vasp_opt / vasp_scf / vasp_eledos / vasp_process_eledos / qe_phonon` 的 `finished / error / unstarted` 状态。
-- 输出根目录保存一份汇总 `workflow_status.json`，供 `substitution_continue` 扫描、统计和续算使用；旧版不含 `qe_phonon` 的状态文件会在下一次刷新时自动补齐或重写，不需要手工删除。
-- `[substitutionflow].submit_groups` 控制 `-s/--submit` 时把未完成任务分成多少组；一个 `case + pressure` 视为一个不可拆分的完整提交单元，组内保持当前遍历顺序，`substitution` 和 `substitution_continue` 会分别对 `submit_group_01.sh`、`submit_group_02.sh` 等脚本逐组执行 `sbatch`。
-- `[substitutionflow].phonon_mode` 控制末尾 QE 声子总工作流，允许值只有 `nosplit / split_index / split_coords`，默认 `split_index`；建议在根配置里显式写出该字段，避免依赖默认值。`substitutionflow` 内部会显式把 case 真源配置 `case/input.toml` 传给 `qe_phonon_* -c`，不再依赖 `qe_phonon_*/input.toml` 副本。
-- 当 `phonon_mode = "split_index"` 或 `"split_coords"` 且使用 `substitution -s` / `substitution_continue -s` 时，提交脚本会调用 `qe_phonon_split_* -s`。整个声子链路只保留两个顶层提交脚本：`submit_pre_and_split_stage.sh` 负责 `scf -> dyn0 -> qe_split_submit`，`submit_merge_and_process_phonon.sh` 负责 `qe_merge -> q2r -> matdyn -> collect -> plot`。`qe_split_submit` 会进入 `01/02/...` 目录并分别 `sbatch run_split.sh`，使 q 点任务可并行排队运行。
-- `qe_phonon` 的整体状态不再靠目录残留猜测，而是读取对应 `qe_phonon_* / workflow_status.json` 归约得到：`nosplit` 以 `scf -> ph -> q2r -> matdyn_phband -> matdyn_phdos -> phonon_plot` 为准，`split_index / split_coords` 以 `scf -> dyn0 -> split tasks -> merge -> q2r -> matdyn_phband -> matdyn_phdos -> phonon_plot` 为准；`matdyn_phband/matdyn_phdos` 完成状态要求结果已归档到 `phband/`、`phdos/`。
-- `substitution_continue` 现在要求显式同时传入 `-o <batch_dir>` 与 `-c <input.toml>`；`-c` 是所有模式下 `case/input.toml` 的唯一真源，不再是可选增强参数。
-- `substitution_continue` 的默认校准流程固定为：先按 `-c` 重写全部 case `input.toml`，再真实刷新状态、同步已有 `qe_phonon_*` 目录中的 `POSCAR` 副本、重新生成 `submit_group_*.sh`，最后输出“状态摘要 + 提交脚本摘要”。这里的 `POSCAR` 同步只会把同 pressure 下 `vasp_opt/CONTCAR` 拷到已有 `qe_phonon_* / POSCAR`，不会读写 `qe_phonon_*/input.toml`，也不会提前生成 `run_scf.sh / ph.in / q2r.in` 等中间文件。
-- `substitution_continue -rws` 继承整套默认校准流程，然后再把全部 `error` 重置为 `unstarted`，并在结束后输出按 `case + pressure` 分组的重写结果表。
-- `substitution` 负责从头生成并启动整条工作流，`substitution_continue` 负责基于状态文件续算。`-r` 与 `-s` 都会先执行同一套默认校准流程，再从当前 `case_status.json/workflow_status.json` 里的第一个非 `finished` 步骤开始运行或提交。状态刷新不再依赖 Slurm 或本地进程探测；只有 `finished` 会跳过，`error` 会阻断，`unstarted` 会继续推进。执行过 `substitution_continue -rws` 后，再运行 `substitution_continue -r` 会从新的第一个非 `finished` 步骤继续推进。
-- `substitution_prepare_potcar` 从 `[substitutionflow]` 推导需要的元素集合，按 `--pot` 指定的原始赝势库筛选并复制所需 `POTCAR` 到当前目录的 `potcar_lib/`，默认读取已有 `potcar_lib/potcar_lib.log` 续选，并在每次完成单个元素选择后立即更新该记录文件。
-- `substitution_prepare_qe_pseudo` 从 `[substitutionflow]` 推导需要的元素集合，按 `--pp` 指定的原始 QE 赝势目录筛选并复制所需文件到当前目录的 `qe_pseudo_lib/`。它不会再回写各 case `input.toml`；推荐在根配置中直接写 `pp_dir = "qe_pseudo_lib"`，并让 `substitution_structure` 原样继承。
-- `substitution_plot_eledos` 是独立的批量汇总绘图 CLI；省略 `-d` 时默认扫描当前目录下全部 `[Z].XA_*` 目录，也支持传入一个批量根目录或一个/多个指定的 `[Z].XA_*` 目录，并在每个 XA 目录下按 pressure 输出 `eledos_summary_<pressure>.png`，每个格子固定绘制 `XA / XB / H / TDOS` 四柱。
-- `substitution_check_phonon_stability` 是独立的批量声子稳定性检查 CLI；省略 `-d` 时默认扫描当前目录下全部 `[Z].XA_*` 目录，也支持传入一个批量根目录或一个/多个指定的 `[Z].XA_*` 目录，并在每个 XA 目录下按 pressure 输出 `phonon_stability_summary_<pressure>.png`。它读取 `qe_phonon_*/phdos/phonon_dos_elements.csv` 的 `frequency_cm-1` 列，换算为 THz 后以最小频率 `< -1.0 THz` 判为 `unstable`，否则判为 `stable`；缺失或无法解析的数据展示为 `unfinished`。读取 case 结果时默认自动并行，也可用 `-j/--jobs` 指定线程数。
+- 每个 case 下生成的 `input.toml` 是后续 `vasp_*`、`qe_phonon_*` 和 `substitution_continue` 的统一配置真源；它默认完整继承根配置中的共享块和子工作流参数块，只对 `chgcar_path`、`wavecar_path` 做 case 级相对路径重写。
+- 每个 case 的 `case_status.json` 记录各压力点在 `mattersim_opt / vasp_opt / vasp_scf / vasp_eledos / vasp_process_eledos / qe_phonon` 的 `finished / error / unstarted` 状态（OUTCAR 启发式判定，无 daemon）；根目录 `workflow_status.json` 汇总供续算。
+- `[substitutionflow].submit_groups` 控制 `-s/--submit` 的提交分组；一个 `case + pressure` 是不可拆分的完整提交单元，逐组 `sbatch submit_group_NN.sh`。
+- `[substitutionflow].phonon_mode` 控制末尾 QE 声子总工作流，允许 `nosplit / split_index / split_coords`，默认 `split_index`；split 模式下 `qe_split_submit` 会进入 `NN/` 目录逐 q 点 `sbatch run_split.sh`。
+- `substitution_continue -o <dir> -c <input.toml>`（`-rfs` 刷新状态 / `-rws` 重写 error、`-r/-s` 运行/提交）按状态文件从第一个非 `finished` 步骤续算。
+- `substitution_prepare_potcar --pot <lib>` 与 `substitution_prepare_qe_pseudo --pp <dir>` 准备本地 `potcar_lib/`、`qe_pseudo_lib/`（交互式选号，选择记录即时写盘）。
+- `substitution_plot_eledos` / `substitution_check_phonon_stability` 输出周期表式批量总览（`eledos_summary_<P>.*`、`phonon_stability_summary_<P>.png`；最小频率 `< -1.0 THz` 判 `unstable`）。
 
 示例 `input_substitution.toml` 片段：
 
@@ -110,18 +64,6 @@ lattice_mode = "ibrav_angstrom"
 [qe_phonon]
 prefix = "ht_ph"
 
-[qe_phonon.scf]
-restart_mode = "from_scratch"
-verbosity = "high"
-forc_conv_thr = "1.0d-6"
-etot_conv_thr = "1.0d-7"
-tstress = true
-tprnfor = true
-ecutwfc = 80.0
-ecutrho = 640.0
-outdir = "./qe_out"
-kpoints = [3, 3, 2]
-
 [qe_phonon.ph]
 qpoints = [2, 2, 1]
 recover = true
@@ -133,3 +75,10 @@ pressures = [20, 50]
 structure_filename = "XAXBH7-P63mmc.vasp"
 phonon_mode = "split_index"
 ```
+
+## 文档
+
+- 实现总览：[docs/overview/dftflow-rust.md](docs/overview/dftflow-rust.md)
+- Spec / 契约 / 验收：[docs/specs/0004-dftflow-rust/](docs/specs/0004-dftflow-rust/spec.md)
+- 各 flow 的 README：`qeflow/` `vaspflow/` `scflow/` `wannier90flow/` `substitutionflow/` `mattersimflow/`
+- 架构决策：[docs/adr/](docs/adr/README.md)

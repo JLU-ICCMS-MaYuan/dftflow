@@ -24,18 +24,35 @@
 
 ## 需求处理记录
 
+### [2026-10-13] 彻底完成 0004 全量迁移（P0–P5 收尾）
+- **需求**：用户要求"彻底完成 0004 的所有需求"；经确认按全量 P5 收尾执行（补齐缺失 CLI、删被替换 Python、改名、清 pyproject、建 48 个旧名入口），musl 静态/离线验证如实留档为待 Linux 节点项；`qeflow-python-backup/` 随 P5 删除；48 个旧名入口采用多调用二进制 + 安装期链接。
+- **结果**：
+    1. 补齐 qeflow 8 个缺失命令（process_eband/process_eledos/ph_nosplit/q2r/matdyn_phband/matdyn_phdos/split_submit/check）并升级 `qe_phonon_nosplit` 为完整聚合工作流；`qf-gen-dyn0` 并入 `qeflow gen-dyn0` 并保留别名，支持 `--xml/--nq1-3/--prefix/--out-dir` 契约与 `q_points.json` 产出。
+    2. 补齐 vaspflow 4 个命令（idos_computed/plot_cohp→process_cohp 对齐 Python 输出契约/plot_kcohp 全新实现/charge_diff）；`--interaction/-low/-up/--emin/--emax` 参数对齐。
+    3. 新建 `crates/df-substitution`（约 3000 行）真实实现 7 个 substitution 命令：selection/structure/status(OUTCAR 启发式)/workflow/prepare(potcar+qe_pseudo 交互选号)/plot_eledos/check_phonon；split 布局改为 Python 的 `NN/` 目录 + 逐 q `run_split.sh`。
+    4. 新建 `crates/qf-compare` 契约容差对照器；新增集成测试（`qeflow/tests/postprocess_golden.rs`、`df-substitution/tests`），`cargo test --workspace` 75 项全绿。
+    5. 真实数据逐字节对照：qe_process_eband 三表（MgB2 真实 projwfc）、qe_process_eledos 四表、substitution structure/continue 全部产物（仅差根路径）、vasp_charge_diff。
+    6. P5 切换：删除 Python `qeflow`(备份)/`scflow`/`vaspflow`/`wannier90flow`/`substitutionflow`/`public`；`wannier90flow-rust`→`wannier90flow`、`substitutionflow-rust`→`substitutionflow`；`pyproject.toml` 仅保留 `mattersim_opt`；`mattersimflow` 经 `mattersimflow/_public_compat.py` 解除 `public` 依赖（CLI 行为不变）。
+    7. `scripts/install-compat.sh` 交付 48 个旧名硬链接入口（argv[0] 分派，含 `qf-gen-dyn0` 别名）；参考基线冻结为提交 `9396b3a`（标签 `python-reference-0004`）；`.gitignore` 补 `target/` 并清除误入索引的 23043 个构建产物。
+- **留档**：`docs/specs/0004-dftflow-rust/{tasks.md,acceptance.md}` 已逐项勾选/标注；`docs/overview/dftflow-rust.md` 重写为最终实现总览（含待 Linux 验证命令）；README 重写。
+- **scflow 完整链路补齐（同日续）**：发现此前 scflow 仅覆盖单点 a2F 路径，随即移植完整链路（dyn*.elph/elph.in_lambda 解析、q 权重三级回退、direct/interp 双通道含 Python float16 stairs 与 wlog/w2 数组别名行为、scipy simpson Cartwright 修正与 reflect 边界精确复刻、分展宽 CSV/result.json/spglib 对称化 CIF/三类 PDF via svg2pdf、summary CSV/PDF）；新增 spglib/svg2pdf 依赖（brew 安装 spglib，仓库级 `.cargo/config.toml` 提供 bindgen 头文件路径）；合成 EPC fixture 与 Python 参考逐字节对照通过并固化为 `scflow/tests/scflow_parity.rs`（修复了笛卡尔→分数坐标转换的行列约定错误与原子量 B=10.811）；修正 `.gitignore` 后重建的 `Cargo.toml` serde_json preserve_order、pytest 基线运行 212 通过/34 环境性失败/2 跳过。
+- **待 Linux 节点项**（不伪造通过证据）：T004 静态 OpenBLAS 切换与 spglib-sys musl 静态链接、T005 PDF 链接验证、T030 musl strip+离线运行、计算节点 `run` 类 pytest 与 PATH。
+- **边界**：线上 Gitee Issue（IKKGLP）不操作，由用户自管；分支名保持 `qeflow-rust`。
+- **追踪**：[Gitee IKKGLP（编号 0004）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)；Spec `docs/specs/0004-dftflow-rust/`；Overview `docs/overview/dftflow-rust.md`。
+- **状态**：代码迁移与本地验收完成并已提交；musl 静态交付验证待 Linux 节点。
+
 ### [2026-10-09] 将 qeflow 用 Rust 全量重写为单一静态二进制（Issue 0004）
 - **需求**：用 Rust 重写现有 Python 版 `qeflow`，产出单一 musl 静态二进制，仅作编排层 spawn 外部 QE/VASP，避免 Python 启动/导入开销；在 `qeflow-rust` 分支开发。
 - **方案**：以 FireWorks 状态机 + 队列适配器 + Workflow DAG 为主骨架，吸收 jobflow 类型化数据流，文件系统状态文件替代 daemon/数据库；cargo workspace 拆为 `qf-config`/`qf-crystal`/`qf-input`/`qf-io`/`qf-state`/`qf-runner`/`qf-phonon`/`qf-scflow`/`qf-cli`；复刻 `input.toml` 递归覆盖、状态机续算与 Slurm 两段提交；scflow 数学用 `ndarray`+静态 OpenBLAS 自实现，绘图用 `plotters`。
-- **结果**：已完成六维度框架调研与架构大纲、cargo workspace 骨架、`qf-config`/`qf-io`/`qf-state`/`qf-runner` 与 `qe-scf→qe-nscf` + `scflow` 垂直切片，musl 静态二进制构建路径搭通；建立 Spec `docs/specs/0004-qeflow-rust/`。
-- **追踪**：[Gitee IKKGLP（编号 0004）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)；Spec 位于 `docs/specs/0004-qeflow-rust/`；Overview 见 `docs/overview/qeflow-rust.md`。
+- **结果**：已完成六维度框架调研与架构大纲、cargo workspace 骨架、`qf-config`/`qf-io`/`qf-state`/`qf-runner` 与 `qe-scf→qe-nscf` + `scflow` 垂直切片，musl 静态二进制构建路径搭通；建立 Spec `docs/specs/0004-dftflow-rust/`。
+- **追踪**：[Gitee IKKGLP（编号 0004）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)；Spec 位于 `docs/specs/0004-dftflow-rust/`；Overview 见 `docs/overview/dftflow-rust.md`。
 - **状态**：进行中（plan building）；全量迁移（输入 deck / phonon split-merge / scflow 绘图 / CLI）待做，尚未替代现有 Python `qeflow`。
 
 ### [2026-10-10] 扩大 Rust 重写范围至全量 Python 包（Issue 0004 范围变更）
 - **需求**：在 qeflow 单一重写基础上，把项目内剩余 Python 包（vaspflow、wannier90flow、substitutionflow、scflow、public）也完整迁移为 Rust；mattersimflow 除外。
 - **决策**：① 最终仓库目录仍叫 `dftflow`（不叫 dftflow-rust），过渡期每个 flow 用 `xxx-rust/`，删 Python 后改名 `xxx/`；② 绘图用 Rust `plotters` 重绘，内容/布局等价（非像素级），CSV/DAT 数值严格 1:1 对齐，不再依赖 Python 调库；③ 保留 `test_auto/` pytest 黄金基线作对照，Rust 侧补集成测试；④ 科学库替代：scflow 对称化 CIF 用 `spglib`，COHPCAR.lobster 用 Rust 手写解析，mattersimflow 生成的 ML 脚本仍由目标机 Python 运行（登记为 Python 例外）；⑤ Gitee 线上 Issue 由用户自管，Spec 内用 Markdown 双向链接回退记录 Epic→子 Issue 拆分（P0–P5）。
 - **范围排除**：`mattersimflow` 不迁移为 Rust，保留其原有 Python 实现、不删、不改。
-- **追踪**：Gitee [IKKGLP（编号 0004）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)；总体计划 `docs/plan/dftflow-rust-full-migration.md`；详细 Spec `docs/specs/0004-qeflow-rust/`。
+- **追踪**：Gitee [IKKGLP（编号 0004）](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)；总体计划 `docs/plan/dftflow-rust-full-migration.md`；详细 Spec `docs/specs/0004-dftflow-rust/`。
 - **状态**：当时的 plan building 记录；目录切换时机、数值容差与 MatterSim 边界已由下条「复核并修正」记录更新，尚未进入分阶段实现。
 
 ### [2026-10-10] 复核并修正 Rust 全量迁移文档（Issue 0004）
@@ -43,8 +60,20 @@
 - **已查明问题**：P0 将 `qeflow-rust/` 改成已存在的 `qeflow/` 会冲突；Python `substitutionflow` 仍导入 `qeflow.common`，Wannier/substitution/MatterSim 仍导入 `public`；`pyproject.toml` 实为 48 个待迁移 CLI 加 1 个保留的 `mattersim_opt`；`test_auto/MgB2/` 的 11 个 pytest 脚本被 `.gitignore` 忽略，原文引用的 `validate_scflow_isif4.py` 不存在；现有 Rust `qf-gen-dyn0` 会形成第六个可执行文件。
 - **用户澄清**：0004 按 Epic 加 P0–P5 子 Issue 管理，线上创建与编号由用户负责；允许仅为移除 `public` 依赖对 `mattersimflow` 作等价调整，保留 Python CLI 及 substitution 可选 ML 链路；浮点按预定容差验收；`scflow` 仍须在弱机完整 Rust 化，Eliashberg 本征值选择静态 OpenBLAS；性能只记录，不设通过门槛。
 - **修订方案**：P0 冻结可跟踪的 pytest 基线并验证 musl 静态 OpenBLAS/spglib、PNG/JPG/PDF 与 CIF；P0–P4 让 Python 与 Rust 并存，P5 反向依赖清零后集中删除被替换 Python、改名并交付五个家族二进制与 48 个旧命令兼容入口；`pyproject.toml` 最终保留 `mattersim_opt` 的最小 Python 安装内容。原始用户需求逐字记录不改写，当前 0004 Spec 仅为跨阶段过渡资料，P1–P4 待真实子 Issue 编号后建立正式 Feature Spec。
-- **追踪**：总体计划 `docs/plan/dftflow-rust-full-migration.md`；跨阶段 Spec 与子 Issue 草稿 `docs/specs/0004-qeflow-rust/`。线上 Issue 与双向链接尚待用户建立，不记为完成。
+- **追踪**：总体计划 `docs/plan/dftflow-rust-full-migration.md`；跨阶段 Spec 与子 Issue 草稿 `docs/specs/0004-dftflow-rust/`。线上 Issue 与双向链接尚待用户建立，不记为完成。
 - **状态**：仅文档修订；Rust 源码、pytest 文件纳管、目录迁移和线上 Issue 均待用户在另一台机器启动后实施。
+
+### [2026-10-12] 修正 0004 命名以对齐全量迁移范围（Issue 0004）
+- **需求**：用户指出 0004 的 issue/spec 名 `qeflow-rust` 与实际要做的事不符——目标是把整个 dftflow 变成 Rust，而非单独 qeflow；要求更名。
+- **变更**：`docs/specs/0004-qeflow-rust/` → `docs/specs/0004-dftflow-rust/`；`docs/qeflow-rust/` → `docs/dftflow-rust/`；`docs/overview/qeflow-rust.md` → `docs/overview/dftflow-rust.md`；AGENTS/plan/overview/spec 内全部路径引用同步更新；`issue-draft.md` 头部补记命名变更说明。历史条目中的 `qeflow-rust/` 旧目录与 `qeflow-rust` 分支名为当时事实，保持不改写。
+- **状态**：命名修正完成；线上 Gitee Issue 标题未改动，由用户自行决定是否同步。
+
+### [2026-10-12] phase0-restructure：musl CI 修正与 Issue 0004 状态落档
+- **需求**：重排 Rust workspace（包名改 dftflow、多二进制骨架、引入 spglib/plotters 与 musl CI），并用 `big-project-issue-manager` 更新 Issue 0004。
+- **澄清**：用户确认「包名改 dftflow」为**仅文档统称**——不改任何包名、目录名与分支名，交付物家族在文档与沟通层面统称 dftflow；本次只补 musl.yml 与 Issue 状态。
+- **变更**：`.github/workflows/musl.yml` strip 列表由 qeflow/vaspflow 补齐为五二进制（+scflow/wannier90/substitution），`ls -lh` 清单同步；`issue-draft.md` 新增「原始需求（用户原话）」小节（逐字留档）、Epic 段补交付物统称说明、P0 段补现状（T001–T003 完成、T004/T005 待 Linux 节点）。
+- **边界**：线上 Gitee（IKKGLP）不操作，由用户自管；分支名保持 `qeflow-rust`。
+- **状态**：P0 剩余 T004/T005 待 Linux x86_64 节点验证 musl 静态样例与 spglib/PDF 可行性。
 
 ### [2026-09-23] ISIF4 的 scflow 完整真实数据验收（Issue 0001）
 - **需求**：直接用 SiP2-19p2/vasp_opt_ISIF4/Tc-236 完成 scflow 全部展宽的真实数据验收；沿用 Python。

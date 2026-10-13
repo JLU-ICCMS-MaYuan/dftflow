@@ -1,0 +1,9 @@
+[scflow]
+work_dir = "work"
+results_dir = "results"
+smoothing_thz = 3
+resolution = 60
+gaussian_sigma = 5
+mu = 0.10
+integration = "sum"
+structure_tolerance = 0.2

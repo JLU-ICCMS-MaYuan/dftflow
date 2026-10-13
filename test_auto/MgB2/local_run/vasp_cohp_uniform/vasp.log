@@ -1,0 +1,45 @@
+ running    4 mpi-ranks, on    1 nodes
+ distrk:  each k-point on    4 cores,    1 groups
+ distr:  one band on    4 cores,    1 groups
+ vasp.6.4.3 19Mar24 (build Oct 12 2026 09:45:53) complex                         
+ POSCAR found type information on POSCAR MgB 
+ POSCAR found :  2 types and       3 ions
+ scaLAPACK will be used
+ LDA part: xc-table for (Slater+PW92), standard interpolation
+ found WAVECAR, reading the header
+  number of k-points has changed, file:    40 present:   567
+  trying to continue reading WAVECAR, but it might fail
+ WARNING: stress and forces are not correct
+ POSCAR, INCAR and KPOINTS ok, starting setup
+ FFT: planning ... GRIDC
+ FFT: planning ... GRID_SOFT
+ FFT: planning ... GRID
+ reading WAVECAR
+ the WAVECAR file was read successfully
+ charge-density read from file: VASP_Job                                
+ entering main loop
+       N       E                     dE             d eps       ncg     rms          rms(c)
+DAV:   1    -0.758476904965E+01   -0.75848E+01   -0.63767E+02 54920   0.450E+01
+DAV:   2    -0.151792972200E+02   -0.75945E+01   -0.69406E+01 44144   0.184E+01
+DAV:   3    -0.153231818338E+02   -0.14388E+00   -0.14283E+00 45632   0.227E+00
+DAV:   4    -0.153233064726E+02   -0.12464E-03   -0.12389E-03 44136   0.806E-02
+DAV:   5    -0.153233066872E+02   -0.21459E-06   -0.21292E-06 46928   0.300E-03
+DAV:   6    -0.153233066879E+02   -0.70327E-09   -0.65256E-09 43184   0.167E-04
+   1 F= -.15323307E+02 E0= -.15323307E+02  d E =0.000000E+00
+ writing wavefunctions
+ -----------------------------------------------------------------------------
+|                                                                             |
+|           W    W    AA    RRRRR   N    N  II  N    N   GGGG   !!!           |
+|           W    W   A  A   R    R  NN   N  II  NN   N  G    G  !!!           |
+|           W    W  A    A  R    R  N N  N  II  N N  N  G       !!!           |
+|           W WW W  AAAAAA  RRRRR   N  N N  II  N  N N  G  GGG   !            |
+|           WW  WW  A    A  R   R   N   NN  II  N   NN  G    G                |
+|           W    W  A    A  R    R  N    N  II  N    N   GGGG   !!!           |
+|                                                                             |
+|     Tetrahedron method does not include variations of the Fermi             |
+|     occupations, so forces and stress will be inaccurate. We suggest        |
+|     using a different smearing scheme ISMEAR = 1 or 2 for metals in         |
+|     relaxations.                                                            |
+|                                                                             |
+ -----------------------------------------------------------------------------
+

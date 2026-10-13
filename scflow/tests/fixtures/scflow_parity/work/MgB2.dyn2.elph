@@ -1,0 +1,31 @@
+  0.0179539  0.0000000  0.0000000
+  0.000000000000
+  0.000001006184
+  0.000001972120
+  0.000003381896
+  0.000005478112
+  0.000008657653
+  Gaussian Broadening 0.010 Ry
+   DOS =     3.14159265 states/spin/Ry Ef=  6.500000eV
+   mode #   1: lambda= 0.000000  gamma= 96.192 (GHz)
+   mode #   2: lambda= 0.316800  gamma= 192.384 (GHz)
+   mode #   3: lambda= 0.182400  gamma= 288.576 (GHz)
+   mode #   4: lambda= 0.115200  gamma= 384.768 (GHz)
+   mode #   5: lambda= 0.074880  gamma= 480.960 (GHz)
+   mode #   6: lambda= 0.048000  gamma= 577.152 (GHz)
+  Gaussian Broadening 0.020 Ry
+   DOS =     3.14159265 states/spin/Ry Ef=  6.500000eV
+   mode #   1: lambda= 0.000000  gamma= 96.384 (GHz)
+   mode #   2: lambda= 0.316800  gamma= 192.768 (GHz)
+   mode #   3: lambda= 0.182400  gamma= 289.152 (GHz)
+   mode #   4: lambda= 0.115200  gamma= 385.536 (GHz)
+   mode #   5: lambda= 0.074880  gamma= 481.920 (GHz)
+   mode #   6: lambda= 0.048000  gamma= 578.304 (GHz)
+  Gaussian Broadening 0.040 Ry
+   DOS =     3.14159265 states/spin/Ry Ef=  6.500000eV
+   mode #   1: lambda= 0.000000  gamma= 96.768 (GHz)
+   mode #   2: lambda= 0.316800  gamma= 193.536 (GHz)
+   mode #   3: lambda= 0.182400  gamma= 290.304 (GHz)
+   mode #   4: lambda= 0.115200  gamma= 387.072 (GHz)
+   mode #   5: lambda= 0.074880  gamma= 483.840 (GHz)
+   mode #   6: lambda= 0.048000  gamma= 580.608 (GHz)

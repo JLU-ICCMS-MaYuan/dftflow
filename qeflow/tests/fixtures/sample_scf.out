@@ -1,0 +1,10 @@
+     Program PWSCF v7.0 starts
+     number of atoms/cell = 2
+     number of k points= 100
+     CELL_PARAMETERS (angstrom)
+       3.0  0.0  0.0
+       0.0  3.0  0.0
+       0.0  0.0  3.5
+     !    total energy   = -123.456 Ry
+     the Fermi energy is  12.34 ev
+     JOB DONE.

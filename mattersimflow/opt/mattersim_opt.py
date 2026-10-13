@@ -6,9 +6,9 @@ import os
 import shutil
 from typing import Dict, List, Optional
 
-from public.config_templates import load_config_file
-from public.executables import resolve_direct_command
-from public.job import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
+from mattersimflow._public_compat import load_config_file
+from mattersimflow._public_compat import resolve_direct_command
+from mattersimflow._public_compat import add_run_submit_arguments, execute_commands, handle_job_action, write_job_script
 from mattersimflow.templates import (
     apply_mattersim_config_overrides,
     get_mattersim_opt_allowed_keys,

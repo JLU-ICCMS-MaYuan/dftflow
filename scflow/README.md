@@ -1,3 +1,7 @@
+> **0004 迁移说明**：scflow 已全量迁移为 Rust（`scflow/src/bin/scflow.rs` + `crates/qf-scflow`），
+> CLI 仍为 `scflow -c input.toml`，输出文件名与数值语义与本文描述一致；科学计算依赖（scipy/matplotlib）不再需要，
+> 绘图由 plotters 完成。本文余下内容保留作为物理量与输出格式的参考说明。
+>
 # scflow
 
 `scflow` 将 A2F 的 QE 后处理代码内置到 dftflow，用于从 `*.dyn*.elph*`、可选 `*.dyn*` 和 `*.ph.out` 计算电子声子耦合、A2F、McMillan/Allen-Dynes Tc 和 Eliashberg Tc。

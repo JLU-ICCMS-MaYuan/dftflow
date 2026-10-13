@@ -1,6 +1,6 @@
 # 计划：dftflow 全量 Rust 重写（qeflow / vaspflow / wannier90flow / substitutionflow / scflow / public）
 
-> 规划文档由 `big-project-planer` 维护；详细 Feature 设计 / 任务拆解见 `docs/specs/0004-qeflow-rust/`。
+> 规划文档由 `big-project-planer` 维护；详细 Feature 设计 / 任务拆解见 `docs/specs/0004-dftflow-rust/`。
 > 状态：文档修订；Rust 迁移须待用户在另一台机器明确启动。Gitee 线上 Issue 由用户维护。
 
 ## 一、目标与背景
@@ -102,4 +102,4 @@
 ## 七、Issue 管理口径
 
 - 本仓库远端为 **Gitee**（现有 Issue `IKKGLP`，本地编号 0004）；线上创建、标签和父子关系由用户负责，本次只维护本地草稿。
-- 0004 定位为 Epic，P0–P5 见 `docs/specs/0004-qeflow-rust/issue-draft.md`。子 Issue 尚无真实编号，线上双向链接尚未建立；取得编号后，P1–P4 分别建立对应编号的 Feature Spec。现有 0004 Spec 在过渡期只保存跨阶段需求与设计，不代表子 Issue 已建立。
+- 0004 定位为 Epic，P0–P5 见 `docs/specs/0004-dftflow-rust/issue-draft.md`。子 Issue 尚无真实编号，线上双向链接尚未建立；取得编号后，P1–P4 分别建立对应编号的 Feature Spec。现有 0004 Spec 在过渡期只保存跨阶段需求与设计，不代表子 Issue 已建立。

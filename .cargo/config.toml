@@ -1,0 +1,11 @@
+# 仓库级构建配置。
+# spglib-sys（经 qf-crystal 引入）需要系统 spglib C 库：
+#   macOS：brew install spglib（头文件在 /opt/homebrew/include）
+#   Linux 计算节点：安装 libspglib-dev（默认路径可被 bindgen/链接器找到，无需本节配置）
+# musl 静态目标下 spglib 的链接方式是 T004 待验证项，见 docs/specs/0004-dftflow-rust/p0-evidence.md。
+
+[env]
+BINDGEN_EXTRA_CLANG_ARGS = "-I/opt/homebrew/include"
+
+[target.'cfg(target_os = "macos")']
+rustflags = ["-L", "/opt/homebrew/lib"]

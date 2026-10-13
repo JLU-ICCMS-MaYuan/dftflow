@@ -1,0 +1,16 @@
+# 本地 COHP uniform E2E：正式参数 + 可行的粗网格（正式 kmesh=0.04 留给集群）
+potcar_dir = "potcar_lib"
+chgcar_path = "vasp_scf/CHGCAR"
+wavecar_path = "vasp_scf/WAVECAR"
+lobster_executable_path = "arch -x86_64 /Users/mayuan/software/lobster-6.0.0/OSX/lobster-6.0.0-OSX"
+
+[vasp]
+executable_path = "mpirun -np 4 /Users/mayuan/Codes/dftflow/external/vasp.6.4.3/bin/vasp_std"
+
+[vasp_cohp_uniform]
+kmesh = 0.25
+ENCUT = 520
+ISMEAR = -5
+ISYM = -1
+NCORE = 4
+NBANDS = 32

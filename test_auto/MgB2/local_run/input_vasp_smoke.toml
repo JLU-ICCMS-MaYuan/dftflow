@@ -1,0 +1,24 @@
+# 本地 macOS arm64 E2E 测试配置（VASP 原生构建 + LOBSTER Rosetta）
+potcar_dir = "potcar_lib"
+chgcar_path = "vasp_scf/CHGCAR"
+wavecar_path = "vasp_scf/WAVECAR"
+lobster_executable_path = "arch -x86_64 /Users/mayuan/software/lobster-6.0.0/OSX/lobster-6.0.0-OSX"
+
+[vasp]
+executable_path = "mpirun -np 4 /Users/mayuan/Codes/dftflow/external/vasp.6.4.3/bin/vasp_std"
+
+[vasp_scf]
+kmesh = 0.3
+ENCUT = 520
+ISMEAR = 0
+SIGMA = 0.05
+EDIFF = 1e-6
+LREAL = "Auto"
+NCORE = 4
+
+[vasp_cohp_uniform]
+kmesh = 0.3
+ENCUT = 520
+ISMEAR = -5
+ISYM = -1
+NCORE = 4

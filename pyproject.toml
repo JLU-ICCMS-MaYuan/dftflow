@@ -4,77 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dftflow"
-version = "0.1.0"
-description = "A collection of DFT calculation workflow automation scripts."
+version = "0.2.0"
+description = "DFT calculation workflow automation (Rust binaries + mattersim_opt Python CLI)."
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
-dependencies = [
-    "toml; python_version < '3.11'",
-    "numpy",
-]
-
-[project.optional-dependencies]
-analysis = [
-    "pymatgen",
-]
-scflow = [
-    "scipy",
-    "pandas",
-    "matplotlib",
-    "pymatgen",
-]
 
 [project.scripts]
-vasp_scf = "vaspflow.scf.vasp_scf:main"
-vasp_scf_converge = "vaspflow.scf.vasp_scf_converge:main"
-vasp_eband = "vaspflow.eband.vasp_eband:main"
-vasp_process_eband = "vaspflow.eband.vasp_process_eband:main"
-vasp_eledos = "vaspflow.eledos.vasp_eledos:main"
-vasp_process_eledos = "vaspflow.eledos.vasp_process_eledos:main"
-vasp_idos_computed = "vaspflow.eledos.vasp_idos_computed:main"
-vasp_fermi = "vaspflow.fermisurface.vasp_fermisurface:main"
-vasp_cohp_uniform = "vaspflow.cohp.vasp_cohp_uniform:main"
-vasp_cohp_fatband = "vaspflow.cohp.vasp_cohp_fatband:main"
-vasp_lobsterin = "vaspflow.cohp.vasp_lobsterin:main"
-vasp_plot_cohp = "vaspflow.cohp.vasp_plot_cohp:main"
-vasp_plot_kcohp = "vaspflow.cohp.vasp_plot_kcohp:main"
-vasp_locpot = "vaspflow.locpot.vasp_locpot:main"
-vasp_process_locpot = "vaspflow.locpot.vasp_process_locpot:main"
-vasp_charge = "vaspflow.charge.vasp_charge:main"
-vasp_charge_diff = "vaspflow.charge.vasp_charge_diff:main"
-vasp_opt = "vaspflow.opt.vasp_opt:main"
-vasp_elf = "vaspflow.elf.vasp_elf:main"
 mattersim_opt = "mattersimflow.opt.mattersim_opt:main"
-substitution_structure = "substitutionflow.cli_structure:main"
-substitution = "substitutionflow.cli_workflow:main"
-substitution_continue = "substitutionflow.cli_continue:main"
-substitution_prepare_potcar = "substitutionflow.prepare_potcar:main"
-substitution_prepare_qe_pseudo = "substitutionflow.prepare_qe_pseudo:main"
-substitution_plot_eledos = "substitutionflow.plot_eledos:main"
-substitution_check_phonon_stability = "substitutionflow.check_phonon_stability:main"
-scflow = "scflow.main:main"
-qe_scf = "qeflow.scf.qe_scf:main"
-qe_nscf = "qeflow.nscf.qe_nscf:main"
-qe_eband = "qeflow.eband.qe_eband:main"
-qe_eledos = "qeflow.eledos.qe_eledos:main"
-qe_process_eledos = "qeflow.eledos.qe_process_dos:main"
-qe_process_eband = "qeflow.eband.qe_process_eband:main"
-qe_ph_nosplit = "qeflow.phonon.ph_step:main"
-qe_merge = "qeflow.phonon.qe_merge:main"
-qe_q2r = "qeflow.phonon.qe_q2r:main"
-qe_matdyn_phband = "qeflow.phonon.qe_matdyn_phband:main"
-qe_matdyn_phdos = "qeflow.phonon.qe_matdyn_phdos:main"
-qe_process_phonon = "qeflow.phonon.process_phonon:main"
-qe_split_submit = "qeflow.phonon.qe_split_submit:main"
-qe_check = "qeflow.check.cli:main"
-qe_phonon_nosplit = "qeflow.phonon.qe_phonon_nosplit:main"
-qe_phonon_split_index = "qeflow.phonon.qe_phonon_split_assign_index:main"
-qe_phonon_split_coords = "qeflow.phonon.qe_phonon_split_assign_coords:main"
-wannier_init = "wannier90flow.wannier_init:main"
-wannier_post = "wannier90flow.wannier_post:main"
-wannier_window = "wannier90flow.wannier_window:main"
-wannier_plot = "wannier90flow.wannier90_plot:main"
 
 [tool.setuptools]
-packages = {find = {where = ["."], include = ["*flow*", "public", "substitutionflow*"]}}
+packages = {find = {where = ["."], include = ["mattersimflow*"]}}
