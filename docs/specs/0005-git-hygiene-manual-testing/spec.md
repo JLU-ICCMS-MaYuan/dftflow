@@ -2,7 +2,7 @@
 
 **Issue**：0005（线上 Issue 待用户自建，本地编号 0005）
 **创建日期**：2026-10-13
-**状态**：实施中
+**状态**：既有治理及 2026-10-14 备份入库补充收尾完成（线上 Issue 由用户自管）
 
 ## 背景与目标
 
@@ -34,6 +34,14 @@
 7. 问「input_*.toml 中的软件路径如何处理」，用户答：
    > 占位符+自动注入(input_*.toml 用占位符提交，真实路径存 docs/local/paths.toml（不入 Git），conftest.py 拷贝时自动替换，本地 pytest 照常能跑)
 
+### 2026-10-14 补充需求（用户原话）
+
+> 你来帮我处理一下这个分支没有提交的代码。以 issue0005 完成
+
+> 你说的 vasp 本地备份都有哪些文件？
+
+> 也一起提交到对应的 vasp 的那个仓库的远程把
+
 ## 用户场景与验收
 
 ### US1：构建与测试产物不入 Git（P0）
@@ -55,7 +63,8 @@
 ### US3：子模块本地改动入库到用户自有仓库（P1）
 
 - `external/vasp.6.4.3`：`makefile.include` 修改与 `BUILD_MACOS.md` 构建笔记提交并推送到
-  私有 Gitee 仓库 `git@gitee.com:mayuan_JLUPHY/vasp.6.4.3.git`；`*.bak` 不提交。
+  私有 Gitee 仓库 `git@gitee.com:mayuan_JLUPHY/vasp.6.4.3.git`；按 2026-10-14 补充授权，
+  `makefile.include.linux-aocl.bak` 原样入库并推送，作为备份不提交规则的单文件例外。
 - `external/q-e`：先从官方上游 `QEF/q-e` 同步用户 fork `https://gitlab.com/madegan/q-e`，
   再把本地分支 `macos-memusage-fix`（提交 `51fdfbd13`）推送到 fork；嵌套子模块
   `external/mbd` 指针变动与 `.DS_Store` 不提交，仅本地留档。
@@ -78,7 +87,7 @@
 - **FR-005**：新建 `docs/local/paths.toml`（不入 Git）保存真实路径；`conftest.py` 在拷贝输入
   文件时读取该文件并替换占位符；文件缺失时给出明确提示并跳过替换（保持可收集）。
 - **FR-006**：`docs/qe-environment.md` 改写为通用版本，真实路径引用 `docs/local/` 说明。
-- **FR-007**：子模块 vasp.6.4.3 提交并推送（含构建笔记，排除 `.bak`）；q-e 同步上游 fork 后
+- **FR-007**：子模块 vasp.6.4.3 提交并推送（含构建笔记，以及补充授权的 `makefile.include.linux-aocl.bak`）；q-e 同步上游 fork 后
   推送 `macos-memusage-fix` 分支；父仓库提交新子模块指针。
 - **FR-008**：新建手动计算操作文档（含输入文件、命令、步骤）；`docs/local/` 下提供远程机器
   登录与软件配置的本地留档模板。
@@ -89,7 +98,8 @@
 - **SC-001**：`git status --porcelain` 中无未跟踪的构建/测试产物；local_run 仅剩输入/脚本类被跟踪文件。
 - **SC-002**：对全部已跟踪文件检索 `/Users/mayuan`、`/work/home/mayuan`、`/home/mayuan` 无命中。
 - **SC-003**：`pytest --collect-only` 正常；冒烟运行至少一个非 `run` 测试通过，替换后的输入文件含真实路径。
-- **SC-004**：vasp.6.4.3 推送后其 origin HEAD 含 makefile.include 与 BUILD_MACOS.md；
+- **SC-004**：vasp.6.4.3 推送后其 origin/master 含 makefile.include、BUILD_MACOS.md
+  与原样保存的 makefile.include.linux-aocl.bak；
   q-e fork 上存在 `macos-memusage-fix` 分支且含 `51fdfbd13`。
 - **SC-005**：手动计算操作文档存在且覆盖 test_auto/MgB2 全部可用输入与命令序列。
 - **SC-006**：父仓库按规范提交，工作区干净（子模块无未提交的需入库改动）。
@@ -128,3 +138,9 @@
      不改变测试语义。
 - `docs/overview/qe-install-m5.md` 属机器软件配置文档，移至 `docs/local/` 本地留档，
   总览索引留说明条目（用户需求第 3 条「软件配置只需记录在本地」）。
+
+### 2026-10-14（备份入库例外）
+
+- 用户在获知唯一未提交项为 VASP Linux/AOCC/AOCL 编译配置备份后，明确要求一起提交到 VASP 远程仓库。
+- 此要求覆盖此前该文件不提交的约定；仅此文件原样保留软件路径并推送用户私有 VASP 仓库，父仓库只记录子模块指针，不复制备份内容。其他机器信息仍按原规则仅存本地。
+- 本次只处理备份、子模块指针和 0005 追踪记录，不修改计算逻辑，不运行 VASP，不操作线上 Issue；父仓库提交到现有 qeflow-rust 分支。

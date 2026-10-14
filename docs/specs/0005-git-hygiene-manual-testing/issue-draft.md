@@ -11,6 +11,14 @@ Git 卫生治理：移出测试运行输出、机器路径本地化、子模块�
 
 > 请帮我处理当前所有尚未提交到 Git 的文件，并基于 issue 和 spec 的方式来实现。具体要求如下：编译生成的临时文件不要加入 Git 版本控制；测试产生的输出文件不需要保留；各个远程机器的登录情况和软件配置情况不需要提交到 Git，只需记录在本地；测试用的输入文件、需要输入的命令和操作步骤都要完整保留并写入文档，方便我后续手动计算时进行查对。请给出满足以上条件的处理方案和需要执行的步骤。
 
+### 2026-10-14 补充需求（用户原话）
+
+> 你来帮我处理一下这个分支没有提交的代码。以 issue0005 完成
+
+> 你说的 vasp 本地备份都有哪些文件？
+
+> 也一起提交到对应的 vasp 的那个仓库的远程把
+
 ## 背景与问题
 
 Issue 0004 完成全量迁移收尾后遗留四类 Git 卫生问题：
@@ -35,3 +43,13 @@ Issue 0004 完成全量迁移收尾后遗留四类 Git 卫生问题：
 
 - Spec：[docs/specs/0005-git-hygiene-manual-testing/](./spec.md)（线上双向链接待 Issue 建立后回填）
 - 关联 Issue：0004（[IKKGLP](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)）收尾后的卫生治理
+
+## 2026-10-14 补充收尾
+
+- 按用户补充授权，将 VASP 的 `makefile.include.linux-aocl.bak` 原样提交并推送私有仓库，作为此前备份排除及机器路径本地化要求的单文件例外。
+- 父仓库同步子模块指针；验收以备份 blob 一致、远程 master 指向及递归工作区状态为依据。结果见 acceptance.md。
+
+## Documentation Impact
+
+- 更新本目录 Spec、Tasks、Acceptance 与本地 Issue 草稿，以及 AGENTS.md 需求记录。
+- 不影响计算功能、CLI 或安装操作，README 与功能 Overview 无需修改。

@@ -24,6 +24,12 @@
 
 ## 需求处理记录
 
+### [2026-10-14] Issue 0005 补充收尾：VASP Linux 编译配置备份入库
+- **需求与授权**：用户要求“你来帮我处理一下这个分支没有提交的代码。以 issue0005 完成”；确认唯一未提交项是 VASP Linux 编译配置备份后，补充“也一起提交到对应的 vasp 的那个仓库的远程把”。
+- **方案与例外**：将 `makefile.include.linux-aocl.bak` 原样纳入 VASP 私有仓库，作为此前 `.bak` 不提交与机器路径本地化规则的单文件例外；父仓库仅更新子模块指针和 0005 文档。
+- **结果与证据**：VASP 提交 `5e8bc01` 已推送私有 Gitee master，`ls-remote` 验证完整提交号一致；提交前后备份 blob 均为 `5b7876d8ccd3f68d49cfa433a8b1f0b6019e99ed`，文件未改写。
+- **边界**：无计算逻辑变更，不重编译或运行 VASP；父仓库在 qeflow-rust 本地提交，线上 Issue 由用户自管。追踪见 `docs/specs/0005-git-hygiene-manual-testing/` 的补充需求、T009 和验收记录。
+
 ### [2026-10-14] 0004 实质缺口收敛与 macOS 主机上的 Linux 交付
 - **需求与授权**：用户要求补齐 QE 基础命令、OpenBLAS 接入和严格数值验收、命令环境切换、五二进制收敛；继续 0004 Issue/Spec 和 MgB2 测试体系，在 macOS 完成 Linux 交付。沿用本项目 Rust 与 pytest，不采用通用 TypeScript 规则。
 - **方案**：复刻冻结 Python 参考（9396b3a）的基础 QE 行为；ndarray-linalg + 系统静态 OpenBLAS 替代 Jacobi；恢复 Tc 和全部派生量容差；版本目录安装并备份旧入口；macOS Docker/OrbStack 运行 Linux amd64 构建环境，编译独立目标依赖并验证静态 ELF 和离线运行。

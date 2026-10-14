@@ -50,3 +50,10 @@
 - [x] `git status --porcelain` 无未跟踪构建/测试产物；pytest 收集正常（121 项；5 个收集错误为 P5 删除 Python 包的既有环境性问题）；conftest 注入冒烟测试通过（临时测试验证后删除）。
 - [x] 父仓库提交子模块新指针与全部变更（AGENTS.md 规范格式）。
 - [x] 更新 `AGENTS.md` 需求处理记录。
+
+## T009 VASP Linux 配置备份入库（2026-10-14 补充授权，FR-007/FR-009、SC-004/SC-006）
+
+- [x] 原样提交 makefile.include.linux-aocl.bak，推送 VASP 私有仓库 master，核对远程提交与文件 blob。
+- [x] 同步父仓库子模块指针，追加需求原话与规则例外、验收和 AGENTS.md 记录，按规范提交。
+- [x] 核对父仓库及所有已初始化子模块无剩余未提交项。
+- 证据：VASP 远程 master 为 `5e8bc01c89483b05d2587f13db854791cfbdf430`；备份 blob 为 `5b7876d8ccd3f68d49cfa433a8b1f0b6019e99ed`；本节随父仓库指针一并提交。

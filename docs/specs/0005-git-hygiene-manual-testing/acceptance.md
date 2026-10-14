@@ -48,3 +48,11 @@
 - **状态**：通过
 - **证据**：提交消息 `[YYYY-MM-DD HH:MM:SS] 工程治理：…`；提交后 `git status` 仅剩
   external/ 子模块内登记留档的本地项（q-e mbd 指针/.DS_Store、vasp .bak/.DS_Store）。
+
+## 2026-10-14 补充验收：VASP Linux 配置备份入库
+
+- **授权变化**：用户明确要求将唯一未提交的 `makefile.include.linux-aocl.bak` 一起提交到 VASP 远程；该文件成为备份排除与机器路径本地化要求的单文件例外。
+- **SC-004 补充证据**：VASP 提交 `5e8bc01c89483b05d2587f13db854791cfbdf430` 仅新增该备份（83 行）；`git push origin HEAD:master` 成功（`7a82340..5e8bc01`），随后 `git ls-remote origin refs/heads/master` 返回相同完整提交号。
+- **内容完整性**：提交前 `git hash-object` 与提交后 `git rev-parse HEAD:makefile.include.linux-aocl.bak` 均为 `5b7876d8ccd3f68d49cfa433a8b1f0b6019e99ed`，备份内容未修改。
+- **SC-006 补充证据**：VASP 子模块工作区为空；父仓库本次提交同步该指针与 0005 文档、AGENTS.md。最终递归 Git 状态在提交后核验。
+- **验证边界**：此次仅做 Git 纳管、推送及文档更新，未重新编译 VASP 或重跑 pytest；之前的计算与测试记录属于历史验收，本次不据此宣称重新通过。父仓库仅本地提交，线上 Issue 仍由用户自管。
