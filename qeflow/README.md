@@ -1,46 +1,31 @@
-# qeflow (Rust rewrite)
+# qeflow
 
-`qeflow` 的 Rust 全量重写：单一静态二进制，仅通过 shell 子进程调用外部 QE/VASP，
-避免在弱机器上反复导入 Python 解释器与动态库。设计借鉴 FireWorks 的状态机 + 队列适配器
-+ Workflow DAG，吸收 jobflow 的类型化数据流，用文件系统 JSON 状态替代 MongoDB/PostgreSQL。
+DFTFlow 的 QE 工作流程序，负责输入生成、计算提交、状态检查和后处理。源码位于本目录，展示算例统一位于根目录 [examples](../examples/README.md)。当前实现和验收范围见 [DFTFlow 总览](../docs/overview/dftflow-rust.md)。
 
-## 当前进度（里程碑 M0–M1）
+## 构建与安装
 
-- **M0**：cargo workspace 骨架 + 8 个 crate；`qf-config`/`qf-state`/`qf-runner` 核心逻辑已落地。
-- **M1**：`qf-config`（input.toml 递归覆盖加载）、`qf-crystal`（POSCAR/ibrav/晶格）、
-  `qf-input`（pw/ph/q2r/matdyn 输入写出，含赝势自动匹配）已可用。
-- 待做：**io_reader 读输出（M2）**、**phonon 状态机 + Slurm 两段提交（M3）**、
-  **scflow 超导数值 + plotters 绘图（M4）**。
-
-## 构建
+从仓库根目录执行：
 
 ```bash
-cd qeflow-rust
-cargo build --release
-# 发布 Linux 静态二进制（可选）：
-# cargo build --release --target x86_64-unknown-linux-musl && strip target/.../qeflow
+bash scripts/build-native.sh
 ```
 
-## 快速验证（M1 垂直切片）
+平台依赖和命令安装方式见 [根目录 README](../README.md)。
+
+## 展示算例
+
+- [MgB₂ / sugon-amd：QE 7.4.1 声子计算](../examples/MgB2/sugon-amd/README.md)。
+- [MgB₂ / inspur](../examples/MgB2/inspur/README.md)、[MgB₂ / chem](../examples/MgB2/chem/README.md)：等待机器配置。
+- [Si 通用展示资产](../examples/Si/generic/README.md)：原有 POSCAR 和旧路径文件的用途及限制。
+- [合成 α²F 参考材料](../examples/synthetic-a2F/generic/README.md)：早期演示数据，当前 CLI 不支持仅凭该曲线运行。
+
+## 基础命令
 
 ```bash
-./target/release/qeflow qe_scf -c examples/input.toml -p examples/POSCAR
-# 在当前目录生成 scf.in（pw.x 输入），并打印将执行的命令
+qe_scf --help
+qe_nscf --help
+qe_phonon_nosplit --help
+qe_process_phonon --help
 ```
 
-`input.toml` 复用 Python 版契约：`[qe]`（`executable_path`、`lattice_mode`）、
-`[qe_phonon.scf|ph|q2r|phband|phdos]` 各子段、`[k_points]`。递归覆盖语义与
-`public/config_templates.py` 一致（嵌套表递归合并，None 不覆盖）。
-
-## 模块
-
-| crate | 职责 |
-| --- | --- |
-| `qf-config` | TOML 加载 + 递归深合并 + pp_dir 解析 |
-| `qf-crystal` | POSCAR 解析、化学式、kmesh、ibrav 自动判断、三模式晶格写出 |
-| `qf-input` | pw/ph/q2r/matdyn 输入 deck 写出、赝势匹配、文件名派生 |
-| `qf-io` | QE 输出集中读取（M2） |
-| `qf-state` | 状态机 + 续算（split_resume_step） |
-| `qf-runner` | spawn 外部二进制 + Slurm 两段提交 + 并行读取 |
-| `qf-phonon` | phonon split/merge 工作流编排（M3） |
-| `qf-scflow` | a2f / Allen-Dynes / Eliashberg / Tc + 绘图（M4） |
+SCF/NSCF 使用 `-c/--config` 读取配置，`-i/--input` 指定结构，`-r/--run` 执行，`-s/--submit` 提交；默认不执行实际计算。声子总流程的具体运行方式和当前限制以算例手册为准。

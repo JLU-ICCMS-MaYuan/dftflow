@@ -102,6 +102,10 @@ structure_filename = "XAXBH7-P63mmc.vasp"
 phonon_mode = "split_index"
 ```
 
+## 展示算例
+
+项目展示算例统一放在 [examples/](examples/README.md)，按体系和机器组织；运行输出保存在不跟踪的 `run/` 目录。
+
 ## 文档
 
 - 实现总览：[docs/overview/dftflow-rust.md](docs/overview/dftflow-rust.md)

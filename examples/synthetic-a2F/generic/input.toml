@@ -1,9 +1,4 @@
-# qeflow-rust 示例配置（用于 `qeflow scflow -c examples/input.toml`）
-# 注意：[qe].executable_path 为"启动命令 + QE bin 目录"，qeflow 自动拼接 pw.x/ph.x/q2r.x/matdyn.x
-
-[qe]
-executable_path = "mpirun -np 8 /path/to/q-e/build/bin"
-
+# 合成 α²F 的历史配置；当前 CLI 限制见同目录 README.md。
 [scflow]
 # 工作目录（相对本配置文件所在目录）
 work_dir = "."

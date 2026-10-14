@@ -24,6 +24,11 @@
 
 ## 需求处理记录
 
+### [2026-10-14] 展示算例集中到根目录 examples
+- **需求与授权**：用户要求将其他目录用于展示的 examples 集中到根目录 examples。
+- **实施**：迁移 qeflow/examples 的四份资产；Si 结构与旧路径放 examples/Si/generic，合成 α²F 和配置放 examples/synthetic-a2F/generic。更新根目录索引及 qeflow 手册，统一运行输出忽略规则。
+- **边界与验证**：不迁移自动测试夹具、冻结参考或第三方代码；历史记录保留当时路径。核对资产哈希、文档链接；尝试合成曲线入口发现当前 CLI 要求 QE EPC 文件，已明确标注为参考材料，旧 Si 路径格式限制也已说明；不提交 QE 作业。
+
 ### [2026-10-14] MgB2 按机器组织 QE 声子测试示例
 - **需求与授权**：用户要求使用 qe-7.4.1-amd-oneAPI2024，并把测试与手册放在 examples/MgB2/sugon-amd；inspur、chem 沿用相同目录规则。
 - **方案与实施**：共享 Bash 准备脚本生成机器目录下 run/ 的输入与显式 Slurm 顺序执行脚本；机器路径仅保存在 docs/local 的环境文件。sugon-amd 使用本机 AMD 配置；其他机器保留待填写模板，不臆造配置。沿用项目 Bash 计算脚本语言例外。
