@@ -1556,3 +1556,8 @@
 - **验证**：用 Python 预言机（`qeflow-rust/tools/validate_dyn0.py`）复刻完全相同算法 + `E24.15` 格式，对真实 `MgB2.dyn0` 逐字节比对通过（`BYTE-EXACT MATCH`）。本机未安装 Rust 工具链，Rust 代码经人工复核 + 预言机证明算法/格式正确，构建命令为 `cargo build -p qf-phonon --bin qf-gen-dyn0`。
 - **收尾**：已在本机 `cargo build -p qf-phonon --bin qf-gen-dyn0` 通过，Rust 产出的 `Mg1B2.dyn0` 与真实 `Mg1B2.dyn0` **字节级一致**；已在 `split_workflow.py` 用 `run_dyn0_via_rust` 替代 `prepare_ph_nosplit_step(dyn0_only=True)+run_ph_to_dyn0`，两个 split CLI（`qe_phonon_split_index/coords`）与 standalone `qe_phonon --dyn0` 亦切换为 Rust；`split_prepare` 从 Rust 产出的 `q_points.json` 读取晶体坐标（拆分流 `dyn0` 状态仍由 `prefix.dyn0` 非空判定）。Rust 二进制可通过 `[qe_phonon].qf_gen_dyn0` 或环境变量 `QF_GEN_DYN0` 或 PATH 定位。
 - **状态**：已完成。
+
+### [2026-10-14] 新增 epwpy 外部子模块
+- **需求与授权**：用户要求将 `https://gitlab.com/madegan/epwpy` 放入仓库 `external/`。
+- **实施**：以 Git 子模块形式登记为 `external/epwpy`，远程地址保持 HTTPS，固定当前上游提交 `b54bb53d4f5de665ed08958cb6194be8efdf645d`。
+- **验证**：`.gitmodules`、子模块 gitlink 与工作区状态已核对；未纳入本次操作前已存在的其他未提交修改。
