@@ -219,3 +219,7 @@ chain_inputs.json 绑定原配置、结构和模式；chain_jobs.json 保存阶�
 [0006 验收](../../specs/0006-qe-phonon-submit-chain/acceptance.md) 记录了 QE 7.4.1 下 MgB2 的 index、coords 与显式脚本 nosplit 对照，以及真实 only_init 验证；固定标准为对应频率差 ≤0.1 cm⁻¹、总 DOS 积分相对差 ≤10⁻³，同 MPI 配置对照通过。该记录不证明所有材料/机器或参数已收敛。其他机器的配置仍须单独补齐与验证。
 
 本页只回写已查证的当前行为；需求背景见 [本地 Issue 草稿](../../specs/0006-qe-phonon-submit-chain/issue-draft.md)、[Spec](../../specs/0006-qe-phonon-submit-chain/spec.md)、[CLI 契约](../../specs/0006-qe-phonon-submit-chain/contracts/cli.md)。本次未重跑计算，也未修改这些需求文件。
+
+## 声子谱路径与仅重绘
+
+三模式共用同一绘图层：频率为纵轴，高对称点路径为横轴，完整保留虚频与路径跳段；联合图右侧 DOS 横轴与左侧共用频率纵轴。已有后处理结果可用 `qe_process_phonon -c input.toml -i POSCAR --plot` 更新 CSV 与图，重绘前保留旧图，不重新执行 QE。详见 [0009 路径与绘图验收](../../specs/0009-phonon-band-plot-rewrite/acceptance.md)。

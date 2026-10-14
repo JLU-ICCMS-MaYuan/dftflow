@@ -56,6 +56,8 @@ bash scripts/verify-entries.sh /absolute/path/to/binaries
 
 三种声子聚合入口均支持 `-i/--input`（别名 `-p/--poscar`），例如 `qe_phonon_nosplit -c input.toml -i POSCAR`。nosplit 不传结构参数时优先复用工作目录 POSCAR，再查找当前目录 POSCAR/CONTCAR；完整执行边界见 [nosplit 说明](docs/overview/qeflow/qe_phonon_nosplit.md)。
 
+已有声子后处理结果可通过 `qe_process_phonon -c input.toml -i POSCAR --plot` 仅更新 CSV 和图；重绘前备份旧图。声子谱使用高对称点路径横轴和完整频率纵轴，联合图右侧 DOS 共享频率轴，见 [0009 验收](docs/specs/0009-phonon-band-plot-rewrite/acceptance.md)。
+
 ## 命令速查
 
 - **QE**：`qe_scf` `qe_nscf` `qe_eband` `qe_eledos` `qe_process_eband` `qe_process_eledos` `qe_ph_nosplit` `qe_merge` `qe_q2r` `qe_matdyn_phband` `qe_matdyn_phdos` `qe_process_phonon` `qe_split_submit` `qe_check` `qe_phonon_nosplit` `qe_phonon_split_index` `qe_phonon_split_coords`

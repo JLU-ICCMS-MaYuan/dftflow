@@ -69,7 +69,7 @@ if name=='ph.x':
 if name=='q2r.x':Path('Si.fc').write_text('forceconstants')
 if name=='matdyn.x':
  if 'fldos' in s:Path('Si.phdos.dat').write_text('0 0.1 0.1\n1 0.2 0.2\n2 0.1 0.1\n')
- else:Path('Si.phband.freq').write_text('&plot nbnd=3, nks=2 /\n0 0 0\n0 1 2\n0.5 0 0\n1 2 3\n')
+ else:Path('Si.phband.freq').write_text('&plot nbnd=3, nks=3 /\n0 0 0\n0 1 2\n0.25 0 0\n0.5 1.5 2.5\n0.5 0 0\n1 2 3\n')
 print('JOB DONE.')
 "#;
     for name in [

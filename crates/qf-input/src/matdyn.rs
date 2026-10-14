@@ -369,4 +369,23 @@ mod tests {
         let want = std::f64::consts::PI / 2.0;
         assert!((recip[0][0] - want).abs() < 1e-12);
     }
+    #[test]
+    fn noncubic_vaspkit_path_preserves_metric_indices_and_jump_weights() {
+        let dir = std::env::temp_dir().join(format!("qf_matdyn_metric_{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("KPATH.in"), "0 0 0 GAMMA\n0.5 0 0 X\n0.5 0 0 X\n0.5 0.5 0 M\n0 0 0 A\n0 0 0.5 Z\n").unwrap();
+        let lattice = [[2., 0., 0.], [1., 3., 0.], [0., 0., 5.]];
+        let (points, path) = build_matdyn_band_path(dir.to_str().unwrap(), "Si", lattice, "KPATH.in", 20).unwrap();
+        assert_eq!(points.iter().map(|p|p.2).collect::<Vec<_>>(), vec![20,20,1,20,1]);
+        let labels = fs::read_to_string(path).unwrap();
+        let rows:Vec<Vec<&str>> = labels.lines().map(|l|l.split_whitespace().collect()).collect();
+        assert_eq!(rows.iter().map(|r|r[1].parse::<usize>().unwrap()).collect::<Vec<_>>(),vec![1,21,41,42,62]);
+        let xdist=rows[1][2].parse::<f64>().unwrap();
+        assert!((xdist - std::f64::consts::PI*(1.0_f64+1./9.).sqrt()/2.).abs()<1e-9);
+        assert_eq!(rows[2][2],rows[3][2]);
+        let zdist=rows[4][2].parse::<f64>().unwrap()-rows[3][2].parse::<f64>().unwrap();
+        assert!((zdist-std::f64::consts::PI/5.).abs()<1e-9);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
 }

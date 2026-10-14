@@ -2,6 +2,7 @@
 //! 复刻 `qeflow/phonon/{split_merge,archive,phonon_tables,phonon_plot,q_index_map}.py`。
 
 pub mod archive;
+pub mod band;
 pub mod index_map;
 pub mod merge;
 pub mod plot;

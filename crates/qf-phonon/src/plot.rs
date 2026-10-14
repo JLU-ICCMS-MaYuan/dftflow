@@ -1,250 +1,273 @@
-//! 声子谱 / 态密度绘图（对齐 `qeflow/phonon/phonon_plot.py` 与 Issue 0003）。
-//! 使用 `plotters` 重绘：左声子谱、右 DOS/元素分波，共享频率轴；产物等价（非像素级）。
+//! 声子色散与 DOS：共享已验证路径，联合图共享频率轴。
+use crate::{
+    archive::{PHBAND_DIR, PHDOS_DIR},
+    band::{archived_file, frequency_range, BandData},
+};
+use anyhow::{ensure, Result};
+use plotters::{
+    coord::Shift,
+    prelude::*,
+    style::text_anchor::{HPos, Pos, VPos},
+};
 
-use std::path::Path;
+const INK: RGBColor = RGBColor(35, 42, 52);
+const BAND: RGBColor = RGBColor(31, 119, 180);
+const COLORS: [RGBColor; 6] = [
+    RGBColor(213, 94, 0),
+    RGBColor(0, 158, 115),
+    RGBColor(204, 121, 167),
+    RGBColor(86, 180, 233),
+    RGBColor(230, 159, 0),
+    RGBColor(100, 100, 100),
+];
 
-use anyhow::Result;
-use plotters::prelude::*;
-
-use qf_io::{read_band_frequencies, read_labelinfo, read_numeric_rows};
-
-use crate::archive::{PHBAND_DIR, PHDOS_DIR};
-
-const BG: RGBColor = WHITE;
-
-/// 绘制声子谱 PNG：`phband/phonon_band.png`。
-pub fn plot_phonon_band(workspace: &str, prefix: &str) -> Result<String> {
-    let names = qf_input::filenames::derive_filenames(prefix);
-    let label_path = format!("{workspace}/{PHBAND_DIR}/{prefix}_band.labelinfo.dat");
-    let label_path = if Path::new(&label_path).exists() {
-        label_path
-    } else {
-        format!("{workspace}/{prefix}_band.labelinfo.dat")
-    };
-    let freq_path = format!("{workspace}/{PHBAND_DIR}/{}", names.flfrq);
-    let freq_path = if Path::new(&freq_path).exists() {
-        freq_path
-    } else {
-        format!("{workspace}/{}", names.flfrq)
-    };
-    let labels = read_labelinfo(&std::fs::read_to_string(&label_path)?);
-    let freq_text = std::fs::read_to_string(&freq_path)?;
-    let modes = crate::tables::detect_mode_count(&freq_text);
-    let frequencies = read_band_frequencies(&freq_text, modes)?;
-
-    let out = format!("{workspace}/{PHBAND_DIR}/phonon_band.png");
-    let root = BitMapBackend::new(&out, (900, 600)).into_drawing_area();
-    root.fill(&BG)?;
-
-    let x_max = labels.last().map(|l| l.distance).unwrap_or(1.0).max(1e-6);
-    let mut y_max = 0.0f64;
-    for row in &frequencies {
-        for v in row {
-            y_max = y_max.max(*v);
-        }
-    }
-    y_max = y_max.max(1.0) * 1.05;
-
-    let mut chart = ChartBuilder::on(&root)
-        .caption("Phonon Band Structure", ("sans-serif", 24))
-        .margin(20)
-        .x_label_area_size(40)
-        .y_label_area_size(60)
-        .build_cartesian_2d(0.0..x_max, 0.0..y_max)?;
+fn draw_band<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    data: &BandData,
+    range: (f64, f64),
+) -> Result<()>
+where
+    DB::ErrorType: 'static,
+{
+    let xmax = data.points.last().unwrap().distance;
+    let mut chart = ChartBuilder::on(area)
+        .caption("Phonon dispersion", ("sans-serif", 26))
+        .margin_top(24)
+        .margin_right(28)
+        .margin_bottom(16)
+        .margin_left(18)
+        .x_label_area_size(64)
+        .y_label_area_size(82)
+        .build_cartesian_2d(0.0..xmax, range.0..range.1)?;
     chart
         .configure_mesh()
-        .x_desc("Wave vector")
-        .y_desc("Frequency (cm-1)")
-        .x_labels(10)
+        .disable_x_mesh()
+        .x_labels(0)
+        .y_labels(6)
+        .max_light_lines(0)
+        .light_line_style(WHITE)
+        .bold_line_style(RGBColor(232, 235, 239))
+        .axis_style(INK)
+        .label_style(("sans-serif", 20))
+        .y_desc("Frequency (cm⁻¹)")
+        .axis_desc_style(("sans-serif", 22))
         .draw()?;
-
-    // 高对称点的竖直分隔线
-    for l in &labels {
-        chart
-            .draw_series(std::iter::once(PathElement::new(
-                vec![(l.distance, 0.0), (l.distance, y_max)],
-                &BLACK.mix(0.4),
-            )))?;
-        chart.draw_series(std::iter::once(Text::new(
-            l.label.clone(),
-            (l.distance, 0.0),
-            ("sans-serif", 16),
-        )))?;
-    }
-
-    for m in 0..modes {
-        let points: Vec<(f64, f64)> = frequencies
-            .iter()
-            .enumerate()
-            .map(|(qi, row)| {
-                let x = labels.get(qi).map(|l| l.distance).unwrap_or(0.0);
-                (x, row[m])
-            })
-            .collect();
-        chart.draw_series(LineSeries::new(points, &BLUE))?;
-    }
-    root.present()?;
-    Ok(out.clone())
-}
-
-/// 绘制声子 DOS PNG：`phdos/phonon_dos.png`（TDOS + 元素分波）。
-pub fn plot_phonon_dos(workspace: &str, prefix: &str, elements: &[String]) -> Result<String> {
-    let names = qf_input::filenames::derive_filenames(prefix);
-    let dos_path = format!("{workspace}/{PHDOS_DIR}/{}", names.fldos);
-    let dos_path = if Path::new(&dos_path).exists() {
-        dos_path
-    } else {
-        format!("{workspace}/{}", names.fldos)
-    };
-    let rows = read_numeric_rows(&std::fs::read_to_string(&dos_path)?);
-    if rows.is_empty() || rows[0].len() < 2 {
-        anyhow::bail!("声子 DOS 文件至少需要 frequency 与 TDOS 两列。");
-    }
-    let x_max = rows.last().map(|r| r[0]).unwrap_or(1.0);
-    let mut y_max = 0.0f64;
-    for r in &rows {
-        y_max = y_max.max(r[1]);
-    }
-    let n_extra = rows[0].len() - 2;
-    let element_colors = [RED, GREEN, MAGENTA, CYAN, YELLOW, BLACK];
-
-    let out = format!("{workspace}/{PHDOS_DIR}/phonon_dos.png");
-    let root = BitMapBackend::new(&out, (900, 600)).into_drawing_area();
-    root.fill(&BG)?;
-
-    let mut chart = ChartBuilder::on(&root)
-        .caption("Phonon DOS", ("sans-serif", 24))
-        .margin(20)
-        .x_label_area_size(40)
-        .y_label_area_size(60)
-        .build_cartesian_2d(0.0..x_max, 0.0..y_max * 1.05)?;
-    chart
-        .configure_mesh()
-        .x_desc("Frequency (cm-1)")
-        .y_desc("DOS")
-        .draw()?;
-
-    chart.draw_series(LineSeries::new(
-        rows.iter().map(|r| (r[0], r[1])),
-        &BLACK,
-    ))?;
-    for e in 0..n_extra {
-        let color = element_colors[e % element_colors.len()];
-        chart.draw_series(LineSeries::new(
-            rows.iter().map(|r| (r[0], r[2 + e])),
-            &color,
-        ))?;
-    }
-    let _ = elements;
-    root.present()?;
-    Ok(out.clone())
-}
-
-/// 绘制联合 JPG：`phonon_combined.jpg`（左声子谱、右 DOS，共享频率轴），对齐 Issue 0003。
-pub fn plot_phonon_combined(workspace: &str, prefix: &str, elements: &[String]) -> Result<String> {
-    // 复用单图数据解析
-    let names = qf_input::filenames::derive_filenames(prefix);
-    let label_path = format!("{workspace}/{PHBAND_DIR}/{prefix}_band.labelinfo.dat");
-    let label_path = if Path::new(&label_path).exists() {
-        label_path
-    } else {
-        format!("{workspace}/{prefix}_band.labelinfo.dat")
-    };
-    let freq_path = format!("{workspace}/{PHBAND_DIR}/{}", names.flfrq);
-    let freq_path = if Path::new(&freq_path).exists() {
-        freq_path
-    } else {
-        format!("{workspace}/{}", names.flfrq)
-    };
-    let labels = read_labelinfo(&std::fs::read_to_string(&label_path)?);
-    let freq_text = std::fs::read_to_string(&freq_path)?;
-    let modes = crate::tables::detect_mode_count(&freq_text);
-    let frequencies = read_band_frequencies(&freq_text, modes)?;
-
-    let dos_path = format!("{workspace}/{PHDOS_DIR}/{}", names.fldos);
-    let dos_path = if Path::new(&dos_path).exists() {
-        dos_path
-    } else {
-        format!("{workspace}/{}", names.fldos)
-    };
-    let dos_rows = read_numeric_rows(&std::fs::read_to_string(&dos_path)?);
-
-    let out = format!("{workspace}/phonon_combined.jpg");
-    let root = BitMapBackend::new(&out, (1600, 600)).into_drawing_area();
-    root.fill(&BG)?;
-    let (left, right) = root.split_horizontally(800);
-
-    let x_max = labels.last().map(|l| l.distance).unwrap_or(1.0).max(1e-6);
-    let mut y_max = 0.0f64;
-    for row in &frequencies {
-        for v in row {
-            y_max = y_max.max(*v);
-        }
-    }
-    if let Some(last) = dos_rows.last() {
-        y_max = y_max.max(last[0].abs());
-    }
-    y_max = y_max.max(1.0) * 1.05;
-
-    // 左：声子谱
-    {
-        let mut chart = ChartBuilder::on(&left)
-            .caption("Phonon Band", ("sans-serif", 20))
-            .margin(15)
-            .x_label_area_size(35)
-            .y_label_area_size(55)
-            .build_cartesian_2d(0.0..x_max, 0.0..y_max)?;
-        chart
-            .configure_mesh()
-            .x_desc("Wave vector")
-            .y_desc("Frequency (cm-1)")
-            .draw()?;
-        for l in &labels {
+    for (distance, _) in &data.ticks {
+        if *distance > 0. && *distance < xmax {
             chart.draw_series(std::iter::once(PathElement::new(
-                vec![(l.distance, 0.0), (l.distance, y_max)],
-                &BLACK.mix(0.4),
+                vec![(*distance, range.0), (*distance, range.1)],
+                RGBColor(205, 210, 216).stroke_width(1),
             )))?;
         }
-        for m in 0..modes {
-            let points: Vec<(f64, f64)> = frequencies
-                .iter()
-                .enumerate()
-                .map(|(qi, row)| {
-                    let x = labels.get(qi).map(|l| l.distance).unwrap_or(0.0);
-                    (x, row[m])
-                })
-                .collect();
-            chart.draw_series(LineSeries::new(points, &BLUE))?;
+    }
+    chart.draw_series(std::iter::once(PathElement::new(
+        vec![(0., 0.), (xmax, 0.)],
+        RGBColor(145, 150, 155).stroke_width(1),
+    )))?;
+    for mode in 0..data.frequencies[0].len() {
+        for segment in &data.segments {
+            chart.draw_series(LineSeries::new(
+                segment
+                    .clone()
+                    .map(|i| (data.points[i].distance, data.frequencies[i][mode])),
+                BAND.stroke_width(2),
+            ))?;
         }
     }
+    // 将标签放在横轴下方，位置由真实路径距离确定，禁止数值横轴刻度。
+    let (xp, yp) = chart.plotting_area().get_pixel_range();
+    let (origin_x, origin_y) = area.get_pixel_range();
+    drop(chart);
+    let style = TextStyle::from(("sans-serif", 20).into_font())
+        .color(&INK)
+        .pos(Pos::new(HPos::Center, VPos::Top));
+    for (distance, label) in &data.ticks {
+        let x = xp.start + ((*distance / xmax) * f64::from(xp.end - xp.start)).round() as i32
+            - origin_x.start;
+        let y = yp.end - origin_y.start;
+        area.draw(&PathElement::new(vec![(x, y), (x, y + 6)], INK))?;
+        area.draw(&Text::new(label.clone(), (x, y + 12), style.clone()))?;
+    }
+    Ok(())
+}
 
-    // 右：DOS（共享频率轴）
-    if !dos_rows.is_empty() && dos_rows[0].len() >= 2 {
-        let dos_x_max = dos_rows.last().map(|r| r[0]).unwrap_or(1.0);
-        let mut dos_y_max = 0.0f64;
-        for r in &dos_rows {
-            dos_y_max = dos_y_max.max(r[1]);
-        }
-        let n_extra = dos_rows[0].len() - 2;
-        let element_colors = [RED, GREEN, MAGENTA, CYAN, YELLOW, BLACK];
-        let mut chart = ChartBuilder::on(&right)
-            .caption("Phonon DOS", ("sans-serif", 20))
-            .margin(15)
-            .x_label_area_size(35)
-            .y_label_area_size(55)
-            .build_cartesian_2d(0.0..dos_x_max, 0.0..y_max)?;
-        chart
-            .configure_mesh()
-            .x_desc("Frequency (cm-1)")
-            .y_desc("DOS")
-            .draw()?;
-        chart.draw_series(LineSeries::new(dos_rows.iter().map(|r| (r[0], r[1])), &BLACK))?;
-        for e in 0..n_extra {
-            let color = element_colors[e % element_colors.len()];
-            chart.draw_series(LineSeries::new(dos_rows.iter().map(|r| (r[0], r[2 + e])), &color))?;
-        }
+struct DosData {
+    rows: Vec<Vec<f64>>,
+    names: Vec<String>,
+}
+fn load_dos(
+    workspace: &str,
+    prefix: &str,
+    elements: &[String],
+    counts: &[usize],
+) -> Result<DosData> {
+    let text = std::fs::read_to_string(archived_file(
+        workspace,
+        PHDOS_DIR,
+        &qf_input::filenames::derive_filenames(prefix).fldos,
+    ))?;
+    ensure!(
+        !regex::Regex::new(r"(?i)\b(?:nan|inf|infinity)\b")?.is_match(&text),
+        "声子 DOS 包含非有限数值"
+    );
+    let rows = qf_io::read_numeric_rows(&text);
+    ensure!(
+        !rows.is_empty() && rows[0].len() >= 2,
+        "声子 DOS 至少需要频率与 TDOS 两列"
+    );
+    let width = rows[0].len();
+    ensure!(
+        rows.iter()
+            .all(|r| r.len() == width && r.iter().all(|v| v.is_finite())),
+        "声子 DOS 列数不一致或包含非有限数值"
+    );
+    // 与表格层一致：投影列是逐原子值，按结构的原子顺序聚合为元素。
+    if width > 2 {
+        let (_, table, names) =
+            crate::tables::build_phonon_dos_tables(workspace, prefix, elements, counts)?;
+        let values = table
+            .iter()
+            .skip(1)
+            .map(|r| {
+                r.iter()
+                    .map(|v| v.parse::<f64>())
+                    .collect::<std::result::Result<Vec<_>, _>>()
+            })
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        return Ok(DosData {
+            rows: values,
+            names: std::iter::once("TDOS".to_owned()).chain(names).collect(),
+        });
     }
     let _ = elements;
-    root.present()?;
-    Ok(out.clone())
+    Ok(DosData {
+        rows,
+        names: vec!["TDOS".into()],
+    })
+}
+fn draw_dos<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    data: &DosData,
+    range: (f64, f64),
+    show_y: bool,
+) -> Result<()>
+where
+    DB::ErrorType: 'static,
+{
+    let xmax = data
+        .rows
+        .iter()
+        .flat_map(|r| r.iter().skip(1))
+        .copied()
+        .fold(0., f64::max)
+        .max(1e-12)
+        * 1.08;
+    let mut chart = ChartBuilder::on(area)
+        .caption("Phonon DOS", ("sans-serif", 26))
+        .margin_top(24)
+        .margin_right(28)
+        .margin_bottom(16)
+        .margin_left(if show_y { 18 } else { 0 })
+        .x_label_area_size(64)
+        .y_label_area_size(if show_y { 82 } else { 12 })
+        .build_cartesian_2d(0.0..xmax, range.0..range.1)?;
+    chart
+        .configure_mesh()
+        .disable_x_mesh()
+        .max_light_lines(0)
+        .x_labels(4)
+        .y_labels(if show_y { 6 } else { 0 })
+        .bold_line_style(RGBColor(232, 235, 239))
+        .axis_style(INK)
+        .label_style(("sans-serif", 18))
+        .x_desc("DOS")
+        .y_desc(if show_y { "Frequency (cm⁻¹)" } else { "" })
+        .axis_desc_style(("sans-serif", 22))
+        .draw()?;
+    chart.draw_series(std::iter::once(PathElement::new(
+        vec![(0., 0.), (xmax, 0.)],
+        RGBColor(145, 150, 155),
+    )))?;
+    for (i, name) in data.names.iter().enumerate() {
+        let color = if i == 0 {
+            INK
+        } else {
+            COLORS[(i - 1) % COLORS.len()]
+        };
+        chart
+            .draw_series(LineSeries::new(
+                data.rows.iter().map(|r| (r[i + 1], r[0])),
+                color.stroke_width(2),
+            ))?
+            .label(name)
+            .legend(move |(x, y)| {
+                PathElement::new(vec![(x, y), (x + 22, y)], color.stroke_width(2))
+            });
+    }
+    chart
+        .configure_series_labels()
+        .position(SeriesLabelPosition::UpperRight)
+        .background_style(WHITE.mix(0.9))
+        .label_font(("sans-serif", 17))
+        .border_style(WHITE)
+        .draw()?;
+    Ok(())
+}
+
+pub fn plot_phonon_band(workspace: &str, prefix: &str) -> Result<String> {
+    let data = BandData::load(workspace, prefix)?;
+    let range = frequency_range(data.frequencies.iter().flatten().copied())?;
+    std::fs::create_dir_all(format!("{workspace}/{PHBAND_DIR}"))?;
+    let out = format!("{workspace}/{PHBAND_DIR}/phonon_band.png");
+    {
+        let area = BitMapBackend::new(&out, (1200, 760)).into_drawing_area();
+        area.fill(&WHITE)?;
+        draw_band(&area, &data, range)?;
+        area.present()?;
+    }
+    Ok(out)
+}
+pub fn plot_phonon_dos(
+    workspace: &str,
+    prefix: &str,
+    elements: &[String],
+    counts: &[usize],
+) -> Result<String> {
+    let data = load_dos(workspace, prefix, elements, counts)?;
+    let range = frequency_range(data.rows.iter().map(|r| r[0]))?;
+    std::fs::create_dir_all(format!("{workspace}/{PHDOS_DIR}"))?;
+    let out = format!("{workspace}/{PHDOS_DIR}/phonon_dos.png");
+    {
+        let area = BitMapBackend::new(&out, (720, 760)).into_drawing_area();
+        area.fill(&WHITE)?;
+        draw_dos(&area, &data, range, true)?;
+        area.present()?;
+    }
+    Ok(out)
+}
+pub fn plot_phonon_combined(
+    workspace: &str,
+    prefix: &str,
+    elements: &[String],
+    counts: &[usize],
+) -> Result<String> {
+    let band = BandData::load(workspace, prefix)?;
+    let dos = load_dos(workspace, prefix, elements, counts)?;
+    let range = frequency_range(
+        band.frequencies
+            .iter()
+            .flatten()
+            .copied()
+            .chain(dos.rows.iter().map(|r| r[0])),
+    )?;
+    let out = format!("{workspace}/phonon_combined.jpg");
+    {
+        let area = BitMapBackend::new(&out, (1600, 760)).into_drawing_area();
+        area.fill(&WHITE)?;
+        let (left, right) = area.split_horizontally(1200);
+        draw_band(&left, &band, range)?;
+        draw_dos(&right, &dos, range, false)?;
+        area.present()?;
+    }
+    Ok(out)
 }

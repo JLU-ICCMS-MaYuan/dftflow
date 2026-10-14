@@ -4,9 +4,9 @@
 use anyhow::Result;
 use std::path::Path;
 
-use qf_io::{read_band_frequencies, read_labelinfo, read_numeric_rows};
+use qf_io::read_numeric_rows;
 
-use crate::archive::{PHBAND_DIR, PHDOS_DIR};
+use crate::archive::PHDOS_DIR;
 
 /// 从频率文件推断模式数（qe_plot 头 nbnd 或首行列数）。
 pub fn detect_mode_count(text: &str) -> usize {
@@ -35,41 +35,6 @@ pub fn detect_mode_count(text: &str) -> usize {
     1
 }
 
-fn lerp(left: f64, right: f64, f: f64) -> f64 {
-    left + (right - left) * f
-}
-
-/// 在 labels 之间线性插值出 `count` 个路径点（含坐标与距离）。
-fn interpolate_band_points(labels: &[qf_io::LabelInfo], count: usize) -> Vec<qf_io::LabelInfo> {
-    let mut points = Vec::with_capacity(count);
-    for point_index in 1..=count {
-        let (mut left, mut right) = (labels[0].clone(), labels[labels.len() - 1].clone());
-        for w in 0..labels.len() - 1 {
-            if labels[w].point_index <= point_index && point_index <= labels[w + 1].point_index {
-                left = labels[w].clone();
-                right = labels[w + 1].clone();
-                break;
-            }
-        }
-        let left_index = left.point_index as f64;
-        let right_index = right.point_index as f64;
-        let fraction = if (right_index - left_index).abs() < 1e-12 {
-            0.0
-        } else {
-            (point_index as f64 - left_index) / (right_index - left_index)
-        };
-        points.push(qf_io::LabelInfo {
-            label: String::new(),
-            point_index,
-            distance: lerp(left.distance, right.distance, fraction),
-            kx: lerp(left.kx, right.kx, fraction),
-            ky: lerp(left.ky, right.ky, fraction),
-            kz: lerp(left.kz, right.kz, fraction),
-        });
-    }
-    points
-}
-
 fn atom_names(elements: &[String], counts: &[usize]) -> Vec<String> {
     let mut names = Vec::new();
     for (e, c) in elements.iter().zip(counts.iter()) {
@@ -84,33 +49,14 @@ fn atom_names(elements: &[String], counts: &[usize]) -> Vec<String> {
 pub fn build_phonon_band_tables(
     workspace: &str,
     prefix: &str,
-    elements: &[String],
-    counts: &[usize],
+    _elements: &[String],
+    _counts: &[usize],
 ) -> Result<(Vec<Vec<String>>, Vec<Vec<String>>)> {
-    let names = qf_input::filenames::derive_filenames(prefix);
-    let label_path = format!("{workspace}/{PHBAND_DIR}/{prefix}_band.labelinfo.dat");
-    let label_path = if Path::new(&label_path).exists() {
-        label_path
-    } else {
-        format!("{workspace}/{prefix}_band.labelinfo.dat")
-    };
-    let freq_path = format!("{workspace}/{PHBAND_DIR}/{}", names.flfrq);
-    let freq_path = if Path::new(&freq_path).exists() {
-        freq_path
-    } else {
-        format!("{workspace}/{}", names.flfrq)
-    };
-    let labels = read_labelinfo(&std::fs::read_to_string(&label_path)?);
-    if labels.is_empty() {
-        anyhow::bail!("高对称点 labelinfo 为空。");
-    }
-    let freq_text = std::fs::read_to_string(&freq_path)?;
-    let modes = detect_mode_count(&freq_text);
-    let frequencies = read_band_frequencies(&freq_text, modes)?;
-    let points = interpolate_band_points(&labels, frequencies.len());
-    if points.len() != frequencies.len() {
-        anyhow::bail!("声子谱路径点数量与频率数量不一致");
-    }
+    let data = crate::band::BandData::load(workspace, prefix)?;
+    let labels = &data.labels;
+    let frequencies = &data.frequencies;
+    let points = &data.points;
+    let modes = frequencies[0].len();
     let mut band_header = vec![
         "point_index".to_string(),
         "distance".to_string(),
@@ -181,6 +127,7 @@ pub fn build_phonon_dos_tables(
     if numeric_rows.is_empty() || numeric_rows[0].len() < 2 {
         anyhow::bail!("声子 DOS 文件至少需要 frequency 与 TDOS 两列。");
     }
+    anyhow::ensure!(numeric_rows.iter().all(|r| r.len() == numeric_rows[0].len() && r.iter().all(|v| v.is_finite())), "声子 DOS 列数不一致或包含非有限数值");
     let atom_names = atom_names(elements, counts);
     let max_atom_cols = numeric_rows[0].len() - 2;
     let selected = &atom_names[..atom_names.len().min(max_atom_cols)];

@@ -612,8 +612,8 @@ fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: boo
         qf_phonon::write_csv(&format!("{}/phdos/phonon_dos_atoms.csv", ctx.workspace), &atoms_rows)?;
         qf_phonon::write_csv(&format!("{}/phdos/phonon_dos_elements.csv", ctx.workspace), &elements_rows)?;
         qf_phonon::plot::plot_phonon_band(&ctx.workspace, &ctx.prefix)?;
-        qf_phonon::plot::plot_phonon_dos(&ctx.workspace, &ctx.prefix, &elements)?;
-        qf_phonon::plot::plot_phonon_combined(&ctx.workspace, &ctx.prefix, &elements)?;
+        qf_phonon::plot::plot_phonon_dos(&ctx.workspace, &ctx.prefix, &elements, &counts)?;
+        qf_phonon::plot::plot_phonon_combined(&ctx.workspace, &ctx.prefix, &elements, &counts)?;
         println!("声子流程已完成：{}", ctx.workspace);
     } else if submit {
         if needed.is_empty() {
@@ -688,9 +688,18 @@ fn run_qe_process_phonon(
     let (elements, counts) = structure_elements(&structure);
 
     if plot {
+        // 重绘与 CSV 使用相同的已校验路径/频率，不复用可能过期的旧表格。
+        let (band_rows, label_rows) = qf_phonon::build_phonon_band_tables(&work_dir, &prefix, &elements, &counts)?;
+        let (atoms_rows, elements_rows, _) = qf_phonon::build_phonon_dos_tables(&work_dir, &prefix, &elements, &counts)?;
+        std::fs::create_dir_all(format!("{work_dir}/phband"))?;
+        std::fs::create_dir_all(format!("{work_dir}/phdos"))?;
+        qf_phonon::write_csv(&format!("{work_dir}/phband/phonon_band.csv"), &band_rows)?;
+        qf_phonon::write_csv(&format!("{work_dir}/phband/phonon_band_labels.csv"), &label_rows)?;
+        qf_phonon::write_csv(&format!("{work_dir}/phdos/phonon_dos_atoms.csv"), &atoms_rows)?;
+        qf_phonon::write_csv(&format!("{work_dir}/phdos/phonon_dos_elements.csv"), &elements_rows)?;
         let band_png = qf_phonon::plot::plot_phonon_band(&work_dir, &prefix)?;
-        let dos_png = qf_phonon::plot::plot_phonon_dos(&work_dir, &prefix, &elements)?;
-        let combined = qf_phonon::plot::plot_phonon_combined(&work_dir, &prefix, &elements)?;
+        let dos_png = qf_phonon::plot::plot_phonon_dos(&work_dir, &prefix, &elements, &counts)?;
+        let combined = qf_phonon::plot::plot_phonon_combined(&work_dir, &prefix, &elements, &counts)?;
         println!("[qe_process_phonon] 绘图完成: {band_png}, {dos_png}, {combined}");
         return Ok(());
     }
