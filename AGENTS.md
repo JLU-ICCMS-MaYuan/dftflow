@@ -32,9 +32,9 @@
     3. 文档：新建 `docs/manual-testing.md`（占位符机制表/测试资产清单/pytest 命令序列/各 flow 手动计算步骤）与 `docs/local/remote-machines.md` 留档模板；`docs/qe-environment.md` 通用化；`docs/overview/qe-install-m5.md` 移入 `docs/local/` 并在总览索引留说明。
     4. 子模块：vasp.6.4.3 提交 `7a82340`（makefile.include macOS arm64 构建 + BUILD_MACOS.md，排除 .bak）推送私有 Gitee 成功（`6e06f68..7a82340`，父仓库指针已同步）；q-e 已添加 upstream `QEF/q-e` 并 fetch（upstream/master = `ee7f72e8f`，fork master `770a0b2d1` 为其祖先可 fast-forward）。
     5. 验证：pytest 收集 248 项、冒烟（vaspflow 非 run 类）48 通过，替换后输入含真实路径；6 个非 run 失败为 0005 之前已存在的环境性失败（mattersim 未安装、numpy 2.5 移除别名、rv4 ENCUT 预期 800 vs 输入 520），与本次改动无关；SC-002 全库机器路径检索仅剩冻结 golden 基线豁免项。
-- **留档/阻断**：q-e fork master 同步与 `macos-memusage-fix`（含提交 `51fdfbd13`）推送被凭据阻断（HTTPS 非交互无凭据、SSH 公钥未注册、钥匙串无项、glab 未安装），按 Spec 留档停止，待用户提供 GitLab PAT 或自行执行：`cd external/q-e && git push origin upstream/master:master && git push origin macos-memusage-fix`；嵌套子模块 `external/mbd` 指针变动与 `.DS_Store` 按约定不提交、仅本地留档。
+- **留档/补齐（2026-10-14）**：q-e 推送已完成——经用户提供的 glab token 认证，fork `madegan/q-e` master fast-forward 至官方上游（`770a0b2d1..ee7f72e8f`），`macos-memusage-fix`（含提交 `51fdfbd13`）推送成功并 ls-remote 验证；临时 PAT 用后已从钥匙串清除（并提醒用户轮换）。嵌套子模块 `external/mbd` 指针变动与 `.DS_Store` 按约定不提交、仅本地留档。
 - **追踪**：Spec `docs/specs/0005-git-hygiene-manual-testing/`；手册 `docs/manual-testing.md`；关联 Issue 0004（[IKKGLP](https://gitee.com/mayuan_JLUPHY/dftflow/issues/IKKGLP)）；线上 Gitee Issue 由用户自建（issue-draft.md 已留草稿）。
-- **状态**：本地实施完成并已提交；q-e fork 推送待补验收（acceptance.md SC-004 部分通过）。
+- **状态**：全部完成并已提交（acceptance.md 六项 SC 全部通过）。
 
 ### [2026-10-13] 彻底完成 0004 全量迁移（P0–P5 收尾）
 - **需求**：用户要求"彻底完成 0004 的所有需求"；经确认按全量 P5 收尾执行（补齐缺失 CLI、删被替换 Python、改名、清 pyproject、建 48 个旧名入口），musl 静态/离线验证如实留档为待 Linux 节点项；`qeflow-python-backup/` 随 P5 删除；48 个旧名入口采用多调用二进制 + 安装期链接。

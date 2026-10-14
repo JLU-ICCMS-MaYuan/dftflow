@@ -27,12 +27,15 @@
 
 ## SC-004 子模块推送完成
 
-- **状态**：部分通过（vasp 已推送，q-e 被凭据阻断）
-- **证据**：vasp.6.4.3 `git push origin HEAD:master` 成功（`6e06f68..7a82340`，含
-  makefile.include 与 BUILD_MACOS.md，`.bak` 未提交）。
-  q-e：upstream 已添加并 fetch（upstream/master=`ee7f72e8f`）；fork master 同步与
-  `macos-memusage-fix` 推送被阻断——HTTPS 非交互无凭据、SSH 公钥未注册 GitLab、
-  钥匙串无 gitlab.com 项、glab 未安装。待用户提供 PAT 或自行推送后补验收。
+- **状态**：通过（2026-10-14 补齐）
+- **证据**：
+  - vasp.6.4.3 `git push origin HEAD:master` 成功（`6e06f68..7a82340`，含 makefile.include
+    与 BUILD_MACOS.md，`.bak` 未提交）。
+  - q-e fork master 同步成功：`git push origin upstream/master:master`
+    （`770a0b2d1..ee7f72e8f`，fast-forward 至官方上游最新）。
+  - q-e `macos-memusage-fix` 分支推送成功，`git ls-remote` 验证远端指向 `51fdfbd1320d3…`
+    （即含 macOS 内存查询补丁的提交）。
+  - 临时使用的 GitLab PAT 在推送完成后已从钥匙串清除，并提醒用户轮换。
 
 ## SC-005 手动计算操作文档完整
 

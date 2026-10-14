@@ -41,8 +41,8 @@
 ## T007 子模块 q-e fork 同步与分支推送（FR-007、SC-004）
 
 - [x] 为 q-e 添加 upstream `https://gitlab.com/QEF/q-e.git` 并 fetch（upstream/master = `ee7f72e8f`）。
-- [ ] 将 fork `master` 同步到上游最新：**被阻断**——HTTPS 非交互推送无凭据、SSH 公钥未注册、钥匙串无凭据，留档待用户提供 PAT 或自行推送。
-- [ ] 推送本地分支 `macos-memusage-fix`（含提交 `51fdfbd13`）到 origin：**被阻断**（同上）。
+- [x] 将 fork `master` fast-forward 同步到上游最新（`770a0b2d1..ee7f72e8f`，2026-10-14 经 glab token 完成认证）。
+- [x] 推送本地分支 `macos-memusage-fix`（含提交 `51fdfbd13`）到 origin，ls-remote 验证通过（远端指向 `51fdfbd1320d3…`）。
 - [x] 嵌套子模块 `external/mbd` 指针变动与 `.DS_Store` 不提交，本地留档。
 
 ## T008 验证与提交（SC-001~SC-006）
