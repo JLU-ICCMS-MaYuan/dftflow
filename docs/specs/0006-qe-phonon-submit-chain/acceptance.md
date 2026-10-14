@@ -102,3 +102,7 @@ FR-001～006、SC-001～004 的本地实现、自动测试、真实计算与安�
 - 本次仅源码修复与本机原生 release 验证，未切换 PATH 中的安装版本；未运行真实 QE 计算，不将此项视为 nosplit 全链路修复。
 
 附加回归：`basic_cli` 3 项、`phonon_chain` 6 项、`phonon_init` 5 项全部通过，本次共 16 项；本地运行日志 `docs/local/nosplit-input-regression-20261014.log`。编译仅有既有未使用项及依赖未来兼容警告，无错误。
+
+### US5 本机命令更新
+
+用户授权“更新新命令”后，qeflow 已由源码提交 b83c9ca 对应的 release 构建打包安装；其他四程序与旧版一致。51 入口帮助通过，安装别名在隔离目录实际使用 -i 生成输入且晶胞/结构一致。旧版本及入口备份保留；本轮未申请计算节点或提交 QE 作业。来源哈希、安装位置与帮助证据见本地 docs/local/nosplit-input-install-20261014.json；不将 squeue 查询问题记为已修复。

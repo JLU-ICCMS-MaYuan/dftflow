@@ -81,3 +81,7 @@ T015：保留现有制品，另建空的 target 目录，使用本机 Linux x86_
 在 QePhononNosplit 增加与 split 同定义的 input 参数；分派到 run_qe_phonon_nosplit 后传入 create_phonon_context，复用显式优先与自动查找逻辑。
 
 FR-011/012 → CLI 参数与上下文结构选择 → T019/T020 → SC-008 真实进程准备输入验证；T021 回写文档。无新实体、配置或数据迁移。
+
+## US5 安装补充
+
+用户后续授权更新命令：仅替换 qeflow 为本次已测试 release 制品，使用既有 glibc 加载器打包；其他四程序复用上一版本。新版本目录及旧入口备份保留，安装后验证全部入口与 nosplit 实际 -i 输入准备。
