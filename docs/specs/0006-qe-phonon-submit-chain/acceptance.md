@@ -66,11 +66,19 @@ FR-001～006、SC-001～004 的本地实现、自动测试、真实计算与安�
 - 新版五二进制打包完成；隔离安装的 51 个入口检查通过；旧 dyn0 链接备份移除、用户独立程序与独立链接保留的迁移回归通过。
 - 主 workspace 元数据不包含独立工具，主源码不包含生成器模块或 gen-dyn0 子命令；构建来源五份哈希与打包清单一致。
 
-### 真实初始化与部署待办
+### 真实初始化与部署进展
 
-- 已在 sugon-amd 提交短时单 MPI 初始化作业 **1250893**，配置非默认 outdir，使用已有 MgB₂ SCF 快照的独立副本；不改原计算。仅验证初始化，正式算例默认 64 MPI 保持原配置。
-- 调度状态为 PENDING / Priority，预计 2026-10-16 15:58:35 启动；尚无真实初始化输出，不能宣称本轮真实验收通过。
-- 新制品暂存版本目录，默认安装尚未切换；按原方案等待真实初始化成功。不能把上一轮 0006 的实际验收当作本次新入口验收。
-- 后续验收：sacct 核对 COMPLETED/0:0，ph_init.out 含正常终止且不含错误，dyn0 与原 QE 列表一致，ph_init_complete.json 的 q_count=2，无新 SCF/完整 PH/后处理；原始 SCF 快照哈希不变。通过后切换全局入口并验证 51 个入口与源码/制品来源，更新任务状态。
+- sugon-amd 短时单 MPI 初始化作业 **1250893** 已于 2026-10-14 17:17:02 启动、17:17:23 完成，sacct 状态 COMPLETED、退出码 0:0；此前预测 10 月 16 日启动仅为当时排队估计。
+- 配置使用非默认 outdir，计算基于已有 MgB₂ SCF 快照的独立副本。QE 7.4.1 正常终止，无错误标记；dyn0 与原 QE 列表逐字节一致，ph_init_complete.json 的 q_count=2。
+- 未产生新 SCF、完整 PH 或后处理输出；原始 SCF 快照逐文件 SHA-256 不变。该验收验证单步初始化入口，正式算例默认 64 MPI 配置保持原状。
+- 用户随后明确要求「全部重新编译，我要新版的代码。」；本轮从全新 target 目录重编译五份主程序与独立工具并切换默认安装，交付证据见下节。
 
 本轮证据位于忽略目录 docs/local/0006-dyn0-decouple/：tests-final.log、tool-detached-tests.log、entries.log、install-migration.log、source-manifest.json、delivery.json、original-scf-sha256.json 和 real-init/。线上 Issue 仍由用户管理。
+
+### 全量重编译与安装完成（2026-10-14）
+
+- 使用新的空 target 目录，Linux x86_64 配置、锁定依赖、offline/release 重新编译五份主程序，workspace 97 项测试全部通过；独立工具使用独立工程和另一个空 target，4 项 release 测试通过。未复用旧 target 编译产物。
+- 五份主程序完成本机 glibc 加载器打包和来源 SHA-256 核对；安装器备份旧入口后切换至 linux-x86_64-20261014-180957。51 个主入口的隔离验证与实际安装核验均通过。
+- 独立 qf-gen-dyn0 单独编译、打包、安装，不属于主 workspace 或主安装器；终端命令指向独立制品，输出与冻结 MgB₂ 基线逐字节一致。主 qeflow 不再接受 gen-dyn0 子命令。
+- 真实初始化 1250893 已通过，T013/T014/T015 收尾完成；原有版本与计算目录保留。
+- 本轮证据在 docs/local/rebuild-20261014-180957/：workspace-tests.log、workspace-build.log、tool-tests.log、tool-build.log、entrypoints.log、installed-entrypoints.json、install.log、tool-artifact.json、source-manifest.json、real-init-acceptance.json、delivery.json。docs/local/latest-rebuild.json 指向最新交付记录。
