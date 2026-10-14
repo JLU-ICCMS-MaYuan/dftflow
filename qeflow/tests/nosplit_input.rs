@@ -94,3 +94,52 @@ fn omitted_input_preserves_automatic_lookup_and_missing_input_fails() {
         structure(5)
     );
 }
+
+#[test]
+fn preparation_and_submission_output_is_concise_and_errors_are_visible() {
+    use std::os::unix::fs::PermissionsExt;
+    let w = setup();
+    fs::write(w.0.join("POSCAR"), structure(4)).unwrap();
+    fs::create_dir_all(w.0.join("bin")).unwrap();
+    let sbatch = w.0.join("bin/sbatch");
+    fs::write(&sbatch, "#!/bin/sh\nif [ -n \"$FAIL_SUBMIT\" ]; then echo allocation-denied >&2; exit 1; fi\necho 12345\n").unwrap();
+    fs::set_permissions(&sbatch, fs::Permissions::from_mode(0o755)).unwrap();
+    let invoke = |args: &[&str], fail: bool| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_qeflow"));
+        c.args(["qe-phonon-nosplit", "-c", "input.toml", "-i", "POSCAR"])
+            .args(args)
+            .current_dir(&w.0)
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    w.0.join("bin").display(),
+                    std::env::var("PATH").unwrap()
+                ),
+            );
+        if fail {
+            c.env("FAIL_SUBMIT", "1");
+        }
+        c.output().unwrap()
+    };
+    let prepared = invoke(&[], false);
+    assert!(prepared.status.success());
+    assert_eq!(
+        String::from_utf8(prepared.stdout).unwrap(),
+        format!("已准备声子流程输入与脚本：{}\n", w.0.join("calc").display())
+    );
+    let submitted = invoke(&["-s"], false);
+    assert!(
+        submitted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&submitted.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(submitted.stdout).unwrap(),
+        "已提交声子流程作业 12345\n"
+    );
+    let failed = invoke(&["-s"], true);
+    assert!(!failed.status.success());
+    assert!(failed.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("allocation-denied"));
+}

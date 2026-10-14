@@ -106,3 +106,12 @@ FR-001～006、SC-001～004 的本地实现、自动测试、真实计算与安�
 ### US5 本机命令更新
 
 用户授权“更新新命令”后，qeflow 已由源码提交 b83c9ca 对应的 release 构建打包安装；其他四程序与旧版一致。51 入口帮助通过，安装别名在隔离目录实际使用 -i 生成输入且晶胞/结构一致。旧版本及入口备份保留；本轮未申请计算节点或提交 QE 作业。来源哈希、安装位置与帮助证据见本地 docs/local/nosplit-input-install-20261014.json；不将 squeue 查询问题记为已修复。
+
+## US6：三种声子命令精简输出（2026-10-14）
+
+- FR-013/014、SC-009：`bash scripts/build-native.sh test --release --locked --offline -p qeflow --test nosplit_input --test phonon_chain --test phonon_init --test basic_cli`，18 项通过（3+7+5+3）。本地日志 docs/local/0006-us6-tests.log。
+- 真实 CLI 准备/提交输出验证覆盖 nosplit/index/coords：仅准备一条带工作目录状态，提交一条带作业号状态，无逐文件清单。Slurm 边界使用假 sbatch，未向真实队列提交任务；模拟拒绝提交时退出失败、保留错误且不报告提交成功。原结构参数、两模式完整链模拟与初始化失败边界仍通过。
+- 完成状态统一措辞，未改计算、写文件、提交或续算的调用顺序。保留 nosplit 全链路限制及 squeue 无效作业号问题，未将文案更新记为这些问题修复。
+- 用户明确授权更新本机入口；安装后的验证与制品来源见本地 docs/local/0006-us6-install.json。旧版及入口备份保留；其他四家族程序复用上一版本，未宣称重新编译。
+
+安装验证通过：51 个默认入口帮助正常，三个已安装别名在隔离目录的准备及假 sbatch 提交输出均与约定单行文案一致。源码及打包制品分别记录哈希；安装时源码待本次提交，随后将本地清单 source_commit 对齐最终提交。

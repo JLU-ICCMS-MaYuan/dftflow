@@ -273,3 +273,22 @@ fn default_tmp_runs_both_modes_and_standalone_merge() {
         }
     }
 }
+
+#[test]
+fn both_split_modes_report_concise_preparation_submission_and_failure() {
+    for mode in ["index", "coords"] {
+        let w = setup(mode);
+        let prepared = cli(&w, &[], &[]);
+        assert!(prepared.status.success());
+        let text = String::from_utf8(prepared.stdout).unwrap();
+        assert_eq!(text.lines().count(), 1);
+        assert!(text.starts_with("已准备声子流程输入与脚本："));
+        let failed = cli(&w, &["-s"], &[("FAIL_SUBMIT", "101")]);
+        assert!(!failed.status.success());
+        assert!(failed.stdout.is_empty());
+        assert!(!failed.stderr.is_empty());
+        let submitted = cli(&w, &["-s"], &[]);
+        assert!(submitted.status.success(), "{}", String::from_utf8_lossy(&submitted.stderr));
+        assert_eq!(String::from_utf8(submitted.stdout).unwrap(), "已提交前置作业 102；后续计算及绘图将自动安排\n");
+    }
+}

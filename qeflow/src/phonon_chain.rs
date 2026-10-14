@@ -496,7 +496,7 @@ fn post(ctx: &PhononCtx, config: &str) -> Result<()> {
         &json!({"finished":true,"prefix":ctx.prefix}),
     )?;
     refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
-    println!("声子全流程完成: {}", ctx.workspace);
+    println!("声子流程已完成：{}", ctx.workspace);
     Ok(())
 }
 pub fn run(
@@ -515,7 +515,7 @@ pub fn run(
     fs::write(Path::new(&ctx.workspace).join("chain_config_path"), &config)?;
     prepare(&ctx, &config, mode)?;
     if !run && !submit {
-        println!("输入与前置/后处理脚本已准备；SCF 完成后才生成 q 点目录");
+        println!("已准备声子流程输入与脚本：{}", ctx.workspace);
         return Ok(());
     }
     if Path::new(&ctx.workspace)
@@ -533,7 +533,7 @@ pub fn run(
                     .unwrap_or(false)
             });
         if complete {
-            println!("全流程已完成");
+            println!("声子流程已完成：{}", ctx.workspace);
             return Ok(());
         }
         fs::remove_file(Path::new(&ctx.workspace).join("chain_complete.json"))?;
@@ -568,7 +568,7 @@ pub fn run(
         )?;
         records.insert("pre".into(), id.clone());
         save_jobs(&ctx.workspace, &records)?;
-        println!("已提交前置作业 {id}；后续 q 点及合并绘图将自动安排");
+        println!("已提交前置作业 {id}；后续计算及绘图将自动安排");
     }
     Ok(())
 }

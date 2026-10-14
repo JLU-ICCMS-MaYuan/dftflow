@@ -171,3 +171,23 @@ US4 实现与验证完成：32 项定向测试通过，五主程序已重新编�
 > 更新新命令
 
 用户授权后已更新默认命令；51 入口帮助与已安装 nosplit -i 实际输入准备通过。此前“未更新安装”的记录描述当时状态。squeue 查询报错尚未修复。
+
+## US6：三种声子聚合入口输出精简
+
+原始需求完整逐字记录在本地 `docs/local/0006-us6-original-request.md`（原话含机器路径，遵守仓库路径本地化规则）；公开引用如下，命令输出路径已脱敏。
+
+> $ qe_phonon_nosplit -i POSCAR -c input.toml  -s
+> [qe_phonon_nosplit] wrote run_scf.sh, run_ph.sh, run_q2r.sh (<仓库目录>/examples/MgB2/sugon-amd/run/qe_phonon_nosplit/q2r.in), run_matdyn_phband.sh (<仓库目录>/examples/MgB2/sugon-amd/run/qe_phonon_nosplit/matdyn_phband.in), run_matdyn_phdos.sh (<仓库目录>/examples/MgB2/sugon-amd/run/qe_phonon_nosplit/matdyn_phdos.in) 为什么会输出这么多？
+>
+> $ qe_phonon_split_coords -i POSCAR -c input.toml -s
+> 已提交前置作业 1251460；后续 q 点及合并绘图将自动安排
+>
+> 但是这个就输出这么少。
+>
+> 我希望能不要输出那么多没有用的？保持一致的精简。使用 issue 和 spec
+>
+> 继续
+
+用户已确认完整草案：复用 0006，FR-013/014、SC-009；准备单行、提交保留作业号、完成保留工作目录，失败保留错误。Documentation Impact：本目录 Spec/Plan/Research/Tasks/验收、Overview、AGENTS；安装状态记录本地。线上仍由用户管理。
+
+US6 源码与 18 项测试完成，验收见 [acceptance.md](acceptance.md)。本地 Issue/Spec 保留线上未核验边界。

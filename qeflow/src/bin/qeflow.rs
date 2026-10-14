@@ -547,16 +547,16 @@ fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: boo
     let ctx = create_phonon_context(config.as_deref(), input.as_deref(), Some("qe_phonon_nosplit"), true)?;
     prepare_root_scf(&ctx)?;
     prepare_ph_step(&ctx)?;
-    let q2r_path = q2r_input::write_q2r_input(&ctx.workspace, &ctx.cfg, &ctx.prefix)?;
+    q2r_input::write_q2r_input(&ctx.workspace, &ctx.cfg, &ctx.prefix)?;
     let q2r_exec = qf_runner::resolve_qe_command(ctx.cfg.qe.executable_path(), "q2r.x");
     let matdyn_exec = qf_runner::resolve_qe_command(ctx.cfg.qe.executable_path(), "matdyn.x");
-    let phband_path = matdyn_input::write_matdyn_phband_input(
+    matdyn_input::write_matdyn_phband_input(
         &ctx.workspace,
         &ctx.cfg,
         &ctx.prefix,
         ctx.structure.lattice,
     )?;
-    let phdos_path = matdyn_input::write_matdyn_phdos_input(&ctx.workspace, &ctx.cfg, &ctx.prefix)?;
+    matdyn_input::write_matdyn_phdos_input(&ctx.workspace, &ctx.cfg, &ctx.prefix)?;
     let slurm_header = ctx.cfg.slurm.header.clone().unwrap_or_default();
     write_root_script(&ctx.workspace, "run_q2r.sh", &slurm_header, &[format!("{q2r_exec} < q2r.in > q2r.out")])?;
     write_root_script(
@@ -571,9 +571,6 @@ fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: boo
         &slurm_header,
         &[format!("{matdyn_exec} < matdyn_phdos.in > matdyn_phdos.out")],
     )?;
-    println!(
-        "[qe_phonon_nosplit] wrote run_scf.sh, run_ph.sh, run_q2r.sh ({q2r_path}), run_matdyn_phband.sh ({phband_path}), run_matdyn_phdos.sh ({phdos_path})"
-    );
 
     let status = refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
     let mut needed: Vec<(String, String)> = Vec::new();
@@ -597,9 +594,8 @@ fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: boo
     }
 
     if run {
-        for (label, command) in &needed {
+        for (_, command) in &needed {
             if command.ends_with("run_scf.sh") || command.ends_with("run_ph.sh") {
-                println!("[qe_phonon_nosplit] {label}");
                 qf_runner::run_shell(command, Path::new(&ctx.workspace))?;
             }
         }
@@ -615,13 +611,13 @@ fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: boo
         qf_phonon::write_csv(&format!("{}/phband/phonon_band_labels.csv", ctx.workspace), &label_rows)?;
         qf_phonon::write_csv(&format!("{}/phdos/phonon_dos_atoms.csv", ctx.workspace), &atoms_rows)?;
         qf_phonon::write_csv(&format!("{}/phdos/phonon_dos_elements.csv", ctx.workspace), &elements_rows)?;
-        let band_png = qf_phonon::plot::plot_phonon_band(&ctx.workspace, &ctx.prefix)?;
-        let dos_png = qf_phonon::plot::plot_phonon_dos(&ctx.workspace, &ctx.prefix, &elements)?;
-        let combined = qf_phonon::plot::plot_phonon_combined(&ctx.workspace, &ctx.prefix, &elements)?;
-        println!("[qe_phonon_nosplit] 绘图完成: {band_png}, {dos_png}, {combined}");
+        qf_phonon::plot::plot_phonon_band(&ctx.workspace, &ctx.prefix)?;
+        qf_phonon::plot::plot_phonon_dos(&ctx.workspace, &ctx.prefix, &elements)?;
+        qf_phonon::plot::plot_phonon_combined(&ctx.workspace, &ctx.prefix, &elements)?;
+        println!("声子流程已完成：{}", ctx.workspace);
     } else if submit {
         if needed.is_empty() {
-            println!("[qe_phonon_nosplit] 声子工作流已完成或没有待提交步骤");
+            println!("声子流程已完成：{}", ctx.workspace);
         } else {
             let mut steps = needed;
             if process_needed {
@@ -646,7 +642,7 @@ fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: boo
                 prefix: &ctx.prefix,
                 slurm_header: &slurm_header,
             };
-            let aggregate = qf_runner::write_labeled_script(
+            qf_runner::write_labeled_script(
                 &script_ctx,
                 "submit_phonon_workflow.sh",
                 &steps,
@@ -655,14 +651,12 @@ fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: boo
                 None,
                 Some("声子总工作流"),
             )?;
-            println!("[qe_phonon_nosplit] generated {}", script_name_of(&aggregate.to_string_lossy()));
             if let Some(job) = qf_runner::submit_via_sbatch(Path::new(&ctx.workspace), "submit_phonon_workflow.sh")? {
-                println!("[qe_phonon_nosplit] submitted Slurm job {job}");
-                println!("[qe_phonon_nosplit] 查看对应 slurm 输出，等待声子工作流完成");
+                println!("已提交声子流程作业 {job}");
             }
         }
     } else {
-        println!("[qe_phonon_nosplit] (dry-run) 声子工作流已完成或没有待提交步骤");
+        println!("已准备声子流程输入与脚本：{}", ctx.workspace);
     }
     refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
     Ok(())

@@ -245,3 +245,29 @@ FR-009 是后来明确批准的 FR-006 旧生成入口保留规则的例外；�
 > 更新新命令
 
 用户授权将已验证的 nosplit 参数修复切换到本机默认入口；不包含 squeue 查询问题的源码修复。
+
+## US6：声子命令精简输出（已确认）
+
+### 原始需求记录
+
+原始需求完整逐字记录在本地 `docs/local/0006-us6-original-request.md`（原话含机器路径，遵守仓库路径本地化规则）；公开引用如下，命令输出路径已脱敏。
+
+> $ qe_phonon_nosplit -i POSCAR -c input.toml  -s
+> [qe_phonon_nosplit] wrote run_scf.sh, run_ph.sh, run_q2r.sh (<仓库目录>/examples/MgB2/sugon-amd/run/qe_phonon_nosplit/q2r.in), run_matdyn_phband.sh (<仓库目录>/examples/MgB2/sugon-amd/run/qe_phonon_nosplit/matdyn_phband.in), run_matdyn_phdos.sh (<仓库目录>/examples/MgB2/sugon-amd/run/qe_phonon_nosplit/matdyn_phdos.in) 为什么会输出这么多？
+>
+> $ qe_phonon_split_coords -i POSCAR -c input.toml -s
+> 已提交前置作业 1251460；后续 q 点及合并绘图将自动安排
+>
+> 但是这个就输出这么少。
+>
+> 我希望能不要输出那么多没有用的？保持一致的精简。使用 issue 和 spec
+>
+> 继续
+
+用户“继续”确认上一版完整草案。
+
+- FR-013：三种聚合入口仅准备时输出一条“已准备声子流程输入与脚本：<工作目录>”；提交成功仅输出主要状态及作业号，不打印逐文件清单或重复提示。
+- FR-014：完成状态统一“声子流程已完成：<工作目录>”；保留错误及活动作业信息，不改计算、提交和续算逻辑。
+- SC-009：真实 CLI 覆盖三模式准备/提交，输出单行且包含正确状态/作业号；提交失败明确报错且不得报告成功，已有结构参数回归通过。
+
+范围包括源码、文档及本机命令更新；不包括 squeue 无效 ID、nosplit 计算流程缺口修复或真实 QE 计算。
