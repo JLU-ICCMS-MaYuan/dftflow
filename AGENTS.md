@@ -24,6 +24,14 @@
 
 ## 需求处理记录
 
+### [2026-10-14] 本机安装 dftflow 与平台构建配置分离
+- **需求与授权**：用户要求安装 dftflow，并确认“编译需要区分在 linux x86_64上的编译文件和 macOS_arm64的编译文件，这样就不用每次编译都修改同一份编译文件了。”
+- **方案**：默认 Cargo 配置保持平台无关；Linux x86_64 glibc 与 macOS arm64 分别使用 `.cargo/linux-x86_64.toml`、`.cargo/macos-arm64.toml` 和独立产物目录；`scripts/build-native.sh` 自动按本机平台分派，既有 Linux musl 静态交付配置独立保留。沿用现有 Rust 项目和 Bash 构建脚本。
+- **安装边界**：用户目录准备 Rust 和原生依赖，五个 Rust 程序复制到稳定版本目录，安装全部 52 个入口；调整 Bash PATH 以优先使用 Rust 入口，原终端配置先备份。机器路径、运行日志和安装证据仅放 `docs/local/`。
+- **完成与验证**：Linux x86_64 glibc 五程序已安装至用户稳定版本目录并创建 52 个入口；Rust 88 项 release 离线测试、全部入口帮助检查通过。已安装 scflow 在清洁环境中通过三展宽 CSV/JSON 数值、CIF/POSCAR 和 7 份 PDF 黄金对照；新登录 shell 确认 QE/VASP/scflow 命令指向 Rust 入口。
+- **依赖与验收边界**：用户级 OpenBLAS 0.3.30（静态、GENERIC、单线程）和 spglib 2.6.0（静态、PIC）已构建；本机库路径只存本地环境文件。两平台配置解析、Cargo 产物目录和脚本分派检查通过；本轮实际编译验收为 Linux glibc，macOS 与既有 musl 交付不冒充本轮实测。证据见 `docs/local/dftflow-install-acceptance-20261014.json`。
+- **状态**：本机安装与平台配置分离完成；源码计算逻辑未改动，未执行第一性原理计算。
+
 ### [2026-10-14] 移除临时 Python 参考工作树
 - **需求**：用户明确不再需要 dftflow-py 工作树，要求删除。
 - **执行与验证**：确认无未提交改动，忽略文件均为 Python/pytest 缓存后，通过 git worktree remove 移除目录及注册信息；主工作树、python/master 分支和 python-reference-0004 标签保留。

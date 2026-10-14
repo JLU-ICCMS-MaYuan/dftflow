@@ -13,16 +13,28 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 ## 构建
 
 ```bash
-# macOS 本机构建：先安装原生依赖
+# macOS arm64 本机构建：先安装原生依赖
 brew install openblas spglib
-cargo build --release --workspace --locked
-cargo test --workspace --locked
+
+# Linux x86_64 / macOS arm64：脚本按本机平台选择独立配置
+bash scripts/build-native.sh
+bash scripts/build-native.sh test --release --workspace --locked
 
 # 在 macOS Docker/OrbStack 内构建 Linux x86_64 musl 并验证
 bash scripts/linux/build.sh
 ```
 
 macOS Mach-O 文件不能直接在 Linux 执行；Linux 交付脚本使用 Linux 编译环境产出 ELF，并检查静态链接和断网运行。目标计算节点仍需提供 QE/VASP 等外部计算程序。
+
+| 构建平台 | Cargo 配置 | 二进制目录 |
+| --- | --- | --- |
+| Linux x86_64 原生（glibc） | `.cargo/linux-x86_64.toml` | `target/linux-x86_64/x86_64-unknown-linux-gnu/release/` |
+| macOS arm64 原生 | `.cargo/macos-arm64.toml` | `target/macos-arm64/aarch64-apple-darwin/release/` |
+| Linux x86_64 musl 静态交付 | `.cargo/linux-host.toml` + `scripts/linux/Dockerfile` | `dist/linux-x86_64-musl/bin/` |
+
+Linux 原生构建需要 Rust、C/C++/Fortran 编译器、libclang、静态 OpenBLAS、spglib 头文件与库，以及 fontconfig/freetype 开发包。非系统依赖可通过 `DFTFLOW_NATIVE_PREFIX` 指定前缀（含 `include/`、`lib/pkgconfig/` 或 `lib64/pkgconfig/`）；共享库运行路径通过链接期 rpath 或 `LD_LIBRARY_PATH` 提供。机器特有的环境变量放在不入 Git 的 `docs/local/build-linux-x86_64.env` 中，由脚本自动加载。原生 glibc 产物用于本机，跨节点独立交付使用 musl 包。
+
+自行编译静态 spglib 时启用 `-DCMAKE_POSITION_INDEPENDENT_CODE=ON`，以支持 Linux 原生 Rust 程序的 PIE 链接。
 
 ## 安装命令
 

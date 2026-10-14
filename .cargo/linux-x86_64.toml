@@ -1,0 +1,5 @@
+# Linux x86_64 原生构建（glibc），与 macOS 和 musl 的产物分别存放。
+# 依赖由系统或 DFTFLOW_NATIVE_PREFIX 提供，机器路径只放 docs/local/。
+[build]
+target = "x86_64-unknown-linux-gnu"
+target-dir = "target/linux-x86_64"

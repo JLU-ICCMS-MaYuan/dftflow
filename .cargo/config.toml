@@ -1,12 +1,5 @@
-# 仓库级构建配置。
-# spglib-sys（经 qf-crystal 引入）需要系统 spglib C 库：
-#   macOS：brew install spglib（头文件在 /opt/homebrew/include）
-#   Linux 计算节点：安装 libspglib-dev（默认路径可被 bindgen/链接器找到，无需本节配置）
-# Linux musl 静态交付使用 scripts/linux/build.sh 和显式 linux-host.toml；已验证证据见 0004 acceptance-20261014.md。
-
-[env]
-BINDGEN_EXTRA_CLANG_ARGS = "-I/opt/homebrew/include"
-PKG_CONFIG_PATH = { value = "/opt/homebrew/opt/openblas/lib/pkgconfig", force = false }
-
-[target.'cfg(target_os = "macos")']
-rustflags = ["-L", "/opt/homebrew/lib"]
+# 默认配置保持平台无关，避免 Linux 自动加载 Homebrew 路径。
+# 原生构建：bash scripts/build-native.sh
+#   Linux x86_64：显式加载 linux-x86_64.toml
+#   macOS arm64：显式加载 macos-arm64.toml
+# musl 静态交付：bash scripts/linux/build.sh（加载 linux-host.toml）
