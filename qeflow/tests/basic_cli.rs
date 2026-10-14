@@ -177,47 +177,6 @@ fn failed_calculation_propagates_and_submit_runs_sbatch() {
 }
 
 #[test]
-fn mgb2_dyn0_alias_matches_family_command_without_config() {
-    let w = setup();
-    fs::remove_file(w.0.join("input.toml")).unwrap();
-    let xml =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../test_auto/MgB2/rust-reference/grid.xml");
-    let alias = w.0.join("qf-gen-dyn0");
-    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_qeflow"), &alias).unwrap();
-    let args = [
-        "--xml",
-        xml.to_str().unwrap(),
-        "--nq1",
-        "2",
-        "--nq2",
-        "2",
-        "--nq3",
-        "1",
-        "--prefix",
-        "Mg1B2",
-    ];
-    ok(Command::new(&alias)
-        .args(args)
-        .args(["--out-dir", "alias-output"])
-        .current_dir(&w.0)
-        .output()
-        .unwrap());
-    ok(Command::new(env!("CARGO_BIN_EXE_qeflow"))
-        .arg("gen-dyn0")
-        .args(args)
-        .args(["--out-dir", "family-output"])
-        .current_dir(&w.0)
-        .output()
-        .unwrap());
-    for name in ["Mg1B2.dyn0", "q_points.json"] {
-        assert_eq!(
-            fs::read(w.0.join("alias-output").join(name)).unwrap(),
-            fs::read(w.0.join("family-output").join(name)).unwrap()
-        );
-    }
-}
-
-#[test]
 fn mgb2_eband_and_eledos_run_all_external_steps() {
     let w = setup();
     let bin = w.0.join("qe bin");

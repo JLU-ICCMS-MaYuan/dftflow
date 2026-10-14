@@ -10,7 +10,7 @@ use crate::xml::QeGridInfo;
 pub struct QPoint {
     /// 1-based 不可约序号。
     pub index: usize,
-    /// 晶体坐标（第一布里渊区归一化）。拆分步骤使用此坐标（ph.x 输入的 `q` 为晶体坐标）。
+    /// 晶体坐标（第一布里渊区归一化）。用于坐标对照；ph.x 显式 q 输入使用下方笛卡尔坐标。
     pub q_crystal: [f64; 3],
     /// 笛卡尔坐标（tpiba = 2π/a₀）。dyn0 文件使用此坐标（与 ph.x 字节一致）。
     pub q_cart: [f64; 3],
@@ -35,7 +35,15 @@ pub struct QGridParams {
 
 impl Default for QGridParams {
     fn default() -> Self {
-        QGridParams { nk1: 1, nk2: 1, nk3: 1, k1: 0, k2: 0, k3: 0, time_reversal: None }
+        QGridParams {
+            nk1: 1,
+            nk2: 1,
+            nk3: 1,
+            k1: 0,
+            k2: 0,
+            k3: 0,
+            time_reversal: None,
+        }
     }
 }
 
@@ -111,9 +119,21 @@ pub fn generate_q_points(info: &QeGridInfo, p: &QGridParams) -> Vec<QPoint> {
                 if !in_list {
                     continue;
                 }
-                let ii = (nint(sign * xkr[0] * nk1 as f64 - 0.5 * p.k1 as f64 + 2.0 * nk1 as f64) % nk1 + nk1) % nk1 + 1;
-                let jj = (nint(sign * xkr[1] * nk2 as f64 - 0.5 * p.k2 as f64 + 2.0 * nk2 as f64) % nk2 + nk2) % nk2 + 1;
-                let kk = (nint(sign * xkr[2] * nk3 as f64 - 0.5 * p.k3 as f64 + 2.0 * nk3 as f64) % nk3 + nk3) % nk3 + 1;
+                let ii = (nint(sign * xkr[0] * nk1 as f64 - 0.5 * p.k1 as f64 + 2.0 * nk1 as f64)
+                    % nk1
+                    + nk1)
+                    % nk1
+                    + 1;
+                let jj = (nint(sign * xkr[1] * nk2 as f64 - 0.5 * p.k2 as f64 + 2.0 * nk2 as f64)
+                    % nk2
+                    + nk2)
+                    % nk2
+                    + 1;
+                let kk = (nint(sign * xkr[2] * nk3 as f64 - 0.5 * p.k3 as f64 + 2.0 * nk3 as f64)
+                    % nk3
+                    + nk3)
+                    % nk3
+                    + 1;
                 let n = ((kk - 1) + (jj - 1) * nk3 + (ii - 1) * nk2 * nk3 + 1) as usize;
                 // 仅当 n 指向另一个“未归并”的点时才归并（与 Fortran 判定一致）。
                 if n > nk as usize && equiv[n] == n as i32 {

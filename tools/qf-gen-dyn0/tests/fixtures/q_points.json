@@ -1,0 +1,40 @@
+{
+  "mode": "kpoint_grid",
+  "nk1": 2,
+  "nk2": 2,
+  "nk3": 1,
+  "qpoints": [
+    {
+      "directory": "01",
+      "index": 1,
+      "q_crystal": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "q_cart": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "weight": 0.25,
+      "is_gamma": true
+    },
+    {
+      "directory": "02",
+      "index": 2,
+      "q_crystal": [
+        0.0,
+        -0.5,
+        0.0
+      ],
+      "q_cart": [
+        0.0,
+        -0.577350269189585,
+        0.0
+      ],
+      "weight": 0.75,
+      "is_gamma": false
+    }
+  ]
+}

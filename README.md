@@ -46,7 +46,7 @@ export PATH="$HOME/.local/bin:$PATH"
 bash scripts/verify-entries.sh /absolute/path/to/binaries
 ```
 
-安装器提供全部 48 个旧名、额外 `qf-gen-dyn0` 别名以及家族入口，共 52 个名称、五份二进制。入口为指向源目录的软链接，因此应将二进制放在稳定版本目录中再安装。已有同名入口会先备份；安装目录必须与源目录不同。
+安装器提供全部 48 个旧名以及家族入口，共 51 个名称、五份二进制。独立 [dyn0 工具](tools/qf-gen-dyn0/README.md) 单独构建，不由安装器安装。入口为指向源目录的软链接，因此应将二进制放在稳定版本目录中再安装。已有同名入口会先备份；安装目录必须与源目录不同。
 
 `qe_scf` / `qe_nscf` 支持 `-i/--input`、`-c/--config`、`-r/--run`、`-s/--submit`；默认配置 `input.toml`。仅准备时不运行，`-r` 实际执行，`-s` 提交 `run_qe.sh`；运行和提交互斥。NSCF 继承 SCF 的 XML、电荷密度和 PAW 数据。
 

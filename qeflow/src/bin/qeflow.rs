@@ -3,6 +3,8 @@
 
 #[path = "../phonon_chain.rs"]
 mod phonon_chain;
+#[path = "../phonon_init.rs"]
+mod phonon_init;
 
 use clap::{Parser, Subcommand};
 use anyhow::{Context, Result};
@@ -20,6 +22,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    #[command(hide = true)]
+    QePhInitRun {
+        #[arg(short, long)]
+        config: String,
+        #[arg(short, long)]
+        input: Option<String>,
+    },
     /// SCF calculation
     QeScf {
         #[arg(short, long, default_value = "input.toml")]
@@ -140,7 +149,7 @@ enum Commands {
         config: Option<String>,
         #[arg(short = 'i', long)]
         input: Option<String>,
-        /// 只运行到生成 dyn0 为止
+        /// 使用 QE only_init 正常初始化并生成 dyn0（需要已有 SCF 数据）
         #[arg(long)]
         dyn0: bool,
         #[arg(short = 'r', long)]
@@ -247,26 +256,7 @@ enum Commands {
         #[arg(long)]
         proj: Option<String>,
     },
-    /// 生成 prefix.dyn0 与 q_points.json（内联 qf-gen-dyn0）
-    GenDyn0 {
-        #[arg(short, long)]
-        config: Option<String>,
-        /// SCF save 的 data-file-schema.xml；提供时按对称性枚举不可约 q 点
-        #[arg(long)]
-        xml: Option<String>,
-        #[arg(long, default_value_t = 1)]
-        nq1: i32,
-        #[arg(long, default_value_t = 1)]
-        nq2: i32,
-        #[arg(long, default_value_t = 1)]
-        nq3: i32,
-        #[arg(long)]
-        prefix: Option<String>,
-        #[arg(long, default_value = ".")]
-        out_dir: String,
-        #[arg(long, default_value = ".")]
-        work_dir: String,
-    },
+
 }
 
 /// 旧命令名 → 子命令（argv[0] 多调用分派，配合 install-compat.sh 的硬链接）。
@@ -288,7 +278,6 @@ const LEGACY_ENTRY_NAMES: &[(&str, &str)] = &[
     ("qe_phonon_nosplit", "qe-phonon-nosplit"),
     ("qe_phonon_split_index", "qe-phonon-split-index"),
     ("qe_phonon_split_coords", "qe-phonon-split-coords"),
-    ("qf-gen-dyn0", "gen-dyn0"),
 ];
 
 fn main() -> Result<()> {
@@ -321,6 +310,7 @@ fn main() -> Result<()> {
         .collect();
     let cli = Cli::parse_from(raw_args);
     match cli.command {
+        Commands::QePhInitRun { config, input } => phonon_init::execute(config, input),
         Commands::QeScf { config, run, submit, poscar } => {
             run_qe_pw("scf", config, poscar, run, submit)
         }
@@ -403,9 +393,7 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Commands::GenDyn0 { config, xml, nq1, nq2, nq3, prefix, out_dir, work_dir } => {
-            run_gen_dyn0(config, xml, nq1, nq2, nq3, prefix, &out_dir, &work_dir)
-        }
+
         Commands::Status { config, work_dir, prefix } => {
             let _cfg = qf_config::load(config.as_deref(), config.as_deref())?;
             let status = refresh_workflow_status(Path::new(&work_dir), &prefix)?;
@@ -556,7 +544,7 @@ fn with_args(exec_cmd: &str, args: &str, redirect: &str) -> String {
 fn run_qe_phonon_nosplit(config: Option<String>, run: bool, submit: bool) -> Result<()> {
     let ctx = create_phonon_context(config.as_deref(), None, Some("qe_phonon_nosplit"), true)?;
     prepare_root_scf(&ctx)?;
-    prepare_ph_step(&ctx, false)?;
+    prepare_ph_step(&ctx)?;
     let q2r_path = q2r_input::write_q2r_input(&ctx.workspace, &ctx.cfg, &ctx.prefix)?;
     let q2r_exec = qf_runner::resolve_qe_command(ctx.cfg.qe.executable_path(), "q2r.x");
     let matdyn_exec = qf_runner::resolve_qe_command(ctx.cfg.qe.executable_path(), "matdyn.x");
@@ -1083,9 +1071,9 @@ fn prepare_root_scf(ctx: &PhononCtx) -> Result<String> {
     )
 }
 
-/// 复刻 `ph_step.prepare_ph_nosplit_step`：写 ph.in + run_ph.sh（dyn0_only 时写出 dyn0 预处理 ph.in）。
-fn prepare_ph_step(ctx: &PhononCtx, dyn0_only: bool) -> Result<String> {
-    ph_input::write_ph_input(&ctx.workspace, &ctx.cfg, &ctx.prefix, "ph.in", dyn0_only)?;
+/// 写出完整 PH 的 ph.in 和 run_ph.sh；仅初始化由 phonon_init 处理。
+fn prepare_ph_step(ctx: &PhononCtx) -> Result<String> {
+    ph_input::write_ph_input(&ctx.workspace, &ctx.cfg, &ctx.prefix, "ph.in")?;
     let ph = qf_runner::resolve_qe_command(ctx.cfg.qe.executable_path(), "ph.x");
     let slurm_header = ctx.cfg.slurm.header.clone().unwrap_or_default();
     write_root_script(
@@ -1096,47 +1084,6 @@ fn prepare_ph_step(ctx: &PhononCtx, dyn0_only: bool) -> Result<String> {
     )
 }
 
-/// 内联 `qf-gen-dyn0`：按 XML 对称信息枚举不可约 q 网格，写 dyn0 + q_points.json。
-fn generate_dyn0_internal(ctx: &PhononCtx) -> Result<String> {
-    let ph_cfg = &ctx.cfg.qe_phonon.ph;
-    let (nq1, nq2, nq3) = ph_input::resolve_grid(ph_cfg, "qpoints", ("nq1", "nq2", "nq3"));
-    let outdir = ctx
-        .cfg
-        .qe_phonon
-        .scf
-        .get("outdir")
-        .and_then(|v| v.as_str())
-        .unwrap_or("./out");
-    let xml_path = format!(
-        "{}/{}/{}.save/data-file-schema.xml",
-        ctx.workspace,
-        outdir.trim_end_matches('/'),
-        ctx.prefix
-    );
-    let info = qf_phonon::xml::parse_qe_save_xml(Path::new(&xml_path)).map_err(|e| {
-        anyhow::anyhow!("解析 SCF XML 失败（请先完成 qe_scf）: {xml_path}\n{e}")
-    })?;
-    let params = qf_phonon::qgrid::QGridParams {
-        nk1: nq1 as i32,
-        nk2: nq2 as i32,
-        nk3: nq3 as i32,
-        ..Default::default()
-    };
-    let qpoints = qf_phonon::qgrid::generate_q_points(&info, &params);
-    let dyn0_path = Path::new(&ctx.workspace).join(format!("{}.dyn0", ctx.prefix));
-    qf_phonon::dyn0::write_dyn0(&dyn0_path, &qpoints, nq1 as i32, nq2 as i32, nq3 as i32)?;
-    qf_phonon::dyn0::write_q_points(
-        &Path::new(&ctx.workspace).join("q_points.json"),
-        &qpoints,
-        &params,
-    )?;
-    if dyn0_path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
-        Ok(dyn0_path.to_string_lossy().into_owned())
-    } else {
-        anyhow::bail!("dyn0 文件为空")
-    }
-}
-
 /// `qe_ph_nosplit`：单步 ph.x（或 --dyn0 只生成 dyn0）。
 fn run_ph_nosplit(
     config: Option<String>,
@@ -1145,19 +1092,12 @@ fn run_ph_nosplit(
     run: bool,
     submit: bool,
 ) -> Result<()> {
-    let ctx = create_phonon_context(config.as_deref(), input.as_deref(), None, true)?;
     if dyn0_only {
-        if run {
-            let path = generate_dyn0_internal(&ctx)?;
-            println!("[qe_ph_nosplit] dyn0 预处理完成: {path}");
-        } else {
-            println!("[qe_ph_nosplit] (dry-run) --dyn0 需要 -r 才会生成 dyn0");
-        }
-        refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
-        return Ok(());
+        return phonon_init::entry(config, input, run, submit);
     }
+    let ctx = create_phonon_context(config.as_deref(), input.as_deref(), None, true)?;
     prepare_root_scf(&ctx)?;
-    let script = prepare_ph_step(&ctx, false)?;
+    let script = prepare_ph_step(&ctx)?;
     println!("[qe_ph_nosplit] wrote {script}");
     qf_runner::submit_or_run(run, submit, Path::new(&ctx.workspace), "run_ph.sh")?;
     refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
@@ -1449,56 +1389,6 @@ fn check_relax_state(workdir: &str) -> &'static str {
         }
     }
     "unstarted"
-}
-
-/// `gen-dyn0`：内联 qf-gen-dyn0（XML 模式优先，回退 config 全网格）。
-#[allow(clippy::too_many_arguments)]
-fn run_gen_dyn0(
-    config: Option<String>,
-    xml: Option<String>,
-    nq1: i32,
-    nq2: i32,
-    nq3: i32,
-    prefix: Option<String>,
-    out_dir: &str,
-    work_dir: &str,
-) -> Result<()> {
-    let work_dir = if out_dir != "." { out_dir.to_string() } else { work_dir.to_string() };
-    std::fs::create_dir_all(&work_dir)?;
-    if let Some(xml) = xml.as_deref() {
-        let prefix = prefix
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("--xml 模式必须提供 --prefix"))?;
-        let info = qf_phonon::xml::parse_qe_save_xml(Path::new(xml))?;
-        let params = qf_phonon::qgrid::QGridParams {
-            nk1: nq1,
-            nk2: nq2,
-            nk3: nq3,
-            ..Default::default()
-        };
-        let qpoints = qf_phonon::qgrid::generate_q_points(&info, &params);
-        let dyn0_path = Path::new(&work_dir).join(format!("{prefix}.dyn0"));
-        qf_phonon::dyn0::write_dyn0(&dyn0_path, &qpoints, nq1, nq2, nq3)?;
-        qf_phonon::dyn0::write_q_points(&Path::new(&work_dir).join("q_points.json"), &qpoints, &params)?;
-        println!("生成 dyn0 -> {}", dyn0_path.display());
-        println!("生成 q_points.json -> {}", Path::new(&work_dir).join("q_points.json").display());
-        return Ok(());
-    }
-    let cfg = qf_config::load(config.as_deref(), config.as_deref())?;
-    let prefix = prefix
-        .clone()
-        .or_else(|| cfg.qe_phonon.prefix.clone())
-        .or_else(|| {
-            cfg.qe_phonon
-                .scf
-                .get("prefix")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "struct".to_string());
-    let path = qf_phonon::split::write_dyn0(&work_dir, &cfg, &prefix)?;
-    println!("生成 dyn0 -> {path}");
-    Ok(())
 }
 
 fn copy_save_tree(source: &Path, target: &Path) -> Result<()> {

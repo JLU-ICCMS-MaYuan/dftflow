@@ -55,3 +55,22 @@ FR-001～006、SC-001～004 的本地实现、自动测试、真实计算与安�
 ## 文档与非目标
 
 根/qeflow README、三个机器手册、Overview、AGENTS 与本 Feature 标准产物已同步。inspur/chem 未冒充完成真实验收；原始运行文件保留归档，运行目录和本机信息均不跟踪。
+
+## US3 补充验收：独立 dyn0 工具与初始化入口
+
+### 已通过
+
+- 主 workspace release/locked/offline：97 项测试通过。原生成器 2 项单元测试和 1 项内嵌别名测试移出，新增 4 项跨进程初始化测试；两种分 q 链路及非正交转换回归通过。
+- 独立工具：4 项测试通过，目录复制至仓库外后 offline/locked 测试和 release 构建再次通过；MgB₂ dyn0 与 q_points.json 和拆分前入口产物逐字节一致。无效网格、乘积溢出及缺失 XML 返回失败。
+- 初始化：默认仅准备、-r 执行、-s 原生提交且生成脚本实际执行均覆盖；不同启动目录、非默认 outdir、SCF prefix 解析、缺失电荷/波函数、QE 日志报错、dyn0 不完整和本次未生成 dyn0 均已验证。只运行 ph.x，不启动 pw.x、q2r.x、matdyn.x；仅写初始化成功标记。
+- 新版五二进制打包完成；隔离安装的 51 个入口检查通过；旧 dyn0 链接备份移除、用户独立程序与独立链接保留的迁移回归通过。
+- 主 workspace 元数据不包含独立工具，主源码不包含生成器模块或 gen-dyn0 子命令；构建来源五份哈希与打包清单一致。
+
+### 真实初始化与部署待办
+
+- 已在 sugon-amd 提交短时单 MPI 初始化作业 **1250893**，配置非默认 outdir，使用已有 MgB₂ SCF 快照的独立副本；不改原计算。仅验证初始化，正式算例默认 64 MPI 保持原配置。
+- 调度状态为 PENDING / Priority，预计 2026-10-16 15:58:35 启动；尚无真实初始化输出，不能宣称本轮真实验收通过。
+- 新制品暂存版本目录，默认安装尚未切换；按原方案等待真实初始化成功。不能把上一轮 0006 的实际验收当作本次新入口验收。
+- 后续验收：sacct 核对 COMPLETED/0:0，ph_init.out 含正常终止且不含错误，dyn0 与原 QE 列表一致，ph_init_complete.json 的 q_count=2，无新 SCF/完整 PH/后处理；原始 SCF 快照哈希不变。通过后切换全局入口并验证 51 个入口与源码/制品来源，更新任务状态。
+
+本轮证据位于忽略目录 docs/local/0006-dyn0-decouple/：tests-final.log、tool-detached-tests.log、entries.log、install-migration.log、source-manifest.json、delivery.json、original-scf-sha256.json 和 real-init/。线上 Issue 仍由用户管理。

@@ -41,16 +41,25 @@ link_entry() {
 
 }
 
+# 升级旧版本：只移除本安装器曾指向同目录 qeflow 的 dyn0 别名。
+# 独立安装的程序或指向其他目标的链接保持原样。
+legacy_dyn0="$TARGET_DIR/qf-gen-dyn0"
+if [[ -L "$legacy_dyn0" && -L "$TARGET_DIR/qeflow" ]] && \
+   [[ "$(readlink "$legacy_dyn0")" == "$(readlink "$TARGET_DIR/qeflow")" ]]; then
+    mkdir -p "$BACKUP_DIR"
+    cp -P "$legacy_dyn0" "$BACKUP_DIR/qf-gen-dyn0"
+    rm "$legacy_dyn0"
+fi
+
 # 同时安装家族入口，供生成的跨 flow 脚本使用。
 for family in qeflow vaspflow wannier90; do link_entry "$family" "$family"; done
 
-# qeflow 家族（17 个 qe_* + qf-gen-dyn0 别名；T013 合并，不交付第六个二进制）
+# qeflow 家族（17 个 qe_*；独立 dyn0 工具不由此安装）
 for entry in \
     qe_scf qe_nscf qe_eband qe_eledos qe_process_eband qe_process_eledos \
     qe_ph_nosplit qe_merge qe_q2r qe_matdyn_phband qe_matdyn_phdos \
     qe_process_phonon qe_split_submit qe_check \
-    qe_phonon_nosplit qe_phonon_split_index qe_phonon_split_coords \
-    qf-gen-dyn0; do
+    qe_phonon_nosplit qe_phonon_split_index qe_phonon_split_coords; do
     link_entry "$entry" qeflow
 done
 
@@ -80,5 +89,5 @@ done
 # scflow 家族（1 个）
 link_entry scflow scflow
 
-echo "已安装 五个家族入口、48 个旧命令与额外 qf-gen-dyn0 别名到 $TARGET_DIR"
+echo "已安装 五份家族二进制、51 个入口（含 48 个旧命令）到 $TARGET_DIR"
 echo "请确认 $TARGET_DIR 在 PATH 中：export PATH=\"$TARGET_DIR:\$PATH\""

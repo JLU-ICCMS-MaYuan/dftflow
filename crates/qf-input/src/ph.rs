@@ -29,13 +29,8 @@ pub fn write_ph_input(
     config: &Config,
     prefix: &str,
     filename: &str,
-    dyn0_only: bool,
 ) -> Result<String> {
-    let mut ph_cfg = ph_grid_config(config, prefix);
-    if dyn0_only {
-        ph_cfg.insert("start_q".to_string(), json!(1));
-        ph_cfg.insert("last_q".to_string(), json!(1));
-    }
+    let ph_cfg = ph_grid_config(config, prefix);
     write_inputph(workspace, filename, config, prefix, &ph_cfg)
 }
 

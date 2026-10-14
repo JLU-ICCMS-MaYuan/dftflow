@@ -1,6 +1,6 @@
 //! split 输入生成：枚举 full q 网格，逐 q 点写出 `NN/scf.in`、`NN/split_ph.in`、
 //! `NN/run_split.sh` 并登记 `q_index_map.json`（对齐 `qeflow/phonon/split_prepare.py`
-//! 与 `q_index_map.py`）。q 点来源优先 `q_points.json`（`qf-gen-dyn0` 产出，晶体坐标），
+//! 与 `q_index_map.py`）。q 点来源优先 `q_points.json`（旧目录兼容，晶体坐标），
 //! 缺失时回退解析 `<prefix>.dyn0`。
 
 use anyhow::{Context, Result};
@@ -20,40 +20,9 @@ pub struct SplitQEntry {
     pub q_cart: Option<[f64; 3]>,
 }
 
-/// 收集 full q 网格（晶体坐标）。
-/// 优先读取 `<workspace>/q_points.json`（`qf-gen-dyn0` 产出）；
-/// 否则解析 `<prefix>.dyn0`；最后按 `config.qe_phonon.ph` 的 nq1/nq2/nq3 全枚举。
-pub fn collect_q_points(workspace: &str, config: &Config, prefix: &str) -> Result<Vec<[f64; 3]>> {
-    let entries = load_split_q_entries(workspace, prefix)?;
-    if !entries.is_empty() {
-        return Ok(entries.into_iter().map(|e| e.q_crystal).collect());
-    }
-    let ph = &config.qe_phonon.ph;
-    let (nq1, nq2, nq3) = qf_input::ph::resolve_grid(ph, "qpoints", ("nq1", "nq2", "nq3"));
-    let nq1 = nq1.max(1);
-    let nq2 = nq2.max(1);
-    let nq3 = nq3.max(1);
-    let mut v = Vec::new();
-    for i in 0..nq1 {
-        for j in 0..nq2 {
-            for k in 0..nq3 {
-                v.push([
-                    i as f64 / nq1 as f64,
-                    j as f64 / nq2 as f64,
-                    k as f64 / nq3 as f64,
-                ]);
-            }
-        }
-    }
-    if v.is_empty() {
-        v.push([0.0, 0.0, 0.0]);
-    }
-    Ok(v)
-}
-
 /// 加载拆分所需 q 点条目：优先 `q_points.json`，回退 `<prefix>.dyn0`（目录名 `NN`）。
 pub fn load_split_q_entries(workspace: &str, prefix: &str) -> Result<Vec<SplitQEntry>> {
-    // 1) q_points.json（qf-gen-dyn0 / qeflow gen-dyn0 产出）
+    // 1) q_points.json（仅为已有计算目录保留读取兼容）
     let qp_path = format!("{workspace}/q_points.json");
     if let Ok(text) = std::fs::read_to_string(&qp_path) {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -255,21 +224,4 @@ fn entries_from_coords(coords: &[[f64; 3]]) -> Vec<SplitQEntry> {
             q_cart: None,
         })
         .collect()
-}
-
-/// 写出 `prefix.dyn0`：第 1 行 `nq1 nq2 nq3`，第 2 行 q 点数量，其后每行一个晶体坐标 q 点。
-/// 供 `qf-gen-dyn0` 与 split 流程复用（对齐 `qeflow/io_reader/ph.py:parse_dyn0_qpoints` 的格式）。
-pub fn write_dyn0(workspace: &str, config: &Config, prefix: &str) -> Result<String> {
-    let ph = &config.qe_phonon.ph;
-    let (nq1, nq2, nq3) = qf_input::ph::resolve_grid(ph, "qpoints", ("nq1", "nq2", "nq3"));
-    let qpoints = collect_q_points(workspace, config, prefix)?;
-    let nq = qpoints.len();
-    let mut s = format!("{nq1} {nq2} {nq3}\n{nq}\n");
-    for q in &qpoints {
-        s.push_str(&format!("{:.10} {:.10} {:.10}\n", q[0], q[1], q[2]));
-    }
-    let names = qf_input::filenames::derive_filenames(prefix);
-    let path = format!("{workspace}/{}", names.dyn0);
-    std::fs::write(&path, s)?;
-    Ok(path)
 }

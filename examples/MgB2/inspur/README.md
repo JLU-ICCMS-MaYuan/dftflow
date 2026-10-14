@@ -61,3 +61,35 @@ ls qe_phonon/phband/ qe_phonon/phdos/
 失败时后处理不运行。等已提交任务终止后再次 bash submit_phonon.sh 可跳过完成项、复用 SCF；已有活动作业不会重复提交。调度查询失败时退出而不猜测状态。部分提交的作业号保留。异常终止遗留 .chain-submit.lock 时，确认无活动提交进程后人工移除锁再重试。
 
 配置、结构或模式改变需要新目录；生成后的绝对路径不能随意移动。运行输出均被 Git 忽略，手册和脚本纳管。详细规格与验收见 [Issue 0006](../../../docs/specs/0006-qe-phonon-submit-chain/spec.md)。
+
+## 直接调用 dftflow 与单独初始化
+
+`prepare.sh` 仅为算例生成结构、配置和提交脚本。准备好 `input.toml`、`POSCAR` 和 `KPATH.in` 后，可直接调用实际命令：
+
+```bash
+# 按索引或坐标分 q：二选一，在各自独立目录执行
+qe_phonon_split_index -c input.toml -i POSCAR -s
+qe_phonon_split_coords -c input.toml -i POSCAR -s
+
+# 不分 q：准备输入；本例通过准备脚本生成的 nosplit_job.sh 完成全流程
+qe_phonon_nosplit -c input.toml
+sbatch nosplit_job.sh
+```
+
+分 q 命令不加 `-s`/`-r` 时只准备，加 `-s` 提交完整依赖链。`-c` 指定配置，`-i` 指定结构。不分 q 的直接 `-r`/`-s` 全流程尚有已知缺口（漏跑/重复后处理与路径处理）；本例保留显式 nosplit_job.sh 路径，修复不纳入本次工具拆分。
+
+只想取得真实 QE 的 q 点列表，已有完整 SCF 保存数据时执行：
+
+```bash
+qe_ph_nosplit -c input.toml --dyn0       # 只生成 ph_init.in 和 run_ph_init.sh
+qe_ph_nosplit -c input.toml --dyn0 -s    # 提交仅初始化作业
+# 已获得计算资源时才使用：
+qe_ph_nosplit -c input.toml --dyn0 -r
+```
+
+注意单步命令是 **qe_ph_nosplit**，完整流程命令是 **qe_phonon_nosplit**。
+`[qe_phonon].work_dir` 相对配置文件目录解析；SCF 保存树位于该工作目录的 `[qe_phonon.scf].outdir`，也可指定绝对 outdir。prefix 依次取 `[qe_phonon].prefix`、SCF prefix、结构化学式。需要 XML、电荷密度及波函数；此命令不补跑 SCF。
+
+初始化设置 `ldisp=true, only_init=true, lqdir=true`，清除 q 点/表示范围限制，等待 QE 正常退出后检查 `ph_init.out` 和 `prefix.dyn0`。成功生成 `ph_init_complete.json` 只代表初始化完成；不计算完整声子、不提交分 q 点及后处理。已有 dyn0 在实际重新初始化前归档为 `prefix.dyn0.before-init-<时间戳>`，失败不复用旧列表。
+
+自动分 q 流程已包含初始化，无需先手动执行该命令。自写 dyn0 生成器已拆为独立工具，主程序和自动流程不再调用它。

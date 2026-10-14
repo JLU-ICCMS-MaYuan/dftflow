@@ -11,5 +11,5 @@ for entry in "$work_dir"/bin/*; do
     "$entry" --help > "$work_dir/help" 2>&1 || { cat "$work_dir/help"; exit 1; }
     count=$((count + 1))
 done
-[[ "$count" == 52 ]]
-printf '全部 %s 个入口通过（48 旧名 + dyn0 别名 + 3 个额外家族名）。\n' "$count"
+[[ "$count" == 51 ]]
+printf '全部 %s 个入口通过（48 旧名 + 3 个额外家族名）。\n' "$count"

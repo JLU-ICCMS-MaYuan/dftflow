@@ -4,8 +4,8 @@
 
 ## 命令与安装
 
-- `scripts/install-compat.sh` 安装五个家族名、48 个旧名和额外 dyn0 别名，总计 52 个唯一入口；先检查源程序并备份旧入口，使用指向稳定版本目录的软链接。
-- `qf-gen-dyn0` 由 `qeflow` 的 argv[0] 分派处理；Cargo 仅有五个 binary target。
+- `scripts/install-compat.sh` 安装五份家族二进制对应的 51 个唯一入口（48 个旧名加 3 个额外家族名）；先检查源程序并备份旧入口，使用指向稳定版本目录的软链接。升级时备份移除原来指向同一 qeflow 的 dyn0 别名，保留独立工具程序。
+- 主 workspace 仅有五个 binary target；`qeflow gen-dyn0` 及别名分派已移除。[独立 dyn0 工具](../../tools/qf-gen-dyn0/README.md) 自带 Cargo 工程、锁文件与测试，不引用内部 crate、不参与自动工作流。
 - `scripts/verify-entries.sh` 在隔离目录逐一运行全部入口的 `--help`。命令名测试不替代各功能完整计算验收。
 
 ## QE 基础计算
@@ -21,6 +21,12 @@ SCF/NSCF 分别读取 `[qe_scf]` / `[qe_nscf]` 的嵌套配置，在 `qe_scf/` /
 前置、q 点及合并作业用 afterok 依赖关联；原生 sbatch --parsable 返回作业号，记录 chain_jobs.json，查询活动作业避免重复提交，失败阻止后处理。合并依据实际 outdir 和 q 映射预检查，再执行 q2r、两项 matdyn、CSV 收集与 PNG/联合 JPG 绘图，校验产物后写 chain_complete.json。
 
 [MgB₂ 算例](../../examples/MgB2/README.md) 按机器和 run/index、run/coords、run/nosplit 组织。sugon-amd 的 QE 7.4.1 小网格两种 split 已实际通过；这不代表参数收敛。登录节点与计算节点 glibc 不同时，用户级配套加载器打包脚本解决本机共享目录部署，通用 musl 静态交付仍保留。具体证据与边界见 [0006 验收](../specs/0006-qe-phonon-submit-chain/acceptance.md)。
+
+## 单步 QE 初始化
+
+`qe_ph_nosplit -c input.toml --dyn0` 只准备；加 `-s` 提交初始化任务，加 `-r` 在已有资源中执行。需要配置 outdir 内已有 SCF XML、电荷密度与波函数，不补跑 SCF。与自动链路共用 only_init/ldisp/lqdir 参数和正常终止、dyn0 有效性检查。重新运行先归档旧列表；仅初始化成功写 ph_init_complete.json，不表示完整声子完成。
+
+工作目录相对配置文件目录解析，脚本固定绝对配置、工作目录和制品路径。单步不调用独立生成器，也不执行合并、q2r、matdyn 或绘图。
 
 ## scflow
 

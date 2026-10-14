@@ -14,3 +14,8 @@
 ## 调度账户额度
 
 实际三模式同时启动触发 AssocMaxSubmitJobLimit，前置阶段非零退出，下游依赖自动取消，记录保留；依次重试复用已有 SCF。sacctmgr 只读查询确认账户存在 MaxSubmitJobs=4/8 的限制。该边界沿用已批准的提交失败处理，不隐式改为占用节点轮询、批次控制器或其他作业拓扑；更多不可约 q 点要求足够提交额度。
+
+## 工具拆分决策
+
+主流程已由 only_init 获取真实 q 列表；独立算法仍供用户离线读取 SCF XML 使用，故保留算法但移出 workspace。拒绝保留主程序对子工具的隐式调用。主项目保留 bg 读取，不再因坐标转换要求旋转矩阵/时间反演信息。独立工具仍完整解析对称性，不扩大其物理适用范围。
+--dyn0 单步初始化与分 q 前置共享输入和完成检查；仅得到 dyn0 不代表声子计算完成。初始化输入使用 ldisp/only_init/lqdir=true、recover/only_wfc=false 并清除 start_q/last_q/start_irr/last_irr 限制。

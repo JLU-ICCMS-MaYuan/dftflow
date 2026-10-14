@@ -1,5 +1,6 @@
 //! Issue 0006：一份 SCF 快照、两种 PH 拆分、Slurm 自动依赖链。
 use super::*;
+use super::phonon_init::checked_log;
 use anyhow::{bail, ensure};
 use qf_phonon::index_map::{QIndexEntry, QIndexMap};
 use serde_json::{json, Value};
@@ -168,14 +169,7 @@ fn stage_script(ctx: &PhononCtx, file: &str, command: &str) -> Result<()> {
 }
 fn prepare(ctx: &PhononCtx, config: &str, mode: &str) -> Result<()> {
     prepare_root_scf(ctx)?;
-    let mut init = ctx.cfg.clone();
-    init.qe_phonon.ph.insert("only_init".into(), json!(true));
-    init.qe_phonon.ph.insert("ldisp".into(), json!(true));
-    init.qe_phonon.ph.insert("lqdir".into(), json!(true));
-    init.qe_phonon.ph.insert("recover".into(), json!(false));
-    init.qe_phonon.ph.remove("start_q");
-    init.qe_phonon.ph.remove("last_q");
-    ph_input::write_ph_input(&ctx.workspace, &init, &ctx.prefix, "ph_init.in", false)?;
+    phonon_init::prepare_input(ctx)?;
     stage_script(
         ctx,
         "submit_pre_and_split_stage.sh",
@@ -186,26 +180,6 @@ fn prepare(ctx: &PhononCtx, config: &str, mode: &str) -> Result<()> {
         "submit_merge_and_process_phonon.sh",
         &stage_command(config, &ctx.workspace, mode, "post")?,
     )?;
-    Ok(())
-}
-fn checked_log(path: &Path, scf: bool) -> Result<()> {
-    let text = fs::read_to_string(path).with_context(|| format!("缺少输出 {}", path.display()))?;
-    let lower = text.to_lowercase();
-    ensure!(
-        text.contains("JOB DONE")
-            && !["error in routine", "convergence not achieved", "%%%%%%%%"]
-                .iter()
-                .any(|s| lower.contains(s)),
-        "计算未正常完成: {}",
-        path.display()
-    );
-    if scf {
-        ensure!(
-            lower.contains("convergence has been achieved"),
-            "SCF 未收敛: {}",
-            path.display()
-        );
-    }
     Ok(())
 }
 fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
@@ -225,19 +199,6 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
     }
     Ok(())
 }
-fn has_wfc(dir: &Path) -> Result<bool> {
-    for e in fs::read_dir(dir)? {
-        let e = e?;
-        if e.file_type()?.is_dir() {
-            if has_wfc(&e.path())? {
-                return Ok(true);
-            }
-        } else if e.file_name().to_string_lossy().contains("wfc") && e.metadata()?.len() > 0 {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
 fn pre(ctx: &PhononCtx) -> Result<()> {
     let ws = Path::new(&ctx.workspace);
     let snapshot = ws.join("scf_snapshot");
@@ -251,13 +212,7 @@ fn pre(ctx: &PhononCtx) -> Result<()> {
         }
         checked_log(&ws.join("scf.out"), true)?;
         let src = ws.join(outdir(ctx)?);
-        let save = src.join(format!("{}.save", ctx.prefix));
-        ensure!(
-            save.join("data-file-schema.xml").is_file()
-                && save.join("charge-density.dat").is_file()
-                && has_wfc(&src)?,
-            "SCF 保存文件或波函数不完整"
-        );
+        phonon_init::check_save(ctx)?;
         ensure!(
             !src.join("_ph0").exists(),
             "首次快照前已有 PH scratch，请使用新目录"
@@ -269,15 +224,8 @@ fn pre(ctx: &PhononCtx) -> Result<()> {
         copy_tree(&src, &tmp)?;
         fs::rename(&tmp, &snapshot)?;
     }
-    if checked_log(&ws.join("ph_init.out"), false).is_err()
-        || !ws.join(format!("{}.dyn0", ctx.prefix)).exists()
-    {
-        let cmd = format!(
-            "{} < ph_init.in > ph_init.out 2>&1",
-            qf_runner::resolve_qe_command(ctx.cfg.qe.executable_path(), "ph.x")
-        );
-        qf_runner::run_shell(&cmd, ws)?;
-        checked_log(&ws.join("ph_init.out"), false)?;
+    if phonon_init::check_output(ws, &ctx.prefix).is_err() {
+        phonon_init::run_init(ctx)?;
     }
     ensure!(!load_points(ctx)?.is_empty(), "初始化未产生 q 点");
     Ok(())

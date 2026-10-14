@@ -80,7 +80,7 @@ scripts/install-compat.sh <bin_dir> [target_dir]
 
 | 家族二进制 | 覆盖旧命令 |
 | --- | --- |
-| `qeflow` | 17 个 `qe_*` + `qf-gen-dyn0` 别名 |
+| `qeflow` | 17 个 `qe_*`（独立 dyn0 工具见 `tools/qf-gen-dyn0`） |
 | `vaspflow` | 19 个 `vasp_*` |
 | `scflow` | `scflow` |
 | `wannier90` | 4 个 `wannier_*` |
