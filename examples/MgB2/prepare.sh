@@ -31,7 +31,7 @@ prefix = "MgB2"
 work_dir = "$work/qe_phonon"
 [qe_phonon.scf]
 prefix = "MgB2"
-outdir = "./out"
+outdir = "./tmp"
 kpoints = [4, 4, 2]
 ecutwfc = 40.0
 ecutrho = 320.0

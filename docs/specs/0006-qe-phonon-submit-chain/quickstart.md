@@ -7,3 +7,7 @@
 ## 单独取得 q 点列表
 
 已有 SCF 数据时直接使用 `qe_ph_nosplit -c input.toml --dyn0 -s`。省略 `-s` 仅准备；`-r` 用于已有计算资源。完整分 q 流程仍直接运行 `qe_phonon_split_index -c input.toml -i POSCAR -s` 或 `qe_phonon_split_coords -c input.toml -i POSCAR -s`，内部自动初始化。离线小工具见 [独立 dyn0 手册](../../../tools/qf-gen-dyn0/README.md)。
+
+## 默认保存目录
+
+新配置的 `[qe_phonon.scf].outdir` 默认为 `./tmp`；MgB2 准备脚本亦采用该值。相对位置以声子工作目录为基准，各 q 子目录有独立 tmp。若继续已有 ./out 的计算，保留原配置，不仅修改 ph_init.in，也不把旧结果直接当作 tmp 数据。

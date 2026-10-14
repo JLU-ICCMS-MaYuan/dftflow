@@ -225,7 +225,7 @@ lattice_mode = "ibrav_angstrom"
 [qe_phonon.scf]
 calculation = "scf"
 restart_mode = "from_scratch"
-outdir = "./out"
+outdir = "./tmp"
 "#;
 
 /// 加载配置：读取 `path`（input.toml），在内置默认值上递归深合并，并解析 `pp_dir` 路径。

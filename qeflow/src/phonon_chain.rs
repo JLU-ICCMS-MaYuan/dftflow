@@ -67,7 +67,7 @@ fn outdir(ctx: &PhononCtx) -> Result<PathBuf> {
         .scf
         .get("outdir")
         .and_then(Value::as_str)
-        .unwrap_or("./out");
+        .unwrap_or("./tmp");
     let p = PathBuf::from(s);
     ensure!(
         !p.is_absolute()

@@ -12,3 +12,7 @@
 - ph_init_complete.json：prefix、q_count、stage=initialization；在正常退出和 dyn0 校验后原子写入。只表示初始化成功，重新执行前删除，不影响完整声子状态。
 - prefix.dyn0.before-init-时间戳：单次重初始化之前归档的旧列表，防止本次缺失输出时误读。
 - 独立工具 q_points.json：保留原工具 schema，含 q_cart/q_crystal/权重等字段；不作为新主流程输入。主项目仍能读取旧计算目录对应数据。
+
+## US4 保存目录缺省值
+
+省略 qe_phonon.scf.outdir 时保存树为工作目录下 tmp/prefix.save；各 q 的树为数字目录/tmp/prefix.save，PH 数据合并至工作目录/tmp/_ph0。显式目录覆盖此默认值；scf_snapshot 的名称和结构不变。

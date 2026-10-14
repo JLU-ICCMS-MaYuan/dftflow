@@ -82,3 +82,14 @@ FR-001～006、SC-001～004 的本地实现、自动测试、真实计算与安�
 - 独立 qf-gen-dyn0 单独编译、打包、安装，不属于主 workspace 或主安装器；终端命令指向独立制品，输出与冻结 MgB₂ 基线逐字节一致。主 qeflow 不再接受 gen-dyn0 子命令。
 - 真实初始化 1250893 已通过，T013/T014/T015 收尾完成；原有版本与计算目录保留。
 - 本轮证据在 docs/local/rebuild-20261014-180957/：workspace-tests.log、workspace-build.log、tool-tests.log、tool-build.log、entrypoints.log、installed-entrypoints.json、install.log、tool-artifact.json、source-manifest.json、real-init-acceptance.json、delivery.json。docs/local/latest-rebuild.json 指向最新交付记录。
+
+## US4 补充验收：默认 outdir 统一为 ./tmp
+
+- FR-010：内置配置、PH 输入、初始化保存树检查、自动链快照与分 q 目录、独立合并及旧 coords 拆分回退均采用 ./tmp；显式配置仍覆盖默认值。新 MgB2 准备脚本同步写 ./tmp，历史运行目录保留。
+- SC-007：`bash scripts/build-native.sh test --release --locked --offline --target-dir target/rebuild-20261014-180957 -p qeflow -p qf-config -p qf-input -p qf-phonon` 共 **32 项通过**。外部 QE 替身从真实生成输入解析 outdir 并检查保存文件，未再硬编码 out 路径。
+- 新增 `default_tmp_runs_both_modes_and_standalone_merge`：省略 outdir 的 index/coords 完整模拟链均正常完成，SCF 各运行一次，根及各 q 的 tmp 保存树、PH patterns 合并与公开 qe_merge 入口通过。新增 `omitted_outdir_initializes_existing_tmp_save`：单独初始化从已有 tmp 读取数据，只执行 PH。原显式 ./out 和 custom-save 测试继续通过。
+- `bash -n examples/MgB2/prepare.sh`、Overview/Spec 相对链接与 Git diff 空白检查通过。
+- 五份主程序 release/locked/offline 构建并以新版本目录打包安装；隔离安装的 51 个入口检查通过，五份源/打包/已安装制品指纹核对通过。安装后实际调用 nosplit/index/coords/--dyn0 的仅准备模式，SCF/PH 输入均含 `outdir = './tmp'`；显式 ./out 初始化输入保留该值。独立 qf-gen-dyn0 安装目标保持原样。
+- 本轮是默认目录和程序衔接验证，**没有重新提交真实 QE 数值作业**，不将模拟回归作为新的数值对照证据；既有数值验收仍以此前记录为准。
+
+本机证据：docs/local/outdir-tmp-tests.log、outdir-tmp-build.log、outdir-tmp-package.log、outdir-tmp-entries.log、outdir-tmp-install.log、outdir-tmp-delivery.json 与 outdir-tmp-installed-check/。真实路径和生成输入不进入 Git。

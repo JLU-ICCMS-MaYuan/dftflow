@@ -86,7 +86,7 @@ fn write_inputph(
         .scf
         .get("outdir")
         .and_then(|v| v.as_str())
-        .unwrap_or("./out")
+        .unwrap_or("./tmp")
         .to_string();
     fs::create_dir_all(workspace)?;
     let path = format!("{workspace}/{filename}");

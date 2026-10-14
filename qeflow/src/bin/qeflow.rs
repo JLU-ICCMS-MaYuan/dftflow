@@ -452,7 +452,7 @@ fn run_qe_phonon_merge(config: Option<String>, input: Option<String>) -> Result<
     if map.qpoints.is_empty() {
         anyhow::bail!("缺少 q_index_map.json 或其中不包含 qpoints，请先运行 qe_phonon_split_*");
     }
-    let outdir = cfg.qe_phonon.scf.get("outdir").and_then(|v|v.as_str()).unwrap_or("./out");
+    let outdir = cfg.qe_phonon.scf.get("outdir").and_then(|v|v.as_str()).unwrap_or("./tmp");
     let result = if map.qpoints.iter().all(|e|e.q_cart.is_some()) { qf_phonon::merge::merge_split_results_with_outdir(&work_dir,&prefix,&map,outdir)? } else { qf_phonon::merge_split_results(&work_dir,&prefix,&map)? };
     if result.success {
         println!("[qe_phonon_merge] 成功回收 {} 个 q 点 dyn 文件", result.dyn_summaries.len());

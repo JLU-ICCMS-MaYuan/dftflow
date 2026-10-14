@@ -45,12 +45,17 @@ if name in ('squeue','sacct'):
  jobs=json.loads((root/'states').read_text());j=sys.argv[sys.argv.index('-j')+1]
  print(jobs.get(j,'COMPLETED'));sys.exit(0)
 s=sys.stdin.read()
+if name in ('pw.x','ph.x'):
+ match=re.search(r"outdir\s*=\s*['\"]([^'\"]+)['\"]",s)
+ assert match, 'missing outdir in QE input'
+ save_root=Path(match.group(1))
 if name=='pw.x':
- p=Path('out/Si.save');p.mkdir(parents=True,exist_ok=True)
+ p=save_root/'Si.save';p.mkdir(parents=True,exist_ok=True)
  (p/'data-file-schema.xml').write_text('<root><b1>1 0.577350269 0</b1><b2>0 1.154700538 0</b2><b3>0 0 1</b3><rotation>1 0 0 0 1 0 0 0 1</rotation></root>')
  (p/'charge-density.dat').write_text('density');(p/'wfc1.dat').write_text('wavefunction')
  print('convergence has been achieved\nJOB DONE.');sys.exit(0)
 if name=='ph.x':
+ assert (save_root/'Si.save/wfc1.dat').is_file(), 'missing SCF wavefunction'
  if 'only_init = .true.' in s:
   Path('Si.dyn0').write_text('2 2 1\n2\n0 0 0\n0.5 0.2886751345 0\n')
  else:
@@ -59,7 +64,7 @@ if name=='ph.x':
   cart='0 0 0' if Path.cwd().name=='01' else '0.5 0.2886751345 0'
   dest=Path('Si.dyn'+str(idx)) if 'ldisp = .true.' in s else Path('Si.dyn')
   dest.write_text('q = ( '+cart+' )\nfreq ( 1) = 1 [THz] = 33 [cm-1]\n')
-  p=Path('out/_ph0/Si.phsave');p.mkdir(parents=True,exist_ok=True);(p/('patterns.'+str(idx)+'.xml')).write_text('patterns')
+  p=save_root/'_ph0/Si.phsave';p.mkdir(parents=True,exist_ok=True);(p/('patterns.'+str(idx)+'.xml')).write_text('patterns')
  print('JOB DONE.');sys.exit(0)
 if name=='q2r.x':Path('Si.fc').write_text('forceconstants')
 if name=='matdyn.x':
@@ -235,4 +240,36 @@ fn changed_inputs_reject_stale_results_and_old_scf_dirs_are_recognized() {
     fs::write(legacy.join("01/split_ph.out"), "JOB DONE.").unwrap();
     let state = qf_state::refresh_split_task_status(&legacy).unwrap();
     assert_eq!(state["01"], qf_state::TaskState::Finished);
+}
+
+#[test]
+fn default_tmp_runs_both_modes_and_standalone_merge() {
+    for mode in ["index", "coords"] {
+        let w = setup(mode);
+        let path = w.0.join("input.toml");
+        let config = fs::read_to_string(&path).unwrap().replace("outdir='./out'\n", "");
+        fs::write(&path, config).unwrap();
+        ok(cli(&w, &["-r"], &[]));
+        for input in ["scf.in", "ph_init.in", "01/split_ph.in", "02/split_ph.in"] {
+            assert!(fs::read_to_string(w.0.join("calc").join(input)).unwrap()
+                .contains("outdir = './tmp'"), "{mode}: {input}");
+        }
+        for dir in ["tmp", "01/tmp", "02/tmp"] {
+            assert!(w.0.join("calc").join(dir).join("Si.save/wfc1.dat").exists());
+        }
+        assert!(!w.0.join("calc/out").exists());
+        assert!(w.0.join("calc/chain_complete.json").exists());
+        let calls = fs::read_to_string(w.0.join("calls")).unwrap();
+        assert_eq!(calls.lines().filter(|l| l.starts_with("pw.x")).count(), 1);
+        let phsave = w.0.join("calc/tmp/_ph0/Si.phsave");
+        for i in [1, 2] {
+            assert!(phsave.join(format!("patterns.{i}.xml")).exists());
+        }
+        // Exercise the public merge CLI's own default-path resolution.
+        fs::remove_dir_all(&phsave).unwrap();
+        ok(command(&w).args(["qe-merge", "-c"]).arg(&path).output().unwrap());
+        for i in [1, 2] {
+            assert!(phsave.join(format!("patterns.{i}.xml")).exists());
+        }
+    }
 }

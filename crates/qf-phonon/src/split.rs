@@ -179,7 +179,7 @@ pub fn generate_split_inputs(
         qf_input::pw::write_phonon_scf_input(&q_dir, config, structure, prefix)?;
         if mode_key == "split_assign_coords" {
             let q_cart = if let Some(cart)=entry.q_cart {cart} else {
-                let od=config.qe_phonon.scf.get("outdir").and_then(|v|v.as_str()).unwrap_or("./out");
+                let od=config.qe_phonon.scf.get("outdir").and_then(|v|v.as_str()).unwrap_or("./tmp");
                 let info=crate::xml::parse_qe_save_xml(&Path::new(workspace).join(od).join(format!("{prefix}.save/data-file-schema.xml")))?;
                 let mut cart=[0.;3]; for i in 0..3 {for j in 0..3 {cart[i]+=entry.q_crystal[j]*info.bg[j][i];}} cart
             };

@@ -71,7 +71,7 @@ pub(super) fn check_save(ctx: &PhononCtx) -> Result<()> {
         .scf
         .get("outdir")
         .and_then(Value::as_str)
-        .unwrap_or("./out");
+        .unwrap_or("./tmp");
     let root = Path::new(&ctx.workspace).join(od);
     let save = root.join(format!("{}.save", ctx.prefix));
     for name in ["data-file-schema.xml", "charge-density.dat"] {

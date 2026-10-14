@@ -1,15 +1,13 @@
-# scflow 超导后处理
+# scflow 功能导航
 
-入口：`scflow -c input.toml`；实现：`scflow/`。
+[返回总览](README.md)
 
-- 输入：旧式 `*.dyn*.elph*` 或原生 `elph_dir/elph.inp_lambda.N`；可选 `*.dynN` 与 `split_ph.out.N / ph_no_split.out / *.ph.out`。
-- 配置：`input.toml` 的 `[scflow]` 段，路径相对配置文件目录解析。
-- 输出：direct/a2f CSV、`result.json`、Tc 曲线和文章视图 PDF，以及从 `ph.out` 提取的 CIF/VASP 结构。
-- 运行边界：只做后处理，不调用 QE，不修改原始计算文件。
+原链接保留，当前完整说明已归入 [scflow 家族](scflow/README.md) 与 [scflow CLI](scflow/scflow.md)。
 
-功能规格：[0001](../specs/0001-scflow-qe-superconductivity/spec.md)。
+```bash
+scflow -c input.toml
+```
 
-- 精确零频：只允许对 λ=0 的模按零贡献处理，并在 result.json 记录原始 γ；λ 非零则报错。
-- 各展宽状态隔离；McMillan / Allen–Dynes 公式使用 float64 运算。
-- 真实归档验收入口：`test_auto/MgB2/validate_scflow_isif4.py`，显式运行两组 μ* 的完整检查。
-- Eliashberg 附 `resolved/resolution_limit` 搜索状态；ISIF4 的两套 μ* 共 20 份输出已通过完整链路测试，其余材料仍以验收记录为准。
+当前生产 CLI 使用 Rust qf-scflow，读取已有 QE EPC 文件后计算分展宽 λ、频率矩与 Tc，输出 CSV/JSON/PDF。仅有 a2F.dat 不能使用完整 CLI；不要照搬早期单曲线或 Python 入口说明。普通声子矩阵也不能替代 EPC 输入。
+
+实现与数值边界见 [核心库](../../crates/qf-scflow/src/lib.rs)、[0001](../specs/0001-scflow-qe-superconductivity/spec.md)、[0004](../specs/0004-dftflow-rust/spec.md)。本页不把历史物理样本对照扩展为任意材料的收敛保证。

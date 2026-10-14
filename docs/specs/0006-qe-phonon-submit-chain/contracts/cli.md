@@ -12,3 +12,7 @@ qe_phonon_split_index / qe_phonon_split_coords 的 -c/-i 不变；无 -r/-s 仅�
 - 主入口：qe_ph_nosplit -c input.toml --dyn0 [-r|-s]，可用 -i POSCAR。无执行参数只准备。配置内 work_dir 相对配置目录，明确 outdir 对应已有 SCF 保存树；不自动寻找其他 SCF 目录。
 - --dyn0 使用 ph_init.in/ph_init.out/run_ph_init.sh；成功检查后写 ph_init_complete.json，不刷新完整 PH 为完成。执行失败清除旧初始化成功标记并返回非零，提交失败保留输入但不标记完成。
 - qeflow gen-dyn0 子命令移除，主安装入口总数 51。历史数据只读兼容不等于支持旧生成命令。
+
+## 默认 outdir（US4）
+
+`[qe_phonon.scf].outdir` 缺省为 `./tmp`，相对声子工作目录解析；各 q 子任务复制到自己的 tmp。显式配置优先，原有 `outdir="./out"` 继续生效。不修改 CLI 参数、fildyn 或工作目录命名，也不搬迁旧结果。

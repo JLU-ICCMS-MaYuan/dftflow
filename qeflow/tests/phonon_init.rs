@@ -147,3 +147,17 @@ fn qe_failure_bad_dyn0_and_stale_dyn0_never_mark_complete() {
         assert!(!w.0.join("calc/ph_init_complete.json").exists());
     }
 }
+
+#[test]
+fn omitted_outdir_initializes_existing_tmp_save() {
+    let w = setup();
+    let path = w.0.join("input.toml");
+    let config = fs::read_to_string(&path).unwrap().replace("outdir='custom-save'\n", "");
+    fs::write(&path, config).unwrap();
+    fs::rename(w.0.join("calc/custom-save"), w.0.join("calc/tmp")).unwrap();
+    ok(cli(&w, &["-r"], &[]));
+    assert!(fs::read_to_string(w.0.join("consumed")).unwrap().contains("outdir = './tmp'"));
+    assert!(w.0.join("calc/ph_init_complete.json").exists());
+    assert!(!w.0.join("calc/out").exists());
+    assert_eq!(fs::read_to_string(w.0.join("calls")).unwrap(), "ph.x \n");
+}

@@ -62,6 +62,8 @@ qe_ph_nosplit -c input.toml --dyn0 -r
 ```
 
 注意单步命令是 **qe_ph_nosplit**，完整流程命令是 **qe_phonon_nosplit**。
+默认 `[qe_phonon.scf].outdir` 为 `./tmp`，SCF 与 PH 初始化/分 q/合并共用该设置；显式设置其他目录会覆盖默认值。已有运行目录若显式使用 `./out`，继续按原配置读取，不自动搬迁或改写历史输入。
+
 `[qe_phonon].work_dir` 相对配置文件目录解析；SCF 保存树位于该工作目录的 `[qe_phonon.scf].outdir`，也可指定绝对 outdir。prefix 依次取 `[qe_phonon].prefix`、SCF prefix、结构化学式。需要 XML、电荷密度及波函数；此命令不补跑 SCF。
 
 初始化设置 `ldisp=true, only_init=true, lqdir=true`，清除 q 点/表示范围限制，等待 QE 正常退出后检查 `ph_init.out` 和 `prefix.dyn0`。成功生成 `ph_init_complete.json` 只代表初始化完成；不计算完整声子、不提交分 q 点及后处理。已有 dyn0 在实际重新初始化前归档为 `prefix.dyn0.before-init-<时间戳>`，失败不复用旧列表。
