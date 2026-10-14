@@ -50,3 +50,25 @@ test_auto/MgB2/local_run/*
 # 可重建发布制品
 dist/
 scripts/linux/.sources/
+
+# Python 工具缓存与覆盖率报告
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# 编辑器及 macOS 临时文件
+*.swp
+*.swo
+*~
+._*
+
+# Rust 格式化备份及覆盖率产物
+*.rs.bk
+*.profraw
+*.profdata
+
+# 根目录旧 .codex 占位文件；未来同名目录仍可存放共享配置
+/.codex
+!/.codex/

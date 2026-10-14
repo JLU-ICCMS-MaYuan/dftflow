@@ -64,3 +64,10 @@
 - [x] 仅移除 `test_auto/MgB2/local_run/vasp_cohp_uniform/WAVECAR`；8 个重写提交逐一核对，无其他文件变化。
 - [x] 验证当前树、提交数量、本地文件 SHA-256 和其他 refs 不变，rust 可达历史不再包含目标文件/blob。
 - [x] `git push -u origin rust` 成功，建立 origin/rust 跟踪关系；证据见 acceptance.md 补充验收。
+
+## T011 保留本地文件并完善忽略规则（FR-001/FR-002、SC-001/SC-006）
+
+- [x] 补齐用户指定的缓存、编辑器/macOS 临时文件、Rust 备份与覆盖率忽略规则。
+- [x] 空 .codex 仅 git rm --cached，并忽略文件但放行未来同名目录。
+- [x] 105 个历史输出均未跟踪且命中忽略规则，106 个本地文件（含 .codex）SHA-256 不变；8 个输入类文件仍跟踪。
+- [x] 13 个新增忽略场景与临时仓库中的 .codex/config.toml 放行验证通过；不改写历史。
