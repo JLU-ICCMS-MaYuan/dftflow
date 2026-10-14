@@ -28,7 +28,7 @@
 - **需求与授权**：用户要求参考 EPWpy 新增 Rust epwflow，使用 big-project-planer 规划并通过 Issue/Spec 实现；七项访谈后明确“确认开始”。沿用 Rust/Bash 语言例外。
 - **已确认范围**：结构/赝势/配置起步、校验后复用、nosplit/index/coords、各向同性与各向异性常规模型、固定物理参数、受限 Tc 搜索、数据和图表、真实 MgB₂ 小网格对照；不包含材料收敛研究、自动 Wannier 调参、SOC/磁性/全带宽/显式库仑矩阵。
 - **预算**：真实试算每作业最多 1 节点/64 MPI/2 小时，同时最多 2 个；本次累计 8 节点小时、数据 100 GiB，参考和失败重试计入。授权仅在上述上限内自动试算，达到上限保留现场并停止追加。
-- **追踪与状态**：已确认总体规划 `docs/plan/epwflow-superconductivity.md`；本地 Epic 草稿 `docs/specs/0007-epwflow-superconductivity/issue-draft.md` 待最终草案审查，五个子 Feature 的详细 Spec/实现尚未开始。0007 是本地编号，线上 Gitee Issue 仍由用户管理。保留原有未提交文件，不提交其他工作。
+- **追踪与状态**：已确认总体规划 `docs/plan/epwflow-superconductivity.md`；用户已确认本地 Epic `docs/specs/0007-epwflow-superconductivity/issue-draft.md`，进入子 Feature 审查。F1 本地 0008 草稿位于 `docs/specs/0008-epwflow-foundation/issue-draft.md`，待该版确认；五个子 Feature 的详细 Spec/实现尚未开始。编号为本地需求编号，线上 Gitee Issue 仍由用户管理。保留原有未提交文件，不提交其他工作。
 
 
 ### [2026-10-14] 修复 MgB2 根运行目录的提交环境
