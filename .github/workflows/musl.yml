@@ -1,9 +1,9 @@
 name: musl-static-build
 on:
   push:
-    branches: [qeflow-rust, main]
+    branches: [master]
   pull_request:
-    branches: [qeflow-rust, main]
+    branches: [master]
 jobs:
   build:
     runs-on: ubuntu-latest

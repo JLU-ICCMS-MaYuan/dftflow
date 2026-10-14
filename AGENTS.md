@@ -24,6 +24,12 @@
 
 ## 需求处理记录
 
+### [2026-10-14] 分支改名与 Rust 默认主分支切换
+- **需求**：用户要求“我希望把 master 分支改名为 python，然后把 rust 改名为 master，并且把改名后的 rust 设置为默认主分支。”
+- **方案**：先将原 master（`7a172fe`）保全到本地及远程 python，再将原 rust 改名为 master，通过普通快进推送更新远程 master，最后移除旧远程 rust 分支名；保留本地备份引用及冻结标签。
+- **文档与构建**：README 明确 master/python/冻结参考标签的用途；musl 工作流的 push 与 pull_request 分支过滤同步为 master。历史记录中的旧分支名不改写。
+- **验收**：核对 python 仍指向原 master、原 rust 提交包含于新 master；Gitee 默认 HEAD 指向 master，两个本地分支分别跟踪对应远程；切换证据仅存 `docs/local/branch-rename-20261014-125405.json`。分支切换不改变计算逻辑，不重跑数值计算。
+
 ### [2026-10-14] 规范整理根目录 .gitignore
 - **需求**：用户要求“重新规范的整齐的书写 gitignore”。
 - **实施**：按构建依赖、Python 缓存、Rust 产物、测试输出、本机资料、参考手册、临时文件七类整理，统一中文注释和分隔线，例外规则紧随对应忽略项。

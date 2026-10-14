@@ -4,6 +4,12 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 五个 Rust 家族程序为 `qeflow`、`vaspflow`、`scflow`、`wannier90`、`substitution`；`mattersim_opt` 按约定保留 Python。当前验收范围与证据见 [0004 收敛验收](docs/specs/0004-dftflow-rust/acceptance-20261014.md)。
 
+## 分支约定
+
+- `master`：默认主分支，承接原 `rust` 分支的 Rust 实现及后续开发。
+- `python`：保留原 `master` 分支的 Python 版本，切换时的提交为 `7a172fe`。
+- `python-reference-0004`：迁移数值对照使用的冻结标签（`9396b3a`），与 `python` 分支用途不同，继续保留。
+
 ## 构建
 
 ```bash
