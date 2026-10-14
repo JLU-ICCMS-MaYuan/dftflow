@@ -24,6 +24,11 @@
 
 ## 需求处理记录
 
+### [2026-10-14] MgB2 按机器组织 QE 声子测试示例
+- **需求与授权**：用户要求使用 qe-7.4.1-amd-oneAPI2024，并把测试与手册放在 examples/MgB2/sugon-amd；inspur、chem 沿用相同目录规则。
+- **方案与实施**：共享 Bash 准备脚本生成机器目录下 run/ 的输入与显式 Slurm 顺序执行脚本；机器路径仅保存在 docs/local 的环境文件。sugon-amd 使用本机 AMD 配置；其他机器保留待填写模板，不臆造配置。沿用项目 Bash 计算脚本语言例外。
+- **验证与边界**：核对 QE 7.4.1 四个计算程序；准备输入、检查脚本和 TOML，确保运行文件不跟踪；未提交实际计算，小网格仅验证流程。
+
 ### [2026-10-14] 本机安装 dftflow 与平台构建配置分离
 - **需求与授权**：用户要求安装 dftflow，并确认“编译需要区分在 linux x86_64上的编译文件和 macOS_arm64的编译文件，这样就不用每次编译都修改同一份编译文件了。”
 - **方案**：默认 Cargo 配置保持平台无关；Linux x86_64 glibc 与 macOS arm64 分别使用 `.cargo/linux-x86_64.toml`、`.cargo/macos-arm64.toml` 和独立产物目录；`scripts/build-native.sh` 自动按本机平台分派，既有 Linux musl 静态交付配置独立保留。沿用现有 Rust 项目和 Bash 构建脚本。
