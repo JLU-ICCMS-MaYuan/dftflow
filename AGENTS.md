@@ -24,6 +24,10 @@
 
 ## 需求处理记录
 
+### [2026-10-14] 移除临时 Python 参考工作树
+- **需求**：用户明确不再需要 dftflow-py 工作树，要求删除。
+- **执行与验证**：确认无未提交改动，忽略文件均为 Python/pytest 缓存后，通过 git worktree remove 移除目录及注册信息；主工作树、python/master 分支和 python-reference-0004 标签保留。
+
 ### [2026-10-14] 分支改名与 Rust 默认主分支切换
 - **需求**：用户要求“我希望把 master 分支改名为 python，然后把 rust 改名为 master，并且把改名后的 rust 设置为默认主分支。”
 - **方案**：先将原 master（`7a172fe`）保全到本地及远程 python，再将原 rust 改名为 master，通过普通快进推送更新远程 master，最后移除旧远程 rust 分支名；保留本地备份引用及冻结标签。
