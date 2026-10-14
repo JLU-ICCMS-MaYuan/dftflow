@@ -1,0 +1,6 @@
+# 仅 scripts/linux/build.sh 显式加载。交付目标保持 musl 默认静态链接；
+# host 构建脚本需要 dlopen(libclang)，故仅 host 禁用 crt-static。
+# 固定版本 Cargo 通过 RUSTC_BOOTSTRAP=1 启用 host-config/target-applies-to-host。
+target-applies-to-host = false
+[host]
+rustflags = ["-C", "target-feature=-crt-static"]

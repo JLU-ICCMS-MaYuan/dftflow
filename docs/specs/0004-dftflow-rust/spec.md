@@ -133,3 +133,14 @@ dftflow/                              # 仓库根 = cargo 虚拟 workspace
 - **R-003 绘图替代**：`plotters` 覆盖 PNG/JPG；PDF 需经 SVG 后端与纯 Rust 转换组件验证，`spglib` 也不替代 CIF 写出。
 - **R-004 目录与依赖**：P0 不能将 `qeflow-rust/` 直接改名为已存在的 `qeflow/`；`substitutionflow` 仍导入 `qeflow.common`，多个包仍导入 `public`。只在 P5 反向依赖清零后删除并改名。
 - **R-005 基线与构建**：测试脚本当前被忽略，所引 `validate_scflow_isif4.py` 不存在；静态 OpenBLAS、spglib 与 PDF 转换须先通过 Linux musl 可行性验证。
+
+
+## [2026-10-14] 缺口补齐原始需求
+
+> 填补完成所有实质缺口：完成 qe 基础命令完整迁移，scflow 完成 openbls 接入测试，openblas 我已经安装好了。完成数值验收测试。完成命令环境切换。我只能在 macos 上完成 linux 交付。我不明白为什么一定要在 linux 上测试。他们只要编译环境一样，能保证 rust 编译为二进制文件。我直接把二进制文件拷贝到 linux 机器上运行不就行了。完成其余二进制的收敛。
+>
+> 测试体系依然是 MgB2. 继续使用 issue 和 spec 完成。
+
+### 本轮实施结论
+
+用户已授权补齐并测试：沿用 0004 与 MgB2 基线，Rust 实现 SCF/NSCF 输入、运行、提交及参数兼容；接入 OpenBLAS 并去除数值豁免；安装五个家族二进制和 48 个旧入口加 dyn0 别名。macOS 上通过 Linux amd64 容器构建 musl 产物并作离线验证，无需远程 Linux 开发机。真实 Slurm/QE/VASP 集群运行与容器离线验证分别记录。线上 Gitee 仍由用户管理。

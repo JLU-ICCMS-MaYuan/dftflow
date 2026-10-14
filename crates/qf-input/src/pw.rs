@@ -3,9 +3,12 @@
 use anyhow::Result;
 use qf_config::{Config, SectionMap};
 use qf_crystal::kmesh::{get_kpoints_from_spacing, KmeshSpec};
-use qf_crystal::lattice::{write_atomic_positions, write_cell_parameters_if_needed, write_system_lattice};
+use qf_crystal::lattice::{
+    write_atomic_positions_with_precision, write_cell_parameters_with_precision, write_system_lattice,
+};
 use qf_crystal::Structure;
 use serde_json::{json, Value};
+use std::path::PathBuf;
 
 use crate::species::write_atomic_species;
 use crate::to_qe_value;
@@ -74,6 +77,10 @@ pub fn write_pw_input(
     prefix: &str,
     kpoints: &str,
 ) -> Result<String> {
+    write_pw_input_with_precision(config, structure, params, prefix, kpoints, 17)
+}
+
+pub fn write_pw_input_with_precision(config: &Config, structure: &Structure, params: &PwParams, prefix: &str, kpoints: &str, precision: usize) -> Result<String> {
     let mut s = String::new();
     s.push_str("&CONTROL\n");
     s.push_str(&format!("  prefix = {}\n", to_qe_value(&json!(prefix))));
@@ -104,8 +111,8 @@ pub fn write_pw_input(
     s.push_str("/\n\n");
 
     s.push_str(&write_atomic_species(config, &structure.elements)?);
-    s.push_str(&write_atomic_positions(structure));
-    s.push_str(&write_cell_parameters_if_needed(config, structure)?);
+    s.push_str(&write_atomic_positions_with_precision(structure, precision));
+    s.push_str(&write_cell_parameters_with_precision(config, structure, precision)?);
     s.push_str(kpoints);
     Ok(s)
 }
@@ -123,12 +130,7 @@ pub fn write_phonon_scf_input(
     std::fs::create_dir_all(workspace)?;
     let path = format!("{workspace}/scf.in");
     std::fs::write(&path, content)?;
-    if let Some(od) = config
-        .qe_phonon
-        .scf
-        .get("outdir")
-        .and_then(|v| v.as_str())
-    {
+    if let Some(od) = config.qe_phonon.scf.get("outdir").and_then(|v| v.as_str()) {
         let od = od.trim_matches('\'').trim_matches('"');
         if !od.is_empty() {
             let _ = std::fs::create_dir_all(format!("{workspace}/{od}"));
@@ -152,7 +154,12 @@ pub fn scf_kpoints_text(structure: &Structure, scf: &SectionMap) -> String {
         ),
         _ => get_kpoints_from_spacing(structure.lattice, &KmeshSpec::Spacing(0.04), 0.04),
     };
-    format!("K_POINTS automatic\n  {grid0} {grid1} {grid2} 0 0 0\n", grid0 = grid[0], grid1 = grid[1], grid2 = grid[2])
+    format!(
+        "K_POINTS automatic\n  {grid0} {grid1} {grid2} 0 0 0\n",
+        grid0 = grid[0],
+        grid1 = grid[1],
+        grid2 = grid[2]
+    )
 }
 
 /// 由嵌套 CONTROL/SYSTEM/ELECTRONS 的配置段构造 [`PwParams`]（复刻 `setup/calculation_setup.py`
@@ -172,11 +179,11 @@ pub fn build_nscf_pw_params(config: &Config) -> PwParams {
         .control
         .insert("calculation".to_string(), json!("nscf"));
     params.control.insert("nosym".to_string(), json!(true));
-    params.control.insert("verbosity".to_string(), json!("high"));
+    params
+        .control
+        .insert("verbosity".to_string(), json!("high"));
     if !params.electrons.contains_key("degauss") {
-        params
-            .electrons
-            .insert("degauss".to_string(), json!(0.02));
+        params.electrons.insert("degauss".to_string(), json!(0.02));
     }
     if !params.electrons.contains_key("occupations") {
         params
@@ -200,4 +207,87 @@ pub fn write_phonon_nscf_input(
     let path = format!("{workspace}/nscf.in");
     std::fs::write(&path, content)?;
     Ok(path)
+}
+
+/// 独立 qe_scf/qe_nscf 的输入，不能复用 qe_phonon.scf 配置。
+pub fn write_calculation_input(
+    workspace: &str,
+    config: &Config,
+    structure: &Structure,
+    kind: &str,
+) -> Result<String> {
+    let nscf = kind == "nscf";
+    let mut template = crate::electronic::eband_template();
+    template["CONTROL"]["calculation"] = json!(kind);
+    template["SYSTEM"] = if nscf {
+        json!({"ecutwfc":50.0,"ecutrho":400.0,"occupations":"tetrahedra"})
+    } else {
+        json!({"ecutwfc":50.0,"ecutrho":400.0,"occupations":"smearing","smearing":"gaussian","degauss":0.01})
+    };
+    template["k_points"] = json!({"kmesh":if nscf {0.02} else {0.04},"kpoints":null,"wan":false});
+    let section = crate::electronic::merge_section(
+        &template,
+        if nscf {
+            &config.qe_nscf
+        } else {
+            &config.qe_scf
+        },
+    );
+    let params = build_nested_pw_params(&section);
+    let kp = &section["k_points"];
+    let grid = if let Some(a) = kp["kpoints"].as_array() {
+        anyhow::ensure!(a.len() == 3, "kpoints 必须包含三个整数");
+        [
+            a[0].as_i64().unwrap_or(0),
+            a[1].as_i64().unwrap_or(0),
+            a[2].as_i64().unwrap_or(0),
+        ]
+    } else {
+        get_kpoints_from_spacing(
+            structure.lattice,
+            &KmeshSpec::Spacing(
+                kp["kmesh"]
+                    .as_f64()
+                    .unwrap_or(if nscf { 0.02 } else { 0.04 }),
+            ),
+            0.04,
+        )
+    };
+    anyhow::ensure!(grid.iter().all(|v| *v > 0), "kpoints 必须为正整数");
+    let [nx, ny, nz] = grid;
+    let mut points = if nscf {
+        format!("K_POINTS crystal\n{}\n", nx * ny * nz)
+    } else {
+        format!("K_POINTS automatic\n  {nx} {ny} {nz} 0 0 0\n")
+    };
+    if nscf {
+        for x in 0..nx {
+            for y in 0..ny {
+                for z in 0..nz {
+                    points.push_str(&format!(
+                        " {:21.17}{:21.17}{:21.17}",
+                        x as f64 / nx as f64,
+                        y as f64 / ny as f64,
+                        z as f64 / nz as f64
+                    ));
+                    if !kp["wan"].as_bool().unwrap_or(false) {
+                        points.push_str(&format!(" {:13.6e}", 1.0 / (nx * ny * nz) as f64));
+                    }
+                    points.push('\n');
+                }
+            }
+        }
+    }
+    let content = write_pw_input_with_precision(config, structure, &params, &structure.formula, &points, if nscf {8} else {17})?;
+    std::fs::write(PathBuf::from(workspace).join(format!("{kind}.in")), content)?;
+    let outdir = params
+        .control
+        .get("outdir")
+        .and_then(Value::as_str)
+        .unwrap_or("./tmp")
+        .trim_matches('\'')
+        .trim_matches('"')
+        .to_string();
+    std::fs::create_dir_all(PathBuf::from(workspace).join(&outdir))?;
+    Ok(outdir)
 }

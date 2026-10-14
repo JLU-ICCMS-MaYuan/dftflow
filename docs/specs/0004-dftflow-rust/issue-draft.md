@@ -96,3 +96,21 @@
 ## 收尾状态（2026-10-13）
 
 P0–P5 已在本机（macOS）完成：48 个旧命令入口就绪（`scripts/install-compat.sh` + argv[0] 分派）、被替换 Python 全部删除、目录改名完成、pyproject 仅保留 `mattersim_opt`；Rust 集成测试 75 项全绿，关键后处理与 Python 参考逐字节对照通过。**待 Linux 节点项**：musl 静态构建/strip/离线运行（T004/T005/T030）、pytest 黄金基线在参考工作树（`python-reference-0004`）运行。线上 Gitee Issue（IKKGLP 及子 Issue 编号）仍由用户自管，本文档仅作本地双向链接记录。
+
+
+## [2026-10-14] 缺口补齐原始需求
+
+> 填补完成所有实质缺口：完成 qe 基础命令完整迁移，scflow 完成 openbls 接入测试，openblas 我已经安装好了。完成数值验收测试。完成命令环境切换。我只能在 macos 上完成 linux 交付。我不明白为什么一定要在 linux 上测试。他们只要编译环境一样，能保证 rust 编译为二进制文件。我直接把二进制文件拷贝到 linux 机器上运行不就行了。完成其余二进制的收敛。
+>
+> 测试体系依然是 MgB2. 继续使用 issue 和 spec 完成。
+
+### 本轮实施结论
+
+用户已授权补齐并测试：沿用 0004 与 MgB2 基线，Rust 实现 SCF/NSCF 输入、运行、提交及参数兼容；接入 OpenBLAS 并去除数值豁免；安装五个家族二进制和 48 个旧入口加 dyn0 别名。macOS 上通过 Linux amd64 容器构建 musl 产物并作离线验证，无需远程 Linux 开发机。真实 Slurm/QE/VASP 集群运行与容器离线验证分别记录。线上 Gitee 仍由用户管理。
+
+
+### 2026-10-14 收敛结果（供用户同步线上 Issue）
+
+已完成本轮 T032–T036：QE 四个基础计算命令完整执行；OpenBLAS 接入并去除 Tc/派生量豁免；Cargo 收敛为五个程序、52 个入口检查通过；当前 zsh 环境切换至 Rust。MgB2 Python/Rust 真实 SCF/NSCF/能带/DOS 跑通，16 张数值表解析值完全一致。
+
+macOS 和 Linux musl 各 88 项 Rust 测试通过，Linux 断网重跑 88 项通过。五个 Linux x86_64 静态 ELF 已 strip，无动态依赖；交付包及哈希清单在 `dist/`。最新完整证据见 `acceptance-20261014.md`。本次没有操作或关闭线上 Gitee Issue。

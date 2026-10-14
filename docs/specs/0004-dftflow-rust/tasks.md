@@ -1,6 +1,6 @@
 # 技术拆解与任务：dftflow 全量 Rust 重写
 
-> 本任务表描述未来实施，不表示当前已完成。勾选 `[x]` 须有真实生产路径和覆盖故障边界的测试证据；各阶段的 Python 目录保留到 P5。
+> P0–P5 为历史阶段记录；2026-10-14 收敛任务及 acceptance-20261014.md 为当前验收依据。勾选 `[x]` 须有真实生产路径和覆盖故障边界的测试证据；各阶段的 Python 目录保留到 P5。
 
 ## P0：基线与构建可行性（依赖 Epic 0004）
 
@@ -11,9 +11,9 @@
   - 更正：`validate_scflow_isif4.py` **实际存在**（`test_auto/MgB2/scflow/validate_scflow_isif4.py`），原「不存在」的描述已失效，见 `p0-evidence.md`。
 - [x] **T003** 将 `qeflow-rust/crates/*` 抽到根 `crates/`，迁走 `qeflow-rust/Cargo.toml` 的嵌套 `[workspace]` 与公共依赖，根虚拟 workspace 暂以 `qeflow-rust/` 为成员；确认 Python `qeflow/` 仍可运行。
   - 证据：根 `Cargo.toml` 为虚拟 workspace，members 已含 `vaspflow`/`wannier90flow-rust`/`substitutionflow-rust`/`scflow`/`crates/*`/`qeflow`；`cargo build --workspace` 通过（2026-10-13 复核，dev profile，0.16s 增量）。
-- [ ] **T004** 用真实矩阵路径验证 `ndarray-linalg` + 静态 OpenBLAS、spglib 的 Linux musl 静态构建和离线运行。
+- [x] **T004** 用真实矩阵路径验证 `ndarray-linalg` + 静态 OpenBLAS、spglib 的 Linux musl 静态构建和离线运行。
   - 状态：**待 Linux 节点**（本机 macOS 无法验证）。注意：`qf-scflow` 当前 Eliashberg 本征值为纯 Rust Jacobi 试验实现（`crates/qf-scflow/src/eig.rs`），musl 下静态 OpenBLAS 验证通过后按 Spec 切换，失败则停止修订方案。
-- [ ] **T005** 验证 PNG/JPG 及 SVG→PDF 的纯 Rust 输出，另验证 `spglib` 对称性加 Rust CIF 文本写出。
+- [x] **T005** 验证 PNG/JPG 及 SVG→PDF 的纯 Rust 输出，另验证 `spglib` 对称性加 Rust CIF 文本写出。
   - 状态：**待 Linux 节点**；本机 macOS 已验证 plotters PNG 输出与 Rust CIF 序列化（`qf-crystal::write_cif` + df-substitution/df-vasp 流程）。
 - [x] **T006** 记录 P0 构建、离线、测试及输入哈希证据；未过门不得进入 P1。
   - 证据：见 `p0-evidence.md`；本机 `cargo build --workspace` + `cargo test --workspace`（75 项）全绿。
@@ -69,7 +69,7 @@
   - 证据：`scripts/install-compat.sh`（硬链接 + argv[0] 分派）；本机已验证 `qe_check`/`vasp_opt`/`wannier_init` 入口分派。计算节点 PATH 验证待部署。
 - [x] **T028** 删除 `qeflow/scflow/vaspflow/wannier90flow/substitutionflow/public` 中被替换的 Python，重命名对应 `xxx-rust/` 目录，更新 workspace path。
 - [x] **T029** 清理 `pyproject.toml` 已迁移入口和依赖，仅保留 `mattersim_opt` Python 安装内容；验证可选 ML 链路。
-- [ ] **T030** 用 Linux musl 产物完成静态链接、strip、离线运行、输入/状态/数值/PNG/JPG/PDF/CIF 全部对照；Python 黄金基线和 Rust 集成测试均通过。
+- [x] **T030** 用 Linux musl 产物完成静态链接、strip、离线运行、输入/状态/数值/PNG/JPG/PDF/CIF 全部对照；Python 黄金基线和 Rust 集成测试均通过。
   - 状态：Rust 集成测试已通过；musl 静态与离线验证待 Linux 节点（命令见 `overview/dftflow-rust.md` §4）。
 - [x] **T031** 更新 README、AGENTS、Overview、子 Issue 文档与回滚说明；线上 Issue 状态由用户决定。
 
@@ -78,3 +78,29 @@
 - 不以 `cargo build`、空测试骨架或部分 CLI 代替真实生产链路；P0 静态本征值求解与 PDF/CIF 可行性未证明时停止。
 - 文件名、列、单位、顺序、状态、退出码精确对齐；浮点按 `contracts/config-and-output.md` 的预定容差验收，禁止失败后临时放宽。
 - 常规 Rust 链路无 Python 依赖；仅启用 `mattersim_opt` 时允许目标机使用 Python。性能只记录，不设通过门槛。
+
+## 2026-10-14 审计收敛任务（本轮用户授权）
+
+旧勾选不能代表以下缺口已解决，本节以新证据收敛 FR-001/003/006/007 与 SC-001/002/004/005。
+
+- [x] **T032** 复刻 QE SCF/NSCF 的配置、目录、输入、SCF 数据继承、运行、提交、失败传播；MgB2 CLI 回归覆盖真正的进程边界。
+- [x] **T033** 以 OpenBLAS 替换 Jacobi；用参考矩阵及 MgB2 EPC 对照，恢复全部 Tc/派生量固定容差，不保留 5% 豁免。
+- [x] **T034** Cargo 只保留五个 binary target，dyn0 通过 qeflow 别名；安装并校验全部旧命令及本机 PATH，保留可回滚的旧安装。
+- [x] **T035** macOS Docker/OrbStack 中构建 Linux x86_64 musl 静态产物；检查 ELF/动态依赖、strip、断网容器 MgB2 与格式测试，生成带哈希交付包。
+- [x] **T036** 更新验收、README、Overview、AGENTS 与本地 Issue 草稿；提交实际完成的改动及未满足边界。
+
+### T032–T034 本轮证据
+
+- `qeflow/tests/basic_cli.rs`：MgB2 输入对照、真实子进程边界、NSCF 数据继承、sbatch 调用、错误退出，以及无配置文件的 dyn0 别名与家族命令一致。
+- `scflow/tests/scflow_parity.rs`：三展宽全部 CSV/JSON/POSCAR、七份 PDF 与 CIF 检查；无 Tc 数值豁免。`qf-scflow` 单测覆盖 OpenBLAS 稠密矩阵与下限状态。
+- 本机同一 QE 实际执行 Python/Rust MgB2 SCF/NSCF：JOB DONE、总能和 Fermi 能一致；具体输入限制见 `acceptance-20261014.md`。
+- Cargo metadata 为五个 binary target，52 个安装入口逐一通过 --help；新登录交互 shell 命中 Rust，安装与 release 哈希一致。
+
+### T004/T005/T030/T035/T036 最终证据（2026-10-14）
+
+- 本轮在 macOS OrbStack 的 Linux x86_64 容器完成，替代旧记录的“待 Linux 节点”执行地点；交付目标不变。
+- 五个 release 程序经 strip，file 确认为 ELF x86-64 static-pie；readelf 均无 INTERP、无 NEEDED。OpenBLAS 0.3.30 和 spglib 2.6.0 均在目标环境编译静态库。
+- Linux release 88 项通过，断网 --offline 再跑 88 项通过；52 个入口全部通过。单独执行已 strip 的 scflow，MgB2 summary 与 Python golden 逐字节一致。
+- `scripts/linux/build.sh` 生成 `dist/dftflow-linux-x86_64-musl.tar.gz`，包含五个程序、安装器、构建信息与 SHA256SUMS。CI 复用同一脚本。
+- SCF/NSCF/eband/eledos 的真实 MgB2 双侧执行完成：16 张电子结构数值表最大绝对差 0.0；各软件/输入/权限边界见最新验收，不宣称远程 Slurm 或 MatterSim 已验收。
+- 文档、AGENTS 和本地 Issue 草稿已回填；线上 Issue 状态仍由用户维护。原 Python 全库历史环境性失败保留为历史记录，不能改称全部 pytest 通过。

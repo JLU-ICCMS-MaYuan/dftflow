@@ -129,6 +129,22 @@ mod tests {
     }
 
     #[test]
+    fn jpeg_encoder_produces_jpeg() {
+        let path = std::env::temp_dir().join(format!("qf-jpeg-{}.jpg", std::process::id()));
+        line_plot_png(
+            &path,
+            &[Series::new(vec![0.0, 1.0], vec![-1.0, 2.0], "MgB2")],
+            "q",
+            "THz",
+            "MgB2",
+        )
+        .unwrap();
+        let data = std::fs::read(&path).unwrap();
+        assert!(data.starts_with(&[0xff, 0xd8]) && data.ends_with(&[0xff, 0xd9]));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn writes_band_plot_tmp() {
         let dir = std::env::temp_dir();
         let path = dir.join("qf_plot_test_band.png");

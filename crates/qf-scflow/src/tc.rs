@@ -89,12 +89,7 @@ fn eliashberg_kernel(a2f: &A2f, r: usize, t: f64) -> f64 {
 /// 通过二分搜索定位 b=0 处即为 Tc。复刻 `scflow/sc_e.py: get_tc_e`。
 ///
 /// 返回值：`(tc, status)`，其中 `status` 为 `"resolved"` 或 `"resolution_limit"`。
-pub fn eliashberg_tc(
-    a2f: &A2f,
-    mu: f64,
-    dim: usize,
-    _integration: Integration,
-) -> (f64, String) {
+pub fn eliashberg_tc(a2f: &A2f, mu: f64, dim: usize, _integration: Integration) -> (f64, String) {
     let size = dim + 1;
     let mut t = 0.0_f64;
     let mut dt = 10.0_f64;
@@ -163,6 +158,18 @@ fn max_eig_at_t(a2f: &A2f, mu: f64, dim: usize, size: usize, t: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn openblas_eliashberg_no_coupling_reports_resolution_limit() {
+        let a = A2f {
+            freqs: vec![1.0, 2.0, 3.0],
+            a2f_lambda: vec![0.0; 3],
+            a2f_gamma: vec![0.0; 3],
+        };
+        let (tc, status) = eliashberg_tc(&a, 0.1, 24, Integration::Sum);
+        assert_eq!(tc, 0.001);
+        assert_eq!(status, "resolution_limit");
+    }
 
     #[test]
     fn mc_millan_positive_for_strong_coupling() {

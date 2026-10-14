@@ -264,10 +264,18 @@ fn required_abc(ibrav: i32, celldm: [f64; 6]) -> Vec<(String, f64)> {
 }
 
 fn format_float(value: f64) -> String {
-    // 近似 Python 的 :.12g：12 位精度后去除多余尾零与小数点。
-    let s = format!("{value:.12}");
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    s.to_string()
+    if value == 0.0 { return if value.is_sign_negative() { "-0" } else { "0" }.into(); }
+    // Python .12g 是十二位有效数字，不是十二位小数。
+    let scientific = format!("{value:.11e}");
+    let (mantissa, exponent) = scientific.split_once('e').unwrap();
+    let exponent: i32 = exponent.parse().unwrap();
+    if !(-4..12).contains(&exponent) {
+        return format!("{}e{:+03}", mantissa.trim_end_matches('0').trim_end_matches('.'), exponent);
+    }
+    let decimals = (11 - exponent).max(0) as usize;
+    let value: f64 = scientific.parse().unwrap();
+    let s = format!("{value:.decimals$}");
+    if decimals == 0 { s } else { s.trim_end_matches('0').trim_end_matches('.').into() }
 }
 
 /// 解析并写出 &SYSTEM 中的晶格段（复刻 `write_system_lattice`）。
@@ -293,6 +301,11 @@ pub fn write_system_lattice(config: &Config, structure: &Structure) -> Result<St
 
 /// 写出 ATOMIC_POSITIONS 段（复刻 `write_atomic_positions`）。
 pub fn write_atomic_positions(structure: &Structure) -> String {
+    write_atomic_positions_with_precision(structure, 17)
+}
+
+pub fn write_atomic_positions_with_precision(structure: &Structure, precision: usize) -> String {
+    let width = precision + 4;
     let coord = if structure.coord_type.to_lowercase().starts_with('d') {
         "crystal"
     } else {
@@ -304,7 +317,7 @@ pub fn write_atomic_positions(structure: &Structure) -> String {
         for _ in 0..structure.counts[ei] {
             let p = structure.positions[atom_index];
             s.push_str(&format!(
-                "  {element:3} {p0:21.17} {p1:21.17} {p2:21.17}\n",
+                "  {element:3} {p0:width$.precision$} {p1:width$.precision$} {p2:width$.precision$}\n",
                 p0 = p[0],
                 p1 = p[1],
                 p2 = p[2]
@@ -318,13 +331,18 @@ pub fn write_atomic_positions(structure: &Structure) -> String {
 
 /// 必要时写出 CELL_PARAMETERS 段（复刻 `write_cell_parameters_if_needed`）。
 pub fn write_cell_parameters_if_needed(config: &Config, structure: &Structure) -> Result<String> {
+    write_cell_parameters_with_precision(config, structure, 17)
+}
+
+pub fn write_cell_parameters_with_precision(config: &Config, structure: &Structure, precision: usize) -> Result<String> {
+    let width = precision + 4;
     if config.lattice_mode()? != LATTICE_MODE_CELL_PARAMETERS {
         return Ok(String::new());
     }
     let mut s = "CELL_PARAMETERS {angstrom}\n".to_string();
     for vec in structure.lattice {
         s.push_str(&format!(
-            "  {v0:21.17} {v1:21.17} {v2:21.17}\n",
+            "  {v0:width$.precision$} {v1:width$.precision$} {v2:width$.precision$}\n",
             v0 = vec[0],
             v1 = vec[1],
             v2 = vec[2]

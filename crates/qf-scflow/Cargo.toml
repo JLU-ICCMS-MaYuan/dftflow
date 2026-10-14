@@ -14,3 +14,5 @@ ndarray = { workspace = true }
 plotters = { workspace = true }
 svg2pdf = { workspace = true }
 regex = { workspace = true }
+ndarray-linalg = { workspace = true }
+openblas-src = { version = "0.10.16", default-features = false, features = ["system", "static", "rustls"] }

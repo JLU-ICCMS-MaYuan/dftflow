@@ -11,7 +11,7 @@ use qf_crystal::Structure;
 use serde_json::json;
 use serde_json::Value;
 
-use crate::pw::{build_nested_pw_params, write_pw_input};
+use crate::pw::{build_nested_pw_params, write_pw_input_with_precision};
 use crate::to_qe_value;
 
 /// eband 配置段模板（对齐 `qeflow/templates.py: get_qe_eband_parameters_template`）。
@@ -106,11 +106,9 @@ pub fn parse_kpath_segments(path: &str) -> Result<Vec<Vec<KPoint>>> {
         if parts.len() != 4 {
             continue;
         }
-        let coords = [
-            parts[0].parse::<f64>()?,
-            parts[1].parse::<f64>()?,
-            parts[2].parse::<f64>()?,
-        ];
+        // VASPKIT 的标题行也可能正好四列，按 Python 参考跳过非坐标行。
+        let (Ok(x), Ok(y), Ok(z)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>(), parts[2].parse::<f64>()) else { continue; };
+        let coords = [x, y, z];
         points.push((coords, parts[3].to_string()));
     }
     if points.len() % 2 != 0 {
@@ -355,7 +353,7 @@ pub fn write_eband_inputs(
     }
 
     let kpoints = eband_kpoints_text(&segments, kpath_points);
-    let pw_content = write_pw_input(config, structure, &params, prefix, &kpoints)?;
+    let pw_content = write_pw_input_with_precision(config, structure, &params, prefix, &kpoints, 8)?;
 
     fs::create_dir_all(workspace)?;
     let eband_path = format!("{workspace}/eband.in");

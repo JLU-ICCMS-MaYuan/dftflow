@@ -1,6 +1,6 @@
 # 验收标准：dftflow 全量 Rust 重写
 
-> 状态（2026-10-13）：P0–P5 代码迁移与本地验收完成；标注「待 Linux」的项无法在 macOS 上验证，已附可复现命令，不在 macOS 伪造通过证据。对照规则见 `contracts/config-and-output.md`。
+> 历史记录（2026-10-13，当前证据以 [2026-10-14 收敛验收](acceptance-20261014.md) 为准）：P0–P5 代码迁移与本地验收完成；标注「待 Linux」的项无法在 macOS 上验证，已附可复现命令，不在 macOS 伪造通过证据。对照规则见 `contracts/config-and-output.md`。
 
 ## P0 基线与可行性
 
@@ -37,3 +37,8 @@
 
 - 迁移前 Python 参考提交：`9396b3a`（标签 `python-reference-0004`），完整 Python 包可从该标签检出或 `git worktree` 恢复。
 - 本轮全部改动集中在 `qeflow-rust` 分支工作区，未触碰 Gitee 线上 Issue（IKKGLP）。
+
+
+## 2026-10-14 审计更正
+
+原“本地验收完成”不应解释为所有主路径已完成：当时 SCF -r 仍为空执行，NSCF CLI 不完整，Jacobi 与 5% 数值豁免未满足契约，旧入口也未全部验证。这些问题由 T032–T036 收敛，见 [最新验收](acceptance-20261014.md)。旧统计和叙述保留为历史，不再作为当前通过依据。

@@ -2,25 +2,33 @@
 
 DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
-当前分支 `qeflow-rust` 已完成 `qeflow / vaspflow / scflow / wannier90flow / substitutionflow / public` 六个 Python 包的全量 Rust 迁移（P0–P5）：交付五个家族静态二进制（`qeflow` / `vaspflow` / `scflow` / `wannier90` / `substitution`），48 个旧命令名经 `scripts/install-compat.sh` 创建的硬链接入口直接可用；`mattersimflow` 保留 Python（`mattersim_opt`）。
+五个 Rust 家族程序为 `qeflow`、`vaspflow`、`scflow`、`wannier90`、`substitution`；`mattersim_opt` 按约定保留 Python。当前验收范围与证据见 [0004 收敛验收](docs/specs/0004-dftflow-rust/acceptance-20261014.md)。
 
 ## 构建
 
 ```bash
-cargo build --release
-# Linux musl 静态交付（目标机）
-rustup target add x86_64-unknown-linux-musl
-cargo build --release --target x86_64-unknown-linux-musl
-strip target/x86_64-unknown-linux-musl/release/{qeflow,vaspflow,scflow,wannier90,substitution}
+# macOS 本机构建：先安装原生依赖
+brew install openblas spglib
+cargo build --release --workspace --locked
+cargo test --workspace --locked
+
+# 在 macOS Docker/OrbStack 内构建 Linux x86_64 musl 并验证
+bash scripts/linux/build.sh
 ```
 
-## 安装旧命令兼容入口
+macOS Mach-O 文件不能直接在 Linux 执行；Linux 交付脚本使用 Linux 编译环境产出 ELF，并检查静态链接和断网运行。目标计算节点仍需提供 QE/VASP 等外部计算程序。
+
+## 安装命令
 
 ```bash
-./scripts/install-compat.sh target/release ~/.local/bin
+bash scripts/install-compat.sh /absolute/path/to/binaries ~/.local/bin
+export PATH="$HOME/.local/bin:$PATH"
+bash scripts/verify-entries.sh /absolute/path/to/binaries
 ```
 
-为 48 个旧命令名（17 个 `qe_*`、19 个 `vasp_*`、4 个 `wannier_*`、7 个 `substitution*`、1 个 `scflow`，含 `qf-gen-dyn0` 别名）创建指向五个家族二进制的硬链接，二进制按 `argv[0]` 分派，现有 Slurm/脚本调用方式不变。
+安装器提供全部 48 个旧名、额外 `qf-gen-dyn0` 别名以及家族入口，共 52 个名称、五份二进制。入口为指向源目录的软链接，因此应将二进制放在稳定版本目录中再安装。已有同名入口会先备份；安装目录必须与源目录不同。
+
+`qe_scf` / `qe_nscf` 支持 `-i/--input`、`-c/--config`、`-r/--run`、`-s/--submit`；默认配置 `input.toml`。仅准备时不运行，`-r` 实际执行，`-s` 提交 `run_qe.sh`；运行和提交互斥。NSCF 继承 SCF 的 XML、电荷密度和 PAW 数据。
 
 ## 命令速查
 

@@ -2,6 +2,7 @@
 name = "qf-phonon"
 version = "0.1.0"
 edition = "2021"
+autobins = false
 
 [dependencies]
 serde = { workspace = true }
@@ -15,7 +16,3 @@ qf-crystal = { path = "../qf-crystal" }
 qf-io = { path = "../qf-io" }
 qf-input = { path = "../qf-input" }
 qf-runner = { path = "../qf-runner" }
-
-[[bin]]
-name = "qf-gen-dyn0"
-path = "src/bin/gen_dyn0.rs"

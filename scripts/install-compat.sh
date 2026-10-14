@@ -5,25 +5,44 @@
 #   <bin_dir>   五个二进制所在目录（如 target/release）
 #   target_dir  兼容入口安装目录（默认 ~/.local/bin）
 #
-# 实现方式：为每个旧命令名创建指向家族二进制的硬链接（失败回退符号链接），
+# 实现方式：为每个入口创建指向稳定版本目录中家族二进制的软链接，
 # 二进制按 argv[0] 分派到对应子命令；cargo 只交付 5 个二进制，不增加第六个。
 set -euo pipefail
 
 BIN_DIR="${1:?用法: install-compat.sh <bin_dir> [target_dir]}"
 TARGET_DIR="${2:-$HOME/.local/bin}"
 
+for binary in qeflow vaspflow scflow wannier90 substitution; do
+    test -x "$BIN_DIR/$binary" || { echo "缺少可执行文件: $BIN_DIR/$binary" >&2; exit 1; }
+done
+BIN_DIR="$(cd "$BIN_DIR" && pwd)"
 mkdir -p "$TARGET_DIR"
+TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
+if [[ "$BIN_DIR" == "$TARGET_DIR" ]]; then
+    echo "源目录与安装目录不能相同" >&2
+    exit 1
+fi
+BACKUP_DIR="$TARGET_DIR/.dftflow-backup-$(date +%Y%m%d-%H%M%S)-$$"
 
 link_entry() {
     local name="$1" target_binary="$2"
     local dest="$TARGET_DIR/$name"
-    rm -f "$dest"
-    if ln "$BIN_DIR/$target_binary" "$dest" 2>/dev/null; then
-        :
-    else
-        ln -s "$(cd "$BIN_DIR" && pwd)/$target_binary" "$dest"
+    if [[ -d "$dest" && ! -L "$dest" ]]; then
+        echo "安装目标是目录，拒绝覆盖: $dest" >&2
+        exit 1
     fi
+    if [[ -e "$dest" || -L "$dest" ]]; then
+        mkdir -p "$BACKUP_DIR"
+        cp -P "$dest" "$BACKUP_DIR/$name"
+    fi
+    local temp="$TARGET_DIR/.dftflow-$name-$$"
+    ln -s "$BIN_DIR/$target_binary" "$temp"
+    mv -f "$temp" "$dest"
+
 }
+
+# 同时安装家族入口，供生成的跨 flow 脚本使用。
+for family in qeflow vaspflow wannier90; do link_entry "$family" "$family"; done
 
 # qeflow 家族（17 个 qe_* + qf-gen-dyn0 别名；T013 合并，不交付第六个二进制）
 for entry in \
@@ -61,5 +80,5 @@ done
 # scflow 家族（1 个）
 link_entry scflow scflow
 
-echo "已安装 48 个旧命令名兼容入口（含 qf-gen-dyn0 别名）到 $TARGET_DIR"
+echo "已安装 五个家族入口、48 个旧命令与额外 qf-gen-dyn0 别名到 $TARGET_DIR"
 echo "请确认 $TARGET_DIR 在 PATH 中：export PATH=\"$TARGET_DIR:\$PATH\""

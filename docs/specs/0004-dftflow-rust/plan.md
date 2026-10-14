@@ -48,3 +48,7 @@ P0–P4 让现有 Python 包与 `xxx-rust/` 并行存在。P0 根 workspace 暂�
 - `qf-config::merge_recursive` 仅对双方均为表的值递归；`None` 不覆盖，其余整体替换。CLI 复刻旧参数、默认值、命令名与退出码；旧名字作为五个二进制的兼容入口，不靠复制 48 份二进制实现。
 - 通过 `qf-runner` 执行外部 QE/VASP/LOBSTER/vaspkit。大数组采用有界内存读取；不得在数值对照前擅自降为 `f32`。普通 Rust flow 不依赖 Python，只有启用 MatterSim 时使用其原有 Python 环境。
 - 性能记录同机冷启动和峰值内存，但用户选择只做功能验收，性能数据不设通过门槛。
+
+## 2026-10-14 已授权的收敛实施
+
+按 T032→T033→T034→T035→T036 收敛。继续使用 MgB2，参考为 python-reference-0004。Linux 验证在 macOS 的 OrbStack Linux amd64 容器内完成。OpenBLAS 使用系统已安装库，本机与目标库分别构建/链接；禁止把 Darwin 库用于 Linux。数值差异须从矩阵构造、精度和算法定位，不调整既定容差。

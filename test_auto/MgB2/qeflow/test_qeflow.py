@@ -24,8 +24,11 @@ def test_qe_scf_api(chdir_work):
     # 验证 scf.in 内容
     scf_content = (Path("qe_scf") / "scf.in").read_text()
     assert "ibrav = 4" in scf_content
-    assert "A = 3.0736999512" in scf_content
-    assert "C = 3.5343999863" in scf_content
+    # cell2ibrav.x 与 Python 回退的文本末位可不同，按 0004 固定数值契约比较。
+    import re
+    for key, reference in (("A", 3.0736999512), ("C", 3.5343999863)):
+        value = float(re.search(rf"^\s*{key}\s*=\s*([\d.eE+-]+)", scf_content, re.M)[1])
+        assert abs(value - reference) <= 1e-8 + 1e-6 * abs(reference)
     assert "CELL_PARAMETERS" not in scf_content
     assert "ATOMIC_POSITIONS" in scf_content
     assert "K_POINTS" in scf_content

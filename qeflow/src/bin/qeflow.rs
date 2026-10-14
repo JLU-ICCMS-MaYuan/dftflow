@@ -1,6 +1,5 @@
 //! qeflow 单一静态二进制入口。
-//! 子命令映射现有 qe_* CLI；M0 仅打通 config 加载 + QE 命令解析，
-//! 其余子命令为占位，由 M3/M4 逐步落地真实编排逻辑。
+//! 子命令及 argv[0] 兼容入口映射原 qe_* CLI。
 
 use clap::{Parser, Subcommand};
 use anyhow::{Context, Result};
@@ -20,88 +19,96 @@ struct Cli {
 enum Commands {
     /// SCF calculation
     QeScf {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
-        #[arg(short = 'r')]
+        #[arg(short = 'r', long, conflicts_with = "submit")]
         run: bool,
-        #[arg(short = 'p', long)]
+        #[arg(short = 's', long)]
+        submit: bool,
+        #[arg(short = 'i', long = "input", visible_short_alias = 'p', visible_alias = "poscar")]
         poscar: Option<String>,
     },
     /// NSCF calculation
     QeNscf {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
+        #[arg(short = 'r', long, conflicts_with = "submit")]
+        run: bool,
+        #[arg(short = 's', long)]
+        submit: bool,
+        #[arg(short = 'i', long = "input", visible_short_alias = 'p', visible_alias = "poscar")]
+        poscar: Option<String>,
     },
     /// Electronic band structure
     QeEband {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
-        #[arg(short = 'p', long)]
+        #[arg(short = 'i', long = "input", visible_short_alias = 'p', visible_alias = "poscar")]
         poscar: Option<String>,
-        #[arg(short = 'r')]
+        #[arg(short = 'r', long)]
         run: bool,
-        #[arg(short = 's')]
+        #[arg(short = 's', long)]
         submit: bool,
     },
     /// Electronic DOS
     QeElEdos {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
-        #[arg(short = 'p', long)]
+        #[arg(short = 'i', long = "input", visible_short_alias = 'p', visible_alias = "poscar")]
         poscar: Option<String>,
-        #[arg(short = 'r')]
+        #[arg(short = 'r', long)]
         run: bool,
-        #[arg(short = 's')]
+        #[arg(short = 's', long)]
         submit: bool,
     },
     /// Phonon workflow (nosplit)
     QePhononNosplit {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
-        #[arg(short = 'r')]
+        #[arg(short = 'r', long)]
         run: bool,
-        #[arg(short = 's')]
+        #[arg(short = 's', long)]
         submit: bool,
     },
     /// Phonon split by index
     QePhononSplitIndex {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
-        #[arg(short = 'p', long)]
+        #[arg(short = 'i', long = "input", visible_short_alias = 'p', visible_alias = "poscar")]
         input: Option<String>,
-        #[arg(short = 'r')]
+        #[arg(short = 'r', long)]
         run: bool,
-        #[arg(short = 's')]
+        #[arg(short = 's', long)]
         submit: bool,
     },
     /// Phonon split by coords
     QePhononSplitCoords {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
-        #[arg(short = 'p', long)]
+        #[arg(short = 'i', long = "input", visible_short_alias = 'p', visible_alias = "poscar")]
         input: Option<String>,
-        #[arg(short = 'r')]
+        #[arg(short = 'r', long)]
         run: bool,
-        #[arg(short = 's')]
+        #[arg(short = 's', long)]
         submit: bool,
     },
     /// Merge split phonon results
     #[command(alias = "qe-merge")]
     QePhononMerge {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
-        #[arg(short = 'p', long)]
+        #[arg(short = 'i', long = "input", visible_short_alias = 'p', visible_alias = "poscar")]
         input: Option<String>,
     },
     /// Process phonon (q2r + matdyn + collect + plot)
     QeProcessPhonon {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
-        #[arg(short = 'p', long)]
+        #[arg(short = 'i', long = "input", visible_short_alias = 'p', visible_alias = "poscar")]
         input: Option<String>,
-        #[arg(short = 'r')]
+        #[arg(short = 'r', long)]
         run: bool,
-        #[arg(short = 's')]
+        #[arg(short = 's', long)]
         submit: bool,
         /// 仅归档已有 q2r/matdyn 结果（phband/phdos）
         #[arg(long)]
@@ -112,12 +119,12 @@ enum Commands {
     },
     /// Superconducting Tc (scflow)
     Scflow {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
     },
     /// 刷新并打印工作流状态与续算点（M3 状态机演示）
     Status {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
         #[arg(short, long, default_value = ".")]
         work_dir: String,
@@ -126,7 +133,7 @@ enum Commands {
     },
     /// Quantum ESPRESSO ph.x 单步任务（qe_ph_nosplit）
     QePhNosplit {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
         #[arg(short = 'i', long)]
         input: Option<String>,
@@ -140,7 +147,7 @@ enum Commands {
     },
     /// Quantum ESPRESSO q2r.x 单步任务
     QeQ2r {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
         #[arg(short = 'i', long)]
         input: Option<String>,
@@ -151,7 +158,7 @@ enum Commands {
     },
     /// matdyn.x 声子能带单步任务
     QeMatdynPhband {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
         #[arg(short = 'i', long)]
         input: Option<String>,
@@ -162,7 +169,7 @@ enum Commands {
     },
     /// matdyn.x 声子 DOS 单步任务
     QeMatdynPhdos {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
         #[arg(short = 'i', long)]
         input: Option<String>,
@@ -173,7 +180,7 @@ enum Commands {
     },
     /// 提交 split 声子 q 点任务
     QeSplitSubmit {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
         #[arg(short = 'i', long)]
         input: Option<String>,
@@ -183,7 +190,7 @@ enum Commands {
     },
     /// QE 输出状态检查器
     QeCheck {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
         #[arg(long)]
         scf: bool,
@@ -229,7 +236,7 @@ enum Commands {
     },
     /// 生成 prefix.dyn0 与 q_points.json（内联 qf-gen-dyn0）
     GenDyn0 {
-        #[arg(short, long, default_value = "input.toml")]
+        #[arg(short, long)]
         config: Option<String>,
         /// SCF save 的 data-file-schema.xml；提供时按对称性枚举不可约 q 点
         #[arg(long)]
@@ -301,40 +308,11 @@ fn main() -> Result<()> {
         .collect();
     let cli = Cli::parse_from(raw_args);
     match cli.command {
-        Commands::QeScf { config, run, poscar } => {
-            let cfg = qf_config::load(config.as_deref(), config.as_deref())?;
-            let pos_path = poscar.unwrap_or_else(|| "POSCAR".to_string());
-            let structure = qf_crystal::parse_poscar(&pos_path)
-                .map_err(|e| anyhow::anyhow!("解析 POSCAR 失败: {e}"))?;
-            let prefix = cfg
-                .qe_phonon
-                .scf
-                .get("prefix")
-                .and_then(|v| v.as_str())
-                .unwrap_or("struct")
-                .to_string();
-            let written = qf_input::pw::write_phonon_scf_input(".", &cfg, &structure, &prefix)?;
-            println!("[qe_scf] wrote {written} for prefix '{prefix}'");
-            if run {
-                let cmd = qf_runner::resolve_qe_command(cfg.qe.executable_path(), "pw.x");
-                println!("[qe_scf] would run: {cmd} < {written} > scf.out");
-            }
-            Ok(())
+        Commands::QeScf { config, run, submit, poscar } => {
+            run_qe_pw("scf", config, poscar, run, submit)
         }
-        Commands::QeNscf { config } => {
-            let cfg = qf_config::load(config.as_deref(), config.as_deref())?;
-            let structure = qf_crystal::parse_poscar("POSCAR")
-                .map_err(|e| anyhow::anyhow!("解析 POSCAR 失败: {e}"))?;
-            let prefix = cfg
-                .qe_phonon
-                .scf
-                .get("prefix")
-                .and_then(|v| v.as_str())
-                .unwrap_or("struct")
-                .to_string();
-            let written = qf_input::pw::write_phonon_nscf_input(".", &cfg, &structure, &prefix)?;
-            println!("[qe_nscf] wrote {written} for prefix '{prefix}'");
-            Ok(())
+        Commands::QeNscf { config, run, submit, poscar } => {
+            run_qe_pw("nscf", config, poscar, run, submit)
         }
         Commands::QeEband { config, poscar, run, submit } => {
             run_qe_eband(config, poscar, run, submit)
@@ -582,25 +560,29 @@ fn run_qe_steps(
     script_name: &str,
     name: &str,
 ) -> Result<()> {
+    let absolute = std::fs::canonicalize(work_dir)?;
     let slurm_header = cfg.slurm.header.clone().unwrap_or_default();
     let ctx = qf_runner::ScriptContext {
-        workspace: Path::new(&work_dir),
+        workspace: &absolute,
         prefix,
         slurm_header: &slurm_header,
     };
-    let script = qf_runner::write_labeled_script(
-        &ctx,
-        script_name,
-        &steps,
-        1,
-        steps.len(),
-        None,
-        Some(script_name),
-    )?;
+    let script = if script_name == "run_qe.sh" {
+        let mut commands = vec!["set -e".to_string(), "echo 'Job started at' `date`".to_string()];
+        commands.extend(steps.iter().map(|(_, cmd)| cmd.clone()));
+        commands.push("echo 'Job finished at' `date`".to_string());
+        qf_runner::write_job_script(&absolute, script_name, &slurm_header, &commands)?
+    } else {
+        qf_runner::write_labeled_script(&ctx, script_name, &steps, 1, steps.len(), None, Some(script_name))?
+    };
     println!("[{name}] wrote {script:?} (work_dir={work_dir})");
     if run {
         qf_runner::run_shell(&format!("bash {script_name}"), Path::new(&work_dir))?;
     } else if submit {
+        if script_name == "run_qe.sh" {
+            qf_runner::run_shell("sbatch run_qe.sh", &absolute)?;
+            return Ok(());
+        }
         if let Some(job) =
             qf_runner::submit_via_sbatch(Path::new(&work_dir), script_name)?
         {
@@ -859,20 +841,21 @@ fn run_qe_process_phonon(
 /// 在准备阶段把 SCF 的 `.save` 数据目录拷入目标工作流目录（对齐 `_copy_scf_save_files`）。
 /// `copy_tree=true` 复制整个 `.save`；源缺失时仅告警并继续（与 Python 行为一致）。
 fn copy_scf_save(work_dir: &str, prefix: &str, outdir: &str, copy_tree: bool) -> Result<()> {
-    let source = format!("qe_scf/{outdir}/{prefix}.save");
-    let target = format!("{work_dir}/{outdir}/{prefix}.save");
-    if !Path::new(&source).exists() {
-        println!("[warn] 找不到 SCF 数据目录 {source}，计算可能会失败（请先运行 qe_scf）");
+    let source = Path::new("qe_scf").join(outdir).join(format!("{prefix}.save"));
+    let target = Path::new(work_dir).join(outdir).join(format!("{prefix}.save"));
+    if !source.exists() {
+        println!("[warn] 找不到 SCF 数据目录 {}", source.display());
         return Ok(());
     }
-    let _ = std::fs::create_dir_all(format!("{work_dir}/{outdir}"));
+    if source == target { return Ok(()); }
+    std::fs::create_dir_all(&target)?;
     if copy_tree {
-        let status = std::process::Command::new("cp")
-            .args(["-r", &source, &target])
-            .status();
-        match status {
-            Ok(s) if s.success() => println!("[eledos] 已从 {source} 拷贝 SCF 数据到 {target}"),
-            _ => println!("[warn] 拷贝 SCF 数据失败: {source} -> {target}"),
+        copy_save_tree(&source, &target)?;
+    } else {
+        for name in ["data-file-schema.xml", "charge-density.dat", "paw.txt"] {
+            if source.join(name).is_file() {
+                std::fs::copy(source.join(name), target.join(name))?;
+            }
         }
     }
     Ok(())
@@ -892,6 +875,16 @@ fn run_qe_eband(
         .map_err(|e| anyhow::anyhow!("解析 POSCAR 失败: {e}"))?;
     let prefix = structure.formula.clone();
     let work_dir = "qe_eband";
+    std::fs::create_dir_all(work_dir)?;
+    std::fs::copy(&pos_path, Path::new(work_dir).join("POSCAR"))?;
+    let section = electronic_input::eband_merged(&cfg);
+    let outdir = section.get("CONTROL").and_then(|s| s.get("outdir")).and_then(|v| v.as_str()).unwrap_or("./tmp").trim_matches('\'').trim_matches('"');
+    copy_scf_save(work_dir, &prefix, outdir, false)?;
+    let kpath = section.get("k_points").and_then(|s| s.get("kpath_file")).and_then(|v| v.as_str()).unwrap_or("KPATH.in");
+    if !Path::new(work_dir).join(kpath).exists() {
+        matdyn_input::run_vaspkit_for_kpath(work_dir)?;
+    }
+    std::fs::create_dir_all(Path::new(work_dir).join(outdir))?;
     let written = electronic_input::write_eband_inputs(work_dir, &cfg, &structure, &prefix)?;
     for w in &written {
         println!("[qe_eband] wrote {w}");
@@ -948,6 +941,8 @@ fn run_qe_eledos(
         .map_err(|e| anyhow::anyhow!("解析 POSCAR 失败: {e}"))?;
     let prefix = structure.formula.clone();
     let work_dir = "qe_eledos";
+    std::fs::create_dir_all(work_dir)?;
+    std::fs::copy(&pos_path, Path::new(work_dir).join("POSCAR"))?;
     let merged = electronic_input::eledos_merged(&cfg);
     let outdir = merged
         .get("CONTROL")
@@ -1569,4 +1564,32 @@ fn run_gen_dyn0(
     let path = qf_phonon::split::write_dyn0(&work_dir, &cfg, &prefix)?;
     println!("生成 dyn0 -> {path}");
     Ok(())
+}
+
+fn copy_save_tree(source: &Path, target: &Path) -> Result<()> {
+    std::fs::create_dir_all(target)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let dest = target.join(entry.file_name());
+        if entry.file_type()?.is_dir() { copy_save_tree(&entry.path(), &dest)?; }
+        else { std::fs::copy(entry.path(), dest)?; }
+    }
+    Ok(())
+}
+
+fn run_qe_pw(kind: &str, config: Option<String>, poscar: Option<String>, run: bool, submit: bool) -> Result<()> {
+    let cfg = qf_config::load(config.as_deref(), config.as_deref())?;
+    let source = poscar.unwrap_or_else(|| "POSCAR".into());
+    let structure = qf_crystal::parse_poscar(&source)?;
+    let workspace = format!("qe_{kind}");
+    std::fs::create_dir_all(&workspace)?;
+    let target = Path::new(&workspace).join("POSCAR");
+    if std::fs::canonicalize(&source).ok() != std::fs::canonicalize(&target).ok() {
+        std::fs::copy(&source, &target)?;
+    }
+    let outdir = qf_input::pw::write_calculation_input(&workspace, &cfg, &structure, kind)?;
+    if kind == "nscf" { copy_scf_save(&workspace, &structure.formula, &outdir, false)?; }
+    let command = format!("{} < {kind}.in > {kind}.out", qf_runner::resolve_qe_command(cfg.qe.executable_path(), "pw.x"));
+    run_qe_steps(&cfg, &workspace, &structure.formula, run, submit,
+        vec![(format!("运行 {kind}"), command)], "run_qe.sh", &workspace)
 }

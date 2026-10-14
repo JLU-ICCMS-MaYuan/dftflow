@@ -46,3 +46,7 @@ test_auto/MgB2/local_run/*
 
 # CodeBuddy project data (local tool state)
 .codebuddy/
+
+# 可重建发布制品
+dist/
+scripts/linux/.sources/

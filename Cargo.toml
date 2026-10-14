@@ -17,7 +17,7 @@ toml = "0.8"
 roxmltree = "0.20"
 clap = { version = "4", features = ["derive"] }
 ndarray = "0.16"
-ndarray-linalg = { version = "0.16", features = ["openblas-static"] }
+ndarray-linalg = { version = "0.17", default-features = false, features = ["openblas-static", "openblas-system"] }
 plotters = "0.3"
 rayon = "1"
 regex = "1"

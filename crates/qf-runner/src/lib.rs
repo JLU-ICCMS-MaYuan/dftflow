@@ -14,12 +14,37 @@ pub const PREFIX: &str = "[qeflow]";
 /// 解析出某个 QE 程序的完整调用串，例如 "mpirun -np 8 /qe/bin/pw.x"。
 /// 复刻现状 `resolve_qe_command`。
 pub fn resolve_qe_command(exec_path: &str, bin: &str) -> String {
-    let exec_path = exec_path.trim_end_matches('/');
-    if exec_path.is_empty() {
-        bin.to_string()
-    } else {
-        format!("{exec_path}/{bin}")
+    let tokens = shell_words::split(exec_path).unwrap_or_else(|_| vec![exec_path.into()]);
+    if tokens.is_empty() {
+        return bin.into();
     }
+    let variable =
+        regex::Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)").unwrap();
+    let mut tokens: Vec<String> = tokens
+        .into_iter()
+        .map(|s| {
+            let s = variable
+                .replace_all(&s, |caps: &regex::Captures| {
+                    std::env::var(caps.get(1).or_else(|| caps.get(2)).unwrap().as_str())
+                        .unwrap_or_else(|_| caps[0].to_string())
+                })
+                .into_owned();
+            if let Some(tail) = s.strip_prefix("~/") {
+                format!("{}/{tail}", std::env::var("HOME").unwrap_or_default())
+            } else {
+                s
+            }
+        })
+        .collect();
+    let target = tokens.last_mut().unwrap();
+    if Path::new(target).file_name().and_then(|s| s.to_str()) != Some(bin) {
+        *target = format!("{}/{bin}", target.trim_end_matches('/'));
+    }
+    tokens
+        .iter()
+        .map(|t| shell_words::quote(t).into_owned())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// spawn 外部命令，将 stdin/stdout/stderr 重定向到文件（复刻现状 shell 重定向语义）。
@@ -39,8 +64,7 @@ pub fn spawn_redirect(
     let status = command
         .stdin(std::fs::File::open(stdin_file).with_context(|| format!("open {stdin_file}"))?)
         .stdout(
-            std::fs::File::create(stdout_file)
-                .with_context(|| format!("create {stdout_file}"))?,
+            std::fs::File::create(stdout_file).with_context(|| format!("create {stdout_file}"))?,
         )
         .stderr(
             std::fs::File::create(format!("{stdout_file}.err"))
@@ -100,7 +124,12 @@ pub fn submit_via_sbatch(work_dir: &Path, script_name: &str) -> Result<Option<St
 
 /// 根据 run_calc / submit_job 决定本地运行还是提交 Slurm。
 /// 对齐 `qeflow/phonon/runner.submit_or_run`。
-pub fn submit_or_run(run_calc: bool, submit_job: bool, cwd: &Path, script_name: &str) -> Result<bool> {
+pub fn submit_or_run(
+    run_calc: bool,
+    submit_job: bool,
+    cwd: &Path,
+    script_name: &str,
+) -> Result<bool> {
     if run_calc {
         run_shell(&format!("bash {script_name}"), cwd)?;
         Ok(true)
@@ -186,7 +215,7 @@ pub struct ScriptContext<'a> {
     pub slurm_header: &'a str,
 }
 
-fn write_root_run_script(
+pub fn write_job_script(
     workspace: &Path,
     script_name: &str,
     slurm_header: &str,
@@ -235,11 +264,16 @@ pub fn write_labeled_script(
         stage,
     };
     let mut cmds = vec!["set -e".to_string()];
-    cmds.extend(build_labeled_commands(steps, start_index, total, Some(&labeled)));
+    cmds.extend(build_labeled_commands(
+        steps,
+        start_index,
+        total,
+        Some(&labeled),
+    ));
     if let Some(m) = completion {
         cmds.push(echo_qeflow(&format!("完成: {m}")));
     }
-    write_root_run_script(ctx.workspace, script_name, ctx.slurm_header, &cmds)
+    write_job_script(ctx.workspace, script_name, ctx.slurm_header, &cmds)
 }
 
 /// 生成单个 q 点 split 运行脚本 `run_split.sh`（对齐 `input_deck/scripts.write_split_run_script`）。
@@ -253,7 +287,7 @@ pub fn write_split_run_script(
         format!("{pw_cmd} < scf.in > scf.out"),
         format!("{ph_cmd} < split_ph.in > split_ph.out"),
     ];
-    write_root_run_script(q_dir, "run_split.sh", slurm_header, &commands)
+    write_job_script(q_dir, "run_split.sh", slurm_header, &commands)
 }
 
 /// 生成 pre + split 提交阶段脚本 `submit_pre_and_split_stage.sh`。
@@ -296,7 +330,10 @@ pub fn write_merge_and_process_stage_script(
     config_file: &str,
 ) -> Result<PathBuf> {
     let steps: Vec<(String, String)> = vec![
-        ("merge".to_string(), format!("qeflow qe-merge -c {config_file}")),
+        (
+            "merge".to_string(),
+            format!("qeflow qe-merge -c {config_file}"),
+        ),
         ("q2r".to_string(), "bash run_q2r.sh".to_string()),
         (
             "matdyn_phband".to_string(),
@@ -358,7 +395,12 @@ pub fn write_split_stage_script(
             cmds.push(format!("(cd {q_name} && bash run_split.sh)"));
         }
     }
-    write_root_run_script(ctx.workspace, "submit_split_stage.sh", ctx.slurm_header, &cmds)
+    write_job_script(
+        ctx.workspace,
+        "submit_split_stage.sh",
+        ctx.slurm_header,
+        &cmds,
+    )
 }
 
 /// 逐 q 点提交 `run_split.sh`（跳过 finished），返回成功提交数量。
@@ -400,6 +442,18 @@ mod tests {
         assert_eq!(
             resolve_qe_command("mpirun -np 8 /qe/bin", "pw.x"),
             "mpirun -np 8 /qe/bin/pw.x"
+        );
+    }
+
+    #[test]
+    fn resolves_explicit_binary_and_quoted_directory() {
+        assert_eq!(
+            resolve_qe_command("mpirun -np 2 '/opt/QE suite/pw.x'", "pw.x"),
+            "mpirun -np 2 '/opt/QE suite/pw.x'"
+        );
+        assert_eq!(
+            resolve_qe_command("'/opt/QE suite'", "pw.x"),
+            "'/opt/QE suite/pw.x'"
         );
     }
 

@@ -8,3 +8,5 @@ anyhow = { workspace = true }
 serde_json = { workspace = true }
 rayon = { workspace = true }
 qf-state = { path = "../qf-state" }
+shell-words = "1"
+regex = { workspace = true }

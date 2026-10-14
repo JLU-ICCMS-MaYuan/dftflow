@@ -47,3 +47,15 @@
 - **验证**：双场景集成通过（vaspkit 在 PATH → 12 12 7 与 Python 一致；PATH 隐藏 vaspkit → 回退 9 9 7）；`cargo test --workspace` 33 套件全绿。
 - **pytest 对照终态**（Python 参考 = git 6385e45，sc-wiki env）：66 项中 60 过（49 API/CLI + 11 run/submit）；6 项未过全部为环境/版本因素——mattersim×4（本机无 `mattersim` ML 包）、`vasp_opt_rv4_api`（测试文件比 6385e45 模板新，stage4 期望 ENCUT=800）、`vasp_lobsterin_submit`（需本地 lobster 路径，本地化后通过）。
 - **环境差异记录**：`[vasp_locpot]` 的显式 `NGX/Y/Z=40` 绑定集群 FFT 粗网格；本地 FFTW 选出的粗网格为 24/24/28（细网格 48/48/56），显式值必须取粗网格否则 VASP 拒读 CHGCAR（`charge density could not be read`）。这是跨机器 FFT 库差异，不是代码缺陷；本地验证用 24/24/28。
+
+
+## 2026-10-14 收敛决策与实证
+
+- 已授权在 macOS 上完成 Linux 交付，构建主机与运行目标分开：OrbStack 提供 Linux x86_64 容器，Rust 目标 `x86_64-unknown-linux-musl`；OpenBLAS、spglib 和字体原生依赖在目标容器编译。macOS Homebrew 库只用于本机构建。
+- ndarray-linalg 0.17 对齐 ndarray 0.16，启用 openblas-system + openblas-static。OpenBLAS 来自系统安装；不使用 Jacobi 回退。crate 构建工具的 rustls 特性是编译依赖要求，不代表程序运行需要联网。
+- MgB2 原有合成黄金产物在替换 OpenBLAS 后恢复严格 Tc/派生量对照，无需降精度或改动 golden；原 5% 豁免已删除。
+- 发布构建及断网测试脚本为 `scripts/linux/build.sh`；源码不再声明第六个 binary target。安装器改用版本目录软链接，预检并备份旧入口。
+- 用户指定继续 MgB2，本轮真实 QE 对照及数值测试以 MgB2 为准，历史 ISIF4 专项不冒充本轮已执行。
+
+- Linux 容器验证发现：Alpine 的 musl host 默认静态链接会使 spglib-sys 的 bindgen 构建脚本无法 dlopen(libclang)。`.cargo/linux-host.toml` 仅令 host 构建工具动态链接，目标 ELF 仍保持 musl 默认静态链接；固定镜像内通过 Cargo 的 host-config/target-applies-to-host 开关启用（RUSTC_BOOTSTRAP 仅在构建容器内设置）。
+- 真实 MgB2 能带对照发现原 Rust 将独立 NSCF/eband 的坐标全部输出为 17 位小数，而 Python 为 8 位；晶格 `.12g` 也误写为固定 12 位小数。已按原契约精确区分 SCF/phonon 的 17 位和 NSCF/eband 的 8 位，并实现 12 位有效数字；不得以末位敏感性为理由放宽数据验收。

@@ -427,7 +427,7 @@ const LEGACY_ENTRY_NAMES: &[(&str, &str)] = &[
     ("vasp_cohp_fatband", "vasp-cohp-fatband"),
     ("vasp_lobsterin", "vasp-lobsterin"),
     ("vasp_plot_cohp", "vasp-process-cohp"),
-    ("vasp_plot_kcohp", "vasp-plot-kcohp"),
+    ("vasp_plot_kcohp", "vasp-plot-k-cohp"),
     ("vasp_locpot", "vasp-locpot"),
     ("vasp_process_locpot", "vasp-process-locpot"),
     ("vasp_charge", "vasp-process-charge"),

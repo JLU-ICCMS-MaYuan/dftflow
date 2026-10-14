@@ -1,5 +1,5 @@
 //! scflow 全链路黄金对照（Python 参考 `python-reference-0004` 产物 vs Rust）：
-//! 分展宽 CSV 逐字节一致；result.json 数值按容差（Eliashberg 求解器差异另记）；
+//! 分展宽 CSV 逐字节一致；result.json 全部数值按固定容差；
 //! CIF/POSCAR/PDF 文件形态与存在性。
 //!
 //! fixture：`scripts/gen_scflow_fixture.py` 生成合成 `*.dyn*.elph*` + `ph.out`
@@ -90,7 +90,6 @@ fn full_pipeline_matches_python_reference() {
         "0.01/direct_s3_b0,01.csv",
         "0.01/a2f_s3_r60_g5_b0,01.csv",
         "0.01/result.json",
-
         "0.02/direct_s3_b0,02.csv",
         "0.02/a2f_s3_r60_g5_b0,02.csv",
         "0.02/result.json",
@@ -102,7 +101,7 @@ fn full_pipeline_matches_python_reference() {
         assert!(golden.join(rel).is_file(), "golden 缺少 {rel}");
     }
 
-    // 2) 分展宽 CSV 逐字节一致；summary CSV 豁免 Eliashberg 级联列
+    // 2) 分展宽及 summary CSV（含 Tc 与所有派生量）逐字段一致
     for rel in [
         "0.01/direct_s3_b0,01.csv",
         "0.01/a2f_s3_r60_g5_b0,01.csv",
@@ -116,17 +115,14 @@ fn full_pipeline_matches_python_reference() {
         assert_eq!(reference, new, "CSV 不一致: {rel}");
     }
     {
-        // summary：Tc E 及其派生列（DeltaC/Tc、Delta、Hc2）由 Eliashberg 求解器
-        // 差异决定（Python float32+LAPACK vs Rust f64），其余列逐字节一致。
+        // OpenBLAS 恢复全部列的严格对照，包括 Eliashberg 派生量。
         let rel = "summary_MgB2_s3_mu0,1.csv";
         let reference = parse_csv_line_first(&std::fs::read_to_string(golden.join(rel)).unwrap());
         let new = parse_csv_line_first(&std::fs::read_to_string(results.join(rel)).unwrap());
-        let exempt = [11usize, 14, 15, 16]; // Tc E, DeltaC/Tc, Delta, Hc2
+        assert_eq!(reference.len(), new.len());
         for (row, (ra, rb)) in reference.iter().zip(&new).enumerate() {
+            assert_eq!(ra.len(), rb.len());
             for (col, (x, y)) in ra.iter().zip(rb).enumerate() {
-                if exempt.contains(&col) {
-                    continue;
-                }
                 assert_eq!(x, y, "summary[{row}][{col}] 不一致");
             }
         }
@@ -137,7 +133,7 @@ fn full_pipeline_matches_python_reference() {
     let new = std::fs::read_to_string(results.join("MgB2.vasp")).unwrap();
     assert_eq!(reference, new, "MgB2.vasp 不一致");
 
-    // 4) result.json：除 Eliashberg 求解器差分外逐字段对照
+    // 4) result.json：全部数值与状态对照，仅归一化临时输入目录
     for broadening in ["0.01", "0.02", "0.04"] {
         let reference: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(golden.join(broadening).join("result.json")).unwrap(),
@@ -149,45 +145,48 @@ fn full_pipeline_matches_python_reference() {
         .unwrap();
         let mut failures = Vec::new();
         compare(&reference, &new, String::new(), &mut failures);
-        // 路径类字段（zero_frequency_handling.modes[N].file）与运行目录相关，忽略
-        // Eliashberg Tc 及其派生量：Python 求解器为 float32 矩阵 + LAPACK，
-        // Rust 为 f64（交付目标为静态 OpenBLAS，musl 验证待 Linux），
-        // 在该合成数据（非物理 λ≈12）上相对差 ~2%；真实数据（λ~0.7）差异远小。
-        let tc_e_py = reference["Tc, K"]["Eliashberg"].as_f64().unwrap();
-        let tc_e_rs = new["Tc, K"]["Eliashberg"].as_f64().unwrap();
-        assert!(
-            (tc_e_py - tc_e_rs).abs() <= 0.05 * tc_e_py.max(1.0),
-            "Eliashberg Tc 相对差超 5%: py={tc_e_py} rs={tc_e_rs}"
-        );
-        let allowed_prefix = [
-            ".Tc, K.Eliashberg",
-            ".DeltaC/Tc",
-            ".Delta",
-            ".Hc2, T",
-            ".zero_frequency_handling.modes",
-        ];
-        let real_failures: Vec<String> = failures
-            .iter()
-            .filter(|f| !allowed_prefix.iter().any(|p| f.starts_with(p)))
-            .cloned()
-            .collect();
-        assert!(
-            real_failures.is_empty(),
-            "result.json 存在非 Eliashberg 差异: {real_failures:?}"
-        );
+        assert!(failures.is_empty(), "result.json 存在差异: {failures:?}");
     }
 
     // 5) CIF：空间群编号/符号与晶胞参数等价（非逐字节）
     let cif = std::fs::read_to_string(results.join("MgB2_35.cif")).unwrap();
-    assert!(cif.contains("_symmetry_Int_Tables_number 35"), "空间群编号缺失");
+    assert!(
+        cif.contains("_symmetry_Int_Tables_number 35"),
+        "空间群编号缺失"
+    );
     assert!(cif.contains("Cmm2"), "空间群符号缺失");
+    let mut pdfs = Vec::new();
+    collect_pdfs(&results, &mut pdfs);
+    assert_eq!(pdfs.len(), 7, "每个展宽两份 PDF，加一份 summary");
+    for pdf in pdfs {
+        let bytes = std::fs::read(&pdf).unwrap();
+        assert!(
+            bytes.starts_with(b"%PDF-"),
+            "PDF 类型错误: {}",
+            pdf.display()
+        );
+        assert!(bytes.windows(5).any(|s| s == b"%%EOF"), "PDF 截断");
+    }
     let _ = std::fs::remove_dir_all(&work);
 }
 
-fn compare(reference: &serde_json::Value, new: &serde_json::Value, path: String, failures: &mut Vec<String>) {
+fn compare(
+    reference: &serde_json::Value,
+    new: &serde_json::Value,
+    path: String,
+    failures: &mut Vec<String>,
+) {
     match (reference, new) {
         (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+            assert_eq!(a.len(), b.len(), "JSON 字段数量不同: {path}");
             for (k, v) in a {
+                if path.starts_with(".zero_frequency_handling.modes[") && k == "file" {
+                    assert_eq!(
+                        std::path::Path::new(v.as_str().unwrap()).file_name(),
+                        std::path::Path::new(b[k].as_str().unwrap()).file_name()
+                    );
+                    continue;
+                }
                 if !b.contains_key(k) {
                     failures.push(format!("{path}.{k} missing"));
                     continue;
@@ -208,7 +207,7 @@ fn compare(reference: &serde_json::Value, new: &serde_json::Value, path: String,
             let (Some(x), Some(y)) = (a.as_f64(), b.as_f64()) else {
                 return;
             };
-            if (x - y).abs() > 1e-6 * x.abs().max(1.0) {
+            if (x - y).abs() > 1e-8 + 1e-6 * x.abs() {
                 failures.push(format!("{path}: {x} vs {y}"));
             }
         }
@@ -225,4 +224,15 @@ use std::process::Command;
 /// 按行拆分 CSV（首行 + 数据行），保留引号字段。
 fn parse_csv_line_first(text: &str) -> Vec<Vec<String>> {
     text.lines().map(|l| parse_csv_line(l)).collect()
+}
+
+fn collect_pdfs(dir: &Path, paths: &mut Vec<PathBuf>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let p = entry.unwrap().path();
+        if p.is_dir() {
+            collect_pdfs(&p, paths);
+        } else if p.extension().and_then(|e| e.to_str()) == Some("pdf") {
+            paths.push(p);
+        }
+    }
 }

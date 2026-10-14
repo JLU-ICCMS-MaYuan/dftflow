@@ -24,6 +24,15 @@
 
 ## 需求处理记录
 
+### [2026-10-14] 0004 实质缺口收敛与 macOS 主机上的 Linux 交付
+- **需求与授权**：用户要求补齐 QE 基础命令、OpenBLAS 接入和严格数值验收、命令环境切换、五二进制收敛；继续 0004 Issue/Spec 和 MgB2 测试体系，在 macOS 完成 Linux 交付。沿用本项目 Rust 与 pytest，不采用通用 TypeScript 规则。
+- **方案**：复刻冻结 Python 参考（9396b3a）的基础 QE 行为；ndarray-linalg + 系统静态 OpenBLAS 替代 Jacobi；恢复 Tc 和全部派生量容差；版本目录安装并备份旧入口；macOS Docker/OrbStack 运行 Linux amd64 构建环境，编译独立目标依赖并验证静态 ELF 和离线运行。
+- **实现**：SCF/NSCF 正确配置段、目录、k 网格、数据继承、运行/提交及错误传播；补齐 eband KPATH 生成和标题跳过、SCF 关键文件复制、DOS 全树复制；修正 vasp_plot_kcohp 旧入口；Cargo 仅五个 binary target，dyn0 保留别名。机器登录信息和实际运行输出仍只存 docs/local。
+- **验收**：macOS Rust 88 项、Python MgB2 API 9 项、已安装基础 CLI 4 项、52 个安装入口通过。Python/Rust 真实 MgB2 SCF 总能与 SCF/NSCF Fermi 能一致；scflow 合成三展宽的 CSV/JSON/全部 Tc 派生量、零频记录、CIF/POSCAR 与七份 PDF 检查通过。Linux 结果按 acceptance-20261014.md 回填，不沿用旧“全部完成”自述。
+- **追踪**：`docs/specs/0004-dftflow-rust/{tasks.md,acceptance-20261014.md}`；本地 Issue 草稿关联 Gitee IKKGLP，线上仍由用户自管。
+- **状态**：本轮缺口实现和验收完成：Linux 五个静态 ELF 已产出并 strip，88 项 release 测试、88 项断网重跑、52 个入口及 stripped scflow 数值对照通过；交付包在 `dist/`。真实远程计算节点与可选 MatterSim 不冒充本轮验收。
+
+
 ### [2026-10-13] Git 卫生治理与手动计算操作文档（Issue 0005）
 - **需求**：处理所有未提交/误跟踪的文件：编译临时文件不入 Git；测试输出不保留；远程机器登录与软件配置（含路径）只记本地；测试输入、命令与操作步骤完整写入文档供手动计算查对。经澄清确认：local_run 166MB 运行输出 `git rm --cached` 保留本地；vasp.6.4.3 推用户私有 Gitee；q-e 推自己的 GitLab fork `madegan/q-e`（先同步上游）；input_*.toml 用占位符提交、真实路径存 gitignored 的 `docs/local/paths.toml` 由 conftest 自动注入；以 0005 新 Spec（issue-draft/spec/tasks/acceptance 全套）管理。
 - **结果**：
