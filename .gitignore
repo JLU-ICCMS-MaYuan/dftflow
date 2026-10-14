@@ -1,39 +1,60 @@
-# directory
+# Git 忽略规则
+# 规则按用途分组；例外规则紧随对应忽略项，调整时需保留先后顺序。
+
+# -----------------------------------------------------------------------------
+# 1. 构建产物、依赖与发布包
+# -----------------------------------------------------------------------------
 target/
-test_manual/
-__pycache__/
-*.egg-info/
+dist/
 node_modules/
+*.egg-info/
+scripts/linux/.sources/
+# 保留已跟踪的子模块指针，忽略 external 下未纳管的本地内容。
 external/
-.pytest_cache/
-docs/local/
-
-# files
 package-lock.json
-wannier90flow/solution_booklet.pdf
-wannier90flow/tutorial.pdf
-wannier90flow/user_guide.pdf
-.vscode/settings.json
 
-# macOS
-.DS_Store
+# -----------------------------------------------------------------------------
+# 2. Python 缓存与覆盖率报告
+# -----------------------------------------------------------------------------
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
 
-# auto-generated test working dirs (QE/VASP/SCFlow run outputs)
+# -----------------------------------------------------------------------------
+# 3. Rust 备份与覆盖率产物
+# -----------------------------------------------------------------------------
+*.rs.bk
+*.profraw
+*.profdata
+
+# -----------------------------------------------------------------------------
+# 4. 测试运行目录与输出
+# -----------------------------------------------------------------------------
+test_manual/
 test_auto/**/MgB2_calc/
-# 跟踪黄金基线 pytest：忽略各 flow 运行时生成目录，仅放行 test_*.py
+
+# 各 flow 的运行内容默认忽略，保留 pytest 脚本和专项验收脚本。
 test_auto/MgB2/qeflow/*
 !test_auto/MgB2/qeflow/test_*.py
+
 test_auto/MgB2/scflow/*
 !test_auto/MgB2/scflow/test_*.py
-test_auto/MgB2/substitutionflow/*
-!test_auto/MgB2/substitutionflow/test_*.py
-test_auto/MgB2/vaspflow/*
-!test_auto/MgB2/vaspflow/test_*.py
-test_auto/MgB2/wannier90flow/*
-!test_auto/MgB2/wannier90flow/test_*.py
 !test_auto/MgB2/scflow/validate_scflow_isif4.py
 
-# local_run：真实运行输出不保留在 Git（输入/脚本/结构/赝势库白名单放行）
+test_auto/MgB2/substitutionflow/*
+!test_auto/MgB2/substitutionflow/test_*.py
+
+test_auto/MgB2/vaspflow/*
+!test_auto/MgB2/vaspflow/test_*.py
+
+test_auto/MgB2/wannier90flow/*
+!test_auto/MgB2/wannier90flow/test_*.py
+
+# 本地运行输出保留磁盘；仅放行输入、脚本、结构与赝势库。
 test_auto/MgB2/local_run/*
 !test_auto/MgB2/local_run/*.toml
 !test_auto/MgB2/local_run/*.sh
@@ -41,34 +62,30 @@ test_auto/MgB2/local_run/*
 !test_auto/MgB2/local_run/potcar_lib/
 !test_auto/MgB2/local_run/potcar_lib/**
 
-# 本机备份类文件
-*.bak
-
-# CodeBuddy project data (local tool state)
+# -----------------------------------------------------------------------------
+# 5. 本机资料、编辑器配置与工具状态
+# -----------------------------------------------------------------------------
+docs/local/
+.vscode/settings.json
 .codebuddy/
 
-# 可重建发布制品
-dist/
-scripts/linux/.sources/
+# 仅忽略根目录旧 .codex 占位文件，未来同名目录可存放共享配置。
+/.codex
+!/.codex/
 
-# Python 工具缓存与覆盖率报告
-.ruff_cache/
-.mypy_cache/
-.coverage
-.coverage.*
-htmlcov/
+# -----------------------------------------------------------------------------
+# 6. 本地参考手册
+# -----------------------------------------------------------------------------
+wannier90flow/solution_booklet.pdf
+wannier90flow/tutorial.pdf
+wannier90flow/user_guide.pdf
 
-# 编辑器及 macOS 临时文件
+# -----------------------------------------------------------------------------
+# 7. 备份、编辑器临时文件与 macOS 元数据
+# -----------------------------------------------------------------------------
+*.bak
 *.swp
 *.swo
 *~
+.DS_Store
 ._*
-
-# Rust 格式化备份及覆盖率产物
-*.rs.bk
-*.profraw
-*.profdata
-
-# 根目录旧 .codex 占位文件；未来同名目录仍可存放共享配置
-/.codex
-!/.codex/
