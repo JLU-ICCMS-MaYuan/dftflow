@@ -22,7 +22,7 @@ qe_phonon_split_index -c input.toml -i POSCAR -s
 qe_phonon_split_coords -c input.toml -i POSCAR -s
 
 # 不分 q：准备输入，再提交算例生成的显式脚本
-qe_phonon_nosplit -c input.toml
+qe_phonon_nosplit -c input.toml -i POSCAR
 sbatch nosplit_job.sh
 ```
 

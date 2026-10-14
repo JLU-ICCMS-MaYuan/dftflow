@@ -77,6 +77,8 @@ enum Commands {
     QePhononNosplit {
         #[arg(short, long, default_value = "input.toml")]
         config: Option<String>,
+        #[arg(short = 'i', long = "input", visible_short_alias = 'p', visible_alias = "poscar")]
+        input: Option<String>,
         #[arg(short = 'r', long)]
         run: bool,
         #[arg(short = 's', long)]
@@ -323,8 +325,8 @@ fn main() -> Result<()> {
         Commands::QeElEdos { config, poscar, run, submit } => {
             run_qe_eledos(config, poscar, run, submit)
         }
-        Commands::QePhononNosplit { config, run, submit } => {
-            run_qe_phonon_nosplit(config, run, submit)
+        Commands::QePhononNosplit { config, input, run, submit } => {
+            run_qe_phonon_nosplit(config, input, run, submit)
         }
         Commands::QePhononSplitIndex { config, input, run, submit } => {
             phonon_chain::run(config, input, run, submit, "index")
@@ -541,8 +543,8 @@ fn with_args(exec_cmd: &str, args: &str, redirect: &str) -> String {
 /// `qe_phonon_nosplit` 真实逻辑（对齐 `phonon/qe_phonon_nosplit.py`）：准备
 /// scf/ph/q2r/matdyn 全部输入与脚本，按状态推进剩余步骤；-r 本地顺序运行并出图，
 /// -s 生成聚合 `submit_phonon_workflow.sh` 提交。
-fn run_qe_phonon_nosplit(config: Option<String>, run: bool, submit: bool) -> Result<()> {
-    let ctx = create_phonon_context(config.as_deref(), None, Some("qe_phonon_nosplit"), true)?;
+fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: bool, submit: bool) -> Result<()> {
+    let ctx = create_phonon_context(config.as_deref(), input.as_deref(), Some("qe_phonon_nosplit"), true)?;
     prepare_root_scf(&ctx)?;
     prepare_ph_step(&ctx)?;
     let q2r_path = q2r_input::write_q2r_input(&ctx.workspace, &ctx.cfg, &ctx.prefix)?;

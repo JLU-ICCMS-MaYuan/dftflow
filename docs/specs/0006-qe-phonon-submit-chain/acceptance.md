@@ -93,3 +93,12 @@ FR-001～006、SC-001～004 的本地实现、自动测试、真实计算与安�
 - 本轮是默认目录和程序衔接验证，**没有重新提交真实 QE 数值作业**，不将模拟回归作为新的数值对照证据；既有数值验收仍以此前记录为准。
 
 本机证据：docs/local/outdir-tmp-tests.log、outdir-tmp-build.log、outdir-tmp-package.log、outdir-tmp-entries.log、outdir-tmp-install.log、outdir-tmp-delivery.json 与 outdir-tmp-installed-check/。真实路径和生成输入不进入 Git。
+
+## US5：nosplit 结构输入参数（2026-10-14）
+
+- FR-011/012、SC-008：`bash scripts/build-native.sh test --release --locked --offline -p qeflow --test nosplit_input`，2 项通过。测试真实 CLI 准备路径（无 QE/Slurm 执行）：四种参数拼写均覆盖旧工作目录 POSCAR，并核对生成 scf.in 的晶胞；未指定时覆盖工作目录 POSCAR、当前 POSCAR、CONTCAR 三种来源；非法显式文件报错且旧结构未变。
+- 新构建 `qeflow qe-phonon-nosplit --help` 显示 `-i, --input <INPUT> [aliases: -p, --poscar]`。
+- 已更新本地 Issue 草稿、Spec/Plan/Research/Tasks/需求质量门、README、nosplit 与三模式 Overview、AGENTS。线上 Issue 和远程链接仍由用户管理，未宣称关闭。
+- 本次仅源码修复与本机原生 release 验证，未切换 PATH 中的安装版本；未运行真实 QE 计算，不将此项视为 nosplit 全链路修复。
+
+附加回归：`basic_cli` 3 项、`phonon_chain` 6 项、`phonon_init` 5 项全部通过，本次共 16 项；本地运行日志 `docs/local/nosplit-input-regression-20261014.log`。编译仅有既有未使用项及依赖未来兼容警告，无错误。

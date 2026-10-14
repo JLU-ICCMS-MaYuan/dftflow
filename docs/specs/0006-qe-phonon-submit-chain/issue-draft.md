@@ -145,3 +145,23 @@ SC-001～SC-004，结果见 [acceptance.md](acceptance.md)。
 追踪：Spec FR-010 / SC-007，任务 T016～T018；实现与验证证据更新至 acceptance.md。线上 Issue 继续由用户管理，本次仅更新本地草稿。
 
 US4 实现与验证完成：32 项定向测试通过，五主程序已重新编译安装，安装后的四种声子入口验证默认 tmp 及显式 out 覆盖。具体边界见 [US4 验收](acceptance.md)；本次不重新提交真实 QE 作业。
+
+## 补充 Bug：nosplit 缺少结构输入参数
+
+### 原始需求记录
+
+> qe_phonon_nosplit 为什么他没有 -i 参数，其他2 个qe-phonon-split-coords和qe_phonon_split_index 都有 -i
+>
+> 你使用 issue 和 spec 把这个 bug 修了
+>
+> 什么叫沿用 0006，又说作为独立 bug 修复。说到底还是新建一个 issue 吗
+>
+> ok
+
+复用 0006，不创建新 Issue；本项性质为 Bug，不改变原 Issue 主类型。关联 [US5 Spec](spec.md)。用户已确认完整补充草案与复用方案。验收采用 FR-011/012、SC-008。
+
+### Documentation Impact
+
+更新本目录 Spec/Plan/Research/Tasks/验收、nosplit Overview、根 README 和 AGENTS；本项不修复其他 nosplit 全链路缺口，不安装、不提交计算，远程链接尚未验证。
+
+本项源码已修复；SC-008 两项新测试和十四项现有回归通过，见 [验收](acceptance.md)。未更新安装制品，不关闭线上 Issue。

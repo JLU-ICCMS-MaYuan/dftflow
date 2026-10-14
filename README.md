@@ -54,6 +54,8 @@ bash scripts/verify-entries.sh /absolute/path/to/binaries
 
 [MgB₂ 分机器算例](examples/MgB2/README.md) 支持 index、coords 和 nosplit。分 q 模式仅计算一次 SCF，入口自动安排所有 q 点与依赖后的合并/绘图；详见 [0006](docs/specs/0006-qe-phonon-submit-chain/spec.md)。
 
+三种声子聚合入口均支持 `-i/--input`（别名 `-p/--poscar`），例如 `qe_phonon_nosplit -c input.toml -i POSCAR`。nosplit 不传结构参数时优先复用工作目录 POSCAR，再查找当前目录 POSCAR/CONTCAR；完整执行边界见 [nosplit 说明](docs/overview/qeflow/qe_phonon_nosplit.md)。
+
 ## 命令速查
 
 - **QE**：`qe_scf` `qe_nscf` `qe_eband` `qe_eledos` `qe_process_eband` `qe_process_eledos` `qe_ph_nosplit` `qe_merge` `qe_q2r` `qe_matdyn_phband` `qe_matdyn_phdos` `qe_process_phonon` `qe_split_submit` `qe_check` `qe_phonon_nosplit` `qe_phonon_split_index` `qe_phonon_split_coords`

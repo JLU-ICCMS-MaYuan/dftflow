@@ -11,12 +11,12 @@
 ## 使用方法
 
 ```bash
-qe_phonon_nosplit -c input.toml
+qe_phonon_nosplit -c input.toml -i POSCAR
 # 仅当已按算例生成并检查此脚本时，才提交它
 sbatch nosplit_job.sh
 ```
 
-`-c/--config` 默认 input.toml；此聚合入口没有 -i 结构选项，使用配置/工作目录中的结构。解析器虽提供 -r/-s，但当前存在下述限制。
+`-c/--config` 默认 input.toml；`-i/--input` 指定结构文件，支持 `-p/--poscar` 别名，与两个 split 入口一致。显式文件优先于已有工作目录 POSCAR；文件不存在时报错。不传结构参数时优先复用工作目录 POSCAR，否则依次查找当前目录 POSCAR、CONTCAR。解析器虽提供 -r/-s，但当前存在下述限制。
 
 ## 输入、输出与衔接
 
