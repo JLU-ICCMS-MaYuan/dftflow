@@ -57,3 +57,10 @@
 - [x] 同步父仓库子模块指针，追加需求原话与规则例外、验收和 AGENTS.md 记录，按规范提交。
 - [x] 核对父仓库及所有已初始化子模块无剩余未提交项。
 - 证据：VASP 远程 master 为 `5e8bc01c89483b05d2587f13db854791cfbdf430`；备份 blob 为 `5b7876d8ccd3f68d49cfa433a8b1f0b6019e99ed`；本节随父仓库指针一并提交。
+
+## T010 单文件历史清理并推送 rust（2026-10-14 明确授权，SC-006 补充）
+
+- [x] 保存原 rust 分支本地备份引用及 WAVECAR SHA-256。
+- [x] 仅移除 `test_auto/MgB2/local_run/vasp_cohp_uniform/WAVECAR`；8 个重写提交逐一核对，无其他文件变化。
+- [x] 验证当前树、提交数量、本地文件 SHA-256 和其他 refs 不变，rust 可达历史不再包含目标文件/blob。
+- [x] `git push -u origin rust` 成功，建立 origin/rust 跟踪关系；证据见 acceptance.md 补充验收。

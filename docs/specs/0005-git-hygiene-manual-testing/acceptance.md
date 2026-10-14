@@ -56,3 +56,13 @@
 - **内容完整性**：提交前 `git hash-object` 与提交后 `git rev-parse HEAD:makefile.include.linux-aocl.bak` 均为 `5b7876d8ccd3f68d49cfa433a8b1f0b6019e99ed`，备份内容未修改。
 - **SC-006 补充证据**：VASP 子模块工作区为空；父仓库本次提交同步该指针与 0005 文档、AGENTS.md。最终递归 Git 状态在提交后核验。
 - **验证边界**：此次仅做 Git 纳管、推送及文档更新，未重新编译 VASP 或重跑 pytest；之前的计算与测试记录属于历史验收，本次不据此宣称重新通过。父仓库仅本地提交，线上 Issue 仍由用户自管。
+
+## 2026-10-14 补充验收：单文件历史清理与 rust 推送
+
+- **授权范围**：仅从 rust 历史移除 `test_auto/MgB2/local_run/vasp_cohp_uniform/WAVECAR`，保留本地文件；不批量清理其余 104 个历史运行文件。
+- **本地回退**：原分支 `119b87d6886dab540c5ca68702fc0d3e3f69a495` 保存于 `refs/backups/rust-before-wavecar-20261014-124611`；逐提交映射及哈希核验记录保存在 gitignored 的 `docs/local/history-cleanup-20261014-124611.json`。该备份不推送。
+- **清理结果**：8 个提交重写后，分支头为 `31829a916d661bc7e6a9f5721cf8d26b2029a37d`；每对新旧提交仅允许该文件差异，提交总数不变。当前树仍为 `6a3622200c6cba604a989e51a05c0f23b0bda18a`，其他原有 refs（包括 python-reference-0004）未变。
+- **本地文件保留**：清理前后 SHA-256 均为 `a999bdadaafc528dcb5a65ec76c83bbd90436f1c8d9e8e970c122b72cc686f09`，文件仍在本地且被忽略。
+- **历史验证**：`git log rust -- <目标路径>` 为空；`git rev-list --objects rust` 不含被拒绝 blob `0f4f1d08d10d1e8878ceae12454c7418891804ce`。本地备份仍保留旧对象，未执行对象回收。
+- **推送证据**：普通推送（未强推）成功创建远程 rust，并设置本地分支跟踪 origin/rust；随后本节文档随独立收尾提交推送。
+- **边界**：未修改计算逻辑或重新运行计算；历史文档中的旧提交号保留为当时记录，可通过本地映射查询新提交号。线上 Issue 未操作。
