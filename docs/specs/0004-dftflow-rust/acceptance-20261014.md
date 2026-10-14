@@ -79,7 +79,7 @@
 ```text
 b29069dfd034db0ecd61423f52170d6fc343a714fbd9f05fa3b9895fba4b0b02  test_auto/MgB2/MgB2.vasp
 0cc2355b6cd2864eab90e710737882c5d65fcea21cc2bdc50b5dda0a2fd66f5f  test_auto/MgB2/input_qe.toml
-07a600d0700776e87be58e91983b8bde50eee2f21d790adc33babe3f1f989f0b  test_auto/MgB2/rust-reference/KPATH.in
+df2bf0fa82d6a3279712c52df9cc347295a89cca3f73b1154a6b174a2c1123c3  test_auto/MgB2/rust-reference/KPATH.in
 2a3c18717aef16a7755dabfe01c3ca5be2831a68aab06c7934b40d619753906c  test_auto/MgB2/rust-reference/nscf.in
 ddfe40da759f9e990d668517d596e0ae7bae12022dfc9a3cf284b292b472db8a  test_auto/MgB2/rust-reference/scf.in
 7f1438082129857815c2d3147ca8b171f8aac333ea589c135cedba7b0d179bc4  test_auto/MgB2/rust-reference/grid.xml
