@@ -152,7 +152,7 @@ fn check_split_task(q_dir: &Path) -> TaskState {
     let scf = sniff(&q_dir.join("scf.out"));
     let ph = sniff(&q_dir.join("split_ph.out"));
     let has_any = scf.exists || ph.exists;
-    if ph.finished && scf.finished {
+    if ph.finished && !ph.error && ((scf.finished && !scf.error) || q_dir.join("scf_reused.json").exists()) {
         return TaskState::Finished;
     }
     if ph.error || scf.error {

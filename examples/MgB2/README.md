@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-- [sugon-amd](sugon-amd/README.md)：QE 7.4.1、AMD Slurm 单节点声子流程。
+- [sugon-amd](sugon-amd/README.md)：QE 7.4.1、一次 SCF、两种分 q 自动依赖链及 nosplit 对照。
 - [inspur](inspur/README.md)：配置模板，等待实际机器信息。
 - [chem](chem/README.md)：配置模板，等待实际机器信息。
 

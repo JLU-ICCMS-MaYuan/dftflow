@@ -17,6 +17,7 @@ pub struct SplitQEntry {
     pub directory: String,
     pub index: usize,
     pub q_crystal: [f64; 3],
+    pub q_cart: Option<[f64; 3]>,
 }
 
 /// 收集 full q 网格（晶体坐标）。
@@ -73,10 +74,12 @@ pub fn load_split_q_entries(workspace: &str, prefix: &str) -> Result<Vec<SplitQE
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string())
                         .unwrap_or_else(|| format!("{index:02}"));
+                    let q_cart = p.get("q_cart").and_then(|v|v.as_array()).filter(|v|v.len()==3).and_then(|v|Some([v[0].as_f64()?,v[1].as_f64()?,v[2].as_f64()?]));
                     entries.push(SplitQEntry {
                         directory,
                         index,
                         q_crystal,
+                        q_cart,
                     });
                 }
             }
@@ -97,6 +100,7 @@ pub fn load_split_q_entries(workspace: &str, prefix: &str) -> Result<Vec<SplitQE
                 directory: format!("{:02}", q.index),
                 index: q.index,
                 q_crystal: q.q_crystal,
+                q_cart: Some(q.q_crystal),
             })
             .collect());
     }
@@ -205,7 +209,12 @@ pub fn generate_split_inputs(
         std::fs::create_dir_all(&q_dir)?;
         qf_input::pw::write_phonon_scf_input(&q_dir, config, structure, prefix)?;
         if mode_key == "split_assign_coords" {
-            qf_input::ph::write_split_ph_input_assign_coords(&q_dir, config, prefix, entry.q_crystal)?;
+            let q_cart = if let Some(cart)=entry.q_cart {cart} else {
+                let od=config.qe_phonon.scf.get("outdir").and_then(|v|v.as_str()).unwrap_or("./out");
+                let info=crate::xml::parse_qe_save_xml(&Path::new(workspace).join(od).join(format!("{prefix}.save/data-file-schema.xml")))?;
+                let mut cart=[0.;3]; for i in 0..3 {for j in 0..3 {cart[i]+=entry.q_crystal[j]*info.bg[j][i];}} cart
+            };
+            qf_input::ph::write_split_ph_input_assign_coords(&q_dir, config, prefix, q_cart)?;
         } else {
             qf_input::ph::write_split_ph_input_assign_index(&q_dir, config, prefix, entry.index as i64)?;
         }
@@ -222,6 +231,7 @@ pub fn generate_split_inputs(
             directory: entry.directory.clone(),
             index: entry.index,
             coords: Some(entry.q_crystal),
+            q_cart: entry.q_cart, q_crystal: Some(entry.q_crystal),
         });
     }
     if !has_q_index_map(workspace) {
@@ -242,6 +252,7 @@ fn entries_from_coords(coords: &[[f64; 3]]) -> Vec<SplitQEntry> {
             directory: format!("{:02}", i + 1),
             index: i + 1,
             q_crystal: *q,
+            q_cart: None,
         })
         .collect()
 }

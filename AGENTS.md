@@ -24,6 +24,14 @@
 
 ## 需求处理记录
 
+### [2026-10-14] 全局技能安装与 Issue 0006 声子一次提交全链路
+- **需求与授权**：用户完整批准 0006 方案，随后要求安装 Big-Project-Skill 并用其实现；已确认一次 SCF、多关联作业、index/coords 两模式和真实集群验收。
+- **技能**：通过 skill-installer 将上游 2ed8ea6 的六个技能安装至当前用户全局目录，20 个文件与固定上游提交一致；使用 issue-manager、spec-runner 和 overview-maintainer。用户指定本地 Issue 草稿及既有确认优先，不操作线上 Gitee。
+- **实施**：SCF 完整快照与 PH only_init；各 q 独立复制并仅 PH；原生 Slurm afterok/作业记录/失败恢复；修正 coords 单位、实际 outdir 合并与后处理路径；三模式 examples 统一 Bash 提交入口。沿用 Rust/Bash 语言例外。
+- **部署**：计算节点旧 glibc 与登录节点不兼容，用户级私有运行库和加载器打包解决，不改系统；五份程序与 52 入口更新。
+- **验证**：workspace 96 项、最终 CLI 16 项、登录和计算节点 52 入口通过；64 MPI 两模式及最终制品 32 MPI 同配置 nosplit 对照通过，每流程 SCF 一次；频率/DOS 标准固定。实际队列额度失败、取消与部署失败如实留档，不冒充通过。
+- **边界**：小网格非物理收敛；账户需有 q 点数 + 2 的提交额度；inspur/chem 模板待实际配置。线上 Issue、远程链接由用户自管；真实路径、作业日志与哈希仅存 docs/local。追踪 docs/specs/0006-qe-phonon-submit-chain/acceptance.md。
+
 ### [2026-10-14] 展示算例集中到根目录 examples
 - **需求与授权**：用户要求将其他目录用于展示的 examples 集中到根目录 examples。
 - **实施**：迁移 qeflow/examples 的四份资产；Si 结构与旧路径放 examples/Si/generic，合成 α²F 和配置放 examples/synthetic-a2F/generic。更新根目录索引及 qeflow 手册，统一运行输出忽略规则。

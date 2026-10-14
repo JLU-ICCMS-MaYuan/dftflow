@@ -37,16 +37,16 @@ fn copy_file(src: &str, dst: &str) -> bool {
 }
 
 fn copy_tree(src: &str, dst: &str) -> bool {
-    if !Path::new(src).is_dir() {
-        return false;
+    fn copy(src: &Path, dst: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry=entry?;
+            if entry.file_type()?.is_dir() { copy(&entry.path(),&dst.join(entry.file_name()))?; }
+            else { std::fs::copy(entry.path(),dst.join(entry.file_name()))?; }
+        }
+        Ok(())
     }
-    if let Some(parent) = Path::new(dst).parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let status = std::process::Command::new("cp")
-        .args(["-r", src, dst])
-        .status();
-    matches!(status, Ok(s) if s.success())
+    copy(Path::new(src),Path::new(dst)).is_ok()
 }
 
 fn extract_lowest_frequencies(dyn_path: &str, limit: usize) -> Vec<f64> {
@@ -114,13 +114,13 @@ fn find_q_phdir_source(q_dir: &str, prefix: &str, q_index: usize, coords_mode: b
     None
 }
 
-fn find_phsave_source(q_dir: &str, prefix: &str, coords_mode: bool) -> Option<String> {
+fn find_phsave_source(q_dir: &str, prefix: &str, coords_mode: bool, q_index: usize) -> Option<String> {
     let q_ph_root = resolve_ph_root(q_dir);
     let phsave = format!("{q_ph_root}/{prefix}.phsave");
     if !Path::new(&phsave).is_dir() {
         return None;
     }
-    let pattern_name = if coords_mode { "patterns.1.xml" } else { "patterns.1.xml" };
+    let pattern_name = format!("patterns.{}.xml", if coords_mode {1} else {q_index});
     if !Path::new(&format!("{phsave}/{pattern_name}")).exists() {
         return None;
     }
@@ -175,7 +175,7 @@ pub fn merge_split_results(workspace: &str, prefix: &str, map: &QIndexMap) -> Re
                 copy_tree(&q_phdir_source, &dst);
             }
         }
-        if let Some(phsave_source) = find_phsave_source(&q_dir, prefix, coords_mode) {
+        if let Some(phsave_source) = find_phsave_source(&q_dir, prefix, coords_mode, q_index) {
             let dst = format!("{merged_ph_root}/{prefix}.phsave");
             copy_tree(&phsave_source, &dst);
         }
@@ -186,4 +186,52 @@ pub fn merge_split_results(workspace: &str, prefix: &str, map: &QIndexMap) -> Re
         errors,
         dyn_summaries: summaries,
     })
+}
+
+/// Issue 0006 的严格合并：依据配置 outdir，先验证再归集。
+pub fn merge_split_results_with_outdir(workspace: &str, prefix: &str, map: &QIndexMap, outdir: &str) -> Result<MergeResult> {
+    use anyhow::{ensure, Context};
+    ensure!(!map.qpoints.is_empty(), "q 映射为空");
+    let coords = map.mode == "split_assign_coords";
+    let mut prepared = Vec::new();
+    let q_re=Regex::new(r"q\s*=\s*\(\s*([^)]*)\)")?;
+    for entry in &map.qpoints {
+        let dir=Path::new(workspace).join(&entry.directory);
+        let log=std::fs::read_to_string(dir.join("split_ph.out"))?;
+        ensure!(log.contains("JOB DONE") && !log.to_lowercase().contains("error in routine"),"q {} 未正常完成",entry.index);
+        let mut errors=Vec::new();
+        let dyn_src=find_dyn_source(dir.to_str().unwrap(),prefix,entry.index,coords,&mut errors).context("缺少或歧义 dyn 文件")?;
+        if let Some(expected)=entry.q_cart {
+            let dyn_text=std::fs::read_to_string(&dyn_src)?;
+            let cap=q_re.captures(&dyn_text).context("dyn 缺少 q 坐标")?;
+            let got:Vec<f64>=cap[1].split_whitespace().map(str::parse).collect::<std::result::Result<_,_>>()?;
+            ensure!(got.len()==3 && got.iter().zip(expected).all(|(a,b)|(a-b).abs()<1e-7),"q {} 动力学矩阵坐标不匹配",entry.index);
+        }
+        let phroot=dir.join(outdir).join("_ph0");
+        let phsave=phroot.join(format!("{prefix}.phsave"));
+        let local_index=if coords {1} else {entry.index};
+        ensure!(phsave.join(format!("patterns.{local_index}.xml")).is_file(),"q {} 缺少 patterns",entry.index);
+        prepared.push((entry,dir,dyn_src,phroot,phsave));
+    }
+    let dest_root=Path::new(workspace).join(outdir).join("_ph0");
+    let dest_save=dest_root.join(format!("{prefix}.phsave"));
+    std::fs::create_dir_all(&dest_save)?;
+    let mut summaries=Vec::new();
+    for (entry,dir,dyn_src,phroot,phsave) in prepared {
+        let dyn_dst=Path::new(workspace).join(format!("{prefix}.dyn{}",entry.index));
+        std::fs::copy(&dyn_src,&dyn_dst)?;
+        summaries.push((entry.index,extract_lowest_frequencies(dyn_dst.to_str().unwrap(),5)));
+        for name in ["split_ph.in","split_ph.out"] {std::fs::copy(dir.join(name),Path::new(workspace).join(format!("{name}.{}",entry.index)))?;}
+        let qroot=phroot.join(format!("{prefix}.q_{}",entry.index));
+        let src=if qroot.is_dir() {qroot} else {phroot.clone()};
+        let dst=dest_root.join(format!("{prefix}.q_{}",entry.index));
+        std::fs::create_dir_all(&dst)?;
+        // 保留各 q 独立潜势；不把整个 _ph0 再复制到自身子目录。
+        for e in std::fs::read_dir(&src)? {
+            let e=e?;if e.file_type()?.is_file() && (e.file_name().to_string_lossy().contains("dvscf")) {std::fs::copy(e.path(),dst.join(e.file_name()))?;}
+        }
+        let local=if coords {1} else {entry.index};
+        std::fs::copy(phsave.join(format!("patterns.{local}.xml")),dest_save.join(format!("patterns.{}.xml",entry.index)))?;
+    }
+    Ok(MergeResult {success:true,errors:Vec::new(),dyn_summaries:summaries})
 }

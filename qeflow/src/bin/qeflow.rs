@@ -1,6 +1,9 @@
 //! qeflow 单一静态二进制入口。
 //! 子命令及 argv[0] 兼容入口映射原 qe_* CLI。
 
+#[path = "../phonon_chain.rs"]
+mod phonon_chain;
+
 use clap::{Parser, Subcommand};
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -187,6 +190,16 @@ enum Commands {
         /// split q 点物化模式
         #[arg(long)]
         mode: String,
+        #[arg(long)]
+        chain: bool,
+    },
+    #[command(hide = true)]
+    QePhononChainStage {
+        #[arg(short, long)] config: String,
+        #[arg(short = 'i', long)] input: Option<String>,
+        #[arg(long)] mode: String,
+        #[arg(long)] stage: String,
+        #[arg(long)] q_dir: Option<String>,
     },
     /// QE 输出状态检查器
     QeCheck {
@@ -324,10 +337,10 @@ fn main() -> Result<()> {
             run_qe_phonon_nosplit(config, run, submit)
         }
         Commands::QePhononSplitIndex { config, input, run, submit } => {
-            run_qe_phonon_split(config, input, run, submit, "index")
+            phonon_chain::run(config, input, run, submit, "index")
         }
         Commands::QePhononSplitCoords { config, input, run, submit } => {
-            run_qe_phonon_split(config, input, run, submit, "coords")
+            phonon_chain::run(config, input, run, submit, "coords")
         }
         Commands::QePhononMerge { config, input } => run_qe_phonon_merge(config, input),
         Commands::QeProcessPhonon {
@@ -358,7 +371,9 @@ fn main() -> Result<()> {
         Commands::QeMatdynPhdos { config, input, run, submit } => {
             run_matdyn_phdos(config, input, run, submit)
         }
-        Commands::QeSplitSubmit { config, input, mode } => {
+        Commands::QePhononChainStage {config,input,mode,stage,q_dir} => phonon_chain::stage(config,input,mode,stage,q_dir),
+        Commands::QeSplitSubmit { config, input, mode, chain } => {
+            if chain { return phonon_chain::stage(config.unwrap_or_else(|| "input.toml".into()),input,mode,"fanout".into(),None); }
             let code = run_split_submit(config, input, &mode)?;
             if code != 0 {
                 std::process::exit(code);
@@ -424,79 +439,6 @@ fn structure_elements(structure: &qf_crystal::Structure) -> (Vec<String>, Vec<us
     (elements, counts)
 }
 
-/// `qe_phonon_split_index` / `qe_phonon_split_coords` 真实逻辑：准备根 SCF 与 dyn0，
-/// 逐 q 点物化 `NN/scf.in`、`NN/split_ph.in`、`NN/run_split.sh`，再运行/提交各 q 点。
-fn run_qe_phonon_split(
-    config: Option<String>,
-    input: Option<String>,
-    run: bool,
-    submit: bool,
-    mode: &str,
-) -> Result<()> {
-    let ctx = create_phonon_context(
-        config.as_deref(),
-        input.as_deref(),
-        Some(&format!("qe_phonon_split_{mode}")),
-        true,
-    )?;
-    let mode_key = match mode {
-        "index" => "split_assign_index",
-        "coords" => "split_assign_coords",
-        other => anyhow::bail!("不支持的 split 模式: {other}"),
-    };
-    // 1) 根 SCF 输入与脚本
-    prepare_root_scf(&ctx)?;
-    // 2) dyn0（内联 qf-gen-dyn0：XML 对称折叠 + q_points.json）
-    generate_dyn0_internal(&ctx)?;
-    // 3) split 输入物化
-    let entries = qf_phonon::generate_split_inputs(&ctx.workspace, &ctx.cfg, &ctx.prefix, mode_key, &ctx.structure)?;
-    println!(
-        "[qe_phonon_split_{mode}] 物化 {} 个 q 点目录（q_index_map.json 就绪）",
-        entries.len()
-    );
-    // 4) 运行/提交
-    let tasks = qf_state::refresh_split_task_status(Path::new(&ctx.workspace))?;
-    let mut submitted = Vec::new();
-    let mut skipped = Vec::new();
-    let mut job_ids = Vec::new();
-    for entry in &entries {
-        let state = tasks.get(&entry.directory).copied().unwrap_or(TaskState::Unstarted);
-        if state == TaskState::Finished {
-            skipped.push(entry.directory.clone());
-            continue;
-        }
-        let q_dir = format!("{}/{}", ctx.workspace, entry.directory);
-        if run {
-            qf_runner::run_shell("bash run_split.sh", Path::new(&q_dir))?;
-            submitted.push(entry.directory.clone());
-        } else if submit {
-            if let Some(job) = qf_runner::submit_via_sbatch(Path::new(&q_dir), "run_split.sh")? {
-                job_ids.push(format!("{}={job}", entry.directory));
-            }
-            submitted.push(entry.directory.clone());
-        }
-    }
-    if !run && !submit {
-        println!(
-            "[qe_phonon_split_{mode}] (dry-run) 未指定 -r/--submit；本地运行为逐 q 点 `bash run_split.sh`，提交为逐 q 点 `safe_sbatch run_split.sh`"
-        );
-    } else {
-        let mut parts = Vec::new();
-        if !submitted.is_empty() {
-            parts.push(format!("提交 {}", submitted.join(", ")));
-        }
-        if !skipped.is_empty() {
-            parts.push(format!("跳过 finished: {}", skipped.join(", ")));
-        }
-        println!("[qe_phonon_split_{mode}] split q 点: {}", if parts.is_empty() { "无待提交任务".to_string() } else { parts.join("; ") });
-        if !job_ids.is_empty() {
-            println!("[qe_phonon_split_{mode}] split jobs: {}", job_ids.join(", "));
-        }
-    }
-    print_resume_point(&ctx)?;
-    Ok(())
-}
-
 fn print_resume_point(ctx: &PhononCtx) -> Result<()> {
     let status = refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
     let (step, label) = split_resume_step(&status);
@@ -516,19 +458,14 @@ fn run_qe_phonon_merge(config: Option<String>, input: Option<String>) -> Result<
         .work_dir
         .clone()
         .unwrap_or_else(|| ".".to_string());
-    let prefix = cfg
-        .qe_phonon
-        .scf
-        .get("prefix")
-        .and_then(|v| v.as_str())
-        .unwrap_or("struct")
-        .to_string();
+    let prefix = cfg.qe_phonon.prefix.clone().or_else(|| cfg.qe_phonon.scf.get("prefix").and_then(|v|v.as_str()).map(str::to_owned)).unwrap_or_else(|| "struct".into());
     let _ = input;
     let map = qf_phonon::index_map::load_q_index_map(&work_dir);
     if map.qpoints.is_empty() {
         anyhow::bail!("缺少 q_index_map.json 或其中不包含 qpoints，请先运行 qe_phonon_split_*");
     }
-    let result = qf_phonon::merge_split_results(&work_dir, &prefix, &map)?;
+    let outdir = cfg.qe_phonon.scf.get("outdir").and_then(|v|v.as_str()).unwrap_or("./out");
+    let result = if map.qpoints.iter().all(|e|e.q_cart.is_some()) { qf_phonon::merge::merge_split_results_with_outdir(&work_dir,&prefix,&map,outdir)? } else { qf_phonon::merge_split_results(&work_dir,&prefix,&map)? };
     if result.success {
         println!("[qe_phonon_merge] 成功回收 {} 个 q 点 dyn 文件", result.dyn_summaries.len());
         for (idx, vals) in &result.dyn_summaries {
@@ -751,20 +688,17 @@ fn run_qe_process_phonon(
     collect: bool,
     plot: bool,
 ) -> Result<()> {
-    let cfg = qf_config::load(config.as_deref(), config.as_deref())?;
+    let mut cfg = qf_config::load(config.as_deref(), config.as_deref())?;
     let work_dir = cfg
         .qe_phonon
         .work_dir
         .clone()
         .unwrap_or_else(|| ".".to_string());
-    let prefix = cfg
-        .qe_phonon
-        .scf
-        .get("prefix")
-        .and_then(|v| v.as_str())
-        .unwrap_or("struct")
-        .to_string();
-    let pos_path = input.unwrap_or_else(|| "POSCAR".to_string());
+    let config_path = std::fs::canonicalize(config.as_deref().unwrap_or("input.toml"))?;
+    let work_dir = config_path.parent().unwrap().join(&work_dir).to_string_lossy().into_owned();
+    cfg.qe_phonon.work_dir = Some(work_dir.clone());
+    let prefix = cfg.qe_phonon.prefix.clone().or_else(|| cfg.qe_phonon.scf.get("prefix").and_then(|v|v.as_str()).map(str::to_string)).unwrap_or_else(|| "struct".into());
+    let pos_path = input.unwrap_or_else(|| format!("{work_dir}/POSCAR"));
     let structure = qf_crystal::parse_poscar(&pos_path)
         .map_err(|e| anyhow::anyhow!("解析 POSCAR 失败: {e}"))?;
     let (elements, counts) = structure_elements(&structure);
@@ -797,6 +731,7 @@ fn run_qe_process_phonon(
     let phband_path = matdyn_input::write_matdyn_phband_input(&work_dir, &cfg, &prefix, structure.lattice)?;
     let phdos_path = matdyn_input::write_matdyn_phdos_input(&work_dir, &cfg, &prefix)?;
     println!("[qe_process_phonon] wrote {q2r_path}, {phband_path}, {phdos_path}");
+    let collect_cmd=format!("{} qe-process-phonon -c {} -i {}", phonon_chain::quote(std::env::current_exe()?.to_str().unwrap()), phonon_chain::quote(config_path.to_str().unwrap()), phonon_chain::quote(std::fs::canonicalize(&pos_path)?.to_str().unwrap()));
     let exec = cfg.qe.executable_path();
     let steps = vec![
         (
@@ -819,11 +754,11 @@ fn run_qe_process_phonon(
         ),
         (
             "归档并生成表格".to_string(),
-            "qeflow qe-process-phonon --collect".to_string(),
+            format!("{collect_cmd} --collect"),
         ),
         (
             "绘图".to_string(),
-            "qeflow qe-process-phonon --plot".to_string(),
+            format!("{collect_cmd} --plot"),
         ),
     ];
     run_qe_steps(

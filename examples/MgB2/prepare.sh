@@ -5,6 +5,8 @@ base=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$base/../.." && pwd)
 machine=${1:?用法：bash examples/MgB2/prepare.sh sugon-amd|inspur|chem}
 case "$machine" in sugon-amd|inspur|chem) ;; *) echo "未知机器：$machine" >&2; exit 1;; esac
+mode=${2:-index}
+case "$mode" in nosplit|index|coords) ;; *) echo "未知模式：$mode" >&2; exit 1;; esac
 settings="$repo/docs/local/MgB2-$machine.env"
 [[ -f "$settings" ]] || { echo "请先配置 $settings，参照 $base/$machine/README.md" >&2; exit 1; }
 source "$settings"
@@ -12,7 +14,7 @@ source "$settings"
 [[ "$NTASKS" =~ ^[1-9][0-9]*$ ]] || { echo 'NTASKS 必须为正整数' >&2; exit 1; }
 for bin in pw ph q2r matdyn; do [[ -x "$QE_BIN/$bin.x" ]]; done
 [[ -r "$ENV_SCRIPT" && -x "$DFTFLOW_BIN/qe_phonon_nosplit" ]]
-work="$base/$machine/run"
+work="$base/$machine/run/$mode"
 [[ ! -e "$work" ]] || { echo "已有 $work；请先另行归档，避免覆盖计算。" >&2; exit 1; }
 mkdir -p "$work/pp"
 cp "$repo/test_auto/MgB2/MgB2.vasp" "$work/POSCAR"
@@ -60,6 +62,32 @@ qpoints = [2, 2, 2]
 ndos = 100
 dos = true
 EOF
+# Slurm 环境随输入保存，子作业无需继承登录 shell 的临时设置。
+cat >> "$work/input.toml" <<EOF
+[slurm]
+header = """#!/bin/bash
+#SBATCH --partition=$PARTITION
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=$NTASKS
+#SBATCH --cpus-per-task=1
+#SBATCH --output=slurm-%j.out
+#SBATCH --error=slurm-%j.err
+${EXCLUDE:+#SBATCH --exclude=$EXCLUDE}
+source $ENV_SCRIPT --force
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
+export PATH=$DFTFLOW_BIN:\$PATH
+ulimit -s unlimited
+"""
+EOF
+if [[ "$mode" != nosplit ]]; then
+  (cd "$work"; PATH="$DFTFLOW_BIN:$PATH" "qe_phonon_split_$mode" -c "$work/input.toml" -i "$work/POSCAR")
+  {
+    printf '#!/bin/bash\nset -e\ncd %q\n' "$work"
+    printf '%q -c %q -i %q -s\n' "$DFTFLOW_BIN/qe_phonon_split_$mode" "$work/input.toml" "$work/POSCAR"
+  } > "$work/submit_phonon.sh"
+  echo "准备完成；一次启动完整依赖链：cd '$work' && bash submit_phonon.sh"
+  exit 0
+fi
 (cd "$work"; PATH="$DFTFLOW_BIN:$PATH" qe_phonon_nosplit -c "$work/input.toml")
 {
   printf '#!/bin/bash\n#SBATCH --job-name=MgB2_ph\n#SBATCH --partition=%s\n#SBATCH --nodes=1\n#SBATCH --ntasks-per-node=%s\n#SBATCH --cpus-per-task=1\n#SBATCH --output=MgB2_ph-%%j.out\n#SBATCH --error=MgB2_ph-%%j.err\n' "$PARTITION" "$NTASKS"
@@ -74,5 +102,6 @@ EOF
 qe_process_phonon -c "$config" --collect
 qe_process_phonon -c "$config" --plot
 EOF
-} > "$work/submit_phonon.sh"
-echo "准备完成。检查输入后执行：cd '$work' && sbatch submit_phonon.sh"
+} > "$work/nosplit_job.sh"
+printf '#!/bin/bash\nset -e\ncd %q\nsbatch --parsable nosplit_job.sh\n' "$work" > "$work/submit_phonon.sh"
+echo "准备完成。检查输入后执行：cd '$work' && bash submit_phonon.sh"

@@ -1,0 +1,671 @@
+//! Issue 0006：一份 SCF 快照、两种 PH 拆分、Slurm 自动依赖链。
+use super::*;
+use anyhow::{bail, ensure};
+use qf_phonon::index_map::{QIndexEntry, QIndexMap};
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
+
+pub(super) fn quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+struct Lock(PathBuf);
+impl Drop for Lock {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir(&self.0);
+    }
+}
+fn lock(ws: &str) -> Result<Lock> {
+    let p = Path::new(ws).join(".chain-submit.lock");
+    fs::create_dir(&p)
+        .with_context(|| format!("已有提交正在执行，或需核对残留锁: {}", p.display()))?;
+    Ok(Lock(p))
+}
+fn atomic_json(path: &Path, value: &Value) -> Result<()> {
+    let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
+    fs::write(&tmp, serde_json::to_vec_pretty(value)?)?;
+    fs::rename(tmp, path)?;
+    Ok(())
+}
+fn jobs(ws: &str) -> Result<BTreeMap<String, String>> {
+    let p = Path::new(ws).join("chain_jobs.json");
+    if !p.exists() {
+        return Ok(BTreeMap::new());
+    }
+    Ok(serde_json::from_slice(&fs::read(p)?)?)
+}
+fn save_jobs(ws: &str, records: &BTreeMap<String, String>) -> Result<()> {
+    atomic_json(
+        &Path::new(ws).join("chain_jobs.json"),
+        &serde_json::to_value(records)?,
+    )
+}
+fn active(id: &str) -> Result<bool> {
+    let state = qf_runner::slurm_job_state(id)?;
+    if state == "INVALID_DEPENDENCY" {
+        let out = std::process::Command::new("scancel").arg(id).output()?;
+        ensure!(out.status.success(), "取消失效依赖作业失败: {id}");
+        return Ok(false);
+    }
+    Ok(matches!(
+        state.as_str(),
+        "PENDING"
+            | "RUNNING"
+            | "CONFIGURING"
+            | "COMPLETING"
+            | "SUSPENDED"
+            | "RESIZING"
+            | "REQUEUED"
+    ))
+}
+fn outdir(ctx: &PhononCtx) -> Result<PathBuf> {
+    let s = ctx
+        .cfg
+        .qe_phonon
+        .scf
+        .get("outdir")
+        .and_then(Value::as_str)
+        .unwrap_or("./out");
+    let p = PathBuf::from(s);
+    ensure!(
+        !p.is_absolute()
+            && !p
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            && p != Path::new("."),
+        "分 q 模式 outdir 必须是独立相对目录: {s}"
+    );
+    Ok(p)
+}
+fn context(config: &str, input: Option<&str>, mode: &str) -> Result<PhononCtx> {
+    ensure!(mode == "index" || mode == "coords", "未知模式 {mode}");
+    let mut cfg = qf_config::load(Some(config), Some(config))?;
+    let base = Path::new(config).parent().unwrap();
+    if let Some(pp) = cfg.pp_dir.as_mut() {
+        *pp = base.join(&*pp).to_string_lossy().into_owned();
+    }
+    let ws = base.join(
+        cfg.qe_phonon
+            .work_dir
+            .as_deref()
+            .unwrap_or(&format!("qe_phonon_split_{mode}")),
+    );
+    fs::create_dir_all(&ws)?;
+    let ws = fs::canonicalize(ws)?;
+    let target = ws.join("POSCAR");
+    let source = input.map(PathBuf::from).unwrap_or_else(|| {
+        if target.exists() {
+            target.clone()
+        } else {
+            base.join("POSCAR")
+        }
+    });
+    if fs::canonicalize(&source).ok() != fs::canonicalize(&target).ok() {
+        fs::copy(&source, &target)?;
+    }
+    let structure = qf_crystal::parse_poscar(target.to_str().unwrap())?;
+    let prefix = cfg
+        .qe_phonon
+        .prefix
+        .clone()
+        .or_else(|| {
+            cfg.qe_phonon
+                .scf
+                .get("prefix")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| structure.formula.clone());
+    cfg.qe_phonon.work_dir = Some(ws.to_string_lossy().into_owned());
+    cfg.qe_phonon.scf.insert("prefix".into(), json!(prefix));
+    let ctx = PhononCtx {
+        cfg,
+        workspace: ws.to_string_lossy().into_owned(),
+        prefix,
+        structure,
+    };
+    outdir(&ctx)?;
+    Ok(ctx)
+}
+fn bind_inputs(ctx: &PhononCtx, config: &str, mode: &str) -> Result<()> {
+    let path = Path::new(&ctx.workspace).join("chain_inputs.json");
+    let expected = json!({"config": fs::read_to_string(config)?, "structure": fs::read_to_string(Path::new(&ctx.workspace).join("POSCAR"))?, "mode": mode});
+    if path.exists() {
+        ensure!(
+            serde_json::from_slice::<Value>(&fs::read(&path)?)? == expected,
+            "配置/结构/模式已经改变，请使用新的运行目录"
+        );
+    } else {
+        atomic_json(&path, &expected)?;
+    }
+    Ok(())
+}
+fn stage_command(config: &str, ws: &str, mode: &str, stage: &str) -> Result<String> {
+    Ok(format!(
+        "{} qe-phonon-chain-stage -c {} -i {} --mode {} --stage {}",
+        quote(
+            std::env::current_exe()?
+                .to_str()
+                .context("程序路径不是 UTF-8")?
+        ),
+        quote(config),
+        quote(&format!("{ws}/POSCAR")),
+        mode,
+        stage
+    ))
+}
+fn stage_script(ctx: &PhononCtx, file: &str, command: &str) -> Result<()> {
+    let header = ctx.cfg.slurm.header.as_deref().unwrap_or("");
+    fs::write(
+        Path::new(&ctx.workspace).join(file),
+        format!(
+            "#!/bin/bash\n{header}\nset -e\ncd {}\n{command}\n",
+            quote(&ctx.workspace)
+        ),
+    )?;
+    Ok(())
+}
+fn prepare(ctx: &PhononCtx, config: &str, mode: &str) -> Result<()> {
+    prepare_root_scf(ctx)?;
+    let mut init = ctx.cfg.clone();
+    init.qe_phonon.ph.insert("only_init".into(), json!(true));
+    init.qe_phonon.ph.insert("ldisp".into(), json!(true));
+    init.qe_phonon.ph.insert("lqdir".into(), json!(true));
+    init.qe_phonon.ph.insert("recover".into(), json!(false));
+    init.qe_phonon.ph.remove("start_q");
+    init.qe_phonon.ph.remove("last_q");
+    ph_input::write_ph_input(&ctx.workspace, &init, &ctx.prefix, "ph_init.in", false)?;
+    stage_script(
+        ctx,
+        "submit_pre_and_split_stage.sh",
+        &stage_command(config, &ctx.workspace, mode, "pre")?,
+    )?;
+    stage_script(
+        ctx,
+        "submit_merge_and_process_phonon.sh",
+        &stage_command(config, &ctx.workspace, mode, "post")?,
+    )?;
+    Ok(())
+}
+fn checked_log(path: &Path, scf: bool) -> Result<()> {
+    let text = fs::read_to_string(path).with_context(|| format!("缺少输出 {}", path.display()))?;
+    let lower = text.to_lowercase();
+    ensure!(
+        text.contains("JOB DONE")
+            && !["error in routine", "convergence not achieved", "%%%%%%%%"]
+                .iter()
+                .any(|s| lower.contains(s)),
+        "计算未正常完成: {}",
+        path.display()
+    );
+    if scf {
+        ensure!(
+            lower.contains("convergence has been achieved"),
+            "SCF 未收敛: {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
+    fs::create_dir_all(dst)?;
+    for e in fs::read_dir(src)? {
+        let e = e?;
+        ensure!(
+            !e.file_type()?.is_symlink(),
+            "快照不允许共享符号链接: {}",
+            e.path().display()
+        );
+        if e.file_type()?.is_dir() {
+            copy_tree(&e.path(), &dst.join(e.file_name()))?;
+        } else {
+            fs::copy(e.path(), dst.join(e.file_name()))?;
+        }
+    }
+    Ok(())
+}
+fn has_wfc(dir: &Path) -> Result<bool> {
+    for e in fs::read_dir(dir)? {
+        let e = e?;
+        if e.file_type()?.is_dir() {
+            if has_wfc(&e.path())? {
+                return Ok(true);
+            }
+        } else if e.file_name().to_string_lossy().contains("wfc") && e.metadata()?.len() > 0 {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+fn pre(ctx: &PhononCtx) -> Result<()> {
+    let ws = Path::new(&ctx.workspace);
+    let snapshot = ws.join("scf_snapshot");
+    if !snapshot.exists() {
+        if checked_log(&ws.join("scf.out"), true).is_err() {
+            let cmd = format!(
+                "{} < scf.in > scf.out 2>&1",
+                qf_runner::resolve_qe_command(ctx.cfg.qe.executable_path(), "pw.x")
+            );
+            qf_runner::run_shell(&cmd, ws)?;
+        }
+        checked_log(&ws.join("scf.out"), true)?;
+        let src = ws.join(outdir(ctx)?);
+        let save = src.join(format!("{}.save", ctx.prefix));
+        ensure!(
+            save.join("data-file-schema.xml").is_file()
+                && save.join("charge-density.dat").is_file()
+                && has_wfc(&src)?,
+            "SCF 保存文件或波函数不完整"
+        );
+        ensure!(
+            !src.join("_ph0").exists(),
+            "首次快照前已有 PH scratch，请使用新目录"
+        );
+        let tmp = ws.join("scf_snapshot.partial");
+        if tmp.exists() {
+            fs::remove_dir_all(&tmp)?;
+        }
+        copy_tree(&src, &tmp)?;
+        fs::rename(&tmp, &snapshot)?;
+    }
+    if checked_log(&ws.join("ph_init.out"), false).is_err()
+        || !ws.join(format!("{}.dyn0", ctx.prefix)).exists()
+    {
+        let cmd = format!(
+            "{} < ph_init.in > ph_init.out 2>&1",
+            qf_runner::resolve_qe_command(ctx.cfg.qe.executable_path(), "ph.x")
+        );
+        qf_runner::run_shell(&cmd, ws)?;
+        checked_log(&ws.join("ph_init.out"), false)?;
+    }
+    ensure!(!load_points(ctx)?.is_empty(), "初始化未产生 q 点");
+    Ok(())
+}
+fn crystal_from_cart(bg: [[f64; 3]; 3], cart: [f64; 3]) -> Result<[f64; 3]> {
+    // bg 的行是倒格矢；解 bg^T * crystal = cart。
+    let mut a = [[0.0; 4]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            a[i][j] = bg[j][i];
+        }
+        a[i][3] = cart[i];
+    }
+    for k in 0..3 {
+        let pivot = (k..3)
+            .max_by(|&i, &j| a[i][k].abs().partial_cmp(&a[j][k].abs()).unwrap())
+            .unwrap();
+        a.swap(k, pivot);
+        ensure!(a[k][k].abs() > 1e-12, "退化倒格矩阵");
+        let d = a[k][k];
+        for j in k..4 {
+            a[k][j] /= d;
+        }
+        for i in 0..3 {
+            if i != k {
+                let f = a[i][k];
+                for j in k..4 {
+                    a[i][j] -= f * a[k][j];
+                }
+            }
+        }
+    }
+    Ok([a[0][3], a[1][3], a[2][3]])
+}
+fn load_points(ctx: &PhononCtx) -> Result<Vec<QIndexEntry>> {
+    let raw = fs::read_to_string(Path::new(&ctx.workspace).join(format!("{}.dyn0", ctx.prefix)))?;
+    let points = qf_io::parse_dyn0_qpoints(&raw)?;
+    let info = qf_phonon::xml::parse_qe_save_xml(
+        &Path::new(&ctx.workspace)
+            .join("scf_snapshot")
+            .join(format!("{}.save/data-file-schema.xml", ctx.prefix)),
+    )?;
+    points
+        .into_iter()
+        .map(|p| {
+            // 旧 parser 字段名是 q_crystal，dyn0 中实际为 QE Cartesian。
+            let cart = p.q_crystal;
+            ensure!(cart.iter().all(|v| v.is_finite()), "非有限 q 坐标");
+            let crystal = crystal_from_cart(info.bg, cart)?;
+            Ok(QIndexEntry {
+                directory: format!("{:02}", p.index),
+                index: p.index,
+                coords: Some(crystal),
+                q_cart: Some(cart),
+                q_crystal: Some(crystal),
+            })
+        })
+        .collect()
+}
+fn materialize(ctx: &PhononCtx, mode: &str) -> Result<QIndexMap> {
+    let map = QIndexMap {
+        mode: format!("split_assign_{mode}"),
+        qpoints: load_points(ctx)?,
+    };
+    let path = Path::new(&ctx.workspace).join("q_index_map.json");
+    if path.exists() {
+        let old = qf_phonon::index_map::load_q_index_map(&ctx.workspace);
+        ensure!(
+            serde_json::to_value(&old)? == serde_json::to_value(&map)?,
+            "已有 q 映射与初始化不一致"
+        );
+    } else {
+        atomic_json(&path, &serde_json::to_value(&map)?)?;
+    }
+    for e in &map.qpoints {
+        let q = Path::new(&ctx.workspace).join(&e.directory);
+        fs::create_dir_all(&q)?;
+        if !q.join("scf_reused.json").exists() {
+            let target = q.join(outdir(ctx)?);
+            ensure!(
+                !target.exists(),
+                "q 点目录已有数据且无复用标记，请归档后重试"
+            );
+            let partial = q.join("scf_copy.partial");
+            if partial.exists() {
+                fs::remove_dir_all(&partial)?;
+            }
+            copy_tree(&Path::new(&ctx.workspace).join("scf_snapshot"), &partial)?;
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::rename(&partial, &target)?;
+            atomic_json(
+                &q.join("scf_reused.json"),
+                &json!({"source":"../scf_snapshot","prefix":ctx.prefix}),
+            )?;
+        }
+        let mut cfg = ctx.cfg.clone();
+        cfg.qe_phonon.ph.insert("only_init".into(), json!(false));
+        cfg.qe_phonon.ph.insert("only_wfc".into(), json!(false));
+        cfg.qe_phonon.ph.insert("recover".into(), json!(false));
+        if mode == "index" {
+            ph_input::write_split_ph_input_assign_index(
+                q.to_str().unwrap(),
+                &cfg,
+                &ctx.prefix,
+                e.index as i64,
+            )?;
+        } else {
+            ph_input::write_split_ph_input_assign_coords(
+                q.to_str().unwrap(),
+                &cfg,
+                &ctx.prefix,
+                e.q_cart.unwrap(),
+            )?;
+        }
+        let command=format!("cd {}\n{} < split_ph.in > split_ph.out 2>&1\n{} qe-phonon-chain-stage -c {} -i {} --mode {} --stage check-q --q-dir {}",quote(q.to_str().unwrap()),qf_runner::resolve_qe_command(cfg.qe.executable_path(),"ph.x"),quote(std::env::current_exe()?.to_str().unwrap()),quote(&absolute_config_from_binding(&ctx.workspace)?),quote(&format!("{}/POSCAR",ctx.workspace)),mode,quote(&e.directory));
+        stage_script(ctx, &format!("{}/run_split.sh", e.directory), &command)?;
+    }
+    Ok(map)
+}
+fn absolute_config_from_binding(ws: &str) -> Result<String> {
+    Ok(fs::read_to_string(Path::new(ws).join("chain_config_path"))?
+        .trim()
+        .to_string())
+}
+fn q_done(ctx: &PhononCtx, e: &QIndexEntry) -> bool {
+    let q = Path::new(&ctx.workspace).join(&e.directory);
+    checked_log(&q.join("split_ph.out"), false).is_ok()
+        && [
+            q.join(format!("{}.dyn{}", ctx.prefix, e.index)),
+            q.join(format!("{}.dyn", ctx.prefix)),
+        ]
+        .iter()
+        .any(|p| p.metadata().map(|m| m.len() > 0).unwrap_or(false))
+}
+fn fanout(ctx: &PhononCtx, config: &str, mode: &str, local: bool) -> Result<()> {
+    let _lock = lock(&ctx.workspace)?;
+    let map = materialize(ctx, mode)?;
+    let mut records = jobs(&ctx.workspace)?;
+    let parent = if local {
+        None
+    } else {
+        std::env::var("SLURM_JOB_ID").ok()
+    };
+    let mut deps: Vec<String> = parent.iter().cloned().collect();
+    for e in &map.qpoints {
+        if q_done(ctx, e) {
+            continue;
+        }
+        let key = format!("q:{}", e.directory);
+        if local {
+            qf_runner::run_shell(
+                "bash run_split.sh",
+                &Path::new(&ctx.workspace).join(&e.directory),
+            )?;
+            ensure!(q_done(ctx, e), "q 点 {} 未完成", e.directory);
+        } else {
+            if let Some(id) = records.get(&key) {
+                if active(id)? {
+                    deps.push(id.clone());
+                    continue;
+                }
+            }
+            let id = qf_runner::submit_slurm(
+                &Path::new(&ctx.workspace).join(&e.directory),
+                "run_split.sh",
+                &parent.iter().cloned().collect::<Vec<_>>(),
+            )?;
+            records.insert(key, id.clone());
+            save_jobs(&ctx.workspace, &records)?;
+            deps.push(id);
+        }
+    }
+    if local {
+        drop(_lock);
+        return post(ctx, config);
+    }
+    if let Some(id) = records.get("post") {
+        if active(id)? {
+            println!("post 已提交: {id}");
+            return Ok(());
+        }
+    }
+    let id = qf_runner::submit_slurm(
+        Path::new(&ctx.workspace),
+        "submit_merge_and_process_phonon.sh",
+        &deps,
+    )?;
+    records.insert("post".into(), id.clone());
+    save_jobs(&ctx.workspace, &records)?;
+    println!("已安排 q 点及合并绘图作业 {id}，依赖 {}", deps.join(":"));
+    Ok(())
+}
+fn post(ctx: &PhononCtx, config: &str) -> Result<()> {
+    let map = qf_phonon::index_map::load_q_index_map(&ctx.workspace);
+    ensure!(
+        !map.qpoints.is_empty() && map.qpoints.iter().all(|e| q_done(ctx, e)),
+        "仍有 q 点未完成，禁止后处理"
+    );
+    let merged = qf_phonon::merge::merge_split_results_with_outdir(
+        &ctx.workspace,
+        &ctx.prefix,
+        &map,
+        &outdir(ctx)?.to_string_lossy(),
+    )?;
+    ensure!(merged.success, "合并失败: {:?}", merged.errors);
+    q2r_input::write_q2r_input(&ctx.workspace, &ctx.cfg, &ctx.prefix)?;
+    matdyn_input::write_matdyn_phband_input(
+        &ctx.workspace,
+        &ctx.cfg,
+        &ctx.prefix,
+        ctx.structure.lattice,
+    )?;
+    matdyn_input::write_matdyn_phdos_input(&ctx.workspace, &ctx.cfg, &ctx.prefix)?;
+    for (bin, name) in [
+        ("q2r.x", "q2r"),
+        ("matdyn.x", "matdyn_phband"),
+        ("matdyn.x", "matdyn_phdos"),
+    ] {
+        let command = format!(
+            "{} < {name}.in > {name}.out 2>&1",
+            qf_runner::resolve_qe_command(ctx.cfg.qe.executable_path(), bin)
+        );
+        qf_runner::run_shell(&command, Path::new(&ctx.workspace))?;
+        checked_log(
+            &Path::new(&ctx.workspace).join(format!("{name}.out")),
+            false,
+        )?;
+    }
+    std::env::set_current_dir(&ctx.workspace)?;
+    run_qe_process_phonon(
+        Some(config.into()),
+        Some(format!("{}/POSCAR", ctx.workspace)),
+        false,
+        false,
+        true,
+        false,
+    )?;
+    run_qe_process_phonon(
+        Some(config.into()),
+        Some(format!("{}/POSCAR", ctx.workspace)),
+        false,
+        false,
+        false,
+        true,
+    )?;
+    for f in qf_phonon::archive::phonon_plot_files() {
+        ensure!(
+            Path::new(&ctx.workspace)
+                .join(&f)
+                .metadata()
+                .map(|m| m.len() > 0)
+                .unwrap_or(false),
+            "缺少产物 {f}"
+        );
+    }
+    ensure!(
+        Path::new(&ctx.workspace)
+            .join("phonon_combined.jpg")
+            .metadata()
+            .map(|m| m.len() > 0)
+            .unwrap_or(false),
+        "缺少联合 JPG"
+    );
+    atomic_json(
+        &Path::new(&ctx.workspace).join("chain_complete.json"),
+        &json!({"finished":true,"prefix":ctx.prefix}),
+    )?;
+    refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
+    println!("声子全流程完成: {}", ctx.workspace);
+    Ok(())
+}
+pub fn run(
+    config: Option<String>,
+    input: Option<String>,
+    run: bool,
+    submit: bool,
+    mode: &str,
+) -> Result<()> {
+    ensure!(!(run && submit), "运行和提交互斥");
+    let config = fs::canonicalize(config.as_deref().unwrap_or("input.toml"))?
+        .to_string_lossy()
+        .into_owned();
+    let ctx = context(&config, input.as_deref(), mode)?;
+    bind_inputs(&ctx, &config, mode)?;
+    fs::write(Path::new(&ctx.workspace).join("chain_config_path"), &config)?;
+    prepare(&ctx, &config, mode)?;
+    if !run && !submit {
+        println!("输入与前置/后处理脚本已准备；SCF 完成后才生成 q 点目录");
+        return Ok(());
+    }
+    if Path::new(&ctx.workspace)
+        .join("chain_complete.json")
+        .exists()
+    {
+        let complete = qf_phonon::archive::phonon_plot_files()
+            .into_iter()
+            .chain(std::iter::once("phonon_combined.jpg".into()))
+            .all(|f| {
+                Path::new(&ctx.workspace)
+                    .join(f)
+                    .metadata()
+                    .map(|m| m.len() > 0)
+                    .unwrap_or(false)
+            });
+        if complete {
+            println!("全流程已完成");
+            return Ok(());
+        }
+        fs::remove_file(Path::new(&ctx.workspace).join("chain_complete.json"))?;
+    }
+    if run {
+        let pre_lock = lock(&ctx.workspace)?;
+        pre(&ctx)?;
+        drop(pre_lock);
+        fanout(&ctx, &config, mode, true)?;
+    } else {
+        let _lock = lock(&ctx.workspace)?;
+        let mut records = jobs(&ctx.workspace)?;
+        // 单个 q 点失败后的续算：只复用已经完成的 pre。
+        if let Some(id) = records.get("pre") {
+            if active(id)? {
+                println!("pre 已提交: {id}");
+                return Ok(());
+            }
+        }
+        for (stage, id) in &records {
+            if stage == "post" || stage.starts_with("q:") {
+                if active(id)? {
+                    println!("已有活动作业 {stage}={id}，请等待或取消后续算");
+                    return Ok(());
+                }
+            }
+        }
+        let id = qf_runner::submit_slurm(
+            Path::new(&ctx.workspace),
+            "submit_pre_and_split_stage.sh",
+            &[],
+        )?;
+        records.insert("pre".into(), id.clone());
+        save_jobs(&ctx.workspace, &records)?;
+        println!("已提交前置作业 {id}；后续 q 点及合并绘图将自动安排");
+    }
+    Ok(())
+}
+pub fn stage(
+    config: String,
+    input: Option<String>,
+    mode: String,
+    stage: String,
+    q_dir: Option<String>,
+) -> Result<()> {
+    let config = fs::canonicalize(config)?.to_string_lossy().into_owned();
+    let ctx = context(&config, input.as_deref(), &mode)?;
+    bind_inputs(&ctx, &config, &mode)?;
+    match stage.as_str() {
+        "pre" => {
+            pre(&ctx)?;
+            fanout(&ctx, &config, &mode, false)
+        }
+        "fanout" => fanout(&ctx, &config, &mode, false),
+        "post" => post(&ctx, &config),
+        "check-q" => {
+            let map = qf_phonon::index_map::load_q_index_map(&ctx.workspace);
+            let e = map
+                .qpoints
+                .iter()
+                .find(|e| Some(&e.directory) == q_dir.as_ref())
+                .context("未知 q 目录")?;
+            ensure!(q_done(&ctx, e), "q 点 {} 未完成", e.directory);
+            Ok(())
+        }
+        _ => bail!("未知阶段 {stage}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn nonorthogonal_cart_conversion() {
+        let c = super::crystal_from_cart(
+            [[1., 0.577350269, 0.], [0., 1.154700538, 0.], [0., 0., 0.87]],
+            [0.5, 0.2886751345, 0.435],
+        )
+        .unwrap();
+        for (a, b) in c.into_iter().zip([0.5, 0., 0.5]) {
+            assert!((a - b).abs() < 1e-9);
+        }
+    }
+}

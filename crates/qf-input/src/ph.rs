@@ -58,7 +58,7 @@ pub fn write_split_ph_input_assign_coords(
     q_dir: &str,
     config: &Config,
     prefix: &str,
-    q_crystal: [f64; 3],
+    q_cart: [f64; 3],
 ) -> Result<String> {
     let mut ph_cfg: SectionMap = config.qe_phonon.ph.clone();
     ph_cfg.insert("ldisp".to_string(), json!(false));
@@ -67,13 +67,14 @@ pub fn write_split_ph_input_assign_coords(
     ph_cfg.remove("qpoints");
     ph_cfg.remove("start_q");
     ph_cfg.remove("last_q");
+    for key in ["nq1", "nq2", "nq3"] { ph_cfg.remove(key); }
     let path = write_inputph(q_dir, "split_ph.in", config, prefix, &ph_cfg)?;
     use std::io::Write;
     let mut f = fs::OpenOptions::new().append(true).open(&path)?;
     writeln!(
         f,
         "{:.15E} {:.15E} {:.15E}",
-        q_crystal[0], q_crystal[1], q_crystal[2]
+        q_cart[0], q_cart[1], q_cart[2]
     )?;
     Ok(path)
 }

@@ -97,3 +97,26 @@ fn band_tables_match_label_points() {
     assert_eq!(band_rows.len(), 5);
     assert_eq!(band_rows[0].len(), 5 + 6, "应含 5 坐标列 + 6 模式列");
 }
+
+#[test]
+fn strict_merge_uses_configured_outdir_and_prechecks_all_points() {
+    let dir=temp_workspace("strict_merge");
+    let map:qf_phonon::index_map::QIndexMap=serde_json::from_value(serde_json::json!({"mode":"split_assign_coords","qpoints":[{"directory":"01","index":1,"q_cart":[0.,0.,0.]},{"directory":"02","index":2,"q_cart":[0.5,0.25,0.]}]})).unwrap();
+    for (name,cart) in [("01","0 0 0"),("02","0.5 0.25 0")] {
+        let q=dir.join(name);
+        fs::create_dir_all(q.join("scratch/_ph0/Si.phsave")).unwrap();
+        fs::write(q.join("split_ph.out"),"JOB DONE.").unwrap();
+        fs::write(q.join("split_ph.in"),"input").unwrap();
+        fs::write(q.join("Si.dyn"),format!("q = ( {cart} )\nfreq ( 1) = 1\n")).unwrap();
+        fs::write(q.join("scratch/_ph0/Si.phsave/patterns.1.xml"),name).unwrap();
+    }
+    fs::write(dir.join("02/Si.dyn"),"q = ( 0 0 0 )").unwrap();
+    assert!(qf_phonon::merge::merge_split_results_with_outdir(dir.to_str().unwrap(),"Si",&map,"scratch").is_err());
+    assert!(!dir.join("Si.dyn1").exists(),"预检查失败不应产生部分合并");
+    fs::write(dir.join("02/Si.dyn"),"q = ( 0.5 0.25 0 )\nfreq ( 1) = 1\n").unwrap();
+    let merged=qf_phonon::merge::merge_split_results_with_outdir(dir.to_str().unwrap(),"Si",&map,"scratch").unwrap();
+    assert!(merged.success);
+    assert_eq!(fs::read_to_string(dir.join("scratch/_ph0/Si.phsave/patterns.2.xml")).unwrap(),"02");
+    assert!(!dir.join("scratch/_ph0/Si.phsave/Si.phsave").exists());
+    fs::remove_dir_all(dir).unwrap();
+}

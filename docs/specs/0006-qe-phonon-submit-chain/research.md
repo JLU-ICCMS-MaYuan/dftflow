@@ -1,0 +1,16 @@
+# 技术决策
+
+- **Python 参考**：origin/python 7a172fed。split_workflow.py 原有两阶段、逐 q SCF 与人工重新提交 post；本需求明确变更为一次 SCF 自动依赖链。
+- **坐标**：本机 QE 7.4.1 PHonon/Doc/INPUT_PH.def 的 xq 卡规定 2π/a₀；dyn0 也是该单位。晶体坐标通过 SCF XML bg 矩阵逆变换获取；拒绝把 q_crystal 直接输入 PH。
+- **初始化**：only_init=true，lqdir=true，正常完成退出；避免 Python 轮询 dyn0 后 SIGTERM，保留可判定成功的日志。
+- **隔离**：snapshot 完整复制 outdir，排除后续生成的 PH scratch。拒绝符号链接共享可写目录。
+- **调度**：原生 sbatch --parsable + afterok，多作业持久记录；拒绝无限 safe_sbatch 重试和资源占用等待。
+- **合并**：真实 outdir、对应 q 坐标和 patterns 校验，预检查后归集。正常零频/虚频不误判失败。
+
+## 实际部署发现与修复
+
+登录节点 glibc 2.28、计算节点旧版，原生制品无法启动。使用用户级 patchelf 将制品 interpreter 指向共享原生前缀里的同版 glibc 加载器，打包 libc/libm/pthread 等配套库；不修改系统、不设置全局 LD_LIBRARY_PATH。源与打包制品分别记录 SHA-256。该部署差异不改变计算或工作流设计，musl 通用静态交付路线保留。
+
+## 调度账户额度
+
+实际三模式同时启动触发 AssocMaxSubmitJobLimit，前置阶段非零退出，下游依赖自动取消，记录保留；依次重试复用已有 SCF。sacctmgr 只读查询确认账户存在 MaxSubmitJobs=4/8 的限制。该边界沿用已批准的提交失败处理，不隐式改为占用节点轮询、批次控制器或其他作业拓扑；更多不可约 q 点要求足够提交额度。

@@ -34,6 +34,8 @@ macOS Mach-O 文件不能直接在 Linux 执行；Linux 交付脚本使用 Linux
 
 Linux 原生构建需要 Rust、C/C++/Fortran 编译器、libclang、静态 OpenBLAS、spglib 头文件与库，以及 fontconfig/freetype 开发包。非系统依赖可通过 `DFTFLOW_NATIVE_PREFIX` 指定前缀（含 `include/`、`lib/pkgconfig/` 或 `lib64/pkgconfig/`）；共享库运行路径通过链接期 rpath 或 `LD_LIBRARY_PATH` 提供。机器特有的环境变量放在不入 Git 的 `docs/local/build-linux-x86_64.env` 中，由脚本自动加载。原生 glibc 产物用于本机，跨节点独立交付使用 musl 包。
 
+登录节点与计算节点的 glibc 不同时，可用 `scripts/linux/package-native-runtime.sh SOURCE_BIN_DIR DEST_BIN_DIR NATIVE_PREFIX` 打包配套私有 glibc 加载器（需要 patchelf）。该版本依赖共享目录路径，避免将私有 glibc 加入全局 LD_LIBRARY_PATH；通用独立交付仍使用 musl 包。
+
 自行编译静态 spglib 时启用 `-DCMAKE_POSITION_INDEPENDENT_CODE=ON`，以支持 Linux 原生 Rust 程序的 PIE 链接。
 
 ## 安装命令
@@ -47,6 +49,10 @@ bash scripts/verify-entries.sh /absolute/path/to/binaries
 安装器提供全部 48 个旧名、额外 `qf-gen-dyn0` 别名以及家族入口，共 52 个名称、五份二进制。入口为指向源目录的软链接，因此应将二进制放在稳定版本目录中再安装。已有同名入口会先备份；安装目录必须与源目录不同。
 
 `qe_scf` / `qe_nscf` 支持 `-i/--input`、`-c/--config`、`-r/--run`、`-s/--submit`；默认配置 `input.toml`。仅准备时不运行，`-r` 实际执行，`-s` 提交 `run_qe.sh`；运行和提交互斥。NSCF 继承 SCF 的 XML、电荷密度和 PAW 数据。
+
+## QE 声子一次提交
+
+[MgB₂ 分机器算例](examples/MgB2/README.md) 支持 index、coords 和 nosplit。分 q 模式仅计算一次 SCF，入口自动安排所有 q 点与依赖后的合并/绘图；详见 [0006](docs/specs/0006-qe-phonon-submit-chain/spec.md)。
 
 ## 命令速查
 

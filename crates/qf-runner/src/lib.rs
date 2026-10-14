@@ -88,6 +88,7 @@ pub fn run_shell(command: &str, cwd: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 fn parse_job_id(text: &str) -> Option<String> {
     let marker = "Submitted batch job";
     let idx = text.find(marker)?;
@@ -100,26 +101,10 @@ fn parse_job_id(text: &str) -> Option<String> {
     }
 }
 
-/// 通过 `safe_sbatch`（回退 `sbatch`）提交 Slurm 作业，解析返回的作业号。
+/// 通过原生 `sbatch --parsable` 提交 Slurm 作业，解析返回的作业号。
 /// 对齐 `qeflow/phonon/console.submit_script`。
 pub fn submit_via_sbatch(work_dir: &Path, script_name: &str) -> Result<Option<String>> {
-    let cmd = format!("safe_sbatch {script_name}");
-    let output = Command::new("bash")
-        .args(["-c", &cmd])
-        .current_dir(work_dir)
-        .output()
-        .with_context(|| format!("submit {script_name} in {}", work_dir.display()))?;
-    if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "{} 目录中的 Slurm 提交失败: {}\n{}",
-            work_dir.display(),
-            cmd,
-            detail.trim()
-        );
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    Ok(parse_job_id(&text))
+    submit_slurm(work_dir, script_name, &[]).map(Some)
 }
 
 /// 根据 run_calc / submit_job 决定本地运行还是提交 Slurm。
@@ -516,5 +501,54 @@ mod tests {
         assert!(post_text.contains("qeflow qe-merge -c input.toml"));
         assert!(post_text.contains("qeflow qe-process-phonon -c input.toml --plot"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// 原生 Slurm 提交；作业号和退出状态均验证，不无限重试。
+pub fn submit_slurm(work_dir: &Path, script: &str, dependencies: &[String]) -> Result<String> {
+    let mut command = Command::new("sbatch");
+    command.arg("--parsable").arg("--kill-on-invalid-dep=yes");
+    if !dependencies.is_empty() {
+        anyhow::ensure!(dependencies.iter().all(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())), "无效依赖作业号");
+        command.arg(format!("--dependency=afterok:{}", dependencies.join(":")));
+    }
+    let output = command.arg(script).current_dir(work_dir).output()?;
+    anyhow::ensure!(output.status.success(), "Slurm 提交 {script} 失败: {}", String::from_utf8_lossy(&output.stderr));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_parsable_job_id(stdout.trim())
+}
+
+pub fn parse_parsable_job_id(text: &str) -> Result<String> {
+    let id = text.split(';').next().unwrap_or("");
+    anyhow::ensure!(!id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) && text.lines().count() == 1, "无法解析 Slurm 作业号: {text:?}");
+    Ok(id.to_string())
+}
+
+/// 查询失败不能当作作业已经结束，避免重复提交。
+pub fn slurm_job_state(id: &str) -> Result<String> {
+    anyhow::ensure!(id.chars().all(|c| c.is_ascii_digit()) && !id.is_empty(), "无效作业号");
+    let out = Command::new("squeue").args(["-h", "-j", id, "-o", "%T|%r"]).output()?;
+    anyhow::ensure!(out.status.success(), "squeue 查询失败: {}", String::from_utf8_lossy(&out.stderr));
+    let state = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if !state.is_empty() {
+        if state.contains("DependencyNeverSatisfied") { return Ok("INVALID_DEPENDENCY".into()); }
+        return Ok(state.split('|').next().unwrap().to_string());
+    }
+    let out = Command::new("sacct").args(["-n", "-X", "-j", id, "--format=State", "--parsable2"]).output()?;
+    anyhow::ensure!(out.status.success(), "sacct 查询失败");
+    let text=String::from_utf8_lossy(&out.stdout);
+    let state=text.lines().next().unwrap_or("").trim().trim_end_matches('|').split_whitespace().next().unwrap_or("");
+    anyhow::ensure!(!state.is_empty(), "作业 {id} 不在队列或 accounting 中，拒绝重复提交");
+    Ok(state.to_string())
+}
+
+#[cfg(test)]
+mod slurm_tests {
+    #[test]
+    fn parsable_requires_an_actual_id() {
+        assert_eq!(super::parse_parsable_job_id("123;cluster").unwrap(), "123");
+        for s in ["", "Submitted batch job 12", "12\n13", "warning\n12", "12x"] {
+            assert!(super::parse_parsable_job_id(s).is_err(), "{s}");
+        }
     }
 }

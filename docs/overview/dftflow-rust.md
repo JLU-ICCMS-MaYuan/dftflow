@@ -14,6 +14,14 @@ SCF/NSCF 分别读取 `[qe_scf]` / `[qe_nscf]` 的嵌套配置，在 `qe_scf/` /
 
 `-i/--input`、`-c/--config`、`-r/--run`、`-s/--submit` 与原版对齐；默认配置 input.toml。`-r` 启动外部 QE 并传播失败，`-s` 调用 sbatch；NSCF 复制 SCF 的 XML、电荷密度和 paw.txt，不复制波函数。电子能带与 DOS 路径共用实际执行工具，能带缺少 KPATH.in 时调用 vaspkit。
 
+## QE 分 q 点自动声子链路
+
+`qe_phonon_split_index`、`qe_phonon_split_coords` 支持默认仅准备、`-r` 顺序完整执行、`-s` 一次安排完整 Slurm 依赖链。根 SCF 只运行一次，保存含波函数的完整快照；PH 初始化用 only_init=true/lqdir=true 正常结束，以真实 dyn0 获取 q 点。各 q 点复制独立 SCF 数据后仅运行 PH。index 按序号，coords 输入 2π/a₀ 的笛卡尔坐标。
+
+前置、q 点及合并作业用 afterok 依赖关联；原生 sbatch --parsable 返回作业号，记录 chain_jobs.json，查询活动作业避免重复提交，失败阻止后处理。合并依据实际 outdir 和 q 映射预检查，再执行 q2r、两项 matdyn、CSV 收集与 PNG/联合 JPG 绘图，校验产物后写 chain_complete.json。
+
+[MgB₂ 算例](../../examples/MgB2/README.md) 按机器和 run/index、run/coords、run/nosplit 组织。sugon-amd 的 QE 7.4.1 小网格两种 split 已实际通过；这不代表参数收敛。登录节点与计算节点 glibc 不同时，用户级配套加载器打包脚本解决本机共享目录部署，通用 musl 静态交付仍保留。具体证据与边界见 [0006 验收](../specs/0006-qe-phonon-submit-chain/acceptance.md)。
+
 ## scflow
 
 读取 QE EPC、插值、direct/interp 两通道、λ/ω_log/Tc、CSV/JSON、spglib CIF/POSCAR 和七份合成样例 PDF。Eliashberg 通过 ndarray-linalg 0.17 调用 OpenBLAS；没有 Jacobi 回退。固定容差验收包含 Tc 与所有派生量、零频原始 gamma 与下限状态，不保留 5% 豁免。
