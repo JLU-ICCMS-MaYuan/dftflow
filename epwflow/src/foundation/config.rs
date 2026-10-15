@@ -27,7 +27,7 @@ pub struct Config {
 }
 fn default_outdir()->PathBuf{PathBuf::from("./tmp")}
 data!(Program{path:PathBuf,args:Vec<String>});
-data!(Programs{pw:Program,ph:Program,epw:Program,launcher:Vec<String>,environment_script:Option<PathBuf>});
+data!(Programs{pw:Program,ph:Program,epw:Program,launcher:Vec<String>,environment_script:Option<PathBuf>,wannier90:Option<Program>,pw2wannier90:Option<Program>});
 data!(Resources{partition:String,nodes:u32,mpi:u32,wall_seconds:u64,storage_bytes:u64});
 data!(BudgetConfig{campaign_id:String,ledger:PathBuf});
 data!(Qe{prefix:String,ecutwfc_ry:f64,ecutrho_ry:f64,occupations:Occupations,smearing:Option<Smearing>,degauss_ry:Option<f64>,scf:Scf,nscf:Nscf});
@@ -140,6 +140,9 @@ impl Config {
         self.structure=paths::existing(base,&self.structure,"structure",false)?;
         for (el,p) in &mut self.pseudos {*p=paths::existing(base,p,&format!("pseudos.{el}"),false)?;}
         for (n,p) in [("pw",&mut self.programs.pw),("ph",&mut self.programs.ph),("epw",&mut self.programs.epw)] {p.path=paths::existing(base,&p.path,&format!("programs.{n}.path"),true)?;}
+        for (n,p) in [("wannier90",&mut self.programs.wannier90),("pw2wannier90",&mut self.programs.pw2wannier90)] {
+            if let Some(pr)=p { pr.path=paths::existing(base,&pr.path,&format!("programs.{n}.path"),true)?; }
+        }
         if let Some(p)=self.programs.launcher.first_mut(){*p=paths::command(base,p)?.to_string_lossy().into_owned();}
         if let Some(p)=&mut self.programs.environment_script {*p=paths::existing(base,p,"programs.environment_script",false)?;}
         if let Some(p)=&mut self.interpolation.quality.reference_manifest {*p=paths::existing(base,p,"interpolation.quality.reference_manifest",false)?;}

@@ -1,0 +1,33 @@
+use anyhow::{ensure, Result};
+use std::collections::BTreeMap;
+use std::path::Path;
+use super::super::foundation::config;
+use super::super::foundation::store;
+use super::super::qe_data::manifest::QeManifest;
+
+/// F3 与 F2 的绑定：F2 清单有效、程序身份与来源不可变（FR-003）。
+#[derive(Debug, Clone)]
+pub struct AdapterBinding {
+    pub f2_digest: String,
+    pub program_identities: BTreeMap<String, String>,
+}
+
+/// 校验 F2 来源清单有效并固定程序身份；前置未满足不得放行（FR-003）。
+pub fn bind_f2(f2_path: &Path, cfg: &config::Config) -> Result<AdapterBinding> {
+    ensure!(f2_path.exists(), "data_invalid: F2 清单缺失 {}", f2_path.display());
+    let f2 = QeManifest::load(f2_path)
+        .map_err(|e| anyhow::anyhow!("data_invalid: 无法加载 F2 清单: {e}"))?;
+    ensure!(
+        f2.validation.all_passed(),
+        "data_invalid: F2 本地校验未通过，F3 不得放行"
+    );
+    let f2_digest = store::hash_file(f2_path)?;
+    let mut program_identities = BTreeMap::new();
+    program_identities.insert("pw".to_string(), store::hash_file(&cfg.programs.pw.path)?);
+    program_identities.insert("ph".to_string(), store::hash_file(&cfg.programs.ph.path)?);
+    program_identities.insert("epw".to_string(), store::hash_file(&cfg.programs.epw.path)?);
+    Ok(AdapterBinding {
+        f2_digest,
+        program_identities,
+    })
+}

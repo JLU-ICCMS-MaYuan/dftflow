@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// 产物记录：角色、相对路径、尺寸、哈希、生产阶段、输入指纹、格式版本。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,7 +105,7 @@ pub struct ScfRecord {
 }
 
 impl QeManifest {
-    pub fn load(path: &PathBuf) -> anyhow::Result<Self> {
+    pub fn load(path: &Path) -> anyhow::Result<Self> {
         let m: Self = super::super::foundation::store::read(path)?;
         anyhow::ensure!(
             m.schema_version == 1,

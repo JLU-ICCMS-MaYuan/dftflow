@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use super::{budget, config, environment, snapshot, status};
+use crate::interpolation::cli::InterpolationCommand;
 use crate::qe_data::cli::QeDataCommand;
 
 #[derive(Parser)]
@@ -73,6 +74,11 @@ pub enum EpwCommand {
         #[command(subcommand)]
         command: QeDataCommand,
     },
+    /// Wannier 化与 EPW 插值阶段边界：check / import（FR-001）。
+    Interpolation {
+        #[command(subcommand)]
+        command: InterpolationCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -140,6 +146,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         } => environment::probe(&config, submit, require_allocation),
         EpwCommand::Budget { action } => budget_cmd(action),
         EpwCommand::QeData { command } => crate::qe_data::cli::run(command),
+        EpwCommand::Interpolation { command } => crate::interpolation::cli::run(command),
     }
 }
 
