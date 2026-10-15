@@ -2,7 +2,7 @@
 
 **类型**：`type:feature`。
 
-**状态**：本地 Issue 草稿已于 2026-10-15 确认；本项详细 Spec 正在审查，尚未确认；实现未开始。
+**状态**：本地 Issue 与详细 Spec 已确认；正式文档已落档，待共同文档质量门；业务实现与验收尚未开始。
 
 **父级**：[Epic 0007](../0007-epwflow-superconductivity/issue-draft.md) 的 F5；**前置**：[0008 执行基础](../0008-epwflow-foundation/issue-draft.md)、[0010 QE 数据](../0010-epwflow-qe-data/issue-draft.md)、[0012 插值](../0012-epwflow-interpolation/issue-draft.md)、[0013 超导与 Tc](../0013-epwflow-superconductivity-tc/issue-draft.md)；**来源**：[总体规划](../../plan/epwflow-superconductivity.md)。0014 为本地需求编号，线上 Issue 仍由用户管理。
 
@@ -125,3 +125,17 @@
 ## 详细 Spec 审查进度
 
 前置 0008、0010、0012、0013 完整 Spec 草案已确认；本项是最后一项详细 Spec，完整草案在对话中审查，待该版确认。重点包括数据和图表契约、独立重绘、直接 CLI、三模式与两种求解的数值覆盖、固定 current 安装与旧入口回归，以及真实验收和部分交付的区别。本项确认后统一建立全部正式文档并检查共同质量门，当前不提前实施。
+
+## 正式文档
+
+[Spec](spec.md)、[设计](plan.md)、[任务](tasks.md)、[验收](acceptance.md)。文档状态以最新记录为准，前文未创建说明是历史阶段。
+
+用户先答复：
+
+> 修改本版 Spec 后再确认
+
+询问具体修改内容后答复：
+
+> 开始实施
+
+未提出替代条款，按已展示的完整 0014 Spec 授权实施；其余四项确认继续有效。

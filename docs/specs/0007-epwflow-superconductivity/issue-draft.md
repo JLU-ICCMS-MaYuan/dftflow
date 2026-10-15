@@ -136,13 +136,13 @@ Epic 最终草稿确认：
 ## Documentation Impact
 
 - [x] 总体规划已落档：`docs/plan/epwflow-superconductivity.md`；用户“确认开始”确认展示的总体方案。
-- [ ] 逐项建立五个子 Feature 的本地 Issue 草稿与标准 Spec 产物，补齐本地父子链接。
+- [x] 五个子 Feature 的本地 Issue、正式 Spec、设计与任务已建立；覆盖及链接核验见 [共同分析](documentation-analysis.md)。
 - [ ] 已实现行为回写 `docs/overview/epwflow/` 及总索引；规划内容不提前进入当前功能文档。
 - [ ] 新增 `epwflow/README.md`，更新根 README、构建/安装说明与 AGENTS 需求记录。
 - [ ] 在忽略的 `examples/MgB2/sugon-amd/` 下提供独立 EPW 算例与手册，真实路径只留本地。
 
 ## 当前证据与最终草案确认
 
-- 当前已有总体规划、只读源码调查及已确认的本地 Epic/五个子 Issue；0008、0010、0012、0013 详细 Spec 草案已确认，当前逐项审查最后一项 0014；尚未统一建立正式 Spec、设计与任务文档，不存在已实现的 epwflow 或 EPW 真实验收证据。
+- 当前已有总体规划、只读源码调查及已确认的本地 Epic/五个子 Issue；五项详细 Spec 均已确认并统一落档。用户在询问 0014 修改内容后答复“开始实施”，未提出替代条款，按已展示版本实施。共同文档检查通过，进入 F1；实现及真实验收均尚未完成。
 - 用户已审阅完整 Epic 正文并答复“确认 Epic 草稿，继续子 Feature 审查（推荐）”，当前 Epic 已确认；此确认不冒充尚未展示的子 Issue/Spec 确认。
 - 线上 Issue 及远程双向链接不适用本轮写入，不伪造线上状态；用户后续创建线上 Issue 时再补真实链接。

@@ -2,7 +2,7 @@
 
 **类型**：`type:feature`。
 
-**状态**：本地 Issue 与详细 Spec 草案均已于 2026-10-15 确认；尚未创建正式 Spec 文档或业务代码。
+**状态**：本地 Issue 与详细 Spec 已确认；正式文档已落档，待共同文档质量门；业务实现与验收尚未开始。
 
 **父级**：[Epic 0007](../0007-epwflow-superconductivity/issue-draft.md) 的 F3；**前置**：[0010 QE 数据准备](../0010-epwflow-qe-data/issue-draft.md)，沿用 [0008 执行基础](../0008-epwflow-foundation/issue-draft.md)；**来源**：[总体规划](../../plan/epwflow-superconductivity.md)。0012 为本地需求编号，0011 已用于编译历史清理；线上 Issue 仍由用户管理。
 
@@ -122,3 +122,7 @@
 本次确认对应已展示的 US1–US5、FR-001～013、SC-001～008，包含 `--until interpolation`、检查与导入接口、Wannier 收敛、共同细网格数据和模式专用交付、粗网格外参考点、FR-008 虚频/低频规则、FR-009 插值质量及独立数值对照标准，以及依赖复用表。不以本轮状态记录替代完整正文，也不将文档确认写成实现或真实验收完成。
 
 前置 0008、0010 与本项详细 Spec 均已确认，继续逐项审查 0013。全部 Spec 确认后统一建立正式文档，当前不创建部分 Spec 产物、不实施代码、不提交真实计算。
+
+## 正式文档
+
+[Spec](spec.md)、[设计](plan.md)、[任务](tasks.md)、[验收](acceptance.md)。文档状态以最新记录为准，前文未创建说明是历史阶段。
