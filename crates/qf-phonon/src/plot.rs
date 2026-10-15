@@ -91,6 +91,42 @@ where
     Ok(())
 }
 
+/// 以 cm⁻¹ 为单位；0 显式关闭。仅用于绘图，CSV 保持原值。
+pub fn dos_plot_sigma(config: &qf_config::Config) -> Result<f64> {
+    let sigma = match config.qe_phonon.phdos.get("plot_sigma_cm1") {
+        Some(value) => value.as_f64().ok_or_else(|| anyhow::anyhow!("plot_sigma_cm1 必须是非负数"))?,
+        None => 10.0,
+    };
+    ensure!(sigma.is_finite() && sigma >= 0.0, "plot_sigma_cm1 必须是有限非负数");
+    Ok(sigma)
+}
+
+/// 同一线性卷积核作用于全部 DOS 列。每个源点的核按输出梯形权重归一，
+/// 保留积分及投影可加性，包括有限频率区间的端点。
+fn gaussian_dos(rows: Vec<Vec<f64>>, sigma: f64) -> Result<Vec<Vec<f64>>> {
+    ensure!(sigma.is_finite() && sigma >= 0.0, "高斯展宽必须是有限非负数");
+    if sigma == 0.0 { return Ok(rows); }
+    ensure!(rows.len() >= 2 && rows.windows(2).all(|w| w[1][0] > w[0][0]), "高斯平滑要求至少两个严格递增的频率点");
+    let lo = rows[0][0];
+    let hi = rows.last().unwrap()[0];
+    let n = (((hi-lo)/(sigma/4.0)).ceil() as usize).max(rows.len()).min(20000).max(2);
+    let dx = (hi-lo)/(n-1) as f64;
+    let mut result: Vec<Vec<f64>> = (0..n).map(|i| { let mut r=vec![0.0; rows[0].len()]; r[0]=lo+i as f64*dx; r }).collect();
+    for (i, source) in rows.iter().enumerate() {
+        let source_weight = if i == 0 { (rows[1][0]-lo)/2.0 } else if i+1 == rows.len() { (hi-rows[i-1][0])/2.0 } else { (rows[i+1][0]-rows[i-1][0])/2.0 };
+        // 减去最近点指数，避免极窄核在所有输出点下溢。
+        let nearest = ((source[0]-lo)/dx).round().clamp(0.0,(n-1) as f64) as usize;
+        let minimum = ((result[nearest][0]-source[0])/sigma).powi(2);
+        let kernel: Vec<f64> = result.iter().map(|r| (-0.5*(((r[0]-source[0])/sigma).powi(2)-minimum)).exp()).collect();
+        let norm: f64 = kernel.iter().enumerate().map(|(j,k)| k*dx*if j==0 || j+1==n {0.5} else {1.0}).sum();
+        ensure!(norm.is_finite() && norm > 0.0, "高斯展宽过小，请增大 plot_sigma_cm1");
+        for (r,k) in result.iter_mut().zip(kernel) {
+            for col in 1..source.len() { r[col] += source[col]*source_weight*k/norm; }
+        }
+    }
+    Ok(result)
+}
+
 struct DosData {
     rows: Vec<Vec<f64>>,
     names: Vec<String>,
@@ -232,8 +268,10 @@ pub fn plot_phonon_dos(
     prefix: &str,
     elements: &[String],
     counts: &[usize],
+    sigma: f64,
 ) -> Result<String> {
-    let data = load_dos(workspace, prefix, elements, counts)?;
+    let mut data = load_dos(workspace, prefix, elements, counts)?;
+    data.rows = gaussian_dos(data.rows, sigma)?;
     let range = frequency_range(data.rows.iter().map(|r| r[0]))?;
     std::fs::create_dir_all(format!("{workspace}/{PHDOS_DIR}"))?;
     let out = format!("{workspace}/{PHDOS_DIR}/phonon_dos.png");
@@ -250,9 +288,11 @@ pub fn plot_phonon_combined(
     prefix: &str,
     elements: &[String],
     counts: &[usize],
+    sigma: f64,
 ) -> Result<String> {
     let band = BandData::load(workspace, prefix)?;
-    let dos = load_dos(workspace, prefix, elements, counts)?;
+    let mut dos = load_dos(workspace, prefix, elements, counts)?;
+    dos.rows = gaussian_dos(dos.rows, sigma)?;
     let range = frequency_range(
         band.frequencies
             .iter()
@@ -270,4 +310,29 @@ pub fn plot_phonon_combined(
         area.present()?;
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod smoothing_tests {
+    use super::*;
+    fn integral(rows: &[Vec<f64>], col: usize) -> f64 {
+        rows.windows(2).map(|w| (w[1][0]-w[0][0])*(w[1][col]+w[0][col])/2.0).sum()
+    }
+    #[test]
+    fn gaussian_preserves_weight_and_projection_sum_and_reduces_peak() {
+        let rows: Vec<Vec<f64>> = (0..101).map(|i| {
+            let a = if i == 50 {1.0} else {0.0};
+            let b = if i == 30 {0.5} else {0.0};
+            vec![i as f64, a+b, a, b]
+        }).collect();
+        assert_eq!(gaussian_dos(rows.clone(),0.0).unwrap(), rows);
+        let narrow=gaussian_dos(rows.clone(),5.0).unwrap();
+        let broad=gaussian_dos(rows.clone(),10.0).unwrap();
+        for col in 1..4 { assert!((integral(&rows,col)-integral(&broad,col)).abs()<1e-10); }
+        assert!(broad.iter().all(|r| (r[1]-r[2]-r[3]).abs()<1e-12));
+        assert!(broad.iter().map(|r|r[2]).fold(0.0,f64::max) < narrow.iter().map(|r|r[2]).fold(0.0,f64::max));
+        assert!(gaussian_dos(rows.clone(),-1.0).is_err());
+        assert!(gaussian_dos(rows,f64::NAN).is_err());
+        assert!(gaussian_dos(vec![vec![0.0,1.0],vec![0.0,2.0]],10.0).is_err());
+    }
 }

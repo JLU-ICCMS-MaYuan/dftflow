@@ -399,3 +399,14 @@ mod tests {
         assert!(base2.get("vasp").is_none());
     }
 }
+
+/// 固定声子工作目录及配置相对路径；其他用户字段保留。
+pub fn phonon_snapshot_text(path: &str, workspace: &str) -> Result<String> {
+    let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(path)?)?;
+    let cfg = load(Some(path), Some(path))?;
+    let root = value.as_table_mut().context("配置必须为 TOML 表")?;
+    if let Some(pp) = cfg.pp_dir { root.insert("pp_dir".into(), toml::Value::String(pp)); }
+    let ph = root.entry("qe_phonon").or_insert_with(|| toml::Value::Table(Default::default())).as_table_mut().context("qe_phonon 必须为表")?;
+    ph.insert("work_dir".into(), toml::Value::String(workspace.into()));
+    Ok(toml::to_string_pretty(&value)?)
+}

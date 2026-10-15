@@ -195,6 +195,7 @@ fn context(config: &str, input: Option<&str>) -> Result<PhononCtx> {
         workspace: ws.to_string_lossy().into_owned(),
         prefix,
         structure,
+        structure_source: source.to_string_lossy().into_owned(),
     })
 }
 

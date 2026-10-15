@@ -115,3 +115,12 @@ FR-001～006、SC-001～004 的本地实现、自动测试、真实计算与安�
 - 用户明确授权更新本机入口；安装后的验证与制品来源见本地 docs/local/0006-us6-install.json。旧版及入口备份保留；其他四家族程序复用上一版本，未宣称重新编译。
 
 安装验证通过：51 个默认入口帮助正常，三个已安装别名在隔离目录的准备及假 sbatch 提交输出均与约定单行文案一致。源码及打包制品分别记录哈希；安装时源码待本次提交，随后将本地清单 source_commit 对齐最终提交。
+
+## 2026-10-15 追加验收
+
+- 命令：`bash scripts/build-native.sh test --release --locked --offline -p qf-config -p qf-input -p qf-phonon -p qeflow`；最终 43 项通过，日志 `docs/local/phonon-additions/tests-verified.log`。旧 scflow 编译警告未在本次修改范围。
+- 安装已验证 qeflow，沿用私有 glibc 加载器并保留旧版本；其他四个程序原样复制。51 默认入口帮助、三聚合入口模拟 sbatch 提交与快照脚本检查通过。安装版绘图与原生测试制品哈希一致，源码和制品哈希见 `docs/local/phonon-additions/install.json`。
+- 不执行真实 QE、不提交真实 Slurm、不迁移现有运行目录；线上 Issue 仍由用户管理，远程双向链接不冒充完成。
+- FR-015/016 / SC-010：index、coords 真实 CLI 生成提交脚本，在外部配置切换目录、外部结构被替换后依次执行 pre、两 q 脚本、post（QE/Slurm 为替身），原目录完整完成。随后删除外部配置、破坏工作 POSCAR，通过 input-init.toml 续算恢复结构；篡改快照或错误模式明确失败。
+- nosplit 已安装模拟提交脚本的 collect/plot 命令固定使用 input-init.toml 与 selected.vasp-init；输入快照中固定工作目录与解析后的赝势目录，结构逐字节一致。自动查找结构记录实际来源名（含 CONTCAR），不统一改成 POSCAR-init。
+- 有快照目录不覆盖快照；无快照旧目录需核对原绑定再显式准备。旧运行脚本固定的旧二进制路径不会因安装改写，本轮不恢复或重提旧 coords 取消作业。原 squeue 无效作业号问题仍不在范围内。

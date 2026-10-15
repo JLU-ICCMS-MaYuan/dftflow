@@ -311,7 +311,19 @@ pub fn write_matdyn_phdos_input(
 ) -> Result<String> {
     let dos_cfg = config.qe_phonon.phdos.clone();
     let names = derive_filenames(prefix);
-    let (nk1, nk2, nk3) = resolve_grid(&dos_cfg, "qpoints", ("nk1", "nk2", "nk3"));
+    let explicit = dos_cfg.contains_key("qpoints") || ["nk1", "nk2", "nk3"].iter().any(|k| dos_cfg.contains_key(*k));
+    let (nk1, nk2, nk3) = if explicit {
+        if let Some(grid) = dos_cfg.get("qpoints") {
+            anyhow::ensure!(grid.as_array().map(|a| a.len() == 3 && a.iter().all(|v| v.as_i64().map(|n| n > 0).unwrap_or(false))).unwrap_or(false), "DOS qpoints 必须是三个正整数");
+        } else {
+            anyhow::ensure!(["nk1", "nk2", "nk3"].iter().all(|k| dos_cfg.get(*k).and_then(|v| v.as_i64()).map(|n| n > 0).unwrap_or(false)), "DOS nk1/nk2/nk3 必须完整指定为正整数");
+        }
+        resolve_grid(&dos_cfg, "qpoints", ("nk1", "nk2", "nk3"))
+    } else {
+        let (a, b, c) = resolve_grid(&config.qe_phonon.ph, "qpoints", ("nq1", "nq2", "nq3"));
+        (a.checked_mul(2).ok_or_else(|| anyhow::anyhow!("PH 网格溢出"))?, b.checked_mul(2).ok_or_else(|| anyhow::anyhow!("PH 网格溢出"))?, c.checked_mul(2).ok_or_else(|| anyhow::anyhow!("PH 网格溢出"))?)
+    };
+    anyhow::ensure!(nk1 > 0 && nk2 > 0 && nk3 > 0, "DOS 网格必须为正整数");
 
     fs::create_dir_all(workspace)?;
     let path = format!("{workspace}/matdyn_phdos.in");
@@ -388,4 +400,30 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+}
+
+#[cfg(test)]
+mod dos_grid_tests {
+    use super::*;
+    #[test]
+    fn dos_defaults_to_twice_ph_grid_and_respects_explicit_grid() {
+        let dir=std::env::temp_dir().join(format!("dos-grid-{}",std::process::id()));
+        let mut cfg=Config::default();
+        cfg.qe_phonon.ph.insert("qpoints".into(),json!([2,3,1]));
+        let check=|cfg:&Config, expected:[i64;3]| {
+            let path=write_matdyn_phdos_input(dir.to_str().unwrap(),cfg,"Si").unwrap();
+            let text=fs::read_to_string(path).unwrap();
+            for (i,n) in expected.iter().enumerate() { assert!(text.contains(&format!("nk{} = {}",i+1,n)),"{text}"); }
+        };
+        check(&cfg,[4,6,2]);
+        cfg.qe_phonon.phdos.insert("qpoints".into(),json!([3,3,3]));
+        check(&cfg,[3,3,3]);
+        cfg.qe_phonon.phdos.clear();
+        for key in ["nk1","nk2","nk3"] {cfg.qe_phonon.phdos.insert(key.into(),json!(7));}
+        check(&cfg,[7,7,7]);
+        cfg.qe_phonon.phdos.clear();cfg.qe_phonon.ph.clear();
+        for (key,n) in [("nq1",3),("nq2",2),("nq3",4)] {cfg.qe_phonon.ph.insert(key.into(),json!(n));}
+        check(&cfg,[6,4,8]);
+        fs::remove_dir_all(dir).unwrap();
+    }
 }

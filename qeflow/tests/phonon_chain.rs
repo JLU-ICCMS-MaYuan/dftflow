@@ -292,3 +292,39 @@ fn both_split_modes_report_concise_preparation_submission_and_failure() {
         assert_eq!(String::from_utf8(submitted.stdout).unwrap(), "已提交前置作业 102；后续计算及绘图将自动安排\n");
     }
 }
+
+#[test]
+fn submitted_scripts_use_frozen_config_and_original_structure_after_external_edits() {
+    for mode in ["index", "coords"] {
+        let w=setup(mode);
+        ok(cli(&w,&["-s"],&[]));
+        let snapshot=w.0.join("calc/input-init.toml");
+        let frozen=fs::read_to_string(&snapshot).unwrap();
+        assert_eq!(fs::read(w.0.join("POSCAR")).unwrap(),fs::read(w.0.join("calc/POSCAR-init")).unwrap());
+        fs::write(w.0.join("input.toml"),"[qe_phonon]\nwork_dir='unrelated'\n").unwrap();
+        fs::write(w.0.join("POSCAR"),"invalid external structure").unwrap();
+        let script=w.0.join("calc/submit_pre_and_split_stage.sh");
+        assert!(fs::read_to_string(&script).unwrap().contains("input-init.toml"));
+        ok(command(&w).arg("--help").output().unwrap());
+        ok(Command::new("bash").arg(&script).env("CHAIN_TESTROOT",&w.0).env("SLURM_JOB_ID","101").env("PATH",format!("{}:{}",w.0.join("bin").display(),std::env::var("PATH").unwrap())).output().unwrap());
+        for q in ["01","02"] {
+            let script=w.0.join(format!("calc/{q}/run_split.sh"));
+            ok(Command::new("bash").arg(script).env("CHAIN_TESTROOT",&w.0).env("PATH",format!("{}:{}",w.0.join("bin").display(),std::env::var("PATH").unwrap())).output().unwrap());
+        }
+        ok(Command::new("bash").arg(w.0.join("calc/submit_merge_and_process_phonon.sh")).env("CHAIN_TESTROOT",&w.0).env("PATH",format!("{}:{}",w.0.join("bin").display(),std::env::var("PATH").unwrap())).output().unwrap());
+        assert!(w.0.join("calc/chain_complete.json").exists());
+        assert_eq!(fs::read_to_string(&snapshot).unwrap(),frozen);
+        fs::remove_file(w.0.join("input.toml")).unwrap();
+        fs::write(w.0.join("calc/POSCAR"),"tampered internal structure").unwrap();
+        ok(command(&w).args([format!("qe-phonon-split-{mode}"),"-c".into(),snapshot.to_string_lossy().into_owned(),"-r".into()]).output().unwrap());
+        assert_eq!(fs::read(w.0.join("calc/POSCAR")).unwrap(),fs::read(w.0.join("calc/POSCAR-init")).unwrap());
+        let wrong_mode=if mode=="coords" {"index"} else {"coords"};
+        let wrong=command(&w).args(["qe-phonon-chain-stage","-c",snapshot.to_str().unwrap(),"--mode",wrong_mode,"--stage","post"]).output().unwrap();
+        assert!(!wrong.status.success());
+        assert!(String::from_utf8_lossy(&wrong.stderr).contains("模式不同"));
+        fs::write(&snapshot,frozen.replace("ecutwfc = 40","ecutwfc = 90")).unwrap();
+        let bad=command(&w).args(["qe-phonon-chain-stage","-c",snapshot.to_str().unwrap(),"--mode",mode,"--stage","post"]).output().unwrap();
+        assert!(!bad.status.success());
+        assert!(String::from_utf8_lossy(&bad.stderr).contains("快照已改变"));
+    }
+}

@@ -61,8 +61,9 @@ fn explicit_input_and_aliases_override_existing_structure() {
 
 #[test]
 fn omitted_input_preserves_automatic_lookup_and_missing_input_fails() {
-    let w = setup();
     for (source, size) in [("CONTCAR", 3), ("POSCAR", 4), ("calc/POSCAR", 5)] {
+        // 每个独立计算目录验证自动查找；已有快照不得换结构。
+        let w = setup();
         fs::write(w.0.join(source), structure(size)).unwrap();
         if source != "calc/POSCAR" {
             let _ = fs::remove_file(w.0.join("calc/POSCAR"));
@@ -82,6 +83,8 @@ fn omitted_input_preserves_automatic_lookup_and_missing_input_fails() {
             structure(size)
         );
     }
+    let w = setup();
+    fs::write(w.0.join("calc/POSCAR"), structure(5)).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_qeflow"))
         .args(["qe-phonon-nosplit", "-i", "missing.vasp"])
         .current_dir(&w.0)
@@ -138,6 +141,7 @@ fn preparation_and_submission_output_is_concise_and_errors_are_visible() {
         String::from_utf8(submitted.stdout).unwrap(),
         "已提交声子流程作业 12345\n"
     );
+    assert!(fs::read_to_string(w.0.join("calc/submit_phonon_workflow.sh")).unwrap().contains("input-init.toml"));
     let failed = invoke(&["-s"], true);
     assert!(!failed.status.success());
     assert!(failed.stdout.is_empty());

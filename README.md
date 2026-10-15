@@ -122,3 +122,7 @@ phonon_mode = "split_index"
 - Spec / 契约 / 验收：[docs/specs/0004-dftflow-rust/](docs/specs/0004-dftflow-rust/spec.md)
 - 各 flow 的 README：`qeflow/` `vaspflow/` `scflow/` `wannier90flow/` `substitutionflow/` `mattersimflow/`
 - 架构决策：[docs/adr/](docs/adr/README.md)
+
+声子 DOS 默认插值网格是 PH 网格各方向的两倍，显式 `[qe_phonon.phdos].qpoints` 优先。绘图高斯平滑默认 `plot_sigma_cm1 = 10.0`（cm⁻¹），调大更平滑、设为 0 关闭；使用 `qe_process_phonon --plot` 重画，原始 DOS 和 CSV 保留。
+
+声子聚合流程保存 `input-init.toml` 和原结构名加 `-init` 的备份，已提交链路读取工作目录快照。修改外部配置后需用原目录的 `input-init.toml` 续算；旧目录和已生成旧脚本不会因安装新版而自动迁移。

@@ -67,6 +67,16 @@ fn redraw_preserves_all_samples_and_rejects_mismatched_labels() {
         fs::read_to_string(dir.join("phband/Si.phband.freq")).unwrap(),
         freq
     );
+    let original_csv=fs::read(dir.join("phdos/phonon_dos_elements.csv")).unwrap();
+    let smoothed=fs::read(dir.join("phdos/phonon_dos.png")).unwrap();
+    fs::write(dir.join("input.toml"), "[qe_phonon]\nwork_dir='.'\nprefix='Si'\n[qe_phonon.phdos]\nplot_sigma_cm1=0\n").unwrap();
+    assert!(invoke().status.success());
+    assert_ne!(smoothed,fs::read(dir.join("phdos/phonon_dos.png")).unwrap());
+    assert_eq!(original_csv,fs::read(dir.join("phdos/phonon_dos_elements.csv")).unwrap());
+    fs::write(dir.join("input.toml"), "[qe_phonon]\nwork_dir='.'\nprefix='Si'\n[qe_phonon.phdos]\nplot_sigma_cm1=-1\n").unwrap();
+    let invalid=invoke();assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("plot_sigma_cm1"));
+    fs::write(dir.join("input.toml"), "[qe_phonon]\nwork_dir='.'\nprefix='Si'\n").unwrap();
     fs::write(
         dir.join("phband/Si_band.labelinfo.dat"),
         labels.replace("X 6", "X 7"),

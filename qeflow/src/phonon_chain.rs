@@ -125,6 +125,7 @@ fn context(config: &str, input: Option<&str>, mode: &str) -> Result<PhononCtx> {
         workspace: ws.to_string_lossy().into_owned(),
         prefix,
         structure,
+        structure_source: source.to_string_lossy().into_owned(),
     };
     outdir(&ctx)?;
     Ok(ctx)
@@ -142,6 +143,51 @@ fn bind_inputs(ctx: &PhononCtx, config: &str, mode: &str) -> Result<()> {
     }
     Ok(())
 }
+/// 返回工作目录内的固定配置与原名结构快照；已存在时只核对，不覆盖。
+pub(super) fn snapshot_inputs(ctx: &PhononCtx, config: &str, input: Option<&str>) -> Result<(String, String)> {
+    let ws = Path::new(&ctx.workspace);
+    let cfg_path = ws.join("input-init.toml");
+    if Path::new(config) == cfg_path {
+        return Ok((cfg_path.to_string_lossy().into_owned(), verify_snapshot(ws)?.to_string_lossy().into_owned()));
+    }
+    let source = input.map(PathBuf::from).unwrap_or_else(|| PathBuf::from(&ctx.structure_source));
+    let name = source.file_name().context("结构文件名无效")?.to_string_lossy();
+    let mut structure_path = ws.join(format!("{name}-init"));
+    if input.is_none() && ws.join("input-init.json").exists() {
+        structure_path = verify_snapshot(ws)?;
+    }
+    let text = qf_config::phonon_snapshot_text(config, &ctx.workspace)?;
+    let structure = fs::read_to_string(&source)?;
+    let manifest = ws.join("input-init.json");
+    let expected = json!({"config":text,"structure":structure,"structure_file":structure_path.file_name().unwrap().to_string_lossy()});
+    if manifest.exists() {
+        verify_snapshot(ws)?;
+        ensure!(serde_json::from_slice::<Value>(&fs::read(&manifest)?)? == expected, "已有输入快照与本次输入不同，请使用原快照续算或新的工作目录");
+    } else {
+        ensure!(!cfg_path.exists() && !structure_path.exists(), "已有未登记输入快照，请先核对，禁止覆盖");
+        fs::write(&cfg_path, &text)?;
+        fs::write(&structure_path, structure.as_bytes())?;
+        atomic_json(&manifest, &expected)?;
+    }
+    Ok((cfg_path.to_string_lossy().into_owned(), structure_path.to_string_lossy().into_owned()))
+}
+fn verify_snapshot(ws: &Path) -> Result<PathBuf> {
+    let manifest: Value = serde_json::from_slice(&fs::read(ws.join("input-init.json"))?)?;
+    let name = manifest["structure_file"].as_str().context("结构快照清单无效")?;
+    ensure!(Path::new(name).components().count() == 1, "结构快照路径无效");
+    let structure = ws.join(name);
+    ensure!(manifest["config"].as_str() == Some(fs::read_to_string(ws.join("input-init.toml"))?.as_str()) && manifest["structure"].as_str() == Some(fs::read_to_string(&structure)?.as_str()), "输入快照已改变，禁止继续计算");
+    Ok(structure)
+}
+fn verify_mode(ws: &str, mode: &str) -> Result<()> {
+    let binding: Value = serde_json::from_slice(&fs::read(Path::new(ws).join("chain_inputs.json"))?)?;
+    ensure!(binding["mode"].as_str() == Some(mode), "快照绑定的拆分模式与本次模式不同");
+    Ok(())
+}
+pub(super) fn snapshot_structure(ws: &str) -> Result<String> {
+    Ok(verify_snapshot(Path::new(ws))?.to_string_lossy().into_owned())
+}
+
 fn stage_command(config: &str, ws: &str, mode: &str, stage: &str) -> Result<String> {
     Ok(format!(
         "{} qe-phonon-chain-stage -c {} -i {} --mode {} --stage {}",
@@ -151,7 +197,7 @@ fn stage_command(config: &str, ws: &str, mode: &str, stage: &str) -> Result<Stri
                 .context("程序路径不是 UTF-8")?
         ),
         quote(config),
-        quote(&format!("{ws}/POSCAR")),
+        quote(&snapshot_structure(ws)?),
         mode,
         stage
     ))
@@ -342,7 +388,7 @@ fn materialize(ctx: &PhononCtx, mode: &str) -> Result<QIndexMap> {
                 e.q_cart.unwrap(),
             )?;
         }
-        let command=format!("cd {}\n{} < split_ph.in > split_ph.out 2>&1\n{} qe-phonon-chain-stage -c {} -i {} --mode {} --stage check-q --q-dir {}",quote(q.to_str().unwrap()),qf_runner::resolve_qe_command(cfg.qe.executable_path(),"ph.x"),quote(std::env::current_exe()?.to_str().unwrap()),quote(&absolute_config_from_binding(&ctx.workspace)?),quote(&format!("{}/POSCAR",ctx.workspace)),mode,quote(&e.directory));
+        let command=format!("cd {}\n{} < split_ph.in > split_ph.out 2>&1\n{} qe-phonon-chain-stage -c {} -i {} --mode {} --stage check-q --q-dir {}",quote(q.to_str().unwrap()),qf_runner::resolve_qe_command(cfg.qe.executable_path(),"ph.x"),quote(std::env::current_exe()?.to_str().unwrap()),quote(&absolute_config_from_binding(&ctx.workspace)?),quote(&snapshot_structure(&ctx.workspace)?),mode,quote(&e.directory));
         stage_script(ctx, &format!("{}/run_split.sh", e.directory), &command)?;
     }
     Ok(map)
@@ -510,8 +556,14 @@ pub fn run(
     let config = fs::canonicalize(config.as_deref().unwrap_or("input.toml"))?
         .to_string_lossy()
         .into_owned();
+    let input = if Path::new(&config).file_name().and_then(|p| p.to_str()) == Some("input-init.toml") {
+        Some(snapshot_structure(Path::new(&config).parent().unwrap().to_str().unwrap())?)
+    } else { input };
     let ctx = context(&config, input.as_deref(), mode)?;
-    bind_inputs(&ctx, &config, mode)?;
+    if Path::new(&config) != Path::new(&ctx.workspace).join("input-init.toml") {
+        bind_inputs(&ctx, &config, mode)?;
+    } else { verify_snapshot(Path::new(&ctx.workspace))?; verify_mode(&ctx.workspace, mode)?; }
+    let (config, _) = snapshot_inputs(&ctx, &config, input.as_deref())?;
     fs::write(Path::new(&ctx.workspace).join("chain_config_path"), &config)?;
     prepare(&ctx, &config, mode)?;
     if !run && !submit {
@@ -579,9 +631,18 @@ pub fn stage(
     stage: String,
     q_dir: Option<String>,
 ) -> Result<()> {
+    // 新脚本直接传快照；兼容已生成脚本时，结构所在目录若有登记快照也转向它。
+    let hinted_ws = input.as_deref().and_then(|p| Path::new(p).parent());
+    let snapshot_ws = if Path::new(&config).file_name().and_then(|s| s.to_str()) == Some("input-init.toml") {
+        Path::new(&config).parent()
+    } else { hinted_ws.filter(|p| p.join("input-init.json").exists()) };
+    let (config, input, frozen) = if let Some(ws) = snapshot_ws {
+        let structure = verify_snapshot(ws)?;
+        (ws.join("input-init.toml").to_string_lossy().into_owned(), Some(structure.to_string_lossy().into_owned()), true)
+    } else { (config, input, false) };
     let config = fs::canonicalize(config)?.to_string_lossy().into_owned();
     let ctx = context(&config, input.as_deref(), &mode)?;
-    bind_inputs(&ctx, &config, &mode)?;
+    if !frozen { bind_inputs(&ctx, &config, &mode)?; } else { verify_mode(&ctx.workspace, &mode)?; }
     match stage.as_str() {
         "pre" => {
             pre(&ctx)?;

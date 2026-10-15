@@ -179,8 +179,10 @@ zasr = "simple"
 kpath_file = "KPATH.in"
 kpath_points = 20
 [qe_phonon.phdos]
-qpoints = [2, 2, 2]
+# 缺省时自动取 PH 网格各方向两倍；可显式覆盖
+qpoints = [4, 4, 2]
 ndos = 100
+plot_sigma_cm1 = 10.0 # 仅绘图高斯展宽，0 关闭
 [slurm]
 header = """#!/bin/bash
 #SBATCH --nodes=1
@@ -194,6 +196,8 @@ header = """#!/bin/bash
 -r 在已经分配的资源内顺序执行完整链，不会向 Slurm 申请资源。-s 通过 sbatch --parsable 获得作业号：q 依赖 pre 成功，post 依赖 pre 和全部 q 成功；无效依赖取消，不占计算资源轮询。前置阶段可能尚未运行，因此刚提交时看不到全部 q 作业是正常的。
 
 ## 续算、失败与完成判据
+
+工作目录的 input-init.toml 保存提交时有效配置，work_dir 与赝势目录固定为绝对路径；结构按原名加 -init 原字节备份（如 POSCAR-init、selected.vasp-init）。input-init.json 校验两份快照，已有快照不自动覆盖。pre、q 检查和 post 以及 nosplit 提交后的后处理命令读取快照，因此外部 input.toml 或结构变化不影响已提交作业。
 
 chain_inputs.json 绑定原配置、结构和模式；chain_jobs.json 保存阶段作业号。重复入口会查询已有作业，跳过仍活跃或已经完成的步骤；部分提交失败保留已成功提交的记录，并报告失败阶段。修复运行环境后可用原命令续算；修改计算输入应创建新目录。
 
@@ -223,3 +227,9 @@ chain_inputs.json 绑定原配置、结构和模式；chain_jobs.json 保存阶�
 ## 声子谱路径与仅重绘
 
 三模式共用同一绘图层：频率为纵轴，高对称点路径为横轴，完整保留虚频与路径跳段；联合图右侧 DOS 横轴与左侧共用频率纵轴。已有后处理结果可用 `qe_process_phonon -c input.toml -i POSCAR --plot` 更新 CSV 与图，重绘前保留旧图，不重新执行 QE。详见 [0009 路径与绘图验收](../../specs/0009-phonon-band-plot-rewrite/acceptance.md)。
+
+### 使用固定输入续算
+
+从原计算目录指向快照，例如 `qe_phonon_split_coords -c qe_phonon_coords/input-init.toml -s`；结构由快照自动恢复。若外部配置已经改变，应使用快照续算。旧目录没有 input-init.toml 时不能凭当前外部配置自动恢复原计算依据，需先核对 chain_inputs.json 中保存的原配置并重新准备。安装新版不会修改旧脚本中的旧二进制路径，也不会自动重提取消的作业。
+
+DOS 未显式指定 qpoints 或完整 nk1/nk2/nk3 时，默认使用 PH 配置生成网格的两倍（nq1/nq2/nq3 形式同样支持）；显式网格优先。改变网格需重新执行 matdyn DOS 才生效。plot_sigma_cm1 只影响图片，原始 DOS 和 CSV 不变；总 DOS 与元素投影共用归一高斯核，保持积分和投影可加性。σ 越大越平滑，也越容易掩盖细峰。σ=0 关闭；非有限值或负值明确报错。

@@ -26,3 +26,12 @@
 本机安装仅更新 qeflow，其他四二进制复用前版；既有私有 glibc 加载器打包，源二进制及打包制品分别哈希，旧版与入口备份保留。51 入口帮助及已安装 qe_process_phonon 隔离重绘通过，PNG/JPG/CSV 与原生构建逐字节一致，来源见本地 install.json。最终 source_commit 在提交后回填，本地机器路径不入库。
 
 SC-001～004 全部满足；不将本地草稿冒充线上 Issue 已创建/关闭。所有基线、新旧图及安装验收仅在本地证据目录，用户原始计算目录未改写。
+
+## 2026-10-15 追加验收
+
+- 命令：`bash scripts/build-native.sh test --release --locked --offline -p qf-config -p qf-input -p qf-phonon -p qeflow`；最终 43 项通过，日志 `docs/local/phonon-additions/tests-verified.log`。旧 scflow 编译警告未在本次修改范围。
+- 安装已验证 qeflow，沿用私有 glibc 加载器并保留旧版本；其他四个程序原样复制。51 默认入口帮助、三聚合入口模拟 sbatch 提交与快照脚本检查通过。安装版绘图与原生测试制品哈希一致，源码和制品哈希见 `docs/local/phonon-additions/install.json`。
+- 不执行真实 QE、不提交真实 Slurm、不迁移现有运行目录；线上 Issue 仍由用户管理，远程双向链接不冒充完成。
+- FR-007 / SC-005：生产输入生成器验证 PH [2,3,1]→DOS [4,6,2]、nq 三键形式、显式 qpoints 和 nk 三键优先；本地用户 input.toml 已显式改成 [4,4,2]，不会因安装自动重算。
+- FR-008 / SC-005：同一归一高斯核作用于所有列；回归验证积分误差 <1e-10、投影加和误差 <1e-12、加宽峰值下降、0 关闭、负数/NaN/重复频率拒绝。真实 CLI 验证平滑图片改变但 CSV 不变。
+- MgB₂ 原数据副本实际重绘 σ=0/10/20 并查看三图并排，σ=10 减弱尖峰，σ=20 更平滑且细峰开始合并；所有原始数据哈希不变，各宽度 CSV 相同。对比图 `docs/local/phonon-additions/dos-comparison.png`，记录 redraw.json。

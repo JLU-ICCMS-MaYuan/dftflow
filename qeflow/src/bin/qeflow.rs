@@ -544,7 +544,12 @@ fn with_args(exec_cmd: &str, args: &str, redirect: &str) -> String {
 /// scf/ph/q2r/matdyn 全部输入与脚本，按状态推进剩余步骤；-r 本地顺序运行并出图，
 /// -s 生成聚合 `submit_phonon_workflow.sh` 提交。
 fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: bool, submit: bool) -> Result<()> {
+    let source_config = std::fs::canonicalize(config.as_deref().unwrap_or("input.toml"))?;
+    let input = if source_config.file_name().and_then(|p| p.to_str()) == Some("input-init.toml") {
+        Some(phonon_chain::snapshot_structure(source_config.parent().unwrap().to_str().unwrap())?)
+    } else { input };
     let ctx = create_phonon_context(config.as_deref(), input.as_deref(), Some("qe_phonon_nosplit"), true)?;
+    let (frozen_config, frozen_structure) = phonon_chain::snapshot_inputs(&ctx, source_config.to_str().unwrap(), input.as_deref())?;
     prepare_root_scf(&ctx)?;
     prepare_ph_step(&ctx)?;
     q2r_input::write_q2r_input(&ctx.workspace, &ctx.cfg, &ctx.prefix)?;
@@ -612,8 +617,8 @@ fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: boo
         qf_phonon::write_csv(&format!("{}/phdos/phonon_dos_atoms.csv", ctx.workspace), &atoms_rows)?;
         qf_phonon::write_csv(&format!("{}/phdos/phonon_dos_elements.csv", ctx.workspace), &elements_rows)?;
         qf_phonon::plot::plot_phonon_band(&ctx.workspace, &ctx.prefix)?;
-        qf_phonon::plot::plot_phonon_dos(&ctx.workspace, &ctx.prefix, &elements, &counts)?;
-        qf_phonon::plot::plot_phonon_combined(&ctx.workspace, &ctx.prefix, &elements, &counts)?;
+        qf_phonon::plot::plot_phonon_dos(&ctx.workspace, &ctx.prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&ctx.cfg)?)?;
+        qf_phonon::plot::plot_phonon_combined(&ctx.workspace, &ctx.prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&ctx.cfg)?)?;
         println!("声子流程已完成：{}", ctx.workspace);
     } else if submit {
         if needed.is_empty() {
@@ -625,16 +630,16 @@ fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: boo
                 steps.push(("matdyn_phband".to_string(), "bash run_matdyn_phband.sh".to_string()));
                 steps.push((
                     "collect phband".to_string(),
-                    format!("qeflow qe-process-phonon -c {} --collect", config.as_deref().unwrap_or("input.toml")),
+                    format!("{} qe-process-phonon -c {} -i {} --collect", phonon_chain::quote(std::env::current_exe()?.to_str().unwrap()), phonon_chain::quote(&frozen_config), phonon_chain::quote(&frozen_structure)),
                 ));
                 steps.push(("matdyn_phdos".to_string(), "bash run_matdyn_phdos.sh".to_string()));
                 steps.push((
                     "collect phdos".to_string(),
-                    format!("qeflow qe-process-phonon -c {} --collect", config.as_deref().unwrap_or("input.toml")),
+                    format!("{} qe-process-phonon -c {} -i {} --collect", phonon_chain::quote(std::env::current_exe()?.to_str().unwrap()), phonon_chain::quote(&frozen_config), phonon_chain::quote(&frozen_structure)),
                 ));
                 steps.push((
                     "plot".to_string(),
-                    format!("qeflow qe-process-phonon -c {} --plot", config.as_deref().unwrap_or("input.toml")),
+                    format!("{} qe-process-phonon -c {} -i {} --plot", phonon_chain::quote(std::env::current_exe()?.to_str().unwrap()), phonon_chain::quote(&frozen_config), phonon_chain::quote(&frozen_structure)),
                 ));
             }
             let script_ctx = qf_runner::ScriptContext {
@@ -698,8 +703,8 @@ fn run_qe_process_phonon(
         qf_phonon::write_csv(&format!("{work_dir}/phdos/phonon_dos_atoms.csv"), &atoms_rows)?;
         qf_phonon::write_csv(&format!("{work_dir}/phdos/phonon_dos_elements.csv"), &elements_rows)?;
         let band_png = qf_phonon::plot::plot_phonon_band(&work_dir, &prefix)?;
-        let dos_png = qf_phonon::plot::plot_phonon_dos(&work_dir, &prefix, &elements, &counts)?;
-        let combined = qf_phonon::plot::plot_phonon_combined(&work_dir, &prefix, &elements, &counts)?;
+        let dos_png = qf_phonon::plot::plot_phonon_dos(&work_dir, &prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&cfg)?)?;
+        let combined = qf_phonon::plot::plot_phonon_combined(&work_dir, &prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&cfg)?)?;
         println!("[qe_process_phonon] 绘图完成: {band_png}, {dos_png}, {combined}");
         return Ok(());
     }
@@ -927,6 +932,7 @@ struct PhononCtx {
     workspace: String,
     prefix: String,
     structure: qf_crystal::Structure,
+    structure_source: String,
 }
 
 const WORKFLOW_DEFAULT_WORKDIRS: &[(&str, &str)] = &[
@@ -1005,6 +1011,7 @@ fn create_phonon_context(
         std::fs::create_dir_all(&workspace)?;
     }
 
+    let mut original_source = format!("{workspace}/POSCAR");
     if prepare_inputs {
         let structure_target = format!("{workspace}/POSCAR");
         let structure_source = if struct_file.is_none() && Path::new(&structure_target).exists() {
@@ -1012,6 +1019,7 @@ fn create_phonon_context(
         } else {
             ensure_structure_source(struct_file)?
         };
+        original_source = structure_source.clone();
         if std::fs::canonicalize(&structure_source).ok()
             != std::fs::canonicalize(&structure_target).ok()
         {
@@ -1035,6 +1043,7 @@ fn create_phonon_context(
         workspace,
         prefix,
         structure,
+        structure_source: original_source,
     })
 }
 
