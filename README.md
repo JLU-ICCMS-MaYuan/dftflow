@@ -10,21 +10,166 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 - `python`：保留原 `master` 分支的 Python 版本，切换时的提交为 `7a172fe`。
 - `python-reference-0004`：迁移数值对照使用的冻结标签（`9396b3a`），与 `python` 分支用途不同，继续保留。
 
-## 构建
+## 编译产物与安装目录
 
-```bash
-# macOS arm64 本机构建：先安装原生依赖
-brew install openblas spglib
+编译和安装是两步：Cargo 先把产物写进仓库的 `target/`，再把需要使用的程序复制到稳定版本目录，最后在 `~/.local/bin` 创建命令软链接。`~` 是当前用户的家目录；下面的路径是本机采用的安装布局，不是 Cargo 强制指定的目录。
 
-# Linux x86_64 / macOS arm64：脚本按本机平台选择独立配置
-bash scripts/build-native.sh
-bash scripts/build-native.sh test --release --workspace --locked
+```text
+仓库/
+├── target/linux-x86_64/x86_64-unknown-linux-gnu/release/  Linux 原生构建产物
+├── target/macos-arm64/aarch64-apple-darwin/release/      Apple Silicon 构建产物
+├── dist/linux-x86_64-musl/                              Linux 静态交付包
+└── docs/local/                                        本机环境、构建日志与验收证据
 
-# 在 macOS Docker/OrbStack 内构建 Linux x86_64 musl 并验证
-bash scripts/linux/build.sh
+~/.local/
+├── bin/                                               PATH 中的命令入口
+│   ├── qeflow -> ../share/dftflow/versions/<版本>/bin/qeflow
+│   ├── qe_phonon_split_coords -> 同一个 qeflow
+│   └── .dftflow-backup-<时间>-<进程号>/                 安装器备份的旧入口
+└── share/dftflow/
+    ├── versions/<版本>/bin/                            五个家族程序的安装副本
+    ├── native/linux-x86_64/                            本机原生依赖与兼容运行库
+    │   ├── include/                                   OpenBLAS、spglib 等头文件
+    │   ├── lib/                                       库、私有 glibc 加载器及 pkgconfig/
+    │   ├── lib64/                                     本机 spglib 静态库等及 pkgconfig/
+    │   └── bin/                                       依赖工具预留目录，本机目前为空
+    └── tools/qf-gen-dyn0/<版本>/bin/                   独立 dyn0 工具
 ```
 
-macOS Mach-O 文件不能直接在 Linux 执行；Linux 交付脚本使用 Linux 编译环境产出 ELF，并检查静态链接和断网运行。目标计算节点仍需提供 QE/VASP 等外部计算程序。
+图中软链接是示意关系，安装器实际写入源版本目录的绝对路径。各目录用途如下：
+
+| 目录 | 存放内容与用途 |
+| --- | --- |
+| 仓库 `target/` | 编译缓存、中间文件和原始可执行文件；不同平台单独存放，`release/` 中还有 Cargo 的其他产物。清理构建缓存不会删除已经复制到 `versions/` 的安装副本。 |
+| `versions/` | 每个安装版本的 `qeflow`、`vaspflow`、`scflow`、`wannier90`、`substitution`。版本名通常含平台、改动主题和时间；不是五十一份独立程序。 |
+| `native/linux-x86_64/include/` | 编译需要的 C 头文件，例如 `cblas.h`、`openblas_config.h`、`spglib.h`。 |
+| `native/linux-x86_64/lib/` | 本机 OpenBLAS 0.3.30 的 `libopenblas.a`、绘图所需字体等共享库，以及为旧 glibc 计算节点准备的加载器、libc 等运行库。`pkgconfig/*.pc` 告诉编译工具到哪里找头文件和库。 |
+| `native/linux-x86_64/lib64/` | 本机 spglib 2.6.0 的 `libsymspg.a` 和相关构建元数据；`lib`/`lib64` 是依赖安装工具的目录选择，并不表示本机同时装了 32 位和 64 位两套程序。 |
+| `tools/` | 不属于五个家族程序的独立工具，目前是 `qf-gen-dyn0`；由它自己的 Cargo 工程单独编译和安装。 |
+| `~/.local/bin/` | 用户输入的 `qe_*` 等命令所在位置。软链接决定当前使用哪个版本，加入 PATH 后无需每次输入完整路径。 |
+| `~/.local/bin/.dftflow-backup-*` | 安装器替换命令前备份的旧入口，通常仍是软链接；不是完整程序备份，原版本文件仍须保留。 |
+| 仓库 `docs/local/` | 不入 Git 的机器路径、编译环境、日志、制品哈希和测试图片；不是运行程序必须遍历的安装目录。 |
+
+选择 `~/.local/share/dftflow/` 是为了使用用户权限安装，避开系统目录，并让依赖、独立工具、多个版本集中管理。这样重新编译不会覆盖正在使用的版本，也方便切换和回退。这个前缀可以更换，需同时调整本机编译环境、安装软链接及依赖该路径的运行库打包设置。macOS 使用 Homebrew 时，依赖通常留在 Homebrew 前缀中，无需另复制到这个 Linux 依赖目录。
+
+版本名中的 `phonon-*`、`nosplit-input` 表示那次安装的改动主题；`candidate` 是历史候选版，`tmp` 是一次默认 outdir 改为 `./tmp` 的版本标记，不表示该安装目录是可随意清理的临时文件。目录名只用于辨识，实际生效版本以软链接为准：
+
+```bash
+command -v qe_phonon_split_coords
+readlink "$HOME/.local/bin/qe_phonon_split_coords"
+readlink "$HOME/.local/bin/qeflow"
+```
+
+已生成的作业脚本可能固定引用旧版本的绝对路径。切换默认入口只影响新启动的命令；清理旧 `versions/` 前应核对已有作业脚本和运行中的作业。私有加载器所在的 `native/` 也被已安装程序引用，不能把它当编译缓存删除。
+
+## 编译依赖：OpenBLAS 与两平台安装
+
+项目的 `ndarray-linalg` 启用 `openblas-static` 和 `openblas-system`：需要能够被编译工具找到的本机 OpenBLAS 开发文件和静态库 `libopenblas.a`，使用默认 LP64 接口。这里的 OpenBLAS 是 Rust 数值计算的依赖，与 QE 自身使用哪套 BLAS 独立；只安装 Python 的 numpy 并不能替代这些开发文件。另需 spglib 头文件/库、libclang，以及字体绘图依赖。
+
+### macOS：Apple Silicon
+
+当前原生配置支持 macOS arm64，使用 `/opt/homebrew` 下的 Homebrew；Intel Mac 不在此脚本的平台分派范围内。
+
+```bash
+# 首次安装 Apple 命令行开发工具；已安装时无需重复
+xcode-select --install
+
+# 安装依赖；gcc 提供 gfortran，llvm 提供 libclang
+brew install openblas spglib gcc cmake pkg-config llvm fontconfig freetype
+
+export PKG_CONFIG_PATH="$(brew --prefix openblas)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export LIBRARY_PATH="$(brew --prefix openblas)/lib:$(brew --prefix)/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
+export LIBCLANG_PATH="$(brew --prefix llvm)/lib"
+
+# 验证 OpenBLAS 开发文件可见
+pkg-config --modversion openblas
+test -f "$(brew --prefix openblas)/lib/libopenblas.a"
+```
+
+另需安装 Rust/Cargo，可按 [Rust 官方安装指南](https://www.rust-lang.org/tools/install) 使用 rustup。Homebrew 依赖和说明见 [OpenBLAS 配方](https://formulae.brew.sh/formula/openblas)。上面的 `export` 只影响当前终端，也可保存到本地 `docs/local/build-macos-arm64.env`；不要复制 Linux 的 glibc 或 Linux 库到 macOS。
+
+### Linux：系统开发包
+
+以 Debian/Ubuntu 为例，有管理员权限时可安装：
+
+```bash
+sudo apt-get update
+sudo apt-get install build-essential gfortran cmake pkg-config clang libclang-dev \
+    libopenblas-dev libsymspg-dev libfontconfig1-dev libfreetype6-dev
+
+pkg-config --modversion openblas
+pkg-config --libs --static openblas
+```
+
+发行版包名可能不同，例如 RHEL 系通常使用 `*-devel` 名称；按管理员提供的开发环境配置。这里要安装开发包，而不只是运行时共享库。系统 OpenBLAS 版本由发行版决定；如果需要复现本机的 0.3.30、没有管理员权限，或集群节点需要统一依赖，可以使用下面的用户前缀源码安装。
+
+### Linux：本机采用的 OpenBLAS 源码方案
+
+本机使用 OpenBLAS **0.3.30、GENERIC、单线程、静态库**；`GENERIC` 避免仅针对编译机的 CPU 指令调优，`USE_THREAD=0` 避免数值库内部线程与工作流并行叠加。它不替代 QE/MPI 的并行设置。
+
+以下命令在专门的依赖源码构建目录执行，需要已有 C/Fortran 编译器和下载工具：
+
+```bash
+export DFTFLOW_NATIVE_PREFIX="$HOME/.local/share/dftflow/native/linux-x86_64"
+mkdir -p "$DFTFLOW_NATIVE_PREFIX"
+
+curl -fL https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.30/OpenBLAS-0.3.30.tar.gz \
+    -o OpenBLAS-0.3.30.tar.gz
+tar -xzf OpenBLAS-0.3.30.tar.gz
+cd OpenBLAS-0.3.30
+make -j4 TARGET=GENERIC DYNAMIC_ARCH=0 USE_THREAD=0 NO_SHARED=1
+make PREFIX="$DFTFLOW_NATIVE_PREFIX" TARGET=GENERIC DYNAMIC_ARCH=0 USE_THREAD=0 NO_SHARED=1 install
+cd ..
+```
+
+`NO_SHARED=1` 只构建静态 OpenBLAS；构建和安装时使用同一组选项。参考 [OpenBLAS 官方安装说明](https://www.openmathlib.org/OpenBLAS/docs/install/)；本项目静态交付的固定参数也可查阅 [Dockerfile](scripts/linux/Dockerfile)。
+
+本机 spglib **2.6.0** 同样采用源码静态安装，启用 PIC 以支持 Linux 原生程序的 PIE 链接：
+
+```bash
+curl -fL https://codeload.github.com/spglib/spglib/tar.gz/refs/tags/v2.6.0 \
+    -o spglib-2.6.0.tar.gz
+tar -xzf spglib-2.6.0.tar.gz
+cmake -S spglib-2.6.0 -B spglib-build \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DSPGLIB_SHARED_LIBS=OFF -DSPGLIB_WITH_Fortran=OFF -DSPGLIB_WITH_TESTS=OFF \
+    -DCMAKE_INSTALL_PREFIX="$DFTFLOW_NATIVE_PREFIX"
+cmake --build spglib-build -j4
+cmake --install spglib-build
+```
+
+这两步不安装编译器、libclang 或字体开发库；无管理员权限时仍需集群模块或管理员提供它们。`libsymspg.a` 可能安装在 `lib/` 或 `lib64/`，均应纳入依赖搜索路径。
+
+## 构建命令
+
+在仓库根目录执行，Rust/Cargo 与上述原生依赖应已就绪：
+
+```bash
+# 五个家族程序的 release 构建
+bash scripts/build-native.sh
+
+# 完整 release 测试
+bash scripts/build-native.sh test --release --workspace --locked
+
+# 仅修改 qeflow 时，构建对应家族
+bash scripts/build-native.sh build --release --locked -p qeflow
+
+# Rust 依赖已缓存时，可明确禁止 Cargo 联网
+bash scripts/build-native.sh build --release --locked --offline -p qeflow
+```
+
+脚本按 `uname` 选择 `.cargo/linux-x86_64.toml` 或 `.cargo/macos-arm64.toml`，先加载不入 Git 的 `docs/local/build-<平台>.env`。无参数时实际执行 `cargo --config .cargo/<平台>.toml build --release --workspace --locked`；`--locked` 固定 Cargo.lock，`--offline` 需要依赖已完整缓存。
+
+Linux 用户前缀的本机环境文件可以按下例编写；路径根据机器调整：
+
+```bash
+# docs/local/build-linux-x86_64.env
+export DFTFLOW_NATIVE_PREFIX="$HOME/.local/share/dftflow/native/linux-x86_64"
+export RUSTFLAGS="-L native=$DFTFLOW_NATIVE_PREFIX/lib -L native=$DFTFLOW_NATIVE_PREFIX/lib64 -C link-arg=-Wl,-rpath,$DFTFLOW_NATIVE_PREFIX/lib -C link-arg=-Wl,-rpath,$DFTFLOW_NATIVE_PREFIX/lib64"
+# 如 bindgen 无法发现 libclang，再按实际安装位置设置 LIBCLANG_PATH
+```
+
+构建脚本自动为该前缀设置 `PKG_CONFIG_PATH`、`LIBRARY_PATH` 和头文件搜索路径。依赖在系统目录中时不必使用这个前缀；静态 OpenBLAS/spglib 不意味着整个 glibc 程序已完全静态链接，字体库、C/Fortran 运行库等仍可能是动态依赖。
 
 | 构建平台 | Cargo 配置 | 二进制目录 |
 | --- | --- | --- |
@@ -32,21 +177,44 @@ macOS Mach-O 文件不能直接在 Linux 执行；Linux 交付脚本使用 Linux
 | macOS arm64 原生 | `.cargo/macos-arm64.toml` | `target/macos-arm64/aarch64-apple-darwin/release/` |
 | Linux x86_64 musl 静态交付 | `.cargo/linux-host.toml` + `scripts/linux/Dockerfile` | `dist/linux-x86_64-musl/bin/` |
 
-Linux 原生构建需要 Rust、C/C++/Fortran 编译器、libclang、静态 OpenBLAS、spglib 头文件与库，以及 fontconfig/freetype 开发包。非系统依赖可通过 `DFTFLOW_NATIVE_PREFIX` 指定前缀（含 `include/`、`lib/pkgconfig/` 或 `lib64/pkgconfig/`）；共享库运行路径通过链接期 rpath 或 `LD_LIBRARY_PATH` 提供。机器特有的环境变量放在不入 Git 的 `docs/local/build-linux-x86_64.env` 中，由脚本自动加载。原生 glibc 产物用于本机，跨节点独立交付使用 musl 包。
-
-登录节点与计算节点的 glibc 不同时，可用 `scripts/linux/package-native-runtime.sh SOURCE_BIN_DIR DEST_BIN_DIR NATIVE_PREFIX` 打包配套私有 glibc 加载器（需要 patchelf）。该版本依赖共享目录路径，避免将私有 glibc 加入全局 LD_LIBRARY_PATH；通用独立交付仍使用 musl 包。
-
-自行编译静态 spglib 时启用 `-DCMAKE_POSITION_INDEPENDENT_CODE=ON`，以支持 Linux 原生 Rust 程序的 PIE 链接。
-
-## 安装命令
+macOS Mach-O 不能直接在 Linux 执行。在 macOS Docker/OrbStack 或安装了 Docker 的 Linux 上，以下脚本构建真正的 Linux amd64 ELF，安装容器内原生依赖并检查静态链接和断网运行；不是使用宿主机的 Homebrew OpenBLAS 交叉链接：
 
 ```bash
-bash scripts/install-compat.sh /absolute/path/to/binaries ~/.local/bin
-export PATH="$HOME/.local/bin:$PATH"
-bash scripts/verify-entries.sh /absolute/path/to/binaries
+bash scripts/linux/build.sh
 ```
 
-安装器提供全部 48 个旧名以及家族入口，共 51 个名称、五份二进制。独立 [dyn0 工具](tools/qf-gen-dyn0/README.md) 单独构建，不由安装器安装。入口为指向源目录的软链接，因此应将二进制放在稳定版本目录中再安装。已有同名入口会先备份；安装目录必须与源目录不同。
+它使用单独 Docker 构建卷保存中间产物，把交付包导出到 `dist/linux-x86_64-musl/`。首次需要下载依赖、基础镜像及 Cargo 包。运行 QE/VASP 等计算仍需要目标机器上配置外部求解器。
+
+## 安装、更新与旧节点兼容
+
+普通原生安装：从本机对应的构建目录复制五个程序到新版本，再切换入口。下面是 Linux 示例；macOS 把源目录换成上表中的 macOS 路径，并修改版本名前缀：
+
+```bash
+build_bin="$PWD/target/linux-x86_64/x86_64-unknown-linux-gnu/release"
+version_bin="$HOME/.local/share/dftflow/versions/linux-x86_64-$(date +%Y%m%d-%H%M%S)/bin"
+mkdir -p "$version_bin"
+for program in qeflow vaspflow scflow wannier90 substitution; do
+    cp "$build_bin/$program" "$version_bin/$program"
+done
+bash scripts/install-compat.sh "$version_bin" "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
+bash scripts/verify-entries.sh "$version_bin"
+```
+
+安装器提供 48 个旧名及家族入口，共 51 个命令名，底层是五份二进制；按入口名字分派到对应子命令。已有同名入口先备份，安装目录必须与源目录不同。独立 [dyn0 工具](tools/qf-gen-dyn0/README.md) 从自己的 Cargo 工程编译，不由主安装器安装。
+
+本机登录节点与计算节点的 glibc 不一致，实际安装副本额外设置了私有加载器和运行库搜索路径，原始 `target/` 产物保留。这是当前共享文件系统上的兼容打包方式：
+
+```bash
+# Linux x86_64；先安装 patchelf，且 build_bin 中有五个已构建程序
+bash scripts/linux/package-native-runtime.sh \
+    "$build_bin" "$version_bin" "$DFTFLOW_NATIVE_PREFIX"
+bash scripts/install-compat.sh "$version_bin" "$HOME/.local/bin"
+```
+
+兼容打包应在首次安装命令入口前完成；上例沿用普通安装示例中定义的目录变量，但创建的是打包后的副本。脚本从主机 `/lib64` 复制同一套 glibc，用 patchelf 设置 ELF interpreter 和 rpath，适用于脚本支持的 Linux 目录布局。**不要把含私有 glibc 的目录加入全局 `LD_LIBRARY_PATH`**。加载器使用绝对路径，目标计算节点必须能访问同一共享路径，不能随意移动 `native/`。
+
+本轮声子修复实际只重编译 qeflow，复制其余四个已安装程序到新版本并保留原内容，再对新 qeflow 设置同一私有加载器，切换 51 个入口。升级脚本、制品哈希和日志留在 `docs/local/`。通用 Linux 静态交付应使用 musl 包，不能把这种绑定本机路径的 glibc 打包视为通用独立包。
 
 `qe_scf` / `qe_nscf` 支持 `-i/--input`、`-c/--config`、`-r/--run`、`-s/--submit`；默认配置 `input.toml`。仅准备时不运行，`-r` 实际执行，`-s` 提交 `run_qe.sh`；运行和提交互斥。NSCF 继承 SCF 的 XML、电荷密度和 PAW 数据。
 
