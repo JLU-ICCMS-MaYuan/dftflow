@@ -307,10 +307,12 @@ fn submitted_scripts_use_frozen_config_and_original_structure_after_external_edi
         assert!(fs::read_to_string(&script).unwrap().contains("input-init.toml"));
         ok(command(&w).arg("--help").output().unwrap());
         ok(Command::new("bash").arg(&script).env("CHAIN_TESTROOT",&w.0).env("SLURM_JOB_ID","101").env("PATH",format!("{}:{}",w.0.join("bin").display(),std::env::var("PATH").unwrap())).output().unwrap());
+        let mut children = Vec::new();
         for q in ["01","02"] {
             let script=w.0.join(format!("calc/{q}/run_split.sh"));
-            ok(Command::new("bash").arg(script).env("CHAIN_TESTROOT",&w.0).env("PATH",format!("{}:{}",w.0.join("bin").display(),std::env::var("PATH").unwrap())).output().unwrap());
+            children.push(Command::new("bash").arg(script).env("CHAIN_TESTROOT",&w.0).env("PATH",format!("{}:{}",w.0.join("bin").display(),std::env::var("PATH").unwrap())).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap());
         }
+        for child in children { ok(child.wait_with_output().unwrap()); }
         ok(Command::new("bash").arg(w.0.join("calc/submit_merge_and_process_phonon.sh")).env("CHAIN_TESTROOT",&w.0).env("PATH",format!("{}:{}",w.0.join("bin").display(),std::env::var("PATH").unwrap())).output().unwrap());
         assert!(w.0.join("calc/chain_complete.json").exists());
         assert_eq!(fs::read_to_string(&snapshot).unwrap(),frozen);

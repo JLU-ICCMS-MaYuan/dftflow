@@ -103,7 +103,10 @@ fn context(config: &str, input: Option<&str>, mode: &str) -> Result<PhononCtx> {
         }
     });
     if fs::canonicalize(&source).ok() != fs::canonicalize(&target).ok() {
-        fs::copy(&source, &target)?;
+        // 多 q 检查可能并行，原子替换避免另一进程读到截断中的 POSCAR。
+        let temporary = target.with_extension(format!("{}.tmp", std::process::id()));
+        fs::copy(&source, &temporary)?;
+        fs::rename(&temporary, &target)?;
     }
     let structure = qf_crystal::parse_poscar(target.to_str().unwrap())?;
     let prefix = cfg

@@ -124,3 +124,7 @@ FR-001～006、SC-001～004 的本地实现、自动测试、真实计算与安�
 - FR-015/016 / SC-010：index、coords 真实 CLI 生成提交脚本，在外部配置切换目录、外部结构被替换后依次执行 pre、两 q 脚本、post（QE/Slurm 为替身），原目录完整完成。随后删除外部配置、破坏工作 POSCAR，通过 input-init.toml 续算恢复结构；篡改快照或错误模式明确失败。
 - nosplit 已安装模拟提交脚本的 collect/plot 命令固定使用 input-init.toml 与 selected.vasp-init；输入快照中固定工作目录与解析后的赝势目录，结构逐字节一致。自动查找结构记录实际来源名（含 CONTCAR），不统一改成 POSCAR-init。
 - 有快照目录不覆盖快照；无快照旧目录需核对原绑定再显式准备。旧运行脚本固定的旧二进制路径不会因安装改写，本轮不恢复或重提旧 coords 取消作业。原 squeue 无效作业号问题仍不在范围内。
+
+### 并行恢复补充核验
+
+结构恢复改为临时文件加原子替换；上述跨进程回归同时运行两个 q 脚本。最终额外重跑 phonon_chain 的 8 项全部通过，日志 docs/local/phonon-additions/tests-parallel.log；随后重新安装并重做 51 入口、三模式模拟提交及安装版重绘核验，制品来源更新到最终提交。
