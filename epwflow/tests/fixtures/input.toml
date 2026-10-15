@@ -1,0 +1,106 @@
+# 仅用于接口测试；不是经过物理收敛的 MgB2 参数。
+schema_version = 1
+work_dir = "run"
+structure = "POSCAR"
+[pseudos]
+Mg = "Mg.upf"
+B = "B.upf"
+[programs]
+launcher = ["./launcher", "-np", "1"]
+[programs.pw]
+path = "./pw.x"
+args = []
+[programs.ph]
+path = "./ph.x"
+args = []
+[programs.epw]
+path = "./epw.x"
+args = []
+[resources]
+partition = "test"
+nodes = 1
+mpi = 1
+wall_seconds = 60
+storage_bytes = 1048576
+[budget]
+campaign_id = "epic-0007"
+ledger = "campaign/ledger.json"
+[qe]
+prefix = "MgB2"
+ecutwfc_ry = 40.0
+ecutrho_ry = 320.0
+occupations = "smearing"
+smearing = "mv"
+degauss_ry = 0.02
+[qe.scf]
+k_grid = [4,4,2]
+k_shift = [0,0,0]
+conv_thr_ry = 1e-10
+[qe.nscf]
+k_grid = [4,4,2]
+nbnd = 16
+conv_thr_ry = 1e-12
+[phonon]
+q_grid = [2,2,1]
+tr2_ph = 1e-12
+[wannier]
+num_wann = 5
+projections = ["B:pz", "B:px;py", "Mg:s"]
+exclude_bands = []
+energy_reference = "f2_fermi"
+outer_window_ev = [-10.0,10.0]
+frozen_window_ev = [-2.0,2.0]
+[wannier.localization]
+max_iterations = 1000
+tolerance_angstrom2 = 1e-10
+window_iterations = 5
+[wannier.disentanglement]
+max_iterations = 1000
+tolerance_angstrom2 = 1e-10
+window_iterations = 5
+[interpolation]
+k_grid = [8,8,4]
+q_grid = [4,4,2]
+electron_smearing = "gaussian"
+degaussw_ev = 0.1
+phonon_smearings_mev = [0.5]
+spectral_points = 500
+fsthick_ev = 0.4
+eps_acoustic_cm1 = 1.0
+fermi_source = "f2"
+[interpolation.quality]
+k_points_crystal = [[0.1,0.2,0.3], [0.2,0.3,0.4], [0.1,0.3,0.2], [0.3,0.1,0.2]]
+q_points_crystal = [[0.1,0.2,0.3], [0.2,0.3,0.4]]
+energy_window_ev = [-0.5,0.5]
+electron_max_ev = 0.05
+electron_rms_ev = 0.02
+phonon_max_cm1 = 5.0
+phonon_rms_cm1 = 2.0
+[superconductivity]
+mode = "both"
+mu_star = 0.1
+frequency_cutoff_ev = 1.0
+max_iterations = 1000
+convergence_relative = 1e-8
+mixing_beta = 0.3
+mixing_history = 4
+initial_gaps_mev = [1.0,10.0]
+initial_shape = 1.0
+gap_temperatures_k = [5.0,10.0,15.0]
+spectrum_index = 0
+[superconductivity.iso]
+min_k = 1.0
+max_k = 80.0
+precision_k = 0.5
+max_solves = 64
+eigen_margin = 1e-6
+normal_gap_mev = 1e-4
+super_gap_mev = 1e-3
+[superconductivity.aniso]
+min_k = 1.0
+max_k = 80.0
+precision_k = 0.5
+max_solves = 64
+eigen_margin = 1e-6
+normal_gap_mev = 1e-4
+super_gap_mev = 1e-3

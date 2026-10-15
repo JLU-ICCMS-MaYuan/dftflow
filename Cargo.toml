@@ -7,6 +7,7 @@ members = [
     "scflow",
     "crates/*",
     "qeflow",
+    "epwflow",
 ]
 
 # 共享依赖版本（由成员 crate 通过 workspace = true 引用）
