@@ -57,11 +57,13 @@ command -v qeflow
 command -v qe_phonon_split_index
 command -v qf-gen-dyn0
 
-# 安装已经构建并保存到稳定版本目录的五个程序
-bash scripts/install-compat.sh /path/to/stable-version/bin
+# 更新已经构建并完成所需兼容打包的五个程序
+bash scripts/install-current.sh /path/to/built/bin
 ```
 
-[install-compat.sh](../../scripts/install-compat.sh) 默认安装到 ~/.local/bin，第二参数可指定其他目录；源与目标目录须不同。它备份旧入口后建立软链接，源版本目录需持续保留。更新主程序时移除原指向 qeflow 的旧 dyn0 别名，但保留已独立安装的 qf-gen-dyn0。这是“主程序升级”和“独立工具升级”的边界。
+[install-current.sh](../../scripts/install-current.sh) 默认更新到 ~/.local/share/dftflow/current/bin，入口位于 ~/.local/bin；额外参数可指定安装根目录及入口目录。程序先复制到临时目录，通过 51 个入口验证后逐文件原子替换；更新锁避免并发安装，退出清理临时副本，不创建时间戳版本。五程序并非整组原子切换，应在无活动计算链时更新；固定配置快照不等于固定程序版本。
+
+[install-compat.sh](../../scripts/install-compat.sh) 负责入口软链接，默认覆盖旧入口；仅显式设置 DFTFLOW_BACKUP_ENTRIES=1 时备份。主安装器保留独立 qf-gen-dyn0，独立工具不计入五主程序和 51 入口。本机独立工具使用 tools/qf-gen-dyn0/current/bin。历史清理与迁移方法见 [清理指南](../specs/0011-build-history-cleanup/quickstart.md)。
 
 登录节点与计算节点 glibc 不匹配时，项目提供 [package-native-runtime.sh](../../scripts/linux/package-native-runtime.sh)，打包一致的加载器与运行库并用 patchelf 修正制品。该方式依赖共享可读路径，不代表跨任意 Linux 的通用静态包；不通过修改系统库或全局 LD_LIBRARY_PATH 来切换。
 

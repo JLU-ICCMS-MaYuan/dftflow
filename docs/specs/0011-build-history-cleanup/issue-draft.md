@@ -1,6 +1,6 @@
-# 0011：整理编译历史清理文档
+# 0011：固定 current 安装与编译历史清理
 
-- 类型：`type:documentation`
+- 类型：`type:maintenance`
 - 编号：本地草稿编号，沿用项目既有本地草稿约定；线上 Gitee Issue 由用户管理，未创建。
 - 关联 Spec：[spec.md](spec.md)
 - 操作指南：[quickstart.md](quickstart.md)
@@ -35,7 +35,7 @@ README 混入本机旧版本清单和详细清理步骤，影响阅读。将这�
 
 ## Documentation Impact
 
-- 不影响当前功能总览：程序和安装行为没有变化，无需修改 Overview。
+- 初始文档迁移不影响功能总览；追加固定安装需求已同步 docs/overview/dftflow-rust.md。
 - 新增本目录 Issue 草稿、Spec 与清理指南。
 - README 以一个链接替代详细章节。
 - 线上 Issue 与远程双向链接未建立，不宣称线上验收或关闭完成。
@@ -43,3 +43,9 @@ README 混入本机旧版本清单和详细清理步骤，影响阅读。将这�
 ## 草案确认
 
 本次用户已授权迁移文档；该版 Issue 草稿未作独立最终确认，仅供线上建单使用。
+
+## 追加：固定 current 安装
+
+用户已确认“开始”执行固定路径覆盖方案；本项扩展为 `type:maintenance`（替代原 `type:documentation`），仍是本地草稿，不操作线上状态。详见 Spec 追加 FR-005～007 / SC-004～005 与 [实施方案](plan.md)。删除旧 versions，保留 native 和独立工具，更新 README 与清理指南。
+
+本次实现与本机迁移证据见 [验收记录](acceptance.md)。

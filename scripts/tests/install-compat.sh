@@ -8,7 +8,7 @@ trap 'rm -rf "$test_dir"' EXIT
 mkdir -p "$test_dir/legacy" "$test_dir/independent" "$test_dir/linked"
 ln -s "$bin_dir/qeflow" "$test_dir/legacy/qeflow"
 ln -s "$bin_dir/qeflow" "$test_dir/legacy/qf-gen-dyn0"
-bash "$repo_dir/scripts/install-compat.sh" "$bin_dir" "$test_dir/legacy" >/dev/null
+DFTFLOW_BACKUP_ENTRIES=1 bash "$repo_dir/scripts/install-compat.sh" "$bin_dir" "$test_dir/legacy" >/dev/null
 [[ ! -e "$test_dir/legacy/qf-gen-dyn0" && ! -L "$test_dir/legacy/qf-gen-dyn0" ]]
 backup=("$test_dir"/legacy/.dftflow-backup-*/qf-gen-dyn0)
 [[ ${#backup[@]} == 1 && -L "${backup[0]}" ]]

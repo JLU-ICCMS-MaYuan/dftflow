@@ -22,6 +22,7 @@ if [[ "$BIN_DIR" == "$TARGET_DIR" ]]; then
     echo "源目录与安装目录不能相同" >&2
     exit 1
 fi
+# 默认覆盖旧入口；仅显式要求时保留备份。
 BACKUP_DIR="$TARGET_DIR/.dftflow-backup-$(date +%Y%m%d-%H%M%S)-$$"
 
 link_entry() {
@@ -31,7 +32,7 @@ link_entry() {
         echo "安装目标是目录，拒绝覆盖: $dest" >&2
         exit 1
     fi
-    if [[ -e "$dest" || -L "$dest" ]]; then
+    if [[ "${DFTFLOW_BACKUP_ENTRIES:-0}" == 1 ]] && [[ -e "$dest" || -L "$dest" ]]; then
         mkdir -p "$BACKUP_DIR"
         cp -P "$dest" "$BACKUP_DIR/$name"
     fi
@@ -46,8 +47,10 @@ link_entry() {
 legacy_dyn0="$TARGET_DIR/qf-gen-dyn0"
 if [[ -L "$legacy_dyn0" && -L "$TARGET_DIR/qeflow" ]] && \
    [[ "$(readlink "$legacy_dyn0")" == "$(readlink "$TARGET_DIR/qeflow")" ]]; then
-    mkdir -p "$BACKUP_DIR"
-    cp -P "$legacy_dyn0" "$BACKUP_DIR/qf-gen-dyn0"
+    if [[ "${DFTFLOW_BACKUP_ENTRIES:-0}" == 1 ]]; then
+        mkdir -p "$BACKUP_DIR"
+        cp -P "$legacy_dyn0" "$BACKUP_DIR/qf-gen-dyn0"
+    fi
     rm "$legacy_dyn0"
 fi
 

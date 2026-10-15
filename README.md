@@ -2,7 +2,7 @@
 
 DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
-五个 Rust 家族程序为 `qeflow`、`vaspflow`、`scflow`、`wannier90`、`substitution`；`mattersim_opt` 按约定保留 Python。当前验收范围与证据见 [0004 收敛验收](docs/specs/0004-dftflow-rust/acceptance-20261014.md)。
+五个 Rust 家族程序为 `qeflow`、`vaspflow`、`scflow`、`wannier90`、`substitution`；`mattersim_opt` 按约定保留 Python。
 
 ## 分支约定
 
@@ -12,7 +12,7 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 ## 编译产物与安装目录
 
-编译和安装是两步：Cargo 先把产物写进仓库的 `target/`，再把需要使用的程序复制到稳定版本目录，最后在 `~/.local/bin` 创建命令软链接。`~` 是当前用户的家目录；下面的路径是本机采用的安装布局，不是 Cargo 强制指定的目录。
+编译和安装是两步：Cargo 先把产物写进仓库的 `target/`，再把需要使用的程序更新到固定 `current/bin/` 目录，最后在 `~/.local/bin` 创建命令软链接。`~` 是当前用户的家目录；下面的路径是本机采用的安装布局，不是 Cargo 强制指定的目录。
 
 ```text
 仓库/
@@ -23,44 +23,34 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 ~/.local/
 ├── bin/                                               PATH 中的命令入口
-│   ├── qeflow -> ../share/dftflow/versions/<版本>/bin/qeflow
+│   ├── qeflow -> ../share/dftflow/current/bin/qeflow
 │   ├── qe_phonon_split_coords -> 同一个 qeflow
-│   └── .dftflow-backup-<时间>-<进程号>/                 安装器备份的旧入口
 └── share/dftflow/
-    ├── versions/<版本>/bin/                            五个家族程序的安装副本
+    ├── current/bin/                            五个家族程序的当前安装副本
     ├── native/linux-x86_64/                            本机原生依赖与兼容运行库
     │   ├── include/                                   OpenBLAS、spglib 等头文件
     │   ├── lib/                                       库、私有 glibc 加载器及 pkgconfig/
     │   ├── lib64/                                     本机 spglib 静态库等及 pkgconfig/
     │   └── bin/                                       依赖工具预留目录，本机目前为空
-    └── tools/qf-gen-dyn0/<版本>/bin/                   独立 dyn0 工具
+    └── tools/qf-gen-dyn0/current/bin/                   独立 dyn0 工具
 ```
 
-图中软链接是示意关系，安装器实际写入源版本目录的绝对路径。各目录用途如下：
+图中软链接是示意关系，安装器实际写入固定程序目录的绝对路径。各目录用途如下：
 
 | 目录 | 存放内容与用途 |
 | --- | --- |
-| 仓库 `target/` | 编译缓存、中间文件和原始可执行文件；不同平台单独存放，`release/` 中还有 Cargo 的其他产物。清理构建缓存不会删除已经复制到 `versions/` 的安装副本。 |
-| `versions/` | 每个安装版本的 `qeflow`、`vaspflow`、`scflow`、`wannier90`、`substitution`。版本名通常含平台、改动主题和时间；不是五十一份独立程序。 |
+| 仓库 `target/` | 编译缓存、中间文件和原始可执行文件；不同平台单独存放，`release/` 中还有 Cargo 的其他产物。清理构建缓存不会删除已经复制到 `current/bin/` 的安装副本。 |
+| `current/bin/` | 当前使用的 `qeflow`、`vaspflow`、`scflow`、`wannier90`、`substitution`。更新覆盖同一路径，不保留时间戳版本。 |
 | `native/linux-x86_64/include/` | 编译需要的 C 头文件，例如 `cblas.h`、`openblas_config.h`、`spglib.h`。 |
 | `native/linux-x86_64/lib/` | 本机 OpenBLAS 0.3.30 的 `libopenblas.a`、绘图所需字体等共享库，以及为旧 glibc 计算节点准备的加载器、libc 等运行库。`pkgconfig/*.pc` 告诉编译工具到哪里找头文件和库。 |
 | `native/linux-x86_64/lib64/` | 本机 spglib 2.6.0 的 `libsymspg.a` 和相关构建元数据；`lib`/`lib64` 是依赖安装工具的目录选择，并不表示本机同时装了 32 位和 64 位两套程序。 |
 | `tools/` | 不属于五个家族程序的独立工具，目前是 `qf-gen-dyn0`；由它自己的 Cargo 工程单独编译和安装。 |
 | `~/.local/bin/` | 用户输入的 `qe_*` 等命令所在位置。软链接决定当前使用哪个版本，加入 PATH 后无需每次输入完整路径。 |
-| `~/.local/bin/.dftflow-backup-*` | 安装器替换命令前备份的旧入口，通常仍是软链接；不是完整程序备份，原版本文件仍须保留。 |
 | 仓库 `docs/local/` | 不入 Git 的机器路径、编译环境、日志、制品哈希和测试图片；不是运行程序必须遍历的安装目录。 |
 
-选择 `~/.local/share/dftflow/` 是为了使用用户权限安装，避开系统目录，并让依赖、独立工具、多个版本集中管理。这样重新编译不会覆盖正在使用的版本，也方便切换和回退。这个前缀可以更换，需同时调整本机编译环境、安装软链接及依赖该路径的运行库打包设置。macOS 使用 Homebrew 时，依赖通常留在 Homebrew 前缀中，无需另复制到这个 Linux 依赖目录。
+选择 `~/.local/share/dftflow/` 是为了使用用户权限安装，集中保存当前程序、原生依赖和独立工具。主程序入口固定指向 `current/bin/`，后续更新无需调整 PATH；安装器默认不再备份旧入口。历史 `.dftflow-backup-*` 不属于当前安装流程。
 
-版本名中的 `phonon-*`、`nosplit-input` 表示那次安装的改动主题；`candidate` 是历史候选版，`tmp` 是一次默认 outdir 改为 `./tmp` 的版本标记，不表示该安装目录是可随意清理的临时文件。目录名只用于辨识，实际生效版本以软链接为准：
-
-```bash
-command -v qe_phonon_split_coords
-readlink "$HOME/.local/bin/qe_phonon_split_coords"
-readlink "$HOME/.local/bin/qeflow"
-```
-
-已生成的作业脚本可能固定引用旧版本的绝对路径。切换默认入口只影响新启动的命令；清理旧 `versions/` 前应核对已有作业脚本和运行中的作业。私有加载器所在的 `native/` 也被已安装程序引用，不能把它当编译缓存删除。
+更新按程序逐文件原子替换；已经运行的进程继续使用原文件，新启动的命令使用更新后的程序。五个程序并非整组同时切换，应在没有活动计算链时更新，避免同一链使用不同程序版本。生成脚本引用 `current` 时，提交后的配置快照仍固定，但程序本身不锁定历史版本。`native/` 被私有加载器引用，必须保留。
 
 历史安装副本与构建缓存的清理方法见 [编译历史清理指南](docs/specs/0011-build-history-cleanup/quickstart.md)。
 
@@ -189,34 +179,29 @@ bash scripts/linux/build.sh
 
 ## 安装、更新与旧节点兼容
 
-普通原生安装：从本机对应的构建目录复制五个程序到新版本，再切换入口。下面是 Linux 示例；macOS 把源目录换成上表中的 macOS 路径，并修改版本名前缀：
+普通原生安装：编译完成后调用固定路径安装器。Linux 示例（macOS 使用对应构建目录）：
 
 ```bash
 build_bin="$PWD/target/linux-x86_64/x86_64-unknown-linux-gnu/release"
-version_bin="$HOME/.local/share/dftflow/versions/linux-x86_64-$(date +%Y%m%d-%H%M%S)/bin"
-mkdir -p "$version_bin"
-for program in qeflow vaspflow scflow wannier90 substitution; do
-    cp "$build_bin/$program" "$version_bin/$program"
-done
-bash scripts/install-compat.sh "$version_bin" "$HOME/.local/bin"
-export PATH="$HOME/.local/bin:$PATH"
-bash scripts/verify-entries.sh "$version_bin"
+bash scripts/install-current.sh "$build_bin"
 ```
 
-安装器提供 48 个旧名及家族入口，共 51 个命令名，底层是五份二进制；按入口名字分派到对应子命令。已有同名入口先备份，安装目录必须与源目录不同。独立 [dyn0 工具](tools/qf-gen-dyn0/README.md) 从自己的 Cargo 工程编译，不由主安装器安装。
+脚本先复制到临时目录并验证 51 个入口，再逐文件替换 `~/.local/share/dftflow/current/bin/`，最后更新 `~/.local/bin/` 的固定软链接；成功或失败退出均清理临时副本。支持额外参数指定安装根目录与入口目录，不生成历史版本。
+
+安装器提供 48 个旧名及家族入口，共 51 个命令名，底层是五份二进制；按入口名字分派到对应子命令。已有同名入口默认覆盖（设置 `DFTFLOW_BACKUP_ENTRIES=1` 才备份），安装目录必须与源目录不同。独立 [dyn0 工具](tools/qf-gen-dyn0/README.md) 从自己的 Cargo 工程编译，不由主安装器安装。
 
 本机登录节点与计算节点的 glibc 不一致，实际安装副本额外设置了私有加载器和运行库搜索路径，原始 `target/` 产物保留。这是当前共享文件系统上的兼容打包方式：
 
 ```bash
-# Linux x86_64；先安装 patchelf，且 build_bin 中有五个已构建程序
+# Linux x86_64；先安装 patchelf，并配置本机 DFTFLOW_NATIVE_PREFIX
+package_dir=$(mktemp -d)
 bash scripts/linux/package-native-runtime.sh \
-    "$build_bin" "$version_bin" "$DFTFLOW_NATIVE_PREFIX"
-bash scripts/install-compat.sh "$version_bin" "$HOME/.local/bin"
+    "$build_bin" "$package_dir" "$DFTFLOW_NATIVE_PREFIX"
+bash scripts/install-current.sh "$package_dir"
+rm -r -- "$package_dir"
 ```
 
-兼容打包应在首次安装命令入口前完成；上例沿用普通安装示例中定义的目录变量，但创建的是打包后的副本。脚本从主机 `/lib64` 复制同一套 glibc，用 patchelf 设置 ELF interpreter 和 rpath，适用于脚本支持的 Linux 目录布局。**不要把含私有 glibc 的目录加入全局 `LD_LIBRARY_PATH`**。加载器使用绝对路径，目标计算节点必须能访问同一共享路径，不能随意移动 `native/`。
-
-本轮声子修复实际只重编译 qeflow，复制其余四个已安装程序到新版本并保留原内容，再对新 qeflow 设置同一私有加载器，切换 51 个入口。升级脚本、制品哈希和日志留在 `docs/local/`。通用 Linux 静态交付应使用 musl 包，不能把这种绑定本机路径的 glibc 打包视为通用独立包。
+先完成兼容打包，再安装到 `current`。打包设置私有 ELF interpreter 和 rpath；计算节点必须能访问同一共享路径。不要把含私有 glibc 的目录加入全局 `LD_LIBRARY_PATH`。此方式绑定本机运行库路径；通用 Linux 静态交付仍使用 musl 包。
 
 `qe_scf` / `qe_nscf` 支持 `-i/--input`、`-c/--config`、`-r/--run`、`-s/--submit`；默认配置 `input.toml`。仅准备时不运行，`-r` 实际执行，`-s` 提交 `run_qe.sh`；运行和提交互斥。NSCF 继承 SCF 的 XML、电荷密度和 PAW 数据。
 
