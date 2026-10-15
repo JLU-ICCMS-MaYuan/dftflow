@@ -87,7 +87,7 @@ Epic 最终草稿确认：
 
 ## Feature 地图与依赖
 
-总体规划与 Epic 已确认以下五阶段拆分。下表 F1–F5 是 Epic 内的标识，不是假造线上 Issue 编号；子 Issue 经逐项审查后定稿。F1 已准备[本地 0008 草稿](../0008-epwflow-foundation/issue-draft.md)，待该版确认；其余仍为待审查项。
+总体规划与 Epic 已确认以下五阶段拆分。下表 F1–F5 是 Epic 内的标识，不是假造线上 Issue 编号；子 Issue 经逐项审查后定稿。F1 [本地 0008](../0008-epwflow-foundation/issue-draft.md) 已于 2026-10-15 确认；F2 [本地 0010 草稿](../0010-epwflow-qe-data/issue-draft.md) 待该版确认；其余仍为待审查项。0009 已用于其他需求，不占用或改名。
 
 | 顺序 | 候选 Feature | 独立用户价值与验收 | 依赖 | 主要触点 |
 | --- | --- | --- | --- | --- |
