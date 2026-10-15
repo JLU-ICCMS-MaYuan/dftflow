@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use super::{budget, config, environment, snapshot, status};
+use crate::qe_data::cli::QeDataCommand;
 
 #[derive(Parser)]
 #[command(name = "epwflow", about = "受控的 QE/EPW 超导计算工作流")]
@@ -66,6 +67,11 @@ pub enum EpwCommand {
     Budget {
         #[command(subcommand)]
         action: Option<BudgetAction>,
+    },
+    /// QE 数据准备阶段边界：check / import（FR-001）。
+    QeData {
+        #[command(subcommand)]
+        command: QeDataCommand,
     },
 }
 
@@ -133,6 +139,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             require_allocation,
         } => environment::probe(&config, submit, require_allocation),
         EpwCommand::Budget { action } => budget_cmd(action),
+        EpwCommand::QeData { command } => crate::qe_data::cli::run(command),
     }
 }
 
