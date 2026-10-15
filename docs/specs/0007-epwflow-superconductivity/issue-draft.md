@@ -2,7 +2,7 @@
 
 **类型**：`type:epic`。
 
-**状态**：本地 Epic 已确认，子 Feature 逐项审查中；未创建线上 Issue，未开始实现。
+**状态**：本地 Epic 与五个子 Feature Issue 均已确认，进入详细 Spec 逐项审查；未创建线上 Issue，未开始实现。
 
 0007 是仓库本地需求编号，不是虚构的 Gitee Issue number。沿用用户已确认的本地草稿约定；线上 Issue 由用户管理。
 
@@ -95,7 +95,7 @@ Epic 最终草稿确认：
 
 ## Feature 地图与依赖
 
-总体规划与 Epic 已确认以下五阶段拆分。下表 F1–F5 是 Epic 内的标识，不是假造线上 Issue 编号；子 Issue 经逐项审查后定稿。F1 [本地 0008](../0008-epwflow-foundation/issue-draft.md)、F2 [本地 0010](../0010-epwflow-qe-data/issue-draft.md)、F3 [本地 0012](../0012-epwflow-interpolation/issue-draft.md)、F4 [本地 0013](../0013-epwflow-superconductivity-tc/issue-draft.md) 已于 2026-10-15 确认；F5 [本地 0014 草稿](../0014-epwflow-delivery/issue-draft.md) 待该版确认。0009、0011 已用于其他需求，不占用或改名。
+总体规划与 Epic 已确认以下五阶段拆分。下表 F1–F5 是 Epic 内的标识，不是假造线上 Issue 编号；子 Issue 经逐项审查后定稿。F1 [本地 0008](../0008-epwflow-foundation/issue-draft.md)、F2 [本地 0010](../0010-epwflow-qe-data/issue-draft.md)、F3 [本地 0012](../0012-epwflow-interpolation/issue-draft.md)、F4 [本地 0013](../0013-epwflow-superconductivity-tc/issue-draft.md)、F5 [本地 0014](../0014-epwflow-delivery/issue-draft.md) 均已于 2026-10-15 确认。0009、0011 已用于其他需求，不占用或改名。
 
 | 顺序 | 候选 Feature | 独立用户价值与验收 | 依赖 | 主要触点 |
 | --- | --- | --- | --- | --- |
@@ -143,6 +143,6 @@ Epic 最终草稿确认：
 
 ## 当前证据与最终草案确认
 
-- 当前只有总体规划、只读源码调查和本地 Epic 草稿，不存在已实现的 epwflow 或 EPW 真实验收证据。
+- 当前已有总体规划、只读源码调查及已确认的本地 Epic/五个子 Issue；详细 Spec 从 0008 开始逐项审查，尚未统一建立设计与任务文档，不存在已实现的 epwflow 或 EPW 真实验收证据。
 - 用户已审阅完整 Epic 正文并答复“确认 Epic 草稿，继续子 Feature 审查（推荐）”，当前 Epic 已确认；此确认不冒充尚未展示的子 Issue/Spec 确认。
 - 线上 Issue 及远程双向链接不适用本轮写入，不伪造线上状态；用户后续创建线上 Issue 时再补真实链接。

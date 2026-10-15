@@ -2,7 +2,7 @@
 
 **类型**：`type:feature`。
 
-**状态**：本地最终草稿待确认；详细 Spec 和实现尚未开始。
+**状态**：本地 Issue 草稿已于 2026-10-15 确认；进入详细 Spec 逐项审查，尚未实现。
 
 **父级**：[Epic 0007](../0007-epwflow-superconductivity/issue-draft.md) 的 F5；**前置**：[0008 执行基础](../0008-epwflow-foundation/issue-draft.md)、[0010 QE 数据](../0010-epwflow-qe-data/issue-draft.md)、[0012 插值](../0012-epwflow-interpolation/issue-draft.md)、[0013 超导与 Tc](../0013-epwflow-superconductivity-tc/issue-draft.md)；**来源**：[总体规划](../../plan/epwflow-superconductivity.md)。0014 为本地需求编号，线上 Issue 仍由用户管理。
 
@@ -53,6 +53,10 @@
 > 我觉得，其实我并不需要你把每一次的编译结果都保留下来，我只需要你不断覆盖旧的编译好的命令就行，这样系统也可以自动寻找到固定路径下的命令。不需要每次都配置一次新命令的执行路径。
 
 > 开始
+
+0014 完整草稿确认：
+
+> 确认 0014 草稿，进入详细 Spec 阶段（推荐）
 
 ## 目标与用户价值
 
@@ -116,4 +120,4 @@
 
 ## 最终草案确认
 
-当前 Issue 待该版完整正文确认；前四个 Feature 的确认不冒充本项确认。0011 固定安装取舍已有授权，本项按其较新要求衔接。确认本项后进入全部 Feature 的详细 Spec 阶段，仍须通过共同文档质量门才能开始实现。
+用户审阅本项完整正文后答复“确认 0014 草稿，进入详细 Spec 阶段（推荐）”，本地 Issue 草稿已确认。五个 Feature 的 Issue 审查完成，按依赖顺序逐项审查详细 Spec；此确认不冒充尚未展示的 Spec 确认。全部详细文档通过共同质量门后才能开始实现。
