@@ -1,4 +1,5 @@
-use std::{fs, path::{Path, PathBuf}, process::{Command, Output}, sync::atomic::{AtomicU64, Ordering}};
+use std::{collections::BTreeMap, fs, path::PathBuf, process::{Command, Output}, sync::atomic::{AtomicU64, Ordering}};
+use epwflow::foundation::{budget, environment, state, storage};
 use std::os::unix::fs::PermissionsExt;
 static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Case { root: PathBuf }
@@ -86,4 +87,69 @@ fn help_and_execution_modes() {
     fail(c.run(&["probe","-c","input.toml"]),"required");
     fail(c.run(&["probe","-c","input.toml","-s","-r"]),"cannot");
     fail(c.run(&["probe","-c","input.toml","-r"]),"allocation");
+}
+
+#[test]
+fn budget_reserve_attach_reconcile_and_deny() {
+    let c = Case::new();
+    std::env::set_var("EPWFLOW_LOCAL_STATE", &c.root);
+    let ledger = c.root.join("ledger.json");
+    // 预留在授权上限内（8 节点小时 = 28800 节点秒）。
+    let t1 = budget::with_ledger(&ledger, "epic-0007", |l| {
+        budget::reserve(l, "stage-a", 1, 1, 3600, 1u64 << 30)
+    })
+    .expect("reserve 应在上限内成功");
+    // 仍在预留态时，超出剩余预算的预留必须拒绝，且不删除既有数据。
+    let denied = budget::with_ledger(&ledger, "epic-0007", |l| {
+        budget::reserve(l, "stage-b", 1, 1, 25201, 1u64 << 30)
+    });
+    assert!(denied.is_err(), "超出预算的预留必须 budget_denied");
+    // 绑定分配占用一个并发车道。
+    budget::with_ledger(&ledger, "epic-0007", |l| budget::attach(l, &t1, Some(11)))
+        .expect("attach 应成功");
+    // 结算：同一 allocation 仅结算一次，释放车道。
+    let settled =
+        budget::with_ledger(&ledger, "epic-0007", |l| budget::reconcile(l)).expect("reconcile");
+    assert!(settled >= 3600, "结算必须包含已提交任务");
+    let st = budget::status_json(&ledger, "epic-0007").expect("status");
+    assert_eq!(st["lanes"], 0, "结算后车道归零");
+    assert_eq!(st["spent_node_seconds"], 3600, "结算后消耗计入");
+}
+
+#[test]
+fn storage_monitor_stops_on_limit() {
+    let mut m = storage::StorageMonitor::new(1000);
+    assert!(m.add(500).is_ok());
+    assert!(m.add(600).is_err(), "超出存储上限必须 storage_denied");
+    assert!(m.should_stop(), "超限必须请求停止");
+    assert_eq!(m.peak(), 1100, "必须记录实际峰值");
+}
+
+#[test]
+fn stage_state_machine_and_dependency_check() {
+    let c = Case::new();
+    let work = &c.root;
+    let mut a = state::StageAttempt::new("scf", vec![], "h1");
+    a.advance(state::StageState::SubmissionPending).unwrap();
+    a.advance(state::StageState::Submitted).unwrap();
+    a.advance(state::StageState::Running).unwrap();
+    a.advance(state::StageState::Validating).unwrap();
+    a.advance(state::StageState::Succeeded).unwrap();
+    a.save(work).unwrap();
+    let mut ok = BTreeMap::new();
+    ok.insert("scf".to_string(), state::StageState::Succeeded);
+    assert!(state::dependencies_satisfied("nscf", &["scf".to_string()], &ok).is_ok());
+    let mut blocked = BTreeMap::new();
+    blocked.insert("scf".to_string(), state::StageState::Running);
+    assert!(
+        state::dependencies_satisfied("nscf", &["scf".to_string()], &blocked).is_err(),
+        "依赖未完成必须阻断"
+    );
+}
+
+#[test]
+fn environment_evidence_rejects_missing_program() {
+    // 未探测的运行版本标为未验证，缺失程序必须返回环境错误而非零退出。
+    let r = environment::verify_program(std::path::Path::new("/no/such/program-xyz"));
+    assert!(r.is_err(), "缺失程序必须 environment 错误");
 }

@@ -5,7 +5,7 @@ use std::{fs::{self,File,OpenOptions},io::{Read,Write},path::{Path,PathBuf},sync
 static SEQUENCE:AtomicU64=AtomicU64::new(0);
 pub fn token()->String {format!("{:x}-{:x}-{:x}",SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos(),std::process::id(),SEQUENCE.fetch_add(1,Ordering::Relaxed))}
 pub fn hash_bytes(bytes:&[u8])->String {format!("{:x}",Sha256::digest(bytes))}
-pub fn hash_file(path:&Path)->Result<String>{let mut f=File::open(path).with_context(||format!("data_invalid: 无法读取 {}",path.display()))?;let mut hash=Sha256::new();let mut buf=[0u8;65536];loop{let n=f.read(&mut buf)?;if n==0{break}hash.update(&buf[..n]);}Ok(format!("{hash:x}"))}
+pub fn hash_file(path:&Path)->Result<String>{let mut f=File::open(path).with_context(||format!("data_invalid: 无法读取 {}",path.display()))?;let mut hash=Sha256::new();let mut buf=[0u8;65536];loop{let n=f.read(&mut buf)?;if n==0{break}hash.update(&buf[..n]);}Ok(format!("{:x}",hash.finalize()))}
 pub fn read<T:DeserializeOwned>(path:&Path)->Result<T>{serde_json::from_slice(&fs::read(path).with_context(||format!("data_invalid: {} 缺失或不可读",path.display()))?).with_context(||format!("data_invalid: {} 损坏/不支持",path.display()))}
 pub fn atomic_bytes(path:&Path,bytes:&[u8])->Result<()>{
     let parent=path.parent().context("data_invalid: 文件没有父目录")?;fs::create_dir_all(parent)?;
@@ -42,3 +42,9 @@ impl Drop for Lock {fn drop(&mut self){
 }}
 pub fn hostname()->String{let mut name=[0u8;256];#[cfg(unix)] unsafe{if libc::gethostname(name.as_mut_ptr().cast(),name.len())==0 {return String::from_utf8_lossy(&name[..name.iter().position(|b|*b==0).unwrap_or(name.len())]).into_owned();}}"unknown".into()}
 pub fn now()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()}
+/// 状态根：$XDG_STATE_HOME/epwflow；仓库本地用 EPWFLOW_LOCAL_STATE 覆盖（gitignored）。
+pub fn state_root()->Result<PathBuf>{
+    if let Ok(local)=std::env::var("EPWFLOW_LOCAL_STATE"){return Ok(PathBuf::from(local));}
+    let base=match std::env::var("XDG_STATE_HOME"){Ok(v) if !v.is_empty()=>PathBuf::from(v),_=>{let home=std::env::var("HOME").unwrap_or_else(|_|".".to_string());PathBuf::from(home).join(".local").join("state")}};
+    Ok(base.join("epwflow"))
+}
