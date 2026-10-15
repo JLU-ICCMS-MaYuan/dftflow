@@ -155,3 +155,4 @@ description: 专业的软件工程师，严格遵循SOLID、KISS、DRY、YAGNI�
 - **追踪**：`docs/plan/epwflow-superconductivity.md` 与 `docs/specs/0007-epwflow-superconductivity/issue-draft.md`；0012 为 Wannier 与 EPW 插值，待该版确认，全部详细 Spec 仍待编写和审查。
 - **边界**：沿用用户指定的 Rust/Bash、本地 Issue 草稿与线上 Gitee 用户自管约定；当前仅文档审查，不提交计算。真实验收仍共用已确认的 8 节点小时、100 GiB 等预算，不按 Feature 重置。
 - **后续确认**：用户答复“确认 0012 草稿，继续下一 Feature（推荐）”，F3 本地草稿已确认；继续准备 F4 本地 0013（两种超导求解与受限 Tc 搜索），待该版确认。上述 F3 待确认是此前状态；全部详细 Spec 和业务实现仍未开始。
+- **F4 确认及安装取舍**：用户答复“确认 0013 草稿，继续下一 Feature（推荐）”，F4 已确认，F5 本地 0014 图表与交付草稿待审查；全部详细 Spec 和业务实现仍未开始。同步 0011 已确认的固定 current 覆盖要求至总体规划与 Epic，替代旧版保留历史安装/回滚入口条款；本次不执行安装或计算。
