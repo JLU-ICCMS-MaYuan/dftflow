@@ -35,3 +35,7 @@ SC-001～004 全部满足；不将本地草稿冒充线上 Issue 已创建/关�
 - FR-007 / SC-005：生产输入生成器验证 PH [2,3,1]→DOS [4,6,2]、nq 三键形式、显式 qpoints 和 nk 三键优先；本地用户 input.toml 已显式改成 [4,4,2]，不会因安装自动重算。
 - FR-008 / SC-005：同一归一高斯核作用于所有列；回归验证积分误差 <1e-10、投影加和误差 <1e-12、加宽峰值下降、0 关闭、负数/NaN/重复频率拒绝。真实 CLI 验证平滑图片改变但 CSV 不变。
 - MgB₂ 原数据副本实际重绘 σ=0/10/20 并查看三图并排，σ=10 减弱尖峰，σ=20 更平滑且细峰开始合并；所有原始数据哈希不变，各宽度 CSV 相同。对比图 `docs/local/phonon-additions/dos-comparison.png`，记录 redraw.json。
+
+## 默认 σ=5 修订验收
+
+按用户最新要求，缺省展宽改为 5 cm⁻¹；4 项定向测试通过（phonon_plot CLI 与 qf-phonon 单元测试），日志 docs/local/phonon-additions/sigma5-tests.log。重新安装，51 入口帮助与三模式模拟提交核验通过；默认入口未配置宽度和显式 plot_sigma_cm1=5 的 DOS 图、联合图与 CSV 逐字节一致，证据 sigma5-default-check.json。保留旧版本，不提交真实计算。

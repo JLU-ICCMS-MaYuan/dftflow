@@ -43,4 +43,4 @@ qe_process_phonon -c input.toml --plot
 
 ## DOS 网格与绘图展宽
 
-`[qe_phonon.phdos]` 未写网格时默认使用 PH 网格的两倍，显式 qpoints 或完整 nk1/nk2/nk3 优先。`plot_sigma_cm1 = 10.0` 是默认绘图高斯标准差，单位 cm⁻¹；0 关闭、20 比 10 更平滑。独立 DOS 和联合图共用处理；原始 QE 输出和 CSV 保留，平滑保持 DOS 积分及投影可加性。仅 `--plot` 即可应用新宽度；改变计算网格则必须重跑 matdyn DOS。
+`[qe_phonon.phdos]` 未写网格时默认使用 PH 网格的两倍，显式 qpoints 或完整 nk1/nk2/nk3 优先。`plot_sigma_cm1 = 5.0` 是默认绘图高斯标准差，单位 cm⁻¹；0 关闭、10 比 5 更平滑。独立 DOS 和联合图共用处理；原始 QE 输出和 CSV 保留，平滑保持 DOS 积分及投影可加性。仅 `--plot` 即可应用新宽度；改变计算网格则必须重跑 matdyn DOS。

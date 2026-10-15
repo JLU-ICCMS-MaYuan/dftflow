@@ -95,7 +95,7 @@ where
 pub fn dos_plot_sigma(config: &qf_config::Config) -> Result<f64> {
     let sigma = match config.qe_phonon.phdos.get("plot_sigma_cm1") {
         Some(value) => value.as_f64().ok_or_else(|| anyhow::anyhow!("plot_sigma_cm1 必须是非负数"))?,
-        None => 10.0,
+        None => 5.0,
     };
     ensure!(sigma.is_finite() && sigma >= 0.0, "plot_sigma_cm1 必须是有限非负数");
     Ok(sigma)

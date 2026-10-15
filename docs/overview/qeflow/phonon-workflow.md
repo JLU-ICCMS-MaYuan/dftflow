@@ -182,7 +182,7 @@ kpath_points = 20
 # 缺省时自动取 PH 网格各方向两倍；可显式覆盖
 qpoints = [4, 4, 2]
 ndos = 100
-plot_sigma_cm1 = 10.0 # 仅绘图高斯展宽，0 关闭
+plot_sigma_cm1 = 5.0 # 仅绘图高斯展宽，0 关闭
 [slurm]
 header = """#!/bin/bash
 #SBATCH --nodes=1
