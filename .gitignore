@@ -91,3 +91,6 @@ wannier90flow/user_guide.pdf
 *~
 .DS_Store
 ._*
+
+# EPW 真实测试：保留手册/测试入口，机器输入与计算产物只留本地。
+/test_auto/MgB2/epwflow/local_run/

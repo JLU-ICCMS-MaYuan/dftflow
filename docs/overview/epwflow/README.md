@@ -45,7 +45,9 @@ cargo test -p epwflow --locked --offline
 
 2026-10-16 对同一源码运行 41 项测试，foundation 10、qe_data 12、interpolation 10、superconductivity 5、delivery 4 全部通过。其模拟程序、简化文件和数学函数测试覆盖不能替代实际 QE/EPW 格式与物理对照。
 
-本地已有 MgB₂ nosplit/index/coords 三套 2×2×1 声子结果，各含 2 个不可约 q 点及相关保存文件；已做只读盘点，尚未证明当前 epwflow 能复用它们。未提交本次真实 EPW 作业，未取得三模式插值或超导数值验收证据。机器路径与原始日志只保存在本地忽略目录。
+本地已有 MgB₂ 三种模式的 2×2×1 声子结果，各含 2 个不可约 q 点。2026-10-16 已在 `test_auto/MgB2/epwflow/` 下完成三种来源的原生 EPW 5.9 冒烟计算：Wannier 收敛、粗/细网格电子声子计算、500 点 α²F 及积分检查通过。这是独立测试脚本调用科学程序的证据，尚未证明公开 epwflow 入口能完成同样流程。
+
+三套直接求和 λ 约为 0.651；index 相对 nosplit 仍有谱形差异，能量轴也非完全一致，严格数值对照未通过。未完成独立插值质量参考或原生 Eliashberg 求解。模式按实际输入核对，不能只根据历史目录名称判断。详见 [真实测试手册](../../../test_auto/MgB2/epwflow/README.md) 和 [0015 验收记录](../../specs/0015-epwflow-mgb2-real-validation/acceptance.md)；机器路径与原始日志留在忽略目录。
 
 ## 源码依据
 
@@ -57,7 +59,7 @@ cargo test -p epwflow --locked --offline
 | --- | --- |
 | 结构解析 | epwflow 调用 qf-crystal 的 POSCAR 解析，不再维护独立解析器 |
 | SCF/NSCF 输入 | qf-input 的 PW 渲染器；epwflow 适配严格配置、显式赝势和统一 prefix，质量来自共享原子质量表 |
-| NSCF 网格 | qf-input 的完整均匀 crystal 网格生成器；EPW 输入设置 SYSTEM.nosym/noinv，实际输出网格校验仍待接通 |
+| NSCF 网格 | qf-input 的完整均匀 crystal 网格生成器；EPW 5.9 适配设置 SYSTEM.nosym/noinv 为 false，保留晶体对称性元数据，完整性由显式点表和实际输出验证。真实测试检查了 32 点、14 带及归一化权重；生产链完整输出检查仍待接通 |
 | PH 输入 | qf-input 的纯 namelist 渲染器，qeflow 原写文件接口也调用它；coords 坐标在 namelist 后，index 指定 start_q/last_q，子任务关闭 only_init |
 | 完成检查 | qeflow 0006 的 checked_log 已提取到 qf-io，epwflow SCF 共用；JOB DONE 与数值收敛分别核验 |
 

@@ -461,7 +461,9 @@ fn shared_qe_inputs_keep_physics_and_full_mesh() {
         .split("/\n")
         .next()
         .unwrap();
-    assert!(system.contains("nosym = .true.") && system.contains("noinv = .true."));
+    // Native EPW 5.9 requires consistent symmetry metadata even though the
+    // electronic input must still enumerate the complete uniform mesh.
+    assert!(system.contains("nosym = .false.") && system.contains("noinv = .false."));
     let k = nscf.split("K_POINTS crystal\n").nth(1).unwrap();
     let count = cfg.qe.nscf.k_grid.iter().product::<u32>() as usize;
     assert_eq!(k.lines().next().unwrap().parse::<usize>().unwrap(), count);

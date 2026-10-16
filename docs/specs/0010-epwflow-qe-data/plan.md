@@ -80,7 +80,7 @@ spec.md、plan.md、research.md、data-model.md、contracts/interface.md、tasks
 ## 2026-10-16 复用实现方案
 
 1. epwflow 严格配置经适配器转换为共享输入模型；直接使用 qf-crystal 的结构解析、qf-input 的 PW/PH 渲染与原子质量。显式赝势绑定由共享渲染接口接收，不退回目录自动猜选。
-2. 先提取无文件副作用的 PH 渲染接口，qeflow 原写文件接口和 epwflow 同时调用。完整均匀 NSCF 网格使用共享网格生成器；nosym/noinv 写入 SYSTEM。旧 build_nscf_pw_params 的错误配置段须修复并回归，不能原样套用。
+2. 先提取无文件副作用的 PH 渲染接口，qeflow 原写文件接口和 epwflow 同时调用。完整均匀 NSCF 网格使用共享网格生成器；EPW 5.9 的 SYSTEM.nosym/noinv 设置为 false，保留晶体对称性并检查实际完整点集（0015 真实调试修正）。旧 build_nscf_pw_params 不直接作为 EPW 适配器。
 3. qeflow/src/phonon_init.rs 与 phonon_chain.rs 内的日志/保存检查、完整快照、only_init、dyn0 计数与坐标转换、分 q 物化逐步提取到共享库。优先使用 0006 当前链路；qf-phonon 的旧 generate_split_inputs 仍逐 q SCF，不作为 EPW 主路径。
 4. 科学阶段与调度分离：共享函数产生输入、数据和校验结果；epwflow foundation 负责预算、作业记录和执行，不直接调用不受其账本约束的旧提交入口。
 5. EPW 独有的响应势/phsave 配对、原生 EPW 保存格式、Wannier 与插值质量、超导求解继续由 epwflow 负责。普通 qeflow 声子合并成功不自动成为 EPW 交付成功。

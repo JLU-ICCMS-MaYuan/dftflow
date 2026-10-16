@@ -73,8 +73,13 @@ impl<'a> QeSettings<'a> {
         }
         let points = if nscf {
             params.system.insert("nbnd".into(), json!(qe.nscf.nbnd));
-            params.system.insert("nosym".into(), json!(true));
-            params.system.insert("noinv".into(), json!(true));
+            // EPW 5.9 allocates symmetry-sized arrays before restoring crystal
+            // symmetries. A nosym NSCF save can therefore cause an out-of-bounds
+            // write in its coarse-grid stage. Keep the crystal metadata and
+            // supply the full explicit mesh below; validate actual output
+            // coverage rather than relying on nosym to establish completeness.
+            params.system.insert("nosym".into(), json!(false));
+            params.system.insert("noinv".into(), json!(false));
             params
                 .electrons
                 .insert("conv_thr".into(), json!(qe.nscf.conv_thr_ry));
