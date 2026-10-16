@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use super::{budget, config, environment, snapshot, status};
 use crate::interpolation::cli::InterpolationCommand;
 use crate::qe_data::cli::QeDataCommand;
+use crate::superconductivity::cli::SuperconductivityCommand;
 
 #[derive(Parser)]
 #[command(name = "epwflow", about = "受控的 QE/EPW 超导计算工作流")]
@@ -79,6 +80,11 @@ pub enum EpwCommand {
         #[command(subcommand)]
         command: InterpolationCommand,
     },
+    /// 超导求解阶段边界：check / import（FR-001）。
+    Superconductivity {
+        #[command(subcommand)]
+        command: SuperconductivityCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -147,6 +153,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         EpwCommand::Budget { action } => budget_cmd(action),
         EpwCommand::QeData { command } => crate::qe_data::cli::run(command),
         EpwCommand::Interpolation { command } => crate::interpolation::cli::run(command),
+        EpwCommand::Superconductivity { command } => crate::superconductivity::cli::run(command),
     }
 }
 
