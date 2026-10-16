@@ -10,7 +10,7 @@ for iteration in 1 2; do
     [[ ! -e "$test_dir/install/versions" ]]
     [[ $(find "$test_dir/entries" -name '.dftflow-backup-*' | wc -l) == 0 ]]
 done
-for program in qeflow vaspflow scflow wannier90 substitution; do
+for program in qeflow vaspflow scflow wannier90 substitution epwflow; do
     cmp "$source_bin/$program" "$test_dir/install/current/bin/$program"
 done
 mkdir "$test_dir/invalid"
@@ -20,11 +20,11 @@ if bash "$repo_dir/scripts/install-current.sh" "$test_dir/invalid" "$test_dir/in
 fi
 [[ ! -e "$test_dir/install/.install-current.lock" ]]
 [[ $(find "$test_dir/install" -name '.install-current.*' | wc -l) == 0 ]]
-for program in qeflow vaspflow scflow wannier90 substitution; do
+for program in qeflow vaspflow scflow wannier90 substitution epwflow; do
     cmp "$source_bin/$program" "$test_dir/install/current/bin/$program"
 done
 for entry in "$test_dir/entries/"*; do
     [[ $(readlink "$entry") == "$test_dir/install/current/bin/"* ]]
     "$entry" --help >/dev/null
 done
-echo '固定安装通过：重复更新、无历史副本、错误输入保护、51 入口。'
+echo '固定安装通过：重复更新、无历史副本、错误输入保护、52 入口。'

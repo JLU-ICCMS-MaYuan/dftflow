@@ -6,6 +6,7 @@ use super::{budget, config, environment, snapshot, status};
 use crate::interpolation::cli::InterpolationCommand;
 use crate::qe_data::cli::QeDataCommand;
 use crate::superconductivity::cli::SuperconductivityCommand;
+use crate::delivery::cli::DeliveryCommand;
 
 #[derive(Parser)]
 #[command(name = "epwflow", about = "受控的 QE/EPW 超导计算工作流")]
@@ -85,6 +86,11 @@ pub enum EpwCommand {
         #[command(subcommand)]
         command: SuperconductivityCommand,
     },
+    /// 结果交付阶段边界：collect / results / budget（FR-001）。
+    Delivery {
+        #[command(subcommand)]
+        command: DeliveryCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -154,6 +160,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         EpwCommand::QeData { command } => crate::qe_data::cli::run(command),
         EpwCommand::Interpolation { command } => crate::interpolation::cli::run(command),
         EpwCommand::Superconductivity { command } => crate::superconductivity::cli::run(command),
+        EpwCommand::Delivery { command } => crate::delivery::cli::run(command),
     }
 }
 

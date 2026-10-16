@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# install-compat.sh —— 为五个家族二进制创建 48 个旧命令名兼容入口（0004 T027）。
+# install-compat.sh —— 为六个家族二进制创建兼容入口（0004 T027）。
 #
 # 用法：./install-compat.sh <bin_dir> [target_dir]
-#   <bin_dir>   五个二进制所在目录（如 target/release）
+#   <bin_dir>   六个二进制所在目录（如 target/release）
 #   target_dir  兼容入口安装目录（默认 ~/.local/bin）
 #
 # 实现方式：为每个入口创建指向稳定版本目录中家族二进制的软链接，
-# 二进制按 argv[0] 分派到对应子命令；cargo 只交付 5 个二进制，不增加第六个。
+# 二进制按 argv[0] 分派到对应子命令；cargo 只交付 6 个二进制，不增加第七个。
 set -euo pipefail
 
 BIN_DIR="${1:?用法: install-compat.sh <bin_dir> [target_dir]}"
 TARGET_DIR="${2:-$HOME/.local/bin}"
 
-for binary in qeflow vaspflow scflow wannier90 substitution; do
+for binary in qeflow vaspflow scflow wannier90 substitution epwflow; do
     test -x "$BIN_DIR/$binary" || { echo "缺少可执行文件: $BIN_DIR/$binary" >&2; exit 1; }
 done
 BIN_DIR="$(cd "$BIN_DIR" && pwd)"
@@ -55,7 +55,7 @@ if [[ -L "$legacy_dyn0" && -L "$TARGET_DIR/qeflow" ]] && \
 fi
 
 # 同时安装家族入口，供生成的跨 flow 脚本使用。
-for family in qeflow vaspflow wannier90; do link_entry "$family" "$family"; done
+for family in qeflow vaspflow wannier90 epwflow; do link_entry "$family" "$family"; done
 
 # qeflow 家族（17 个 qe_*；独立 dyn0 工具不由此安装）
 for entry in \
@@ -92,5 +92,5 @@ done
 # scflow 家族（1 个）
 link_entry scflow scflow
 
-echo "已安装 五份家族二进制、51 个入口（含 48 个旧命令）到 $TARGET_DIR"
+echo "已安装 六份家族二进制、52 个入口（含 48 个旧命令）到 $TARGET_DIR"
 echo "请确认 $TARGET_DIR 在 PATH 中：export PATH=\"$TARGET_DIR:\$PATH\""

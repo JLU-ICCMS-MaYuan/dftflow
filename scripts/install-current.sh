@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 将五个已构建程序更新到固定 current/bin；不保留历史安装副本。
+# 将六个已构建程序更新到固定 current/bin；不保留历史安装副本。
 # 用法：install-current.sh SOURCE_BIN [INSTALL_ROOT] [ENTRY_DIR]
 # SOURCE_BIN 必须已经完成目标机器需要的运行库打包。
 set -euo pipefail
@@ -20,13 +20,13 @@ cleanup() {
 }
 trap cleanup EXIT
 stage=$(mktemp -d "$install_root/.install-current.XXXXXX")
-for program in qeflow vaspflow scflow wannier90 substitution; do
+for program in qeflow vaspflow scflow wannier90 substitution epwflow; do
     [[ -x "$source_bin/$program" ]] || { echo "缺少可执行文件: $source_bin/$program" >&2; exit 1; }
     cp "$source_bin/$program" "$stage/$program"
 done
 # 在覆盖任何已安装程序之前验证全部命令的启动能力。
 bash "$script_dir/verify-entries.sh" "$stage" >/dev/null
-for program in qeflow vaspflow scflow wannier90 substitution; do
+for program in qeflow vaspflow scflow wannier90 substitution epwflow; do
     mv -f "$stage/$program" "$install_root/current/bin/$program"
 done
 bash "$script_dir/install-compat.sh" "$install_root/current/bin" "$entry_dir"
