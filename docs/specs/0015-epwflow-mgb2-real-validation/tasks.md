@@ -13,7 +13,7 @@
 
 ## US2：三模式续算（P1）
 
-- [ ] T004 [US2] 由实现模型修复 epwflow/src/qe_data/reuse.rs、collect_ph.rs，本助手核对 的树复制、来源和 q/扰动对应，验证 tmp、真实 XML 与原始哈希。
+- [ ] T004 [US2] 由实现模型修复 epwflow/src/qe_data/reuse.rs、collect_ph.rs，本助手核对树复制、来源和 q/扰动对应，验证 tmp、真实 XML 与原始哈希。
 - [ ] T005 [US2] 由实现模型修复 foundation/{cli,process,slurm,budget}.rs 与各 scheduler 的真实入口/日志/依赖，本助手复测；在 docs/local/0015-epwflow-smoke/ 固定输入、独立参考与预算清单，预算未知时不提交。
 - [ ] T006 [US2] 在 examples/MgB2/sugon-amd/epw/0015/ 隔离目录依次验证一套及三模式真实 NSCF/Wannier/质量比较/细网格/α²F，记录源码制品、作业、阶段次数及数值报告；不纳入 Git。
 
@@ -40,3 +40,7 @@ T001→T002→T009 交接→实现模型分批修复与本助手 T003 复测→T
 ## 分工交接
 
 - [x] T009 记录用户已确认的职责，建立 [实现交接清单](handoff.md)，关联 B01～B09、修复顺序、复现与逐批复测标准。仅完成文档交接，T003～T008 保持未完成。
+
+### T003 首批进度（2026-10-16）
+
+已新增 `epwflow/tests/real_contracts.rs`：1 项 stdout 对照通过，8 项已知失败回归显式执行并复现 B01/B04/B05/B06/B07/B08/B09。已知失败用例标注 ignore 与缺陷号，默认测试不会把其计为通过；修复后须逐项显式复测、取消 ignore。B02/B03、树复制与保存指纹、缺质量参考、完整状态恢复等回归仍待补齐，T003 保持未完成。仅新增测试与记录，没有补齐生产功能。

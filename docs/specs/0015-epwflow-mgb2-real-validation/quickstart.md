@@ -15,3 +15,12 @@ cargo test -p epwflow --locked --offline
 独立参考必须人工核查底层输入和原生输出，再运行规范化比较；不能复制 epwflow 生成的合成数据充当参考。计算使用预算登记的 Slurm 分配，不在登录节点启动科学求解器。
 
 实现模型先阅读 [交接清单](handoff.md)，按批次提交修复和证据；本助手使用同一套基线命令及真实格式复测。当前命令的失败预期只适用于审查基线，修复后应更新证据而非继续依赖历史结论。
+
+## 单独复现已知缺陷
+
+```bash
+cargo test -p epwflow --locked --offline --test real_contracts
+cargo test -p epwflow --locked --offline --test real_contracts -- --ignored --test-threads=1 --nocapture
+```
+
+当前第一条为 1 通过、8 ignored；第二条退出 101，8 项失败，明确显示待修复缺陷。这里的失败是有意检查正确契约后发现实现不满足，并非完成验收。实现模型修复后逐项运行、取消 ignore，再执行完整回归。详细对应关系见 [验收记录](acceptance.md)。

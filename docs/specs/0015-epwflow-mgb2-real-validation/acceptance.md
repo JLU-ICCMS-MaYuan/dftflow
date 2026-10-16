@@ -1,6 +1,6 @@
 # 0015 验收与问题记录
 
-**状态**：初始检查已执行；新测试/修复及真实验收尚未开始；Issue/Spec 草案待确认。
+**状态**：初始检查与首批失败回归已执行；生产修复及真实验收尚未开始；Issue/Spec 草案待确认。
 
 ## 已执行检查
 
@@ -44,3 +44,25 @@
 ## 分工确认与实现交接
 
 用户已确认“保持分工：其他模型按缺陷清单补齐实现，你继续测试和 debug（推荐）”。[交接清单](handoff.md) 按 B01～B09 列明修复顺序和逐批复测条件。当前仅文档交接完成，缺陷、三模式实际运行、数值对照均未因此转为通过；没有新增真实作业或修改科学实现。完整草案确认状态独立保留。
+
+## 首批契约回归（2026-10-16）
+
+用户“开始”后再次快进拉取，远端没有新实现提交；受测生产源码仍为 62fda76，工作树基点为 4640151。本轮新增测试，不修改生产实现。
+
+- 默认 `cargo test -p epwflow --locked --offline`：原 41 项与新增 1 项 stdout 对照通过，8 项已知失败回归明确 ignored，不计入通过。
+- 显式运行 `cargo test -p epwflow --locked --offline --test real_contracts -- --ignored --test-threads=1 --nocapture`：退出 101，0 通过、8 失败，复现结果如下。失败是待修复缺陷，不能据此声称验收通过。
+
+| 用例 | 实际失败证据 | 对应缺陷 |
+| --- | --- | --- |
+| b01_run_and_submit_validate_missing_configuration | run 未加载实际配置就返回 not_implemented | B01 |
+| b01_until_is_a_recognized_execution_boundary | --until 被参数解析拒绝 | B01 |
+| b04_import_rejects_empty_manifest_despite_valid_label | 无任何数据、检查或角色却返回 imported | B04 |
+| b05_scf_consumes_stdout_and_rejects_nonconvergence | 替身只写 stdout，阶段报缺少 scf.out，未进入收敛判断 | B05 |
+| b06_unknown_scheduler_preserves_active_allocation | sacct/squeue 替身不可查询时仍清空 allocations | B06 |
+| b07_qe_stages_use_bound_prefix | 配置 MgB2，SCF 实际写入 scf | B07 |
+| b08_interpolation_rejects_empty_f2_manifest | 无电子态及 PH 的 F2 清单仍可绑定 F3 | B08 |
+| b09_reads_qe_schema_text_coordinates_and_sibling_eigenvalues | 原生 schema 层级样本报缺少 kpoint_coord | B09 |
+
+XML 样本根据已盘点的 QE 7.4.1 层级构造，数值为合成值，只验证格式，不是新的 MgB₂ 物理参考。预算用例通过独立 CLI 进程、隔离状态目录和不可用调度替身执行，未读写正式账本。原始输出、受测提交与测试文件哈希仅留在 `docs/local/0015-epwflow-smoke/real-contracts-known-failures.{json,log}`。
+
+已知失败用例用 `#[ignore = "Bxx: ..."]` 明确暂挂，修复后应显式运行并取消对应 ignore；默认绿灯不能关闭缺陷。B02/B03 等完整科学来源回归仍待补齐，SC-001～004 均未因此转为通过。未运行真实 QE/EPW 或提交 Slurm，原有三套声子结果保持不动。
