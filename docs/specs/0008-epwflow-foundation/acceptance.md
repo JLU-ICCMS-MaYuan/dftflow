@@ -36,3 +36,7 @@
 - **FR/SC 覆盖**：64 条 FR 与 39 条 SC 均已有对应源文件、集成测试与结构化清单产出；未运行项在 F5 六组合验收表中以 `status = "not_run"` 诚实标注，未编造证据。
 - **真实小网格验收**：本机 `external/q-e/build/bin` 具备真实 pw.x/ph.x/epw.x/wannier90.x/pw2wannier90.x；完整六组合端到端真实验收本次未执行（本环境缺准备好的赝势集合与计算节点输入，且工作区其它 crate 因系统依赖 spglib/llvm-config 无法整体构建）。epwflow 单 crate 在本机完全构建并通过测试。
 - **后续**：在具备赝势与 Slurm/计算节点的环境，按统一预算上限（8 节点小时、100 GiB）逐项执行真实验收，输出写入 `docs/local/epwflow-acceptance/`（gitignored）。
+
+## 2026-10-16 独立复核修正
+
+同一源码 62fda76 的 41 项现有测试可复现通过，但前文“全部模块族已实现”及“64 FR/39 SC 已覆盖”的声明不能据测试数量成立。实际 CLI 不能启动科学链路，数据格式/产物来源/预算存在已复现阻断；详见 [0015 独立测试记录](../0015-epwflow-mgb2-real-validation/acceptance.md)。本 Feature 仍未完成正式完整验收，不能据此前回写关闭或宣称真实结果正确。

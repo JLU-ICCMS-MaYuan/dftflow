@@ -1,60 +1,52 @@
-# epwflow 家族二进制 — 已实现行为总览
+# epwflow 当前入口与验证边界
 
-> 本文档只描述已经落地的代码行为（截至 2026-10-16）。未落地的设计、计划或 Issue 不写作现状。
+## 当前结论
 
-## 定位
+截至 2026-10-16，源码基线 `62fda76` 已有第六个 Rust 程序 epwflow 及五个模块族，但公开 `submit/run/resume` 尚未接通科学流程。现有 41 项隔离测试通过，不能据此把它作为已验证的真实 EPW 超导工作流使用。
 
-`epwflow` 是工作区第六个家族二进制，用 Rust 实现从结构/赝势/配置一次性启动
-`pw.x` / `ph.x` / `wannier90.x` / `pw2wannier90.x` / `epw.x` 的全自动编排层，覆盖
-QE 数据准备 → Wannier 化与 EPW 插值 → 超导求解（iso/aniso）→ 结果交付。它只做编排，
-不重写求解器；受预算约束、阶段可复用、可续算，并产出结构化的清单与图表。
+本页依据代码、实际 CLI 和真实 QE XML 解析复现修正此前“全流程已实现”的表述；检查证据见 [0015 验收记录](../../specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
 
-## 模块族与 Spec 对应
+## 公开命令及当前行为
 
-| 阶段 | 模块 | Spec | 源文件数 |
-| --- | --- | --- | --- |
-| F1 执行基础 | `foundation` | 0008 | 13（含 cli/config/store/snapshot/state/budget/storage/process/slurm/environment/status/stage） |
-| F2 QE 数据链 | `qe_data` | 0010 | 12 |
-| F3 EPW 插值 | `interpolation` | 0012 | 13 |
-| F4 超导求解 | `superconductivity` | 0013 | 13 |
-| F5 结果交付 | `delivery` | 0014 | 10 |
+| 命令 | 实际行为与限制 |
+| --- | --- |
+| `epwflow check -c C [--json]` | 加载并检查配置/文件；运行版本固定报告 unverified，不代表已探测 |
+| `epwflow prepare -c C` | 准备输入绑定；不执行科学链路 |
+| `epwflow submit -c C`、`run -c C` | 当前无条件返回 not_implemented；没有 `--until` 参数 |
+| `epwflow status -w W [--refresh] [--json]` | 读取本地状态；当前分派忽略 refresh，不查询调度器 |
+| `epwflow resume -w W -s/-r` | 尚未接通科学续算 |
+| `epwflow probe -c C -s/-r` | 提交探测路径尚未接通；不可把帮助信息当作版本证据 |
+| `epwflow budget status/reserve/attach/reconcile` | 有本地记账函数；reconcile 当前未查询 Slurm 终态即清空活动分配，不足以证明预算/并发受控 |
+| `epwflow qe-data check/import` | 按自身 manifest 检查/导入；不直接识别旧 qeflow 声子目录，保存目录的普通文件复制也有缺陷 |
+| `epwflow interpolation check/import` | 读取自身插值清单；不能独立证明真实 EPW 数据有效 |
+| `epwflow superconductivity check/import` | 读取自身求解清单；清单中的数值来源受下述限制 |
+| `epwflow delivery collect/results/budget` | 从已有结构化结果收集、读取及显示；操作成功不等于科学结果正确 |
 
-## 关键契约
+可直接核查构建入口：
 
-- 所有阶段清单均带 `schema_version = 1`，并使用 `Artifact { role, relative_path, byte_size,
-  sha256, producer_stage, input_digest, format_version }` 与 `Validation { status, checks,
-  units, thresholds, evidence }`。未收敛/未定位/部分成功用结构化状态表示，不填零、不连线。
-- 数值标准固定：Tc 容差 0.1 K、能隙容差 0.05 meV、λ 相对容差 0.02；Tc 搜索按 0.01 K 刻度
-  在 `[min_k, max_k]` 内做有界搜索；未定位返回 `None`。
-- 各阶段以 F2→F3→F4→F5 顺序依赖上游清单；上游校验未通过（或缺失）则下游明确拒绝放行。
-- 安装体系：6 个家族二进制（qeflow / vaspflow / scflow / wannier90 / substitution / epwflow），
-  固定 `current/bin` 覆盖语义，共 52 个兼容入口。
+```bash
+cargo test -p epwflow --locked --offline
+./target/debug/epwflow --help
+./target/debug/epwflow qe-data --help
+./target/debug/epwflow interpolation --help
+```
 
-## 已实现能力（行为测试覆盖）
+当前没有经真实验收的“一次提交续算 EPW”使用命令。安装脚本已列入六程序/52 入口；这不证明当前机器默认入口已安装受测制品，本次未切换安装。
 
-- 一次入口：`epwflow check / prepare / submit / run / status / resume / probe / budget`
-  以及四个阶段子命令 `qe-data` / `interpolation` / `superconductivity` / `delivery`。
-- F2：一次 SCF + 完整均匀 NSCF、三种 PH 模式（index/coords/nosplit）、q 点映射、
-  响应数据归集、可复用导入、同版本同输入数值对照。
-- F3：Wannier 化（wannier90/pw2wannier90）、粗网格 EPW、细网格与矩阵元、α²F 与 λ、
-  插值质量阈值与虚频/低频规则、分阶段复用。
-- F4：iso（Allen-Dynes 线性化 Tc）与 aniso（归一化幂迭代双初值形状一致性）、单次尝试
-  一模式一温度、BCS 能隙与重整化函数 Z、0.01 K 有界 Tc 搜索、收敛/未定位分离。
-- F5：一次入口自动收集、α²F/能隙 SVG 绘图与 CSV、六组合（3 PH × 2 求解）验收表、
-  统一预算账本摘要、与基线回归比对、可移植结果包重绘。
+## 数据与科学结果的限制
 
-## 隔离验证证据
+- **QE 解析**：`qe_data/nscf.rs` 期待 k_point 内嵌 kpoint_coord 和 e；实际 QE 7.4.1 保存 XML 的坐标直接位于 k_point 文本，本征值在相邻 eigenvalues。对三套真实 MgB₂ 保存 XML 调用当前解析器均失败。
+- **数据衔接**：生成器固定使用不同的 scf/nscf/ph 前缀；阶段日志写入 `.epwflow/logs/`，部分消费者却要求独立的 `epw.out`。现有测试通过 fixture 自行写这些文件，没有证明真实 stdout 的衔接。
+- **α²F**：`interpolation/scheduler.rs` 当前从频率公式构造 α²F，未从实际 EPW 谱读取；这些数值不能称为 MgB₂ 的真实电子声子谱。缺少独立质量参考时，当前代码还会跳过该项检查。
+- **超导**：`superconductivity` 当前采用经验 Tc、归一化迭代和 BCS 型能隙；未实现原约定的两种原生 EPW Eliashberg 求解。both 使用 iso 的 Tc，不能当作两种独立结果。
+- **验收阈值**：此前本页列出的 Tc 0.1 K、能隙 0.05 meV、λ 相对差 0.02 不是已确认的完整验收标准。正式标准分别在 [0010](../../specs/0010-epwflow-qe-data/spec.md)、[0012](../../specs/0012-epwflow-interpolation/spec.md)、[0013](../../specs/0013-epwflow-superconductivity-tc/spec.md)，当前实现尚未据此完成真实对照。
 
-`cargo test -p epwflow` 全部通过（foundation 10 + qe_data 12 + interpolation 10 +
-superconductivity 5 + delivery 4 = 41 个集成/单元测试）。所有测试使用临时目录与可执行
-fixture（不启动真实 QE、不触碰真实队列、不纳入 `external/` 子模块）。
+## 已有证据
 
-## 真实小网格验收状态（诚实标注）
+2026-10-16 对同一源码运行 41 项测试，foundation 10、qe_data 12、interpolation 10、superconductivity 5、delivery 4 全部通过。其模拟程序、简化文件和数学函数测试覆盖不能替代实际 QE/EPW 格式与物理对照。
 
-- 本机 `external/q-e/build/bin` 已具备真实 `pw.x` / `ph.x` / `epw.x` / `wannier90.x` /
-  `pw2wannier90.x` 可执行文件。
-- 完整的六组合（3 PH × 2 求解）真实 MgB2/Si 小网格端到端验收**本次未执行**：本环境缺少
-  准备好的赝势集合与计算节点输入，且工作区其它 crate 因系统依赖（spglib/llvm-config）
-  无法整体构建，故未做跨 crate 全量构建。epwflow 单 crate 在本机完全构建并通过测试。
-- 后续真实验收应在具备赝势与 Slurm/计算节点的环境，按 `docs/overview` 的预算上限
-  （8 节点小时、100 GiB）逐项执行，并将输出写入 `docs/local/epwflow-acceptance/`（gitignored）。
+本地已有 MgB₂ nosplit/index/coords 三套 2×2×1 声子结果，各含 2 个不可约 q 点及相关保存文件；已做只读盘点，尚未证明当前 epwflow 能复用它们。未提交本次真实 EPW 作业，未取得三模式插值或超导数值验收证据。机器路径与原始日志只保存在本地忽略目录。
+
+## 源码依据
+
+公开命令见 `epwflow/src/foundation/cli.rs`；恢复与预算见 `snapshot.rs`、`budget.rs`；数据导入与 XML 见 `qe_data/reuse.rs`、`nscf.rs`；结果来源见 `interpolation/scheduler.rs`、`superconductivity/{scheduler,iso,aniso,gap}.rs`。模块存在不等于完整工作流可用。
