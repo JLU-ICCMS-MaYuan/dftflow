@@ -9,12 +9,12 @@
 
 ## US1：真实接口失败回归（P1）
 
-- [ ] T003 [US1] 在 epwflow/tests/real_contracts.rs 复现 B01～B08，覆盖公开 CLI、原生 stdout、空清单、实际 XML、未知 Slurm 状态和物理结果来源；对应修复触点见 acceptance.md，职责确认后执行，不用源码字符串断言替代行为测试。
+- [ ] T003 [US1] 在 epwflow/tests/real_contracts.rs 复现 B01～B09，覆盖公开 CLI、原生 stdout、空清单、实际 XML、未知 Slurm 状态和物理结果来源；对应修复触点见 acceptance.md，由本助手负责失败复现和复测，生产补齐由实现模型负责，不用源码字符串断言替代行为测试。
 
 ## US2：三模式续算（P1）
 
-- [ ] T004 [US2] 核对并修复 epwflow/src/qe_data/reuse.rs、collect_ph.rs 的树复制、来源和 q/扰动对应，验证 tmp、真实 XML 与原始哈希。
-- [ ] T005 [US2] 核对并修复 foundation/{cli,process,slurm,budget}.rs 与各 scheduler 的真实入口/日志/依赖；在 docs/local/0015-epwflow-smoke/ 固定输入、独立参考与预算清单，预算未知时不提交。
+- [ ] T004 [US2] 由实现模型修复 epwflow/src/qe_data/reuse.rs、collect_ph.rs，本助手核对 的树复制、来源和 q/扰动对应，验证 tmp、真实 XML 与原始哈希。
+- [ ] T005 [US2] 由实现模型修复 foundation/{cli,process,slurm,budget}.rs 与各 scheduler 的真实入口/日志/依赖，本助手复测；在 docs/local/0015-epwflow-smoke/ 固定输入、独立参考与预算清单，预算未知时不提交。
 - [ ] T006 [US2] 在 examples/MgB2/sugon-amd/epw/0015/ 隔离目录依次验证一套及三模式真实 NSCF/Wannier/质量比较/细网格/α²F，记录源码制品、作业、阶段次数及数值报告；不纳入 Git。
 
 ## US3：科学正确性及完整起点（P2）
@@ -27,7 +27,7 @@
 
 ## 顺序与覆盖
 
-T001→T002→草案/职责确认→T003→T004/T005→T006→T007→T008。共享文件串行。MVP 是一个来源的真实 α²F/λ，不代替三模式和完整科学验收。
+T001→T002→T009 交接→实现模型分批修复与本助手 T003 复测→T004/T005→T006→T007→T008。完整草案确认和真实提交前置条件仍独立核对。共享文件串行。MVP 是一个来源的真实 α²F/λ，不代替三模式和完整科学验收。
 
 | 需求/标准 | 任务 |
 | --- | --- |
@@ -36,3 +36,7 @@ T001→T002→草案/职责确认→T003→T004/T005→T006→T007→T008。共�
 | FR-004、FR-007 / SC-002 | T005、T006 |
 | FR-005、FR-006 / SC-003 | T003、T006、T007 |
 | FR-008 / SC-004 | T003、T007、T008 |
+
+## 分工交接
+
+- [x] T009 记录用户已确认的职责，建立 [实现交接清单](handoff.md)，关联 B01～B09、修复顺序、复现与逐批复测标准。仅完成文档交接，T003～T008 保持未完成。
