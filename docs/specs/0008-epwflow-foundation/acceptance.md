@@ -28,3 +28,11 @@
 - 初始占位入口的 `cargo test -p epwflow --test foundation` 实际运行 6 项，全部失败，属于行为测试尚未实现的基线。
 - 添加基础模块后的 `cargo test -p epwflow --offline --test foundation` 编译失败：`foundation/store.rs` 的 hash_file 直接对 SHA-256 hasher 使用 LowerHex，报 E0277；需要对最终摘要格式化。此轮按用户要求原样保存，未继续修复或重跑。
 - 本次是用户明确要求的未完成工作存档提交，不代表可用版本或验收通过；未安装、未提交真实计算。后续本助手负责测试与 debug，功能实现交给用户指定的其他模型。
+
+## 实施验收回写（2026-10-16）
+
+- **状态**：F1–F5 全部五个模块族已实现并通过隔离行为测试。
+- **隔离测试证据**：`cargo test -p epwflow` 全绿，合计 41 个测试（foundation 10 + qe_data 12 + interpolation 10 + superconductivity 5 + delivery 4），使用临时目录与可执行 fixture，不启动真实 QE、不触碰真实队列、不纳入 `external/` 子模块。
+- **FR/SC 覆盖**：64 条 FR 与 39 条 SC 均已有对应源文件、集成测试与结构化清单产出；未运行项在 F5 六组合验收表中以 `status = "not_run"` 诚实标注，未编造证据。
+- **真实小网格验收**：本机 `external/q-e/build/bin` 具备真实 pw.x/ph.x/epw.x/wannier90.x/pw2wannier90.x；完整六组合端到端真实验收本次未执行（本环境缺准备好的赝势集合与计算节点输入，且工作区其它 crate 因系统依赖 spglib/llvm-config 无法整体构建）。epwflow 单 crate 在本机完全构建并通过测试。
+- **后续**：在具备赝势与 Slurm/计算节点的环境，按统一预算上限（8 节点小时、100 GiB）逐项执行真实验收，输出写入 `docs/local/epwflow-acceptance/`（gitignored）。
