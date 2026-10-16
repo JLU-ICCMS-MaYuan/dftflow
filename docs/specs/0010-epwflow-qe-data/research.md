@@ -57,3 +57,9 @@
 现有源码：crates/qf-input/src/pw.rs、crates/qf-runner/src/lib.rs、qeflow/src/phonon_chain.rs、crates/qf-phonon/src/merge.rs、scripts/install-current.sh、scripts/verify-entries.sh。参考 external/epwpy 固定 b54bb53d4f5de665ed08958cb6194be8efdf645d。目标 QE 7.4.1 安装源码的 EPW/src/readin.f90、wannierization.f90、supercond_driver.f90、supercond_iso.f90、supercond_aniso.f90、io/io_supercond.f90 为版本适配事实来源；实际路径只记 docs/local。
 
 源码声明 EPW 5.9 尚不等于实际程序身份。数值、节点兼容性和二进制读取必须用真实运行验证；网页工具本轮不可用，不能声称在线文档已核实。目标源码之外的新版本需独立适配。现有 qeflow 声子谱通过不能证明 EPW 输入完整。所有尚未运行的验收维持未完成。
+
+## D07：优先复用 qeflow，薄适配器连接严格配置
+
+用户明确要求避免重新实现 QE 流程。源码核查发现共享 qf-input 已有 PW/PH 写出、qf-crystal 已有结构解析；epwflow 的独立生成器却把三阶段 prefix 分别写成 scf/nscf/ph、原子质量写成 1，并把 PH 网格放在 namelist 外。决定移除这套重复实现，增加必要的共享纯渲染接口供两入口调用。
+
+不能直接复用旧 generate_split_inputs（含逐 q SCF）或旧 build_nscf_pw_params（nosym 在 CONTROL）；复用对象以 0006 当前单 SCF 链路及修正后的共享生成器为准。真实 PH 产物的 EPW 配对验证由适配层补充，不放宽现有数据契约。

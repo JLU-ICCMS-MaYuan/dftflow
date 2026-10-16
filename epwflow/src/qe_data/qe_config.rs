@@ -1,239 +1,165 @@
-use anyhow::{bail, ensure, Context, Result};
-use std::path::Path;
+//! epwflow 严格配置到共享 qeflow 输入库的适配层。
 use super::super::foundation::config;
+use anyhow::{ensure, Context, Result};
+use qf_config::SectionMap;
+use qf_crystal::Structure;
+use qf_input::pw::PwParams;
+use serde_json::json;
 
-/// 晶胞：晶格、元素、数量、坐标（直接或笛卡尔）与赝势名。
-#[derive(Debug, Clone)]
-pub struct Cell {
-    pub lattice: [[f64; 3]; 3],
-    pub species: Vec<String>,
-    pub counts: Vec<usize>,
-    pub positions: Vec<[f64; 3]>,
-    pub direct: bool,
-}
-
-/// 解析 VASP POSCAR/CONTCAR 为 QE 所需的晶胞描述；非正交晶格保留完整基底。
-pub fn parse_poscar(path: &Path) -> Result<Cell> {
-    let txt = std::fs::read_to_string(path)
-        .with_context(|| format!("input_conflict: 无法读取结构 {}", path.display()))?;
-    let lines: Vec<&str> = txt.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
-    ensure!(lines.len() >= 8, "data_invalid: POSCAR 行数不足");
-    let scale: f64 = lines[1]
-        .split_whitespace()
-        .next()
-        .context("data_invalid: POSCAR 缺少缩放因子")?
-        .parse()
-        .context("data_invalid: POSCAR 缩放因子非数值")?;
-    let mut lattice = [[0.0f64; 3]; 3];
-    for i in 0..3 {
-        let v: Vec<f64> = lines[2 + i]
-            .split_whitespace()
-            .map(|x| x.parse())
-            .collect::<std::result::Result<_, _>>()
-            .context("data_invalid: POSCAR 晶格非数值")?;
-        ensure!(v.len() == 3, "data_invalid: POSCAR 晶格必须有 3 分量");
-        for j in 0..3 {
-            lattice[i][j] = v[j] * scale;
-        }
-    }
-    let species: Vec<String> = lines[5].split_whitespace().map(|s| s.to_string()).collect();
-    let counts: Vec<usize> = lines[6]
-        .split_whitespace()
-        .map(|x| x.parse())
-        .collect::<std::result::Result<_, _>>()
-        .context("data_invalid: POSCAR 数量非整数")?;
-    ensure!(species.len() == counts.len(), "data_invalid: POSCAR 元素与数量不匹配");
-    let direct = lines[7]
-        .chars()
-        .next()
-        .map(|c| c == 'D' || c == 'd' || c == 'K' || c == 'k')
-        .unwrap_or(true);
-    let mut pos_lines = Vec::new();
-    for l in lines.iter().skip(8) {
-        let v: Vec<f64> = l
-            .split_whitespace()
-            .map(|x| x.parse())
-            .collect::<std::result::Result<_, _>>()
-            .context("data_invalid: POSCAR 坐标非数值")?;
-        if v.len() >= 3 {
-            pos_lines.push([v[0], v[1], v[2]]);
-        }
-    }
-    let total: usize = counts.iter().sum();
-    ensure!(pos_lines.len() == total, "data_invalid: POSCAR 坐标数 {} 与元素总数 {} 不符", pos_lines.len(), total);
-    Ok(Cell { lattice, species, counts, positions: pos_lines, direct })
-}
-
-/// 由 foundation Config 与已解析晶胞生成 QE 输入；统一受控生成器，不接受任意透传。
+/// 结构解析、原子质量与 PW/PH 格式由共享库维护；此处只映射 EPW 参数。
 pub struct QeSettings<'a> {
     pub config: &'a config::Config,
-    pub cell: Cell,
+    pub cell: Structure,
 }
 
 impl<'a> QeSettings<'a> {
     pub fn from_config(config: &'a config::Config) -> Result<Self> {
-        let cell = parse_poscar(&config.structure)?;
-        Ok(QeSettings { config, cell })
-    }
-
-    fn control(&self, calculation: &str, prefix: &str, outdir: &str) -> String {
-        format!(
-            "&control\n  calculation = '{calculation}'\n  prefix = '{prefix}'\n  outdir = '{outdir}'\n/\n"
-        )
-    }
-
-    fn system(&self, nbnd: Option<usize>) -> String {
-        let c = &self.config.qe;
-        let nat = self.cell.positions.len();
-        let ntyp = self.cell.species.len();
-        let occ = match c.occupations {
-            config::Occupations::Fixed => "fixed",
-            config::Occupations::Smearing => "smearing",
-        };
-        let mut s = format!(
-            "&system\n  ibrav = 0\n  nat = {nat}\n  ntyp = {ntyp}\n  ecutwfc = {}\n  ecutrho = {}\n  occupations = '{occ}'\n",
-            c.ecutwfc_ry, c.ecutrho_ry
+        let cell =
+            qf_crystal::parse_poscar(config.structure.to_str().context("结构路径不是 UTF-8")?)?;
+        ensure!(
+            cell.elements.len() == cell.counts.len(),
+            "data_invalid: 元素与数量不匹配"
         );
-        if let Some(d) = c.degauss_ry {
-            s.push_str(&format!("  degauss = {d}\n"));
+        for el in &cell.elements {
+            ensure!(
+                config.pseudos.contains_key(el),
+                "configuration: 缺少 {el} 的显式赝势"
+            );
+            ensure!(
+                qf_input::species::ATOMIC_MASSES
+                    .iter()
+                    .any(|(e, _)| e == el),
+                "configuration: {el} 没有受支持的原子质量"
+            );
         }
-        if let Some(sm) = &c.smearing {
-            let sms = match sm {
-                config::Smearing::Gaussian => "gaussian",
-                config::Smearing::Mp => "mp",
-                config::Smearing::Mv => "mv",
-                config::Smearing::Fd => "fd",
-            };
-            s.push_str(&format!("  smearing = '{sms}'\n"));
-        }
-        if let Some(n) = nbnd {
-            s.push_str(&format!("  nbnd = {n}\n"));
-        }
-        s.push_str("/\n");
-        s
+        Ok(Self { config, cell })
     }
 
-    fn electrons(&self) -> String {
-        format!("&electrons\n  conv_thr = {}\n/\n", self.config.qe.scf.conv_thr_ry)
-    }
-
-    fn atomic_species(&self) -> String {
-        let mut s = String::from("ATOMIC_SPECIES\n");
-        for el in &self.cell.species {
-            let pseudo = self
-                .config
-                .pseudos
-                .get(el)
-                .cloned()
-                .unwrap_or_else(|| format!("{el}.upf").into());
-            let name = std::path::Path::new(&pseudo)
-                .file_name()
-                .map(|f| f.to_string_lossy().into_owned())
-                .unwrap_or_else(|| pseudo.to_string_lossy().into_owned());
-            s.push_str(&format!("{el} 1.0 {name}\n"));
+    fn pw_input(&self, outdir: &str, nscf: bool) -> Result<String> {
+        let qe = &self.config.qe;
+        let mut shared = qf_config::Config::default();
+        shared.qe.lattice_mode = Some(qf_config::LATTICE_MODE_CELL_PARAMETERS.into());
+        // 赝势使用已解析的绝对路径，保持显式文件身份，不在目录内自动猜选。
+        shared.pp_dir = Some("/".into());
+        let mut species = String::from("ATOMIC_SPECIES\n");
+        for el in &self.cell.elements {
+            let path = &self.config.pseudos[el];
+            let name = path.to_str().context("赝势路径不是 UTF-8")?;
+            ensure!(
+                path.is_absolute() && !name.chars().any(char::is_whitespace),
+                "configuration: QE 赝势卡片需要不含空白的绝对路径；请先固定到受控赝势目录"
+            );
+            species.push_str(&format!(
+                "  {el} {:.4} {name}\n",
+                qf_input::species::get_atomic_mass(el, None)
+            ));
         }
-        s
-    }
-
-    fn cell_params(&self) -> String {
-        let mut s = String::from("CELL_PARAMETERS angstrom\n");
-        for v in self.cell.lattice {
-            s.push_str(&format!("  {} {} {}\n", v[0], v[1], v[2]));
+        let mut params = PwParams::default();
+        params.control.insert(
+            "calculation".into(),
+            json!(if nscf { "nscf" } else { "scf" }),
+        );
+        params.control.insert("outdir".into(), json!(outdir));
+        params.system.insert("ecutwfc".into(), json!(qe.ecutwfc_ry));
+        params.system.insert("ecutrho".into(), json!(qe.ecutrho_ry));
+        params
+            .system
+            .insert("occupations".into(), json!(qe.occupations));
+        if let Some(v) = qe.degauss_ry {
+            params.system.insert("degauss".into(), json!(v));
         }
-        s
-    }
-
-    fn atomic_positions(&self) -> String {
-        let kind = if self.cell.direct { "crystal" } else { "angstrom" };
-        let mut s = format!("ATOMIC_POSITIONS {kind}\n");
-        let mut idx = 0usize;
-        for (el, n) in self.cell.species.iter().zip(self.cell.counts.iter()) {
-            for _ in 0..*n {
-                let p = self.cell.positions[idx];
-                s.push_str(&format!("{el}  {} {} {}\n", p[0], p[1], p[2]));
-                idx += 1;
-            }
+        if let Some(v) = &qe.smearing {
+            params.system.insert("smearing".into(), json!(v));
         }
-        s
-    }
-
-    fn kpoints_automatic(&self, grid: [u32; 3], shift: [u32; 3]) -> String {
-        format!(
-            "K_POINTS automatic\n  {} {} {}  {} {} {}\n",
-            grid[0], grid[1], grid[2], shift[0], shift[1], shift[2]
+        let points = if nscf {
+            params.system.insert("nbnd".into(), json!(qe.nscf.nbnd));
+            params.system.insert("nosym".into(), json!(true));
+            params.system.insert("noinv".into(), json!(true));
+            params
+                .electrons
+                .insert("conv_thr".into(), json!(qe.nscf.conv_thr_ry));
+            qf_input::pw::uniform_kpoints_text(qe.nscf.k_grid.map(i64::from), true)?
+        } else {
+            params
+                .electrons
+                .insert("conv_thr".into(), json!(qe.scf.conv_thr_ry));
+            let [a, b, c] = qe.scf.k_grid;
+            let [x, y, z] = qe.scf.k_shift;
+            format!("K_POINTS automatic\n  {a} {b} {c} {x} {y} {z}\n")
+        };
+        qf_input::pw::write_pw_input_with_species(
+            &shared, &self.cell, &params, &qe.prefix, &points, 17, &species,
         )
     }
 
-    /// 渲染 SCF 输入；含完整晶胞与自动 k 网格。
-    pub fn scf_input(&self, outdir: &str) -> String {
-        let mut s = String::new();
-        s.push_str(&self.control("scf", "scf", outdir));
-        s.push_str(&self.system(None));
-        s.push_str(&self.electrons());
-        s.push_str(&self.atomic_species());
-        s.push_str(&self.cell_params());
-        s.push_str(&self.atomic_positions());
-        s.push_str(&self.kpoints_automatic(self.config.qe.scf.k_grid, self.config.qe.scf.k_shift));
-        s
+    pub fn scf_input(&self, outdir: &str) -> Result<String> {
+        self.pw_input(outdir, false)
+    }
+    pub fn nscf_input(&self, outdir: &str) -> Result<String> {
+        self.pw_input(outdir, true)
     }
 
-    /// 渲染 NSCF 输入：显式完整均匀 k 网格与带数。
-    pub fn nscf_input(&self, outdir: &str) -> String {
-        let mut s = String::new();
-        s.push_str(&self.control("nscf", "nscf", outdir));
-        s.push_str(&self.system(Some(self.config.qe.nscf.nbnd as usize)));
-        s.push_str(&self.electrons());
-        s.push_str(&self.atomic_species());
-        s.push_str(&self.cell_params());
-        s.push_str(&self.atomic_positions());
-        s.push_str(&self.kpoints_automatic(self.config.qe.nscf.k_grid, [0, 0,0]));
-        s
+    fn ph_params(&self, init: bool) -> SectionMap {
+        let p = &self.config.phonon;
+        let mut params = SectionMap::new();
+        for (key, value) in [
+            ("tr2_ph", json!(p.tr2_ph)),
+            ("ldisp", json!(true)),
+            ("only_init", json!(init)),
+            ("lqdir", json!(true)),
+            ("recover", json!(false)),
+            ("only_wfc", json!(false)),
+            ("fildyn", json!(format!("{}.dyn", self.config.qe.prefix))),
+            ("fildvscf", json!("dvscf")),
+            ("nq1", json!(p.q_grid[0])),
+            ("nq2", json!(p.q_grid[1])),
+            ("nq3", json!(p.q_grid[2])),
+        ] {
+            params.insert(key.into(), value);
+        }
+        params
     }
 
-    /// 渲染 PH 初始化输入（only_init）。
     pub fn phonon_init_input(&self, outdir: &str) -> String {
-        let p = &self.config.phonon;
-        format!(
-            "&inputph\n  tr2_ph = {}\n  ldisp = .true.\n  only_init = .true.\n  lqdir = .true.\n  prefix = 'ph'\n  outdir = '{outdir}'\n/\n  {} {} {}\n",
-            p.tr2_ph, p.q_grid[0], p.q_grid[1], p.q_grid[2]
-        )
+        qf_input::ph::render_inputph(&self.config.qe.prefix, outdir, &self.ph_params(true))
     }
 
-    /// 渲染 PH nosplit 输入：单个任务计算完整 q 网格（FR-005）。
     pub fn phonon_nosplit_input(&self, outdir: &str) -> String {
-        let p = &self.config.phonon;
-        format!(
-            "&inputph\n  tr2_ph = {}\n  ldisp = .true.\n  last_q = 0\n  lqdir = .true.\n  prefix = 'ph'\n  outdir = '{outdir}'\n/\n  {} {} {}\n",
-            p.tr2_ph, p.q_grid[0], p.q_grid[1], p.q_grid[2]
-        )
+        qf_input::ph::render_inputph(&self.config.qe.prefix, outdir, &self.ph_params(false))
     }
 
-    /// 渲染 PH 分 q 输入：index 用 ldisp+start_q=last_q；coords 用显式笛卡尔 q。
     pub fn phonon_q_input(
         &self,
         outdir: &str,
-        _mode: &config::PhMode,
+        mode: &config::PhMode,
         q: Option<&super::manifest::QPoint>,
         q_index: usize,
     ) -> Result<String> {
-        let p = &self.config.phonon;
-        let header = format!(
-            "&inputph\n  tr2_ph = {}\n  prefix = 'ph'\n  outdir = '{outdir}'\n",
-            p.tr2_ph
-        );
-        let body = match p.mode {
-            config::PhMode::Nosplit => "  ldisp = .true.\n  last_q = 0\n".to_string(),
-            config::PhMode::Index => format!(
-                "  ldisp = .true.\n  start_q = {q_index}\n  last_q = {q_index}\n"
-            ),
-            config::PhMode::Coords => match q {
-                Some(qp) => format!(
-                    "  ldisp = .false.\n  xq(1) = {:.10}\n  xq(2) = {:.10}\n  xq(3) = {:.10}\n",
-                    qp.cartesian[0], qp.cartesian[1], qp.cartesian[2]
-                ),
-                None => bail!("data_invalid: coords 模式需要显式 q 坐标"),
-            },
-        };
-        Ok(format!("{header}{body}/\n"))
+        let mut params = self.ph_params(false);
+        let mut tail = String::new();
+        match mode {
+            config::PhMode::Nosplit => (),
+            config::PhMode::Index => {
+                ensure!(q_index > 0, "data_invalid: q 序号必须从 1 起始");
+                params.insert("start_q".into(), json!(q_index));
+                params.insert("last_q".into(), json!(q_index));
+            }
+            config::PhMode::Coords => {
+                let q = q.context("data_invalid: coords 模式需要显式 q 坐标")?;
+                ensure!(
+                    q.cartesian.iter().all(|x| x.is_finite()),
+                    "data_invalid: q 坐标非有限"
+                );
+                params.insert("ldisp".into(), json!(false));
+                for key in ["nq1", "nq2", "nq3"] {
+                    params.remove(key);
+                }
+                tail = format!(
+                    "{:.17e} {:.17e} {:.17e}\n",
+                    q.cartesian[0], q.cartesian[1], q.cartesian[2]
+                );
+            }
+        }
+        Ok(qf_input::ph::render_inputph(&self.config.qe.prefix, outdir, &params) + &tail)
     }
 }

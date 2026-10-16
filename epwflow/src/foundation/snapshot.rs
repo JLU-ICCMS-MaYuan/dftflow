@@ -1,3 +1,4 @@
+use super::{config, status, store};
 use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -5,7 +6,6 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use super::{config, store, status};
 
 /// 运行绑定：prepare 唯一建立；input-init.toml 不可修改；新输入新绑定（数据模型 v1）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,7 +36,13 @@ impl RunBinding {
     }
     /// 核对绑定来源未被篡改；复用前必须重算指纹，不能把历史 check 当作永久有效。
     pub fn verify(&self) -> Result<()> {
-        self.structure.verify().context("input_conflict: 结构快照被修改")?;
+        ensure!(
+            config_sha_of_init(&self.work_dir)? == self.config_sha256,
+            "input_conflict: 固定配置被修改"
+        );
+        self.structure
+            .verify()
+            .context("input_conflict: 结构快照被修改")?;
         for (el, id) in &self.pseudos {
             id.verify()
                 .with_context(|| format!("input_conflict: 赝势 {el} 被修改"))?;
@@ -58,75 +64,87 @@ fn config_sha_of_init(work: &Path) -> Result<String> {
 }
 
 /// 固定输入并准备独立运行；相同输入重复准备幂等，冲突/篡改/已存在不明文件拒绝覆盖。
-pub fn prepare(config: &config::Config, config_path: &Path) -> Result<RunBinding> {
+pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBinding> {
     let work = config.work_dir.clone();
-    if work.exists() {
-        let bind_path = work.join("run-binding.json");
-        if bind_path.exists() {
-            let existing = store::read::<RunBinding>(&bind_path)?;
-            ensure!(
-                existing.schema_version == 1,
-                "unsupported_version: 既有运行绑定 schema_version 必须为 1"
-            );
-            let init_hash = config_sha_of_init(&work)?;
-            if existing.config_sha256 == init_hash {
-                // 幂等：重新写入同一 input-init.toml，不改变既有快照。
-                fs::write(&input_init_path(&work), fs::read(config_path)?)
-                    .with_context(|| format!("data_invalid: 无法写回 {}", input_init_path(&work).display()))?;
-                return Ok(existing);
-            }
-            bail!("input_conflict: 运行目录已绑定不同配置，拒绝覆盖");
-        }
-        bail!("input_conflict: 工作目录已存在且不是有效的既有运行，拒绝覆盖");
-    }
-    fs::create_dir_all(&work)
-        .with_context(|| format!("data_invalid: 无法创建工作目录 {}", work.display()))?;
-
-    // 原结构加 -init 的副本，固定结构身份。
+    let _lock = store::Lock::acquire(&work)?;
     let stem = config
         .structure
         .file_name()
-        .context("data_invalid: 结构文件缺少文件名")?
-        .to_string_lossy()
-        .into_owned();
-    let init_name = format!("{stem}-init");
-    let init_path = work.join(&init_name);
-    fs::copy(&config.structure, &init_path)
-        .with_context(|| format!("data_invalid: 无法复制结构到 {}", init_path.display()))?;
-    let structure = store::Identity::capture(&init_path)?;
-
-    let mut pseudos = BTreeMap::new();
-    for (el, p) in &config.pseudos {
-        pseudos.insert(el.clone(), store::Identity::capture(p)?);
-    }
-    let mut programs = BTreeMap::new();
-    for (n, p) in [
-        ("pw", &config.programs.pw),
-        ("ph", &config.programs.ph),
-        ("epw", &config.programs.epw),
-    ] {
-        programs.insert(n.to_string(), store::Identity::capture(&p.path)?);
-    }
-
-    let config_sha256 = store::hash_file(config_path)?;
-    let run_id = run_id_of(&config_sha256, &structure, &pseudos, &programs);
-    let binding = RunBinding {
-        schema_version: 1,
-        run_id,
-        config_sha256,
-        structure,
-        pseudos,
-        programs,
-        environment_status: "unverified".to_string(),
-        work_dir: work.clone(),
-        outdir_base: config.outdir.clone(),
-        budget_id: config.budget.campaign_id.clone(),
+        .context("data_invalid: 结构缺少文件名")?
+        .to_string_lossy();
+    let init_name = if stem.ends_with("-init") {
+        stem.to_string()
+    } else {
+        format!("{stem}-init")
     };
-    // input-init.toml 以原始 TOML 字节固定，下游只读此绑定。
-    fs::write(&input_init_path(&work), fs::read(config_path)?)
-        .with_context(|| format!("data_invalid: 无法写 {}", input_init_path(&work).display()))?;
-    store::write(&work.join("run-binding.json"), &binding)?;
-    Ok(binding)
+    let mut fixed = config.clone();
+    fixed.structure = work.join(&init_name);
+    let bytes = toml::to_string_pretty(&fixed)?.into_bytes();
+    if work.exists() {
+        let existing = RunBinding::load(&work)?;
+        existing.verify()?;
+        ensure!(
+            store::hash_bytes(&bytes) == existing.config_sha256,
+            "input_conflict: 工作目录已绑定不同配置，拒绝覆盖"
+        );
+        ensure!(
+            store::hash_file(&config.structure)? == existing.structure.sha256,
+            "input_conflict: 原结构与快照不一致"
+        );
+        return Ok(existing);
+    }
+    let staging = work.with_file_name(format!(".epw-prepare-{}", store::token()));
+    fs::create_dir(&staging)?;
+    let result = (|| -> Result<RunBinding> {
+        fs::copy(&config.structure, staging.join(&init_name))?;
+        let mut structure = store::Identity::capture(&staging.join(&init_name))?;
+        structure.path = fixed.structure.clone();
+        structure.target = fixed.structure.clone();
+        let mut pseudos = BTreeMap::new();
+        for (el, p) in &config.pseudos {
+            pseudos.insert(el.clone(), store::Identity::capture(p)?);
+        }
+        let mut programs = BTreeMap::new();
+        for (n, p) in [
+            ("pw", &config.programs.pw),
+            ("ph", &config.programs.ph),
+            ("epw", &config.programs.epw),
+        ] {
+            programs.insert(n.to_string(), store::Identity::capture(&p.path)?);
+        }
+        for (n, p) in [
+            ("wannier90", &config.programs.wannier90),
+            ("pw2wannier90", &config.programs.pw2wannier90),
+        ] {
+            if let Some(p) = p {
+                programs.insert(n.to_owned(), store::Identity::capture(&p.path)?);
+            }
+        }
+        if let Some(p) = &config.programs.environment_script {
+            programs.insert("environment_script".into(), store::Identity::capture(p)?);
+        }
+        let config_sha256 = store::hash_bytes(&bytes);
+        let binding = RunBinding {
+            schema_version: 1,
+            run_id: run_id_of(&config_sha256, &structure, &pseudos, &programs),
+            config_sha256,
+            structure,
+            pseudos,
+            programs,
+            environment_status: "unverified".into(),
+            work_dir: work.clone(),
+            outdir_base: config.outdir.clone(),
+            budget_id: config.budget.campaign_id.clone(),
+        };
+        store::atomic_bytes(&staging.join("input-init.toml"), &bytes)?;
+        store::write(&staging.join("run-binding.json"), &binding)?;
+        fs::rename(&staging, &work)?;
+        Ok(binding)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&staging);
+    }
+    result
 }
 
 fn run_id_of(

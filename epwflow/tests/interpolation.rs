@@ -359,7 +359,7 @@ fn interpolation_manifest_load_version() {
 // ---------- FR-010：导入复用 ----------
 
 #[test]
-fn interpolation_reuse_import() {
+fn interpolation_reuse_rejects_unvalidated_manifest() {
     let dir = std::env::temp_dir().join(format!("epwflow-ir-{}", store::token()));
     std::fs::create_dir_all(&dir).unwrap();
     let src = dir.join("source").join("interpolation");
@@ -401,8 +401,7 @@ fn interpolation_reuse_import() {
     store::write(&src.join("manifest.json"), &m).unwrap();
     let target = dir.join("target");
     std::fs::create_dir_all(&target).unwrap();
-    let report = reuse::import_from_run(&dir.join("source"), &target).unwrap();
-    assert_eq!(report.status, "imported");
+    assert!(reuse::import_from_run(&dir.join("source"), &target).is_err(), "没有校验项不能仅凭 valid 导入");
 }
 
 // 避免未使用告警。

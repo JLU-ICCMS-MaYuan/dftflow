@@ -81,6 +81,21 @@ pub fn write_pw_input(
 }
 
 pub fn write_pw_input_with_precision(config: &Config, structure: &Structure, params: &PwParams, prefix: &str, kpoints: &str, precision: usize) -> Result<String> {
+    let species = write_atomic_species(config, &structure.elements)?;
+    write_pw_input_with_species(config, structure, params, prefix, kpoints, precision, &species)
+}
+
+/// 使用调用方已绑定的赝势条目；与 qeflow 共用全部 PW namelist/结构写出逻辑。
+/// species 必须是完整 ATOMIC_SPECIES 段，由受控适配器构造。
+pub fn write_pw_input_with_species(
+    config: &Config,
+    structure: &Structure,
+    params: &PwParams,
+    prefix: &str,
+    kpoints: &str,
+    precision: usize,
+    species: &str,
+) -> Result<String> {
     let mut s = String::new();
     s.push_str("&CONTROL\n");
     s.push_str(&format!("  prefix = {}\n", to_qe_value(&json!(prefix))));
@@ -110,7 +125,7 @@ pub fn write_pw_input_with_precision(config: &Config, structure: &Structure, par
     }
     s.push_str("/\n\n");
 
-    s.push_str(&write_atomic_species(config, &structure.elements)?);
+    s.push_str(species);
     s.push_str(&write_atomic_positions_with_precision(structure, precision));
     s.push_str(&write_cell_parameters_with_precision(config, structure, precision)?);
     s.push_str(kpoints);
@@ -178,16 +193,17 @@ pub fn build_nscf_pw_params(config: &Config) -> PwParams {
     params
         .control
         .insert("calculation".to_string(), json!("nscf"));
-    params.control.insert("nosym".to_string(), json!(true));
+    params.system.insert("nosym".to_string(), json!(true));
+    params.system.insert("noinv".to_string(), json!(true));
     params
         .control
         .insert("verbosity".to_string(), json!("high"));
-    if !params.electrons.contains_key("degauss") {
-        params.electrons.insert("degauss".to_string(), json!(0.02));
+    if !params.system.contains_key("degauss") {
+        params.system.insert("degauss".to_string(), json!(0.02));
     }
-    if !params.electrons.contains_key("occupations") {
+    if !params.system.contains_key("occupations") {
         params
-            .electrons
+            .system
             .insert("occupations".to_string(), json!("smearing"));
     }
     params
@@ -255,29 +271,11 @@ pub fn write_calculation_input(
     };
     anyhow::ensure!(grid.iter().all(|v| *v > 0), "kpoints 必须为正整数");
     let [nx, ny, nz] = grid;
-    let mut points = if nscf {
-        format!("K_POINTS crystal\n{}\n", nx * ny * nz)
+    let points = if nscf {
+        uniform_kpoints_text(grid, !kp["wan"].as_bool().unwrap_or(false))?
     } else {
         format!("K_POINTS automatic\n  {nx} {ny} {nz} 0 0 0\n")
     };
-    if nscf {
-        for x in 0..nx {
-            for y in 0..ny {
-                for z in 0..nz {
-                    points.push_str(&format!(
-                        " {:21.17}{:21.17}{:21.17}",
-                        x as f64 / nx as f64,
-                        y as f64 / ny as f64,
-                        z as f64 / nz as f64
-                    ));
-                    if !kp["wan"].as_bool().unwrap_or(false) {
-                        points.push_str(&format!(" {:13.6e}", 1.0 / (nx * ny * nz) as f64));
-                    }
-                    points.push('\n');
-                }
-            }
-        }
-    }
     let content = write_pw_input_with_precision(config, structure, &params, &structure.formula, &points, if nscf {8} else {17})?;
     std::fs::write(PathBuf::from(workspace).join(format!("{kind}.in")), content)?;
     let outdir = params
@@ -290,4 +288,20 @@ pub fn write_calculation_input(
         .to_string();
     std::fs::create_dir_all(PathBuf::from(workspace).join(&outdir))?;
     Ok(outdir)
+}
+
+/// Γ 中心完整均匀网格；不作对称约化，供 QE NSCF 与 EPW 共用。
+pub fn uniform_kpoints_text(grid: [i64; 3], weights: bool) -> Result<String> {
+    anyhow::ensure!(grid.iter().all(|n| *n > 0), "kpoints 必须为正整数");
+    let total = grid.iter().try_fold(1i64, |n, v| n.checked_mul(*v))
+        .ok_or_else(|| anyhow::anyhow!("kpoints 数量溢出"))?;
+    let [nx, ny, nz] = grid;
+    let mut points = format!("K_POINTS crystal\n{total}\n");
+    for x in 0..nx { for y in 0..ny { for z in 0..nz {
+        points.push_str(&format!(" {:21.17}{:21.17}{:21.17}",
+            x as f64 / nx as f64, y as f64 / ny as f64, z as f64 / nz as f64));
+        if weights { points.push_str(&format!(" {:21.17}", 1.0 / total as f64)); }
+        points.push('\n');
+    } } }
+    Ok(points)
 }

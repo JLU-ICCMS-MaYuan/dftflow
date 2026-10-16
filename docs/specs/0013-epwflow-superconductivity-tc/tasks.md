@@ -142,3 +142,7 @@ T001→T002 后按故事和前置任务顺序执行；同一共享文件串行�
 | SC-006 | T034 | acceptance.md | epwflow/tests/superconductivity.rs 与真实/安装证据 |
 | SC-007 | T035 | acceptance.md | epwflow/tests/superconductivity.rs 与真实/安装证据 |
 | SC-008 | T036 | acceptance.md | epwflow/tests/superconductivity.rs 与真实/安装证据 |
+
+## 2026-10-16 实现收敛
+
+- [ ] T038 依据 0015 B01～B09 修复本 Feature 的真实生产路径，取消已通过回归的 ignore；核对其余 FR/SC、真实程序输出和来源，更新验收与当前功能文档。原已勾选项不能替代本轮复核。实现与测试均由本助手承担。

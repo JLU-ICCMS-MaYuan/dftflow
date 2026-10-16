@@ -82,3 +82,23 @@ XML 样本根据已盘点的 QE 7.4.1 层级构造，数值为合成值，只验
 新增样本均为检测错误放行的合成数据，绝不是 MgB₂ 结果或独立物理参考。插值用例在独立子进程使用隔离预算注册表，不修改正式账本。
 
 当前 `real_contracts` 默认运行 1 通过、11 ignored；显式运行 ignored 用例退出 101，11 项已知失败全部复现。首批 8 项与本批 3 项分别保留记录；最新输出及测试哈希为本地 `real-contracts-second-batch.{json,log}`。ignored 不计通过，修复后取消对应标记。B01～B09 现均有相关行为回归，但树复制、指纹篡改、完整网格与未知状态恢复等覆盖尚未完成，T003 继续未完成。没有真实作业、原始数据或安装变更。
+
+## 2026-10-16 共享 QE 输入与基础阻断修复
+
+用户追加要求复用 qeflow；本批完成 qf-crystal 结构解析、qf-input 的 PW/PH 输入与均匀 NSCF 网格复用，以及从 0006 提取到 qf-io 的日志完成检查。epwflow 删除独立结构/输入实现，统一配置 prefix、共享原子质量，修正 PH 网格/coords 位置与 SYSTEM.nosym/noinv。共享脚本执行、完整快照和 EPW 归集尚未全部接通，不能称为完整链路可运行。
+
+同时修复：固定输入重复 prepare 覆盖/篡改检查、Slurm 作业号严格解析、未知作业预算保留/实际用时结算/step 去重、活动分配继续占用预留、空校验清单拒绝、Wannier 否定收敛优先，以及真实 QE XML 的原生结构与 Hartree→eV 转换。预算相对路径归一化，status 不创建新账本；完整并发/提交流程仍待实现。
+
+### 本批证据
+
+- `bash scripts/build-native.sh test -p epwflow -p qf-input -p qf-io --locked --offline --no-fail-fast`：79 项通过、4 项明确暂挂；其中 epwflow 53 项、共享输入 8 项、共享 IO 18 项。日志 `docs/local/0015-epwflow-smoke/shared-input-tests.log`。
+- `bash scripts/build-native.sh test -p qeflow --locked --offline`：27 项通过，覆盖基础 CLI、单 SCF 分 q 链、初始化、快照和后处理；日志 `qeflow-shared-regression.log`。
+- `real_contracts` 中 7 项原失败回归取消 ignore，新增输入物理量/完整网格、调度解析、已绑定预算计数、配置篡改检查；默认 12 项通过。该数字包含原 stdout 对照，不代表 12 项科学验收。
+- 对已有 nosplit/index/coords 三套 MgB₂ 的 SCF XML 只读调用修复后的解析器，均读出 8 个 k 点、12 带；证据 `actual-xml-parser-fixed.json`。不把 SCF 不可约点当作完整 NSCF 网格，不修改原始文件。
+- 剩余 4 项暂挂回归显式运行仍全部失败（退出 101）：B01 两项入口、B02 非原生谱、B03 非原生超导。B02/B03 增加非空自述 passed 项，避免空清单防护掩盖真实缺口；日志 `remaining-contract-failures.log`。这些已验证的失败复现不计入通过数。
+
+### 未完成与限制
+
+B04 树复制/来源核对、B06 完整提交账本与并发、B07 输出路径和数据承接、B08 原生质量证据等仍有未完成项；空列表和输入文本修复不等于对应缺陷全部关闭。PH 快照复用、q 映射/响应势校验、完整输出网格验证、原生 Wannier/插值/超导以及真实小网格验收继续保持未完成。显式赝势卡片暂拒绝带空白路径，受控文件物化待补。
+
+旧 F2/F3 模拟测试只说明其局部接口行为，仍包含简化输出，不是独立物理参考。本批无真实 QE/EPW 启动、Slurm 提交、安装切换或线上 Issue 操作，原共享预算未因本批重置。

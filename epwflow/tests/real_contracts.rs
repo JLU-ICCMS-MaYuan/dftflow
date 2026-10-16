@@ -165,7 +165,6 @@ fn b01_until_is_a_recognized_execution_boundary() {
 }
 
 #[test]
-#[ignore = "B09: QE 原生 XML 结构解析失败，修复后取消 ignore"]
 fn b09_reads_qe_schema_text_coordinates_and_sibling_eigenvalues() {
     let c = Case::new();
     // 根据已盘点的 QE 7.4.1 XML 层级构造最小格式样本。
@@ -200,7 +199,6 @@ fn b09_reads_qe_schema_text_coordinates_and_sibling_eigenvalues() {
 }
 
 #[test]
-#[ignore = "B04: 空清单被导入成功，修复后取消 ignore"]
 fn b04_import_rejects_empty_manifest_despite_valid_label() {
     let c = Case::new();
     c.empty_manifest();
@@ -216,7 +214,6 @@ fn b04_import_rejects_empty_manifest_despite_valid_label() {
 }
 
 #[test]
-#[ignore = "B08: 空 F2 清单可绑定 F3，修复后取消 ignore"]
 fn b08_interpolation_rejects_empty_f2_manifest() {
     let c = Case::new();
     let path = c.empty_manifest();
@@ -225,7 +222,6 @@ fn b08_interpolation_rejects_empty_f2_manifest() {
 }
 
 #[test]
-#[ignore = "B05: SCF 阶段没有消费已捕获 stdout，修复后取消 ignore"]
 fn b05_scf_consumes_stdout_and_rejects_nonconvergence() {
     let c = Case::new();
     c.script(
@@ -247,7 +243,6 @@ fn b05_scf_consumes_stdout_and_rejects_nonconvergence() {
 }
 
 #[test]
-#[ignore = "B06: 未知作业被直接结算并释放并发，修复后取消 ignore"]
 fn b06_unknown_scheduler_preserves_active_allocation() {
     let c = Case::new();
     let ledger = "campaign/ledger.json";
@@ -298,15 +293,14 @@ fn b06_unknown_scheduler_preserves_active_allocation() {
 }
 
 #[test]
-#[ignore = "B07: SCF/NSCF/PH 的 prefix 与配置不一致，修复后取消 ignore"]
 fn b07_qe_stages_use_bound_prefix() {
     let c = Case::new();
     let cfg = c.config();
     let qe = QeSettings::from_config(&cfg).unwrap();
     let re = regex::Regex::new(r#"(?i)prefix\s*=\s*['\"]([^'\"]+)['\"]"#).unwrap();
     for (stage, input) in [
-        ("scf", qe.scf_input("./tmp")),
-        ("nscf", qe.nscf_input("./tmp")),
+        ("scf", qe.scf_input("./tmp").unwrap()),
+        ("nscf", qe.nscf_input("./tmp").unwrap()),
         ("ph_init", qe.phonon_init_input("./tmp")),
     ] {
         let prefix = re.captures(&input).expect("输入必须声明 prefix");
@@ -325,6 +319,11 @@ fn b02_rejects_interpolation_without_native_spectrum_or_quality_evidence() {
     }
     let c = Case::new();
     let f2 = c.empty_manifest();
+    // 非空的自述检查也不能代替真实文件/谱/质量证据；避免仅由空清单防护截断本用例。
+    let mut declared: Value = store::read(&f2).unwrap();
+    declared["validation"]["checks"] =
+        json!([{"name":"fixture_claim", "passed":true, "detail":"not scientific evidence"}]);
+    store::write(&f2, &declared).unwrap();
     let source_before = store::hash_file(&f2).unwrap();
     // 故意沿用旧测试接受的简化文件，证明它们不足以作为真实 EPW 结果。
     // 不提供原生谱、完整矩阵元、合法 F2 或独立质量参考。
@@ -405,7 +404,7 @@ fn b03_rejects_superconductivity_without_successful_native_solver() {
         "spectra": [{"smearing_id": "fixture", "energy_mev": [5.0, 10.0, 15.0, 20.0],
             "a2f": [0.192, 0.192, 0.192, 0.192], "lambda_integral": 0.8, "lambda_sum": 0.8, "cutoff_ev": 0.2}],
         "quality": null, "mode_readiness": {"iso": true},
-        "validation": {"status": "valid", "checks": [], "units": {}, "thresholds": {}, "evidence": []}
+        "validation": {"status": "valid", "checks": [{"name":"fixture_claim", "passed":true, "detail":"not scientific evidence"}], "units": {}, "thresholds": {}, "evidence": []}
     });
     store::write(&work.join("interpolation/manifest.json"), &f3).unwrap();
     let result = scheduler::run(&cfg, &work, &[], Backend::Local);
@@ -423,7 +422,6 @@ fn b03_rejects_superconductivity_without_successful_native_solver() {
 }
 
 #[test]
-#[ignore = "B08: Final State 被当作 Wannier 收敛证据，修复后取消 ignore"]
 fn b08_wannier_final_state_does_not_override_nonconvergence() {
     use epwflow::interpolation::wannier;
     let c = Case::new();
@@ -437,4 +435,198 @@ fn b08_wannier_final_state_does_not_override_nonconvergence() {
         result.is_err(),
         "明确未收敛的日志不能被 Final State 覆盖：{result:?}"
     );
+}
+
+#[test]
+fn shared_qe_inputs_keep_physics_and_full_mesh() {
+    let c = Case::new();
+    let cfg = c.config();
+    let qe = QeSettings::from_config(&cfg).unwrap();
+    let input = qe.scf_input("./tmp").unwrap();
+    let species = input.split("ATOMIC_SPECIES\n").nth(1).unwrap();
+    let rows: Vec<_> = species
+        .lines()
+        .take(2)
+        .map(|l| l.split_whitespace().collect::<Vec<_>>())
+        .collect();
+    assert_eq!(rows[0][0], "Mg");
+    assert!((rows[0][1].parse::<f64>().unwrap() - 24.305).abs() < 1e-10);
+    assert!((rows[1][1].parse::<f64>().unwrap() - 10.81).abs() < 1e-10);
+    assert_eq!(rows[0][2], cfg.pseudos["Mg"].to_str().unwrap());
+    let nscf = qe.nscf_input("./tmp").unwrap();
+    let system = nscf
+        .split("&SYSTEM\n")
+        .nth(1)
+        .unwrap()
+        .split("/\n")
+        .next()
+        .unwrap();
+    assert!(system.contains("nosym = .true.") && system.contains("noinv = .true."));
+    let k = nscf.split("K_POINTS crystal\n").nth(1).unwrap();
+    let count = cfg.qe.nscf.k_grid.iter().product::<u32>() as usize;
+    assert_eq!(k.lines().next().unwrap().parse::<usize>().unwrap(), count);
+    assert_eq!(k.lines().skip(1).count(), count);
+    let init = qe.phonon_init_input("./tmp");
+    assert!(init.contains("nq1 = 2") && init.ends_with("/\n"));
+    let point = epwflow::qe_data::manifest::QPoint {
+        global_index: 2,
+        local_index: 1,
+        directory: "02".into(),
+        crystal: [0., 0.5, 0.],
+        cartesian: [0., -0.577350269189585, 0.],
+        alat: 5.8,
+        reciprocal_basis: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+        source_dyn0: "MgB2.dyn0".into(),
+    };
+    let coords = qe
+        .phonon_q_input(
+            "./tmp",
+            &epwflow::foundation::config::PhMode::Coords,
+            Some(&point),
+            2,
+        )
+        .unwrap();
+    let (head, tail) = coords.split_once("/\n").unwrap();
+    assert!(head.contains("ldisp = .false.") && head.contains("only_init = .false."));
+    assert!(!head.contains("nq1") && !head.contains("xq("));
+    let parsed: Vec<f64> = tail
+        .split_whitespace()
+        .map(|x| x.parse().unwrap())
+        .collect();
+    assert_eq!(parsed.as_slice(), &point.cartesian);
+    let index = qe
+        .phonon_q_input(
+            "./tmp",
+            &epwflow::foundation::config::PhMode::Index,
+            None,
+            2,
+        )
+        .unwrap();
+    assert!(index.contains("start_q = 2") && index.contains("last_q = 2"));
+    assert!(index.contains("only_init = .false."));
+    let nosplit = qe.phonon_nosplit_input("./tmp");
+    assert!(nosplit.contains("ldisp = .true.") && nosplit.contains("only_init = .false."));
+    assert!(!nosplit.contains("last_q"));
+}
+
+#[test]
+fn strict_scheduler_identity_and_accounting() {
+    use epwflow::foundation::slurm::{parse_accounting, parse_job_id};
+    for bad in [
+        "0",
+        "-1",
+        "12 extra",
+        "12\n13",
+        "Submitted batch job 12",
+        "12;cluster;other",
+    ] {
+        assert!(parse_job_id(bad).is_err(), "{bad}");
+    }
+    let job = parse_job_id("12;cluster-a\n").unwrap();
+    assert_eq!(job.job_id, 12);
+    assert_eq!(job.cluster.as_deref(), Some("cluster-a"));
+    let done = parse_accounting(12, "12|COMPLETED|37|1|\n12.batch|COMPLETED|37|1|\n").unwrap();
+    assert!(done.terminal);
+    assert_eq!(done.node_seconds, 37);
+    let running = parse_accounting(12, "12|RUNNING|8|1|\n").unwrap();
+    assert!(!running.terminal);
+    for bad in [
+        "",
+        "12.batch|COMPLETED|37|1|",
+        "12|MYSTERY|0|0|",
+        "12|COMPLETED|3|0|",
+        "12|COMPLETED|3|1|\n12|FAILED|2|1|",
+    ] {
+        assert!(parse_accounting(12, bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn attached_allocations_still_reserve_shared_budget() {
+    let c = Case::new();
+    let mut tokens = Vec::new();
+    for _ in 0..4 {
+        let out = c.cli(&[
+            "budget",
+            "reserve",
+            "--ledger",
+            "campaign/ledger.json",
+            "--label",
+            "bound",
+            "--nodes",
+            "1",
+            "--mpi",
+            "1",
+            "--wall-seconds",
+            "7200",
+            "--storage-bytes",
+            "1",
+        ]);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        tokens.push(
+            String::from_utf8(out.stdout)
+                .unwrap()
+                .trim()
+                .strip_prefix("reserved: token=")
+                .unwrap()
+                .to_string(),
+        );
+    }
+    assert!(c
+        .cli(&[
+            "budget",
+            "attach",
+            "--ledger",
+            "campaign/ledger.json",
+            "--token",
+            &tokens[0],
+            "--job",
+            "12"
+        ])
+        .status
+        .success());
+    let denied = c.cli(&[
+        "budget",
+        "reserve",
+        "--ledger",
+        "campaign/ledger.json",
+        "--label",
+        "excess",
+        "--nodes",
+        "1",
+        "--mpi",
+        "1",
+        "--wall-seconds",
+        "1",
+        "--storage-bytes",
+        "1",
+    ]);
+    assert!(!denied.status.success());
+    let ledger: Value = store::read(&c.root.join("campaign/ledger.json")).unwrap();
+    assert_eq!(ledger["allocations"].as_array().unwrap().len(), 1);
+    assert_eq!(ledger["reservations"].as_array().unwrap().len(), 3);
+}
+
+#[test]
+fn prepare_rejects_changed_bound_configuration_without_rewriting() {
+    let c = Case::new();
+    assert!(c.cli(&["prepare", "-c", "input.toml"]).status.success());
+    let snap = c.root.join("run/input-init.toml");
+    let original = fs::read(&snap).unwrap();
+    let config = fs::read_to_string(c.root.join("input.toml")).unwrap();
+    c.put(
+        "input.toml",
+        &config.replace("mu_star = 0.1", "mu_star = 0.12"),
+    );
+    let out = c.cli(&["prepare", "-c", "input.toml"]);
+    assert!(!out.status.success());
+    assert_eq!(fs::read(&snap).unwrap(), original);
+    fs::write(&snap, b"tampered configuration").unwrap();
+    let out = c.cli(&["resume", "-w", "run", "-s"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("input_conflict"));
 }

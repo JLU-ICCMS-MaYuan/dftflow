@@ -1,9 +1,9 @@
-use anyhow::{ensure, Context, Result};
-use regex::Regex;
-use std::path::Path;
 use super::super::foundation::stage::Backend;
 use super::super::foundation::store;
 use super::epw_config::EpwConfig;
+use anyhow::{ensure, Context, Result};
+use regex::Regex;
+use std::path::Path;
 
 /// Wannier 化成功结果（FR-004）。
 #[derive(Debug, Clone)]
@@ -18,9 +18,16 @@ pub struct WannierResult {
 pub fn parse_wannier_log(log: &Path) -> Result<WannierResult> {
     let txt = std::fs::read_to_string(log)
         .with_context(|| format!("data_invalid: 无法读取 {}", log.display()))?;
-    let conv_re = Regex::new(r"Convergence reached|Final State").expect("wannier: 正则编译失败");
+    let conv_re = Regex::new(r"(?im)^\s*(?:\|\s*)?Convergence (?:was )?reached\b")
+        .expect("wannier: 正则编译失败");
     let conv = conv_re.is_match(&txt);
-    let iter_re = Regex::new(r"Number of iterations\s*[:=]\s*(\d+)").expect("wannier: 正则编译失败");
+    ensure!(
+        !txt.to_lowercase().contains("convergence not reached")
+            && !txt.to_lowercase().contains("convergence was not reached"),
+        "data_invalid: Wannier 明确未收敛"
+    );
+    let iter_re =
+        Regex::new(r"Number of iterations\s*[:=]\s*(\d+)").expect("wannier: 正则编译失败");
     let num_iter = iter_re
         .captures(&txt)
         .and_then(|c| c[1].parse::<usize>().ok())
@@ -42,7 +49,13 @@ pub fn parse_wannier_log(log: &Path) -> Result<WannierResult> {
     })
 }
 
-fn exec(prog: &Path, args: &[&str], dir: &Path, launcher: &[String], backend: Backend) -> Result<()> {
+fn exec(
+    prog: &Path,
+    args: &[&str],
+    dir: &Path,
+    launcher: &[String],
+    backend: Backend,
+) -> Result<()> {
     let mut cmd: Vec<String> = launcher.iter().cloned().collect();
     cmd.push(prog.to_string_lossy().into_owned());
     for a in args {
@@ -53,7 +66,12 @@ fn exec(prog: &Path, args: &[&str], dir: &Path, launcher: &[String], backend: Ba
             super::super::foundation::process::run(&cmd, dir)?;
         }
         Backend::Slurm => {
-            super::super::foundation::slurm::submit_via_sbatch(launcher, &cmd[launcher.len()..], dir, "wannier")?;
+            super::super::foundation::slurm::submit_via_sbatch(
+                launcher,
+                &cmd[launcher.len()..],
+                dir,
+                "wannier",
+            )?;
         }
     }
     Ok(())
@@ -93,7 +111,10 @@ pub fn run_wannier(
     exec(w90, &["scf"], &dir, launcher, backend)?;
 
     let log = dir.join("scf.wout");
-    ensure!(log.exists(), "data_invalid: wannier90 未产生 scf.wout，禁止后续插值");
+    ensure!(
+        log.exists(),
+        "data_invalid: wannier90 未产生 scf.wout，禁止后续插值"
+    );
     let mut res = parse_wannier_log(&log)?;
     // 来源摘要：对 wannier 输出目录做整体哈希。
     res.wannier_digest = store::hash_file(&log)?;

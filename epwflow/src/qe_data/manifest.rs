@@ -117,7 +117,7 @@ impl QeManifest {
 
 impl Validation {
     pub fn all_passed(&self) -> bool {
-        self.status == "valid" && self.checks.iter().all(|c| c.passed)
+        self.status == "valid" && !self.checks.is_empty() && self.checks.iter().all(|c| c.passed)
     }
     pub fn check(&mut self, name: &str, passed: bool, detail: &str) {
         self.checks.push(Check {

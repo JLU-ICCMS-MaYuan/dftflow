@@ -181,22 +181,18 @@ base=$(basename "$inp")
 mkdir -p out
 case "$base" in
   scf.in)
-    printf '!    total energy              =    -100.12345678 Ry\n' > scf.out
+    printf 'convergence has been achieved\n!    total energy              =    -100.12345678 Ry\nJOB DONE.\n'
     mkdir -p out/scf.save
     printf '<xml/>\n' > out/scf.save/data-file-schema.xml
     ;;
   nscf.in)
     mkdir -p out/nscf.save
     cat > out/nscf.save/data-file-schema.xml <<'XML'
-<fermi_energy> 10.5 </fermi_energy>
-<k_point weight="0.5">
-<kpoint_coord> 0.0 0.0 0.0 </kpoint_coord>
-<e> 1.0 </e> <e> 2.0 </e>
-</k_point>
-<k_point weight="0.5">
-<kpoint_coord> 0.25 0.0 0.0 </kpoint_coord>
-<e> 1.1 </e> <e> 2.1 </e>
-</k_point>
+<espresso><output><band_structure>
+<nbnd>2</nbnd><nks>2</nks><fermi_energy>10.5</fermi_energy>
+<ks_energies><k_point weight="0.5">0.0 0.0 0.0</k_point><eigenvalues size="2">1.0 2.0</eigenvalues></ks_energies>
+<ks_energies><k_point weight="0.5">0.25 0.0 0.0</k_point><eigenvalues size="2">1.1 2.1</eigenvalues></ks_energies>
+</band_structure></output></espresso>
 XML
     ;;
 esac
@@ -219,7 +215,7 @@ q = ( 0.5 0.0 0.0 )
 DYN
     ;;
   ph.in)
-    if grep -q 'last_q = 0' "$inp"; then
+    if grep -q 'ldisp = .true.' "$inp" && ! grep -q 'start_q' "$inp"; then
       for i in 1 2; do
         printf 'omega(   1) =    100.0 [cm-1]\nomega(   2) =    200.0 [cm-1]\n' > "out/ph.dyn$i"
         mkdir -p out/ph.phsave/_ph0
@@ -235,7 +231,7 @@ DYN
       printf 'dvscf\n' > "out/ph.dvscf_q.$idx"
       printf 'control\n' > "out/ph.phsave/_ph0/control_ph.xml"
     else
-      x=$(sed -n 's/.*xq(1) *= *\([0-9.]*\).*/\1/p' "$inp")
+      x=$(tail -n 1 "$inp" | awk '{print $1}')
       idx=$(awk "BEGIN{printf \"%d\", ($x*2)+1}")
       printf 'omega(   1) =    100.0 [cm-1]\nomega(   2) =    200.0 [cm-1]\n' > "out/ph.dyn$idx"
       mkdir -p out/ph.phsave/_ph0
@@ -315,11 +311,11 @@ fn qe_config_renders_expected_namelists() {
     let cfg = config::Config::load(&case.config_path).unwrap();
     let qe = QeSettings::from_config(&cfg).unwrap();
     let out = case.root.join("out");
-    let scf_in = qe.scf_input(out.to_str().unwrap());
-    assert!(scf_in.contains("&control") && scf_in.contains("calculation = 'scf'"));
-    assert!(scf_in.contains("&system") && scf_in.contains("ibrav = 0"));
+    let scf_in = qe.scf_input(out.to_str().unwrap()).unwrap();
+    assert!(scf_in.contains("&CONTROL") && scf_in.contains("calculation = 'scf'"));
+    assert!(scf_in.contains("&SYSTEM") && scf_in.contains("ibrav = 0"));
     assert!(scf_in.contains("ATOMIC_POSITIONS"));
-    let nscf_in = qe.nscf_input(out.to_str().unwrap());
+    let nscf_in = qe.nscf_input(out.to_str().unwrap()).unwrap();
     assert!(nscf_in.contains("calculation = 'nscf'") && nscf_in.contains("nbnd = 4"));
     let init_in = qe.phonon_init_input(out.to_str().unwrap());
     assert!(init_in.contains("only_init = .true.") && init_in.contains("ldisp = .true."));
@@ -339,15 +335,11 @@ fn scf_energy_parsing() {
 
 #[test]
 fn nscf_xml_parsing() {
-    let xml = "<fermi_energy> 10.5 </fermi_energy>\n\
-               <k_point weight=\"0.5\">\n\
-               <kpoint_coord> 0.0 0.0 0.0 </kpoint_coord>\n\
-               <e> 1.0 </e> <e> 2.0 </e>\n\
-               </k_point>\n\
-               <k_point weight=\"0.5\">\n\
-               <kpoint_coord> 0.25 0.0 0.0 </kpoint_coord>\n\
-               <e> 1.1 </e> <e> 2.1 </e>\n\
-               </k_point>\n";
+    let xml = r#"<espresso><output><band_structure>
+<nbnd>2</nbnd><nks>2</nks><fermi_energy>10.5</fermi_energy>
+<ks_energies><k_point weight="0.5">0.0 0.0 0.0</k_point><eigenvalues size="2">1.0 2.0</eigenvalues></ks_energies>
+<ks_energies><k_point weight="0.5">0.25 0.0 0.0</k_point><eigenvalues size="2">1.1 2.1</eigenvalues></ks_energies>
+</band_structure></output></espresso>"#;
     let dir = std::env::temp_dir().join(format!("epwflow-nscf-{}", store::token()));
     std::fs::create_dir_all(&dir).unwrap();
     let p = dir.join("data-file-schema.xml");
@@ -357,7 +349,7 @@ fn nscf_xml_parsing() {
     assert_eq!(st.weights.len(), 2);
     assert_eq!(st.kpoints.len(), 2);
     assert_eq!(st.kpoints[0], [0.0, 0.0, 0.0]);
-    assert!((st.fermi - 10.5).abs() < 1e-9);
+    assert!((st.fermi - 10.5 * 27.211386245988).abs() < 1e-9);
     assert!(nscf::parse_xml(&dir.join("missing.xml")).is_err());
 }
 

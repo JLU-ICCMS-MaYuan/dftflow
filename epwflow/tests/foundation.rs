@@ -1,5 +1,5 @@
 use std::{collections::BTreeMap, fs, path::PathBuf, process::{Command, Output}, sync::atomic::{AtomicU64, Ordering}};
-use epwflow::foundation::{budget, environment, state, storage};
+use epwflow::foundation::{environment, state, storage};
 use std::os::unix::fs::PermissionsExt;
 static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Case { root: PathBuf }
@@ -18,7 +18,7 @@ impl Case {
     fn script(&self,name:&str,text:&str) { self.put(name,text); fs::set_permissions(self.root.join(name),fs::Permissions::from_mode(0o755)).unwrap(); }
     fn cmd(&self) -> Command {
         let mut c=Command::new(env!("CARGO_BIN_EXE_epwflow"));
-        c.current_dir(&self.root).env("XDG_STATE_HOME",self.root.join("state")).env("PATH",format!("{}:/usr/bin:/bin", self.root.display())); c
+        c.current_dir(&self.root).env("EPWFLOW_LOCAL_STATE",self.root.join("state")).env("XDG_STATE_HOME",self.root.join("state")).env("PATH",format!("{}:/usr/bin:/bin", self.root.display())); c
     }
     fn run(&self,args:&[&str])->Output {self.cmd().args(args).output().unwrap()}
     fn json(&self,args:&[&str])->serde_json::Value { let o=self.run(args);assert!(o.status.success(),"{}",String::from_utf8_lossy(&o.stderr));serde_json::from_slice(&o.stdout).unwrap() }
@@ -92,28 +92,24 @@ fn help_and_execution_modes() {
 #[test]
 fn budget_reserve_attach_reconcile_and_deny() {
     let c = Case::new();
-    std::env::set_var("EPWFLOW_LOCAL_STATE", &c.root);
-    let ledger = c.root.join("ledger.json");
-    // 预留在授权上限内（8 节点小时 = 28800 节点秒）。
-    let t1 = budget::with_ledger(&ledger, "epic-0007", |l| {
-        budget::reserve(l, "stage-a", 1, 1, 3600, 1u64 << 30)
-    })
-    .expect("reserve 应在上限内成功");
-    // 仍在预留态时，超出剩余预算的预留必须拒绝，且不删除既有数据。
-    let denied = budget::with_ledger(&ledger, "epic-0007", |l| {
-        budget::reserve(l, "stage-b", 1, 1, 25201, 1u64 << 30)
-    });
-    assert!(denied.is_err(), "超出预算的预留必须 budget_denied");
-    // 绑定分配占用一个并发车道。
-    budget::with_ledger(&ledger, "epic-0007", |l| budget::attach(l, &t1, Some(11)))
-        .expect("attach 应成功");
-    // 结算：同一 allocation 仅结算一次，释放车道。
-    let settled =
-        budget::with_ledger(&ledger, "epic-0007", |l| budget::reconcile(l)).expect("reconcile");
-    assert!(settled >= 3600, "结算必须包含已提交任务");
-    let st = budget::status_json(&ledger, "epic-0007").expect("status");
-    assert_eq!(st["lanes"], 0, "结算后车道归零");
-    assert_eq!(st["spent_node_seconds"], 3600, "结算后消耗计入");
+    c.script("sacct", "#!/bin/sh\nprintf '11|COMPLETED|120|1|\n11.batch|COMPLETED|120|1|\n'\n");
+    let reserved = c.run(&["budget", "reserve", "--ledger", "ledger.json", "--label", "stage-a",
+        "--nodes", "1", "--mpi", "1", "--wall-seconds", "3600", "--storage-bytes", "1024"]);
+    assert!(reserved.status.success(), "{}", String::from_utf8_lossy(&reserved.stderr));
+    let output = String::from_utf8(reserved.stdout).unwrap();
+    let id = output.trim().strip_prefix("reserved: token=").unwrap();
+    assert!(c.run(&["budget", "attach", "--ledger", "ledger.json", "--token", id, "--job", "11"]).status.success());
+    // 已绑定任务仍保留请求时限的预算；不得在运行状态未知时提前退款。
+    assert!(!c.run(&["budget", "reserve", "--ledger", "ledger.json", "--label", "invalid",
+        "--nodes", "1", "--mpi", "1", "--wall-seconds", "25201", "--storage-bytes", "1024"]).status.success());
+    assert!(c.run(&["budget", "reconcile", "--ledger", "ledger.json"]).status.success());
+    let st = c.json(&["budget", "status", "--ledger", "ledger.json", "--json"]);
+    assert_eq!(st["lanes"], 0);
+    assert_eq!(st["spent_node_seconds"], 120, "实际时间结算且不重复计算 batch 步骤");
+    assert!(c.run(&["budget", "reconcile", "--ledger", "ledger.json"]).status.success());
+    let again = c.json(&["budget", "status", "--ledger", "ledger.json", "--json"]);
+    assert_eq!(again["spent_node_seconds"], 120);
+
 }
 
 #[test]

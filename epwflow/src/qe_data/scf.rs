@@ -54,7 +54,7 @@ pub fn run_scf(
     std::fs::create_dir_all(&dir)?;
     let outdir = dir.join("out");
     std::fs::create_dir_all(&outdir)?;
-    let input = qe.scf_input(outdir.to_str().unwrap());
+    let input = qe.scf_input(outdir.to_str().unwrap())?;
     std::fs::write(dir.join("scf.in"), &input)?;
     let prog = &qe.config.programs.pw.path;
     let cmd: Vec<String> = launcher
@@ -66,12 +66,14 @@ pub fn run_scf(
         .collect();
     match backend {
         Backend::Local => {
-            let _r = process::run(&cmd, &dir)?;
+            let report = process::run(&cmd, &dir)?;
+            std::fs::copy(report.stdout_path, dir.join("scf.out"))?;
         }
         Backend::Slurm => {
             super::super::foundation::slurm::submit_via_sbatch(launcher, &cmd[launcher.len()..], &dir, "scf")?;
         }
     }
+    qf_io::qe_completion::checked_log(&dir.join("scf.out"), true)?;
     let out = std::fs::read_to_string(dir.join("scf.out"))
         .with_context(|| "data_invalid: 缺少 scf.out")?;
     let energy = parse_scf_energy(&out)?;

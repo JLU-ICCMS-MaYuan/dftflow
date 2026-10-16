@@ -1,9 +1,9 @@
+use super::super::foundation::store;
+pub use super::super::qe_data::manifest::{Artifact, Check, Validation};
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
-use super::super::foundation::store;
-pub use super::super::qe_data::manifest::{Artifact, Check, Validation};
 
 /// 粗网格数据：EPW 粗网格插值所需全部角色（FR-005/007）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,7 +76,10 @@ impl InterpolationManifest {
     pub fn load(path: &Path) -> Result<Self> {
         let m: InterpolationManifest = store::read(path)?;
         if m.schema_version != 1 {
-            bail!("data_invalid: 插值清单 schema_version={} 不支持", m.schema_version);
+            bail!(
+                "data_invalid: 插值清单 schema_version={} 不支持",
+                m.schema_version
+            );
         }
         Ok(m)
     }

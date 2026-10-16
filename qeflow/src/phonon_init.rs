@@ -26,26 +26,7 @@ pub(super) fn prepare_input(ctx: &PhononCtx) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn checked_log(path: &Path, scf: bool) -> Result<()> {
-    let text = fs::read_to_string(path).with_context(|| format!("缺少输出 {}", path.display()))?;
-    let lower = text.to_lowercase();
-    ensure!(
-        text.contains("JOB DONE")
-            && !["error in routine", "convergence not achieved", "%%%%%%%%"]
-                .iter()
-                .any(|s| lower.contains(s)),
-        "计算未正常完成: {}",
-        path.display()
-    );
-    if scf {
-        ensure!(
-            lower.contains("convergence has been achieved"),
-            "SCF 未收敛: {}",
-            path.display()
-        );
-    }
-    Ok(())
-}
+pub(super) use qf_io::qe_completion::checked_log;
 
 fn has_wfc(dir: &Path) -> Result<bool> {
     for entry in fs::read_dir(dir)? {

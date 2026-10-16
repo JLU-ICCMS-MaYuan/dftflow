@@ -11,5 +11,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 regex = { workspace = true }
+roxmltree = { workspace = true }
 sha2 = "0.10"
 libc = "0.2"
+qf-config = { path = "../crates/qf-config" }
+qf-crystal = { path = "../crates/qf-crystal" }
+qf-input = { path = "../crates/qf-input" }
+qf-io = { path = "../crates/qf-io" }

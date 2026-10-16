@@ -90,20 +90,22 @@ fn write_inputph(
         .to_string();
     fs::create_dir_all(workspace)?;
     let path = format!("{workspace}/{filename}");
+    fs::write(&path, render_inputph(prefix, &outdir, ph_cfg))?;
+    Ok(path)
+}
+
+/// 纯渲染接口：qeflow 文件写出与 epwflow 共用同一 namelist 规则。
+pub fn render_inputph(prefix: &str, outdir: &str, ph_cfg: &SectionMap) -> String {
     let mut s = String::from("&inputph\n");
     s.push_str(&format!("  prefix = {}\n", to_qe_value(&json!(prefix))));
     s.push_str(&format!("  outdir = {}\n", to_qe_value(&json!(outdir))));
     for (k, v) in ph_cfg {
-        if let Some(sv) = v.as_str() {
-            if sv.is_empty() {
-                continue;
-            }
-        }
+        if k == "prefix" || k == "outdir" { continue; }
+        if v.as_str().is_some_and(str::is_empty) { continue; }
         s.push_str(&format!("  {k} = {}\n", to_qe_value(v)));
     }
     s.push_str("/\n");
-    fs::write(&path, &s)?;
-    Ok(path)
+    s
 }
 
 /// 解析网格配置：优先 `vector_key`（形如 [n1,n2,n3]），否则回退 `nq1/nq2/nq3`，再否则默认 (1,1,1)。
