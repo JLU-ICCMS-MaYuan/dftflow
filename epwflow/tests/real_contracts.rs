@@ -86,6 +86,27 @@ impl Drop for Case {
     }
 }
 
+// 调用带预算注册的库函数时使用独立测试进程，避免修改并行用例的环境变量。
+fn isolated_worker(name: &str) -> bool {
+    if std::env::var("EPWFLOW_REGRESSION_WORKER").as_deref() == Ok(name) {
+        return false;
+    }
+    let c = Case::new();
+    let out = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--ignored", "--nocapture"])
+        .env("EPWFLOW_REGRESSION_WORKER", name)
+        .env("EPWFLOW_LOCAL_STATE", c.root.join("isolated-state"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "隔离回归失败：\n{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    true
+}
+
 #[test]
 fn process_captures_stdout_without_fixture_writing_stage_log() {
     let c = Case::new();
@@ -291,4 +312,129 @@ fn b07_qe_stages_use_bound_prefix() {
         let prefix = re.captures(&input).expect("输入必须声明 prefix");
         assert_eq!(&prefix[1], cfg.qe.prefix, "{stage} 必须使用已绑定 prefix");
     }
+}
+
+#[test]
+#[ignore = "B02/B08: 无原生谱及质量参考仍发布插值结果，修复后取消 ignore"]
+fn b02_rejects_interpolation_without_native_spectrum_or_quality_evidence() {
+    use epwflow::foundation::config::Program;
+    use epwflow::interpolation::scheduler;
+
+    if isolated_worker("b02_rejects_interpolation_without_native_spectrum_or_quality_evidence") {
+        return;
+    }
+    let c = Case::new();
+    let f2 = c.empty_manifest();
+    let source_before = store::hash_file(&f2).unwrap();
+    // 故意沿用旧测试接受的简化文件，证明它们不足以作为真实 EPW 结果。
+    // 不提供原生谱、完整矩阵元、合法 F2 或独立质量参考。
+    c.script(
+        "epw.x",
+        r#"#!/bin/sh
+case "$2" in
+  *epw_coarse.in)
+    printf 'fixture only\n' > epw.out
+    printf 'not a native matrix\n' > coarse.ephmat ;;
+  *epw_fine.in)
+    printf 'fixture only\n' > epw.out
+    printf '100 200 300\n' > fine_frequencies.dat
+    printf '1 2 3\n' > fine_eigenvalues.dat
+    printf 'not a map\n' > fine_kqmap.dat
+    printf 'not a native matrix\n' > fine_ephmat_shard.dat ;;
+  *) exit 92 ;;
+esac
+"#,
+    );
+    c.script(
+        "wannier90.x",
+        "#!/bin/sh\nprintf 'Convergence reached\\nSpread = 1.5\\n' > scf.wout\n",
+    );
+    c.script("pw2wannier90.x", "#!/bin/sh\nexit 0\n");
+    let mut cfg = c.config();
+    cfg.programs.wannier90 = Some(Program {
+        path: c.root.join("wannier90.x"),
+        args: vec![],
+    });
+    cfg.programs.pw2wannier90 = Some(Program {
+        path: c.root.join("pw2wannier90.x"),
+        args: vec![],
+    });
+    let work = c.root.join("interpolation-run");
+    let result = scheduler::run(&cfg, Backend::Local, &[], &work, &c.root.join("source"));
+    assert_eq!(
+        store::hash_file(&f2).unwrap(),
+        source_before,
+        "来源必须只读"
+    );
+    assert!(
+        result.is_err(),
+        "无原生谱和有效数据不能发布插值成功：{result:?}"
+    );
+    assert!(
+        !work.join("interpolation/manifest.json").exists(),
+        "不得发布合成有效谱"
+    );
+}
+
+#[test]
+#[ignore = "B03: 未调用原生 EPW 即发布超导结果，修复后取消 ignore"]
+fn b03_rejects_superconductivity_without_successful_native_solver() {
+    use epwflow::foundation::config::Mode;
+    use epwflow::superconductivity::scheduler;
+
+    let c = Case::new();
+    // 若调用 EPW 则明确失败；任何已有谱都不能绕过原生求解与收敛证据。
+    c.script(
+        "epw.x",
+        "#!/bin/sh\nprintf 'called\\n' > native-solver-called\nexit 91\n",
+    );
+    let mut cfg = c.config();
+    cfg.superconductivity.mode = Mode::Iso;
+    let iso = cfg.superconductivity.iso.as_mut().unwrap();
+    iso.max_k = 10.0;
+    iso.precision_k = 0.1;
+    cfg.superconductivity.gap_temperatures_k = vec![2.0, 5.0, 8.0];
+    let work = c.root.join("superconductivity-run");
+    // 明确是用来检测错误放行的合成清单，没有原生求解或矩阵元来源。
+    let f3 = json!({
+        "schema_version": 1, "run_id": "untrusted-fixture", "f2_digest": "x", "wannier_digest": "y",
+        "coarse": null,
+        "fine": {"kpoints": 8, "qpoints": 8, "energies": [1.0, 2.0, 3.0, 4.0],
+            "frequencies": [40.3, 80.6, 120.9, 161.2], "weights": [0.25, 0.25, 0.25, 0.25],
+            "kqmap": 4, "layout": "epw", "ephmat_shards": 1, "artifacts": []},
+        "spectra": [{"smearing_id": "fixture", "energy_mev": [5.0, 10.0, 15.0, 20.0],
+            "a2f": [0.192, 0.192, 0.192, 0.192], "lambda_integral": 0.8, "lambda_sum": 0.8, "cutoff_ev": 0.2}],
+        "quality": null, "mode_readiness": {"iso": true},
+        "validation": {"status": "valid", "checks": [], "units": {}, "thresholds": {}, "evidence": []}
+    });
+    store::write(&work.join("interpolation/manifest.json"), &f3).unwrap();
+    let result = scheduler::run(&cfg, &work, &[], Backend::Local);
+    assert!(
+        result.is_err(),
+        "没有成功的原生 EPW 求解不得交付 Tc/能隙：{result:?}"
+    );
+    if let Ok(manifest) = fs::read_to_string(work.join("superconductivity/manifest.json")) {
+        let value: Value = serde_json::from_str(&manifest).unwrap();
+        assert_ne!(
+            value["validation"]["status"], "valid",
+            "可保留失败证据，不得发布有效结果"
+        );
+    }
+}
+
+#[test]
+#[ignore = "B08: Final State 被当作 Wannier 收敛证据，修复后取消 ignore"]
+fn b08_wannier_final_state_does_not_override_nonconvergence() {
+    use epwflow::interpolation::wannier;
+    let c = Case::new();
+    // 合成冲突日志：最终状态与有限展宽不是收敛证据。
+    c.put(
+        "nonconverged.wout",
+        "Convergence not reached\nFinal State\nSpread = 1.5\n",
+    );
+    let result = wannier::parse_wannier_log(&c.root.join("nonconverged.wout"));
+    assert!(
+        result.is_err(),
+        "明确未收敛的日志不能被 Final State 覆盖：{result:?}"
+    );
 }

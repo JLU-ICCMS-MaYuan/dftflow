@@ -24,3 +24,5 @@ cargo test -p epwflow --locked --offline --test real_contracts -- --ignored --te
 ```
 
 当前第一条为 1 通过、8 ignored；第二条退出 101，8 项失败，明确显示待修复缺陷。这里的失败是有意检查正确契约后发现实现不满足，并非完成验收。实现模型修复后逐项运行、取消 ignore，再执行完整回归。详细对应关系见 [验收记录](acceptance.md)。
+
+第二批补充后，上述默认命令为 1 通过、11 ignored；显式命令为 11 项已知失败（退出 101）。首批“8 项”是历史批次记录，当前数量以本段及 acceptance.md 的最新结果为准。程序路径存在也不能绕过尚未接通的提交入口。

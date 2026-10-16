@@ -66,3 +66,19 @@
 XML 样本根据已盘点的 QE 7.4.1 层级构造，数值为合成值，只验证格式，不是新的 MgB₂ 物理参考。预算用例通过独立 CLI 进程、隔离状态目录和不可用调度替身执行，未读写正式账本。原始输出、受测提交与测试文件哈希仅留在 `docs/local/0015-epwflow-smoke/real-contracts-known-failures.{json,log}`。
 
 已知失败用例用 `#[ignore = "Bxx: ..."]` 明确暂挂，修复后应显式运行并取消对应 ignore；默认绿灯不能关闭缺陷。B02/B03 等完整科学来源回归仍待补齐，SC-001～004 均未因此转为通过。未运行真实 QE/EPW 或提交 Slurm，原有三套声子结果保持不动。
+
+## 第二批回归与程序路径澄清（2026-10-16）
+
+远端仍无新的生产修复。本轮只读核对用户后续指定的 QE 7.4.1 配套 pw.x、ph.x、epw.x：文件均存在并有执行权限。原 `.my_scriptrc.py` 仍声明旧 7.1 路径，本地算例环境已指定 7.4.1；遵循用户后续选择，不修改该配置。路径与文件检查结果保存在忽略的 `program-path-check.json`。没有执行科学程序，此检查不能替代计算节点启动、动态库或运行版本验证。
+
+当前阻断出现在 epwflow 内部，不能归因于用户没有提供路径：公开 submit/run 在读取配置、调用外部程序前直接返回 not_implemented。即便绕过入口调用当前库函数，也存在下列可执行复现：
+
+| 新用例 | 实际结果 | 缺陷 |
+| --- | --- | --- |
+| b02_rejects_interpolation_without_native_spectrum_or_quality_evidence | 无合法 F2、无原生谱/矩阵元/质量参考的简化替身仍得到 valid 插值清单，且 quality 为 None；α²F 由生产公式生成 | B02/B08 |
+| b03_rejects_superconductivity_without_successful_native_solver | 配置了必定失败的 EPW 替身，生产代码未调用原生求解，仍返回 located/converged/valid 的 Tc 和能隙 | B03 |
+| b08_wannier_final_state_does_not_override_nonconvergence | 合成日志明确 Convergence not reached，却因包含 Final State 和有限 Spread 返回 converged=true | B08 的数值质量门补充 |
+
+新增样本均为检测错误放行的合成数据，绝不是 MgB₂ 结果或独立物理参考。插值用例在独立子进程使用隔离预算注册表，不修改正式账本。
+
+当前 `real_contracts` 默认运行 1 通过、11 ignored；显式运行 ignored 用例退出 101，11 项已知失败全部复现。首批 8 项与本批 3 项分别保留记录；最新输出及测试哈希为本地 `real-contracts-second-batch.{json,log}`。ignored 不计通过，修复后取消对应标记。B01～B09 现均有相关行为回归，但树复制、指纹篡改、完整网格与未知状态恢复等覆盖尚未完成，T003 继续未完成。没有真实作业、原始数据或安装变更。
