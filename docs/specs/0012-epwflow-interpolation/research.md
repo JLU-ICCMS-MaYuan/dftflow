@@ -57,3 +57,12 @@
 现有源码：crates/qf-input/src/pw.rs、crates/qf-runner/src/lib.rs、qeflow/src/phonon_chain.rs、crates/qf-phonon/src/merge.rs、scripts/install-current.sh、scripts/verify-entries.sh。参考 external/epwpy 固定 b54bb53d4f5de665ed08958cb6194be8efdf645d。目标 QE 7.4.1 安装源码的 EPW/src/readin.f90、wannierization.f90、supercond_driver.f90、supercond_iso.f90、supercond_aniso.f90、io/io_supercond.f90 为版本适配事实来源；实际路径只记 docs/local。
 
 源码声明 EPW 5.9 尚不等于实际程序身份。数值、节点兼容性和二进制读取必须用真实运行验证；网页工具本轮不可用，不能声称在线文档已核实。目标源码之外的新版本需独立适配。现有 qeflow 声子谱通过不能证明 EPW 输入完整。所有尚未运行的验收维持未完成。
+
+## 2026-10-19：叠图补充决策
+
+- **D07，共同有效窗与真实参考**：采用用户选择的共同有效能窗，不自动扩大 Wannier 基底。完整 QE／EPW 路径服务可视比较，独立粗网格外参考点继续服务科学质量门。QE 声子 q2r/matdyn 曲线与直接 ph.x 点分开标注；两套插值看起来重合不能证明直接第一性原理质量通过。
+- **D08，严格电子原子投影**：选用同一波函数规范下的复原子投影算符，经实际解纠缠／旋转变换后插值；拒绝把键中心 Wannier 函数或任意轨道编号当作元素。原因是能带内混合含相位和非对角贡献，仅插值平方权重不能保证同一原子投影定义。实现前必须核查目标 projwfc 原生格式和旋转矩阵规范；本段是方案，尚无 MgB₂ 两侧可靠 PDOS 的验收证据。
+- **D09，元素声子 DOS**：按质量加权动力学矩阵本征矢的原子位移分量平方归属元素，不使用按频率排序的模式编号归属元素。原生 `.phdos_proj` 的模式列不能直接当成 Mg/B 投影；需要版本适配与完整本征矢校验。若读取的是实际位移本征矢，先按对应质量约定恢复质量加权、归一化表示，不能混用。
+- **D10，数据完整与科学质量分离**：完整但超差数据允许诊断叠图；缺少可靠投影的面板只能标为缺失，不能补曲线。沿用原质量容差，不新增未经确认的 DOS 物理误差门，先报告 L1／最大差／积分与覆盖。预算和对原参数的单次例外不扩大。
+
+拟采用的算符变换和 DOS 权重见 [数据模型](data-model.md)，跨功能交付见 [0014](../0014-epwflow-delivery/plan.md)。已有能带对比工具可以复用；仍需实现 epwflow 的统一数据契约和四类叠图，不能笼统宣称项目此前没有任何能带对比。

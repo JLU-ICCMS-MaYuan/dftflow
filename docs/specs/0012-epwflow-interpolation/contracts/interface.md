@@ -46,3 +46,26 @@ Artifact={role,relative_path,byte_size,sha256,producer_stage,input_digest,format
 `quality-reference.json` 使用版本 1，字段为 `schema_version/asr/window_ev/fermi_reference/electron_reference/electron_interpolated/phonon_reference_cm1/phonon_interpolated_mev/provenance`。文件项为 `{path,sha256}`，相对路径从清单目录解析；读取前重新核对。ASR 明确为 `epw_simple_gamma_onsite`，派生频率须登记原始 PH、转换程序和实际 dynmat 输出。缺来源、指纹改变、缺态或错误单位均拒绝。点的独立性、冻结计划和完整物理来源仍属于验收检查，不能由一份自述清单自动取得认证。
 
 数值阈值仍为 Spec 的原定 0.05/0.02 eV、5/2 cm⁻¹。质量检查先于细网格；通过的历史报告不能绑定到另一套粗网格目录。本轮尚未替换旧全部 coarse/fine 占位格式，不能把渲染和只读检查当成从头运行接口。
+
+## 2026-10-19：叠图数据交接契约（待实现）
+
+FR-014/015 使用同一配置绑定和现有阶段入口，不新增一套 CLI 或自由 namelist 透传。路径、DOS 网格、投影与展宽进入统一类型化配置和快照；`quality` 已固定的共同能窗／参考 E_F 继续复用，新增比较路径不能改变原独立质量点。check/prepare 只校验并显示实际数据计划；必要参考只在受控 run/submit/resume 中计算。
+
+生产者为 F3 的 `interpolation/comparison/`，消费者为 F5 和 0015 验证：
+
+| 文件角色 | 最低数据 |
+| --- | --- |
+| electronic_bands.csv | method、segment_id、point_id、distance、band、energy_ev；坐标与能量零点见元数据 |
+| phonon_bands.csv | method、reference_kind、segment_id、point_id、distance、mode、frequency_cm1 |
+| phonon_reference_points.csv | 真实 ph.x 点、坐标、mode、frequency_cm1 与来源；不能冒充连续曲线 |
+| electronic_dos.csv | method、energy_ev、projection_kind、element、orbital、density；总量行标签明确 |
+| phonon_dos.csv | method、frequency_cm1、projection_kind、element、density |
+| metadata.json | 路径与 DOS 网格、原始／统一单位、E_F／有效窗、质量／ASR、投影算符／规范、权重、核／σ、范围／尾部及归一化 |
+| metrics.json | 对应曲线逐点差、最大／RMS、DOS 绝对／归一化 L1 差、积分、覆盖与缺项；参考积分为零时不用除零公式 |
+| manifest.json | 独立 schema_version=1、run_id、PH 模式、上游指纹、相对文件角色／大小／哈希、数据完整性和科学质量状态 |
+
+上表是规范化交接，不改名或覆盖原始科学文件。电子轴为相同 E−E_F（eV），DOS 为 states/(eV·cell)；声子轴为 cm⁻¹，DOS 为 states/((cm⁻¹)·cell)。若原生能量／频率坐标换算 x′=c x，密度相应为 D′=D/c，积分与符号保持；必须记录原单位和转换依据。对比在相同网格上生成，不能事后自由平移、平滑或重采样以降低误差。
+
+缺投影、规范不明、网格／ASR／展宽不一致、窗内缺态、空文件、篡改或非有限值均拒绝对应数据就绪；其余有效面板可显式部分交付。投影完整性与物理质量分开保存，quality_failed 的完整数据仅作诊断，workflow_complete=false、下游不就绪。
+
+独立清单相对 artifact_root 定位，绑定原 F3 来源摘要；旧主清单保持原读取契约。未带 comparison 清单的旧结果可以按旧功能读取，但不能通过新增叠图验收；未知新清单版本明确拒绝，不静默把旧输出当成新投影。

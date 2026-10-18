@@ -57,3 +57,13 @@
 现有源码：crates/qf-input/src/pw.rs、crates/qf-runner/src/lib.rs、qeflow/src/phonon_chain.rs、crates/qf-phonon/src/merge.rs、scripts/install-current.sh、scripts/verify-entries.sh。参考 external/epwpy 固定 b54bb53d4f5de665ed08958cb6194be8efdf645d。目标 QE 7.4.1 安装源码的 EPW/src/readin.f90、wannierization.f90、supercond_driver.f90、supercond_iso.f90、supercond_aniso.f90、io/io_supercond.f90 为版本适配事实来源；实际路径只记 docs/local。
 
 源码声明 EPW 5.9 尚不等于实际程序身份。数值、节点兼容性和二进制读取必须用真实运行验证；网页工具本轮不可用，不能声称在线文档已核实。目标源码之外的新版本需独立适配。现有 qeflow 声子谱通过不能证明 EPW 输入完整。所有尚未运行的验收维持未完成。
+
+## 2026-10-19：叠图与诊断交付取舍
+
+- **成对数据唯一来源**：F3 负责路径／网格、能量参考和投影，F5 只校验、归集和绘图。沿用既有绘图库与 QE／Wannier 对比能力，拒绝在绘图层重复物理插值或临时推测元素归属。
+- **固定四图加总览**：在现有 α²F／能隙／Tc 图之外增加电子能带、电子 DOS、声子色散和声子 DOS 四张独立叠图及 2×2 总览；不把一张总览替代可检查的独立图。按用户选择严格保留元素与轨道 PDOS。
+- **虚线覆盖实线**：QE 先实线、EPW 后虚线，配对曲线同色系，图例区分方法。该顺序是可测试契约；不能依赖后端默认排序或只修改图例线型。
+- **诊断不依赖超导**：插值对比可能在 F4 开始之前失败，故 collect 必须支持仅 F3 comparison 数据的诊断导出。原完整结果包和科学完成门不降低；诊断包标明缺项与质量失败，不填空的 α²F／能隙／Tc 数值。
+- **不由绘图改变科学判据**：保留独立质量点和全部已有容差；新增 DOS 差异作为报告量，不通过平滑、强制归一化或临时加宽误差门制造成功。没有可靠原子投影时不画伪元素 PDOS。
+
+以上是已确认方案的待实施设计；现有误差图、原生冒烟结果和简化谱图不等于本项四类叠图已完成。
