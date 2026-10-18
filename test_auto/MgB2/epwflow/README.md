@@ -85,3 +85,37 @@ python3 test_auto/MgB2/epwflow/verify_native_epw.py test_auto/MgB2/epwflow/local
 已复现并定位的接口问题包括：`phonselfen` 不接受 `mp_mesh_k=true`；强制无对称 NSCF 保存树在该 EPW 5.9 中触发崩溃；coords 内部编号未转换；旧 index 合并根目录存在零字节 Γ 点响应势；EPW 5.9 正常结束不打印 PW/PH 的 `JOB DONE`。生产输入层已修复对称性设置，其余归集和结束检查仍须接入生产编排并回归。
 
 本轮新增计算累计 67 节点秒；保守计入既有仓库计算后共 667 节点秒，低于 8 节点小时授权。账本为本地独立测试记账，不冒充 epwflow 生产预算机制已通过。保留原数据，未切换安装、未操作线上 Issue。
+
+## 2026-10-18：按 Mori 讲义的新 LDA 输入
+
+以上 2026-10-16 的 PBE 三模式是历史冒烟。用户后续指定本目录 `Wed.9.Mori.pdf` 为参数依据，新运行位于 `local_run/0015-native/mori-*/`，与旧保存树隔离。原件不由本次提交纳入 Git，保留用户文件。
+
+| 参数 | 新参考值 |
+| --- | --- |
+| 结构 | 六方，alat=5.8260252227888 Bohr，c/a=1.1420694129095 |
+| 赝势与质量 | NC LDA Mg.pz-n-vbc.UPF、B.pz-vbc.UPF；24.305、10.811 amu |
+| SCF | 展示输入 8³，40/160 Ry，MP 0.05 Ry，conv_thr=1e-9；正文另写 12³，保留矛盾 |
+| PH / NSCF | 3³，tr2_ph=1e-16；6³ 完整 216 点，16 带 |
+| Wannier | 5 个函数；B:pz 与三个键心 s；dis_froz_max=8.8 eV，没有另造外窗或排除带 |
+| 细网格计划 | 40³/20³；fsthick=0.4 eV，degaussw=0.1 eV，degaussq=0.5 meV；尚未执行 |
+| 超导计划 | FSR，μ*=0.05，截断 0.5 eV，10～55 K；仍保留原 10⁻⁸、双初值验收标准，尚未执行 |
+
+新 SCF、六点 PH、均匀 NSCF、原生 Wannier/粗网格、六 k/四 q 独立参考已经实际运行。声子参考按 EPW 相同的 Γ onsite 简单 ASR 处理派生副本，再用原生 dynmat 对角化；原始 PH 文件不改写。质量诊断显式选择全部 q，不能把 Fermi 窗口筛选留下的零频当作真实频率。
+
+| 质量项 | 最大 / RMS | 原定最大 / RMS | 结论 |
+| --- | --- | --- | --- |
+| 电子能量 | 0.013027809 / 0.008787088 eV | 0.05 / 0.02 eV | 当前采样窗内通过；不代表完整费米面覆盖 |
+| 声子频率 | 48.530593309 / 10.610753468 cm⁻¹ | 5 / 2 cm⁻¹ | 失败，阻断细网格与超导 |
+
+构建后的 Rust 入口可以直接复查这些真实文件：
+
+```bash
+./target/linux-x86_64/x86_64-unknown-linux-gnu/debug/epwflow interpolation check \
+  -w test_auto/MgB2/epwflow/local_run/0015-native/mori-quality-01 --json
+```
+
+该命令应输出 `quality_failed` 并退出 1，数值报告保留；这不是程序崩溃或队列未运行。实际源文件清单为 `quality-reference.json`，报告为 `quality-check.stdout.json`，逐模比较为 `phonon-comparison.csv`。不得为了绿灯修改原始数据、删除坏点或扩大容差。
+
+旧 index 在新目录复用同一 SCF 快照重算两点 PH 后，谱形 L1 诊断降至约 7.46×10⁻⁶，但谱轴仍不完全相同，严格同轴验收继续未通过。新 LDA 的质量失败也不能用旧 PBE 的 λ 冒烟替代。
+
+本轮生产修复包括原生输入/谱/结束解析、独立质量阻断及关闭经验 Tc/BCS 的错误发布。`submit/run/--until`、完整原生矩阵元和两种超导执行仍有缺口。当前共享累计 1015 节点秒，全部本轮作业已结算，无新增额度；本地账本不冒充生产预算机制已经完成，默认安装未更新。

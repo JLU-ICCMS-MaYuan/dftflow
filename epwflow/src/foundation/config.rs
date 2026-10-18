@@ -22,6 +22,7 @@ pub struct Config {
     pub schema_version:u32,pub work_dir:PathBuf,
     #[serde(default="default_outdir")] pub outdir:PathBuf,
     pub structure:PathBuf,pub pseudos:BTreeMap<String,PathBuf>,pub programs:Programs,
+    #[serde(default)] pub atomic_masses:BTreeMap<String,f64>,
     pub resources:Resources,pub budget:BudgetConfig,pub qe:Qe,pub phonon:Phonon,
     pub wannier:Wannier,pub interpolation:Interpolation,pub superconductivity:Superconductivity,
 }
@@ -35,7 +36,7 @@ data!(Scf{k_grid:[u32;3],k_shift:[u32;3],conv_thr_ry:f64});
 data!(Nscf{k_grid:[u32;3],nbnd:u32,conv_thr_ry:f64});
 #[derive(Debug,Clone,Serialize,Deserialize)] #[serde(deny_unknown_fields)]
 pub struct Phonon {#[serde(default)] pub mode:PhMode,pub q_grid:[u32;3],pub tr2_ph:f64}
-data!(Wannier{num_wann:u32,projections:Vec<String>,exclude_bands:Vec<u32>,energy_reference:EnergyReference,outer_window_ev:Option<[f64;2]>,frozen_window_ev:Option<[f64;2]>,localization:Convergence,disentanglement:Option<Convergence>});
+data!(Wannier{num_wann:u32,projections:Vec<String>,exclude_bands:Vec<u32>,energy_reference:EnergyReference,outer_window_ev:Option<[f64;2]>,frozen_window_ev:Option<[f64;2]>,frozen_max_ev:Option<f64>,localization:Convergence,disentanglement:Option<Convergence>});
 data!(Convergence{max_iterations:u32,tolerance_angstrom2:f64,window_iterations:u32});
 data!(Interpolation{k_grid:[u32;3],q_grid:[u32;3],electron_smearing:Smearing,degaussw_ev:f64,phonon_smearings_mev:Vec<f64>,spectral_points:u32,fsthick_ev:f64,eps_acoustic_cm1:f64,fermi_source:FermiSource,quality:Quality});
 data!(Quality{k_points_crystal:Vec<[f64;3]>,q_points_crystal:Vec<[f64;3]>,energy_window_ev:[f64;2],electron_max_ev:f64,electron_rms_ev:f64,phonon_max_cm1:f64,phonon_rms_cm1:f64,reference_manifest:Option<PathBuf>});
@@ -82,6 +83,7 @@ impl Config {
         ensure!(self.schema_version==1,"unsupported_version: schema_version 必须为 1");self.resources.validate()?;
         ensure!(self.budget.campaign_id=="epic-0007","configuration: budget.campaign_id: 本次必须共用 epic-0007");
         ensure!(!self.pseudos.is_empty()&&self.pseudos.keys().all(|s|!s.is_empty()&&s.chars().all(|c|c.is_ascii_alphabetic())),"configuration: pseudos: 必须为元素到文件的非空映射");
+        for (el,mass) in &self.atomic_masses {ensure!(self.pseudos.contains_key(el),"configuration: atomic_masses.{el}: 未声明对应赝势元素");positive(*mass,&format!("atomic_masses.{el}"))?;}
         for (n,p) in [("pw",&self.programs.pw),("ph",&self.programs.ph),("epw",&self.programs.epw)] {
             ensure!(p.args.iter().all(|s|!s.contains('\0')),"configuration: programs.{n}.args: NUL");
         }
@@ -102,8 +104,13 @@ impl Config {
         let exc:BTreeSet<_>=w.exclude_bands.iter().collect();ensure!(exc.len()==w.exclude_bands.len()&&w.exclude_bands.iter().all(|x|*x>0&&*x<=q.nscf.nbnd),"configuration: wannier.exclude_bands: 重复或超范围");
         ensure!(q.nscf.nbnd as usize-w.exclude_bands.len()>=w.num_wann as usize,"configuration: wannier.exclude_bands: 剩余能带不足");
         w.localization.validate("wannier.localization")?;
-        if let Some(win)=w.outer_window_ev {interval(win,"wannier.outer_window_ev")?;w.disentanglement.as_ref().context("configuration: wannier.disentanglement: 缺失")?.validate("wannier.disentanglement")?;}
-        else {ensure!(w.disentanglement.is_none(),"configuration: wannier.disentanglement: 缺少外窗");}
+        if let Some(win)=w.outer_window_ev {interval(win,"wannier.outer_window_ev")?;w.disentanglement.as_ref().context("configuration: wannier.disentanglement: 缺失")?;}
+        if let Some(conv)=&w.disentanglement {conv.validate("wannier.disentanglement")?;}
+        if let Some(max)=w.frozen_max_ev {
+            ensure!(max.is_finite(),"configuration: wannier.frozen_max_ev: 非有限能窗");
+            ensure!(w.frozen_window_ev.is_none(),"configuration: wannier.frozen_max_ev: 与 frozen_window_ev 冲突");
+            if let Some(outer)=w.outer_window_ev {ensure!(max>=outer[0]&&max<=outer[1],"configuration: wannier.frozen_max_ev: 超出外窗");}
+        }
         if let Some(win)=w.frozen_window_ev {interval(win,"wannier.frozen_window_ev")?;let outer=w.outer_window_ev.context("configuration: wannier.frozen_window_ev: 缺少外窗")?;ensure!(win[0]>=outer[0]&&win[1]<=outer[1],"configuration: wannier.frozen_window_ev: 超出外窗");}
         let i=&self.interpolation;
         grid(i.k_grid,"interpolation.k_grid")?;grid(i.q_grid,"interpolation.q_grid")?;

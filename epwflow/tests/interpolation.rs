@@ -2,7 +2,6 @@
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use epwflow::foundation::config;
 use epwflow::foundation::stage::Backend;
@@ -210,34 +209,15 @@ exit 0
     Case { root, config_path, work }
 }
 
-/// 序列化预算相关运行并隔离 state root，避免共享 campaign 注册表冲突。
-fn run_f3(case: &Case) -> InterpolationManifest {
-    static LOCK: Mutex<()> = Mutex::new(());
-    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let state = case.root.join("state");
-    let _ = std::fs::create_dir_all(&state);
-    std::env::set_var("EPWFLOW_LOCAL_STATE", &state);
-    let cfg = config::Config::load(&case.config_path).expect("配置加载失败");
-    scheduler::run(&cfg, Backend::Local, &[], &case.work, &case.work).expect("interpolation 失败")
-}
-
-// ---------- FR-001：阶段边界 + FR-012 交付 ----------
-
+// 旧夹具只写自述 valid 与简化文件，不能作为完整科学链的正向验收。
 #[test]
-fn interpolation_full_pipeline() {
+fn incomplete_fixture_cannot_publish_interpolation() {
     let case = make_case();
-    let m = run_f3(&case);
-    assert!(m.validation.all_passed(), "F3 校验未通过: {:?}", m.validation.status);
-    assert!(m.coarse.is_some());
-    assert!(m.fine.is_some());
-    assert!(!m.spectra.is_empty());
-    assert!(m.quality.is_some());
-    let p = case.work.join("interpolation").join("manifest.json");
-    assert!(p.exists());
-    // 模式就绪。
-    assert!(m.mode_readiness["wannier"]);
-    assert!(m.mode_readiness["coarse"]);
-    assert!(m.mode_readiness["fine"]);
+    let cfg = config::Config::load(&case.config_path).unwrap();
+    let result = scheduler::run(&cfg, Backend::Local, &[], &case.work, &case.work);
+    assert!(result.is_err());
+    assert!(!case.work.join("interpolation/manifest.json").exists());
+    assert!(!case.root.join("ledger.json").exists(), "输入不完整时不能先预留资源");
 }
 
 #[test]
@@ -253,24 +233,23 @@ fn interpolation_check_no_data() {
 fn epw_config_renders_and_requires_energy_reference() {
     let case = make_case();
     let cfg = config::Config::load(&case.config_path).unwrap();
-    let ec = EpwConfig::from_config(&cfg).unwrap();
-    let win = ec.wannier90_input();
-    assert!(win.contains("num_wann = 2") && win.contains("energy_reference"));
-    let coarse_in = ec.epw_coarse_input("out");
-    assert!(coarse_in.contains("epwread = .false.") && coarse_in.contains("ephwrite = .true."));
-    let fine_in = ec.epw_fine_input("out", 1.0);
+    let ec = EpwConfig::from_config(&cfg).unwrap().with_fermi(5.0).unwrap();
+    let win = ec.wannier90_input().unwrap();
+    assert!(win.contains("num_wann = 2") && !win.contains("energy_reference"));
+    let coarse_in = ec.epw_coarse_input("out").unwrap();
+    assert!(coarse_in.contains("epwread = .false.") && coarse_in.contains("band_plot = .true."));
+    let fine_in = ec.epw_fine_input("out", 1.0).unwrap();
     assert!(fine_in.contains("epwread = .true."));
 }
 
 // ---------- FR-003：绑定 F2 ----------
 
 #[test]
-fn adapter_accepts_valid_f2_and_rejects_invalid() {
+fn adapter_rejects_empty_and_invalid_f2() {
     let case = make_case();
     let cfg = config::Config::load(&case.config_path).unwrap();
-    let binding = adapter::bind_f2(&case.work.join("qe-data").join("manifest.json"), &cfg).unwrap();
-    assert!(!binding.f2_digest.is_empty());
-    assert_eq!(binding.program_identities.len(), 3);
+    assert!(adapter::bind_f2(&case.work.join("qe-data").join("manifest.json"), &cfg).is_err(),
+        "空 F2 不能凭自述 valid 放行");
 
     // 篡改 F2 校验状态后必须拒绝。
     let f2_dir = case.work.join("qe-data");

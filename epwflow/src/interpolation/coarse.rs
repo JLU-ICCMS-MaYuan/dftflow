@@ -42,7 +42,8 @@ pub fn run_coarse(
     std::fs::create_dir_all(&dir)?;
     let outdir = dir.join("out");
     std::fs::create_dir_all(&outdir)?;
-    std::fs::write(dir.join("epw_coarse.in"), epw_cfg.epw_coarse_input(outdir.to_str().unwrap()))?;
+    epw_cfg.write_quality_points(&dir)?;
+    std::fs::write(dir.join("epw_coarse.in"), epw_cfg.epw_coarse_input(outdir.to_str().unwrap())?)?;
     run_epw(epw_cfg, &dir, "epw_coarse.in", launcher, backend)?;
     let out = dir.join("epw.out");
     ensure!(out.exists(), "data_invalid: 粗网格 EPW 未产生 epw.out");

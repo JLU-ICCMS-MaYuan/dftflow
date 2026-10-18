@@ -309,7 +309,6 @@ fn b07_qe_stages_use_bound_prefix() {
 }
 
 #[test]
-#[ignore = "B02/B08: 无原生谱及质量参考仍发布插值结果，修复后取消 ignore"]
 fn b02_rejects_interpolation_without_native_spectrum_or_quality_evidence() {
     use epwflow::foundation::config::Program;
     use epwflow::interpolation::scheduler;
@@ -376,7 +375,6 @@ esac
 }
 
 #[test]
-#[ignore = "B03: 未调用原生 EPW 即发布超导结果，修复后取消 ignore"]
 fn b03_rejects_superconductivity_without_successful_native_solver() {
     use epwflow::foundation::config::Mode;
     use epwflow::superconductivity::scheduler;
@@ -403,7 +401,8 @@ fn b03_rejects_superconductivity_without_successful_native_solver() {
             "kqmap": 4, "layout": "epw", "ephmat_shards": 1, "artifacts": []},
         "spectra": [{"smearing_id": "fixture", "energy_mev": [5.0, 10.0, 15.0, 20.0],
             "a2f": [0.192, 0.192, 0.192, 0.192], "lambda_integral": 0.8, "lambda_sum": 0.8, "cutoff_ev": 0.2}],
-        "quality": null, "mode_readiness": {"iso": true},
+        "quality": {"points":36,"energy_reference":"qe_zero","max_error":0.0,"rms_error":0.0,
+            "coverage":1.0,"thresholds":{},"status":"valid"}, "mode_readiness": {"iso": true},
         "validation": {"status": "valid", "checks": [{"name":"fixture_claim", "passed":true, "detail":"not scientific evidence"}], "units": {}, "thresholds": {}, "evidence": []}
     });
     store::write(&work.join("interpolation/manifest.json"), &f3).unwrap();
@@ -509,6 +508,23 @@ fn shared_qe_inputs_keep_physics_and_full_mesh() {
     let nosplit = qe.phonon_nosplit_input("./tmp");
     assert!(nosplit.contains("ldisp = .true.") && nosplit.contains("only_init = .false."));
     assert!(!nosplit.contains("last_q"));
+}
+
+#[test]
+fn shared_qe_input_honors_explicit_reference_atomic_masses() {
+    let c=Case::new();
+    let mut cfg=c.config();
+    cfg.atomic_masses.insert("B".into(),10.811);
+    let qe=QeSettings::from_config(&cfg).unwrap();
+    let input=qe.scf_input("./tmp").unwrap();
+    let species=input.split("ATOMIC_SPECIES\n").nth(1).unwrap();
+    let b=species.lines().find(|line|line.split_whitespace().next()==Some("B")).unwrap();
+    assert_eq!(b.split_whitespace().nth(1).unwrap().parse::<f64>().unwrap(),10.811);
+    cfg.atomic_masses.insert("B".into(),f64::NAN);
+    assert!(cfg.validate().is_err());
+    cfg.atomic_masses.insert("B".into(),10.811);
+    cfg.atomic_masses.insert("Pb".into(),207.2);
+    assert!(cfg.validate().is_err());
 }
 
 #[test]

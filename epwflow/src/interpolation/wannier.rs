@@ -88,8 +88,8 @@ pub fn run_wannier(
     std::fs::create_dir_all(&dir)?;
     let outdir = dir.join("out");
     std::fs::create_dir_all(&outdir)?;
-    std::fs::write(dir.join("scf.win"), epw_cfg.wannier90_input())?;
-    let pw2 = epw_cfg.pw2wannier90_input(outdir.to_str().unwrap());
+    std::fs::write(dir.join("scf.win"), epw_cfg.wannier90_input()?)?;
+    let pw2 = epw_cfg.pw2wannier90_input(outdir.to_str().unwrap())?;
     std::fs::write(dir.join("pw2wan.in"), &pw2)?;
 
     let w90 = &epw_cfg

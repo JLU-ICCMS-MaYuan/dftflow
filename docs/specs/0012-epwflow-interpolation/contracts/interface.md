@@ -32,3 +32,17 @@ F1 返回配置/运行绑定与阶段协议，F2 返回 qe-data/manifest.json，
 wannier_input、wannier_log、rotation、disentanglement（适用时）、epw_coarse_data、coarse_ephmat、quality_reference、quality_report、fine_frequencies、fine_eigenvalues、fine_kqmap、fine_ephmat_shard、spectral_table；从目标 EPW 读取例程确定文件记录集合并生成 schema，其中缺任一角色即不发布。F4 消费其谱函数或 fine 集合。
 
 Artifact={role,relative_path,byte_size,sha256,producer_stage,input_digest,format_version}；validation={status,checks,units,thresholds,evidence}。只有 status=valid 的必需角色完整才发布该阶段 manifest。format_version 未知或文件集合与已验证适配器不符即拒绝；不靠 glob 命中一个文件放行。
+
+## 2026-10-18 原生读取与讲义参数适配
+
+以下是已实现的局部接口，不等于完整 F3 自动执行：
+
+- `wannier.frozen_max_ev` 可只给冻结窗上界，与 `frozen_window_ev` 互斥；没有外窗时沿用目标 Wannier90 的默认语义，不虚构下界。F2 Fermi 相对能窗转换成实际 eV 数值，不写未知 `energy_reference` namelist。
+- 顶层可选 `atomic_masses`（元素→amu）由共享 QE 输入层和 EPW `amass(i)` 使用。EPW 序号须来自结构元素顺序；未绑定顺序时拒绝渲染显式质量。
+- 原生 coarse 使用 `qe.nscf.k_grid`、`phonon.q_grid`；fine 使用 `interpolation.k_grid/q_grid` 的 `nkf*/nqf*`，不自行乘二。`degaussq` 单位为 meV，`degaussw/fsthick` 为 eV。5 个 Wannier 函数不等于 5 条投影字符串，轨道展开另行核验。
+- 原生只读目录有 `epw.in/epw.out/epw.exitcode`、相应 wout 和唯一 a2f 谱时，`epwflow interpolation check -w W --json` 返回 `native_epc_only`、`workflow_complete=false`；这不认证质量、能隙或自动链。
+- 目录有 `quality-reference.json` 时，同一命令检查真实 QE XML、EPW `band.eig/phband.freq` 与同 ASR 的参考频率，输出电子与声子最大/RMS及逐模式误差。超差保留 JSON 报告并非零退出；不会启动 QE/EPW/sbatch。
+
+`quality-reference.json` 使用版本 1，字段为 `schema_version/asr/window_ev/fermi_reference/electron_reference/electron_interpolated/phonon_reference_cm1/phonon_interpolated_mev/provenance`。文件项为 `{path,sha256}`，相对路径从清单目录解析；读取前重新核对。ASR 明确为 `epw_simple_gamma_onsite`，派生频率须登记原始 PH、转换程序和实际 dynmat 输出。缺来源、指纹改变、缺态或错误单位均拒绝。点的独立性、冻结计划和完整物理来源仍属于验收检查，不能由一份自述清单自动取得认证。
+
+数值阈值仍为 Spec 的原定 0.05/0.02 eV、5/2 cm⁻¹。质量检查先于细网格；通过的历史报告不能绑定到另一套粗网格目录。本轮尚未替换旧全部 coarse/fine 占位格式，不能把渲染和只读检查当成从头运行接口。

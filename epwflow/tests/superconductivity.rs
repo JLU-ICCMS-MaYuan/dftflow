@@ -7,7 +7,7 @@ use epwflow::foundation::config;
 use epwflow::foundation::stage::Backend;
 use epwflow::foundation::store;
 use epwflow::superconductivity::{
-    aniso, attempt, gap, iso, manifest::SuperconductivityManifest, parse, scheduler, solver_config,
+    aniso, attempt, gap, iso, parse, scheduler, solver_config,
 };
 
 fn write_script(path: &PathBuf, body: &str) {
@@ -208,14 +208,14 @@ fn single_attempt_convergence_separation() {
 }
 
 #[test]
-fn superconductivity_full_pipeline() {
+fn missing_native_solver_cannot_publish_superconductivity() {
     let root = std::env::temp_dir().join(format!("epwflow-f4-{}", store::token()));
     std::fs::create_dir_all(&root).unwrap();
     let cfg_path = make_config(&root);
     let cfg = config::Config::load(&cfg_path).unwrap();
     let work = root.join("work");
 
-    // 直接构造合法插值清单（FR-003 数据源）。
+    // 自称 valid 的合成清单没有原生求解或质量证据，必须拒绝。
     let f3 = work.join("interpolation");
     std::fs::create_dir_all(&f3).unwrap();
     let manifest = serde_json::json!({
@@ -247,12 +247,8 @@ fn superconductivity_full_pipeline() {
     });
     std::fs::write(f3.join("manifest.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
 
-    let m = scheduler::run(&cfg, &work, &[], Backend::Local).unwrap();
-    assert!(m.tc.is_some(), "全流程应定位 Tc");
-    assert!(m.located);
-    assert_eq!(m.mode, "iso");
-    assert!(m.validation.all_passed(), "校验应全通过: {}", m.validation.status);
-
-    let loaded = SuperconductivityManifest::load(&work.join("superconductivity").join("manifest.json")).unwrap();
-    assert_eq!(loaded.run_id, "f4");
+    let result = scheduler::run(&cfg, &work, &[], Backend::Local);
+    assert!(result.is_err(), "无原生求解证据不得发布超导结果");
+    assert!(!work.join("superconductivity/manifest.json").exists());
+    std::fs::remove_dir_all(root).unwrap();
 }

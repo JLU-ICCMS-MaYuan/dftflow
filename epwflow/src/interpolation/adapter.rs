@@ -10,6 +10,7 @@ use super::super::qe_data::manifest::QeManifest;
 pub struct AdapterBinding {
     pub f2_digest: String,
     pub program_identities: BTreeMap<String, String>,
+    pub fermi_ev: f64,
 }
 
 /// 校验 F2 来源清单有效并固定程序身份；前置未满足不得放行（FR-003）。
@@ -21,6 +22,13 @@ pub fn bind_f2(f2_path: &Path, cfg: &config::Config) -> Result<AdapterBinding> {
         f2.validation.all_passed(),
         "data_invalid: F2 本地校验未通过，F3 不得放行"
     );
+    ensure!(f2.scf.is_some() && !f2.qpoints.is_empty()
+        && f2.qpoints.len() == f2.phonon_files.len(),
+        "data_invalid: F2 缺少 SCF 或完整 PH/q 映射，不能凭 valid 标签放行");
+    let states = f2.states.as_ref().ok_or_else(|| anyhow::anyhow!("data_invalid: F2 缺少完整电子态"))?;
+    ensure!(states.fermi.is_finite() && states.k_grid == cfg.qe.nscf.k_grid
+        && states.nbnd == cfg.qe.nscf.nbnd as usize,
+        "data_invalid: F2 Fermi 能或 NSCF 网格/带数不相容");
     let f2_digest = store::hash_file(f2_path)?;
     let mut program_identities = BTreeMap::new();
     program_identities.insert("pw".to_string(), store::hash_file(&cfg.programs.pw.path)?);
@@ -29,5 +37,6 @@ pub fn bind_f2(f2_path: &Path, cfg: &config::Config) -> Result<AdapterBinding> {
     Ok(AdapterBinding {
         f2_digest,
         program_identities,
+        fermi_ev: states.fermi,
     })
 }

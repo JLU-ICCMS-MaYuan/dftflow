@@ -25,6 +25,8 @@ pub fn evaluate(
         reference.len(),
         interpolated.len()
     );
+    ensure!(reference.iter().chain(interpolated).all(|v| v.is_finite()),
+        "data_invalid: 质量参考或插值频率含非有限数");
     let (max_err, rms) = compare::error_stats(reference, interpolated);
     let th = thresholds();
     let mut report = QualityReport {

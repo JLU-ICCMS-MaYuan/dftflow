@@ -30,7 +30,7 @@ pub fn run_fine(
     std::fs::create_dir_all(&dir)?;
     let outdir = dir.join("out");
     std::fs::create_dir_all(&outdir)?;
-    std::fs::write(dir.join("epw_fine.in"), epw_cfg.epw_fine_input(outdir.to_str().unwrap(), smearing_mev))?;
+    std::fs::write(dir.join("epw_fine.in"), epw_cfg.epw_fine_input(outdir.to_str().unwrap(), smearing_mev)?)?;
     let prog = &epw_cfg.cfg.programs.epw.path;
     let mut cmd: Vec<String> = launcher.iter().cloned().collect();
     cmd.push(prog.to_string_lossy().into_owned());

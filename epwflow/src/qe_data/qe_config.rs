@@ -51,7 +51,7 @@ impl<'a> QeSettings<'a> {
             );
             species.push_str(&format!(
                 "  {el} {:.4} {name}\n",
-                qf_input::species::get_atomic_mass(el, None)
+                qf_input::species::get_atomic_mass(el, self.config.atomic_masses.get(el).copied())
             ));
         }
         let mut params = PwParams::default();
