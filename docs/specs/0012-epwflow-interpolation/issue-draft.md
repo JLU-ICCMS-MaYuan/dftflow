@@ -2,7 +2,7 @@
 
 **类型**：`type:feature`。
 
-**状态**：本地 Issue 与详细 Spec 已确认；正式文档已落档，待共同文档质量门；业务实现与验收尚未开始。
+**状态**：本地 Issue 与详细 Spec 已确认；部分原生输入、解析与只读质量检查已实现，独立质量未通过，整体未完成；最新证据见 [验收记录](acceptance.md)。
 
 **父级**：[Epic 0007](../0007-epwflow-superconductivity/issue-draft.md) 的 F3；**前置**：[0010 QE 数据准备](../0010-epwflow-qe-data/issue-draft.md)，沿用 [0008 执行基础](../0008-epwflow-foundation/issue-draft.md)；**来源**：[总体规划](../../plan/epwflow-superconductivity.md)。0012 为本地需求编号，0011 已用于编译历史清理；线上 Issue 仍由用户管理。
 
@@ -48,6 +48,12 @@
 后续实现授权：
 
 > 如果启动不了，就继续完善代码，继续把所有 epwflow的 issue 和 spec 完善好，然后完成测试。
+
+后续单次粗 q 参数对照授权：
+
+> 允许单次 6³ 粗 q 对照，保持原标准（推荐）
+
+此次明确例外仅允许粗 q 网格 3³→6³，复用同一 LDA SCF/NSCF 和其他参数；资源上限 1 节点/24 MPI/30 分钟，计入原共享预算。原最大/RMS 5/2 cm⁻¹ 及独立覆盖要求不变，失败不自动继续扫描。实验追踪与具体证据统一在 [0015](../0015-epwflow-mgb2-real-validation/acceptance.md)，不另建 Issue。
 
 ## 目标与用户价值
 

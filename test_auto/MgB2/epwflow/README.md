@@ -119,3 +119,34 @@ python3 test_auto/MgB2/epwflow/verify_native_epw.py test_auto/MgB2/epwflow/local
 旧 index 在新目录复用同一 SCF 快照重算两点 PH 后，谱形 L1 诊断降至约 7.46×10⁻⁶，但谱轴仍不完全相同，严格同轴验收继续未通过。新 LDA 的质量失败也不能用旧 PBE 的 λ 冒烟替代。
 
 本轮生产修复包括原生输入/谱/结束解析、独立质量阻断及关闭经验 Tc/BCS 的错误发布。`submit/run/--until`、完整原生矩阵元和两种超导执行仍有缺口。当前共享累计 1015 节点秒，全部本轮作业已结算，无新增额度；本地账本不冒充生产预算机制已经完成，默认安装未更新。
+
+## 2026-10-19：单次 6³ 粗 q 对照
+
+用户明确允许一次 3³→6³ 粗 q 对照。运行保存在 `local_run/0015-native/mori-q6-proposal/`，复用同一 LDA SCF/NSCF 的独立副本；其他输入和原独立参考不变。28 个不可约 PH 点、Wannier 与完整 216 点粗 q 网格正常结束，新增 SCF/NSCF 均为零。
+
+| 声子误差（cm⁻¹） | 原 3³ | 单次 6³ | 原标准 |
+| --- | --- | --- | --- |
+| 最大 | 48.530593309 | 9.042613107 | ≤5，仍失败 |
+| RMS | 10.610753468 | 1.840341913 | ≤2，本项通过 |
+
+整体质量仍失败；最大误差在 q=(1/12,0,0) 的排序第八模：QE 533.851426、EPW 524.808813 cm⁻¹。四个固定点在新网格下只有一个仍在网格外，完整独立覆盖要求也尚未满足。没有继续扫描网格、运行细网格或超导。
+
+在仓库根目录直接复查数值，不需要 prepare.sh，也不会提交作业或启动科学程序：
+
+```bash
+./target/linux-x86_64/x86_64-unknown-linux-gnu/debug/epwflow interpolation check \
+  -w test_auto/MgB2/epwflow/local_run/0015-native/mori-q6-proposal --json
+```
+
+预期为 `quality_failed`、退出 1。`quality-check.stdout.json` 是原生 Rust 报告，`q6-comparison.json` 记录新旧指标与实验状态，`phonon-error-comparison.csv` 保留全部逐模式误差；`q6-quality-comparison.{png,svg,pdf}` 是诊断图，并非连续声子谱。
+
+本地验收脚本可幂等复查终态、数据完整性、同一预算结算及 Rust 数值；绘图脚本只读现有结果：
+
+```bash
+python3 test_auto/MgB2/epwflow/local_run/0015-native/finish_q6.py
+python3 test_auto/MgB2/epwflow/local_run/0015-native/plot_q6_comparison.py
+```
+
+前者因质量失败预期退出 1，不会重新运行 QE/EPW 或 sbatch；后者生成图表，不改变科学数据表。脚本、完整来源指纹、机器信息和预算只留本机忽略目录。这是原生手动参考测试，没有补齐公开自动入口。
+
+本次消耗 1158 节点秒，共享累计 2173 秒，所有预留已结算；本地原生数据约 6.49 GB。三套历史声子来源 1020 个文件和 LDA SCF/NSCF 来源 274 个文件均保持不变。默认安装、原数值标准和 8 节点小时/100 GiB 上限保持原约定。
