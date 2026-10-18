@@ -45,7 +45,7 @@ Artifact={role,relative_path,byte_size,sha256,producer_stage,input_digest,format
 
 `quality-reference.json` 使用版本 1，字段为 `schema_version/asr/window_ev/fermi_reference/electron_reference/electron_interpolated/phonon_reference_cm1/phonon_interpolated_mev/provenance`。文件项为 `{path,sha256}`，相对路径从清单目录解析；读取前重新核对。ASR 明确为 `epw_simple_gamma_onsite`，派生频率须登记原始 PH、转换程序和实际 dynmat 输出。缺来源、指纹改变、缺态或错误单位均拒绝。点的独立性、冻结计划和完整物理来源仍属于验收检查，不能由一份自述清单自动取得认证。
 
-数值阈值仍为 Spec 的原定 0.05/0.02 eV、5/2 cm⁻¹。质量检查先于细网格；通过的历史报告不能绑定到另一套粗网格目录。本轮尚未替换旧全部 coarse/fine 占位格式，不能把渲染和只读检查当成从头运行接口。
+数值阈值仍为 Spec 的当前 0.05/0.02 eV、15/2 cm⁻¹（2026-10-19 用户只调整声子最大误差）。质量检查先于细网格；通过的历史报告不能绑定到另一套粗网格目录。本轮尚未替换旧全部 coarse/fine 占位格式，不能把渲染和只读检查当成从头运行接口。
 
 ## 2026-10-19：叠图数据交接契约（完整目标；当前子集见后文）
 
@@ -83,3 +83,6 @@ FR-014/015 使用同一配置绑定和现有阶段入口，不新增一套 CLI �
 规范化 CSV 的表头与前表相同，当前数值子格式不支持带引号／逗号的标签；复杂标题和备注放在 JSON 中。独立 manifest 严格核对五个 CSV、metadata.json、metrics.json 的完整集合、相对路径、大小和哈希。元数据单位必须为 eV_relative_fermi、cm-1、states/(eV*cell)、states/(cm-1*cell)。未知版本、非法单位、非有限值、错误网格或篡改均拒绝。
 
 当前导出仅有总 DOS；metadata 的 electronic_projection、phonon_projection 明确 unavailable，并在 manifest.missing 说明缺项。消费其他数据中的真实元素／轨道列时，必须分别声明 atomic_projector_operator、mass_weighted_eigenvectors；该声明只是格式前提，不代替物理来源验收。质量失败保留诊断，不发布细网格 EPC 或超导就绪。
+
+
+2026-10-19 当前范围：元素／轨道投影暂缓，严格投影契约保留供后续恢复，不以总量填充投影列。原生质量报告新增 `phonon.max_error_limit_cm1=15`、`rms_error_limit_cm1=2`，实测误差仍原样记录；`workflow_complete=false` 不变。旧报告作为当时标准的证据，不覆盖重写。

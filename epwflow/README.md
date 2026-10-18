@@ -17,6 +17,8 @@ epwflow interpolation check -w /path/to/native-epw --json
 
 若目录包含 `quality-reference.json`，同一命令检查独立 QE/PH 参考、指纹和电子/声子误差；质量超差输出诊断并非零退出。若目录只有原生 EPW 输入输出、退出码、wout 和谱，只能报告 `native_epc_only`，不会宣称能隙/Tc 或完整流程成功。格式见 [原生数据契约](../docs/specs/0012-epwflow-interpolation/contracts/interface.md)。
 
+当前声子插值误差门为最大 **15 cm⁻¹**、RMS **2 cm⁻¹**（2026-10-19 用户调整）；报告打印实测值和采用上限，历史失败报告保留。元素／轨道投影按用户要求暂缓，总 DOS 与能带／声子叠图仍可使用。可靠电子投影还缺复原子投影算符及同一 Wannier 规范映射，可靠声子元素权重还缺逐原子本征矢适配，不能直接用键中心 Wannier 标签或模式序号代替。
+
 MgB₂ 的 [真实测试手册](../test_auto/MgB2/epwflow/README.md) 区分旧 PBE 三模式冒烟和用户指定 Mori 讲义的新 LDA 输入。新输入已完成独立质量对照，但声子插值尚未满足严格阈值；没有越过该门生成超导结果。精确机器参数和原始输出留在忽略目录，未切换默认安装。
 
 可使用更新后的受测构建入口生成比较诊断图。`DFTFLOW_BUILD_BIN` 指向本机平台构建目录，W 是包含 interpolation/comparison 的运行目录，R 是结果包：

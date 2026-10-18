@@ -1,13 +1,23 @@
-use anyhow::{bail, ensure, Result};
-use std::collections::BTreeMap;
 use super::compare;
 use super::manifest::QualityReport;
+use anyhow::{bail, ensure, Result};
+use std::collections::BTreeMap;
 
-/// 固定的插值质量阈值（FR-009）：频率最大绝对误差 ≤ 5 cm⁻¹，RMS ≤ 2 cm⁻¹。
+/// 0012 FR-009：用户于 2026-10-19 将最大误差改为 15 cm⁻¹；RMS 不变。
+pub const FREQUENCY_MAX_ERROR_CM1: f64 = 15.0;
+pub const FREQUENCY_RMS_ERROR_CM1: f64 = 2.0;
+
+/// 共用阈值，避免原生检查、阶段清单与错误提示采用不同标准。
 pub fn thresholds() -> BTreeMap<String, f64> {
     let mut m = BTreeMap::new();
-    m.insert("frequency_max_error_cm1".to_string(), 5.0);
-    m.insert("frequency_rms_error_cm1".to_string(), 2.0);
+    m.insert(
+        "frequency_max_error_cm1".to_string(),
+        FREQUENCY_MAX_ERROR_CM1,
+    );
+    m.insert(
+        "frequency_rms_error_cm1".to_string(),
+        FREQUENCY_RMS_ERROR_CM1,
+    );
     m
 }
 
@@ -18,15 +28,20 @@ pub fn evaluate(
     interpolated: &[f64],
     energy_reference: &str,
 ) -> Result<QualityReport> {
-    ensure!(!reference.is_empty(), "data_invalid: 缺参考频率，质量检查无效");
+    ensure!(
+        !reference.is_empty(),
+        "data_invalid: 缺参考频率，质量检查无效"
+    );
     ensure!(
         reference.len() == interpolated.len(),
         "data_invalid: 参考与插值频率点数不一致 {} vs {}",
         reference.len(),
         interpolated.len()
     );
-    ensure!(reference.iter().chain(interpolated).all(|v| v.is_finite()),
-        "data_invalid: 质量参考或插值频率含非有限数");
+    ensure!(
+        reference.iter().chain(interpolated).all(|v| v.is_finite()),
+        "data_invalid: 质量参考或插值频率含非有限数"
+    );
     let (max_err, rms) = compare::error_stats(reference, interpolated);
     let th = thresholds();
     let mut report = QualityReport {
@@ -38,17 +53,20 @@ pub fn evaluate(
         thresholds: th.clone(),
         status: "valid".to_string(),
     };
-    report.status = if max_err <= th["frequency_max_error_cm1"] && rms <= th["frequency_rms_error_cm1"] {
-        "valid"
-    } else {
-        "invalid"
-    }
-    .to_string();
+    report.status =
+        if max_err <= th["frequency_max_error_cm1"] && rms <= th["frequency_rms_error_cm1"] {
+            "valid"
+        } else {
+            "invalid"
+        }
+        .to_string();
     if report.status == "invalid" {
         bail!(
-            "data_invalid: 插值质量超差：max={} cm⁻¹, rms={} cm⁻¹（阈值 5/2）",
+            "data_invalid: 插值质量超差：max={} cm⁻¹, rms={} cm⁻¹（阈值 {}/{}）",
             max_err,
-            rms
+            rms,
+            FREQUENCY_MAX_ERROR_CM1,
+            FREQUENCY_RMS_ERROR_CM1
         );
     }
     Ok(report)

@@ -52,3 +52,12 @@
 合成多投影样式样本另存并以 SYNTHETIC STYLE TEST 标题明确标注；它只检验分面、图层和格式，不能作为 MgB₂ PDOS。真实结果包复制到另一目录，从其他工作目录调用 plot／results check，QE／EPW／sbatch 替身调用为零，原始来源与规范化表格哈希不变。实际 results check 返回 figures_verified=true、comparison_complete=false、quality_status=failed、workflow_complete=false。
 
 comparison_plots 四项集成测试、窗边界裁剪单测和新增 matdyn 格式回归通过；完整 epwflow 回归 **74 通过、2 ignored**。缺投影、缺另一来源、完整自动入口和原科学门失败尚未解决，SC-009～011 保持部分／未完成，不关闭本 Feature 或 Epic，不安装、不推送。
+
+
+## 2026-10-19：15 cm⁻¹ 新门、投影暂缓与新增独立点
+
+用户已把声子最大误差门改为15cm⁻¹，RMS仍2，并暂缓元素及元素／轨道投影。已有四张独立总量叠图和总览继续有效；旧图和旧质量报告保留历史身份，不覆盖为新门的成功结果。缺投影面板仍标为缺失，暂缓不冒充实现完成。
+
+当前电子只读取本征值，尚缺同一规范的复原子投影算符与Wannier旋转／解纠缠映射；键中心轨道不能直接标成Mg/B原子轨道。当前声子只读取频率，尚缺EPW逐原子质量规范一致的本征矢适配。QE单侧投影不构成两侧投影对照，不能靠总DOS填元素列。
+
+原四点按15/2数值通过，但新增路径外固定点后最大／RMS为49.448071／8.075133cm⁻¹，真实计算仍拒绝下游；细网格只准备未提交。完整回归75通过、2项已知自动入口缺口ignored，最终原生输出复核14通过。科学失败原因与资源、证据见[0015本轮完整验收](../0015-epwflow-mgb2-real-validation/acceptance.md)，不能据本次规则变更关闭F5或Epic。

@@ -49,6 +49,7 @@ fn check(work: &Path, json: bool) -> Result<()> {
             println!("interpolation_quality: {}", if report.passed { "passed" } else { "failed" });
             println!("electron_max_rms_ev: {} {}", report.electron.max_error_ev, report.electron.rms_error_ev);
             println!("phonon_max_rms_cm1: {} {}", report.phonon.max_error_cm1, report.phonon.rms_error_cm1);
+            println!("phonon_limits_max_rms_cm1: {} {}", report.phonon.max_error_limit_cm1, report.phonon.rms_error_limit_cm1);
             println!("workflow_complete: false");
         }
         anyhow::ensure!(report.passed, "data_invalid: 独立插值质量未通过，禁止细网格与超导下游");

@@ -174,3 +174,16 @@ OVERLAY_RUN="$PWD/test_auto/MgB2/epwflow/local_run/0015-native/overlay-q6-01"
 当前真实原子／轨道电子投影与 EPW 元素声子本征矢适配尚缺，独立 DOS 图对应分面明确显示缺项。合成多元素样式另存 overlay-style-test-01，标题明确不是 MgB₂，不能拿其投影曲线代替真实结果。原独立声子最大误差仍为 9.042613107 cm⁻¹，质量门失败；结果检查必须显示 comparison_complete=false、quality_status=failed、workflow_complete=false。本次不运行细网格 EPC 或超导。
 
 本轮修复 QE XML 动力学矩阵／力常数后缀及 matdyn 第四列 q 权重的适配问题，失败记录留存，只重跑必要后处理。完整 epwflow 回归 74 通过、2 项 B01 暂挂；跨目录重绘、源／CSV 哈希不变及零科学程序／sbatch 调用已核验。四个作业新增 19 节点秒，共享累计 2192 秒，无未结算预留，未重置预算或覆盖安装。
+
+
+## 2026-10-19：新误差门与投影暂缓
+
+按用户要求，当前声子最大／RMS门为15/2cm⁻¹。上述历史5/2结果及其当时退出状态保留；用新程序检查原四点会数值通过，不代表误差重新变小。元素及元素／轨道投影暂缓，不重标缺失面板或以总量代替。
+
+本轮固定补充原路径外q=(1/12,1/12,1/12)，五点最大／RMS49.448071／8.075133cm⁻¹，仍失败。新清单、全部模式差异与核查证据位于忽略目录local_run/0015-native/quality-policy15-01。直接复核：
+
+```bash
+"$DFTFLOW_BUILD_BIN/epwflow" interpolation check -w "$NATIVE_ROOT/quality-policy15-01" --json
+```
+
+该命令预期退出1、workflow_complete=false；只读，不执行科学计算。原四点新门报告与全部旧报告分开保存。40³／20³续算候选仅准备在独立目录，尚未提交；不能跳过新失败点。详细证据见[0015验收记录](../../../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。

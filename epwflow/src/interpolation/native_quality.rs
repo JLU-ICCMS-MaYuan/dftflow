@@ -1,5 +1,6 @@
 //! 对实际 QE/EPW 产物进行只读质量对照；保留超差结果，不修改原始数据。
 use super::native::{electronic_quality, parse_bands, ElectronicQuality, NativeBands};
+use super::quality::{FREQUENCY_MAX_ERROR_CM1, FREQUENCY_RMS_ERROR_CM1};
 use crate::{foundation::store, qe_data::nscf};
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -51,6 +52,8 @@ pub struct PhononQuality {
     pub errors_cm1: Vec<Vec<f64>>,
     pub max_error_cm1: f64,
     pub rms_error_cm1: f64,
+    pub max_error_limit_cm1: f64,
+    pub rms_error_limit_cm1: f64,
     pub passed: bool,
 }
 
@@ -114,7 +117,11 @@ pub fn phonon_quality(
         errors_cm1: errors,
         max_error_cm1,
         rms_error_cm1,
-        passed: stable && max_error_cm1 <= 5.0 && rms_error_cm1 <= 2.0,
+        max_error_limit_cm1: FREQUENCY_MAX_ERROR_CM1,
+        rms_error_limit_cm1: FREQUENCY_RMS_ERROR_CM1,
+        passed: stable
+            && max_error_cm1 <= FREQUENCY_MAX_ERROR_CM1
+            && rms_error_cm1 <= FREQUENCY_RMS_ERROR_CM1,
     })
 }
 
