@@ -18,3 +18,17 @@ epwflow interpolation check -w /path/to/native-epw --json
 若目录包含 `quality-reference.json`，同一命令检查独立 QE/PH 参考、指纹和电子/声子误差；质量超差输出诊断并非零退出。若目录只有原生 EPW 输入输出、退出码、wout 和谱，只能报告 `native_epc_only`，不会宣称能隙/Tc 或完整流程成功。格式见 [原生数据契约](../docs/specs/0012-epwflow-interpolation/contracts/interface.md)。
 
 MgB₂ 的 [真实测试手册](../test_auto/MgB2/epwflow/README.md) 区分旧 PBE 三模式冒烟和用户指定 Mori 讲义的新 LDA 输入。新输入已完成独立质量对照，但声子插值尚未满足严格阈值；没有越过该门生成超导结果。精确机器参数和原始输出留在忽略目录，未切换默认安装。
+
+可使用更新后的受测构建入口生成比较诊断图。`DFTFLOW_BUILD_BIN` 指向本机平台构建目录，W 是包含 interpolation/comparison 的运行目录，R 是结果包：
+
+```bash
+"$DFTFLOW_BUILD_BIN/epwflow" interpolation export-comparison --source comparison-sources.json --output "$W/interpolation/comparison"
+"$DFTFLOW_BUILD_BIN/epwflow" collect -w "$W"
+"$DFTFLOW_BUILD_BIN/epwflow" plot --results "$W/results"
+"$DFTFLOW_BUILD_BIN/epwflow" results check --results "$W/results" --json
+"$DFTFLOW_BUILD_BIN/epwflow" plot --results "$R" --output "$D" --formats png,svg,pdf
+```
+
+导出命令只读取已准备的原生数据，当前原生适配限定 MgB₂／QE 7.4.1／EPW 5.9；来源 JSON 的完整字段见上述数据契约。后续三个命令不运行 QE／EPW／Slurm，不要求已有超导结果。默认生成四张独立叠图和 2×2 总览，各含 PNG／SVG／PDF：QE 为实线，EPW 为后绘制的虚线。比较表和图像清单分别保存来源哈希，结果包可复制后独立重绘。
+
+当前真实适配只产生总 DOS；元素／轨道电子 PDOS 与元素声子 DOS 缺少严格投影时显示缺失面板，不能用总量代替。总览展示总量，元素／轨道分面位于独立 DOS 图。quality_failed 可以输出诊断图，但 workflow_complete=false；不能据图像生成成功继续细网格 EPC／超导。公开 submit/run/resume 科学链尚未接通，默认安装未更新。

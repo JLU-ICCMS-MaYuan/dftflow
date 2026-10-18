@@ -18,7 +18,7 @@ pub struct SourceFile {
 }
 
 impl SourceFile {
-    fn checked_path(&self, base: &Path) -> Result<PathBuf> {
+    pub(crate) fn checked_path(&self, base: &Path) -> Result<PathBuf> {
         let path = base.join(&self.path);
         ensure!(
             self.sha256.len() == 64 && store::hash_file(&path)? == self.sha256,

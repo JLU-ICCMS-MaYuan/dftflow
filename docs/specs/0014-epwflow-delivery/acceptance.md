@@ -42,3 +42,13 @@
 真实 MgB₂ 的四张叠图、2×2 总览、可靠元素／轨道 PDOS 和独立重绘仍待完成。既有少量误差点／误差热图不构成新增交付；6³ 最大误差仍超原门，index 同轴谱、Eliashberg／Tc 和完整自动入口不因此通过。全部共享资源、数据隔离和原数值标准继续适用。
 
 **本次文档核验结果**：34 份任务内 Markdown 范围检查、150 个文件链接、五项 Feature 的 68 FR／44 SC 设计与任务映射、任务编号唯一性及 14 个新增实施任务未勾选检查通过；追加用户原话和已有引文、Spec 数值条款与历史失败记录保留检查通过，`git diff --check` 通过。该结果只验证文档，不包含业务测试、真实计算、图像查看或安装验收；新增科学／图像标准仍为未运行。
+
+## 2026-10-19：四类真实诊断图与独立重绘子集
+
+公开 collect／plot／results check 已在没有 F4 的真实 MgB₂ 比较包上执行。默认生成 electronic_bands_comparison、electronic_dos_comparison、phonon_dispersion_comparison、phonon_dos_comparison 和 comparison_overview，五种基名各有 PNG／SVG／PDF，共 15 个文件。当前来源 nosplit；另外两种来源完整叠图仍缺证据。
+
+实际查看 PNG 和经转换的 SVG／PDF：QE 黑色实线先画，EPW 红色虚线后画；声子独立 ph.x 参考为蓝色散点，连续 QE 曲线明确为 q2r/matdyn。标题显示 quality: failed 与 PARTIAL RESULTS，共同 E_F、有效窗、网格及核宽度可读。电子曲线按能窗真实求交，避免窗外曲线压成假平带；路径断点分段。四面板总览展示两种谱和两种总 DOS，独立 DOS 图的元素／轨道位置明确显示缺可靠成对数据，不生成伪投影曲线。
+
+合成多投影样式样本另存并以 SYNTHETIC STYLE TEST 标题明确标注；它只检验分面、图层和格式，不能作为 MgB₂ PDOS。真实结果包复制到另一目录，从其他工作目录调用 plot／results check，QE／EPW／sbatch 替身调用为零，原始来源与规范化表格哈希不变。实际 results check 返回 figures_verified=true、comparison_complete=false、quality_status=failed、workflow_complete=false。
+
+comparison_plots 四项集成测试、窗边界裁剪单测和新增 matdyn 格式回归通过；完整 epwflow 回归 **74 通过、2 ignored**。缺投影、缺另一来源、完整自动入口和原科学门失败尚未解决，SC-009～011 保持部分／未完成，不关闭本 Feature 或 Epic，不安装、不推送。

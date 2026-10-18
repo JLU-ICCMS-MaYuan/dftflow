@@ -47,7 +47,7 @@ Artifact={role,relative_path,byte_size,sha256,producer_stage,input_digest,format
 
 数值阈值仍为 Spec 的原定 0.05/0.02 eV、5/2 cm⁻¹。质量检查先于细网格；通过的历史报告不能绑定到另一套粗网格目录。本轮尚未替换旧全部 coarse/fine 占位格式，不能把渲染和只读检查当成从头运行接口。
 
-## 2026-10-19：叠图数据交接契约（待实现）
+## 2026-10-19：叠图数据交接契约（完整目标；当前子集见后文）
 
 FR-014/015 使用同一配置绑定和现有阶段入口，不新增一套 CLI 或自由 namelist 透传。路径、DOS 网格、投影与展宽进入统一类型化配置和快照；`quality` 已固定的共同能窗／参考 E_F 继续复用，新增比较路径不能改变原独立质量点。check/prepare 只校验并显示实际数据计划；必要参考只在受控 run/submit/resume 中计算。
 
@@ -69,3 +69,17 @@ FR-014/015 使用同一配置绑定和现有阶段入口，不新增一套 CLI �
 缺投影、规范不明、网格／ASR／展宽不一致、窗内缺态、空文件、篡改或非有限值均拒绝对应数据就绪；其余有效面板可显式部分交付。投影完整性与物理质量分开保存，quality_failed 的完整数据仅作诊断，workflow_complete=false、下游不就绪。
 
 独立清单相对 artifact_root 定位，绑定原 F3 来源摘要；旧主清单保持原读取契约。未带 comparison 清单的旧结果可以按旧功能读取，但不能通过新增叠图验收；未知新清单版本明确拒绝，不静默把旧输出当成新投影。
+
+## 2026-10-19：已实现的比较诊断子集
+
+新增 `epwflow interpolation export-comparison --source S --output D`，只读解析已有原生文件，不运行科学程序或提交作业；D 必须不存在。该入口不代替计划中的受控参考计算阶段。数据模型位于 interpolation/comparison_data.rs，F5 直接消费该模型，避免 F3 反向依赖绘图模块。
+
+来源 JSON 严格使用 schema_version=1，包含 run_id、ph_mode、quality_reference、fermi_reference、qe_bands_xml、qe_mesh_xml、epw_bands、qe_phonon_bands、epw_phonon_bands、epw_log、provenance、path、ticks、mesh、mesh_shape、reciprocal、window_ev、electronic_sigma_ev、phonon_sigma_cm1；文件项沿用 `{path,sha256}`。相对路径按 S 所在目录解析；path 的项为 segment_id、point_id、distance、crystal，ticks 为 distance、label；reciprocal 将晶体坐标右乘转换成 QE 的 2π/alat 坐标。
+
+当前原生输入要求电子／声子插值文件依次含比较路径和完整 Γ 中心 DOS 网格；QE 能带 XML 只含路径，独立 NSCF XML 含完整均匀网格。检查实际坐标、点数、权重、原子顺序与九声子模式。适配器只接受 Mg、B、B；不宣称通用材料适配已完成。
+
+共同单一参考 E_F；电子因非磁性自旋简并使用权重 2/N，声子使用 1/N。两侧在同轴上用 `exp[-((x−e)/σ)²]/(σ√π)` 累积，不按曲线重新归一化。声子 meV→cm⁻¹ 在累积之前转换，保留虚频；频率轴包含八倍 σ 的核尾。电子表仅覆盖所选共同有效窗，报告窗内积分，不能当全电子态计数；缺窗内态显式记录为不完整。
+
+规范化 CSV 的表头与前表相同，当前数值子格式不支持带引号／逗号的标签；复杂标题和备注放在 JSON 中。独立 manifest 严格核对五个 CSV、metadata.json、metrics.json 的完整集合、相对路径、大小和哈希。元数据单位必须为 eV_relative_fermi、cm-1、states/(eV*cell)、states/(cm-1*cell)。未知版本、非法单位、非有限值、错误网格或篡改均拒绝。
+
+当前导出仅有总 DOS；metadata 的 electronic_projection、phonon_projection 明确 unavailable，并在 manifest.missing 说明缺项。消费其他数据中的真实元素／轨道列时，必须分别声明 atomic_projector_operator、mass_weighted_eigenvectors；该声明只是格式前提，不代替物理来源验收。质量失败保留诊断，不发布细网格 EPC 或超导就绪。

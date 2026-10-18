@@ -33,7 +33,7 @@ summary、a2f、coupling、gap_summary、gap_states、tc、report、figure_png�
 
 Artifact={role,relative_path,byte_size,sha256,producer_stage,input_digest,format_version}；validation={status,checks,units,thresholds,evidence}。只有 status=valid 的必需角色完整才发布该阶段 manifest。format_version 未知或文件集合与已验证适配器不符即拒绝；不靠 glob 命中一个文件放行。
 
-## 2026-10-19：比较结果包与图表契约（待实现）
+## 2026-10-19：比较结果包与图表契约（完整目标；当前子集见后文）
 
 沿用已规划的 `epwflow collect -w W [--output R]`、`epwflow plot --results R [--output D] [--formats png,svg,pdf]` 和 `epwflow results check --results R [--json]`，不新增平行命令。当前落档不表示这些公开入口已经接通；实际实现／验收以 acceptance.md 为准。
 
@@ -52,3 +52,11 @@ collect 允许没有 F4 清单的有效 F3 诊断输入；输出 R/comparison，
 缺可靠投影或参考时，plot 只能生成标明缺项的部分面板；结果检查明确 comparison_complete=false。篡改、未知版本、非法单位／非有限值或未知文件覆盖冲突返回非零。完整但质量失败的结果允许操作成功并输出诊断图，同时 quality_status=failed、workflow_complete=false；操作成功绝不等同科学验收通过。
 
 collect／plot／results check 不运行 QE、EPW 或 sbatch，不创建科学任务；缺参考计算应由受预算控制的 F3 明确执行。重绘仅更新本工具拥有的图像和绘图清单，comparison 表格和科学源文件内容必须保持不变。
+
+## 2026-10-19：已接通的比较包命令
+
+公开 collect／plot／results check 已消费上述独立 comparison 包；没有超导清单也能导出有效诊断。默认输出 results/comparison、results/figures，后者的 comparison-figures.json 绑定源清单与全部图像哈希；results check 验证默认图目录的该清单（若存在），自定义 --output 的图目录不由默认检查自动定位。重复收集仅接受相同来源；重绘只覆盖清单拥有且哈希仍相符的图像，未知冲突拒绝。
+
+当前四张独立图与总览均支持 PNG、SVG、PDF；总览的 DOS 面板展示总量，元素／轨道在独立 DOS 图分面。缺投影面板显示缺失，标题标记 PARTIAL RESULTS；quality=failed 与 workflow_complete=false 保留。电子能带按真实线段与能窗求交裁剪，不能把窗外线段压到边界形成假平带。只有所有新增投影、覆盖及科学标准满足后才能通过完整叠图验收。
+
+本轮 collect／plot／results check 仅交付比较包，不表示 Spec FR-002 的完整 α²F／能隙／Tc 结果包已经接通；旧 delivery 子命令兼容保留。

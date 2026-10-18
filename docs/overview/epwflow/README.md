@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-截至 2026-10-18，epwflow 已复用 qeflow 的 QE 基础库，并能只读检查真实 EPW 5.9 谱和独立插值参考。公开 `submit/run/resume` 仍未接通科学流程，原生 Eliashberg/Tc 尚未交付。MgB₂ 讲义参数的独立声子质量已实测失败，不能把原生冒烟或解析回归当作完整验收。
+截至 2026-10-19，epwflow 已复用 qeflow 的 QE 基础库，并能只读检查真实 EPW 5.9 谱和独立插值参考。公开 `submit/run/resume` 仍未接通科学流程，原生 Eliashberg/Tc 尚未交付。MgB₂ 讲义参数的独立声子质量已实测失败，不能把原生冒烟或解析回归当作完整验收。
 
 本页依据代码、实际 CLI、回归测试和真实 QE XML 只读解析记录当前状态；检查证据见 [0015 验收记录](../../specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
 
@@ -21,6 +21,10 @@
 | `epwflow interpolation check -w W [--json]` | 原生目录检查退出、结束计时、Wannier 和谱；有 quality-reference.json 时核对来源及电子/声子误差，超差非零退出；没有该参考则仅报告 native_epc_only |
 | `epwflow interpolation import -c C --source M` | 读取自身插值清单；完整实际文件角色和重读能力仍待实现 |
 | `epwflow superconductivity check/import` | 读取自身求解清单；清单中的数值来源受下述限制 |
+| `epwflow interpolation export-comparison --source S --output D` | 只读导出已有 MgB₂ 原生路径／均匀网格与总 DOS；不提交科学计算；严格投影尚缺 |
+| `epwflow collect -w W [--output R]` | 校验并收集 interpolation/comparison，不要求 F4；当前仅交付独立比较包 |
+| `epwflow plot --results R [--output D] [--formats png,svg,pdf]` | 四张独立叠图及 2×2 总览，QE 实线先画、EPW 虚线后画；缺投影明示，默认三格式 |
+| `epwflow results check --results R [--json]` | 只读检查比较表及默认图目录清单／哈希；操作成功与完整性／质量状态分开 |
 | `epwflow delivery collect/results/budget` | 从已有结构化结果收集、读取及显示；操作成功不等于科学结果正确 |
 
 先按本机平台构建说明加载 native 环境和配置，再核查受测入口。下面以构建目录变量为例，实际路径不能用默认安装路径替代：
@@ -75,3 +79,11 @@
 快照、分 q 物化、归集和提交链尚未全部提取或接通。EPW 仍须验证响应势、patterns、完整电子态与原生矩阵元；不能用普通声子结果的成功标记跳过这些检查。当前显式赝势卡片要求绝对且无空白的路径，含空白路径的受控文件物化尚待补齐。
 
 固定配置准备已改为 staging 后发布、重复准备不覆盖，执行前验证 input-init 哈希。空校验列表不再被视为有效清单，Wannier 的 Final State 不能覆盖明确未收敛信息。这些是局部防护；完整输入来源、实际矩阵元角色和自动工作流仍有缺口，未通过整体验收。
+
+## 比较诊断图的当前边界
+
+比较数据模型由 F3 拥有，F5 直接消费。原生导出限定 MgB₂／QE 7.4.1／EPW 5.9，解析真实 XML、band.eig、QE matdyn 和 EPW phband.freq，核对坐标、完整均匀网格、单位和指纹。总 DOS 在相同能量／频率轴使用共同高斯核及物理权重，保留虚频；电子图使用绑定的共同 E_F 和有效窗。
+
+独立电子／声子 DOS 图有元素与轨道分面位置，可靠数据缺失时明确标记。当前原生适配没有生成严格原子投影和 EPW 声子本征矢，真实元素／轨道叠图仍未完成；键心 Wannier 函数和声子模式序号不能充当元素。总览的 DOS 面板展示总量，完整投影以独立分面为准。
+
+collect／plot 可在没有 F4 时导出部分诊断；结果包移动后可重绘，不调用科学程序，表格与原始输出内容不变。图像先暂存、登记哈希再发布，未知文件冲突拒绝。质量失败显示 failed、缺项显示 PARTIAL RESULTS，workflow_complete=false；图像与样式回归不改变原科学质量门。完整自动入口、六组合和原生能隙／Tc 未完成。

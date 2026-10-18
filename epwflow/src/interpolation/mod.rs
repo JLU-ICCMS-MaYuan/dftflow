@@ -13,3 +13,6 @@ pub mod reuse;
 pub mod scheduler;
 pub mod spectral;
 pub mod wannier;
+pub mod comparison;
+
+pub mod comparison_data;

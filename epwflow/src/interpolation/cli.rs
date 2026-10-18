@@ -21,6 +21,13 @@ pub enum InterpolationCommand {
         #[arg(long)]
         source: PathBuf,
     },
+    /// 校验原生来源，导出叠图诊断数据；不执行科学程序。
+    ExportComparison {
+        #[arg(long)]
+        source: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 /// 入口。
@@ -28,6 +35,7 @@ pub fn run(cmd: InterpolationCommand) -> Result<()> {
     match cmd {
         InterpolationCommand::Check { work, json } => check(&work, json),
         InterpolationCommand::Import { config, source } => import(&config, &source),
+        InterpolationCommand::ExportComparison { source, output } => super::comparison::export(&source,&output),
     }
 }
 

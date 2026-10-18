@@ -150,3 +150,27 @@ python3 test_auto/MgB2/epwflow/local_run/0015-native/plot_q6_comparison.py
 前者因质量失败预期退出 1，不会重新运行 QE/EPW 或 sbatch；后者生成图表，不改变科学数据表。脚本、完整来源指纹、机器信息和预算只留本机忽略目录。这是原生手动参考测试，没有补齐公开自动入口。
 
 本次消耗 1158 节点秒，共享累计 2173 秒，所有预留已结算；本地原生数据约 6.49 GB。三套历史声子来源 1020 个文件和 LDA SCF/NSCF 来源 274 个文件均保持不变。默认安装、原数值标准和 8 节点小时/100 GiB 上限保持原约定。
+
+## 2026-10-19：真实比较图预览
+
+使用本轮更新的 Rust 构建入口，在 `local_run/0015-native/overlay-q6-01/` 输出真实 LDA 6³ 比较数据。实际 PH 来源为 nosplit；旧 PBE 三来源结果保持独立，不能把本轮图算成三种模式全部通过。
+
+查看 [2×2 总览](local_run/0015-native/overlay-q6-01/results/figures/comparison_overview.png)、[电子能带](local_run/0015-native/overlay-q6-01/results/figures/electronic_bands_comparison.png)、[电子 DOS](local_run/0015-native/overlay-q6-01/results/figures/electronic_dos_comparison.png)、[声子谱](local_run/0015-native/overlay-q6-01/results/figures/phonon_dispersion_comparison.png)、[声子 DOS](local_run/0015-native/overlay-q6-01/results/figures/phonon_dos_comparison.png)。同目录提供同基名 SVG、PDF，比较 CSV 与指标在相邻 comparison 目录。运行数据被忽略，Git 手册链接只在保留现场的机器可用。
+
+以下命令在仓库根目录执行；先按 Linux native 构建说明构建。它们直接调用本轮受测入口，默认安装没有切换：
+
+```bash
+EPWFLOW_BIN="$PWD/target/linux-x86_64/x86_64-unknown-linux-gnu/debug/epwflow"
+OVERLAY_RUN="$PWD/test_auto/MgB2/epwflow/local_run/0015-native/overlay-q6-01"
+# 首次导出要求目标不存在；本次已导出，无需重复执行此行。
+"$EPWFLOW_BIN" interpolation export-comparison --source "$OVERLAY_RUN/comparison-sources.json" --output "$OVERLAY_RUN/interpolation/comparison"
+"$EPWFLOW_BIN" collect -w "$OVERLAY_RUN"
+"$EPWFLOW_BIN" plot --results "$OVERLAY_RUN/results" --formats png,svg,pdf
+"$EPWFLOW_BIN" results check --results "$OVERLAY_RUN/results" --json
+```
+
+四类独立图和总览均由生产绘图入口生成，QE 实线先画、EPW 虚线后画，独立 ph.x 点为散点。电子图的共同窗为 E_F±0.5 eV；DOS 用完整 6³ 网格，电子 σ=0.1 eV，声子 σ=0.5 meV，积分保留物理权重。该 DOS 网格与粗网格重合；接近重合不能证明网格外精度或材料收敛。
+
+当前真实原子／轨道电子投影与 EPW 元素声子本征矢适配尚缺，独立 DOS 图对应分面明确显示缺项。合成多元素样式另存 overlay-style-test-01，标题明确不是 MgB₂，不能拿其投影曲线代替真实结果。原独立声子最大误差仍为 9.042613107 cm⁻¹，质量门失败；结果检查必须显示 comparison_complete=false、quality_status=failed、workflow_complete=false。本次不运行细网格 EPC 或超导。
+
+本轮修复 QE XML 动力学矩阵／力常数后缀及 matdyn 第四列 q 权重的适配问题，失败记录留存，只重跑必要后处理。完整 epwflow 回归 74 通过、2 项 B01 暂挂；跨目录重绘、源／CSV 哈希不变及零科学程序／sbatch 调用已核验。四个作业新增 19 节点秒，共享累计 2192 秒，无未结算预留，未重置预算或覆盖安装。

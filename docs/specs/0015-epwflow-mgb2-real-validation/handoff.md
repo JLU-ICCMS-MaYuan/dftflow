@@ -113,3 +113,9 @@ cargo build -p epwflow --locked --offline
 - 真实验证：按 [本项新任务](tasks.md) T020～T023 核对三 PH 来源、投影／积分／数值质量和实际图像，缺项不算完成。
 
 原 6³ 最大误差超限、index 同轴对照、Eliashberg／Tc 与公开自动链缺口保持原状态；所有新增实现／真实验收任务未完成，本次不启动计算、不切换安装、不操作线上 Issue 或推送。
+
+## 2026-10-19：比较诊断入口及真实图像交接
+
+已实现 F3 comparison/comparison_data 和 F5 comparison/comparison_plot 子集，公开 export-comparison、collect、plot、results check；独立比较包无需 F4，能生成四张独立图和 2×2 总览、PNG／SVG／PDF。真实测试仅是讲义 LDA 6³、实际 nosplit 来源，完整 epwflow 回归 74 通过、2 项 B01 暂挂。当前状态和证据见 [验收记录](acceptance.md)，直接命令见 [测试手册](../../../test_auto/MgB2/epwflow/README.md)。
+
+后续仍须补齐严格复原子投影算符变换、EPW 质量加权本征矢与元素 DOS、其余两来源对照，以及原有独立质量覆盖、Eliashberg／Tc 和自动入口。不能把总 DOS 与合成投影样式冒充真实 PDOS；原声子最大误差 9.042613107 cm⁻¹ 仍失败，不放宽标准或自动调参。默认安装未切换，科学来源保留只读。

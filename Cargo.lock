@@ -592,6 +592,7 @@ dependencies = [
  "anyhow",
  "clap 4.6.7",
  "libc",
+ "plotters",
  "qf-config",
  "qf-crystal",
  "qf-input",
@@ -601,6 +602,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "svg2pdf",
  "toml",
 ]
 

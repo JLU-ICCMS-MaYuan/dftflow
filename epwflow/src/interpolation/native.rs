@@ -218,6 +218,15 @@ pub struct NativeBands {
 
 /// 读取 QE/EPW 的 &plot 格式；不猜测空行、频率单位或能量零点。
 pub fn parse_bands(text: &str) -> Result<NativeBands> {
+    parse_plot(text, 3)
+}
+
+/// QE 7.4.1 matdyn 的坐标记录另含第四列 q 权重，不能当成首个频率。
+pub fn parse_matdyn(text: &str) -> Result<NativeBands> {
+    parse_plot(text, 4)
+}
+
+fn parse_plot(text: &str, coordinate_columns: usize) -> Result<NativeBands> {
     let header = regex::Regex::new(r"(?s)^\s*&plot\s+nbnd=\s*(\d+)\s*,\s*nks=\s*(\d+)\s*/")?;
     let cap = header
         .captures(text)
@@ -229,18 +238,21 @@ pub fn parse_bands(text: &str) -> Result<NativeBands> {
         .split_whitespace()
         .collect();
     ensure!(
-        bands.checked_add(3).and_then(|stride| points.checked_mul(stride)) == Some(tokens.len()),
+        bands.checked_add(coordinate_columns).and_then(|stride| points.checked_mul(stride)) == Some(tokens.len()),
         "data_invalid: 原生能带记录截断或多余"
     );
     let mut out = NativeBands {
         points_cartesian: Vec::new(),
         values: Vec::new(),
     };
-    for row in tokens.chunks_exact(bands + 3) {
+    for row in tokens.chunks_exact(bands + coordinate_columns) {
+        if coordinate_columns == 4 {
+            ensure!(number(row[3])? >= 0.0, "data_invalid: matdyn q 权重为负");
+        }
         out.points_cartesian
             .push([number(row[0])?, number(row[1])?, number(row[2])?]);
         out.values
-            .push(row[3..].iter().map(|s| number(s)).collect::<Result<_>>()?);
+            .push(row[coordinate_columns..].iter().map(|s| number(s)).collect::<Result<_>>()?);
     }
     Ok(out)
 }

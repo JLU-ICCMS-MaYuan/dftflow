@@ -58,6 +58,18 @@ fn native_bands_reject_truncation_and_non_finite_records() {
     assert!(native::parse_bands(&text.replace("3 4", "3 NaN")).is_err());
 }
 
+#[test]
+fn matdyn_fourth_coordinate_column_is_weight_not_frequency() {
+    let text = " &plot nbnd= 3, nks= 2 /\n0 0 0 0\n-1 2\n3\n.1 .2 .3 .5\n4 5 6\n";
+    let data = native::parse_matdyn(text).unwrap();
+    assert_eq!(data.values, vec![vec![-1., 2., 3.], vec![4., 5., 6.]]);
+    assert_eq!(data.points_cartesian[1], [0.1, 0.2, 0.3]);
+    assert!(native::parse_bands(text).is_err());
+    assert!(native::parse_matdyn(&text.replace(".3 .5", ".3 -1")).is_err());
+    assert!(native::parse_matdyn(&text.replace(".3 .5", ".3 NaN")).is_err());
+    assert!(native::parse_matdyn(&text.replace("4 5 6", "4 5")).is_err());
+}
+
 fn bands(values: Vec<f64>) -> NativeBands {
     NativeBands {
         points_cartesian: vec![[0.; 3]],

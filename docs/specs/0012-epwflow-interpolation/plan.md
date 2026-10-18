@@ -95,3 +95,7 @@ spec.md、plan.md、research.md、data-model.md、contracts/interface.md、tasks
 | FR-015、SC-010 | T041/T042/T043 | 原子投影算符、Wannier 变换、质量加权本征矢与共同 DOS 累积 | 相位／模式误标／缺投影／积分测试，0015 真实对照 |
 
 新数据文件与字段见 [契约](contracts/interface.md)；表格及投影实体见 [数据模型](data-model.md)。实现路径为计划触点，不以文件存在证明功能完成。
+
+## 2026-10-19：诊断适配实施顺序
+
+先将 comparison_data 放入 F3，严格读取带哈希清单；comparison 只解析已有原生数据并累积总 DOS。F5 依赖此模型收集／绘图；后续原子投影算符和声子本征矢生产者仍在 F3 补齐，不能在绘图层猜元素。新增 export-comparison 是只读诊断适配，不形成第二套执行器。现有受控 run/submit 尚未接通，本轮必要计算由登记预算的测试脚本完成并明确标记。

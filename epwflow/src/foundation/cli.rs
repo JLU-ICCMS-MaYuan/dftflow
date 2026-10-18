@@ -91,6 +91,37 @@ pub enum EpwCommand {
         #[command(subcommand)]
         command: DeliveryCommand,
     },
+    /// 收集经过核验的插值叠图数据；不要求已有超导结果。
+    Collect {
+        #[arg(short = 'w', long)]
+        work: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// 从自包含结果包绘图，不启动 QE、EPW 或 Slurm。
+    Plot {
+        #[arg(long)]
+        results: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long, value_delimiter = ',', default_value = "png,svg,pdf")]
+        formats: Vec<String>,
+    },
+    /// 只读检查结果包。
+    Results {
+        #[command(subcommand)]
+        command: ResultsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ResultsCommand {
+    Check {
+        #[arg(long)]
+        results: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -161,6 +192,23 @@ fn dispatch(cli: Cli) -> Result<()> {
         EpwCommand::Interpolation { command } => crate::interpolation::cli::run(command),
         EpwCommand::Superconductivity { command } => crate::superconductivity::cli::run(command),
         EpwCommand::Delivery { command } => crate::delivery::cli::run(command),
+        EpwCommand::Collect { work, output } => {
+            let result=crate::delivery::comparison::collect(&work,output.as_deref())?;
+            println!("results: {}",result.display());
+            Ok(())
+        },
+        EpwCommand::Plot { results, output, formats } => {
+            let path=crate::delivery::comparison_plot::plot(&results,output.as_deref(),&formats)?;
+            println!("figures: {}",path.display());
+            Ok(())
+        },
+        EpwCommand::Results { command: ResultsCommand::Check { results, json } } => {
+            let data=crate::delivery::comparison::load(&results.join("comparison"))?;
+            let mut report=crate::delivery::comparison::summary(&data);
+            report["figures_verified"]=crate::delivery::comparison_plot::check_figures(&results)?.into();
+            if json {status::print_json(&report);} else {println!("comparison_complete: {}\nquality_status: {}\nworkflow_complete: false\nfigures_verified: {}",report["comparison_complete"],report["quality_status"],report["figures_verified"]);}
+            Ok(())
+        },
     }
 }
 

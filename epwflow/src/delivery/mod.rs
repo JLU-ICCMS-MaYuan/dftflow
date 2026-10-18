@@ -8,3 +8,5 @@ pub mod plot;
 pub mod regression;
 pub mod report_store;
 pub mod scheduler;
+pub mod comparison;
+pub mod comparison_plot;
