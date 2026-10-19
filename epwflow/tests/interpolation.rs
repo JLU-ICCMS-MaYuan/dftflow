@@ -233,7 +233,8 @@ fn interpolation_check_no_data() {
 fn epw_config_renders_and_requires_energy_reference() {
     let case = make_case();
     let cfg = config::Config::load(&case.config_path).unwrap();
-    let ec = EpwConfig::from_config(&cfg).unwrap().with_fermi(5.0).unwrap();
+    let ec = EpwConfig::from_config(&cfg).unwrap().with_fermi(5.0).unwrap()
+        .with_bands(&[vec![0., 4., 6., 10.]]).unwrap();
     let win = ec.wannier90_input().unwrap();
     assert!(win.contains("num_wann = 2") && !win.contains("energy_reference"));
     let coarse_in = ec.epw_coarse_input("out").unwrap();

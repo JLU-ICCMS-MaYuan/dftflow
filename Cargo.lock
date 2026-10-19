@@ -597,6 +597,7 @@ dependencies = [
  "qf-crystal",
  "qf-input",
  "qf-io",
+ "qf-wannier",
  "regex",
  "roxmltree",
  "serde",
@@ -1616,6 +1617,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "qf-wannier"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2485,6 +2497,7 @@ dependencies = [
  "plotters",
  "qf-config",
  "qf-runner",
+ "qf-wannier",
  "roxmltree",
  "serde_json",
  "toml",

@@ -86,6 +86,10 @@ pub fn run_wannier(
 ) -> Result<WannierResult> {
     let dir = work.join("wannier");
     std::fs::create_dir_all(&dir)?;
+    qf_wannier::write_selection(&dir.join("window-selection.json"), &epw_cfg.window_selection()?)?;
+    qf_wannier::require_projectability_keywords(
+        &epw_cfg.cfg.programs.wannier90.as_ref().context("configuration: 缺少 programs.wannier90")?.path,
+    )?;
     let outdir = dir.join("out");
     std::fs::create_dir_all(&outdir)?;
     std::fs::write(dir.join("scf.win"), epw_cfg.wannier90_input()?)?;

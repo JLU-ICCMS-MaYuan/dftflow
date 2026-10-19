@@ -224,6 +224,8 @@ rm -r -- "$package_dir"
 
 配置契约（`input.toml` 递归覆盖、状态机、容差）见 [0004 契约](docs/specs/0004-dftflow-rust/contracts/config-and-output.md)。
 
+Wannier 自动选窗已统一采用指定 AiiDA 工作流的默认“能量冻结＋投影解纠缠”：`wannier90 window data-file-schema.xml --num-wann 5`。旧 `--auto nbnd1 num_wann nbnd3` 已弃用；初始化需配置实际 NSCF `bands_file`，epwflow 则从 F2 清单绑定本征值。实际程序需支持投影参数，不能静默退回旧方法，详见 [选窗使用说明](docs/specs/0016-wannier-window-selection/quickstart.md)。
+
 ## High Throughput Substitution
 
 - `mattersim_opt` 通过外部 MatterSim Python 环境运行两阶段预优化：先只优化原子坐标，再在目标压力下联合优化晶格和原子坐标，输出 `mattersim_opt/CONTCAR` 供后续 `vasp_opt` 使用。

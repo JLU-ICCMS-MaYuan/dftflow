@@ -11,6 +11,7 @@ path = "src/bin/wannier90.rs"
 path = "src/lib.rs"
 
 [dependencies]
+qf-wannier = { path = "../crates/qf-wannier" }
 qf-config = { path = "../crates/qf-config" }
 qf-runner = { path = "../crates/qf-runner" }
 anyhow = { workspace = true }

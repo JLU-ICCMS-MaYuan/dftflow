@@ -40,6 +40,8 @@ pub fn run_coarse(
 ) -> Result<CoarseResult> {
     let dir = work.join("coarse");
     std::fs::create_dir_all(&dir)?;
+    qf_wannier::write_selection(&dir.join("window-selection.json"), &epw_cfg.window_selection()?)?;
+    qf_wannier::require_projectability_keywords(&epw_cfg.cfg.programs.epw.path)?;
     let outdir = dir.join("out");
     std::fs::create_dir_all(&outdir)?;
     epw_cfg.write_quality_points(&dir)?;

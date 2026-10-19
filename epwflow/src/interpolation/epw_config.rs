@@ -6,6 +6,7 @@ pub struct EpwConfig<'a> {
     pub cfg: &'a config::Config,
     fermi_ev: Option<f64>,
     species: Option<Vec<String>>,
+    bands: Option<Vec<Vec<f64>>>,
 }
 
 /// 在生成细网格矩阵元之前，先在固定验证点完成 Wannier/粗网格检查。
@@ -29,6 +30,7 @@ impl<'a> EpwConfig<'a> {
             cfg,
             fermi_ev: None,
             species: None,
+            bands: None,
         })
     }
 
@@ -36,6 +38,14 @@ impl<'a> EpwConfig<'a> {
     pub fn with_fermi(mut self, fermi_ev: f64) -> Result<Self> {
         ensure!(fermi_ev.is_finite(), "data_invalid: F2 Fermi 能非有限");
         self.fermi_ev = Some(fermi_ev);
+        Ok(self)
+    }
+
+    /// 由已核验的 F2 清单提供完整 NSCF 本征值，单位为 eV。
+    pub fn with_bands(mut self, bands: &[Vec<f64>]) -> Result<Self> {
+        ensure!(qf_wannier::validate_bands(bands)? == self.cfg.qe.nscf.nbnd as usize,
+            "data_invalid: 选窗本征值与配置 NSCF 带数不符");
+        self.bands = Some(bands.to_vec());
         Ok(self)
     }
 
@@ -53,40 +63,31 @@ impl<'a> EpwConfig<'a> {
         Ok(self)
     }
 
-    fn window_offset(&self) -> Result<f64> {
-        match self.cfg.wannier.energy_reference {
-            config::EnergyReference::QeZero => Ok(0.0),
-            config::EnergyReference::F2Fermi => self
-                .fermi_ev
-                .context("data_invalid: 相对 Fermi 能窗缺少绑定的 F2 Fermi 能"),
-        }
+    pub fn window_selection(&self) -> Result<qf_wannier::Selection> {
+        let w = &self.cfg.wannier;
+        ensure!(w.frozen_max_ev.is_none() || w.frozen_window_ev.is_none(), "configuration: 冻结能窗上界重复指定");
+        let bounds = qf_wannier::Bounds {
+            dis_win_min: w.outer_window_ev.map(|v| v[0]),
+            dis_win_max: w.outer_window_ev.map(|v| v[1]),
+            dis_froz_min: w.frozen_window_ev.map(|v| v[0]),
+            dis_froz_max: w.frozen_window_ev.map(|v| v[1]).or(w.frozen_max_ev),
+        };
+        let reference = match w.energy_reference {
+            config::EnergyReference::QeZero => qf_wannier::Reference::Absolute,
+            config::EnergyReference::F2Fermi => qf_wannier::Reference::Fermi,
+        };
+        qf_wannier::select_default(
+            self.bands.as_deref().context("data_invalid: 上游组合选窗缺少绑定的完整 F2 本征值；旧固定窗路径已弃用")?,
+            self.fermi_ev.context("data_invalid: 选窗缺少绑定的 F2 Fermi 能")?,
+            w.num_wann as usize,
+            &w.exclude_bands.iter().map(|&v| v as usize).collect::<Vec<_>>(),
+            &bounds, reference,
+        )
     }
 
     fn windows(&self) -> Result<Vec<(String, f64)>> {
-        let w = &self.cfg.wannier;
-        let offset = self.window_offset()?;
-        let mut values = Vec::new();
-        for (name, window) in [
-            ("dis_win", w.outer_window_ev),
-            ("dis_froz", w.frozen_window_ev),
-        ] {
-            if let Some([min, max]) = window {
-                values.push((format!("{name}_min"), min + offset));
-                values.push((format!("{name}_max"), max + offset));
-            }
-        }
-        if let Some(max) = w.frozen_max_ev {
-            ensure!(
-                w.frozen_window_ev.is_none(),
-                "configuration: 冻结能窗上界重复指定"
-            );
-            values.push(("dis_froz_max".into(), max + offset));
-        }
-        ensure!(
-            values.iter().all(|(_, v)| v.is_finite()),
-            "configuration: 能窗换算溢出"
-        );
-        Ok(values)
+        Ok(self.window_selection()?.parameters.into_iter()
+            .filter(|(name, _)| !name.starts_with("dis_proj_")).collect())
     }
 
     /// 仅渲染 Wannier 参数片段；EPW 主路径调用其内置 Wannier90 库。
@@ -122,6 +123,9 @@ impl<'a> EpwConfig<'a> {
         for (name, value) in self.windows()? {
             s.push_str(&format!("{name} = {value:.16e}\n"));
         }
+        s.push_str(&format!("dis_proj_min = {}\ndis_proj_max = {}\n", qf_wannier::DIS_PROJ_MIN, qf_wannier::DIS_PROJ_MAX));
+        s.push_str(qf_wannier::PROJECTABILITY_SWITCH);
+        s.push('\n');
         if let Some(d) = &w.disentanglement {
             s.push_str(&format!(
                 "dis_num_iter = {}\ndis_conv_tol = {:.16e}\ndis_conv_window = {}\n",
@@ -222,6 +226,9 @@ impl<'a> EpwConfig<'a> {
                     s.push_str(&format!(" {name} = {value:.16e}\n"));
                 }
                 let mut data = vec![
+                    qf_wannier::PROJECTABILITY_SWITCH.to_string(),
+                    format!("dis_proj_min = {}", qf_wannier::DIS_PROJ_MIN),
+                    format!("dis_proj_max = {}", qf_wannier::DIS_PROJ_MAX),
                     format!("conv_tol = {:.16e}", w.localization.tolerance_angstrom2),
                     format!("conv_window = {}", w.localization.window_iterations),
                 ];

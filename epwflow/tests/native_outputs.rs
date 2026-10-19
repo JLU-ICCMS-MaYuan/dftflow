@@ -234,6 +234,9 @@ fn mori_fsr_parameters_use_native_coarse_and_fine_grid_contracts() {
     cfg.validate().unwrap();
     let ec = EpwConfig::from_config(&cfg)
         .unwrap()
+        .with_bands(&[vec![-4., 0., 1., 2., 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21.]])
+        .unwrap()
+        .with_fermi(7.5).unwrap()
         .with_species(&["Mg".into(), "B".into()])
         .unwrap();
     let coarse = ec
@@ -291,12 +294,15 @@ fn native_windows_require_bound_fermi_and_reject_fortran_truncation() {
     cfg.wannier.energy_reference = EnergyReference::F2Fermi;
     let ec = EpwConfig::from_config(&cfg)
         .unwrap()
+        .with_bands(&[vec![-4., 0., 1., 2., 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21.]])
+        .unwrap()
         .with_species(&["Mg".into(), "B".into()])
         .unwrap();
     assert!(ec.epw_coarse_input("./tmp").is_err());
     let ec = ec.with_fermi(7.5).unwrap();
     let input = ec.epw_coarse_input("./tmp").unwrap();
-    assert!((field(&input, "dis_froz_max").parse::<f64>().unwrap() - 16.3).abs() < 1e-12);
+    assert!((field(&input, "dis_froz_max").parse::<f64>().unwrap() - 10.0).abs() < 1e-12,
+        "相对覆盖也必须受上游态数上限约束");
     assert!(ec
         .native_input(NativeStage::CoarseQuality, "./tmp", &"a".repeat(100), 0.5)
         .is_err());
@@ -328,6 +334,8 @@ fn diagnostic_points_include_all_fixed_q_without_changing_fermi_window() {
     cfg.interpolation.quality.q_points_crystal =
         vec![[0.; 3], [1.0 / 12.0, 0., 0.], [1.0 / 6.0, 0., 1.0 / 6.0]];
     let epw = EpwConfig::from_config(&cfg)
+        .unwrap()
+        .with_bands(&[vec![-4., 0., 1., 2., 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21.]])
         .unwrap()
         .with_species(&["Mg".into(), "B".into()])
         .unwrap()

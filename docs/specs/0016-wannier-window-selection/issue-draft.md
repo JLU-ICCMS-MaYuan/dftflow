@@ -1,6 +1,6 @@
 # 本地需求 0016：完善 Wannier 外窗与冻结窗上下限的选择
 
-**类型**：`type:feature`。**状态**：调研已完成，Issue／Spec 为待审草案，优化实现及真实选窗实验未开始。
+**类型**：`type:feature`。**状态**：指定上游与默认组合模式已获用户明确选择，源码接入与相关验证已完成，原生新窗口质量尚未验收；本地编号与线上自管约定不变。
 
 0016 沿用本仓库本地需求编号约定，不是已经创建的 Gitee Issue number。远端为 Gitee，线上 Issue 仍由用户管理；本次未创建线上记录、未推送。正式线上编号确定后再核对目录映射，不宣称远程双向链接有效。
 
@@ -8,21 +8,30 @@
 
 > 调研：如何完善 dis_win和 frozen_win这两个窗口的上下限的选择，先给我你当前的选择窗口上下限的方案，然后再调研。你要明白：你需要先调研清楚已有的开源项目，或者文献，然后再给我答案。使用 issue 和 spec 新建一个需求，然后开始做这件事。
 
+
+> 我想让你把[https://github.com/JLU-ICCMS-MaYuan/aiida-wannier90-workflows](https://github.com/JLU-ICCMS-MaYuan/aiida-wannier90-workflows)作为 external 里面的子仓库，然后完全采用这个[https://github.com/JLU-ICCMS-MaYuan/aiida-wannier90-workflows](https://github.com/JLU-ICCMS-MaYuan/aiida-wannier90-workflows)里面的设置窗口的方案来构建。而且你可以再 看看[https://github.com/JLU-ICCMS-MaYuan/aiida-wannier90-workflows](https://github.com/JLU-ICCMS-MaYuan/aiida-wannier90-workflows)有没有其他可以优化我的epwflow 和 wannierflow 代码的地方，都可以借鉴一下。
+
+> 我希望你使用这个仓库的默认方案是“E_F/导带底以上约 2 eV 的能量冻结＋投影解纠缠”。你说的：新投影解纠缠参数是什么参数？？？？？
+
+> 我希望你完成采用[https://github.com/JLU-ICCMS-MaYuan/aiida-wannier90-workflows](https://github.com/JLU-ICCMS-MaYuan/aiida-wannier90-workflows)里面设置窗口的方式。之前的方式🔛
+
+> 我希望你完成采用[https\://github.com/JLU-ICCMS-MaYuan/aiida-wannier90-workflows]\(https\://github.com/JLU-ICCMS-MaYuan/aiida-wannier90-workflows)里面设置窗口的方式。之前的方式弃用。
+
 ## 目标与价值
 
-先解释当前四边界及其来源，再根据已阅读的开源实现和文献，提出可验证、可复现的窗口选择方案。后续实现应帮助用户判断窗口是否适合指定目标能区，而不是把示例参数、程序默认值或图像重合当作最优窗口。
+先解释现状并完成外部调研，再按用户最新指令采用指定仓库默认的能量冻结＋投影解纠缠，统一 epwflow 与 wannierflow 的选择与原生输入，弃用原带号启发式，不静默回退。
 
 ## 范围
 
-- 调研当前 epwflow、已有 `wannier_window --auto`、Wannier90、AiiDA 工作流、SMV、SCDM 和投影解纠缠。
-- 区分外窗、冻结窗、独立质量验证窗及绘图显示窗；明确绝对能量与相对同一 E_F 的转换。
-- 设计四边界的逐 k 点态数、目标覆盖、输入完整性与版本兼容检查。
-- 提出有界候选比较和独立复核方案；当前五个 Wannier 函数及投影保持基线。
-- 明确何时只能给出“可行候选”，何时才有证据推荐一个通过验收的窗口。
+- 引入固定提交的 `external/aiida-wannier90-workflows` Git 子模块，保留许可与来源。
+- 使用共享 Rust 模块复现默认约 2 eV、投影阈值 0.01／0.95、能量平移与冻结上界限制；未设置外窗／下界保留原生默认。
+- 两套 flow 使用真实本征值，记录来源指纹、参数与逐点能量态数；实际投影由原生程序读取。
+- 修改检查命令及两类原生输入，删除旧自动算法，设置执行前必要能力门。
+- 审计其他可借鉴项；本次同时修复 wannierflow 的空参数写入和生成脚本失败传播，其他发现不冒充已修复。
 
 ## 范围外
 
-本轮不执行新的 QE／PH／EPW 作业、窗口扫描或生产代码修改。扩大 Wannier 子空间、更换赝势或泛函、升级科学程序、采用 SCDM／投影解纠缠作为默认生产方法、恢复暂缓的元素／轨道 PDOS，均不在本轮实施范围。电子选窗不能绕过声子质量门。
+本次不启动新 QE／PH／EPW 作业或阈值扫描，不升级／覆盖科学程序，不自动扩大物理基底，不更换赝势／泛函，不恢复暂缓的 DOS 投影、不放宽质量门或预算，不切换默认安装、不推送。实际科学程序不支持时明确阻断。
 
 ## 关系与依赖
 
@@ -30,20 +39,19 @@
 
 ## 验收与关闭条件
 
-1. 当前四边界及默认语义可由输入、实际日志、绑定的 NSCF 本征值复核。
-2. 调研至少覆盖两个开源项目及相关方法原始论文，区分已查证事实、适用限制和项目建议。
-3. 后续方案对四个边界分别给出依据；每个候选满足逐点态数约束及目标覆盖，记录淘汰原因。
-4. 若进入优化实施，以固定验证集比较候选，保留独立复核集；缺数据、基底容量不足、版本不支持或候选全部失败时如实拒绝推荐。
-5. 电子最大／RMS 误差沿用 0.05／0.02 eV；声子最大／RMS 50／2 cm⁻¹ 等上游标准不变。当前调研不构成科学通过证明。
-6. 完整实施与真实验证完成、适用文档回写及远程关系核验后才可关闭；本轮只交付调研与需求草案。
+1. 当前窗口调查与指定上游行为均可按固定源码、日志和实际能谱复核。
+2. 共享策略进入两个 flow 的最终原生输入，阈值与平移／上限行为和固定上游一致；缺少本征值或必要能力时不回退。
+3. 旧自动算法已删除，旧 CLI 参数明确报弃用；已有科学结果读取和只读带号／能量分析仍可用。
+4. 相关数值、错误边界、CLI、输入生成与差分检查通过，记录真实 MgB₂ 只读结果及本机能力限制。
+5. 源码／输入验证不等于新窗口原生质量通过；电子最大／RMS 0.05／0.02 eV，声子最大／RMS 50／2 cm⁻¹及其他科学验收标准不变。
+6. 线上关系与完整科学验证不在本轮伪造完成；本地实现验证完成不自动关闭线上需求。
 
 ## Documentation Impact
 
-- [x] 新增本目录 Issue／Spec 草案、现状证据、调研及需求检查表：具体证据与覆盖见 [需求检查](checklists/requirements.md)。
-- [x] 本轮不影响当前功能说明及根 README：未改变代码、CLI、安装或科学参数，因此不把拟议能力写入 Overview。
-- [ ] 后续实现改变行为时，使用对应 Skill 更新 `docs/overview/epwflow/` 及必要使用说明。
-- [ ] 当前 Issue／Spec 最终草案确认、Epic 反向关系和线上 Issue／Spec 双向远程链接核验。
+- [x] Issue／Spec 保存完整原始需求和最新取舍；固定来源、计划、任务、审计与采用依据分别落档。
+- [x] 当前功能总览及 CLI 使用说明已按实际接入与限制回写，验证见 acceptance.md。
+- [ ] 线上 Issue 编号、Epic 反向关系和远程 Spec 链接：沿用用户自管约定，不为补链接自动推送。
 
-## 本轮交付
+## 本次产物
 
-[Spec](spec.md)、[当前选择与只读核验](current-selection.md)、[开源与文献调研](research.md)。其中研究建议是 AI 根据证据提出的方案，不冒充用户已确认的技术决策；正式 Plan／Tasks 和优化实现留待该版设计确认。
+[Spec](spec.md)、[当前选择](current-selection.md)、[前期调研](research.md)、[指定上游行为](upstream-adoption.md)、[复用审计](reuse-audit.md)、[计划](plan.md)、[任务](tasks.md)、[快速验证](quickstart.md)、[验收](acceptance.md)。

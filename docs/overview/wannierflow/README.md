@@ -27,12 +27,12 @@ wannierflow/
 
 ## 使用关系
 
-window 从已有能量分析窗口，init 从配置准备 Wannier 流程，post 读取计算结果，plot 比较已有能带。init 之前需完成匹配的 QE 电子计算。
+window 与 init 共用指定上游默认的能量冻结＋投影解纠缠策略；init 直接从配置中的真实 NSCF bands_file 生成窗口及来源记录。window 的 -n／-e 保留只读分析，旧 --auto 已弃用。post 读取计算结果，plot 比较已有能带。init 之前需完成匹配的 QE 电子计算；实际程序能力与科学收敛单独检查。
 
 ```mermaid
 flowchart LR
     A[已有电子能量] --> B[wannier_window]
-    B --> C[填写能窗 / 投影配置]
+    B --> C[核对共享选窗结果与投影配置]
     C --> D[wannier_init]
     D --> E[wannier_post]
     D --> F[wannier_plot]

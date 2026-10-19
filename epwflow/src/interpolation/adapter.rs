@@ -11,6 +11,7 @@ pub struct AdapterBinding {
     pub f2_digest: String,
     pub program_identities: BTreeMap<String, String>,
     pub fermi_ev: f64,
+    pub eigenvalues: Vec<Vec<f64>>,
 }
 
 /// 校验 F2 来源清单有效并固定程序身份；前置未满足不得放行（FR-003）。
@@ -29,6 +30,9 @@ pub fn bind_f2(f2_path: &Path, cfg: &config::Config) -> Result<AdapterBinding> {
     ensure!(states.fermi.is_finite() && states.k_grid == cfg.qe.nscf.k_grid
         && states.nbnd == cfg.qe.nscf.nbnd as usize,
         "data_invalid: F2 Fermi 能或 NSCF 网格/带数不相容");
+    ensure!(qf_wannier::validate_bands(&states.eigenvalues)? == states.nbnd
+        && states.eigenvalues.len() == states.kpoints.len(),
+        "data_invalid: F2 选窗本征值不完整");
     let f2_digest = store::hash_file(f2_path)?;
     let mut program_identities = BTreeMap::new();
     program_identities.insert("pw".to_string(), store::hash_file(&cfg.programs.pw.path)?);
@@ -38,5 +42,6 @@ pub fn bind_f2(f2_path: &Path, cfg: &config::Config) -> Result<AdapterBinding> {
         f2_digest,
         program_identities,
         fermi_ev: states.fermi,
+        eigenvalues: states.eigenvalues.clone(),
     })
 }

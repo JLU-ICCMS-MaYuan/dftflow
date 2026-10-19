@@ -5,6 +5,7 @@ edition = "2021"
 description = "受控的 QE/EPW 超导计算工作流"
 
 [dependencies]
+qf-wannier = { path = "../crates/qf-wannier" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }

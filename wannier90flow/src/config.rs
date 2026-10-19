@@ -38,6 +38,7 @@ pub fn wannier_init_template() -> Value {
         "system_name": null,
         "num_wann": null,
         "num_bands": null,
+        "bands_file": null,
         "exclude_bands": null,
         "iprint": null,
         "num_iter": null,
@@ -103,7 +104,15 @@ pub fn load_init_config(path: &str) -> Result<Value> {
     let mut template = wannier_init_template();
     let mut keys = SHARED_ALLOWED_KEYS.to_vec();
     keys.push("wannier_init");
-    apply_config_overrides(&mut template, &input, &keys)
+    let mut cfg = apply_config_overrides(&mut template, &input, &keys)?;
+    if let Some(file) = cfg["wannier_init"]["bands_file"].as_str() {
+        let file = std::path::Path::new(file);
+        if file.is_relative() {
+            let base = std::path::Path::new(path).parent().unwrap_or(std::path::Path::new("."));
+            cfg["wannier_init"]["bands_file"] = Value::String(base.join(file).to_string_lossy().into_owned());
+        }
+    }
+    Ok(cfg)
 }
 
 /// TOML 优先、失败时尝试 JSON 的宽容解析（对齐 `load_config_file` 按扩展名/内容尝试）。

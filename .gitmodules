@@ -19,3 +19,6 @@
 [submodule "external/epwpy"]
 	path = external/epwpy
 	url = https://gitlab.com/madegan/epwpy.git
+[submodule "external/aiida-wannier90-workflows"]
+	path = external/aiida-wannier90-workflows
+	url = https://github.com/JLU-ICCMS-MaYuan/aiida-wannier90-workflows.git

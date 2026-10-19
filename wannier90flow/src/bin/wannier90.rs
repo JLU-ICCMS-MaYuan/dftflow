@@ -54,17 +54,23 @@ enum Commands {
         /// 能量文件：EIGENVAL 或 QE/FLEUR XML（含能带信息）
         xml: String,
         /// 能带序号（1 或 2 个整数）
-        #[arg(short, long, num_args = 1..=2, value_parser = clap::value_parser!(usize))]
+        #[arg(short, long, num_args = 1..=2, conflicts_with_all = ["e", "num_wann", "auto"], value_parser = clap::value_parser!(usize))]
         n: Option<Vec<usize>>,
         /// 能量范围（1 或 2 个浮点）
-        #[arg(short, long, num_args = 1..=2, allow_hyphen_values = true, value_parser = clap::value_parser!(f64))]
+        #[arg(short, long, num_args = 1..=2, conflicts_with_all = ["n", "num_wann", "auto"], allow_hyphen_values = true, value_parser = clap::value_parser!(f64))]
         e: Option<Vec<f64>>,
-        /// 自动估计能窗：nbnd1 num_wann nbnd3
-        #[arg(long, num_args = 3, value_names = ["nbnd1", "num_wann", "nbnd3"])]
+        /// 旧带号启发式已弃用
+        #[arg(long, hide = true, num_args = 3)]
         auto: Option<Vec<usize>>,
-        /// 自动能窗边界偏移（eV）
-        #[arg(long, default_value_t = 0.02)]
-        auto_delta: f64,
+        /// 上游默认组合选窗的 Wannier 函数数目
+        #[arg(long)]
+        num_wann: Option<usize>,
+        /// 绝对 Fermi 能（eV）；QE XML 缺省读取实际值
+        #[arg(long, allow_hyphen_values = true)]
+        fermi: Option<f64>,
+        /// 排除的原始 1-based 带号
+        #[arg(long, value_delimiter = ',')]
+        exclude_bands: Vec<usize>,
     },
     /// QE 与 Wannier90 能带对比图（wannier90_plot）
     Plot {
@@ -124,25 +130,23 @@ fn main() -> Result<()> {
             n,
             e,
             auto,
-            auto_delta,
+            num_wann,
+            fermi,
+            exclude_bands,
         } => {
+            if auto.is_some() {
+                anyhow::bail!("旧 --auto nbnd1 num_wann nbnd3 已弃用；请使用 --num-wann N，采用上游默认能量冻结＋投影解纠缠");
+            }
             let mode = if let Some(n) = n {
                 window::WindowMode::Bands(n)
             } else if let Some(e) = e {
                 window::WindowMode::Energies(e)
-            } else if let Some(a) = auto {
-                let (nbnd1, num_wann, nbnd3) = (a[0], a[1], a[2]);
-                if nbnd1 < 1 || num_wann < 1 {
-                    anyhow::bail!("--auto 参数必须满足：nbnd1>=1, num_wann>=1, nbnd3>=0");
-                }
-                window::WindowMode::Auto {
-                    nbnd1,
-                    num_wann,
-                    nbnd3,
-                    delta: auto_delta,
+            } else if let Some(num_wann) = num_wann {
+                window::WindowMode::Default {
+                    num_wann, fermi, exclude_bands,
                 }
             } else {
-                anyhow::bail!("-n / -e / --auto 必须提供其一");
+                anyhow::bail!("自动选窗请指定 --num-wann N；只读分析可指定 -n 或 -e");
             };
             window::run(&xml, mode)
         }

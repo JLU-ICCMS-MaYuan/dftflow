@@ -141,11 +141,11 @@ pub fn ensure_pw2wan_input(path: &str, prefix: &str, cfg: &Value) -> Result<()> 
         return Ok(());
     }
     let pw2_cfg = cfg.get("pw2wannier90");
-    // 对齐 Python `dict.get(key, default)` 语义：模板键恒存在（值可为 None），
-    // None 原样格式化为 'None'，不做回退。
+    // 模板中的空值表示未指定，不能输出 Fortran 无效的 'None'。
     let get = |k: &str, default: Value| -> Value {
         pw2_cfg
             .and_then(|c| c.get(k))
+            .filter(|v| !v.is_null())
             .cloned()
             .unwrap_or(default)
     };
@@ -159,26 +159,19 @@ pub fn ensure_pw2wan_input(path: &str, prefix: &str, cfg: &Value) -> Result<()> 
         format!("  prefix = {}", format_pw2_value(&prefix_val)),
         format!("  seedname = {}", format_pw2_value(&seedname)),
     ];
-    match pw2_cfg.and_then(|c| c.get("write_amn")) {
+    match pw2_cfg.and_then(|c| c.get("write_amn")).filter(|v| !v.is_null()) {
         Some(v) => lines.push(format!("  write_amn = {}", format_pw2_value(v))),
         None => lines.push("  write_amn = .true.".into()),
     }
-    match pw2_cfg.and_then(|c| c.get("write_mmn")) {
+    match pw2_cfg.and_then(|c| c.get("write_mmn")).filter(|v| !v.is_null()) {
         Some(v) => lines.push(format!("  write_mmn = {}", format_pw2_value(v))),
         None => lines.push("  write_mmn = .true.".into()),
     }
-    // Python: `if "write_unk" in pw2_cfg` —— 模板键恒存在，因此恒写出（None → 'None'）
-    if pw2_cfg.and_then(|c| c.get("write_unk")).is_some() {
-        let v = pw2_cfg.and_then(|c| c.get("write_unk")).unwrap();
-        lines.push(format!("  write_unk = {}", format_pw2_value(v)));
-    }
-    if pw2_cfg.and_then(|c| c.get("spin_component")).is_some() {
-        let v = pw2_cfg.and_then(|c| c.get("spin_component")).unwrap();
-        lines.push(format!("  spin_component = {}", format_pw2_value(v)));
-    }
-    if pw2_cfg.and_then(|c| c.get("wan_mode")).is_some() {
-        let v = pw2_cfg.and_then(|c| c.get("wan_mode")).unwrap();
-        lines.push(format!("  wan_mode = {}", format_pw2_value(v)));
+    // 可选空值不写入 namelist。
+    for name in ["write_unk", "spin_component", "wan_mode"] {
+        if let Some(value) = pw2_cfg.and_then(|c| c.get(name)).filter(|v| !v.is_null()) {
+            lines.push(format!("  {name} = {}", format_pw2_value(value)));
+        }
     }
     lines.push("/\n".into());
 
@@ -208,7 +201,7 @@ pub fn create_run_script(work_dir: &str, prefix: &str, cfg: &Value) -> Result<()
     let script_path = format!("{work_dir}/run_wannier90.sh");
     let content = format!(
         "{}\n\ncd \"$(dirname \"$0\")\"\n\necho \"Prep NNKP at $(date)\"\n{exec_path} -pp \"{prefix}\"\n\necho \"Run pw2wannier90 at $(date)\"\nif [ ! -f \"{pw2_input_name}\" ]; then\n  echo \"缺少 pw2wannier90 输入文件: {pw2_input_name}\"\n  exit 1\nfi\n{pw2_exec_path} < \"{pw2_input_name}\" > PW2WAN.log 2>&1\n\necho \"Run Wannier90 (requires *.amn/*.mmn ready)\"\n{exec_path} \"{prefix}\" > WANNIER90.log 2>&1\n",
-        slurm_header.trim()
+        format!("{}\nset -euo pipefail", slurm_header.trim())
     );
     std::fs::write(&script_path, content)?;
     #[cfg(unix)]
@@ -225,6 +218,7 @@ pub fn run_wannier90_pipeline(work_dir: &str, prefix: &str, cfg: &Value) -> Resu
     let exec_path = cfg["wannier90"]["executable_path"]
         .as_str()
         .unwrap_or("wannier90.x");
+    qf_wannier::require_projectability_keywords(Path::new(exec_path))?;
     let pw2_exec_path = cfg["pw2wannier90"]["executable_path"]
         .as_str()
         .unwrap_or("pw2wannier90.x");
@@ -273,20 +267,44 @@ pub fn write_win(
     let Some(num_wann) = init_cfg.get("num_wann").and_then(|v| v.as_i64()) else {
         anyhow::bail!("配置缺少 num_wann。");
     };
+    anyhow::ensure!(num_wann > 0, "num_wann 必须为正");
+    let bands_file = init_cfg["bands_file"].as_str().context(
+        "上游默认组合选窗需要 wannier_init.bands_file 指向实际 QE NSCF XML；旧手填窗生成路径已弃用")?;
+    let (bands, fermi) = qf_wannier::read_qe_bands(Path::new(bands_file))?;
+    anyhow::ensure!(bands.len() == kpoints.len(), "bands_file k 点数与生成的 Wannier 网格不符");
+    if let Some(value) = init_cfg["fermi_energy"].as_f64() {
+        anyhow::ensure!((value - fermi).abs() <= 1e-8, "配置 Fermi 能与 bands_file 不一致");
+    }
+    let exclude_bands: Vec<usize> = if let Some(value) = init_cfg.get("exclude_bands").filter(|v| !v.is_null()) {
+        value.as_array().context("exclude_bands 必须是 1-based 整数数组")?.iter()
+            .map(|v| v.as_u64().and_then(|n| usize::try_from(n).ok()).context("非法排除带号"))
+            .collect::<Result<_>>()?
+    } else { Vec::new() };
+    let bound = |key: &str| -> Result<Option<f64>> {
+        init_cfg.get(key).filter(|v| !v.is_null())
+            .map(|v| v.as_f64().with_context(|| format!("{key} 必须是有限能量数值"))).transpose()
+    };
+    let bounds = qf_wannier::Bounds {
+        dis_win_min: bound("dis_win_min")?,
+        dis_win_max: bound("dis_win_max")?,
+        dis_froz_min: bound("dis_froz_min")?,
+        dis_froz_max: bound("dis_froz_max")?,
+    };
+    let selection = qf_wannier::select_default(&bands, fermi, num_wann as usize,
+        &exclude_bands, &bounds, qf_wannier::Reference::UpstreamRelative)?;
+    let num_bands = bands[0].len() - selection.excluded_bands.len();
+    if let Some(nb) = init_cfg["num_bands"].as_u64() {
+        anyhow::ensure!(nb as usize == num_bands, "num_bands 与排除后的实际能带数不符");
+    }
 
     let get_i = |k: &str| init_cfg.get(k).and_then(|v| v.as_i64());
-    let get_f = |k: &str| init_cfg.get(k).and_then(|v| v.as_f64());
     let get_b = |k: &str| init_cfg.get(k).and_then(|v| v.as_bool());
 
     let mut out = String::new();
     out.push_str(&format!("num_wann = {num_wann}\n"));
-    if let Some(nb) = get_i("num_bands") {
-        out.push_str(&format!("num_bands = {nb}\n"));
-    }
-    if let Some(eb) = init_cfg.get("exclude_bands") {
-        if !eb.is_null() {
-            out.push_str(&format!("exclude_bands = {}\n", python_repr(eb)));
-        }
+    out.push_str(&format!("num_bands = {num_bands}\n"));
+    if !selection.excluded_bands.is_empty() {
+        out.push_str(&format!("exclude_bands = {}\n", selection.excluded_bands.iter().map(usize::to_string).collect::<Vec<_>>().join(",")));
     }
     if let Some(v) = get_i("iprint") {
         out.push_str(&format!("iprint = {v}\n"));
@@ -297,11 +315,11 @@ pub fn write_win(
     if let Some(v) = get_i("dis_num_iter") {
         out.push_str(&format!("dis_num_iter = {v}\n"));
     }
-    for k in ["dis_froz_min", "dis_froz_max", "dis_win_min", "dis_win_max"] {
-        if let Some(v) = get_f(k) {
-            out.push_str(&format!("{k} = {:12.6}\n", v));
-        }
+    for (k, v) in &selection.parameters {
+        out.push_str(&format!("{k} = {v:.16e}\n"));
     }
+    out.push_str(qf_wannier::PROJECTABILITY_SWITCH);
+    out.push('\n');
     for k in ["write_hr", "write_bvec"] {
         if let Some(v) = get_b(k) {
             out.push_str(&format!("{k} = {}\n", bool_lower(v)));
@@ -334,9 +352,7 @@ pub fn write_win(
             out.push_str(&format!("wannier_plot_format = {fmt}\n"));
         }
     }
-    if let Some(v) = get_f("fermi_energy") {
-        out.push_str(&format!("fermi_energy = {:12.6}\n", v));
-    }
+    out.push_str(&format!("fermi_energy = {fermi:.16e}\n"));
     if let Some(v) = get_b("fermi_surface_plot") {
         out.push_str(&format!("fermi_surface_plot = {}\n", bool_lower(v)));
     }
@@ -435,6 +451,7 @@ pub fn write_win(
     out.push_str(&format!("! system_name: {system_name}\n"));
 
     std::fs::write(output, out).with_context(|| format!("write {output}"))?;
+    qf_wannier::write_selection(&Path::new(output).with_extension("window-selection.json"), &selection)?;
     Ok(())
 }
 
@@ -444,16 +461,6 @@ fn bool_lower(b: bool) -> &'static str {
         "true"
     } else {
         "false"
-    }
-}
-
-/// Python f-string 对容器值的 `str()` 表示：`[1, 2]`（逗号+空格）。
-fn python_repr(v: &Value) -> String {
-    if let Some(arr) = v.as_array() {
-        let inner: Vec<String> = arr.iter().map(value_to_plain_string).collect();
-        format!("[{}]", inner.join(", "))
-    } else {
-        value_to_plain_string(v)
     }
 }
 
@@ -541,8 +548,10 @@ pub fn run(input: &str, config: &str, run: bool, submit: bool) -> Result<()> {
     create_run_script(work_dir, &basename, &cfg)?;
     println!("已生成 {output}，包含 {} 个 k 点。", kpoints.len());
     if run {
+        qf_wannier::require_projectability_keywords(Path::new(cfg["wannier90"]["executable_path"].as_str().unwrap_or("wannier90.x")))?;
         run_wannier90_pipeline(work_dir, &basename, &cfg)?;
     } else if submit {
+        qf_wannier::require_projectability_keywords(Path::new(cfg["wannier90"]["executable_path"].as_str().unwrap_or("wannier90.x")))?;
         qf_runner::submit_via_sbatch(Path::new(work_dir), "run_wannier90.sh")?;
     }
     Ok(())

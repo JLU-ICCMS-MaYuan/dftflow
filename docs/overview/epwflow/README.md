@@ -140,3 +140,12 @@ MgB₂ 测试脚本与说明位于 test_auto/MgB2/epwflow；运行数据为 test
 真实 MgB₂ 的两个下边界均为 −4.90710 eV，冻结窗上界为 8.80000 eV，外窗上界为 32.23753 eV；共同 E_F=7.497269413025949 eV。本次只标注实际计算窗口，不修改物理输入。带冻结窗元数据的新包通过原有 `collect`／`plot` 命令绘制；旧包若需补全边界，应在独立目录使用带指纹的原始 `.wout` 重新 `interpolation export-comparison`，不能手改旧清单。
 
 源码与数据校验见 `interpolation/comparison.rs`、`comparison_data.rs`，绘图见 `delivery/comparison_plot.rs`；7 项比较回归及真实三格式核验见 [0014 验收记录](../../specs/0014-epwflow-delivery/acceptance.md)。投影暂缓、宽窗缺态及科学质量失败状态保留。
+
+
+## 默认组合选窗
+
+新生成路径与 wannierflow 共用 `qf-wannier`，采用固定 AiiDA 工作流的默认能量冻结＋投影解纠缠。F2 绑定传递实际 NSCF 本征值和共同 E_F；默认冻结上界由运行时平移值＋2 eV 出发，再按排除后的第 N／N+1 带限制，默认投影阈值为 0.01／0.95。未设置的其他边界保留原生默认；显式能量覆盖仍经过同一上限处理。
+
+独立 `.win` 与 EPW 的 `wdata` 都写投影阈值及标准 W90 所需的 `dis_froz_proj=true`；实际投影由原生程序读取。执行路径保存 `window-selection.json`，缺本征值或无法核验实际独立／内嵌 W90 必要参数支持时拒绝，不沿用旧固定窗或带号启发式。关键字检查是保守必要条件，不等于原生组合方法已经运行成功。
+
+本机现有 W90／EPW 尚未核验到这三项参数支持，未升级程序或执行新窗口科学计算；现有历史结果和窗口日志不改写。源码接入、上游数值差分与新窗口科学质量分别报告，声子 RMS 失败及下游质量门不变。使用和证据见 [0016 使用说明](../../specs/0016-wannier-window-selection/quickstart.md) 与 [验收](../../specs/0016-wannier-window-selection/acceptance.md)。

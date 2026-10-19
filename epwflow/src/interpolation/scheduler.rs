@@ -38,9 +38,14 @@ pub fn run(
     let checked_quality = native_quality::check_current_coarse(quality_path, &work.join("coarse"))?;
     ensure!(checked_quality.passed,
         "data_invalid: 独立插值质量未通过，禁止细网格与超导下游");
-    let _token = charge_budget(cfg, "f3")?;
     let structure = crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
-    let epw_cfg = epw_config::EpwConfig::from_config(cfg)?.with_fermi(binding.fermi_ev)?.with_species(&structure.cell.elements)?;
+    let epw_cfg = epw_config::EpwConfig::from_config(cfg)?.with_fermi(binding.fermi_ev)?.with_bands(&binding.eigenvalues)?.with_species(&structure.cell.elements)?;
+    epw_cfg.window_selection()?;
+    qf_wannier::require_projectability_keywords(&cfg.programs.epw.path)?;
+    if let Some(program) = &cfg.programs.wannier90 {
+        qf_wannier::require_projectability_keywords(&program.path)?;
+    }
+    let _token = charge_budget(cfg, "f3")?;
 
     // Wannier 化（FR-004）。
     let wan = wannier::run_wannier(&epw_cfg, work, launcher, backend)?;
