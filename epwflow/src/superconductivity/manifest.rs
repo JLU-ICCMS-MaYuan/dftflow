@@ -1,9 +1,9 @@
+use super::super::foundation::store;
+use super::super::qe_data::manifest::{Check, Validation};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
-use super::super::foundation::store;
-use super::super::qe_data::manifest::{Validation, Check};
 
 /// 单次尝试记录。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,13 +29,51 @@ pub struct SuperconductivityManifest {
     pub gaps_mev: Vec<f64>,
     pub attempts: Vec<AttemptRecord>,
     pub validation: Validation,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub native_modes: BTreeMap<String, super::engine::ModeResult>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<store::Identity>,
 }
 
 impl SuperconductivityManifest {
     pub fn load(path: &Path) -> Result<Self> {
         let m: SuperconductivityManifest = store::read(path)?;
-        if m.schema_version != 1 {
-            anyhow::bail!("data_invalid: 超导清单 schema_version={} 不支持", m.schema_version);
+        if !matches!(m.schema_version, 1 | 2) {
+            anyhow::bail!(
+                "data_invalid: 超导清单 schema_version={} 不支持",
+                m.schema_version
+            );
+        }
+        if m.schema_version == 2 {
+            for a in &m.artifacts {
+                a.verify()?;
+            }
+            anyhow::ensure!(
+                !m.native_modes.is_empty() && m.tc.is_none(),
+                "data_invalid: 原生交付必须按模式保存区间，不能压为旧 Tc 标量"
+            );
+            for (mode, result) in &m.native_modes {
+                anyhow::ensure!(
+                    result.schema_version == 1
+                        && matches!(
+                            (mode.as_str(), result.mode),
+                            ("iso", crate::foundation::config::Mode::Iso)
+                                | ("aniso", crate::foundation::config::Mode::Aniso)
+                        ),
+                    "data_invalid: 原生模式身份不符"
+                );
+                for a in &result.attempts {
+                    if let Some(record) = &a.record {
+                        record.verify()?;
+                        let r: super::attempt::AttemptResult = store::read(&record.path)?;
+                        r.executable.verify()?;
+                        r.source.verify(r.request.mode)?;
+                        for x in &r.artifacts {
+                            x.verify()?;
+                        }
+                    }
+                }
+            }
         }
         Ok(m)
     }
@@ -43,7 +81,11 @@ impl SuperconductivityManifest {
 
 /// 便捷校验条目。
 pub fn check(name: &str, passed: bool, detail: &str) -> Check {
-    Check { name: name.to_string(), passed, detail: detail.to_string() }
+    Check {
+        name: name.to_string(),
+        passed,
+        detail: detail.to_string(),
+    }
 }
 
 /// 占位以满足 BTreeMap 导入（避免未使用告警）。

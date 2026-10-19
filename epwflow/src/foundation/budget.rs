@@ -51,6 +51,21 @@ pub struct BudgetLedger {
 }
 
 impl BudgetLedger {
+    /// 核对当前分配已经登记且覆盖阶段请求，不创建第二份预留。
+    pub fn require_allocation(&self, job: u64, resources: &super::config::Resources) -> Result<String> {
+        let allocation = self
+            .allocations
+            .iter()
+            .find(|a| a.job_id == Some(job))
+            .context("allocation: 当前 Slurm 分配尚未登记；请先 budget reserve/attach")?;
+        ensure!(
+            allocation.node_seconds >= resources.nodes as u64 * resources.wall_seconds
+                && allocation.storage_bytes >= resources.storage_bytes,
+            "budget_denied: 已登记分配不足以覆盖请求时间或存储"
+        );
+        Ok(allocation.reservation_id.clone())
+    }
+
     fn init(campaign_id: &str) -> Self {
         BudgetLedger {
             schema_version: 1,

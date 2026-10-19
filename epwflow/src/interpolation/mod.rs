@@ -7,6 +7,7 @@ pub mod epw_config;
 pub mod fine;
 pub mod manifest;
 pub mod native;
+pub mod native_matrices;
 pub mod native_quality;
 pub mod quality;
 pub mod reuse;

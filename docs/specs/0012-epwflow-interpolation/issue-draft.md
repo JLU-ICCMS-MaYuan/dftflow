@@ -222,3 +222,7 @@
 > 我还希望你能在能带图和 dos 图上以不同的颜色虚线标出来，四个窗口 dis_win和 frozen_win的位置，方便我了解你选的窗口是否合适。
 
 沿用 FR-014：本项从同一带指纹的 Wannier `.wout` 读取实际 Outer／Inner，向 0014 交付 dis_win_min/max、dis_froz_min/max 及共同 E_F。冻结窗包含于外窗，缺失不推断；实际窗口不修改，重合边界不作能量偏移。实现和已验证子集见 [Spec](spec.md)、[T047](tasks.md) 与 [验收记录](acceptance.md)，完整科学验收状态不因绘图改变。
+
+## 2026-10-19：暂缓 9³，先补原生交接
+
+用户答复“暂不加密网格，先补齐原生执行代码”。单次 9³ PH [诊断草案](convergence-proposal.md) 暂缓；未提交新实验，原五点及 50／2 cm⁻¹ 门保持。fine.rs／native_matrices.rs 增加原生细网格角色与 INTEGER(4)／REAL(8) 小端适配，供 0013 读取完整费米面状态；这不是当前真实 F3 质量通过或完整生产链成功的证据。

@@ -6,9 +6,7 @@ use std::path::PathBuf;
 use epwflow::foundation::config;
 use epwflow::foundation::stage::Backend;
 use epwflow::foundation::store;
-use epwflow::superconductivity::{
-    aniso, attempt, gap, iso, parse, scheduler, solver_config,
-};
+use epwflow::superconductivity::{aniso, attempt, gap, iso, parse, scheduler, search};
 
 fn write_script(path: &PathBuf, body: &str) {
     std::fs::write(path, body).unwrap();
@@ -149,62 +147,368 @@ iso = {{ min_k = 1.0, max_k = 10.0, precision_k = 0.1, max_solves = 20, eigen_ma
     p
 }
 
-/// 构造一个会让 Tc 落在 [1,10] K 内的谱（FR-004/008 单元验证）。
-fn strong_spectrum() -> parse::Spectrum {
-    parse::compute_lambda(&[5.0, 10.0, 15.0, 20.0], &[0.192, 0.192, 0.192, 0.192], 200.0).unwrap()
+// 以下是原生格式/进程契约 fixture，不是 MgB₂ 科学结果或真实 EPW 验收。
+fn request(mode: config::Mode, kind: attempt::SolveKind) -> attempt::Request {
+    attempt::Request {
+        mode,
+        kind,
+        temperature_centikelvin: 2000,
+        seed_mev: if kind == attempt::SolveKind::Nonlinear {
+            Some(1.0)
+        } else {
+            None
+        },
+        mu_star: 0.05,
+        cutoff_ev: 0.03,
+        max_iterations: 1000,
+        convergence_relative: 1e-8,
+        mixing_beta: 0.2,
+        mixing_history: 4,
+        initial_shape: 1.0,
+    }
+}
+
+fn states() -> Vec<gap::State> {
+    vec![
+        gap::State {
+            kpoint: 2,
+            band: 1,
+            energy_ev: -0.01,
+            weight: 0.25,
+        },
+        gap::State {
+            kpoint: 5,
+            band: 3,
+            energy_ev: 0.02,
+            weight: 0.75,
+        },
+    ]
+}
+
+fn raw_gap(r: &attempt::Request, mapping: &[gap::State], delta: f64) -> String {
+    let aniso = !mapping.is_empty();
+    let mut s = if aniso {
+        "# w [eV] Enk-Ef [eV] znorm(w) delta(w) [eV]\n"
+    } else {
+        "w [eV] znorm(w) delta(w) [eV]\n"
+    }
+    .to_string();
+    for i in 0..r.nfreq().unwrap() {
+        let w = (2 * i + 1) as f64
+            * std::f64::consts::PI
+            * gap::KB_EV_K
+            * r.temperature_centikelvin as f64
+            / 100.0;
+        if aniso {
+            for state in mapping {
+                s.push_str(&format!(
+                    "{w:.10e} {:.10e} 1.5 {:.10e}\n",
+                    state.energy_ev,
+                    delta / 1000.0
+                ));
+            }
+        } else {
+            s.push_str(&format!("{w:.10e} 1.5 {:.10e}\n", delta / 1000.0));
+        }
+    }
+    s
+}
+
+fn solve_log(r: &attempt::Request) -> String {
+    let nf = r.nfreq().unwrap();
+    let body = if r.kind == attempt::SolveKind::Linear {
+        let cut = (2 * nf + 1) as f64
+            * std::f64::consts::PI
+            * gap::KB_EV_K
+            * r.temperature_centikelvin as f64
+            / 100.0;
+        format!("Start: Solving (isotropic) linearized Eliashberg equation with solver = lapack\nFor the first Temp. 20.00 K\nTotal number of frequency points nsiw(1) = {nf}\nTemp. Max. nsiw wscut Nr. of iters\n(K) eigenvalue (itemp) (eV) to Converge\n20.00 1.2000000 {nf} {cut:.4} 1\nFinish: Solving (isotropic) linearized Eliashberg equation\n")
+    } else {
+        format!("temp(1) = 20.00000 K\nSolve {} Eliashberg equations on imaginary-axis\nTotal number of frequency points nsiw(1) = {nf}\niter ethr znormi deltai [meV]\n1 1e-2 1.5 2.0\n2 1e-10 1.5 2.0\nConvergence was reached in nsiter = 2\n",if r.mode==config::Mode::Iso {"isotropic"} else {"anisotropic"})
+    };
+    format!("Program EPW v.5.9 starts\n{body}Total program execution\nEPW : 0.01s CPU 0.02s WALL\n")
+}
+
+fn native_inputs(root: &PathBuf) -> attempt::NativeInputs {
+    use epwflow::foundation::store::Identity;
+    let a = root.join("fixture.a2f");
+    let c = root.join("crystal.fmt");
+    std::fs::write(&a, "# fixture\n10 0.1\n20 0.2\n").unwrap();
+    std::fs::write(&c, "fixture crystal\n").unwrap();
+    let mut matrix_files = vec![];
+    for name in ["egnv", "freq", "ikmap", "ephmat1"] {
+        let p = root.join(name);
+        std::fs::write(&p, "fixture only").unwrap();
+        matrix_files.push(Identity::capture(&p).unwrap());
+    }
+    attempt::NativeInputs {
+        interpolation_digest: "fixture-f3-digest".into(),
+        prefix: "mgb2".into(),
+        k_grid: [4; 3],
+        q_grid: [2; 3],
+        spectral_points: 2,
+        eps_acoustic_cm1: 0.1,
+        a2f: Identity::capture(&a).unwrap(),
+        crystal: Identity::capture(&c).unwrap(),
+        selecq: Some(Identity::capture(&c).unwrap()),
+        matrix_outdir: root.clone(),
+        matrix_files,
+        states: states(),
+    }
 }
 
 #[test]
-fn iso_tc_search_located() {
-    let spec = strong_spectrum();
-    let tc = iso::crit_temp_iso(&spec, 0.1, 200, 1.0, 10.0, 0.01, 50);
-    assert!(tc.is_some(), "Tc 应在有界温度内被定位");
-    let tc = tc.unwrap();
-    assert!(tc > 1.0 && tc < 10.0, "Tc={tc} 应落在 (1,10) K");
+fn full_native_gap_preserves_units_mapping_and_frequencies() {
+    let r = request(config::Mode::Aniso, attempt::SolveKind::Nonlinear);
+    let data = gap::parse_native(
+        &raw_gap(&r, &states(), 2.0),
+        2000,
+        r.nfreq().unwrap(),
+        states(),
+    )
+    .unwrap();
+    assert_eq!(data.delta_mev.len(), 6);
+    assert_eq!(data.states[1].band, 3);
+    assert!((data.delta_mev[5] - 2.0).abs() < 1e-10);
+    assert_eq!(data.band_statistics().unwrap()[&3].weight_sum, 0.75);
+    assert!(gap::parse_native(
+        &raw_gap(&r, &states(), 2.0),
+        2001,
+        r.nfreq().unwrap(),
+        states()
+    )
+    .is_err());
+    let truncated = raw_gap(&r, &states(), 2.0)
+        .lines()
+        .take(6)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(gap::parse_native(&truncated, 2000, r.nfreq().unwrap(), states()).is_err());
+    let mut wrong = states();
+    wrong[0].energy_ev += 0.001;
+    assert!(gap::parse_native(
+        &raw_gap(&r, &states(), 2.0),
+        2000,
+        r.nfreq().unwrap(),
+        wrong
+    )
+    .is_err());
+    assert!(gap::parse_native(
+        &raw_gap(&r, &states(), 2.0).replace("[eV]", "[meV]"),
+        2000,
+        r.nfreq().unwrap(),
+        states()
+    )
+    .is_err());
 }
 
 #[test]
-fn aniso_dual_initial_converged() {
-    let spec = strong_spectrum();
-    let root = std::env::temp_dir().join(format!("epwflow-sc-{}", store::token()));
+fn native_log_rejects_unconverged_small_gap_and_wrong_identity() {
+    let r = request(config::Mode::Iso, attempt::SolveKind::Nonlinear);
+    let log = solve_log(&r);
+    let e = parse::solve_log(&log, &r).unwrap();
+    assert_eq!(e.relative_residual, Some(1e-10));
+    assert_eq!(e.iterations, Some(2));
+    for bad in [
+        log.replace("Convergence was reached", "Convergence was not reached"),
+        log.replace("1e-10", "1e-2"),
+        log.replace("1e-10", "NaN"),
+        log.replace("20.00000", "20.01000"),
+        log.replace("isotropic", "anisotropic"),
+        log.replace("2 1e-10", "3 1e-10"),
+        format!("{log}{log}"),
+    ] {
+        assert!(parse::solve_log(&bad, &r).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn native_linear_has_no_invented_residual_and_classifies_rho() {
+    let r = request(config::Mode::Iso, attempt::SolveKind::Linear);
+    let e = parse::solve_log(&solve_log(&r), &r).unwrap();
+    assert_eq!(e.relative_residual, None);
+    assert_eq!(e.maximum_eigenvalue, Some(1.2));
+    assert_eq!(
+        iso::classify(1.2, 1e-6).unwrap(),
+        search::Side::Superconducting
+    );
+    assert_eq!(iso::classify(0.9, 1e-6).unwrap(), search::Side::Normal);
+    assert_eq!(iso::classify(1.0, 1e-6).unwrap(), search::Side::Uncertain);
+    assert!(iso::classify(f64::NAN, 1e-6).is_err());
+    assert!(parse::solve_log(
+        &solve_log(&r).replace("solver = lapack", "solver = power"),
+        &r
+    )
+    .is_err());
+}
+
+#[test]
+fn dual_seed_uses_full_distribution_and_only_global_sign() {
+    let r = request(config::Mode::Aniso, attempt::SolveKind::Nonlinear);
+    let a = gap::parse_native(&raw_gap(&r, &states(), 2.0), 2000, 3, states()).unwrap();
+    let mut b = a.clone();
+    b.delta_mev.iter_mut().for_each(|d| *d = -*d);
+    assert_eq!(
+        aniso::classify(&a, &b, 1e-4, 1e-3).unwrap(),
+        search::Side::Superconducting
+    );
+    b.delta_mev[0] = -b.delta_mev[0];
+    assert!(aniso::classify(&a, &b, 1e-4, 1e-3).is_err());
+    b = a.clone();
+    b.z[4] += 0.1;
+    assert!(aniso::classify(&a, &b, 1e-4, 1e-3).is_err());
+    let mut cancellation = a.clone();
+    cancellation.delta_mev[0] = -6.0;
+    assert!(cancellation.band_statistics().unwrap()[&1].signed_mean_mev < 0.0);
+    assert_eq!(
+        aniso::classify(&cancellation, &cancellation, 1e-4, 1e-3).unwrap(),
+        search::Side::Superconducting
+    );
+    b.delta_mev.fill(1e-5);
+    assert_eq!(
+        aniso::classify(&b, &b, 1e-4, 1e-3).unwrap(),
+        search::Side::Normal
+    );
+    b.delta_mev[5] = 0.001;
+    assert_eq!(
+        aniso::classify(&b, &b, 1e-4, 1e-3).unwrap(),
+        search::Side::Uncertain
+    );
+}
+
+#[test]
+fn native_attempt_runs_one_temperature_keeps_failure_and_refuses_repeat() {
+    let root = std::env::temp_dir().join(format!("epwflow-native-{}", store::token()));
+    std::fs::create_dir_all(&root).unwrap();
+    let inputs = native_inputs(&root);
+    for mode in [config::Mode::Iso, config::Mode::Aniso] {
+        let r = request(mode, attempt::SolveKind::Nonlinear);
+        let mapping = if mode == config::Mode::Iso {
+            vec![]
+        } else {
+            states()
+        };
+        std::fs::write(root.join("stdout.fixture"), solve_log(&r)).unwrap();
+        std::fs::write(root.join("gap.fixture"), raw_gap(&r, &mapping, 2.0)).unwrap();
+        let script = root.join("epw-fixture");
+        let output_name = format!(
+            "mgb2.imag_{}_020.00",
+            if mode == config::Mode::Iso {
+                "iso"
+            } else {
+                "aniso"
+            }
+        );
+        // 路径通过程序 args 传递，不执行命令字符串插值。
+        write_script(&script,&format!("#!/bin/bash\nset -eu\ntest \"$2\" = '-inp'\ntest -f \"$3\"\ncat \"$1/stdout.fixture\"\ncp \"$1/gap.fixture\" '{output_name}'\n"));
+        let program = config::Program {
+            path: script,
+            args: vec![root.to_string_lossy().into_owned()],
+        };
+        let dir = root.join(if mode == config::Mode::Iso {
+            "iso"
+        } else {
+            "aniso"
+        });
+        let result = attempt::run_attempt(&r, &inputs, &program, &[], &dir).unwrap();
+        assert_eq!(result.status, "valid", "{:?}", result.reason);
+        assert!(result.gap.is_some());
+        assert_eq!(result.exit_status, Some(0));
+        let input = std::fs::read_to_string(dir.join("epw.in")).unwrap();
+        assert!(input.contains("nstemp = 1"));
+        assert!(input.contains("temps(1) = 20.00"));
+        assert!(input.contains("gap_edge = 1.0000000000000000e-3"));
+        assert!(input.contains("imag_read = .false."));
+        assert!(attempt::run_attempt(&r, &inputs, &program, &[], &dir).is_err());
+    }
+    let r = request(config::Mode::Iso, attempt::SolveKind::Linear);
+    let script = root.join("fail");
+    write_script(
+        &script,
+        "#!/bin/bash\nprintf 'original error' >&2\nexit 7\n",
+    );
+    let p = config::Program {
+        path: script,
+        args: vec![],
+    };
+    let result = attempt::run_attempt(&r, &inputs, &p, &[], &root.join("failed")).unwrap();
+    assert_eq!(result.status, "failed");
+    assert_eq!(result.exit_status, Some(7));
+    assert!(std::fs::read_to_string(root.join("failed/epw.err"))
+        .unwrap()
+        .contains("original error"));
+    std::fs::write(&inputs.a2f.path, "changed").unwrap();
+    assert!(attempt::run_attempt(&r, &inputs, &p, &[], &root.join("changed")).is_err());
+    assert!(!root.join("changed").exists());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn centikelvin_search_brackets_handles_uncertain_and_detects_inconsistent() {
+    let mut s = search::Search::new(1000, 5500, 50).unwrap();
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(t) = s.next_temperature() {
+        assert!(seen.insert(t));
+        s.observe(
+            t,
+            if t < 3200 {
+                search::Side::Superconducting
+            } else {
+                search::Side::Normal
+            },
+        )
+        .unwrap();
+    }
+    assert_eq!(s.status, "located");
+    let [a, b] = s.interval_centikelvin.unwrap();
+    assert!(a < 3200 && b >= 3200 && b - a <= 50);
+    let mut q = search::Search::new(100, 900, 1).unwrap();
+    q.observe(100, search::Side::Superconducting).unwrap();
+    q.observe(900, search::Side::Normal).unwrap();
+    assert_eq!(q.next_temperature(), Some(500));
+    q.observe(500, search::Side::Uncertain).unwrap();
+    assert_eq!(q.next_temperature(), Some(300));
+    q.observe(300, search::Side::Uncertain).unwrap();
+    assert_eq!(q.next_temperature(), Some(700));
+    q.observe(700, search::Side::Uncertain).unwrap();
+    assert_eq!(q.next_temperature(), None);
+    assert_eq!(q.status, "classification_uncertain");
+    let mut broken = search::Search::new(100, 900, 10).unwrap();
+    broken.observe(100, search::Side::Normal).unwrap();
+    broken.observe(900, search::Side::Superconducting).unwrap();
+    assert_eq!(broken.status, "inconsistent");
+    assert!(broken.observe(900, search::Side::Normal).is_err());
+}
+
+#[test]
+fn native_stage_requires_existing_sufficient_allocation() {
+    use epwflow::foundation::budget::BudgetLedger;
+    let root = std::env::temp_dir().join(format!("epwflow-f4-budget-{}", store::token()));
     std::fs::create_dir_all(&root).unwrap();
     let cfg = config::Config::load(&make_config(&root)).unwrap();
-    let sc = solver_config::SolverConfig::from_config(&cfg).unwrap();
-    let r = aniso::solve(&spec, &sc).unwrap();
-    assert!(r.located, "aniso Tc 应被定位");
-    assert!(r.converged, "双初值应一致收敛");
-    let tc = r.tc.unwrap();
-    assert!(tc > 1.0 && tc < 10.0);
-}
-
-#[test]
-fn gap_solve_finite_and_renormalized() {
-    let spec = strong_spectrum();
-    let omega = gap::matsubara(2.0, 200);
-    let (shape, _lambda) = gap::power_iterate_gap(2.0, &spec, 0.1, 200, 0.5, 200, 1e-4);
-    assert!(shape.iter().all(|x| x.is_finite()), "能隙形状应有限");
-    let amax = shape.iter().map(|x| x.abs()).fold(0.0_f64, f64::max);
-    assert!((amax - 1.0).abs() < 1e-6, "归一化形状最大值应为 1");
-    let z = gap::renormalization_z(&shape, &omega, &spec, 0.1, 2.0);
-    let min_z = z.iter().map(|x| *x).fold(f64::INFINITY, f64::min);
-    assert!(min_z >= 1.0, "重整化函数应 ≥ 1");
-    // BCS 能隙在 Tc 以下为正、以上为 0（FR-007）。
-    assert!(gap::bcs_gap(2.0, 6.0) > 0.0);
-    assert_eq!(gap::bcs_gap(8.0, 6.0), 0.0);
-}
-
-#[test]
-fn single_attempt_convergence_separation() {
-    let spec = strong_spectrum();
-    let root = std::env::temp_dir().join(format!("epwflow-sc-{}", store::token()));
-    std::fs::create_dir_all(&root).unwrap();
-    let cfg = config::Config::load(&make_config(&root)).unwrap();
-    let sc = solver_config::SolverConfig::from_config(&cfg).unwrap();
-    let below = attempt::run_attempt(config::Mode::Iso, &spec, &sc, 2.0).unwrap();
-    let above = attempt::run_attempt(config::Mode::Iso, &spec, &sc, 8.0).unwrap();
-    assert!(below.converged, "低于 Tc 应收敛");
-    assert!(!above.converged, "高于 Tc 应不收敛");
-    assert!(below.gap_mev > 0.0);
+    let mut value = serde_json::json!({
+        "schema_version":1,"campaign_id":"fixture",
+        "limits":{"node_seconds":28800,"storage_bytes":107374182400_u64,"max_lanes":2},
+        "spent_node_seconds":0,"reservations":[],"lanes":1,"storage_roots":[],"revision":0,
+        "allocations":[{"reservation_id":"native","job_id":42,
+            "node_seconds":cfg.resources.nodes as u64 * cfg.resources.wall_seconds,
+            "storage_bytes":cfg.resources.storage_bytes}]
+    });
+    let ledger: BudgetLedger = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(
+        ledger.require_allocation(42, &cfg.resources).unwrap(),
+        "native"
+    );
+    assert!(ledger.require_allocation(43, &cfg.resources).is_err());
+    value["allocations"][0]["node_seconds"] = 0.into();
+    let ledger: BudgetLedger = serde_json::from_value(value.clone()).unwrap();
+    assert!(ledger.require_allocation(42, &cfg.resources).is_err());
+    value["allocations"][0]["node_seconds"] =
+        (cfg.resources.nodes as u64 * cfg.resources.wall_seconds).into();
+    value["allocations"][0]["storage_bytes"] = 0.into();
+    let ledger: BudgetLedger = serde_json::from_value(value).unwrap();
+    assert!(ledger.require_allocation(42, &cfg.resources).is_err());
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -245,10 +549,330 @@ fn missing_native_solver_cannot_publish_superconductivity() {
             "units": {}, "thresholds": {}, "evidence": []
         }
     });
-    std::fs::write(f3.join("manifest.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+    std::fs::write(
+        f3.join("manifest.json"),
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
 
     let result = scheduler::run(&cfg, &work, &[], Backend::Local);
     assert!(result.is_err(), "无原生求解证据不得发布超导结果");
     assert!(!work.join("superconductivity/manifest.json").exists());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn binary_egnv_recovers_compressed_order_original_bands_and_weights() {
+    use epwflow::superconductivity::source::{self, RY_EV};
+    let mut bytes = vec![];
+    for n in [2i32, 4, 4, 4, 2, 3] {
+        bytes.extend(n.to_le_bytes());
+    }
+    // ef、ef0、DOS、展宽、费米窗，原生单位 Ry。
+    for x in [0.5f64, 0.5, 2.0, 0.01, 0.1] {
+        bytes.extend(x.to_le_bytes());
+    }
+    for (ik, ix, energies) in [(1i32, 2i32, [0.49f64, 0.8, 0.52]), (2, 1, [0.48, 0.5, 0.9])] {
+        for x in [0.5f64, 0.0, 0.0, 0.0] {
+            bytes.extend(x.to_le_bytes());
+        }
+        bytes.extend(ik.to_le_bytes());
+        bytes.extend(ix.to_le_bytes());
+        for x in energies {
+            bytes.extend(x.to_le_bytes());
+        }
+    }
+    let e = source::eigenvalues(&bytes).unwrap();
+    assert_eq!(
+        e.states
+            .iter()
+            .map(|s| (s.kpoint, s.band))
+            .collect::<Vec<_>>(),
+        vec![(2, 1), (2, 2), (1, 1), (1, 3)]
+    );
+    assert!((e.states[0].energy_ev + 0.02 * RY_EV).abs() < 1e-12);
+    assert!(e.states.iter().all(|s| s.weight > 0.0));
+    let expected = 0.5 * 0.5 * (-4.0f64).exp() / (std::f64::consts::PI.sqrt() * 0.01 * 2.0);
+    assert!((e.states[0].weight - expected).abs() < 1e-12);
+    assert!(source::eigenvalues(&bytes[..bytes.len() - 1]).is_err());
+    let mut corrupt = bytes.clone();
+    corrupt[0..4].copy_from_slice(&2i32.to_be_bytes());
+    assert!(source::eigenvalues(&corrupt).is_err());
+}
+
+#[test]
+fn native_engine_persists_counts_reuses_valid_and_does_not_retry_failed() {
+    use epwflow::superconductivity::engine::Engine;
+    let root = std::env::temp_dir().join(format!("epwflow-engine-{}", store::token()));
+    std::fs::create_dir_all(&root).unwrap();
+    let mut cfg = config::Config::load(&make_config(&root)).unwrap();
+    cfg.superconductivity.frequency_cutoff_ev = 0.03;
+    cfg.superconductivity.initial_gaps_mev = [1.0, 10.0];
+    cfg.superconductivity.iso.as_mut().unwrap().max_k = 55.0;
+    cfg.superconductivity.iso.as_mut().unwrap().max_solves = 1;
+    let inputs = native_inputs(&root);
+    let req = request(config::Mode::Iso, attempt::SolveKind::Linear);
+    std::fs::write(root.join("stdout.fixture"), solve_log(&req)).unwrap();
+    let script = root.join("native-fixture");
+    write_script(&script, "#!/bin/bash\nset -eu\ncat \"$1/stdout.fixture\"\n");
+    cfg.programs.epw = config::Program {
+        path: script,
+        args: vec![root.to_string_lossy().into_owned()],
+    };
+    let dir = root.join("engine");
+    let mut calls = 0;
+    {
+        let mut e = Engine::open(&cfg, &inputs, &[], &dir, config::Mode::Iso).unwrap();
+        e.attempt(2000, attempt::SolveKind::Linear, None, &mut || {
+            calls += 1;
+            Ok(())
+        })
+        .unwrap();
+    }
+    let mut e = Engine::open(&cfg, &inputs, &[], &dir, config::Mode::Iso).unwrap();
+    e.attempt(2000, attempt::SolveKind::Linear, None, &mut || {
+        calls += 1;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(calls, 1);
+    assert_eq!(e.result.attempts.len(), 1);
+    let err = e
+        .attempt(2100, attempt::SolveKind::Linear, None, &mut || {
+            calls += 1;
+            Ok(())
+        })
+        .unwrap_err();
+    assert!(err.to_string().contains("attempt_limit"));
+    assert_eq!(calls, 1);
+    // 模拟提交/进程启动后中断：未知状态不能自动重提。
+    e.result.attempts[0].status = "running".into();
+    e.result.attempts[0].record = None;
+    e.save().unwrap();
+    drop(e);
+    let mut e = Engine::open(&cfg, &inputs, &[], &dir, config::Mode::Iso).unwrap();
+    assert!(e
+        .attempt(2000, attempt::SolveKind::Linear, None, &mut || {
+            calls += 1;
+            Ok(())
+        })
+        .unwrap_err()
+        .to_string()
+        .contains("scheduler_unknown"));
+    assert_eq!(calls, 1);
+    // 确认失败也保持占用次数，不因重新打开而归零。
+    e.result.attempts[0].status = "failed".into();
+    e.save().unwrap();
+    drop(e);
+    let mut e = Engine::open(&cfg, &inputs, &[], &dir, config::Mode::Iso).unwrap();
+    assert!(e
+        .attempt(2000, attempt::SolveKind::Linear, None, &mut || {
+            calls += 1;
+            Ok(())
+        })
+        .is_err());
+    assert_eq!(calls, 1);
+    cfg.superconductivity.mu_star = 0.15;
+    assert!(Engine::open(&cfg, &inputs, &[], &dir, config::Mode::Iso).is_err());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn native_engine_both_modes_use_process_results_and_keep_independent_intervals() {
+    use epwflow::superconductivity::engine::Engine;
+    let root = std::env::temp_dir().join(format!("epwflow-engine-both-{}", store::token()));
+    std::fs::create_dir_all(&root).unwrap();
+    let mut cfg = config::Config::load(&make_config(&root)).unwrap();
+    cfg.superconductivity.mode = config::Mode::Both;
+    cfg.superconductivity.frequency_cutoff_ev = 0.03;
+    cfg.superconductivity.initial_gaps_mev = [1.0, 10.0];
+    cfg.superconductivity.gap_temperatures_k = vec![20.0, 25.0, 30.0];
+    cfg.superconductivity.convergence_relative = 1e-8;
+    let tc = cfg.superconductivity.iso.as_mut().unwrap();
+    tc.min_k = 10.0;
+    tc.max_k = 55.0;
+    tc.precision_k = 5.0;
+    tc.max_solves = 64;
+    tc.normal_gap_mev = 1e-4;
+    tc.super_gap_mev = 1e-3;
+    cfg.superconductivity.aniso = cfg.superconductivity.iso.clone();
+    let inputs = native_inputs(&root);
+    // 此进程只模拟目标版本的 IO/收敛契约。阈值用于验证独立搜索，不是物理模型。
+    let script = root.join("epw-fixture.py");
+    write_script(
+        &script,
+        r#"#!/usr/bin/python3
+import sys,re,math,pathlib
+text=pathlib.Path(sys.argv[-1]).read_text()
+def value(name):
+    return re.search(r'(?m)^\s*'+re.escape(name)+r'\s*=\s*([^\n]+)',text).group(1).strip()
+t=float(value('temps(1)'))
+assert value('nstemp')=='1'
+assert value('imag_read')=='.false.'
+iso=value('liso')=='.true.'
+linear=value('tc_linear')=='.true.'
+kb=1.380649e-23/1.602176634e-19
+nf=int(.5*(float(value('wscut'))/(math.pi*kb*t)-1))+1
+print('Program EPW v.5.9 starts')
+boundary=32 if iso else 36
+if linear:
+    print('Start: Solving (isotropic) linearized Eliashberg equation with solver = lapack')
+    print(f'For the first Temp. {t:.2f} K')
+    print(f'Total number of frequency points nsiw(1) = {nf}')
+    print('Temp. Max. nsiw wscut Nr. of iters')
+    rho=1.2 if t<boundary else .8
+    cut=(2*nf+1)*math.pi*kb*t
+    print(f'{t:.2f} {rho:.7f} {nf} {cut:.4f} 1')
+    print('Finish: Solving (isotropic) linearized Eliashberg equation')
+else:
+    print(f'temp(1) = {t:.5f} K')
+    print('Solve '+('isotropic' if iso else 'anisotropic')+' Eliashberg equations on imaginary-axis')
+    print(f'Total number of frequency points nsiw(1) = {nf}')
+    d=2.0 if t<boundary else 1e-6
+    print('iter ethr znormi deltai [meV]')
+    print(f'1 1e-2 1.5 {d}')
+    print(f'2 1e-10 1.5 {d}')
+    print('Convergence was reached in nsiter = 2')
+    name='mgb2.imag_'+('iso' if iso else 'aniso')+f'_{t:06.2f}'
+    with open(name,'w') as f:
+        f.write('w [eV] znorm(w) delta(w) [eV]\n' if iso else '# w [eV] Enk-Ef [eV] znorm(w) delta(w) [eV]\n')
+        for n in range(nf):
+            w=(2*n+1)*math.pi*kb*t
+            for e in ([None] if iso else [-.01,.02]):
+                f.write(f'{w:.10e} '+('' if e is None else f'{e:.10e} ')+f'1.5 {d/1000:.10e}\n')
+print('Total program execution')
+print('EPW : 0.01s CPU 0.02s WALL')
+"#,
+    );
+    cfg.programs.epw = config::Program {
+        path: script,
+        args: vec![],
+    };
+    let mut results = vec![];
+    for mode in [config::Mode::Iso, config::Mode::Aniso] {
+        let dir = root.join(if mode == config::Mode::Iso {
+            "iso"
+        } else {
+            "aniso"
+        });
+        let mut e = Engine::open(&cfg, &inputs, &[], &dir, mode).unwrap();
+        let mut calls = 0;
+        e.run(&mut || {
+            calls += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert!(e.result.complete, "{:?}", e.result.reason);
+        assert_eq!(e.result.search.status, "located");
+        assert_eq!(calls, e.result.attempts.len());
+        let n = calls;
+        drop(e);
+        let mut resumed = Engine::open(&cfg, &inputs, &[], &dir, mode).unwrap();
+        resumed
+            .run(&mut || {
+                calls += 1;
+                Ok(())
+            })
+            .unwrap();
+        assert!(resumed.result.complete);
+        assert_eq!(calls, n);
+        results.push(resumed.result.search.interval_centikelvin.unwrap());
+    }
+    assert_ne!(results[0], results[1]);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn native_fine_handoff_binds_binary_roles_band_offset_and_rejects_changes() {
+    use epwflow::{
+        interpolation::{epw_config::EpwConfig, fine, manifest::InterpolationManifest, native},
+        superconductivity::source::{self, RY_EV},
+    };
+    let root = std::env::temp_dir().join(format!("epwflow-native-fine-{}", store::token()));
+    std::fs::create_dir_all(&root).unwrap();
+    let mut cfg = config::Config::load(&make_config(&root)).unwrap();
+    cfg.wannier.num_wann = 4;
+    cfg.interpolation.spectral_points = 3;
+    let dir = root.join("fine");
+    let matrix = dir.join("out/scf.ephmat");
+    std::fs::create_dir_all(&matrix).unwrap();
+    let mut bytes = vec![];
+    for n in [2i32, 4, 4, 4, 2, 3] {
+        bytes.extend(n.to_le_bytes());
+    }
+    for x in [
+        0.5f64,
+        0.5,
+        2.0,
+        cfg.interpolation.degaussw_ev / RY_EV,
+        cfg.interpolation.fsthick_ev / RY_EV,
+    ] {
+        bytes.extend(x.to_le_bytes());
+    }
+    for (ik, ix, energies) in [(1i32, 2i32, [0.49f64, 0.8, 0.52]), (2, 1, [0.48, 0.5, 0.9])] {
+        for x in [0.5f64, 0.0, 0.0, 0.0] {
+            bytes.extend(x.to_le_bytes());
+        }
+        bytes.extend(ik.to_le_bytes());
+        bytes.extend(ix.to_le_bytes());
+        for x in energies {
+            bytes.extend(x.to_le_bytes());
+        }
+    }
+    std::fs::write(matrix.join("egnv"), &bytes).unwrap();
+    let mut freq = vec![];
+    for n in [8i32, 2, 2, 2, 3] {
+        freq.extend(n.to_le_bytes());
+    }
+    for _ in 0..8 {
+        for x in [0.0f64, 0.0, 0.0, 0.001, 0.002, 0.003] {
+            freq.extend(x.to_le_bytes());
+        }
+    }
+    std::fs::write(matrix.join("freq"), freq).unwrap();
+    let mut ikmap = vec![];
+    for _ in 0..2 {
+        for i in 0..64 {
+            ikmap.extend(((i % 2 + 1) as i32).to_le_bytes());
+        }
+    }
+    std::fs::write(matrix.join("ikmap"), ikmap).unwrap();
+    std::fs::write(matrix.join("npool"), 1i32.to_le_bytes()).unwrap();
+    let shard = [1i32.to_le_bytes(), 2i32.to_le_bytes()].concat();
+    std::fs::write(matrix.join("ephmat1"), shard).unwrap();
+    std::fs::write(dir.join("epw_fine.in"), "fixture input").unwrap();
+    std::fs::write(dir.join("epw.out"),"Program EPW v.5.9 starts\nibndmin = 2 ebndmin = -1.0 eV\nibndmax = 4 ebndmax = 1.0 eV\nTotal program execution\nEPW : 1s CPU 2s WALL\n").unwrap();
+    std::fs::write(dir.join("crystal.fmt"), "fixture crystal").unwrap();
+    std::fs::write(dir.join("selecq.fmt"), "8\n8\n1 2 3 4 5 6 7 8\n").unwrap();
+    let table="w[meV] a2f and integrated 2*a2f/w for 1 smearing values\n1 1 2\n2 2 4\n3 3 6\nIntegrated el-ph coupling\n # 6\nSummed el-ph coupling 6\n";
+    std::fs::write(dir.join("scf.a2f"), table).unwrap();
+    let epw = EpwConfig::from_config(&cfg).unwrap();
+    let fr = fine::collect_fine(&root, &epw).unwrap();
+    let fd = fine::into_fine_data(&fr);
+    assert_eq!(fd.layout, source::FORMAT);
+    let parsed = native::NativeSpectrum::parse(table, 3).unwrap();
+    let manifest = serde_json::json!({
+        "schema_version":1,"run_id":"fixture-native","f2_digest":"fixture","wannier_digest":"fixture",
+        "coarse":null,"fine":fd,
+        "spectra":[{"smearing_id":"fixture","energy_mev":parsed.energy_mev,"a2f":parsed.a2f[0],
+            "lambda_integral":6.0,"lambda_sum":6.0,"cutoff_ev":0.2}],
+        "quality":null,"mode_readiness":{},
+        "validation":{"status":"valid","checks":[{"name":"fixture","passed":true,"detail":"IO only"}],"units":{},"thresholds":{},"evidence":[]}
+    });
+    store::write(&root.join("interpolation/manifest.json"), &manifest).unwrap();
+    let m = InterpolationManifest::load(&root.join("interpolation/manifest.json")).unwrap();
+    let bound = source::bind(&root, &cfg, &m).unwrap();
+    assert_eq!(
+        bound
+            .states
+            .iter()
+            .map(|s| (s.kpoint, s.band))
+            .collect::<Vec<_>>(),
+        vec![(2, 2), (2, 3), (1, 2), (1, 4)]
+    );
+    bound.verify(config::Mode::Aniso).unwrap();
+    std::fs::write(matrix.join("egnv"), &bytes[..bytes.len() - 1]).unwrap();
+    assert!(source::bind(&root, &cfg, &m).is_err());
+    assert!(fine::collect_fine(&root, &epw).is_err());
     std::fs::remove_dir_all(root).unwrap();
 }

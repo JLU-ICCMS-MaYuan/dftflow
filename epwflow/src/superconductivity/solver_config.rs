@@ -1,5 +1,5 @@
-use anyhow::{ensure, Result};
 use super::super::foundation::config;
+use anyhow::{ensure, Result};
 
 /// 超导求解配置封装（FR-002）：iso/aniso、μ*、截止与迭代参数。
 pub struct SolverConfig<'a> {
@@ -8,15 +8,17 @@ pub struct SolverConfig<'a> {
 
 impl<'a> SolverConfig<'a> {
     pub fn from_config(cfg: &'a config::Config) -> Result<Self> {
+        cfg.validate()?;
         let sc = &cfg.superconductivity;
-        ensure!(sc.mu_star >= 0.0, "configuration: mu_star 必须非负");
-        ensure!(sc.frequency_cutoff_ev > 0.0, "configuration: 频率截止必须为正");
-        ensure!(sc.mixing_beta > 0.0 && sc.mixing_beta <= 1.0, "configuration: mixing_beta 需在 (0,1]");
-        ensure!(sc.convergence_relative > 0.0, "configuration: 收敛相对阈值必须为正");
-        ensure!(sc.max_iterations > 0, "configuration: max_iterations 必须为正");
-        ensure!(!sc.gap_temperatures_k.is_empty(), "configuration: 缺失 gap_temperatures_k");
-        if let config::Mode::Aniso | config::Mode::Both = sc.mode {
-            ensure!(sc.aniso.is_some(), "configuration: aniso 模式缺少 aniso 配置块");
+        ensure!(
+            sc.gap_temperatures_k.iter().all(|t| *t <= 999.99),
+            "configuration: EPW 5.9 温度文件格式只支持到 999.99 K"
+        );
+        for tc in [sc.iso.as_ref(), sc.aniso.as_ref()].into_iter().flatten() {
+            ensure!(
+                tc.max_k <= 999.99,
+                "configuration: EPW 5.9 搜索温度文件格式只支持到 999.99 K"
+            );
         }
         Ok(SolverConfig { cfg })
     }

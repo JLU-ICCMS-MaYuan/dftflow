@@ -1,8 +1,8 @@
+use super::super::foundation::status;
+use super::manifest::SuperconductivityManifest;
 use anyhow::{Context, Result};
 use clap::Subcommand;
 use std::path::{Path, PathBuf};
-use super::manifest::SuperconductivityManifest;
-use super::super::foundation::status;
 
 /// superconductivity 子命令：阶段边界 check / import（FR-001）。
 #[derive(Subcommand)]
@@ -48,7 +48,11 @@ fn check(work: &Path, json: bool) -> Result<()> {
     if json {
         status::print_json(&status::envelope(
             "ok",
-            if m.validation.all_passed() { "valid" } else { "partial" },
+            if m.validation.all_passed() {
+                "valid"
+            } else {
+                "partial"
+            },
             serde_json::json!({
                 "run_id": m.run_id,
                 "mode": m.mode,
@@ -57,6 +61,7 @@ fn check(work: &Path, json: bool) -> Result<()> {
                 "converged": m.converged,
                 "gaps_mev": m.gaps_mev,
                 "validation_status": m.validation.status,
+                "native_modes": m.native_modes,
                 "workflow_complete": false,
             }),
         ));
@@ -67,6 +72,15 @@ fn check(work: &Path, json: bool) -> Result<()> {
         println!("located: {}", m.located);
         println!("converged: {}", m.converged);
         println!("validation_status: {}", m.validation.status);
+        for (mode, result) in &m.native_modes {
+            println!(
+                "{mode}: status={} interval_centikelvin={:?} complete={} attempts={}",
+                result.search.status,
+                result.search.interval_centikelvin,
+                result.complete,
+                result.attempts.len()
+            );
+        }
     }
     Ok(())
 }
@@ -77,6 +91,9 @@ fn import(source: &Path) -> Result<()> {
     if !m.validation.all_passed() {
         anyhow::bail!("data_invalid: 前置超导清单校验未通过，拒绝导入");
     }
-    println!("imported: run={} mode={} tc={:?} located={}", m.run_id, m.mode, m.tc, m.located);
+    println!(
+        "imported: run={} mode={} tc={:?} located={}",
+        m.run_id, m.mode, m.tc, m.located
+    );
     Ok(())
 }

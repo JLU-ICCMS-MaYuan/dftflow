@@ -42,3 +42,38 @@
 F4 scheduler 质量检查后仍明确返回 `not_implemented`。iso／aniso／attempt／search 的旧辅助路径仍用 Allen–Dynes／BCS，部分正向测试验证的是这些辅助函数；不能据测试通过认定原生两模式已实现。当前 manifest 的单个 tc 与简化能隙数组也尚未实现已确认的两模式独立区间、完整 Δ／Z 及分类证据。
 
 按原设计追加 T039～T045，落实原生单温度、完整解析、两初值、持久搜索、交付数据及真实参考闭环，全部保持未完成。具体证据和建议路线见 [Epic 完成度核查](../0007-epwflow-superconductivity/completion-audit.md)。本轮未执行原生 Eliashberg，不改变 SC-001～008 的未完成结论，不改变共享预算、容差或温度范围。
+
+## 2026-10-19：按用户决定实现原生执行首批代码
+
+用户选择：
+
+> 暂不加密网格，先补齐原生执行代码
+
+9³ PH 诊断已暂缓。保留既有五点参考、最大 50／RMS 2 cm⁻¹ 门及共享预算；本轮未提交 PH、NSCF、细网格或 Eliashberg 科学作业，未切换默认安装。
+
+### 已落地代码与来源核对
+
+直接核对目标 EPW 5.9 的 supercond_driver、supercond_iso、supercond_aniso、supercond、printing 和 io_supercond 源码：LAPACK 行的温度／最大本征值／nsiw／截断／直接求解标识；非线性 temp(1)、逐次 ethr、明确收敛／未收敛文本；FSR imag_iso／imag_aniso 的单位、列序及正 Matsubara 顺序；egnv、freq、ikmap、npool 与矩阵分片布局。源码核对不代替实际程序运行。
+
+- attempt.rs 执行单模式／单温度／单初值；输入固定 nstemp=1、imag_read=false 和既定低频参数。复用 F1 process，新增 run_report 保留非零退出、stderr 和执行时间，原 run 仍拒绝非零退出。
+- F3 native_matrices.rs／fine.rs 归集原生角色；source.rs 校验角色、相对路径、大小、哈希、细网格和展宽身份。egnv 的费米面压缩映射与原生 ibndmin／ibndmax 联合恢复 k／band；不把文件内带号误作细网格全局带号。
+- parse.rs／gap.rs 读取完整正频率 Δ（meV）和 Z，检查温度、频率数、单位、状态能量、缺行、多行、非有限值、残差和迭代；未收敛小能隙不能分类为正常。
+- iso.rs／aniso.rs 移除经验求解，分别分类原生本征值及完整双初值分布；只允许整体符号翻转，不能按均值或排序幅度判一致。
+- search.rs／engine.rs 保存独立区间、方法、阈值、整数温度、尝试和停止原因。调用前写入计数，失败不退款；有效项重验复用，活动／未知／失败项不自动重提。中点不确定时按固定四分点顺序处理。
+- scheduler.rs 保持独立质量及当前粗网格重验，通过共用 BudgetLedger.require_allocation 使用 F1 已登记分配，不另行 sbatch；该方法独立于工作区未提交的自动入口函数。原生本地 manifest／tc.json 为版本 2，旧版本 1 保持读取兼容；分模式区间不再填旧单一 Tc 标量。保存 temperatures.csv 与完整 gaps/，只有必需能隙和搜索均有效时才报告阶段完成。
+
+### 隔离验证及其含义
+
+执行 bash scripts/build-native.sh test -p epwflow -p qeflow --locked --offline：当前工作树 epwflow 98 项、qeflow 27 项通过，0 失败、0 ignored。计数包含工作树其他已存在的测试，不据此扩大本次提交范围。
+
+本批 superconductivity.rs 共 12 项回归：登记分配身份与时间／存储不足拒绝；原生格式、单位与完整性拒绝；未收敛／NaN／错温度／错模式／重复日志；LAPACK 本征值且不伪造残差；双初值全分布、Z 与统一符号；单温度独立进程、原始失败码和 stderr；整温度搜索和不确定四分点；跨进程次数、有效复用和未知不重提；两模式独立搜索及必需能隙；原生细网格角色交接、带偏移和篡改拒绝。
+
+仅导出本次暂存内容到独立目录，执行 epwflow --tests 的离线编译检查通过；不依赖工作区其余未提交入口变更。
+
+这些进程均为明确标注的 IO／状态契约 fixture，没有调用真实 EPW，不是原生 Tc 数值验收。旧四项经验结果正向用例已替换，不继续把数学辅助测试记作科学能力。
+
+### 未完成项及文档影响
+
+T039～T043 仅完成本批代码基础，整项仍不勾选：失败显式重试尚未接入统一 resume；统一入口最终 F4 验证、完整原生首次／重读链和 F5 自包含、迁移与消费仍缺。当前记录带本地绝对身份路径，不宣称可移动结果包。真实 EPW 正常侧／临界附近收敛、至少三个固定有效能隙温度、独立参考及六组合均无新证据，T044／T045 保持未完成。
+
+当前声子最大 49.448071／RMS 8.075133 cm⁻¹，RMS 仍失败。原数值标准不变，没有实际 iso／aniso Tc 可报告。Issue／Spec／Plan／Tasks 与 [Overview](../../overview/epwflow/native-superconductivity.md) 已同步；本地 Issue 不关闭、不操作线上 Gitee。实现复用 F1 执行、配置及账本，由 F3 拥有数据适配，不自造第二套 Eliashberg、QE 或资源机制。

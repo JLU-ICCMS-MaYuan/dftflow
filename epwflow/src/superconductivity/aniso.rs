@@ -1,51 +1,42 @@
-use anyhow::Result;
-use super::gap::{bcs_gap, power_iterate_gap};
-use super::parse::Spectrum;
-use super::search::search_tc;
-use super::solver_config::SolverConfig;
+//! 双初值必须逐元素一致；只容许整个 Δ 数组同时翻转符号。
+use super::{gap::GapData, search::Side};
+use anyhow::{ensure, Result};
 
-/// 各向异性求解结果（FR-005）：双初值判据。
-#[derive(Debug, Clone)]
-pub struct AnisoResult {
-    pub tc: Option<f64>,
-    pub located: bool,
-    pub converged: bool,
-    pub gap_min: f64,
-    pub gap_max: f64,
-}
-
-/// 各向异性求解：两个初始能隙分别做归一化幂迭代，要求收敛到同一形状（FR-005）。
-pub fn solve(spectrum: &Spectrum, cfg: &SolverConfig) -> Result<AnisoResult> {
-    let n_max = super::search::default_n_max(&spectrum.frequencies_mev);
-    let iso = cfg.cfg.superconductivity.iso.as_ref();
-    let (min_k, max_k, precision_k, max_solves) = match iso {
-        Some(i) => (i.min_k, i.max_k, i.precision_k, i.max_solves as usize),
-        None => (1.0, 10.0, 0.01, 50),
+pub fn classify(a: &GapData, b: &GapData, normal_mev: f64, super_mev: f64) -> Result<Side> {
+    a.validate()?;
+    b.validate()?;
+    ensure!(
+        normal_mev.is_finite()
+            && super_mev.is_finite()
+            && normal_mev > 0.0
+            && super_mev > normal_mev,
+        "configuration: 能隙分类阈值无效"
+    );
+    ensure!(
+        a.temperature_centikelvin == b.temperature_centikelvin
+            && a.states == b.states
+            && a.frequencies_mev == b.frequencies_mev,
+        "data_invalid: 双初值物理索引不同"
+    );
+    let delta_match = |sign: f64| {
+        a.delta_mev
+            .iter()
+            .zip(&b.delta_mev)
+            .all(|(x, y)| (x - sign * y).abs() <= 1e-4 + 1e-3 * x.abs().max(y.abs()))
     };
-    let tc = search_tc(spectrum, cfg.mu_star(), n_max, min_k, max_k, precision_k, max_solves);
-    let located = tc.is_some();
-    let mut converged = false;
-    let (mut gap_min, mut gap_max) = (0.0_f64, 0.0_f64);
-    if let Some(tc) = tc {
-        let t_solve = (tc * 0.5).max(0.5);
-        let seeds = cfg.initial_gaps_mev();
-        let s0 = seeds.get(0).copied().unwrap_or(0.5);
-        let s1 = seeds.get(1).copied().unwrap_or(1.5);
-        let (shape0, _lambda0) =
-            power_iterate_gap(t_solve, spectrum, cfg.mu_star(), n_max, s0, cfg.max_iterations(), cfg.convergence_relative());
-        let (shape1, _lambda1) =
-            power_iterate_gap(t_solve, spectrum, cfg.mu_star(), n_max, s1, cfg.max_iterations(), cfg.convergence_relative());
-        // 双初值判据（FR-005）：两个初始能隙均收敛到同一主导本征矢（形状一致），
-        // 证明求解对初值稳健；与 Tc 定位（Allen-Dynes）共同决定收敛。
-        let shape_consistent = {
-            let m0 = shape0.iter().map(|x| x.abs()).fold(0.0_f64, f64::max);
-            let m1 = shape1.iter().map(|x| x.abs()).fold(0.0_f64, f64::max);
-            (m0 - m1).abs() <= 1e-6 + 0.05 * m0.max(m1)
-        };
-        converged = shape_consistent;
-        let gap = bcs_gap(t_solve, tc);
-        gap_min = gap;
-        gap_max = gap;
-    }
-    Ok(AnisoResult { tc, located, converged, gap_min, gap_max })
+    let z_match =
+        a.z.iter()
+            .zip(&b.z)
+            .all(|(x, y)| (x - y).abs() <= 1e-5 + 1e-3 * x.abs().max(y.abs()));
+    ensure!(
+        (delta_match(1.0) || delta_match(-1.0)) && z_match,
+        "classification_uncertain: 双初值完整 Δ/Z 不一致"
+    );
+    Ok(if a.d_inf() <= normal_mev && b.d_inf() <= normal_mev {
+        Side::Normal
+    } else if a.d0_inf() >= super_mev && b.d0_inf() >= super_mev {
+        Side::Superconducting
+    } else {
+        Side::Uncertain
+    })
 }
