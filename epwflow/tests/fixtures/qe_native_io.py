@@ -167,7 +167,7 @@ else:
                 ET.SubElement(pert,'DISPLACEMENT_PATTERN').text=s(vec)
             ET.ElementTree(pat).write(phsave/('patterns.'+str(index)+'.xml'))
             dv_dir=out/'_ph0'
-            if any(abs(x)>1e-9 for x in q):dv_dir=dv_dir/(prefix+'.q_'+str(index))
+            if not is_coords and any(abs(x)>1e-9 for x in q):dv_dir=dv_dir/(prefix+'.q_'+str(index))
             dv_dir.mkdir(parents=True,exist_ok=True)
             data=struct.pack('<d',.001)*(8*modes*2)
             if mode=='truncated_dvscf':data=data[:-8]

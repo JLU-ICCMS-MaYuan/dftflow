@@ -67,7 +67,8 @@ pub(crate) fn response(
     let prefix = &qe.config.qe.prefix;
     let root = dir.join("out/_ph0");
     let gamma = q.crystal.iter().all(|x| x.abs() < 1e-9);
-    let dv_dir = if gamma {
+    // QE 对 ldisp=false 且非 qplot 的单 q 强制 lqdir=false。
+    let dv_dir = if gamma || matches!(qe.config.phonon.mode, PhMode::Coords) {
         root.clone()
     } else {
         root.join(format!("{prefix}.q_{}", q.local_index))

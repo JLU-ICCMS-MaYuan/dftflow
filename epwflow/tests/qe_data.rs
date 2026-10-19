@@ -323,6 +323,9 @@ fn qe_data_coords_mode_full_pipeline() {
     );
     assert_eq!(m.qpoints.len(), 2);
     assert_eq!(m.phonon_files.len(), 2);
+    let root = case.root.join("work/ph/02/out/_ph0");
+    assert!(root.join("actual_prefix.dvscf1").is_file());
+    assert!(!root.join("actual_prefix.q_1").exists());
 }
 
 #[test]
