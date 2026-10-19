@@ -57,7 +57,7 @@ fn control(qe: &QeSettings, dir: &Path) -> PathBuf {
         .join(format!("{}.phsave/control_ph.xml", qe.config.qe.prefix))
 }
 
-pub(super) fn response(
+pub(crate) fn response(
     qe: &QeSettings,
     dir: &Path,
     q: &QPoint,

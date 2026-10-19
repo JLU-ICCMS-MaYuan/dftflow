@@ -50,7 +50,11 @@ impl Case {
 
     fn qe_fixture(&self) {
         let input = fs::read_to_string(self.root.join("input.toml")).unwrap();
-        self.put("input.toml", &input.replace("[phonon]", "[phonon]\nmode = \"nosplit\""));
+        self.put("input.toml", &input.replace("[phonon]", "[phonon]\nmode = \"nosplit\"")
+            .replace("frozen_window_ev = [-2.0,2.0]", "frozen_window_ev = [-0.5,0.5]")
+            .replace("energy_reference = \"f2_fermi\"", "energy_reference = \"qe_zero\""));
+        // 此替身通过选窗能力预检，但不提供 dynmat；自动参考须在新科学调用前拒绝。
+        self.script("epw.x", "#!/bin/sh\n# dis_proj_min dis_proj_max dis_froz_proj\nexit 0\n");
         self.put("KPATH.in", "0 0 0 G\n0.5 0 0 X\n");
         self.put("qe-native.py", include_str!("fixtures/qe_native_io.py"));
         for kind in ["pw", "ph", "q2r", "matdyn"] {
@@ -345,7 +349,7 @@ fn b01_boundary_executes_qe_once_and_blocks_missing_interpolation_evidence() {
         "续算应复用原计算根目录"
     );
     assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("缺少独立插值质量来源清单"));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("dynmat.x"), "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(c.workflow()["state"], "failed");
     assert_eq!(c.workflow()["current_stage"], "wannier");
     assert!(c.workflow()["completed"].get("qe-data").is_some());

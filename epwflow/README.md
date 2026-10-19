@@ -2,7 +2,7 @@
 
 EPW 工作流仅构建三个独立程序：`epw_phonon`、`epw_wannier`、`epw_superconductivity`。配置默认名为 `inputepw.toml`，运行快照为 `input-init.toml`；同目录原有 `input.toml` 继续供 qeflow 使用。
 
-三个入口、脚本生成和粗／细网格清单已接入。第一阶段已直接调用 qeflow 共享执行库。独立参考的自动生成、第二阶段四类图的自动生成，以及真实原生 iso／aniso Tc 的完整验收仍在实施。当前源码、构建产物和默认安装分别核对，旧安装不能直接使用下列新选项。当前功能见 [Overview](../docs/overview/epwflow/README.md)，整合契约见 [0008 三程序设计](../docs/specs/0008-epwflow-foundation/three-programs.md)。
+三个入口、脚本生成和粗／细网格清单已接入。第一阶段已直接调用 qeflow 共享执行库。独立参考自动生成和显式纯能量选窗已接入；第二阶段四类图的自动生成，以及真实原生 iso／aniso Tc 的完整验收仍在实施。当前源码、构建产物和默认安装分别核对，旧安装不能直接使用下列新选项。当前功能见 [Overview](../docs/overview/epwflow/README.md)，整合契约见 [0008 三程序设计](../docs/specs/0008-epwflow-foundation/three-programs.md)。
 
 ## 三个阶段
 
@@ -13,7 +13,9 @@ flowchart TD
     P1 --> P2["逐 q XML dyn／dvscf／phsave<br/>保留 save；完整均匀 NSCF；严格校验"]
     P2 --> PM["qe-data/manifest.json"]
     PM --> W["epw_wannier"]
-    W --> W1["选窗 → Wannier／粗网格 → 独立质量检查"]
+    W --> WP["显式选窗与程序预检"]
+    WP --> WR["同源独立参考：显式清单，或自动<br/>SCF 副本 → 固定点 NSCF／直接 PH → dynmat"]
+    WR --> W1["Wannier／粗网格 → 独立质量检查"]
     W1 --> W2["目标：电子能带／DOS、声子谱／DOS<br/>四张对比图与总览"]
     W2 --> WM["wannier/manifest.json<br/>不含细网格或 α²F"]
     WM --> S["epw_superconductivity"]
@@ -68,9 +70,25 @@ epw_superconductivity --resume -w "$W" -s
 epw_phonon -c inputepw.toml -r
 ```
 
-总提交脚本用 Slurm `afterok` 串联三个作业，并设置依赖无效时取消后续作业。逐次提交回执保存在 `chain-submission.json`；完整重复调用返回既有回执，部分或未知提交禁止自动重提。每个计算节点入口仍分别登记并检查原共享预算；总提交成功不代表科学完成，尚缺的独立参考或选窗兼容会明确阻断。失败后按对应阶段显式恢复；旧的依赖作业不会自动改绑新作业号。
+总提交脚本用 Slurm `afterok` 串联三个作业，并设置依赖无效时取消后续作业。逐次提交回执保存在 `chain-submission.json`；完整重复调用返回既有回执，部分或未知提交禁止自动重提。每个计算节点入口仍分别登记并检查原共享预算；总提交成功不代表科学完成，独立参考、选窗或科学检查失败会明确阻断。失败后按对应阶段显式恢复；旧的依赖作业不会自动改绑新作业号。
 
 内部 `.epwflow/slurm/` 脚本属于已提交的尝试，不能手工重提。科学输出保存在 `W/calculations/<尝试号>/`；恢复沿用原科学目录，已通过阶段重新验哈希，失败现场保留。共享声子链后处理失败时可复用已核验的 SCF／PH，固定请求或受控脚本被篡改则拒绝恢复。粗／细阶段通过 native-attempts 检查点重验完整原生输出；显式恢复时将失败尝试归档到 history，按原参数重试，成功展宽直接复用。质量失败只复核原结果，未知目录、变化来源或篡改证据拒绝恢复。清单已发布但完成状态未登记时，重验清单后补齐登记，不再执行该阶段。此恢复已通过进程故障注入，实际新科学链仍待验收。第二、三阶段缺少前置完成证据时拒绝启动；活动或未知作业不自动重提。
+
+## 现有 EPW 的纯能量选窗与自动参考
+
+在 `inputepw.toml` 中显式选择：
+
+```toml
+[wannier]
+selection_mode = "energy_only"
+# 其余 num_wann、projections、收敛标准等继续填写。
+energy_reference = "f2_fermi"
+# 可选：outer_window_ev、frozen_window_ev，或单独 frozen_max_ev。
+```
+
+默认四界从本次 F2 本征值生成：外窗为排除带后的全谱极值±0.02 eV，冻结下界为外窗下界，上界为共同 E_F＋2 eV。每个 k 点必须满足外窗态数≥N、冻结态数≤N，冻结窗还须覆盖质量与 EPC 目标能区；不合法即停止，不静默截低上界。实际选择保存为 `coarse/window-selection.json`。该模式保留初始投影，不输出 `dis_proj_min`／`dis_proj_max`／`dis_froz_proj`；未填写模式的旧配置保持历史组合行为，显式切换模式须用新运行目录。详见 [0016 契约](../docs/specs/0016-wannier-window-selection/spec.md)。
+
+省略 `interpolation.quality.reference_manifest` 时，第二阶段使用第一阶段冻结的 SCF 副本，执行固定 k 的独立 NSCF，以及缺少的固定 q 的直接 PH；不重做 SCF。声子参考采用同源 Γ onsite ASR，交给 `ph.x` 同目录的 `dynmat.x` 对角化。该程序在新运行准备时冻结身份；旧运行没有该身份时须新建运行或提供显式参考。原始文件、输入、日志、退出码和派生参考均保存在 `quality-sources/`，失败沿用显式恢复和历史归档。独立点的物理覆盖仍须验收，自动生成不等于科学质量通过。
 
 ## 数据检查、比较和重绘
 

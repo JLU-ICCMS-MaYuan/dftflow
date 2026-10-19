@@ -37,7 +37,15 @@ data!(Scf{k_grid:[u32;3],k_shift:[u32;3],conv_thr_ry:f64});
 data!(Nscf{k_grid:[u32;3],nbnd:u32,conv_thr_ry:f64});
 #[derive(Debug,Clone,Serialize,Deserialize)] #[serde(deny_unknown_fields)]
 pub struct Phonon {#[serde(default)] pub mode:PhMode,pub q_grid:[u32;3],pub tr2_ph:f64}
-data!(Wannier{num_wann:u32,projections:Vec<String>,exclude_bands:Vec<u32>,energy_reference:EnergyReference,outer_window_ev:Option<[f64;2]>,frozen_window_ev:Option<[f64;2]>,frozen_max_ev:Option<f64>,localization:Convergence,disentanglement:Option<Convergence>});
+#[derive(Debug,Clone,Serialize,Deserialize)] #[serde(deny_unknown_fields)]
+pub struct Wannier {
+    #[serde(default, skip_serializing_if="qf_wannier::SelectionMode::is_legacy")]
+    pub selection_mode:qf_wannier::SelectionMode,
+    pub num_wann:u32,pub projections:Vec<String>,pub exclude_bands:Vec<u32>,
+    pub energy_reference:EnergyReference,pub outer_window_ev:Option<[f64;2]>,
+    pub frozen_window_ev:Option<[f64;2]>,pub frozen_max_ev:Option<f64>,
+    pub localization:Convergence,pub disentanglement:Option<Convergence>,
+}
 data!(Convergence{max_iterations:u32,tolerance_angstrom2:f64,window_iterations:u32});
 data!(Interpolation{k_grid:[u32;3],q_grid:[u32;3],electron_smearing:Smearing,degaussw_ev:f64,phonon_smearings_mev:Vec<f64>,spectral_points:u32,fsthick_ev:f64,eps_acoustic_cm1:f64,fermi_source:FermiSource,quality:Quality});
 data!(Quality{k_points_crystal:Vec<[f64;3]>,q_points_crystal:Vec<[f64;3]>,energy_window_ev:[f64;2],electron_max_ev:f64,electron_rms_ev:f64,phonon_max_cm1:f64,phonon_rms_cm1:f64,reference_manifest:Option<PathBuf>});
@@ -112,7 +120,12 @@ impl Config {
             ensure!(w.frozen_window_ev.is_none(),"configuration: wannier.frozen_max_ev: 与 frozen_window_ev 冲突");
             if let Some(outer)=w.outer_window_ev {ensure!(max>=outer[0]&&max<=outer[1],"configuration: wannier.frozen_max_ev: 超出外窗");}
         }
-        if let Some(win)=w.frozen_window_ev {interval(win,"wannier.frozen_window_ev")?;let outer=w.outer_window_ev.context("configuration: wannier.frozen_window_ev: 缺少外窗")?;ensure!(win[0]>=outer[0]&&win[1]<=outer[1],"configuration: wannier.frozen_window_ev: 超出外窗");}
+        if w.selection_mode==qf_wannier::SelectionMode::EnergyOnly {w.disentanglement.as_ref().context("configuration: wannier.disentanglement: 纯能量模式缺失收敛标准")?;}
+        if let Some(win)=w.frozen_window_ev {
+            interval(win,"wannier.frozen_window_ev")?;
+            if let Some(outer)=w.outer_window_ev {ensure!(win[0]>=outer[0]&&win[1]<=outer[1],"configuration: wannier.frozen_window_ev: 超出外窗");}
+            else {ensure!(w.selection_mode==qf_wannier::SelectionMode::EnergyOnly,"configuration: wannier.frozen_window_ev: 缺少外窗");}
+        }
         let i=&self.interpolation;
         grid(i.k_grid,"interpolation.k_grid")?;grid(i.q_grid,"interpolation.q_grid")?;
         ensure!(i.k_grid.iter().zip(i.q_grid).all(|(k,q)|k%q==0),"configuration: interpolation.k_grid: 不与细 q 网格整除相容");

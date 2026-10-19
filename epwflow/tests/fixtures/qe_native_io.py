@@ -9,6 +9,20 @@ text = Path(args[args.index('-inp')+1]).read_text() if '-inp' in args else sys.s
 def value(name, default=None):
     m = re.search(r'\b'+name+r"\s*=\s*('(?:[^']|'')*'|[^,\n]+)", text, re.I)
     return m.group(1).strip().strip("'") if m else default
+if kind == 'dynmat':
+    with (ROOT/'scientific-calls').open('a') as f: f.write('dynmat '+Path.cwd().name+'\n')
+    assert value('asr') == 'no' and value('amass\\(1\\)') is not None
+    source=ET.parse(value('fildyn')).getroot()
+    assert source.find('NUMBER_OF_Q').text.strip() == '1'
+    assert source.find('FREQUENCIES_THZ_CMM1') is None
+    q=source.find('DYNAMICAL_MAT_.1/Q_POINT').text
+    nat=int(source.find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)
+    if (ROOT/'reference-failure').exists() and (ROOT/'reference-failure').read_text().strip() == Path.cwd().name:
+        print('Error in routine reference fixture'); sys.exit(2)
+    # 仅用于进程协议；ASR 数学由独立矩阵单元测试验证。
+    Path(value('filout')).write_text('q = '+q+'\n'+''.join(
+        f'freq ({i}) = {100/33.3564095198152:.6f} [THz] = 100.000000 [cm-1]\n' for i in range(1,3*nat+1)))
+    print('JOB DONE.'); sys.exit(0)
 if kind in ('q2r', 'matdyn'):
     with (ROOT/'scientific-calls').open('a') as f: f.write(kind+'\n')
     if kind == 'q2r' and (ROOT/'post-failure').exists():
@@ -106,6 +120,7 @@ else:
             q=points[index-1]
             root=ET.Element('Root');geo=ET.SubElement(root,'GEOMETRY_INFO');ET.SubElement(geo,'NUMBER_OF_ATOMS').text=str(len(atoms));ET.SubElement(geo,'AT').text=s([v/alat for row in lattice for v in row])
             for i,(name,xyz) in enumerate(atoms,1):ET.SubElement(geo,'ATOM.'+str(i),SPECIES=name,TAU=s([v/alat for v in xyz]))
+            ET.SubElement(root,'NUMBER_OF_Q').text='1'
             dyn=ET.SubElement(root,'DYNAMICAL_MAT_.1');ET.SubElement(dyn,'Q_POINT').text=s([.1,0,0] if mode=='wrong_q' else q)
             for i in range(1,len(atoms)+1):
                 for j in range(1,len(atoms)+1):ET.SubElement(dyn,'PHI.'+str(i)+'.'+str(j)).text=s([0.]*18)

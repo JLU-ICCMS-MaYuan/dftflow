@@ -147,3 +147,8 @@ T054 的代码恢复子集已完成。原生粗网格与逐展宽细网格在准
 
 
 最终完整命令：`env -u TMPDIR bash scripts/build-native.sh test -p epwflow -p qeflow -p qf-input -p qf-config -p qf-phonon --locked --offline -- --test-threads=1`，**179 通过、0 失败、6 项真实环境暂挂**。这是一次完整串行运行的统计，不将定向复测重复累加；系统临时目录用于临时 fixture，指定 local_run/005 保存持久日志与 validation.json。并发目录异常仍保留待核查，不据串行通过宣称其根因已修复。10 份 Markdown、111 个本地链接、7 个 Bash 代码块及测试替身语法检查通过，git diff --check 通过。
+
+
+## 自动独立参考与显式纯能量模式
+
+实施、故障记录、验证与剩余边界见[专项验收](../0015-epwflow-mgb2-real-validation/native-reference-validation.md)。本项不替代四类图自动来源或真实 Tc 验收。

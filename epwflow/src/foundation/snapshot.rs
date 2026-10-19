@@ -134,6 +134,12 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
                 }
             }
         }
+        if config.interpolation.quality.reference_manifest.is_none() {
+            if let Some(dir) = config.programs.ph.path.parent() {
+                let path = dir.join("dynmat.x");
+                if path.is_file() { programs.insert("dynmat".into(), store::Identity::capture(&path)?); }
+            }
+        }
         for (n, p) in [
             ("wannier90", &config.programs.wannier90),
             ("pw2wannier90", &config.programs.pw2wannier90),

@@ -1,6 +1,6 @@
 pub mod cli;
 pub mod collect_ph;
-mod execution;
+pub(crate) mod execution;
 pub mod compare;
 pub mod manifest;
 pub mod nscf;

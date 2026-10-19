@@ -35,7 +35,7 @@ impl<'a> QeSettings<'a> {
         Ok(Self { config, cell })
     }
 
-    fn pw_input(&self, outdir: &str, nscf: bool) -> Result<String> {
+    fn pw_input(&self, outdir: &str, nscf: bool, reference: Option<&[[f64; 3]]>) -> Result<String> {
         let qe = &self.config.qe;
         let mut shared = qf_config::Config::default();
         shared.qe.lattice_mode = Some(qf_config::LATTICE_MODE_CELL_PARAMETERS.into());
@@ -78,12 +78,19 @@ impl<'a> QeSettings<'a> {
             // write in its coarse-grid stage. Keep the crystal metadata and
             // supply the full explicit mesh below; validate actual output
             // coverage rather than relying on nosym to establish completeness.
-            params.system.insert("nosym".into(), json!(false));
-            params.system.insert("noinv".into(), json!(false));
+            params.system.insert("nosym".into(), json!(reference.is_some()));
+            params.system.insert("noinv".into(), json!(reference.is_some()));
             params
                 .electrons
                 .insert("conv_thr".into(), json!(qe.nscf.conv_thr_ry));
-            qf_input::pw::uniform_kpoints_text(qe.nscf.k_grid.map(i64::from), true)?
+            if let Some(points) = reference {
+                ensure!(!points.is_empty() && points.iter().flatten().all(|v| v.is_finite()),
+                    "data_invalid: 独立电子参考点为空或非有限");
+                let mut text = format!("K_POINTS crystal\n{}\n", points.len());
+                for p in points { text.push_str(&format!("{:.17e} {:.17e} {:.17e} {:.17e}\n",
+                    p[0], p[1], p[2], 1.0 / points.len() as f64)); }
+                text
+            } else { qf_input::pw::uniform_kpoints_text(qe.nscf.k_grid.map(i64::from), true)? }
         } else {
             params
                 .electrons
@@ -98,10 +105,15 @@ impl<'a> QeSettings<'a> {
     }
 
     pub fn scf_input(&self, outdir: &str) -> Result<String> {
-        self.pw_input(outdir, false)
+        self.pw_input(outdir, false, None)
     }
     pub fn nscf_input(&self, outdir: &str) -> Result<String> {
-        self.pw_input(outdir, true)
+        self.pw_input(outdir, true, None)
+    }
+
+    /// 独立固定 k 点只用于质量参考，不交给 EPW 作为完整均匀 NSCF 保存树。
+    pub fn reference_input(&self, outdir: &str, points: &[[f64; 3]]) -> Result<String> {
+        self.pw_input(outdir, true, Some(points))
     }
 
     fn ph_params(&self, init: bool) -> SectionMap {

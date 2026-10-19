@@ -200,6 +200,12 @@ T052/T053 不替代 T051 的历史来源自动导入／阶段恢复、独立数�
 
 ## 三程序阶段边界更新
 
-按已确认的[三程序契约](../0008-epwflow-foundation/three-programs.md)，Wannier／粗网格与质量独立发布 wannier/manifest.json；细网格 EPC／α²F 在第三个程序执行，并另行发布 interpolation/manifest.json。阶段分离和来源不变进程回归已通过，见[0008 验收](../0008-epwflow-foundation/acceptance.md)；自动参考／四类比较图及真实完整科学验收仍未完成。
+按已确认的[三程序契约](../0008-epwflow-foundation/three-programs.md)，Wannier／粗网格与质量独立发布 wannier/manifest.json；细网格 EPC／α²F 在第三个程序执行，并另行发布 interpolation/manifest.json。阶段分离和来源不变进程回归已通过，见[0008 验收](../0008-epwflow-foundation/acceptance.md)；自动参考已通过进程回归；四类比较图的自动来源及真实完整科学验收仍未完成。
 
 - [x] T054 收敛原生粗／细阶段显式恢复：持久请求、物化输入与成功指纹、失败归档、发布中断重验归集及逐展宽复用；覆盖未知现场、来源／输出篡改、质量失败不重算和不重复 SCF／PH。对应 FR-010，T051 的代码恢复子集；不替代真实科学与六组合验收。
+
+
+- [x] T055 [US2] 缺省独立质量参考自动生成：复用已绑定 SCF 副本执行固定 k 的 QE 电子态、固定 q 的直接 PH；用原 Γ onsite ASR 与 QE dynmat 对角化，保存全部原始／派生来源、失败归档和恢复证据。覆盖坐标／模式／质量／虚频、程序和来源变化、零新增 SCF 及质量失败阻断。对应 FR-006/009/010、SC-002/005，0008 FR-016 的参考子集。
+- [ ] T056 [US2/US5] 自动生成比较路径／DOS 网格的 QE 与 EPW 数据，接入已有比较导出和 0014 四类图／总览；保持独立质量点和粗细边界，覆盖失败诊断及移动重绘。对应 FR-014/015、SC-009/010，投影暂缓条款继续适用。
+
+T055 与显式纯能量的完整串行回归为 145 通过、0 失败、6 项真实环境暂挂；详见[专项验收](../0015-epwflow-mgb2-real-validation/native-reference-validation.md)。该勾选只表示参考生成与恢复代码验收，不关闭独立覆盖或真实科学验证。

@@ -78,13 +78,34 @@ impl<'a> EpwConfig<'a> {
             config::EnergyReference::QeZero => qf_wannier::Reference::Absolute,
             config::EnergyReference::F2Fermi => qf_wannier::Reference::Fermi,
         };
-        qf_wannier::select_default(
-            self.bands.as_deref().context("data_invalid: 上游组合选窗缺少绑定的完整 F2 本征值；旧固定窗路径已弃用")?,
+        let select = match w.selection_mode {
+            qf_wannier::SelectionMode::EnergyOnly => qf_wannier::select_energy_only,
+            qf_wannier::SelectionMode::FixedPlusProjectability => qf_wannier::select_default,
+        };
+        let selection = select(
+            self.bands.as_deref().context("data_invalid: 选窗缺少绑定的完整 F2 本征值")?,
             self.fermi_ev.context("data_invalid: 选窗缺少绑定的 F2 Fermi 能")?,
             w.num_wann as usize,
             &w.exclude_bands.iter().map(|&v| v as usize).collect::<Vec<_>>(),
             &bounds, reference,
-        )
+        )?;
+        if w.selection_mode == qf_wannier::SelectionMode::EnergyOnly {
+            let q = &self.cfg.interpolation.quality;
+            let fermi = selection.fermi_ev;
+            let lower = fermi + q.energy_window_ev[0].min(-self.cfg.interpolation.fsthick_ev);
+            let upper = fermi + q.energy_window_ev[1].max(self.cfg.interpolation.fsthick_ev);
+            ensure!(selection.parameters["dis_froz_min"] <= lower
+                && upper <= selection.parameters["dis_froz_max"],
+                "data_invalid: 纯能量冻结窗未包含质量／EPC 目标窗 [{lower},{upper}] eV");
+        }
+        Ok(selection)
+    }
+
+    pub fn require_window_support(&self) -> Result<()> {
+        if self.cfg.wannier.selection_mode == qf_wannier::SelectionMode::FixedPlusProjectability {
+            qf_wannier::require_projectability_keywords(&self.cfg.programs.epw.path)?;
+        }
+        Ok(())
     }
 
     fn windows(&self) -> Result<Vec<(String, f64)>> {
@@ -125,9 +146,11 @@ impl<'a> EpwConfig<'a> {
         for (name, value) in self.windows()? {
             s.push_str(&format!("{name} = {value:.16e}\n"));
         }
-        s.push_str(&format!("dis_proj_min = {}\ndis_proj_max = {}\n", qf_wannier::DIS_PROJ_MIN, qf_wannier::DIS_PROJ_MAX));
-        s.push_str(qf_wannier::PROJECTABILITY_SWITCH);
-        s.push('\n');
+        if w.selection_mode == qf_wannier::SelectionMode::FixedPlusProjectability {
+            s.push_str(&format!("dis_proj_min = {}\ndis_proj_max = {}\n", qf_wannier::DIS_PROJ_MIN, qf_wannier::DIS_PROJ_MAX));
+            s.push_str(qf_wannier::PROJECTABILITY_SWITCH);
+            s.push('\n');
+        }
         if let Some(d) = &w.disentanglement {
             s.push_str(&format!(
                 "dis_num_iter = {}\ndis_conv_tol = {:.16e}\ndis_conv_window = {}\n",
@@ -227,13 +250,18 @@ impl<'a> EpwConfig<'a> {
                 for (name, value) in self.windows()? {
                     s.push_str(&format!(" {name} = {value:.16e}\n"));
                 }
-                let mut data = vec![
-                    qf_wannier::PROJECTABILITY_SWITCH.to_string(),
-                    format!("dis_proj_min = {}", qf_wannier::DIS_PROJ_MIN),
-                    format!("dis_proj_max = {}", qf_wannier::DIS_PROJ_MAX),
+                let mut data = Vec::new();
+                if w.selection_mode == qf_wannier::SelectionMode::FixedPlusProjectability {
+                    data.extend([
+                        qf_wannier::PROJECTABILITY_SWITCH.to_string(),
+                        format!("dis_proj_min = {}", qf_wannier::DIS_PROJ_MIN),
+                        format!("dis_proj_max = {}", qf_wannier::DIS_PROJ_MAX),
+                    ]);
+                }
+                data.extend([
                     format!("conv_tol = {:.16e}", w.localization.tolerance_angstrom2),
                     format!("conv_window = {}", w.localization.window_iterations),
-                ];
+                ]);
                 if let Some(d) = &w.disentanglement {
                     data.extend([
                         format!("dis_num_iter = {}", d.max_iterations),

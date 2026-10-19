@@ -23,6 +23,8 @@ pub fn run(
     let report = process::run_report(&cmd, dir)?;
     fs::copy(report.stdout_path, dir.join(format!("{stem}.out")))?;
     fs::copy(report.stderr_path, dir.join(format!("{stem}.err")))?;
+    fs::write(dir.join(format!("{stem}.exitcode")),
+        report.exit_status.map(|n| n.to_string()).unwrap_or_else(|| "signal".into()))?;
     ensure!(
         report.exit_status == Some(0),
         "execution_failed: {stem} 退出码 {:?}",

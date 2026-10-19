@@ -81,15 +81,22 @@ fn run_coarse_stages(
 ) -> Result<InterpolationManifest> {
     let f2_manifest_path = f2_work.join("qe-data").join("manifest.json");
     let binding = adapter::bind_f2(&f2_manifest_path, cfg)?;
-    let frozen = super::quality_binding::freeze(cfg, binding.fermi_ev)?;
+    // 显式参考仍在任何科学执行前验证；自动参考须先通过程序与选窗预检。
+    let supplied = cfg.interpolation.quality.reference_manifest.as_ref()
+        .map(|path| super::quality_binding::freeze_at(cfg, binding.fermi_ev, path)).transpose()?;
     let structure = crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
     let epw_cfg = epw_config::EpwConfig::from_config(cfg)?
         .with_fermi(binding.fermi_ev)?
         .with_bands(&binding.eigenvalues)?
         .with_species(&structure.cell.elements)?;
     epw_cfg.window_selection()?;
-    qf_wannier::require_projectability_keywords(&cfg.programs.epw.path)?;
+    epw_cfg.require_window_support()?;
     if charge { charge_budget(cfg, "f3")?; }
+    let frozen = if let Some(frozen) = supplied { frozen } else {
+        let path = super::references::ensure_sources(cfg, backend, launcher, work, f2_work, retry)?;
+        super::quality_binding::freeze_at(cfg, binding.fermi_ev, &path)?
+    };
+    let reference_digest = frozen.source.sha256.clone();
     // EPW 在一次粗网格执行中完成内置 Wannier 化，不另启动不完整的独立链。
     let f2 = crate::qe_data::manifest::QeManifest::load(&f2_manifest_path)?;
     let digest = attempt_digest(cfg, launcher, &[
@@ -122,13 +129,7 @@ fn run_coarse_stages(
             byte_size: std::fs::metadata(&path)?.len(),
             sha256: store::hash_file(&path)?,
             producer_stage: "quality".into(),
-            input_digest: store::hash_file(
-                cfg.interpolation
-                    .quality
-                    .reference_manifest
-                    .as_ref()
-                    .unwrap(),
-            )?,
+            input_digest: reference_digest.clone(),
             format_version: "1".into(),
         });
     }

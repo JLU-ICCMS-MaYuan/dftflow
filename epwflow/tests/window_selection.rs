@@ -66,3 +66,81 @@ fn explicit_absolute_override_is_capped_instead_of_preserving_old_rule() {
     assert_eq!(s.parameters["dis_froz_max"], 2.5);
     assert_eq!(s.parameters["dis_proj_max"], 0.95);
 }
+
+#[test]
+fn energy_only_uses_four_bounds_and_existing_epw_without_projectability() {
+    let mut c = cfg();
+    let program = std::env::temp_dir().join(format!("epw-window-{}", epwflow::foundation::store::token()));
+    std::fs::write(&program, "#!/bin/sh\nexit 0\n").unwrap();
+    c.programs.epw.path = program.clone();
+    c.wannier.selection_mode = qf_wannier::SelectionMode::EnergyOnly;
+    let ec = EpwConfig::from_config(&c)
+        .unwrap()
+        .with_fermi(0.)
+        .unwrap()
+        .with_bands(&[vec![-2., -1., 3., 6.]])
+        .unwrap();
+    let selection = ec.window_selection().unwrap();
+    assert_eq!(selection.mode, "energy_only");
+    assert_eq!(
+        selection.parameters["dis_froz_max"], 2.,
+        "稀疏间隙不能将上界移到 LUMO+2"
+    );
+    assert_eq!(selection.parameters.len(), 4);
+    for input in [
+        ec.wannier90_input().unwrap(),
+        ec.epw_coarse_input("out").unwrap(),
+    ] {
+        assert!(!input.contains("dis_proj_") && !input.contains("dis_froz_proj"));
+        for bound in ["dis_win_min", "dis_win_max", "dis_froz_min", "dis_froz_max"] {
+            assert!(input.contains(bound));
+        }
+        assert!(input.contains("conv_tol"));
+    }
+    // 同一程序没有组合参数标记；纯能量可用，组合模式仍拒绝。
+    ec.require_window_support().unwrap();
+    c.wannier.selection_mode = qf_wannier::SelectionMode::FixedPlusProjectability;
+    assert!(EpwConfig::from_config(&c)
+        .unwrap()
+        .require_window_support()
+        .is_err());
+    std::fs::remove_file(program).unwrap();
+}
+
+#[test]
+fn energy_only_rejects_target_loss_and_preserves_legacy_config_encoding() {
+    let mut c = cfg();
+    let old = toml::to_string(&c).unwrap();
+    assert!(!old.contains("selection_mode"));
+    assert!(toml::from_str::<Config>(
+        &old.replace("[wannier]", "[wannier]\nselection_mode = 'unknown'")
+    )
+    .is_err());
+    c.wannier.selection_mode = qf_wannier::SelectionMode::EnergyOnly;
+    c.wannier.frozen_window_ev = Some([-0.1, 0.1]);
+    c.validate().unwrap();
+    let mut no_convergence = c.clone();
+    no_convergence.wannier.disentanglement = None;
+    assert!(no_convergence.validate().is_err());
+    let ec = EpwConfig::from_config(&c)
+        .unwrap()
+        .with_fermi(0.)
+        .unwrap()
+        .with_bands(&[vec![-2., -1., 3., 6.]])
+        .unwrap();
+    assert!(ec
+        .window_selection()
+        .unwrap_err()
+        .to_string()
+        .contains("目标窗"));
+    c.wannier.frozen_window_ev = Some([-0.5, 0.5]);
+    c.interpolation.fsthick_ev = 0.6;
+    let ec = EpwConfig::from_config(&c)
+        .unwrap()
+        .with_fermi(0.)
+        .unwrap()
+        .with_bands(&[vec![-2., -1., 3., 6.]])
+        .unwrap();
+    assert!(ec.window_selection().is_err(), "EPC 窗不能超出冻结窗");
+    assert!(toml::to_string(&c).unwrap().contains("energy_only"));
+}

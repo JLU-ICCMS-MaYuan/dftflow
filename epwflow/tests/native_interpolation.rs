@@ -33,7 +33,8 @@ fn executable(path: &Path, text: &str) {
     fs::write(path, text).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
-fn case(failure: &str) -> Case {
+fn case(failure: &str) -> Case { case_with_auto(failure, false) }
+fn case_with_auto(failure: &str, automatic: bool) -> Case {
     let root = std::env::temp_dir().join(format!("epwflow-native-interp-{}", store::token()));
     fs::create_dir(&root).unwrap();
     let mut cfg: config::Config = toml::from_str(include_str!("fixtures/input.toml")).unwrap();
@@ -54,7 +55,7 @@ fn case(failure: &str) -> Case {
         include_str!("fixtures/qe_native_io.py"),
     )
     .unwrap();
-    for name in ["pw", "ph"] {
+    for name in ["pw", "ph", "dynmat"] {
         let p = root.join(format!("{name}.x"));
         executable(
             &p,
@@ -69,12 +70,17 @@ fn case(failure: &str) -> Case {
         };
         if name == "pw" {
             cfg.programs.pw = prog
-        } else {
+        } else if name == "ph" {
             cfg.programs.ph = prog
         };
     }
     let ep = root.join("epw.x");
-    executable(&ep, include_str!("fixtures/epw_native_io.py"));
+    let epw_script = include_str!("fixtures/epw_native_io.py");
+    let epw_script = if automatic {
+        epw_script.lines().filter(|s| !s.contains("dis_proj_min dis_proj_max dis_froz_proj"))
+            .collect::<Vec<_>>().join("\n") + "\n"
+    } else { epw_script.to_string() };
+    executable(&ep, &epw_script);
     cfg.programs.epw = Program {
         path: ep,
         args: vec!["--io-contract".into()],
@@ -93,13 +99,17 @@ fn case(failure: &str) -> Case {
     cfg.wannier.outer_window_ev = Some([1.5, 5.]);
     cfg.wannier.frozen_window_ev = Some([2.22, 3.2]);
     cfg.wannier.frozen_max_ev = None;
+    if automatic {
+        cfg.wannier.selection_mode = qf_wannier::SelectionMode::EnergyOnly;
+        cfg.wannier.frozen_window_ev = Some([2.2, 3.3]);
+    }
     cfg.interpolation.k_grid = [4; 3];
     cfg.interpolation.q_grid = [2; 3];
     cfg.interpolation.phonon_smearings_mev = vec![0.5, 1.];
     cfg.interpolation.spectral_points = 4;
     cfg.superconductivity.spectrum_index = 0;
     cfg.interpolation.quality.energy_window_ev = [-0.5, 0.5];
-    cfg.interpolation.quality.reference_manifest = Some(root.join("reference.json"));
+    cfg.interpolation.quality.reference_manifest = if automatic { None } else { Some(root.join("reference.json")) };
     cfg.interpolation.quality.q_points_crystal =
         vec![[0., 0., 0.], [0.25, 0., 0.], [0.5, 0., 0.], [0.75, 0., 0.]];
     let binding = snapshot::prepare(&cfg, &root.join("input.toml")).unwrap();
@@ -167,6 +177,7 @@ fn case(failure: &str) -> Case {
         phonon_interpolated_mev: missing(),
         provenance: vec![file(&cfg.structure)],
     };
+    if !automatic {
     store::write(
         cfg.interpolation
             .quality
@@ -176,6 +187,7 @@ fn case(failure: &str) -> Case {
         &sources,
     )
     .unwrap();
+    }
     fs::write(root.join("epw-failure"), failure).unwrap();
     Case { root, cfg }
 }
@@ -476,5 +488,108 @@ fn retry_rejects_tampered_complete_or_running_inputs_and_unknown_directories() {
         assert!(retry_coarse(&c).is_err(), "{kind}");
         assert_eq!(calls(&c), log, "{kind}");
         assert!(!c.cfg.work_dir.join("native-attempts/history").exists());
+    }
+}
+
+#[test]
+fn automatic_quality_sources_use_scf_copies_and_fixed_independent_points() {
+    let c = case_with_auto("", true);
+    let work = &c.cfg.work_dir;
+    let before = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
+    let original = store::Identity::capture(&work.join("nscf/out/scf.save/data-file-schema.xml")).unwrap();
+    let source = qe_data::save::files(&work.join("scf/snapshot")).unwrap();
+    // 合法清单不依赖响应数组顺序，必须按物理 q 编号关联。
+    let mut f2 = qe_data::manifest::QeManifest::load(&work.join("qe-data/manifest.json")).unwrap();
+    f2.phonon_files.reverse();
+    store::write(&work.join("qe-data/manifest.json"), &f2).unwrap();
+    let coarse = interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).unwrap();
+    assert!(coarse.validation.all_passed());
+    original.verify().unwrap();
+    assert_eq!(qe_data::save::files(&work.join("scf/snapshot")).unwrap(),source);
+    let calls = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
+    let added = calls.strip_prefix(&before).unwrap();
+    assert_eq!(added.lines().filter(|l| *l == "pw").count(),1);
+    assert_eq!(added.lines().filter(|l| *l == "ph").count(),2);
+    assert_eq!(added.lines().filter(|l| l.starts_with("dynmat ")).count(),4);
+    assert_eq!(calls.matches("q2r\n").count(), before.matches("q2r\n").count());
+    assert!(fs::read_to_string(work.join("quality-sources/electron/reference.in")).unwrap().contains("'nscf'"));
+    assert!(!work.join("fine").exists());
+    let sources: QualitySources = store::read(&work.join("quality-sources/reference.json")).unwrap();
+    assert!(sources.provenance.iter().any(|f| f.path.ends_with("corrected.xml")));
+    assert!(sources.provenance.iter().any(|f| f.path.ends_with("scf.dyn.xml")));
+    assert!(sources.provenance.iter().any(|f| f.path.ends_with("scf.dyn_q1.xml")));
+    assert!(interpolation::quality_binding::check(&c.cfg,work).unwrap().passed);
+    let mut resumed = c.cfg.clone();
+    // 固定清单变化不能悄悄补算其他参考点。
+    resumed.interpolation.quality.q_points_crystal[1][1] = 0.125;
+    assert!(interpolation::scheduler::run_coarse_with_retry(&resumed,Backend::Local,&[],work,work,true).is_err());
+    assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(),calls);
+    interpolation::scheduler::run_fine_registered(&c.cfg,Backend::Local,&[],work).unwrap();
+}
+
+#[test]
+fn failed_reference_resumes_only_failed_native_task_and_rejects_tampering() {
+    for tamper in [false,true] {
+        let c = case_with_auto("",true);
+        let work = &c.cfg.work_dir;
+        fs::write(c.root.join("reference-failure"),"dynmat-0002").unwrap();
+        assert!(interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).is_err());
+        assert!(!c.root.join("epw-calls").exists());
+        assert!(!work.join("quality-sources/reference.json").exists());
+        let log = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
+        assert!(interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).is_err());
+        assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(),log);
+        fs::remove_file(c.root.join("reference-failure")).unwrap();
+        let complete = store::Identity::capture(&work.join("quality-sources/dynmat-0001/modes.out")).unwrap();
+        if tamper { fs::write(&complete.path,"changed").unwrap(); }
+        let result = retry_coarse(&c);
+        if tamper {
+            assert!(result.is_err());
+            assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(),log);
+            assert!(!c.root.join("epw-calls").exists());
+        } else {
+            result.unwrap(); complete.verify().unwrap();
+            let calls = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
+            assert_eq!(calls.lines().filter(|l| *l == "pw").count(),2+1); // F2 SCF/NSCF + 独立 NSCF。
+            assert_eq!(calls.matches("dynmat dynmat-0001\n").count(),1);
+            assert_eq!(calls.matches("dynmat dynmat-0002\n").count(),2);
+            assert_eq!(calls.matches("dynmat dynmat-0003\n").count(),1);
+            let history = work.join("native-attempts/history");
+            assert!(fs::read_dir(history).unwrap().any(|e| e.unwrap().path().join("reference.exitcode").is_file()));
+        }
+    }
+}
+
+#[test]
+fn auto_reference_preflight_and_native_validation_never_bypass_quality() {
+    for kind in ["program","unknown","wrong-q","duplicate-k","quality"] {
+        let c = case_with_auto(if kind == "quality" { "quality" } else { "" },true);
+        let work = &c.cfg.work_dir;
+        let before = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
+        match kind {
+            "program" => fs::write(c.root.join("dynmat.x"),"changed").unwrap(),
+            "unknown" => {
+                fs::create_dir(work.join("quality-sources")).unwrap();
+                fs::write(work.join("quality-sources/keep"),"unknown").unwrap();
+            },
+            "wrong-q" => fs::write(c.root.join("fixture-failure"),"wrong_q").unwrap(),
+            "duplicate-k" => fs::write(c.root.join("fixture-failure"),"duplicate_k").unwrap(),
+            _ => {},
+        }
+        assert!(interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).is_err(),"{kind}");
+        assert!(!work.join("wannier/manifest.json").exists());
+        assert!(!work.join("fine").exists());
+        if kind != "quality" { assert!(!c.root.join("epw-calls").exists()); }
+        if kind == "program" || kind == "unknown" {
+            assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(),before);
+        }
+        if kind == "quality" {
+            let scientific = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
+            let native = calls(&c);
+            assert!(!interpolation::quality_binding::check(&c.cfg,work).unwrap().passed);
+            assert!(retry_coarse(&c).is_err());
+            assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(),scientific);
+            assert_eq!(calls(&c),native);
+        }
     }
 }

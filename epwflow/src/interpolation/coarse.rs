@@ -102,7 +102,7 @@ pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
         &dir.join("window-selection.json"),
         &epw_cfg.window_selection()?,
     )?;
-    qf_wannier::require_projectability_keywords(&epw_cfg.cfg.programs.epw.path)?;
+    epw_cfg.require_window_support()?;
     epw_cfg.write_quality_points(&dir)?;
     fs::write(
         dir.join("epw_coarse.in"),

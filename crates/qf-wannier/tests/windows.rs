@@ -1,6 +1,79 @@
 use qf_wannier::{select_default, Bounds, Reference};
 
 #[test]
+fn energy_only_uses_fermi_and_never_caps_requested_bound() {
+    let bands = vec![vec![-10., -2., -1., 3., 6.], vec![-9., -2., -0.5, 4., 8.]];
+    let s = qf_wannier::select_energy_only(
+        &bands,
+        0.,
+        3,
+        &[1],
+        &Bounds::default(),
+        Reference::Absolute,
+    )
+    .unwrap();
+    assert_eq!(s.parameters["dis_win_min"], -2.02);
+    assert_eq!(s.parameters["dis_win_max"], 8.02);
+    assert_eq!(s.parameters["dis_froz_min"], -2.02);
+    assert_eq!(s.parameters["dis_froz_max"], 2.);
+    assert_eq!(s.outer_counts, vec![4, 4]);
+    assert_eq!(s.energy_frozen_counts, vec![2, 2]);
+    let impossible = Bounds {
+        dis_froz_max: Some(7.),
+        ..Bounds::default()
+    };
+    let error =
+        qf_wannier::select_energy_only(&bands, 0., 3, &[1], &impossible, Reference::Absolute)
+            .unwrap_err();
+    assert!(error.to_string().contains("k=1") && error.to_string().contains("不自动裁剪"));
+}
+
+#[test]
+fn energy_only_supports_independent_frozen_lower_and_reference_conversion() {
+    let bands = vec![vec![-10., 4., 5., 8.], vec![-9., 4.5, 5.5, 9.]];
+    let bounds = Bounds {
+        dis_froz_min: Some(-1.),
+        dis_froz_max: Some(1.),
+        ..Bounds::default()
+    };
+    let s = qf_wannier::select_energy_only(&bands, 5., 2, &[], &bounds, Reference::Fermi).unwrap();
+    assert_eq!(s.parameters["dis_froz_min"], 4.);
+    assert_eq!(s.parameters["dis_froz_max"], 6.);
+    assert_eq!(s.energy_frozen_counts, vec![2, 2]);
+    assert_eq!(
+        s.parameters["dis_win_min"], -10.02,
+        "默认绝对谱底不重复加 Fermi"
+    );
+    for invalid in [
+        Bounds {
+            dis_froz_max: Some(f64::NAN),
+            ..bounds.clone()
+        },
+        Bounds {
+            dis_win_min: Some(0.),
+            dis_win_max: Some(1.),
+            ..bounds.clone()
+        },
+    ] {
+        assert!(
+            qf_wannier::select_energy_only(&bands, 5., 2, &[], &invalid, Reference::Fermi).is_err()
+        );
+    }
+    assert!(
+        qf_wannier::select_energy_only(&bands, 5., 2, &[0], &bounds, Reference::Fermi).is_err()
+    );
+    assert!(qf_wannier::select_energy_only(
+        &bands,
+        5.,
+        2,
+        &[],
+        &bounds,
+        Reference::UpstreamRelative
+    )
+    .is_err());
+}
+
+#[test]
 fn defaults_keep_unspecified_bounds_and_shift_metal_by_fermi() {
     let bands = vec![
         vec![-0.0002, 0.0002, 4., 6.],

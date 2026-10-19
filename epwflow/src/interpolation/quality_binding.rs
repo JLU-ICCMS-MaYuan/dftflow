@@ -33,6 +33,15 @@ pub fn freeze(cfg: &Config, fermi: f64) -> Result<Frozen> {
         .reference_manifest
         .as_ref()
         .context("data_invalid: 缺少独立插值质量来源清单")?;
+    freeze_at(cfg, fermi, path)
+}
+
+pub(super) fn reference_path(cfg: &Config, work: &Path) -> std::path::PathBuf {
+    cfg.interpolation.quality.reference_manifest.clone()
+        .unwrap_or_else(|| work.join("quality-sources/reference.json"))
+}
+
+pub(super) fn freeze_at(cfg: &Config, fermi: f64, path: &Path) -> Result<Frozen> {
     let base = path.parent().context("data_invalid: 质量清单缺父目录")?;
     let mut s: QualitySources = store::read(path)?;
     ensure!(
@@ -158,7 +167,7 @@ impl Frozen {
     }
 }
 
-fn write_matching(path: &Path, value: &impl Serialize) -> Result<()> {
+pub(super) fn write_matching(path: &Path, value: &impl Serialize) -> Result<()> {
     if let Ok(meta) = fs::symlink_metadata(path) {
         ensure!(meta.is_file() && !meta.file_type().is_symlink(),
             "input_conflict: 已有质量发布必须是普通文件");
@@ -179,12 +188,7 @@ struct Binding {
 
 /// F4 重验配对来源及原配置身份；兼容已有显式指向当前 coarse 的历史清单。
 pub fn check(cfg: &Config, work: &Path) -> Result<NativeQuality> {
-    let source = cfg
-        .interpolation
-        .quality
-        .reference_manifest
-        .as_ref()
-        .context("data_invalid: 缺独立质量来源")?;
+    let source = reference_path(cfg, work);
     let binding_path = work.join("quality-binding.json");
     let path = if binding_path.exists() {
         let binding: Binding = store::read(&binding_path)?;

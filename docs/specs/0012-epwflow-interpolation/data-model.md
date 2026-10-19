@@ -47,3 +47,17 @@ RunBinding→StageAttempt→Artifact，后续 manifest 引用上游身份；基�
 电子投影保留同一 k 点完整算符 P_α；令 W 为包含解纠缠和局域化的 Bloch→Wannier 变换，使用 P_α^W = W† P_α W。其倒／实空间转换沿用实际 Wannier 规范、相位与插值权重，在细网格本征态上求期望值。粗网格重构、厄米性、规范和带映射是必要检查，不能通过裁掉负权重或重新缩放掩盖错误。电子原子投影可能不完备，必须报告 spilling／未投影部分；不要求元素投影强行等于总 DOS。
 
 声子质量加权本征矢满足全原子笛卡尔分量平方和为 1；元素权重是该元素所有原子分量平方和。共同累积后各元素声子 DOS 逐点和应等于总 DOS；完整频率范围内积分为 3N（MgB₂ 为 9），有限范围、虚频、截断与核尾部另报，不通过重新归一化隐藏缺失。
+
+## 自动独立参考
+
+`interpolation.quality.reference_manifest` 存在时继续只读使用；缺省时在本次科学目录的 `quality-sources/` 生成，不改写固定配置。
+
+- `request.json`：版本 1、固定配置／启动参数／F2 清单及 SCF 快照清单／PW、PH、dynmat 和生成程序的身份摘要。缺请求的已有目录拒绝覆盖。
+- `electron/`：从原 SCF 完整副本执行固定显式 k 点 NSCF；保留原始输入、XML、波函数、日志和退出状态。该保存树仅作质量参考，不能取代 F2 的完整均匀 NSCF。
+- `ph-NNNN/`：不在已有直接 PH 点集中的固定 q，从独立 SCF 副本执行 coords PH。原有点按物理 q 编号只读复用，不能依赖响应数组的顺序。
+- `dynmat-NNNN/`：保留 `corrected.xml`、`reference.in`、`modes.out` 和执行证据。派生 XML 对 onsite 上三角减去同源 Γ 行和，裁成单 q；原始 PH XML 不改写。以相同显式原子质量运行同目录 `dynmat.x`、`asr=no`，保留带符号的全部 3N 模。
+- `reference.freq` 与 `reference.json`：只在全部参考完整且来源重验后发布；共同 Fermi 来自 F2，电子参考 NSCF 自身的 Fermi 不重新对齐。成对插值输出仍由原 `quality_binding` 统一登记。
+
+每个原生任务复用 `native-attempts/` 请求与恢复协议，登记 `reference.exitcode`，只冻结输入文件和原 SCF 快照清单，允许工作保存副本被 QE 改写。完成检查点保留实际输出身份；显式恢复重验成功任务，只归档并重试失败任务。旧 EPW 检查点缺省退出文件仍解释为 `epw.exitcode`，不改写旧归档。
+
+自动生成只落实固定参考的执行与来源契约。真实 MgB₂ 的不等价网格外覆盖、质量数值及手动对照仍须按 FR-006 和 0015 验收，进程替身的点集不能当作科学覆盖证据。

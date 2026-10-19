@@ -1,4 +1,4 @@
-//! 共用 Wannier 选窗：复现固定 AiiDA 工作流默认组合模式的数值规则。
+//! 共用 Wannier 选窗：显式纯能量模式和历史 AiiDA 组合模式。
 //! 来源及许可说明见 docs/specs/0016-wannier-window-selection/upstream-adoption.md。
 
 use anyhow::{ensure, Context, Result};
@@ -12,6 +12,145 @@ pub const DIS_PROJ_MIN: f64 = 0.01;
 pub const DIS_PROJ_MAX: f64 = 0.95;
 /// 标准 W90 接口显式启用投影冻结；避免只写阈值却仍执行纯能量算法。
 pub const PROJECTABILITY_SWITCH: &str = "dis_froz_proj = true";
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SelectionMode {
+    #[default]
+    FixedPlusProjectability,
+    EnergyOnly,
+}
+impl SelectionMode {
+    pub fn is_legacy(&self) -> bool {
+        *self == Self::FixedPlusProjectability
+    }
+}
+
+fn kept_bands(
+    bands: &[Vec<f64>],
+    num_wann: usize,
+    exclude: &[usize],
+) -> Result<(Vec<Vec<f64>>, Vec<usize>)> {
+    let nbnd = validate_bands(bands)?;
+    let mut excluded = exclude.to_vec();
+    excluded.sort_unstable();
+    excluded.dedup();
+    ensure!(
+        num_wann > 0 && excluded.iter().all(|&b| b > 0 && b <= nbnd),
+        "data_invalid: num_wann 或 exclude_bands 无效"
+    );
+    ensure!(
+        nbnd - excluded.len() >= num_wann,
+        "data_invalid: 排除后能带少于 num_wann"
+    );
+    let kept = bands
+        .iter()
+        .map(|row| {
+            row.iter()
+                .enumerate()
+                .filter(|(i, _)| excluded.binary_search(&(i + 1)).is_err())
+                .map(|(_, &e)| e)
+                .collect()
+        })
+        .collect();
+    Ok((kept, excluded))
+}
+
+/// 金属的显式纯能量起点；所有边界均记录，不裁剪请求或推断稀疏网格带隙。
+pub fn select_energy_only(
+    bands: &[Vec<f64>],
+    fermi_ev: f64,
+    num_wann: usize,
+    exclude_bands: &[usize],
+    overrides: &Bounds,
+    reference: Reference,
+) -> Result<Selection> {
+    ensure!(fermi_ev.is_finite(), "data_invalid: Fermi 能非有限");
+    let (kept, excluded) = kept_bands(bands, num_wann, exclude_bands)?;
+    let offset = match reference {
+        Reference::Absolute => 0.0,
+        Reference::Fermi => fermi_ev,
+        Reference::UpstreamRelative => {
+            anyhow::bail!("configuration: 纯能量模式仅接受绝对或 Fermi 能量参考")
+        }
+    };
+    let homo = kept
+        .iter()
+        .flatten()
+        .copied()
+        .filter(|&e| e <= fermi_ev)
+        .reduce(f64::max)
+        .context("data_invalid: 没有占据态")?;
+    let lumo = kept
+        .iter()
+        .flatten()
+        .copied()
+        .filter(|&e| e > fermi_ev)
+        .reduce(f64::min)
+        .context("data_invalid: 没有未占据态")?;
+    let bound = |value: Option<f64>, default: f64| -> Result<f64> {
+        let result = value.map(|v| v + offset).unwrap_or(default);
+        ensure!(result.is_finite(), "data_invalid: 能窗非有限或换算溢出");
+        Ok(result)
+    };
+    let lower = bound(
+        overrides.dis_win_min,
+        kept.iter().flatten().copied().fold(f64::INFINITY, f64::min) - 0.02,
+    )?;
+    let upper = bound(
+        overrides.dis_win_max,
+        kept.iter()
+            .flatten()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max)
+            + 0.02,
+    )?;
+    let frozen_lower = bound(overrides.dis_froz_min, lower)?;
+    let frozen_upper = bound(overrides.dis_froz_max, fermi_ev + DEFAULT_FROZEN_OFFSET_EV)?;
+    ensure!(
+        lower < upper
+            && lower <= frozen_lower
+            && frozen_lower < frozen_upper
+            && frozen_upper <= upper,
+        "data_invalid: 纯能量外窗 [{lower},{upper}] 不包含冻结窗 [{frozen_lower},{frozen_upper}]"
+    );
+    let mut outer_counts = Vec::new();
+    let mut energy_frozen_counts = Vec::new();
+    for (k, row) in kept.iter().enumerate() {
+        let outer = row.iter().filter(|&&e| lower <= e && e <= upper).count();
+        let frozen = row
+            .iter()
+            .filter(|&&e| frozen_lower <= e && e <= frozen_upper)
+            .count();
+        ensure!(outer >= num_wann && frozen <= num_wann,
+            "data_invalid: k={} 外窗 {} 态、冻结 {} 态，要求 frozen<=N={}<=outer；请求冻结窗 [{frozen_lower},{frozen_upper}] 不自动裁剪", k + 1, outer, frozen, num_wann);
+        outer_counts.push(outer);
+        energy_frozen_counts.push(frozen);
+    }
+    Ok(Selection {
+        upstream_revision: "dftflow-energy-only-v1".into(),
+        mode: "energy_only".into(),
+        bands_sha256: format!("{:x}", Sha256::digest(serde_json::to_vec(bands)?)),
+        fermi_ev,
+        homo_ev: homo,
+        lumo_ev: lumo,
+        shift_ev: fermi_ev,
+        requested_frozen_max_ev: frozen_upper,
+        // 历史记录兼容字段：纯能量模式不施加 cap，保留请求值。
+        frozen_cap_ev: frozen_upper,
+        num_wann,
+        excluded_bands: excluded,
+        parameters: [
+            ("dis_win_min".into(), lower),
+            ("dis_win_max".into(), upper),
+            ("dis_froz_min".into(), frozen_lower),
+            ("dis_froz_max".into(), frozen_upper),
+        ]
+        .into(),
+        outer_counts,
+        energy_frozen_counts,
+    })
+}
 
 /// 未设置的边界保留为 None，由原生程序决定实际默认范围。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -59,22 +198,8 @@ pub fn select_default(
     overrides: &Bounds,
     reference: Reference,
 ) -> Result<Selection> {
-    let nbnd = validate_bands(bands)?;
-    ensure!(
-        fermi_ev.is_finite() && num_wann > 0,
-        "data_invalid: Fermi 能或 Wannier 数无效"
-    );
-    let mut excluded = exclude_bands.to_vec();
-    excluded.sort_unstable();
-    excluded.dedup();
-    ensure!(
-        excluded.iter().all(|&b| b > 0 && b <= nbnd),
-        "data_invalid: exclude_bands 超出原始 1-based 带号范围"
-    );
-    ensure!(
-        nbnd - excluded.len() >= num_wann,
-        "data_invalid: 排除后能带少于 num_wann"
-    );
+    ensure!(fermi_ev.is_finite(), "data_invalid: Fermi 能非有限");
+    let (kept, excluded) = kept_bands(bands, num_wann, exclude_bands)?;
     let homo = bands
         .iter()
         .flatten()
@@ -116,16 +241,6 @@ pub fn select_default(
         .copied()
         .unwrap_or(shift + DEFAULT_FROZEN_OFFSET_EV);
     ensure!(requested.is_finite(), "data_invalid: 默认冻结上界溢出");
-    let kept: Vec<Vec<f64>> = bands
-        .iter()
-        .map(|row| {
-            row.iter()
-                .enumerate()
-                .filter(|(b, _)| excluded.binary_search(&(b + 1)).is_err())
-                .map(|(_, &e)| e)
-                .collect()
-        })
-        .collect();
     let mut cap = kept
         .iter()
         .map(|row| row[num_wann - 1])

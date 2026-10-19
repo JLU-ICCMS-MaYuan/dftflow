@@ -19,6 +19,8 @@ struct Receipt {
     outputs: Vec<Identity>,
     archive: Option<PathBuf>,
     archive_had_directory: bool,
+    #[serde(default = "epw_exitcode")]
+    exit_code: String,
 }
 
 #[derive(Serialize, Deserialize, PartialEq)]
@@ -29,6 +31,8 @@ enum State {
     Complete,
     Archiving,
 }
+
+fn epw_exitcode() -> String { "epw.exitcode".into() }
 
 fn exists(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok()
@@ -58,9 +62,9 @@ fn verify(ids: &[Identity]) -> Result<()> {
     Ok(())
 }
 
-fn checked_collect<T>(dir: &Path, collect: &impl Fn() -> Result<T>) -> Result<T> {
+fn checked_collect<T>(dir: &Path, exit_code: &str, collect: &impl Fn() -> Result<T>) -> Result<T> {
     ensure!(
-        fs::read_to_string(dir.join("epw.exitcode"))?.trim() == "0",
+        fs::read_to_string(dir.join(exit_code))?.trim() == "0",
         "execution_failed: 原生尝试没有成功退出证据"
     );
     collect()
@@ -79,7 +83,7 @@ fn complete<T>(
     );
     receipt
         .outputs
-        .push(Identity::capture(&receipt.directory.join("epw.exitcode"))?);
+        .push(Identity::capture(&receipt.directory.join(&receipt.exit_code))?);
     verify(&receipt.inputs)?;
     verify(&receipt.outputs)?;
     receipt.state = State::Complete;
@@ -126,11 +130,7 @@ fn archive(receipt: &mut Receipt, target: &Path, root: &Path, label: &str) -> Re
     let history = destination.with_extension("json");
     if history.exists() {
         ensure!(
-            fs::read(&history)? == {
-                let mut bytes = serde_json::to_vec_pretty(receipt)?;
-                bytes.push(b'\n');
-                bytes
-            },
+            serde_json::to_value(store::read::<Receipt>(&history)?)? == serde_json::to_value(&receipt)?,
             "input_conflict: 归档检查点发生变化"
         );
     } else {
@@ -151,6 +151,20 @@ pub fn run<T>(
     collect: impl Fn() -> Result<T>,
     evidence: impl Fn(&T) -> Result<Vec<Identity>>,
 ) -> Result<T> {
+    run_with_inputs(work, label, dir, digest, retry, "epw.exitcode", None,
+        prepare, execute, collect, evidence)
+}
+
+/// QE 会改写工作保存树；只冻结显式只读输入，执行产物由归集器登记。
+pub(super) fn run_with_inputs<T>(
+    work: &Path, label: &str, dir: &Path, digest: String, retry: bool,
+    exit_code: &str, selected_inputs: Option<&[PathBuf]>,
+    prepare: impl FnOnce() -> Result<()>, execute: impl FnOnce() -> Result<()>,
+    collect: impl Fn() -> Result<T>, evidence: impl Fn(&T) -> Result<Vec<Identity>>,
+) -> Result<T> {
+    ensure!(Path::new(exit_code).components().count() == 1
+        && !exit_code.starts_with('.') && !exit_code.contains('/'),
+        "input_conflict: 退出证据必须是普通文件名");
     ensure!(
         dir.starts_with(work)
             && !label.is_empty()
@@ -165,6 +179,7 @@ pub fn run<T>(
         let mut previous: Receipt = store::read(&target)?;
         ensure!(
             previous.schema_version == 1
+                && previous.exit_code == exit_code
                 && previous.digest == digest
                 && previous.directory == dir
                 && !previous.id.is_empty()
@@ -190,11 +205,11 @@ pub fn run<T>(
         if previous.state == State::Complete {
             verify(&previous.inputs)?;
             verify(&previous.outputs)?;
-            return checked_collect(dir, &collect);
+            return checked_collect(dir, exit_code, &collect);
         }
         if previous.state == State::Running {
             verify(&previous.inputs)?;
-            if let Ok(result) = checked_collect(dir, &collect) {
+            if let Ok(result) = checked_collect(dir, exit_code, &collect) {
                 complete(&mut previous, &target, &result, &evidence)?;
                 return Ok(result);
             }
@@ -216,15 +231,18 @@ pub fn run<T>(
         outputs: vec![],
         archive: None,
         archive_had_directory: false,
+        exit_code: exit_code.into(),
     };
     store::write(&target, &receipt)?;
     prepare()?;
-    inputs(dir, &mut receipt.inputs)?;
+    if let Some(paths) = selected_inputs {
+        receipt.inputs = paths.iter().map(|p| Identity::capture(p)).collect::<Result<_>>()?;
+    } else { inputs(dir, &mut receipt.inputs)?; }
     ensure!(!receipt.inputs.is_empty(), "data_invalid: 原生物化输入为空");
     receipt.state = State::Running;
     store::write(&target, &receipt)?;
     execute()?;
-    let result = checked_collect(dir, &collect)?;
+    let result = checked_collect(dir, exit_code, &collect)?;
     complete(&mut receipt, &target, &result, &evidence)?;
     Ok(result)
 }
@@ -251,6 +269,7 @@ mod tests {
                 outputs: vec![],
                 archive: Some(destination.clone()),
                 archive_had_directory: true,
+                exit_code: epw_exitcode(),
             };
             if missing {
                 fs::remove_dir_all(&destination).unwrap();
@@ -266,6 +285,17 @@ mod tests {
                     "failed output"
                 );
                 assert!(destination.with_extension("json").exists());
+                // 旧 EPW 检查点没有 exit_code；默认值兼容不改写原归档。
+                let history = destination.with_extension("json");
+                let mut old: serde_json::Value = store::read(&history).unwrap();
+                old.as_object_mut().unwrap().remove("exit_code");
+                store::write(&history, &old).unwrap();
+                let original = fs::read(&history).unwrap();
+                archive(&mut receipt, &root.join("coarse.json"), &root, "coarse").unwrap();
+                assert_eq!(fs::read(&history).unwrap(), original);
+                old["digest"] = "changed".into();
+                store::write(&history, &old).unwrap();
+                assert!(archive(&mut receipt, &root.join("coarse.json"), &root, "coarse").is_err());
             }
             fs::remove_dir_all(work).unwrap();
         }

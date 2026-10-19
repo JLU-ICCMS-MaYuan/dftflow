@@ -94,3 +94,12 @@
 
 
 真实 EPW 执行进一步证实 `epw.f90` 在 `wannierize=false` 时仍先调用 `io.f90::loadbm`；因此重启角色必须包含原 `.ukk`。依据 `pw2wan.f90::write_filukk` 核对完整记录，不能仅用原六文件完整性判断可执行。修复与证据见 [细网格验收](../0015-epwflow-mgb2-real-validation/native-fine-validation.md)。
+
+
+## 自动参考的源码依据与职责
+
+- 分类：已确认主路径实现缺失，沿用 F3 数据所有权和 F1 共享分配；不为历史目录建立第二条默认执行链。
+- EPW/src/io/io.f90 的 dynmat_asr 从原始 Γ 保存每个原子／极化的行和，仅修改 onsite 上三角；同文件随后对动力学矩阵做 Hermitian 对称化。XML 的复数 3×3 PHI 使用 Fortran 列主序。不能按文本行主序改矩阵。
+- PHonon/PH/io_dyn_mat.f90 的 NUMBER_OF_Q 和逐星 DYNAMICAL_MAT_ 允许裁出独立的第一个 q；原频率／本征矢尾部移除，原始文件保留。PHonon/PH/dynmat.f90 使用 asr=no；rigid.f90 的 dyndiag 负责 Hermitian、原子质量和本征值；write_eigenvectors.f90 的 writemodes 输出带符号 cm-1。
+- 不新增 Rust 线性代数实现；QE 原生对角化避免自制质量单位和数值算法分叉。固定物理参数和数值门保持，转换行为需单独测试矩阵列序、Γ 身份、星裁剪和虚频符号。
+- 验证映射：FR-006→共享 QE 输入／直接 PH／ASR 派生→T055→真实进程接口与负向用例；FR-010→共用检查点→逐任务恢复与来源篡改拒绝；FR-014→比较数据→T056→自动四类图及独立重绘。完整真实科学证据仍由 0015 追踪。
