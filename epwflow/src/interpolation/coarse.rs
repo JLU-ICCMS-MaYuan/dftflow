@@ -166,6 +166,9 @@ pub fn collect_coarse(work: &Path, epw_cfg: &EpwConfig) -> Result<CoarseResult> 
         &dir.join(format!("{}.wout", cfg.qe.prefix)),
         cfg.wannier.num_wann as usize,
     )?;
+    epw_cfg.check_native_windows(&fs::read_to_string(
+        dir.join(format!("{}.wout", cfg.qe.prefix)),
+    )?)?;
     let digest = store::hash_file(&dir.join("epw_coarse.in"))?;
     let artifacts = paths
         .into_iter()

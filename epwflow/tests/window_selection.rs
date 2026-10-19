@@ -184,3 +184,39 @@ fn energy_only_lower_bound_survives_epw59_namelist_override() {
     let standalone = ec.wannier90_input().unwrap();
     assert!(standalone.contains(&format!("dis_win_min = {expected:.16e}")));
 }
+
+#[test]
+fn energy_only_checks_all_actual_boundaries_with_native_display_rounding() {
+    let mut c = cfg();
+    c.wannier.selection_mode = qf_wannier::SelectionMode::EnergyOnly;
+    let ec = EpwConfig::from_config(&c).unwrap().with_fermi(0.).unwrap()
+        .with_bands(&[vec![-2.000005, -1., 3., 6.]]).unwrap();
+    let selection = ec.window_selection().unwrap();
+    let keys = ["dis_win_min", "dis_win_max", "dis_froz_min", "dis_froz_max"];
+    let bounds = keys.map(|key| selection.parameters[key]);
+    let log = |v: [f64; 4]| format!("| Outer: {:.5} to {:.5} (eV)\n| Inner: {:.5} to {:.5} (eV)\n", v[0], v[1], v[2], v[3]);
+    ec.check_native_windows(&log(bounds)).unwrap();
+    for index in 0..4 {
+        let mut changed = bounds;
+        changed[index] += 0.02;
+        let error = ec.check_native_windows(&log(changed)).unwrap_err().to_string();
+        assert!(error.contains(keys[index]), "{error}");
+    }
+    for invalid in [
+        "| Outer: -2.02000 to 6.02000 (eV)\n".to_string(),
+        log(bounds) + "| Inner: -2.02000 to 2.00000 (eV)\n",
+        log(bounds).replace("6.02000", "NaN"),
+    ] {
+        assert!(ec.check_native_windows(&invalid).is_err());
+    }
+    let shifted = format!("| Outer: {:.12} to {:.12} (eV)\n| Inner: {:.12} to {:.12} (eV)\n",
+        bounds[0] + 0.000006, bounds[1], bounds[2], bounds[3]);
+    assert!(ec.check_native_windows(&shifted).is_err());
+}
+
+#[test]
+fn legacy_selection_does_not_infer_four_explicit_energy_bounds() {
+    let c = cfg();
+    let ec = EpwConfig::from_config(&c).unwrap();
+    ec.check_native_windows("historical output without four explicit windows").unwrap();
+}

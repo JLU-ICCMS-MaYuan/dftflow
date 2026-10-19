@@ -108,6 +108,28 @@ impl<'a> EpwConfig<'a> {
         Ok(())
     }
 
+    /// 核对内嵌 W90 实际窗口，不能用生成过 namelist／wdata 代替原生采用证据。
+    pub fn check_native_windows(&self, log: &str) -> Result<()> {
+        if self.cfg.wannier.selection_mode != qf_wannier::SelectionMode::EnergyOnly {
+            return Ok(());
+        }
+        let outer = super::comparison::parse_outer_window(log)?;
+        let inner = super::comparison::parse_frozen_window(log)?
+            .context("data_invalid: 纯能量 Wannier 日志缺少 Inner 能窗")?;
+        let selection = self.window_selection()?;
+        for (name, actual) in [
+            ("dis_win_min", outer[0]), ("dis_win_max", outer[1]),
+            ("dis_froz_min", inner[0]), ("dis_froz_max", inner[1]),
+        ] {
+            let expected = selection.parameters[name];
+            // 部署 W90 的 disentangle 使用 f10.5；仅允许半个显示间隔与浮点余量。
+            let tolerance = 0.000005 + 8.0 * f64::EPSILON * expected.abs().max(1.0);
+            ensure!((actual - expected).abs() <= tolerance,
+                "data_invalid: 原生 {name}={actual} eV 与选窗记录 {expected} eV 不一致");
+        }
+        Ok(())
+    }
+
     fn windows(&self) -> Result<Vec<(String, f64)>> {
         Ok(self.window_selection()?.parameters.into_iter()
             .filter(|(name, _)| !name.starts_with("dis_proj_")).collect())

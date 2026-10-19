@@ -234,6 +234,9 @@ pub fn run_fine_with_retry(
         .with_fermi(f2.fermi_ev)?
         .with_bands(&f2.eigenvalues)?
         .with_species(&structure.cell.elements)?;
+    epw_cfg.check_native_windows(&std::fs::read_to_string(
+        work.join("coarse").join(format!("{}.wout", cfg.qe.prefix)),
+    )?)?;
     let coarse = manifest.coarse.as_ref().context("data_invalid: 缺粗网格")?;
     // 细网格 EPW：每个展宽一列（FR-007/008）。
     let mut spectra = Vec::new();

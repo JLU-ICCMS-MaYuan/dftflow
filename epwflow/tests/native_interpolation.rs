@@ -298,6 +298,49 @@ fn native_pipeline_failure_preserves_evidence_and_blocks_downstream() {
 }
 
 #[test]
+fn energy_window_mismatch_blocks_publication_even_without_comparison_plots() {
+    for (failure, expected) in [("coarse-window", "原生 dis_win_min"), ("coarse-window-missing", "缺少 Inner")] {
+        let c = case_with_auto(failure, true);
+        assert!(c.cfg.kpath.is_none());
+        let error = run(&c).unwrap_err().to_string();
+        assert!(error.contains(expected), "{failure}: {error}");
+        assert!(!c.cfg.work_dir.join("wannier/manifest.json").exists());
+        assert!(!c.cfg.work_dir.join("interpolation/manifest.json").exists());
+        assert!(!c.cfg.work_dir.join("fine").exists());
+        assert!(c.cfg.work_dir.join("coarse/scf.wout").is_file());
+        assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 1);
+    }
+}
+
+#[test]
+fn fine_rechecks_actual_windows_in_hash_consistent_legacy_coarse_manifest() {
+    let c = case_with_auto("", true);
+    let work = &c.cfg.work_dir;
+    let mut manifest = interpolation::scheduler::run_coarse_registered(
+        &c.cfg, Backend::Local, &[], work, work,
+    ).unwrap();
+    // 模拟旧发布者的错误窗口与自洽哈希；其余原生数据和独立质量结果保持。
+    let wout = work.join("coarse/scf.wout");
+    let text = fs::read_to_string(&wout).unwrap();
+    let line = text.lines().find(|line| line.starts_with("| Outer:")).unwrap();
+    fs::write(&wout, text.replace(line, "| Outer: 1.52 to 5.0 (eV)")).unwrap();
+    let identity = store::Identity::capture(&wout).unwrap();
+    manifest.wannier_digest = identity.sha256.clone();
+    let artifact = manifest.coarse.as_mut().unwrap().artifacts.iter_mut()
+        .find(|artifact| artifact.role == "coarse_wannier").unwrap();
+    artifact.sha256 = identity.sha256;
+    artifact.byte_size = fs::metadata(&wout).unwrap().len();
+    store::write(&work.join("wannier/manifest.json"), &manifest).unwrap();
+    interpolation::scheduler::verify_coarse(&c.cfg, work).unwrap();
+    let error = interpolation::scheduler::run_fine_registered(
+        &c.cfg, Backend::Local, &[], work,
+    ).unwrap_err().to_string();
+    assert!(error.contains("原生 dis_win_min"), "{error}");
+    assert!(!work.join("fine").exists());
+    assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 1);
+}
+
+#[test]
 fn reference_changes_and_wrong_points_stop_before_native_calls() {
     for kind in ["hash", "point"] {
         let mut c = case("");

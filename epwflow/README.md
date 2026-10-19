@@ -2,7 +2,7 @@
 
 EPW 工作流仅构建三个独立程序：`epw_phonon`、`epw_wannier`、`epw_superconductivity`。配置默认名为 `inputepw.toml`，运行快照为 `input-init.toml`；同目录原有 `input.toml` 继续供 qeflow 使用。
 
-纯能量模式的外窗下界经受控 `wdata` 传给内嵌 W90，以兼容现有 EPW 5.9；实际窗口仍以 `.wout` 核验。当前 PBE 原生阻断及双 FFT 源码核查见[诊断记录](../docs/specs/0012-epwflow-interpolation/native-double-grid-audit.md)，不能把接口回归通过当成已获得 Tc。
+纯能量模式的外窗下界经受控 `wdata` 传给内嵌 W90，以兼容现有 EPW 5.9。第二阶段发布前、第三阶段启动细网格前，均核对 `.wout` 的实际四界；缺失、冲突或超出原生显示舍入的偏差会阻断。当前 PBE 原生阻断及双 FFT 源码核查见[诊断记录](../docs/specs/0012-epwflow-interpolation/native-double-grid-audit.md)，不能把接口回归通过当成已获得 Tc。
 
 三个入口、脚本生成和粗／细网格清单已接入。第一阶段直接调用 qeflow 共享执行库；第二阶段已接入独立参考、显式纯能量选窗、比较数据和四类图的自动生成。真实 PBE 全链与原生 iso／aniso Tc 的完整科学验收仍未完成。当前源码、构建产物和默认安装分别核对，旧安装不能直接使用下列新选项。当前功能见 [Overview](../docs/overview/epwflow/README.md)，整合契约见 [0008 三程序设计](../docs/specs/0008-epwflow-foundation/three-programs.md)。
 
@@ -158,4 +158,4 @@ bash scripts/build-native.sh test -p qeflow -p epwflow -p qf-input -p qf-phonon 
 
 保留 EPW 数据时，q2r 输出 `.fc.xml`，两类 matdyn 与自动比较均读取该路径；普通模式继续使用 `.fc`。恢复时复用已核验的 XML q2r。显式赝势以共同 `pseudo_dir` 与带引号的短相对文件名定位，生成前检查 QE 的原生长度限制。
 
-真实 PBE 已完成第一阶段、完整 NSCF 和第二阶段独立参考。当前原生粗网格因 Wannier 局域化未收敛及 EPC 非有限值被拒绝，尚无有效四类比较图和 Tc；EPW 的实际窗口覆盖语义也待核对。最新证据及未完成项见 [PBE 主路径验证](../docs/specs/0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。
+真实 PBE 已完成第一阶段、完整 NSCF 和第二阶段独立参考。当前原生粗网格因 Wannier 局域化未收敛及 EPC 非有限值被拒绝，尚无有效四类比较图和 Tc；窗口传参和运行时核对已修复，真实四界一致性仍待重跑验证。最新证据及未完成项见 [PBE 主路径验证](../docs/specs/0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。

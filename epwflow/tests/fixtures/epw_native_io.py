@@ -62,8 +62,11 @@ if coarse or reread:
     wout='Using band disentanglement : T\n<<< Disentanglement convergence criteria satisfied >>>\nCycle: 14\n<<< Wannierisation convergence criteria satisfied >>>\nFinal State\n'
     wout+=''.join(f'WF centre and spread {i} ( 0 0 0 ) 1.25\n' for i in range(1,n+1))
     if coarse:
-        wout+=f'| Outer: {window_min()} to {value("dis_win_max")} (eV)\n'
-        wout+=f'| Inner: {value("dis_froz_min")} to {value("dis_froz_max")} (eV)\n'
+        lower=window_min()
+        if mode=='coarse-window':lower=str(float(lower)+0.02)
+        wout+=f'| Outer: {lower} to {value("dis_win_max")} (eV)\n'
+        if mode!='coarse-window-missing':
+            wout+=f'| Inner: {value("dis_froz_min")} to {value("dis_froz_max")} (eV)\n'
     Path(prefix+'.wout').write_text(wout)
     kept=list(range(8,17));nk=coarse_nk
     Path(prefix+'.ukk').write_text('9 7\n'+'\n'.join(map(str,kept))+'\n'+'(0,0)\n'*(9*n*nk)+'T\n'*(9*nk)+'T\n'*7+'F\n'*9+'0 0 0\n'*n)
