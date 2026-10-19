@@ -36,7 +36,7 @@ egnv 恢复费米面 k 映射、能量和物理权重；带编号还要核对同
 
 F4 版本 2 交给原生 F5 格式 epwflow-native-results。collect 保存 summary.json、a2f.csv、coupling.csv、gap_summary.csv、gap_states.csv、tc.csv 和 report.md，以及相对路径、大小、哈希的 manifest.json。逐态表保留最低正 Matsubara 频率的 Δ、Z、真实 k／带编号、可用的晶体坐标及物理权重；完整频率数组仍在 F4 的哈希来源中。两模式分别保留区间、中点、半宽、方法与停止状态，未定位时不填写 Tc 估值。
 
-plot 提供原生 α²F／累计 λ、能隙随温度、aniso 加权离散分布、实际 k 索引分布、Tc 区间与总览共六类图，各有 PNG／SVG／PDF。k 索引图不是高对称路径；缺数据明确显示，失败或不确定温度处断线，均值范围不裁掉极值。
+plot 提供原生 α²F／累计 λ、能隙随温度、aniso 加权离散分布、实际 k 索引分布、Tc 区间与总览共六类图，各有 PNG／SVG／PDF。aniso 分布以温度为横轴、最低正 Matsubara 的绝对能隙为纵轴，0.05 meV 归箱后用横向宽度表示每温度归一化的费米面权重；只取已通过双初值分类的一套固定初值，不画失败／不确定温度，不做温度插值或未经验证的 σ／π 归属。k 索引图不是高对称路径；缺数据明确显示，失败或不确定温度处断线，均值范围不裁掉极值。
 
 结果包可移动后在空 PATH 下重绘；不调用 QE、EPW、sbatch。results check 分开报告本地文件完整性与原始来源可核验性；来源不可访问时为 unavailable，不能称为已验源。native_complete 与 workflow_complete 表示当前所选运行的原生求解／三格式交付，不表示 Epic 的三来源六组合或独立科学参考已验收。比较图与原生图保留各自清单。
 

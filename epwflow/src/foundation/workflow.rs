@@ -536,7 +536,7 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
         );
         budget::attach_once(ledger, &r.reservation, job)?;
         budget::registered_allocation(ledger, job, &cfg.resources)?;
-        let a = slurm::accounting(job)?;
+        let a = slurm::running_allocation(job)?;
         ensure!(
             !a.terminal && matches!(a.state.as_str(), "RUNNING" | "COMPLETING"),
             "allocation: 当前分配尚未运行或已终止"

@@ -53,7 +53,7 @@ fn actual() -> Result<()> {
     );
     let job: u64 = std::env::var("SLURM_JOB_ID")?.parse()?;
     ensure!(
-        slurm::accounting(job)?.state == "RUNNING",
+        slurm::running_allocation(job)?.state == "RUNNING",
         "必须在实际运行的 Slurm 分配内"
     );
     ensure!(

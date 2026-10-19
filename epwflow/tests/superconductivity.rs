@@ -964,6 +964,27 @@ print('EPW : 0.01s CPU 0.02s WALL')
         String::from_utf8_lossy(&command.stderr)
     );
     assert!(epwflow::delivery::native_plot::check(&moved).unwrap());
+    let distribution =
+        std::fs::read_to_string(moved.join("figures/gap_aniso_distribution.svg")).unwrap();
+    for label in [
+        "Temperature (K)",
+        "|Delta_nk(iw0)| (meV)",
+        "normalized Fermi-surface weight",
+        "no temperature interpolation",
+    ] {
+        assert!(distribution.contains(label), "缺少分布说明 {label}");
+    }
+    if let Ok(dest) = std::env::var("EPWFLOW_FIXTURE_ARTIFACTS") {
+        std::fs::create_dir_all(&dest).unwrap();
+        for ext in ["png", "svg", "pdf"] {
+            let name = format!("gap_aniso_distribution.{ext}");
+            std::fs::copy(
+                moved.join("figures").join(&name),
+                PathBuf::from(&dest).join(&name),
+            )
+            .unwrap();
+        }
+    }
     assert_eq!(
         epwflow::delivery::check_results(&moved).unwrap()["workflow_complete"],
         true

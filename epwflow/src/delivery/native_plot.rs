@@ -8,7 +8,7 @@ use anyhow::{ensure, Result};
 use plotters::{coord::Shift, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -20,6 +20,135 @@ pub const KINDS: [&str; 6] = [
     "tc_interval",
     "summary",
 ];
+
+pub const GAP_BIN_MEV: f64 = 0.05;
+
+/// 同一初值、已通过双初值分类的最低正 Matsubara 分布。每个温度的箱质量和为 1。
+/// 不连接温度，不平滑能隙，不将带编号命名为未经投影验证的 sigma/pi。
+pub fn gap_distributions(data: &Data) -> Result<BTreeMap<i64, Vec<(f64, f64)>>> {
+    use crate::superconductivity::search::Side;
+    let Some(mode) = data.modes.get("aniso") else {
+        return Ok(BTreeMap::new());
+    };
+    let eligible = |t: i64| {
+        matches!(
+            mode.search.points.get(&t),
+            Some(Side::Superconducting | Side::Normal)
+        ) && !mode.failed_temperatures_centikelvin.contains(&t)
+    };
+    let seed = data
+        .states
+        .iter()
+        .filter(|s| s.mode == "aniso" && eligible(s.temperature_centikelvin))
+        .map(|s| s.seed_mev)
+        .min_by(f64::total_cmp);
+    let mut masses: BTreeMap<i64, BTreeMap<u32, f64>> = BTreeMap::new();
+    let mut identities = BTreeSet::new();
+    for s in data.states.iter().filter(|s| {
+        s.mode == "aniso" && Some(s.seed_mev) == seed && eligible(s.temperature_centikelvin)
+    }) {
+        ensure!(
+            s.weight.is_finite()
+                && s.weight >= 0.0
+                && s.delta_mev.is_finite()
+                && s.delta_mev.abs() / GAP_BIN_MEV < u32::MAX as f64,
+            "data_invalid: 分布权重或能隙无效"
+        );
+        ensure!(
+            identities.insert((s.temperature_centikelvin, s.kpoint, s.band)),
+            "data_invalid: 分布含重复物理态"
+        );
+        let bin = (s.delta_mev.abs() / GAP_BIN_MEV).floor() as u32;
+        *masses
+            .entry(s.temperature_centikelvin)
+            .or_default()
+            .entry(bin)
+            .or_default() += s.weight;
+    }
+    masses
+        .into_iter()
+        .map(|(t, bins)| {
+            let total: f64 = bins.values().sum();
+            ensure!(
+                total.is_finite() && total > 0.0,
+                "data_invalid: 分布总权重无效"
+            );
+            Ok((
+                t,
+                bins.into_iter()
+                    .filter(|(_, w)| *w > 0.0)
+                    .map(|(b, w)| ((b as f64 + 0.5) * GAP_BIN_MEV, w / total))
+                    .collect(),
+            ))
+        })
+        .collect()
+}
+
+fn distribution_panel<DB: DrawingBackend>(area: &DrawingArea<DB, Shift>, data: &Data) -> Result<()>
+where
+    DB::ErrorType: 'static,
+{
+    let rows = gap_distributions(data)?;
+    if rows.is_empty() {
+        area.draw(&Text::new(
+            "Anisotropic gap distribution: no classified dual-seed data",
+            (20, 45),
+            ("sans-serif", 16),
+        ))?;
+        return Ok(());
+    }
+    let times: Vec<_> = rows.keys().map(|&t| t as f64 / 100.0).collect();
+    let width = times.windows(2).map(|w| w[1] - w[0]).fold(3.0, f64::min) * 0.75;
+    let maximum = rows.values().flatten().map(|(_, w)| *w).fold(0.0, f64::max);
+    let ymax = rows
+        .values()
+        .flatten()
+        .map(|(d, _)| d + GAP_BIN_MEV)
+        .fold(0.5, f64::max)
+        * 1.08;
+    let mu = data
+        .solve_parameters
+        .get("aniso")
+        .map(|r| format!("; mu*={}", r.mu_star))
+        .unwrap_or_default();
+    let mut chart = ChartBuilder::on(area)
+        .caption(
+            format!("Lowest positive Matsubara Fermi-surface gap{mu}"),
+            ("sans-serif", 17),
+        )
+        .margin(15)
+        .x_label_area_size(45)
+        .y_label_area_size(65)
+        .build_cartesian_2d(0.0..(times.last().unwrap() + width + 2.0), 0.0..ymax)?;
+    chart
+        .configure_mesh()
+        .x_desc("Temperature (K)")
+        .y_desc("|Delta_nk(iw0)| (meV)")
+        .draw()?;
+    for (t, bins) in rows {
+        let t = t as f64 / 100.0;
+        let hi = bins.last().unwrap().0 + GAP_BIN_MEV / 2.0;
+        chart.draw_series(std::iter::once(PathElement::new(
+            [(t, 0.0), (t, hi)],
+            BLUE.mix(0.35),
+        )))?;
+        chart.draw_series(bins.into_iter().map(|(delta, mass)| {
+            Rectangle::new(
+                [
+                    (t, (delta - GAP_BIN_MEV / 2.0).max(0.0)),
+                    (t + width * mass / maximum, delta + GAP_BIN_MEV / 2.0),
+                ],
+                BLUE.mix(0.7).filled(),
+            )
+        }))?;
+    }
+    area.draw(&Text::new(
+        "Width: normalized Fermi-surface weight; gap bin 0.05 meV; no temperature interpolation",
+        (75, 58),
+        ("sans-serif", 11),
+    ))?;
+    Ok(())
+}
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Figures {
@@ -41,6 +170,9 @@ fn panel<DB: DrawingBackend>(area: &DrawingArea<DB, Shift>, data: &Data, kind: u
 where
     DB::ErrorType: 'static,
 {
+    if kind == 2 {
+        return distribution_panel(area, data);
+    }
     if kind == 0 {
         let parts = area.split_evenly((2, 1));
         for (i, part) in parts.iter().enumerate() {
@@ -140,7 +272,6 @@ where
     }
     let title = match kind {
         1 => "Lowest positive Matsubara gap: band mean and range",
-        2 => "Anisotropic gap samples with physical state weights",
         _ => "Anisotropic gap by actual k index; not a symmetry path",
     };
     let mut curves: Vec<(String, Vec<(f64, f64)>)> = vec![];
@@ -211,13 +342,7 @@ where
                         && s.band == band
                         && Some(s.seed_mev) == seed
                 })
-                .map(|s| {
-                    if kind == 2 {
-                        (s.delta_mev, s.weight)
-                    } else {
-                        (s.kpoint as f64, s.delta_mev)
-                    }
-                })
+                .map(|s| (s.kpoint as f64, s.delta_mev))
                 .collect();
             curves.push((format!("{} K, band {band}", t as f64 / 100.0), xs));
         }
@@ -250,14 +375,9 @@ where
         .configure_mesh()
         .x_desc(match kind {
             1 => "Temperature (K)",
-            2 => "Signed delta (meV)",
             _ => "Original k-point index (see gap_states.csv)",
         })
-        .y_desc(if kind == 2 {
-            "Physical state weight"
-        } else {
-            "Gap (meV)"
-        })
+        .y_desc("Gap (meV)")
         .draw()?;
     for (n, (name, xs)) in curves.into_iter().enumerate() {
         let color = Palette99::pick(n).to_rgba();

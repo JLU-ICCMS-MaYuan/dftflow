@@ -98,6 +98,45 @@ pub struct Accounting {
     pub state: String,
     pub terminal: bool,
     pub node_seconds: u64,
+    pub nodes: u64,
+}
+
+#[derive(Debug)]
+struct RunningNodesPending;
+impl std::fmt::Display for RunningNodesPending {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "scheduler_unknown: RUNNING 的节点数尚未记账")
+    }
+}
+impl std::error::Error for RunningNodesPending {}
+
+/// 启动前有限等待 RUNNING 的节点记账；未知记录和终态不重试，不修改预算预留。
+pub fn running_allocation(job_id: u64) -> Result<Accounting> {
+    running_with(
+        10,
+        || accounting(job_id),
+        || std::thread::sleep(std::time::Duration::from_secs(1)),
+    )
+}
+
+fn running_with(
+    tries: usize,
+    mut query: impl FnMut() -> Result<Accounting>,
+    mut pause: impl FnMut(),
+) -> Result<Accounting> {
+    for i in 0..tries {
+        match query() {
+            Ok(a) if a.state == "RUNNING" && a.nodes > 0 => return Ok(a),
+            Ok(a) if a.state == "RUNNING" && a.nodes == 0 => (),
+            Err(e) if e.downcast_ref::<RunningNodesPending>().is_some() => (),
+            Ok(_) => bail!("allocation: 当前分配未运行或已终止"),
+            Err(e) => return Err(e),
+        }
+        if i + 1 < tries {
+            pause();
+        }
+    }
+    bail!("scheduler_unknown: 等待 RUNNING 节点记账超时；禁止启动科学程序")
 }
 
 /// 只采用 allocation 行，排除 batch/extern 等 step，未知状态保持预留。
@@ -168,6 +207,9 @@ pub fn parse_accounting(job_id: u64, text: &str) -> Result<Accounting> {
     let nodes: u64 = r[3]
         .parse()
         .context("scheduler_unknown: AllocNodes 非整数")?;
+    if state == "RUNNING" && nodes == 0 && elapsed > 0 {
+        return Err(RunningNodesPending.into());
+    }
     ensure!(
         elapsed == 0 || nodes > 0,
         "scheduler_unknown: 已占用时间但节点数为零"
@@ -175,8 +217,62 @@ pub fn parse_accounting(job_id: u64, text: &str) -> Result<Accounting> {
     Ok(Accounting {
         state: state.to_owned(),
         terminal,
+        nodes,
         node_seconds: elapsed
             .checked_mul(nodes)
             .context("scheduler_unknown: 节点时间溢出")?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_waits_only_for_running_node_accounting() {
+        let mut rows = ["12|RUNNING|1|0|", "12|RUNNING|2|1|"].into_iter();
+        let mut sleeps = 0;
+        let a = running_with(
+            3,
+            || parse_accounting(12, rows.next().unwrap()),
+            || sleeps += 1,
+        )
+        .unwrap();
+        assert_eq!(a.nodes, 1);
+        assert_eq!(a.node_seconds, 2);
+        assert_eq!(sleeps, 1);
+        // 结算仍拒绝零节点；启动等待不制造有效节点时间。
+        assert!(parse_accounting(12, "12|RUNNING|1|0|").is_err());
+        let mut calls = 0;
+        assert!(running_with(
+            3,
+            || {
+                calls += 1;
+                parse_accounting(12, "12|RUNNING|1|0|")
+            },
+            || ()
+        )
+        .is_err());
+        assert_eq!(calls, 3);
+        for row in [
+            "12|FAILED|2|1|",
+            "12|PENDING|0|0|",
+            "12|MYSTERY|1|1|",
+            "12|COMPLETED|2|0|",
+            "",
+            "12|RUNNING|2|1|\n12|RUNNING|2|1|",
+        ] {
+            let mut calls = 0;
+            assert!(running_with(
+                3,
+                || {
+                    calls += 1;
+                    parse_accounting(12, row)
+                },
+                || panic!("未知或终态不得等待")
+            )
+            .is_err());
+            assert_eq!(calls, 1, "{row}");
+        }
+    }
 }

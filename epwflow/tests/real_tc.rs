@@ -37,7 +37,7 @@ struct Case {
 fn allocation(cfg: &Config) -> Result<u64> {
     let job: u64 = std::env::var("SLURM_JOB_ID")?.parse()?;
     ensure!(
-        slurm::accounting(job)?.state == "RUNNING",
+        slurm::running_allocation(job)?.state == "RUNNING",
         "真实分配没有运行"
     );
     ensure!(
@@ -266,16 +266,25 @@ fn actual(diagnostic: bool) -> Result<()> {
                     cfg.superconductivity.aniso.as_ref()
                 }
                 .unwrap();
-                aniso::classify(
+                match aniso::classify(
                     &solutions[0],
                     &solutions[1],
                     tc.normal_gap_mev,
                     tc.super_gap_mev,
-                )
-                .ok()
+                ) {
+                    Ok(side) => Some(side),
+                    Err(e) => {
+                        println!("{name} dual-seed classification failed: {e:#}");
+                        None
+                    }
+                }
             } else {
                 None
             };
+            if let Some(side) = side {
+                engine.result.search.observe(t, side)?;
+                engine.save()?;
+            }
             diagnostic_sides.insert(name.to_string(), side);
         } else {
             engine.run(&mut before)?;
