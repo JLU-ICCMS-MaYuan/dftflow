@@ -119,3 +119,7 @@ T046 本轮子项完成；五维子空间在宽窗有未匹配参考态，严格
 - 结果检查为 figures_verified=true、quality_status=failed、workflow_complete=false；保留宽窗 2527 个未匹配参考态、投影缺项及原声子 RMS 失败。边界展示不改变科学质量结论。
 
 当前工作树 epwflow／qeflow 完整回归共 115 项通过、0 失败、0 ignored（epwflow 88、qeflow 27）；包含已有其他任务的入口改动，本次提交只纳入窗口标注范围。命令、文件指纹、坐标检查和图像转换证据位于忽略目录 `docs/local/0015-window-boundaries/`。未切换默认安装或推送。
+
+## 2026-10-19：最新 50／20 门与原生代码收尾
+
+用户最新要求声子 RMS 放宽到 20 cm⁻¹。已有五点最大／RMS 49.448070759／8.075133004，在新 50／20 门下实际只读检查通过、退出 0，来源哈希未变；这替代前文当前 RMS 失败的判断，不重写历史报告。原生失败恢复、证据重验及结果包／图表的代码验证与缺项见 [本批验收](../0015-epwflow-mgb2-real-validation/native-closeout-validation.md)。本批无新增科学作业；不宣称真实 Tc 或完整三来源六组合通过，不关闭本地 Issue。

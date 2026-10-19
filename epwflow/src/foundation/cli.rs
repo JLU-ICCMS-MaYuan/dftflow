@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use super::{budget, config, environment, snapshot, status};
+use super::{budget, config, environment, snapshot, status, workflow::{self, Boundary}};
 use crate::interpolation::cli::InterpolationCommand;
 use crate::qe_data::cli::QeDataCommand;
 use crate::superconductivity::cli::SuperconductivityCommand;
@@ -29,15 +29,19 @@ pub enum EpwCommand {
         #[arg(short = 'c', long)]
         config: PathBuf,
     },
-    /// 提交全流程；科学阶段未接入前返回明确不可用。
+    /// 一次提交执行链；提交成功不代表数值完成。
     Submit {
         #[arg(short = 'c', long)]
         config: PathBuf,
+        #[arg(long, value_enum, default_value = "all")]
+        until: Boundary,
     },
-    /// 直接运行；科学阶段未接入前返回明确不可用。
+    /// 在已登记的 Slurm 分配内依次执行科学阶段。
     Run {
         #[arg(short = 'c', long)]
         config: PathBuf,
+        #[arg(long, value_enum, default_value = "all")]
+        until: Boundary,
     },
     /// 查询运行状态；只读可以成功返回失败/未知，但要显式显示。
     Status {
@@ -56,6 +60,15 @@ pub enum EpwCommand {
         submit: bool,
         #[arg(short = 'r', long)]
         require_allocation: bool,
+        #[arg(long, value_enum)]
+        until: Option<Boundary>,
+    },
+    #[command(name = "__execute", hide = true)]
+    Execute {
+        #[arg(short = 'w', long)]
+        work: PathBuf,
+        #[arg(long)]
+        attempt: String,
     },
     /// 环境探测；-s 与 -r 互斥且必选其一。
     Probe {
@@ -171,17 +184,19 @@ fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         EpwCommand::Check { config, json } => check(&config, json),
         EpwCommand::Prepare { config } => prepare(&config),
-        EpwCommand::Submit { config } => submit(&config),
-        EpwCommand::Run { config } => run_cmd(&config),
-        EpwCommand::Status { work, refresh: _, json } => status_cmd(&work, json),
+        EpwCommand::Submit { config, until } => workflow::start(&config, until, true),
+        EpwCommand::Run { config, until } => workflow::start(&config, until, false),
+        EpwCommand::Status { work, refresh, json } => status_cmd(&work, refresh, json),
         EpwCommand::Resume {
             work,
             submit,
             require_allocation,
+            until,
         } => {
-            snapshot::resume(&work, submit, require_allocation)?;
+            workflow::resume(&work, until, submit, require_allocation)?;
             Ok(())
         }
+        EpwCommand::Execute { work, attempt } => workflow::execute(&work, &attempt),
         EpwCommand::Probe {
             config,
             submit,
@@ -193,20 +208,18 @@ fn dispatch(cli: Cli) -> Result<()> {
         EpwCommand::Superconductivity { command } => crate::superconductivity::cli::run(command),
         EpwCommand::Delivery { command } => crate::delivery::cli::run(command),
         EpwCommand::Collect { work, output } => {
-            let result=crate::delivery::comparison::collect(&work,output.as_deref())?;
+            let result=crate::delivery::collect_results(&work,output.as_deref())?;
             println!("results: {}",result.display());
             Ok(())
         },
         EpwCommand::Plot { results, output, formats } => {
-            let path=crate::delivery::comparison_plot::plot(&results,output.as_deref(),&formats)?;
+            let path=crate::delivery::plot_results(&results,output.as_deref(),&formats)?;
             println!("figures: {}",path.display());
             Ok(())
         },
         EpwCommand::Results { command: ResultsCommand::Check { results, json } } => {
-            let data=crate::delivery::comparison::load(&results.join("comparison"))?;
-            let mut report=crate::delivery::comparison::summary(&data);
-            report["figures_verified"]=crate::delivery::comparison_plot::check_figures(&results)?.into();
-            if json {status::print_json(&report);} else {println!("comparison_complete: {}\nquality_status: {}\nworkflow_complete: false\nfigures_verified: {}",report["comparison_complete"],report["quality_status"],report["figures_verified"]);}
+            let report=crate::delivery::check_results(&results)?;
+            if json {status::print_json(&report);} else {println!("comparison_complete: {}\nquality_status: {}\nworkflow_complete: {}\nfigures_verified: {}",report["comparison_complete"],report["quality_status"],report["workflow_complete"],report["figures_verified"]);}
             Ok(())
         },
     }
@@ -241,19 +254,8 @@ fn prepare(config_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn submit(config_path: &Path) -> Result<()> {
-    let _ = config_path;
-    // F1：科学阶段未接入前，生产 submit 必须返回明确不可用错误，不启动任何程序。
-    anyhow::bail!("not_implemented: 科学阶段尚未接入，submit 不可用");
-}
-
-fn run_cmd(config_path: &Path) -> Result<()> {
-    let _ = config_path;
-    anyhow::bail!("not_implemented: 科学阶段尚未接入，run 不可用");
-}
-
-fn status_cmd(work: &Path, json: bool) -> Result<()> {
-    let v = snapshot::status(work)?;
+fn status_cmd(work: &Path, refresh: bool, json: bool) -> Result<()> {
+    let v = workflow::status(work, refresh)?;
     if json {
         status::print_json(&v);
     } else {

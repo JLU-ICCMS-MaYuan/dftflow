@@ -9,7 +9,7 @@ qf-wannier = { path = "../crates/qf-wannier" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 toml = { workspace = true }
 regex = { workspace = true }
 roxmltree = { workspace = true }

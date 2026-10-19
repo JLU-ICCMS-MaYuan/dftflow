@@ -18,6 +18,16 @@ pub fn run(
     launcher: &[String],
     backend: Backend,
 ) -> Result<SuperconductivityManifest> {
+    run_with_retry(cfg, work, launcher, backend, false)
+}
+
+pub fn run_with_retry(
+    cfg: &config::Config,
+    work: &Path,
+    launcher: &[String],
+    backend: Backend,
+    retry: bool,
+) -> Result<SuperconductivityManifest> {
     let work = std::fs::canonicalize(work)?;
     let path = work.join("interpolation/manifest.json");
     let f3 = InterpolationManifest::load(&path)?;
@@ -72,8 +82,50 @@ pub fn run(
         let name = if mode == Mode::Iso { "iso" } else { "aniso" };
         let dir = root.join(name);
         let mut engine = Engine::open(cfg, &input, launcher, &dir, mode)?;
+        if retry {
+            engine.prepare_resume(&mut |job| {
+                ensure!(
+                    crate::foundation::slurm::accounting(job)?.terminal,
+                    "scheduler_unknown: 原分配仍活动，不能重提中断尝试"
+                );
+                Ok(())
+            })?;
+        }
         engine.run(&mut before)?;
         native_modes.insert(name.to_string(), engine.result);
+    }
+    let result = publish(
+        &root,
+        f3.run_id,
+        input.interpolation_digest,
+        cfg.superconductivity.mode,
+        native_modes,
+    )?;
+    if !result.converged {
+        bail!("partial: 原生求解或搜索尚未完成，已保存分模式区间、尝试和停止原因");
+    }
+    Ok(result)
+}
+
+/// 发布 F4 结构化交付；生产调用者必须先完成质量门和预算检查。
+pub fn publish(
+    root: &Path,
+    run_id: String,
+    interpolation_digest: String,
+    mode: Mode,
+    native_modes: BTreeMap<String, super::engine::ModeResult>,
+) -> Result<SuperconductivityManifest> {
+    let expected = match mode {
+        Mode::Iso => vec!["iso"],
+        Mode::Aniso => vec!["aniso"],
+        Mode::Both => vec!["aniso", "iso"],
+    };
+    ensure!(
+        native_modes.keys().map(String::as_str).collect::<Vec<_>>() == expected,
+        "data_invalid: 缺少所选模式，不能发布原生阶段"
+    );
+    for r in native_modes.values() {
+        super::verify::mode(r, &interpolation_digest)?;
     }
     let complete = native_modes.values().all(|r| r.complete);
     let located = native_modes.values().all(|r| r.search.status == "located");
@@ -103,9 +155,9 @@ pub fn run(
     }
     let mut result = SuperconductivityManifest {
         schema_version: 2,
-        run_id: f3.run_id,
-        interpolation_digest: input.interpolation_digest,
-        mode: match cfg.superconductivity.mode {
+        run_id,
+        interpolation_digest,
+        mode: match mode {
             Mode::Iso => "iso",
             Mode::Aniso => "aniso",
             Mode::Both => "both",
@@ -134,9 +186,6 @@ pub fn run(
         .artifacts
         .push(store::Identity::capture(&root.join("tc.json"))?);
     store::write(&root.join("manifest.json"), &result)?;
-    if !complete {
-        bail!("partial: 原生求解或搜索尚未完成，已保存分模式区间、尝试和停止原因");
-    }
     Ok(result)
 }
 

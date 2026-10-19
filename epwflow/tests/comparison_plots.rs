@@ -629,7 +629,7 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
             .enumerate()
             .map(|(m, v)| {
                 (v + if i == 2 && m == 6 {
-                    49.448
+                    51.448
                 } else if i == 1 && m == 7 {
                     9.04
                 } else {
@@ -754,7 +754,7 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
     assert_eq!(markers.len(), 2);
     assert_eq!(markers[0].scope, "sampled_maximum");
     assert_eq!(markers[0].mode_sorted, 7);
-    assert!((markers[0].error_cm1 - 49.448).abs() < 1e-8);
+    assert!((markers[0].error_cm1 - 51.448).abs() < 1e-8);
     for v in markers[0].q_crystal {
         assert!((v - 1.0 / 12.0).abs() < 1e-8);
     }

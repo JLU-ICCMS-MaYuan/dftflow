@@ -12,7 +12,7 @@ DFTFlow 为第一性原理计算准备输入、组织外部求解器和调度任
 | [vaspflow](vaspflow/README.md) | VASP 输入、优化、电子/体积场/COHP 分析 | vaspflow；按需 VASP/VASPKIT/LOBSTER |
 | [wannierflow](wannierflow/README.md) | Wannier 初始化、能窗与结果分析 | 家族命令 wannier90；Wannier90 与 QE 接口 |
 | [scflow](scflow/README.md) | 已有 QE EPC 数据的超导后处理 | scflow；Rust 数值与绘图库 |
-| [epwflow](epwflow/README.md) | 共享 QE 输入、原生谱与独立质量检查；自动链与超导执行仍有缺口 | Rust epwflow；MgB₂ 声子插值质量实测失败，完整链路尚未验收 |
+| [epwflow](epwflow/README.md) | 共享 QE 输入、受控执行入口、原生谱与独立质量检查 | Rust epwflow；原生两模式执行、续算及结果包已有回归，MgB₂ Tc 与完整链路尚未验收 |
 | [substitutionflow](substitutionflow/README.md) | 元素替换、阶段组织、批量汇总 | substitution；调用其他 flow |
 | [mattersimflow](mattersimflow/README.md) | 机器学习势预优化 | Python mattersim_opt；MatterSim/ASE |
 | [独立工具](tools/README.md) | 独立 Rust dyn0 算法工具 | qf-gen-dyn0；单独 Cargo 工程 |
@@ -26,7 +26,7 @@ DFTFlow 为第一性原理计算准备输入、组织外部求解器和调度任
 - [Rust 架构、平台构建与安装](dftflow-rust.md)。
 - [声子绘图旧入口](qe-phonon-plot.md)、[scflow 旧入口](scflow.md)：保留链接，具体用法由家族页面维护。
 
-- [epwflow 实际拟合外窗、比较诊断与测试数据目录](epwflow/README.md#实际解纠缠外窗与测试目录)：已支持按实际 Wannier 外窗重绘；宽窗缺态、暂缓投影及科学质量失败分别保留。
+- [epwflow 实际拟合外窗、比较诊断与测试数据目录](epwflow/README.md#实际解纠缠外窗与测试目录)：已支持按实际 Wannier 外窗重绘；宽窗缺态和暂缓投影保留；声子新 50／20 门已复核通过，真实 Tc 尚未验收。
 
 ## 整体关系
 

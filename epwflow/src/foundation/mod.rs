@@ -11,3 +11,4 @@ pub mod state;
 pub mod status;
 pub mod storage;
 pub mod store;
+pub mod workflow;

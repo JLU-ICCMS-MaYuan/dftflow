@@ -171,12 +171,14 @@ fn request(mode: config::Mode, kind: attempt::SolveKind) -> attempt::Request {
 fn states() -> Vec<gap::State> {
     vec![
         gap::State {
+            k_crystal: Some([0.0, 0.0, 0.0]),
             kpoint: 2,
             band: 1,
             energy_ev: -0.01,
             weight: 0.25,
         },
         gap::State {
+            k_crystal: Some([0.5, 0.0, 0.0]),
             kpoint: 5,
             band: 3,
             energy_ev: 0.02,
@@ -696,7 +698,14 @@ fn native_engine_both_modes_use_process_results_and_keep_independent_intervals()
     tc.normal_gap_mev = 1e-4;
     tc.super_gap_mev = 1e-3;
     cfg.superconductivity.aniso = cfg.superconductivity.iso.clone();
-    let inputs = native_inputs(&root);
+    let mut inputs = native_inputs(&root);
+    let f3_path = root.join("interpolation/manifest.json");
+    store::write(&f3_path,&serde_json::json!({"schema_version":1,"run_id":"native-fixture","f2_digest":"fixture","wannier_digest":"fixture",
+        "coarse":null,"fine":null,"spectra":[{"smearing_id":"fixture","energy_mev":[0.0,10.0,20.0],"a2f":[0.0,0.2,0.1],
+            "lambda_integral":0.35,"lambda_sum":0.35,"cutoff_ev":0.03}],"quality":null,"mode_readiness":{},
+        "validation":{"status":"valid","checks":[{"name":"fixture","passed":true,"detail":"SYNTHETIC IO fixture"}],"units":{},"thresholds":{},"evidence":[]}})).unwrap();
+    inputs.interpolation_digest = store::hash_file(&f3_path).unwrap();
+    let mut native_modes = std::collections::BTreeMap::new();
     // 此进程只模拟目标版本的 IO/收敛契约。阈值用于验证独立搜索，不是物理模型。
     let script = root.join("epw-fixture.py");
     write_script(
@@ -750,11 +759,13 @@ print('EPW : 0.01s CPU 0.02s WALL')
     };
     let mut results = vec![];
     for mode in [config::Mode::Iso, config::Mode::Aniso] {
-        let dir = root.join(if mode == config::Mode::Iso {
-            "iso"
-        } else {
-            "aniso"
-        });
+        let dir = root
+            .join("superconductivity")
+            .join(if mode == config::Mode::Iso {
+                "iso"
+            } else {
+                "aniso"
+            });
         let mut e = Engine::open(&cfg, &inputs, &[], &dir, mode).unwrap();
         let mut calls = 0;
         e.run(&mut || {
@@ -777,9 +788,152 @@ print('EPW : 0.01s CPU 0.02s WALL')
         assert!(resumed.result.complete);
         assert_eq!(calls, n);
         results.push(resumed.result.search.interval_centikelvin.unwrap());
+        native_modes.insert(
+            if mode == config::Mode::Iso {
+                "iso".into()
+            } else {
+                "aniso".into()
+            },
+            resumed.result,
+        );
     }
     assert_ne!(results[0], results[1]);
-    std::fs::remove_dir_all(root).unwrap();
+    let root_sc = root.join("superconductivity");
+    let original = scheduler::publish(
+        &root_sc,
+        "native-fixture".into(),
+        inputs.interpolation_digest.clone(),
+        config::Mode::Both,
+        native_modes,
+    )
+    .unwrap();
+    epwflow::superconductivity::verify::complete(&root, &cfg, "native-fixture").unwrap();
+    let mut tampered = original.clone();
+    tampered
+        .native_modes
+        .get_mut("iso")
+        .unwrap()
+        .search
+        .interval_centikelvin = Some([1000, 1001]);
+    store::write(&root_sc.join("manifest.json"), &tampered).unwrap();
+    assert!(
+        epwflow::superconductivity::manifest::SuperconductivityManifest::load(
+            &root_sc.join("manifest.json")
+        )
+        .is_err()
+    );
+    let mut missing_mode = original.clone();
+    missing_mode.native_modes.remove("aniso");
+    store::write(&root_sc.join("manifest.json"), &missing_mode).unwrap();
+    assert!(
+        epwflow::superconductivity::manifest::SuperconductivityManifest::load(
+            &root_sc.join("manifest.json")
+        )
+        .is_err()
+    );
+    store::write(&root_sc.join("manifest.json"), &original).unwrap();
+    let mut partial_modes = original.native_modes.clone();
+    let aniso = partial_modes.get_mut("aniso").unwrap();
+    aniso.complete = false;
+    aniso.reason = Some("fixture: stopped after a solver failure".into());
+    aniso
+        .search
+        .stop("solver_failed", "fixture: no Tc estimate");
+    scheduler::publish(
+        &root_sc,
+        "native-fixture".into(),
+        inputs.interpolation_digest.clone(),
+        config::Mode::Both,
+        partial_modes,
+    )
+    .unwrap();
+    assert!(epwflow::superconductivity::verify::complete(&root, &cfg, "native-fixture").is_err());
+    let partial_output = root.join("partial-results");
+    epwflow::delivery::collect_results(&root, Some(&partial_output)).unwrap();
+    let (_, partial) = epwflow::delivery::native::load(&partial_output).unwrap();
+    assert!(!partial.complete);
+    assert!(partial.modes["aniso"].search.estimate_k().is_none());
+    assert_eq!(
+        epwflow::delivery::check_results(&partial_output).unwrap()["workflow_complete"],
+        false
+    );
+    scheduler::publish(
+        &root_sc,
+        "native-fixture".into(),
+        inputs.interpolation_digest.clone(),
+        config::Mode::Both,
+        original.native_modes.clone(),
+    )
+    .unwrap();
+    let output = epwflow::delivery::collect_results(&root, None).unwrap();
+    epwflow::delivery::collect_results(&root, None).unwrap();
+    for action in ["collect", "results"] {
+        let cli = std::process::Command::new(env!("CARGO_BIN_EXE_epwflow"))
+            .args(["delivery", action, "-w", root.to_str().unwrap(), "--json"])
+            .env("PATH", "")
+            .output()
+            .unwrap();
+        assert!(
+            cli.status.success(),
+            "{}",
+            String::from_utf8_lossy(&cli.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&cli.stdout).unwrap();
+        assert_eq!(report["native_complete"], true);
+        assert_eq!(report["workflow_complete"], false, "尚未生成三格式图");
+    }
+    let (_, data) = epwflow::delivery::native::load(&output).unwrap();
+    assert_eq!(data.modes.len(), 2);
+    assert!(!data.states.is_empty());
+    assert!(data
+        .states
+        .iter()
+        .all(|s| s.k_crystal.is_some() && s.z > 0.0));
+    let moved = std::env::temp_dir().join(format!("epwflow-moved-{}", store::token()));
+    std::fs::rename(&output, &moved).unwrap();
+    let hidden = root.with_extension("hidden");
+    std::fs::rename(&root, &hidden).unwrap();
+    assert_eq!(
+        epwflow::delivery::native::check(&moved).unwrap()["source_verification"],
+        "unavailable"
+    );
+    let command = std::process::Command::new(env!("CARGO_BIN_EXE_epwflow"))
+        .args(["plot", "--results", moved.to_str().unwrap()])
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    assert!(
+        command.status.success(),
+        "{}",
+        String::from_utf8_lossy(&command.stderr)
+    );
+    assert!(epwflow::delivery::native_plot::check(&moved).unwrap());
+    assert_eq!(
+        epwflow::delivery::check_results(&moved).unwrap()["workflow_complete"],
+        true
+    );
+    let before = store::hash_file(&moved.join("gap_states.csv")).unwrap();
+    epwflow::delivery::plot_results(&moved, None, &["svg".into()]).unwrap();
+    assert_eq!(
+        store::hash_file(&moved.join("gap_states.csv")).unwrap(),
+        before
+    );
+    // 重绘后只验证已登记格式；三格式完成门不能误判。
+    assert!(!epwflow::delivery::native_plot::check(&moved).unwrap());
+    if let Ok(dest) = std::env::var("EPWFLOW_FIXTURE_ARTIFACTS") {
+        std::fs::create_dir_all(&dest).unwrap();
+        for name in ["summary.png", "summary.svg", "summary.pdf"] {
+            std::fs::copy(
+                moved.join("figures").join(name),
+                PathBuf::from(&dest).join(name),
+            )
+            .unwrap();
+        }
+    }
+    std::fs::write(moved.join("gap_states.csv"), "tampered").unwrap();
+    assert!(epwflow::delivery::native::load(&moved).is_err());
+    std::fs::remove_dir_all(moved).unwrap();
+    std::fs::remove_dir_all(hidden).unwrap();
 }
 
 #[test]
@@ -874,5 +1028,96 @@ fn native_fine_handoff_binds_binary_roles_band_offset_and_rejects_changes() {
     std::fs::write(matrix.join("egnv"), &bytes[..bytes.len() - 1]).unwrap();
     assert!(source::bind(&root, &cfg, &m).is_err());
     assert!(fine::collect_fine(&root, &epw).is_err());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn native_explicit_resume_preserves_failed_evidence_and_counts_unknown_attempts() {
+    use epwflow::superconductivity::engine::{Engine, Entry};
+    let root = std::env::temp_dir().join(format!("epwflow-native-retry-{}", store::token()));
+    std::fs::create_dir_all(&root).unwrap();
+    let mut cfg = config::Config::load(&make_config(&root)).unwrap();
+    cfg.superconductivity.frequency_cutoff_ev = 0.03;
+    cfg.superconductivity.iso.as_mut().unwrap().max_k = 55.0;
+    cfg.superconductivity.iso.as_mut().unwrap().max_solves = 3;
+    let input = native_inputs(&root);
+    std::fs::write(
+        root.join("stdout.fixture"),
+        solve_log(&request(config::Mode::Iso, attempt::SolveKind::Linear)),
+    )
+    .unwrap();
+    let script = root.join("retry-fixture");
+    write_script(
+        &script,
+        "#!/bin/sh\nif [ ! -f \"$1/allow\" ]; then exit 7; fi\ncat \"$1/stdout.fixture\"\n",
+    );
+    cfg.programs.epw = config::Program {
+        path: script,
+        args: vec![root.to_string_lossy().into_owned()],
+    };
+    let dir = root.join("search");
+    let mut engine = Engine::open(&cfg, &input, &[], &dir, config::Mode::Iso).unwrap();
+    assert!(engine
+        .attempt(2000, attempt::SolveKind::Linear, None, &mut || Ok(()))
+        .is_err());
+    let old = store::Identity::capture(&dir.join("attempt-0001/attempt.json")).unwrap();
+    drop(engine);
+    let mut engine = Engine::open(&cfg, &input, &[], &dir, config::Mode::Iso).unwrap();
+    assert!(engine
+        .attempt(2000, attempt::SolveKind::Linear, None, &mut || Ok(()))
+        .is_err());
+    engine
+        .prepare_resume(&mut |_| panic!("已结束进程不需猜测调度状态"))
+        .unwrap();
+    std::fs::write(root.join("allow"), "fixture").unwrap();
+    engine
+        .attempt(2000, attempt::SolveKind::Linear, None, &mut || Ok(()))
+        .unwrap();
+    old.verify().unwrap();
+    assert_eq!(engine.result.attempts.len(), 2);
+    let req = attempt::Request::from_config(
+        &cfg,
+        config::Mode::Iso,
+        attempt::SolveKind::Linear,
+        2100,
+        None,
+    )
+    .unwrap();
+    engine.result.attempts.push(Entry {
+        request: req,
+        directory: dir.join("attempt-0003"),
+        record: None,
+        status: "running".into(),
+        reason: None,
+        job_id: Some(99),
+    });
+    engine
+        .result
+        .search
+        .stop("scheduler_unknown", "fixture interrupted");
+    engine.save().unwrap();
+    drop(engine);
+    let mut engine = Engine::open(&cfg, &input, &[], &dir, config::Mode::Iso).unwrap();
+    assert!(engine
+        .prepare_resume(&mut |_| anyhow::bail!("scheduler_unknown: active"))
+        .is_err());
+    engine
+        .prepare_resume(&mut |id| {
+            assert_eq!(id, 99);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(engine.result.attempts[2].status, "failed");
+    assert_eq!(engine.result.search.status, "pending");
+    let mut launches = 0;
+    let error = engine
+        .attempt(2100, attempt::SolveKind::Linear, None, &mut || {
+            launches += 1;
+            Ok(())
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("attempt_limit"));
+    assert_eq!(launches, 0);
+    assert_eq!(engine.result.attempts.len(), 3);
     std::fs::remove_dir_all(root).unwrap();
 }

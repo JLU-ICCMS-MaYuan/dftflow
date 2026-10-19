@@ -2,7 +2,7 @@
 
 **类型**：`type:feature`。
 
-**状态**：本地 Issue 与详细 Spec 已确认；正式文档已落档，待共同文档质量门；业务实现与验收尚未开始。
+**状态**：比较包、原生分模式结果包、六类三格式图及移动重绘已有代码回归；真实 Tc、三来源六组合和安装验收尚未完成。
 
 **父级**：[Epic 0007](../0007-epwflow-superconductivity/issue-draft.md) 的 F5；**前置**：[0008 执行基础](../0008-epwflow-foundation/issue-draft.md)、[0010 QE 数据](../0010-epwflow-qe-data/issue-draft.md)、[0012 插值](../0012-epwflow-interpolation/issue-draft.md)、[0013 超导与 Tc](../0013-epwflow-superconductivity-tc/issue-draft.md)；**来源**：[总体规划](../../plan/epwflow-superconductivity.md)。0014 为本地需求编号，线上 Issue 仍由用户管理。
 
@@ -239,3 +239,10 @@
 > 我还希望你能在能带图和 dos 图上以不同的颜色虚线标出来，四个窗口 dis_win和 frozen_win的位置，方便我了解你选的窗口是否合适。
 
 沿用 FR-014／SC-009/010：四个实际边界用不同颜色虚线标在电子能带和 DOS 上，分别为水平线和竖线，独立图及总览一致。由 0012 提供经过验证的同一 wout Outer／Inner 数据，重合边界交错呈现；未知边界明示缺失，不修改计算参数。
+
+
+## 2026-10-19：RMS 门限与代码收尾
+
+> 科学侧声子 RMS 的 限制放宽到 20 cm-1. 然后修复代码侧的收尾。
+
+采用最新指令：声子最大／RMS 误差门为 50／20 cm⁻¹，保留全部五点参考。电子、虚频、覆盖、超导收敛与原共享资源标准不变；旧报告保留原门限与结论。优先收尾显式失败恢复、统一阶段验证和 F5 原生结果包；阈值调整不代表插值数值改善或 Tc 已通过真实验收。

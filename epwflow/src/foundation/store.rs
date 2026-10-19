@@ -22,7 +22,7 @@ impl Identity {
     pub fn verify(&self)->Result<()>{let now=Self::capture(&self.path)?;ensure!(now.target==self.target && now.sha256==self.sha256&&now.bytes==self.bytes,"input_conflict: 文件或链接目标已改变 {}",self.path.display());Ok(())}
 }
 #[derive(Serialize,Deserialize)] #[serde(deny_unknown_fields)]
-struct Owner {host:String,pid:u32,token:String,created_unix:u64}
+struct Owner {host:String,pid:u32,token:String,created_unix:u64,#[serde(default)]job_id:Option<u64>}
 pub struct Lock {path:PathBuf,token:String}
 impl Lock {
     pub fn acquire(target:&Path)->Result<Self>{
@@ -32,8 +32,41 @@ impl Lock {
             if e.kind()==std::io::ErrorKind::AlreadyExists {bail!("scheduler_unknown: 锁 {} 已存在；核对 owner 和未决提交后恢复，不能删除未知锁",path.display());}
             return Err(e.into())
         }
-        let t=token(); let owner=Owner{host:hostname(),pid:std::process::id(),token:t.clone(),created_unix:now()};
+        let t=token(); let owner=Owner{host:hostname(),pid:std::process::id(),token:t.clone(),created_unix:now(),job_id:std::env::var("SLURM_JOB_ID").ok().and_then(|s|s.parse().ok())};
         write(&path.join("owner.json"),&owner)?;Ok(Self{path,token:t})
+    }
+}
+/// 仅显式恢复使用：所有者必须属于指定旧分配，且该分配有明确终态证据。
+pub fn recover_finished_lock(target:&Path,job:u64)->Result<()> {
+    recover_lock_with(target,job,||{
+        ensure!(super::slurm::accounting(job)?.terminal,"scheduler_unknown: 原锁所属分配仍活动");Ok(())
+    })
+}
+fn recover_lock_with(target:&Path,job:u64,terminal:impl FnOnce()->Result<()>)->Result<()> {
+    let path=target.with_file_name(format!("{}.lock",target.file_name().context("锁路径")?.to_string_lossy()));
+    if !path.exists(){return Ok(());}
+    ensure!(!fs::symlink_metadata(&path)?.file_type().is_symlink(),"scheduler_unknown: 锁目录是链接");
+    let owner_path=path.join("owner.json");let identity=Identity::capture(&owner_path)?;
+    let owner:Owner=read(&owner_path)?;
+    ensure!(owner.job_id==Some(job),"scheduler_unknown: 锁不属于原分配，不能清除未知锁");
+    ensure!(fs::read_dir(&path)?.count()==1,"scheduler_unknown: 锁含未知现场");
+    terminal()?;identity.verify()?;
+    fs::remove_file(owner_path)?;fs::remove_dir(path)?;Ok(())
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+    #[test]
+    fn lock_recovery_requires_matching_allocation_and_confirmed_terminal(){
+        let root=std::env::temp_dir().join(format!("epw-lock-{}",token()));fs::create_dir(&root).unwrap();
+        let target=root.join("execution");let lock=root.join("execution.lock");fs::create_dir(&lock).unwrap();
+        let owner=Owner{host:"fixture".into(),pid:1,token:"fixture".into(),created_unix:0,job_id:Some(42)};
+        write(&lock.join("owner.json"),&owner).unwrap();
+        assert!(recover_lock_with(&target,41,||panic!("错误分配不查询或清锁")).is_err());
+        assert!(recover_lock_with(&target,42,||bail!("scheduler_unknown: active")).is_err());
+        assert!(lock.exists());recover_lock_with(&target,42,||Ok(())).unwrap();assert!(!lock.exists());
+        fs::remove_dir_all(root).unwrap();
     }
 }
 impl Drop for Lock {fn drop(&mut self){

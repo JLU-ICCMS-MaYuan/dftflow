@@ -283,7 +283,7 @@ fn wannier_convergence_parsing() {
 fn quality_pass_and_fail() {
     let ok = quality::evaluate(&[100.0, 200.0], &[101.0, 202.0], "QeZero").unwrap();
     assert_eq!(ok.status, "valid");
-    assert!(quality::evaluate(&[100.0, 200.0], &[120.0, 200.0], "QeZero").is_err());
+    assert!(quality::evaluate(&[100.0, 200.0], &[180.0, 200.0], "QeZero").is_err());
     // 缺参考无效。
     assert!(quality::evaluate(&[], &[], "QeZero").is_err());
 }

@@ -1,5 +1,5 @@
 use super::{config, status, store};
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -186,18 +186,7 @@ pub fn status(work: &Path) -> Result<serde_json::Value> {
     ))
 }
 
-/// 续算：先核对固定快照，再按选择续算；F1 科学阶段未接入，一律返回明确不可用。
+/// 续算沿用统一入口的固定快照、执行边界与分配登记。
 pub fn resume(work: &Path, submit: bool, require_allocation: bool) -> Result<()> {
-    let binding = RunBinding::load(work)?;
-    binding.verify()?;
-    if submit && require_allocation {
-        bail!("cannot: resume 的 -s 与 -r 必须互斥");
-    }
-    if !submit && !require_allocation {
-        bail!("required: resume 必须明确选择 -s 或 -r");
-    }
-    if require_allocation {
-        bail!("not_implemented: 科学阶段尚未接入，resume -r 需要分配记录");
-    }
-    bail!("not_implemented: 科学阶段尚未接入，resume 不可用");
+    super::workflow::resume(work, None, submit, require_allocation)
 }

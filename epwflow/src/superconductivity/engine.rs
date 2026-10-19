@@ -20,6 +20,8 @@ pub struct Entry {
     pub record: Option<Identity>,
     pub status: String,
     pub reason: Option<String>,
+    #[serde(default)]
+    pub job_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +36,14 @@ pub struct ModeResult {
     pub attempts: Vec<Entry>,
     pub complete: bool,
     pub reason: Option<String>,
+    #[serde(default)]
+    pub gap_temperatures_centikelvin: Vec<i64>,
+    #[serde(default = "default_seeds")]
+    pub initial_gaps_mev: [f64; 2],
+}
+
+fn default_seeds() -> [f64; 2] {
+    [1.0, 10.0]
 }
 
 pub struct Engine<'a> {
@@ -42,6 +52,7 @@ pub struct Engine<'a> {
     launcher: &'a [String],
     root: &'a Path,
     pub result: ModeResult,
+    retry_failed: bool,
 }
 
 impl<'a> Engine<'a> {
@@ -75,10 +86,30 @@ impl<'a> Engine<'a> {
             ensure!(
                 saved.schema_version == 1
                     && saved.mode == mode
-                    && saved.binding_digest == binding_digest,
+                    && saved.binding_digest == binding_digest
+                    && serde_json::to_value(&saved.thresholds)? == serde_json::to_value(tc)?
+                    && saved.initial_gaps_mev == cfg.superconductivity.initial_gaps_mev
+                    && saved.gap_temperatures_centikelvin
+                        == cfg
+                            .superconductivity
+                            .gap_temperatures_k
+                            .iter()
+                            .map(|&t| config::temperature(t, "gap_temperature"))
+                            .collect::<Result<Vec<_>>>()?,
                 "input_conflict: 搜索程序/F3/求解配置身份已变"
             );
             for a in &saved.attempts {
+                let expected = Request::from_config(
+                    cfg,
+                    mode,
+                    a.request.kind,
+                    a.request.temperature_centikelvin,
+                    a.request.seed_mev,
+                )?;
+                ensure!(
+                    serde_json::to_value(&expected)? == serde_json::to_value(&a.request)?,
+                    "input_conflict: 保存的尝试参数与固定配置不一致"
+                );
                 ensure!(
                     a.directory.parent() == Some(root),
                     "data_invalid: 尝试目录逃逸"
@@ -87,6 +118,13 @@ impl<'a> Engine<'a> {
                     record.verify()?;
                 }
             }
+            ensure!(
+                saved.search.min_centikelvin == config::temperature(tc.min_k, "min_k")?
+                    && saved.search.max_centikelvin == config::temperature(tc.max_k, "max_k")?
+                    && saved.search.precision_centikelvin
+                        == config::temperature(tc.precision_k, "precision_k")?,
+                "input_conflict: 保存的搜索区间与固定配置不一致"
+            );
             saved
         } else {
             ModeResult {
@@ -108,6 +146,13 @@ impl<'a> Engine<'a> {
                 attempts: vec![],
                 complete: false,
                 reason: None,
+                gap_temperatures_centikelvin: cfg
+                    .superconductivity
+                    .gap_temperatures_k
+                    .iter()
+                    .map(|&t| config::temperature(t, "gap_temperature"))
+                    .collect::<Result<_>>()?,
+                initial_gaps_mev: cfg.superconductivity.initial_gaps_mev,
             }
         };
         Ok(Self {
@@ -116,7 +161,68 @@ impl<'a> Engine<'a> {
             launcher,
             root,
             result,
+            retry_failed: false,
         })
+    }
+
+    /// 仅显式 resume 调用。未知进程须由原分配的终态证据解除，原目录与次数不变。
+    pub fn prepare_resume(&mut self, terminal: &mut impl FnMut(u64) -> Result<()>) -> Result<()> {
+        for entry in &mut self.result.attempts {
+            if entry.status != "running" {
+                continue;
+            }
+            let path = entry.directory.join("attempt.json");
+            if path.exists() {
+                let record: AttemptResult = store::read(&path)?;
+                ensure!(
+                    serde_json::to_vec(&record.request)? == serde_json::to_vec(&entry.request)?,
+                    "input_conflict: 中断尝试身份改变"
+                );
+                if record.status != "running" {
+                    ensure!(
+                        matches!(record.status.as_str(), "valid" | "failed"),
+                        "data_invalid: 尝试状态非法"
+                    );
+                    record.executable.verify()?;
+                    record.source.verify(record.request.mode)?;
+                    for a in &record.artifacts {
+                        a.verify()?;
+                    }
+                    entry.status = record.status;
+                    entry.reason = record.reason;
+                    entry.record = Some(Identity::capture(&path)?);
+                    continue;
+                }
+            }
+            terminal(
+                entry
+                    .job_id
+                    .context("scheduler_unknown: 中断尝试缺少原分配号，不能重提")?,
+            )?;
+            entry.status = "failed".into();
+            entry.reason = Some("execution_failed: 原分配已终止，原生尝试被中断".into());
+            if path.exists() {
+                entry.record = Some(Identity::capture(&path)?);
+            }
+        }
+        if matches!(
+            self.result.search.status.as_str(),
+            "solver_failed" | "scheduler_unknown" | "resource_limit"
+        ) {
+            let old = &self.result.search;
+            let mut restored = Search::new(
+                old.min_centikelvin,
+                old.max_centikelvin,
+                old.precision_centikelvin,
+            )?;
+            for (&t, &side) in &old.points {
+                restored.observe(t, side)?;
+            }
+            self.result.search = restored;
+        }
+        self.result.reason = None;
+        self.retry_failed = true;
+        self.save()
     }
 
     pub fn save(&self) -> Result<()> {
@@ -136,10 +242,11 @@ impl<'a> Engine<'a> {
             .result
             .attempts
             .iter()
+            .rev()
             .find(|a| serde_json::to_vec(&a.request).is_ok_and(|s| s == encoded))
         {
             ensure!(
-                a.status == "valid",
+                a.status == "valid" || (a.status == "failed" && self.retry_failed),
                 "{}: 已有未完成或失败尝试，保留现场；不自动重提",
                 if a.status == "running" {
                     "scheduler_unknown"
@@ -147,27 +254,29 @@ impl<'a> Engine<'a> {
                     "solver_failed"
                 }
             );
-            let record = a
-                .record
-                .as_ref()
-                .context("data_invalid: 有效尝试缺少原生记录")?;
-            record.verify()?;
-            let r: AttemptResult = store::read(&record.path)?;
-            ensure!(
-                r.schema_version == 1
-                    && r.status == "valid"
-                    && serde_json::to_vec(&r.request)? == encoded,
-                "data_invalid: 尝试状态/身份冲突"
-            );
-            r.executable.verify()?;
-            r.source.verify(r.request.mode)?;
-            for x in &r.artifacts {
-                x.verify()?;
+            if a.status == "valid" {
+                let record = a
+                    .record
+                    .as_ref()
+                    .context("data_invalid: 有效尝试缺少原生记录")?;
+                record.verify()?;
+                let r: AttemptResult = store::read(&record.path)?;
+                ensure!(
+                    r.schema_version == 1
+                        && r.status == "valid"
+                        && serde_json::to_vec(&r.request)? == encoded,
+                    "data_invalid: 尝试状态/身份冲突"
+                );
+                r.executable.verify()?;
+                r.source.verify(r.request.mode)?;
+                for x in &r.artifacts {
+                    x.verify()?;
+                }
+                if let Some(g) = &r.gap {
+                    g.validate()?;
+                }
+                return Ok(r);
             }
-            if let Some(g) = &r.gap {
-                g.validate()?;
-            }
-            return Ok(r);
         }
         let tc = match self.result.mode {
             Mode::Iso => self.cfg.superconductivity.iso.as_ref(),
@@ -188,6 +297,10 @@ impl<'a> Engine<'a> {
             record: None,
             status: "running".into(),
             reason: None,
+            job_id: std::env::var("SLURM_JOB_ID")
+                .ok()
+                .map(|s| s.parse())
+                .transpose()?,
         });
         self.save()?; // 次数在启动前落盘；异常窗口保留为未知。
         let run = attempt::run_attempt(
@@ -254,7 +367,7 @@ impl<'a> Engine<'a> {
         )
     }
 
-    /// 不重复失败尝试；显式恢复的失败重试策略尚未开放，保持计数和未知状态。
+    /// 只有 prepare_resume 明确授权后，才在原规则和剩余次数内重试已确认失败项。
     pub fn run(&mut self, before: &mut impl FnMut() -> Result<()>) -> Result<&ModeResult> {
         let outcome = (|| -> Result<()> {
             while let Some(t) = self.result.search.next_temperature() {
@@ -282,6 +395,10 @@ impl<'a> Engine<'a> {
             required.dedup();
             for t in required {
                 let nonlinear = self.nonlinear(t, before)?;
+                ensure!(
+                    nonlinear == Side::Superconducting,
+                    "classification_uncertain: 必需能隙温度未获得双初值一致的超导态分布"
+                );
                 let classified = if self.result.mode == Mode::Iso {
                     let linear = self.linear(t, before)?;
                     ensure!(

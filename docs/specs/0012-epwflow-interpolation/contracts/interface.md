@@ -99,3 +99,9 @@ comparison Sources 新增可选 wannier_wout 文件项（path、sha256），必�
 ### 外窗与冻结窗边界
 
 metadata.frozen_window_ev 是可选的绝对 eV 二元数组，来自同一已核验 wannier_wout 的唯一 Inner 记录；缺失代表未记录。存在时必须有限、递增且包含于 disentanglement_window_ev。四个边界均由绝对值减同一 fermi_ev 后定位，图例使用 dis_win_min/max、dis_froz_min/max 并注明 E−E_F；曲线数据与 display window 不因标注而改变。重合边界不偏移，交错显示不同颜色的虚线。旧包不能根据显示范围推断物理窗口；未知、无效或篡改数据依现有清单规则拒绝。
+
+## 2026-10-19：50／20 门与原生代码收尾
+
+对应 FR-009/012、SC-003/007。本次只调整共享 RMS 常数与边界回归。五点、45 模及相同 ASR、单位、电子窗保持不变；旧失败报告不改写。新的只读报告留在编号目录 029。
+
+科学求解与真实验收共用原预算；9³ PH 暂缓，不新增需求或另建线上 Issue。阈值调整不表述为插值改进，真实 Tc、独立手动参考与完整自动链仍须各自提供证据。

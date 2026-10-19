@@ -249,6 +249,27 @@ pub fn attach(ledger: &mut BudgetLedger, token: &str, job_id: Option<u64>) -> Re
     Ok(())
 }
 
+/// 自动入口保守限制所有未结算预留；排队或未知任务也占名额。
+pub fn reserve_workflow(ledger: &mut BudgetLedger, label: &str, r: &super::config::Resources) -> Result<String> {
+    ensure!(ledger.reservations.len() + ledger.allocations.len() < ledger.limits.max_lanes as usize,
+        "budget_denied: 已有两个未结算任务；先核对终态并结算");
+    reserve(ledger, label, r.nodes, r.mpi, r.wall_seconds, r.storage_bytes)
+}
+
+/// 提交回执与计算节点启动可能并发；仅同一 token/作业允许幂等绑定。
+pub fn attach_once(ledger: &mut BudgetLedger, token: &str, job: u64) -> Result<()> {
+    if let Some(a) = ledger.allocations.iter().find(|a| a.reservation_id == token) {
+        ensure!(a.job_id == Some(job), "input_conflict: 预留已绑定其他作业");
+        return Ok(());
+    }
+    attach(ledger, token, Some(job))
+}
+
+/// 资源内运行必须复用已登记分配，不按阶段重复预留。
+pub fn registered_allocation(ledger: &BudgetLedger, job: u64, r: &super::config::Resources) -> Result<String> {
+    ledger.require_allocation(job, r)
+}
+
 /// 依据调度证据结算终态；同一 allocation 仅结算一次；未知作业保留预留不退款。
 pub fn reconcile(ledger: &mut BudgetLedger) -> Result<u64> {
     // 先取得全部证据，查询失败时不做部分修改；with_ledger 随后原子发布。

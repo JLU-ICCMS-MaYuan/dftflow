@@ -45,6 +45,20 @@ impl SuperconductivityManifest {
             );
         }
         if m.schema_version == 2 {
+            let expected = match m.mode.as_str() {
+                "iso" => vec!["iso"],
+                "aniso" => vec!["aniso"],
+                "both" => vec!["aniso", "iso"],
+                _ => anyhow::bail!("data_invalid: 未知原生求解模式"),
+            };
+            anyhow::ensure!(
+                m.native_modes
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    == expected,
+                "data_invalid: 原生交付的所选模式不完整"
+            );
             for a in &m.artifacts {
                 a.verify()?;
             }
@@ -53,6 +67,7 @@ impl SuperconductivityManifest {
                 "data_invalid: 原生交付必须按模式保存区间，不能压为旧 Tc 标量"
             );
             for (mode, result) in &m.native_modes {
+                super::verify::mode(result, &m.interpolation_digest)?;
                 anyhow::ensure!(
                     result.schema_version == 1
                         && matches!(
@@ -74,6 +89,16 @@ impl SuperconductivityManifest {
                     }
                 }
             }
+            let complete = m.native_modes.values().all(|r| r.complete);
+            anyhow::ensure!(
+                m.converged == complete
+                    && m.located
+                        == m.native_modes
+                            .values()
+                            .all(|r| r.search.status == "located")
+                    && (!m.validation.all_passed() || complete),
+                "data_invalid: 阶段状态与分模式证据冲突"
+            );
         }
         Ok(m)
     }

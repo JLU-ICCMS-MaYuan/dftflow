@@ -77,3 +77,7 @@ F4 scheduler 质量检查后仍明确返回 `not_implemented`。iso／aniso／at
 T039～T043 仅完成本批代码基础，整项仍不勾选：失败显式重试尚未接入统一 resume；统一入口最终 F4 验证、完整原生首次／重读链和 F5 自包含、迁移与消费仍缺。当前记录带本地绝对身份路径，不宣称可移动结果包。真实 EPW 正常侧／临界附近收敛、至少三个固定有效能隙温度、独立参考及六组合均无新证据，T044／T045 保持未完成。
 
 当前声子最大 49.448071／RMS 8.075133 cm⁻¹，RMS 仍失败。原数值标准不变，没有实际 iso／aniso Tc 可报告。Issue／Spec／Plan／Tasks 与 [Overview](../../overview/epwflow/native-superconductivity.md) 已同步；本地 Issue 不关闭、不操作线上 Gitee。实现复用 F1 执行、配置及账本，由 F3 拥有数据适配，不自造第二套 Eliashberg、QE 或资源机制。
+
+## 2026-10-19：最新 50／20 门与原生代码收尾
+
+用户最新要求声子 RMS 放宽到 20 cm⁻¹。已有五点最大／RMS 49.448070759／8.075133004，在新 50／20 门下实际只读检查通过、退出 0，来源哈希未变；这替代前文当前 RMS 失败的判断，不重写历史报告。原生失败恢复、证据重验及结果包／图表的代码验证与缺项见 [本批验收](../0015-epwflow-mgb2-real-validation/native-closeout-validation.md)。本批无新增科学作业；不宣称真实 Tc 或完整三来源六组合通过，不关闭本地 Issue。

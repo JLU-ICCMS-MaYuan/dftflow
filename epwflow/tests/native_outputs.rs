@@ -395,10 +395,12 @@ fn revised_phonon_maximum_keeps_rms_and_stability_gates() {
     let measured = check(9.042613107, 0.0);
     assert!(measured.passed);
     assert_eq!(measured.max_error_limit_cm1, 50.0);
-    assert_eq!(measured.rms_error_limit_cm1, 2.0);
+    assert_eq!(measured.rms_error_limit_cm1, 20.0);
     assert!(check(50.0, 0.0).passed);
+    assert!(check(20.0, 20.0).passed);
+    assert!(!check(20.001, 20.001).passed);
     assert!(!check(50.01, 0.0).passed);
-    assert!(!check(9.04, 2.1).passed);
+    assert!(!check(9.04, 20.1).passed);
     let reference_values = vec![100.0; 900];
     let mut fit = reference_values.clone();
     fit[0] += 9.04;

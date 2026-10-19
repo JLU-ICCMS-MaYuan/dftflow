@@ -74,3 +74,9 @@ F3 metadata.disentanglement_window_ev 存在时，电子能带纵轴和电子 DO
 ### 外窗与冻结窗边界
 
 metadata.frozen_window_ev 是可选的绝对 eV 二元数组，来自同一已核验 wannier_wout 的唯一 Inner 记录；缺失代表未记录。存在时必须有限、递增且包含于 disentanglement_window_ev。四个边界均由绝对值减同一 fermi_ev 后定位，图例使用 dis_win_min/max、dis_froz_min/max 并注明 E−E_F；曲线数据与 display window 不因标注而改变。重合边界不偏移，交错显示不同颜色的虚线。旧包不能根据显示范围推断物理窗口；未知、无效或篡改数据依现有清单规则拒绝。
+
+## 2026-10-19：50／20 门与原生代码收尾
+
+对应 FR-001～005、SC-001/003/004。F4 版本 2 通过独立原生结果包交付，不压缩成旧单 Tc 标量。包内保存分模式搜索、最低正频率逐态 Δ／Z／k 坐标／物理权重、带统计、原生谱与累计 λ；完整 Matsubara 数组保留 F4 哈希来源。六类图均由 Rust 消费包内表，支持 PNG／SVG／PDF 和移动后空 PATH 重绘。显式 collect／plot 通过发布日志恢复半写文件；只替换已登记且哈希匹配的旧文件，未知文件拒绝覆盖。
+
+科学求解与真实验收共用原预算；9³ PH 暂缓，不新增需求或另建线上 Issue。阈值调整不表述为插值改进，真实 Tc、独立手动参考与完整自动链仍须各自提供证据。

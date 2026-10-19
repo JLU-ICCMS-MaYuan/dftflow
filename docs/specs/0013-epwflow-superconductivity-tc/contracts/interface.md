@@ -32,3 +32,9 @@ F1 返回配置/运行绑定与阶段协议，F2 返回 qe-data/manifest.json，
 solve_input、solve_log、gap_frequency_data、state_mapping、convergence_evidence、seed_comparison、classification、search_journal、tc_result；频率/带/k 使用显式复合键；F5 消费 published manifest，不从日志重新求 Tc。
 
 Artifact={role,relative_path,byte_size,sha256,producer_stage,input_digest,format_version}；validation={status,checks,units,thresholds,evidence}。只有 status=valid 的必需角色完整才发布该阶段 manifest。format_version 未知或文件集合与已验证适配器不符即拒绝；不靠 glob 命中一个文件放行。
+
+## 2026-10-19：50／20 门与原生代码收尾
+
+对应 FR-008～011、SC-004/005/008。显式 resume 保留科学根目录、旧尝试、所有失败次数及固定身份，重建可继续的搜索状态；未知尝试仅在原分配明确终态后解除。新尝试使用新编号目录。最终阶段门重新解析原生日志与完整 Δ／Z、重放分类与区间，并校验固定配置、所选模式和必需能隙温度，不能只相信 complete 布尔值。
+
+科学求解与真实验收共用原预算；9³ PH 暂缓，不新增需求或另建线上 Issue。阈值调整不表述为插值改进，真实 Tc、独立手动参考与完整自动链仍须各自提供证据。

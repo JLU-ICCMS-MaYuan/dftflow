@@ -8,6 +8,8 @@ pub struct State {
     pub band: usize,
     pub energy_ev: f64,
     pub weight: f64,
+    #[serde(default)]
+    pub k_crystal: Option<[f64; 3]>,
 }
 
 pub const FORMAT: &str = "epw5.9-le-i4-r8";
@@ -110,9 +112,7 @@ pub fn eigenvalues(bytes: &[u8]) -> Result<Eigenvalues> {
     let mut all_energies = Vec::new();
     for ik in 1..=nk {
         let wk = r.real()?;
-        for _ in 0..3 {
-            r.real()?;
-        }
+        let k_crystal = [r.real()?, r.real()?, r.real()?];
         ensure!(
             wk >= 0.0 && r.int()? == ik,
             "data_invalid: egnv k 索引/权重冲突"
@@ -132,6 +132,7 @@ pub fn eigenvalues(bytes: &[u8]) -> Result<Eigenvalues> {
                     band: ib,
                     energy_ev: energy,
                     weight: w,
+                    k_crystal: Some(k_crystal),
                 });
             }
         }

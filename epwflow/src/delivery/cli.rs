@@ -41,15 +41,24 @@ pub fn run(cmd: DeliveryCommand) -> Result<()> {
 }
 
 fn collect(work: &PathBuf, json: bool) -> Result<()> {
-    let b = super::scheduler::run(work)?;
-    print_bundle(&b, json);
-    Ok(())
+    let result = super::collect_results(work, None)?;
+    print_native(&result, json)
 }
 
 fn results(work: &PathBuf, json: bool) -> Result<()> {
     let path = work.join("results").join("manifest.json");
+    if path.exists() && crate::foundation::store::read::<serde_json::Value>(&path)?["kind"] == "epwflow-native-results" {
+        return print_native(&work.join("results"), json);
+    }
     let b = ResultsBundle::load(&path).with_context(|| format!("data_invalid: 无法加载 {}", path.display()))?;
     print_bundle(&b, json);
+    Ok(())
+}
+
+fn print_native(root: &std::path::Path, json: bool) -> Result<()> {
+    let report = super::check_results(root)?;
+    if json { status::print_json(&report); }
+    else { println!("{}", serde_json::to_string_pretty(&report)?); }
     Ok(())
 }
 

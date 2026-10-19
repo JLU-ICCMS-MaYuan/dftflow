@@ -37,7 +37,20 @@ pub fn run(
     work: &Path,
 ) -> Result<QeManifest> {
     let _token = charge_budget(binding, cfg)?;
+    let result = run_registered(binding, cfg, qe, backend, launcher, work)?;
+    budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, budget::reconcile)?;
+    Ok(result)
+}
 
+/// 由统一入口在已登记分配内调用；整份分配只计费一次。
+pub fn run_registered(
+    binding: &snapshot::RunBinding,
+    _cfg: &config::Config,
+    qe: &QeSettings,
+    backend: Backend,
+    launcher: &[String],
+    work: &Path,
+) -> Result<QeManifest> {
     // 1. 一次 SCF 与完整快照。
     let scf_res = scf::run_scf(qe, work, launcher, backend)?;
     // 2. 完整均匀 NSCF。
@@ -143,10 +156,6 @@ pub fn run(
         );
     }
 
-    // 9. 结算预算。
-    budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
-        budget::reconcile(ledger)
-    })?;
     Ok(manifest)
 }
 

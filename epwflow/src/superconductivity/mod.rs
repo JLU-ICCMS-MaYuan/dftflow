@@ -13,3 +13,4 @@ pub mod scheduler;
 pub mod search;
 pub mod solver_config;
 pub mod source;
+pub mod verify;

@@ -31,6 +31,15 @@ pub fn run(
     work: &Path,
     f2_work: &Path,
 ) -> Result<InterpolationManifest> {
+    run_stages(cfg, backend, launcher, work, f2_work, true)
+}
+
+/// 统一入口已登记整份分配，禁止再次按阶段计费。
+pub fn run_registered(cfg: &config::Config, backend: Backend, launcher: &[String], work: &Path, f2_work: &Path) -> Result<InterpolationManifest> {
+    run_stages(cfg, backend, launcher, work, f2_work, false)
+}
+
+fn run_stages(cfg: &config::Config, backend: Backend, launcher: &[String], work: &Path, f2_work: &Path, charge: bool) -> Result<InterpolationManifest> {
     let f2_manifest_path = f2_work.join("qe-data").join("manifest.json");
     let binding = adapter::bind_f2(&f2_manifest_path, cfg)?;
     let quality_path = cfg.interpolation.quality.reference_manifest.as_ref().context(
@@ -45,7 +54,7 @@ pub fn run(
     if let Some(program) = &cfg.programs.wannier90 {
         qf_wannier::require_projectability_keywords(&program.path)?;
     }
-    let _token = charge_budget(cfg, "f3")?;
+    let _token = if charge { Some(charge_budget(cfg, "f3")?) } else { None };
 
     // Wannier 化（FR-004）。
     let wan = wannier::run_wannier(&epw_cfg, work, launcher, backend)?;
@@ -108,7 +117,7 @@ pub fn run(
 
     let manifest = InterpolationManifest {
         schema_version: 1,
-        run_id: "f3".to_string(),
+        run_id: crate::qe_data::manifest::QeManifest::load(&f2_manifest_path)?.run_id,
         f2_digest: binding.f2_digest.clone(),
         wannier_digest: wan.wannier_digest.clone(),
         coarse: Some(coarse_data),
@@ -125,7 +134,7 @@ pub fn run(
     } else {
         bail!("data_invalid: interpolation 本地校验未通过，拒绝发布清单: {}", validation.status);
     }
-    budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| budget::reconcile(ledger))?;
+    if charge { budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, budget::reconcile)?; }
     Ok(manifest)
 }
 

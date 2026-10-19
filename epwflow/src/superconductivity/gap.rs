@@ -69,6 +69,10 @@ impl GapData {
                 s.energy_ev.is_finite() && s.weight.is_finite() && s.weight >= 0.0,
                 "data_invalid: 状态能量/权重无效"
             );
+            ensure!(
+                s.k_crystal.is_none_or(|k| k.iter().all(|x| x.is_finite())),
+                "data_invalid: k 坐标非有限"
+            );
         }
         let weight_sum = self.states.iter().map(|s| s.weight).sum::<f64>();
         ensure!(
