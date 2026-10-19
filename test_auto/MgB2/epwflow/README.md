@@ -187,3 +187,14 @@ OVERLAY_RUN="$PWD/test_auto/MgB2/epwflow/local_run/0015-native/overlay-q6-01"
 ```
 
 该命令预期退出1、workflow_complete=false；只读，不执行科学计算。原四点新门报告与全部旧报告分开保存。40³／20³续算候选仅准备在独立目录，尚未提交；不能跳过新失败点。详细证据见[0015验收记录](../../../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
+
+## 2026-10-19：50 cm⁻¹ 最大误差与紫色标注
+
+更新后的 Rust CLI 已使用现有五个直接 PH 验证点重绘；未重新运行 QE／EPW。当前最大值上限 50 cm⁻¹，RMS 仍为 2 cm⁻¹；历史图和旧规则报告保留。
+
+- [声子谱 PNG](local_run/0015-native/overlay-q6-purple50-01/results/figures/phonon_dispersion_comparison.png)、[SVG](local_run/0015-native/overlay-q6-purple50-01/results/figures/phonon_dispersion_comparison.svg)、[PDF](local_run/0015-native/overlay-q6-purple50-01/results/figures/phonon_dispersion_comparison.pdf)。
+- [四图总览 PNG](local_run/0015-native/overlay-q6-purple50-01/results/figures/comparison_overview.png)、[SVG](local_run/0015-native/overlay-q6-purple50-01/results/figures/comparison_overview.svg)、[PDF](local_run/0015-native/overlay-q6-purple50-01/results/figures/comparison_overview.pdf)。
+
+主图紫点为 Γ–M 段内部 q=(1/12,0,0) 的第八频率排序模，直接 PH 与 EPW 差 9.042613 cm⁻¹。已核验采样总最大在路径外 q=(1/12,1/12,1/12) 的第七排序模，差 49.448071 cm⁻¹，图下单独用紫色列出；不会强行放在 Γ／M／K 上。编号按频率排序，不代表已解析振动方向。
+
+实际五点 RMS 为 8.075133 cm⁻¹，仍超过 2；最大值通过不等于整体通过，当前没有放行细网格或超导。三格式已实际查看，独立重绘不调用科学程序或 sbatch，来源指纹与科学表格保持不变。证据见同目录 `figure-verification/checks.json`；完整回归 76 通过、2 项既有自动入口暂挂。

@@ -1,6 +1,8 @@
 //! 经真实 CLI 验证叠图、可移植重绘和拒绝无效来源；样式数据明确为合成。
 use epwflow::{
-    delivery::comparison::{self, Artifact, Manifest, Metadata, Tick, KINDS, TABLES},
+    delivery::comparison::{
+        self, Artifact, Manifest, Metadata, PhononErrorMarker, Tick, KINDS, TABLES,
+    },
     foundation::store,
     interpolation::comparison::gaussian_dos,
 };
@@ -105,6 +107,28 @@ fn fixture(root: &Path) -> PathBuf {
         orbitals: vec!["Mg:s".into(), "Mg:p".into(), "B:s".into(), "B:p".into()],
         electronic_projection: "atomic_projector_operator".into(),
         phonon_projection: "mass_weighted_eigenvectors".into(),
+        phonon_error_markers: vec![
+            PhononErrorMarker {
+                scope: "sampled_maximum".into(),
+                q_crystal: [1.0 / 12.0; 3],
+                mode_sorted: 7,
+                qe_cm1: 300.0,
+                epw_cm1: 349.0,
+                error_cm1: 49.0,
+                path_distance: None,
+                path_label: None,
+            },
+            PhononErrorMarker {
+                scope: "path_maximum".into(),
+                q_crystal: [0.5, 0.0, 0.0],
+                mode_sorted: 8,
+                qe_cm1: 400.0,
+                epw_cm1: 410.0,
+                error_cm1: 10.0,
+                path_distance: Some(0.5),
+                path_label: Some("M (high-symmetry point)".into()),
+            },
+        ],
         notes: vec!["Synthetic projections for renderer regression only".into()],
     };
     store::write(&dir.join("metadata.json"), &metadata).unwrap();
@@ -161,6 +185,41 @@ fn fingerprints(dir: &Path) -> Vec<String> {
 }
 
 #[test]
+fn error_markers_validate_semantics_and_old_metadata_remains_readable() {
+    let root = temp();
+    let work = fixture(&root);
+    let dir = work.join("interpolation/comparison");
+    let original: Metadata = store::read(&dir.join("metadata.json")).unwrap();
+    let mut legacy = serde_json::to_value(&original).unwrap();
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("phonon_error_markers");
+    store::write(&dir.join("metadata.json"), &legacy).unwrap();
+    rehash(&dir);
+    assert!(comparison::load(&dir)
+        .unwrap()
+        .metadata
+        .phonon_error_markers
+        .is_empty());
+    for case in 0..4 {
+        let mut invalid = original.clone();
+        match case {
+            0 => invalid.phonon_error_markers[0].path_label = Some("M".into()),
+            1 => invalid.phonon_error_markers[0].mode_sorted = 0,
+            2 => invalid.phonon_error_markers[1].path_distance = Some(0.333333),
+            _ => invalid.phonon_error_markers[1].scope = "sampled_maximum".into(),
+        }
+        store::write(&dir.join("metadata.json"), &invalid).unwrap();
+        rehash(&dir);
+        assert!(
+            comparison::load(&dir).is_err(),
+            "标注语义错误 {case} 未被拒绝"
+        );
+    }
+}
+
+#[test]
 fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
     let root = if let Ok(p) = std::env::var("EPWFLOW_PREVIEW_DIR") {
         let p = PathBuf::from(p);
@@ -211,6 +270,13 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
         let qe = svg.find("#2D2D37").unwrap();
         let epw = svg.find("#D34131").unwrap();
         assert!(qe < epw, "EPW 必须后绘");
+        if kind == "phonon_dispersion_comparison" || kind == "comparison_overview" {
+            assert!(svg.contains("#8A2BE2"));
+            assert!(svg.contains("Sampled maximum (OFF PATH): 49.00"));
+            assert!(svg.contains("mode 7 (frequency sorted)"));
+            assert!(svg.contains("(1/12, 1/12, 1/12)"));
+            assert!(svg.contains("M (high-symmetry point)"));
+        }
     }
     let moved = root.join("portable-results");
     fs::rename(&results, &moved).unwrap();
@@ -402,21 +468,43 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
     let zeros = vec![[0.0; 3]; 6];
     fs::write(root.join("quality.xml"), xml(&zeros)).unwrap();
     fs::write(root.join("quality.eig"), bands(&zeros, &[0.0])).unwrap();
-    let frequencies: Vec<_> = (0..9).map(|i| 100.0 + i as f64 * 10.0).collect();
-    let interpolated: Vec<_> = frequencies
-        .iter()
-        .map(|v| (v + 50.0) / 8.065543937)
-        .collect();
+    let frequencies: Vec<_> = (0..9).map(|i| 100.0 + i as f64 * 100.0).collect();
+    let quality_q = [
+        [0., 0., 0.],
+        [0.25, 0.125, 0.],
+        [1.0 / 12.0, 1.7 / 12.0, 0.9 / 12.0],
+        [0.2, 0.1, 0.3],
+    ];
     fs::write(
         root.join("quality-qe.freq"),
-        bands(&zeros[..4], &frequencies),
+        bands(&quality_q, &frequencies),
     )
     .unwrap();
-    fs::write(
-        root.join("quality-epw.freq"),
-        bands(&zeros[..4], &interpolated),
-    )
-    .unwrap();
+    let mut interpolated = "&plot nbnd= 9, nks= 4 /\n".to_string();
+    for (i, q) in quality_q.iter().enumerate() {
+        let values: Vec<_> = frequencies
+            .iter()
+            .enumerate()
+            .map(|(m, v)| {
+                (v + if i == 2 && m == 6 {
+                    49.448
+                } else if i == 1 && m == 7 {
+                    9.04
+                } else {
+                    0.0
+                }) / 8.065543937
+            })
+            .collect();
+        interpolated.push_str(
+            &bands(&[*q], &values)
+                .lines()
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+        interpolated.push('\n');
+    }
+    fs::write(root.join("quality-epw.freq"), interpolated).unwrap();
     fs::write(root.join("plan.txt"), "SYNTHETIC native adapter test").unwrap();
     let file = |name: &str| SourceFile {
         path: name.into(),
@@ -519,6 +607,27 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
     assert_eq!(data.manifest.quality_status, "failed");
     assert!(!data.manifest.missing.is_empty());
     assert!(!data.direct.is_empty());
+    let markers = &data.metadata.phonon_error_markers;
+    assert_eq!(markers.len(), 2);
+    assert_eq!(markers[0].scope, "sampled_maximum");
+    assert_eq!(markers[0].mode_sorted, 7);
+    assert!((markers[0].error_cm1 - 49.448).abs() < 1e-8);
+    for v in markers[0].q_crystal {
+        assert!((v - 1.0 / 12.0).abs() < 1e-8);
+    }
+    assert!(markers[0].path_distance.is_none());
+    assert!(markers[0].path_label.is_none());
+    assert_eq!(markers[1].mode_sorted, 8);
+    assert!((markers[1].path_distance.unwrap() - sources.path[1].distance).abs() < 1e-8);
+    assert!((markers[1].error_cm1 - 9.04).abs() < 1e-8);
+    // 即使重新登记哈希，互相矛盾的标注仍须由语义校验拒绝。
+    let mut bad_metadata = data.metadata.clone();
+    bad_metadata.phonon_error_markers[0].error_cm1 = 0.0;
+    store::write(&output.join("metadata.json"), &bad_metadata).unwrap();
+    rehash(&output);
+    assert!(comparison::load(&output).is_err());
+    store::write(&output.join("metadata.json"), &data.metadata).unwrap();
+    rehash(&output);
     let metrics: serde_json::Value = store::read(&output.join("metrics.json")).unwrap();
     assert!((metrics["phonon_dos"]["qe_integral"].as_f64().unwrap() - 9.0).abs() < 1e-8);
     assert_eq!(

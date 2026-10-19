@@ -74,6 +74,20 @@ pub struct Tick {
     pub label: String,
 }
 
+/// 直接 PH 与 EPW 的验证点误差；排序模式不等同于振动本征矢身份。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PhononErrorMarker {
+    pub scope: String,
+    pub q_crystal: [f64; 3],
+    pub mode_sorted: usize,
+    pub qe_cm1: f64,
+    pub epw_cm1: f64,
+    pub error_cm1: f64,
+    pub path_distance: Option<f64>,
+    pub path_label: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Metadata {
@@ -90,6 +104,8 @@ pub struct Metadata {
     pub orbitals: Vec<String>,
     pub electronic_projection: String,
     pub phonon_projection: String,
+    #[serde(default)]
+    pub phonon_error_markers: Vec<PhononErrorMarker>,
     pub notes: Vec<String>,
 }
 
@@ -338,6 +354,38 @@ pub fn load(root: &Path) -> Result<Dataset> {
     }
     let electronic = bands(root, false)?;
     let phonon = bands(root, true)?;
+    let mut scopes = BTreeSet::new();
+    let mode_count = phonon
+        .iter()
+        .map(|c| &c.branch)
+        .collect::<BTreeSet<_>>()
+        .len();
+    for marker in &metadata.phonon_error_markers {
+        ensure!(
+            matches!(marker.scope.as_str(), "sampled_maximum" | "path_maximum")
+                && scopes.insert(&marker.scope)
+                && marker.q_crystal.iter().all(|v| v.is_finite())
+                && marker.mode_sorted > 0
+                && marker.mode_sorted <= mode_count
+                && [marker.qe_cm1, marker.epw_cm1, marker.error_cm1]
+                    .iter()
+                    .all(|v| v.is_finite())
+                && marker.error_cm1 >= 0.0
+                && ((marker.qe_cm1 - marker.epw_cm1).abs() - marker.error_cm1).abs() < 1e-8
+                && marker.path_distance.is_some() == marker.path_label.is_some()
+                && (marker.scope != "path_maximum" || marker.path_distance.is_some()),
+            "data_invalid: 声子误差标注的模式、数值或路径身份无效"
+        );
+        if let Some(x) = marker.path_distance {
+            ensure!(
+                x.is_finite()
+                    && phonon
+                        .iter()
+                        .any(|c| c.points.iter().any(|p| (p.0 - x).abs() < 1e-8)),
+                "data_invalid: 声子误差标注不在路径采样点上"
+            );
+        }
+    }
     let electronic_dos = dos(root, false, &metadata)?;
     let phonon_dos = dos(root, true, &metadata)?;
     let mut direct = Vec::new();

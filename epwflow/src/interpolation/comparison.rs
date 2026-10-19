@@ -5,7 +5,9 @@ use super::{
 };
 use crate::{
     foundation::store,
-    interpolation::comparison_data::{Artifact, Manifest, Metadata, Tick, TABLES},
+    interpolation::comparison_data::{
+        Artifact, Manifest, Metadata, PhononErrorMarker, Tick, TABLES,
+    },
     qe_data::nscf,
 };
 use anyhow::{ensure, Context, Result};
@@ -91,6 +93,78 @@ fn cart(p: [f64; 3], reciprocal: &[[f64; 3]; 3]) -> [f64; 3] {
 fn same(a: &[f64; 3], b: &[f64; 3]) -> bool {
     a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-6)
 }
+
+fn phonon_error_markers(
+    reference: &native::NativeBands,
+    interpolated: &native::NativeBands,
+    source: &Sources,
+) -> Result<Vec<PhononErrorMarker>> {
+    // 用倒格矢的对偶基恢复晶体坐标，不能把 QE 笛卡尔坐标直接标成晶体坐标。
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    };
+    let dot = |a: [f64; 3], b: [f64; 3]| (0..3).map(|i| a[i] * b[i]).sum::<f64>();
+    let b = source.reciprocal;
+    let dual = [cross(b[1], b[2]), cross(b[2], b[0]), cross(b[0], b[1])];
+    let determinant = dot(b[0], dual[0]);
+    ensure!(
+        determinant.is_finite() && determinant.abs() > 1e-12,
+        "data_invalid: 倒格矢矩阵不可逆"
+    );
+    let mut samples = Vec::new();
+    for (i, q) in reference.points_cartesian.iter().enumerate() {
+        let path_point = source.path.iter().find(|p| same(q, &cart(p.crystal, &b)));
+        let path_label = path_point.map(|p| {
+            if let Some(t) = source
+                .ticks
+                .iter()
+                .find(|t| (t.distance - p.distance).abs() < 1e-8)
+            {
+                format!("{} (high-symmetry point)", t.label)
+            } else {
+                let left = source.ticks.iter().rev().find(|t| t.distance < p.distance);
+                let right = source.ticks.iter().find(|t| t.distance > p.distance);
+                match (left, right) {
+                    (Some(l), Some(r)) => format!("{} - {} (interior)", l.label, r.label),
+                    _ => "path interior".into(),
+                }
+            }
+        });
+        let mut qe = reference.values[i].clone();
+        let mut epw: Vec<_> = interpolated.values[i].iter().map(|v| v * MEV_CM1).collect();
+        qe.sort_by(f64::total_cmp);
+        epw.sort_by(f64::total_cmp);
+        for (mode, (qe, epw)) in qe.into_iter().zip(epw).enumerate() {
+            samples.push(PhononErrorMarker {
+                scope: "sampled_maximum".into(),
+                q_crystal: std::array::from_fn(|j| dot(*q, dual[j]) / determinant),
+                mode_sorted: mode + 1,
+                qe_cm1: qe,
+                epw_cm1: epw,
+                error_cm1: (qe - epw).abs(),
+                path_distance: path_point.map(|p| p.distance),
+                path_label: path_label.clone(),
+            });
+        }
+    }
+    let largest = |on_path: bool| {
+        samples
+            .iter()
+            .filter(|s| !on_path || s.path_distance.is_some())
+            .max_by(|a, b| a.error_cm1.total_cmp(&b.error_cm1))
+            .cloned()
+    };
+    let mut markers = vec![largest(false).context("data_invalid: 声子验证点为空")?];
+    if let Some(mut marker) = largest(true) {
+        marker.scope = "path_maximum".into();
+        markers.push(marker);
+    }
+    Ok(markers)
+}
 fn axis(lo: f64, hi: f64, n: usize) -> Vec<f64> {
     (0..n)
         .map(|i| lo + (hi - lo) * i as f64 / (n - 1) as f64)
@@ -139,6 +213,12 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
             .phonon_reference_cm1
             .checked_path(reference_base)?,
     )?)?;
+    let quality_interpolated = native::parse_bands(&fs::read_to_string(
+        quality_sources
+            .phonon_interpolated_mev
+            .checked_path(reference_base)?,
+    )?)?;
+    let error_markers = phonon_error_markers(&direct, &quality_interpolated, &s)?;
     for p in &s.provenance {
         p.checked_path(base)?;
     }
@@ -415,6 +495,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         orbitals: vec!["Mg:s".into(), "Mg:p".into(), "B:s".into(), "B:p".into()],
         electronic_projection: "unavailable".into(),
         phonon_projection: "unavailable".into(),
+        phonon_error_markers: error_markers,
         notes: vec![
             format!(
                 "fixed {}x{}x{} DOS mesh; Gaussian sigma_e={} eV, sigma_ph={} cm-1",

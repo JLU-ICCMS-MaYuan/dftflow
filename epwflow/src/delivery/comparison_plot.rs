@@ -9,6 +9,98 @@ use std::{
     path::{Path, PathBuf},
 };
 
+const ERROR_PURPLE: RGBColor = RGBColor(138, 43, 226);
+
+fn coordinate(value: f64) -> String {
+    if value.abs() < 1e-7 {
+        return "0".into();
+    }
+    for denominator in 1..=48 {
+        let numerator = (value * denominator as f64).round();
+        if (value - numerator / denominator as f64).abs() < 1e-7 {
+            return if denominator == 1 {
+                format!("{numerator:.0}")
+            } else {
+                format!("{numerator:.0}/{denominator}")
+            };
+        }
+    }
+    format!("{value:.6}")
+}
+
+/// 路径外最大误差单独展示，不投影到无关的高对称点或覆盖连续色散。
+fn phonon_panel<DB: DrawingBackend>(area: &DrawingArea<DB, Shift>, data: &Dataset) -> Result<()>
+where
+    DB::ErrorType: 'static,
+{
+    let markers = &data.metadata.phonon_error_markers;
+    if markers.is_empty() {
+        return chart(area, &data.phonon, data, 2, "total");
+    }
+    let (_, height) = area.dim_in_pixel();
+    let (main, footer) = area.split_vertically(height.saturating_sub(155));
+    chart(&main, &data.phonon, data, 2, "total")?;
+    for (card, marker) in footer.split_evenly((1, markers.len())).iter().zip(markers) {
+        let (width, _) = card.dim_in_pixel();
+        let title = if marker.scope == "sampled_maximum" {
+            if marker.path_distance.is_some() {
+                "Sampled maximum (on path)"
+            } else {
+                "Sampled maximum (OFF PATH)"
+            }
+        } else {
+            "On-path sampled maximum"
+        };
+        let label = marker
+            .path_label
+            .as_deref()
+            .unwrap_or("Not a point on this high-symmetry path");
+        let q = marker
+            .q_crystal
+            .iter()
+            .map(|v| coordinate(*v))
+            .collect::<Vec<_>>()
+            .join(", ");
+        for (y, text, size) in [
+            (20, format!("{title}: {:.2} cm^-1", marker.error_cm1), 16),
+            (43, format!("q(crystal) = ({q})"), 14),
+            (
+                65,
+                format!("mode {} (frequency sorted); {label}", marker.mode_sorted),
+                13,
+            ),
+            (90, format!("QE ph.x: {:.6} cm^-1", marker.qe_cm1), 14),
+            (113, format!("EPW: {:.6} cm^-1", marker.epw_cm1), 14),
+            (
+                137,
+                "Maximum over verified samples; not the entire Brillouin zone".into(),
+                12,
+            ),
+        ] {
+            card.draw(&Text::new(
+                text,
+                (12, y),
+                ("sans-serif", size).into_font().color(&ERROR_PURPLE),
+            ))?;
+        }
+        // 两个紫点分别对应参考和插值频率；连线长度不代表主图的路径距离。
+        let x = width as i32 - 42;
+        let (qe_y, epw_y) = if marker.qe_cm1 <= marker.epw_cm1 {
+            (111, 87)
+        } else {
+            (87, 111)
+        };
+        card.draw(&PathElement::new(
+            vec![(x, qe_y), (x, epw_y)],
+            ERROR_PURPLE.stroke_width(2),
+        ))?;
+        for y in [qe_y, epw_y] {
+            card.draw(&Circle::new((x, y), 5, ERROR_PURPLE.filled()))?;
+        }
+    }
+    Ok(())
+}
+
 /// 显式截取线段，窗外数据不贴着边界生成虚假的水平能带。
 fn clip(points: &[(f64, f64)], lo: f64, hi: f64) -> Vec<Vec<(f64, f64)>> {
     let mut paths: Vec<Vec<(f64, f64)>> = Vec::new();
@@ -244,6 +336,36 @@ where
         .label("QE ph.x (direct points)")
         .legend(|(x, y)| Circle::new((x + 15, y), 4, RGBColor(25, 105, 190).filled()));
     }
+    if kind == 2 {
+        if let Some(marker) = data
+            .metadata
+            .phonon_error_markers
+            .iter()
+            .find(|m| m.scope == "path_maximum")
+        {
+            if let Some(x) = marker.path_distance {
+                ctx.draw_series(std::iter::once(PathElement::new(
+                    vec![(x, marker.qe_cm1), (x, marker.epw_cm1)],
+                    ERROR_PURPLE.stroke_width(3),
+                )))?;
+                ctx.draw_series(
+                    [marker.qe_cm1, marker.epw_cm1]
+                        .into_iter()
+                        .map(|y| Circle::new((x, y), 6, ERROR_PURPLE.filled())),
+                )?
+                .label("Purple: max direct PH / EPW error on path")
+                .legend(|(x, y)| Circle::new((x + 15, y), 5, ERROR_PURPLE.filled()));
+                ctx.draw_series(std::iter::once(
+                    EmptyElement::at((x, marker.qe_cm1.max(marker.epw_cm1)))
+                        + Text::new(
+                            format!("mode {}: {:.2} cm^-1", marker.mode_sorted, marker.error_cm1),
+                            (10, -13),
+                            ("sans-serif", 14).into_font().color(&ERROR_PURPLE),
+                        ),
+                ))?;
+            }
+        }
+    }
     ctx.configure_series_labels()
         .background_style(WHITE.mix(0.9))
         .border_style(RGBColor(180, 180, 180))
@@ -301,7 +423,11 @@ where
         .iter()
         .enumerate()
         {
-            chart(&panels[i], curves, data, i, "total")?;
+            if i == 2 {
+                phonon_panel(&panels[i], data)?;
+            } else {
+                chart(&panels[i], curves, data, i, "total")?;
+            }
         }
     } else if kind == 1 || kind == 3 {
         let mut projections = vec!["total".to_string()];
@@ -318,6 +444,8 @@ where
         for (panel, p) in panels.iter().zip(projections) {
             chart(panel, curves, data, kind, &p)?;
         }
+    } else if kind == 2 {
+        phonon_panel(&body, data)?;
     } else {
         chart(
             &body,

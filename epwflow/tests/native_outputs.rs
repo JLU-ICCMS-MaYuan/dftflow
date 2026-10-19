@@ -378,25 +378,25 @@ fn phonon_quality_preserves_units_signs_and_all_modes() {
 fn revised_phonon_maximum_keeps_rms_and_stability_gates() {
     use epwflow::interpolation::{native_quality::phonon_quality, quality};
     // 稀疏的大偏差使最大误差与 RMS 两条独立规则都实际参与判断。
-    let reference = bands(vec![100.0; 81]);
+    let reference = bands(vec![100.0; 900]);
     let check = |maximum: f64, background: f64| {
-        let mut values = vec![(100.0 + background) / 8.065543937; 81];
+        let mut values = vec![(100.0 + background) / 8.065543937; 900];
         values[0] = (100.0 + maximum) / 8.065543937;
-        phonon_quality(&reference, &bands(values), 81).unwrap()
+        phonon_quality(&reference, &bands(values), 900).unwrap()
     };
     let measured = check(9.042613107, 0.0);
     assert!(measured.passed);
-    assert_eq!(measured.max_error_limit_cm1, 15.0);
+    assert_eq!(measured.max_error_limit_cm1, 50.0);
     assert_eq!(measured.rms_error_limit_cm1, 2.0);
-    assert!(check(15.0, 0.0).passed);
-    assert!(!check(15.01, 0.0).passed);
+    assert!(check(50.0, 0.0).passed);
+    assert!(!check(50.01, 0.0).passed);
     assert!(!check(9.04, 2.1).passed);
-    let reference_values = vec![100.0; 81];
+    let reference_values = vec![100.0; 900];
     let mut fit = reference_values.clone();
     fit[0] += 9.04;
     let legacy = quality::evaluate(&reference_values, &fit, "QeZero").unwrap();
-    assert_eq!(legacy.thresholds["frequency_max_error_cm1"], 15.0);
-    fit[0] = 115.01;
+    assert_eq!(legacy.thresholds["frequency_max_error_cm1"], 50.0);
+    fit[0] = 150.01;
     assert!(quality::evaluate(&reference_values, &fit, "QeZero").is_err());
 }
 

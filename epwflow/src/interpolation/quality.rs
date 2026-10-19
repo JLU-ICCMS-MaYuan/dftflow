@@ -3,8 +3,8 @@ use super::manifest::QualityReport;
 use anyhow::{bail, ensure, Result};
 use std::collections::BTreeMap;
 
-/// 0012 FR-009：用户于 2026-10-19 将最大误差改为 15 cm⁻¹；RMS 不变。
-pub const FREQUENCY_MAX_ERROR_CM1: f64 = 15.0;
+/// 0012 FR-009：用户于 2026-10-19 将最大误差改为 50 cm⁻¹；RMS 不变。
+pub const FREQUENCY_MAX_ERROR_CM1: f64 = 50.0;
 pub const FREQUENCY_RMS_ERROR_CM1: f64 = 2.0;
 
 /// 共用阈值，避免原生检查、阶段清单与错误提示采用不同标准。
