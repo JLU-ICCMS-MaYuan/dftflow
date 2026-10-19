@@ -231,6 +231,15 @@ struct Generated {
     script: store::Identity,
 }
 
+// oneAPI 等用户脚本可能读取未定义的可选变量；仅加载期间关闭 nounset。
+// errexit 保持启用，source 非零退出仍阻断，执行阶段恢复严格选项。
+fn source_environment(path: &Path) -> Result<String> {
+    Ok(format!(
+        "set +u\nsource {} --force\nset -u\n",
+        slurm::shell_quote(path.to_str().context("环境脚本不是 UTF-8")?)
+    ))
+}
+
 fn generated_path(work: &Path, until: Boundary) -> PathBuf {
     work.join(".epwflow/generated").join(format!("{}.json", until.name()))
 }
@@ -261,7 +270,7 @@ pub(super) fn generate_phase_for(config: &Path, until: Boundary, executable_path
         r.partition, r.nodes, r.mpi, r.wall_seconds / 3600, r.wall_seconds / 60 % 60, r.wall_seconds % 60,
         quote(&path.with_extension("%j.out").to_string_lossy()), quote(&path.with_extension("%j.err").to_string_lossy()), quote(&b.work_dir.to_string_lossy()));
     if let Some(env) = &cfg.programs.environment_script {
-        body.push_str(&format!("source {} --force\n", quote(&env.to_string_lossy())));
+        body.push_str(&source_environment(env)?);
     }
     body.push_str(&format!("exec {} --run-script -w {}\n", quote(&executable.path.to_string_lossy()), quote(&b.work_dir.to_string_lossy())));
     store::atomic_bytes(&path, body.as_bytes())?;
@@ -383,10 +392,7 @@ fn start_bound(work: &Path, until: Boundary, submit: bool, retry: bool) -> Resul
             quote(work.to_str().context("工作目录不是 UTF-8")?)
         ));
         if let Some(env) = &cfg.programs.environment_script {
-            body.push_str(&format!(
-                "source {} --force\n",
-                quote(env.to_str().context("环境脚本不是 UTF-8")?)
-            ));
+            body.push_str(&source_environment(env)?);
         }
         body.push_str(&format!(
             "exec {} --execute-attempt {} -w {}\n",

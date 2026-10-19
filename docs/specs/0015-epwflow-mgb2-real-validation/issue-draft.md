@@ -241,3 +241,7 @@
 沿用 0012 T054，补齐原生尝试检查点、失败归档、成功展宽复用、质量失败不重算及 F1 清单发布中断恢复。测试位置使用 test_auto/MgB2/local_run/005-three-stage-recovery；独立进程替身不消耗科学预算，不计真实 iso／aniso 或六组合通过。自动独立参考／四类出图、现有程序组合选窗兼容和真实 Tc 仍待完成。
 
 Documentation Impact：更新 0012 设计／契约／任务／验收、0008 验收、模块 README 与当前功能 Overview；本段不改变整体 Issue 未完成状态。
+
+## 三程序 PBE 主路径验证
+
+用户已选现有 PBE 输入和纯能量模式，按 0008 T041／T042 在新的 local_run/010-public-pbe 逐阶段验证，固定参数与资源、证据及停止规则见[真实验证设计](public-pbe-validation.md)。Documentation Impact：本项计划／验收、0008 验收及测试手册按实际运行结果同步；整体真实科学门未通过前不关闭，不操作线上 Issue。

@@ -165,3 +165,7 @@
 ### T047：F4 部分清单公开恢复已验证
 
 通过三个公开程序复现：iso 进程退出 17、aniso 20 次有效尝试已完成，F4 发布 partial；旧恢复入口在进入 Engine 前错误拒绝。已统一 F4 发布证据校验并修复编排，合法 partial 交回原 Engine，完整阶段仍补登记，损坏／来源／配置冲突继续拒绝。55 项定向回归通过；失败记录、有效尝试、F3、最终交付恢复和隔离预算均保留。具体证据见[验收](acceptance.md#t047f4-部分清单的公开续算)。Documentation Impact：本项 Spec 设计／契约／任务／验收、0013／0015 验收、模块和测试手册、Overview 均同步。真实 PBE／完整 Tc 仍未验收，不关闭整体需求、不操作线上 Issue。
+
+### T048：真实 oneAPI 初始化失败
+
+PBE 第一阶段作业在 QE 启动前因 oneAPI 可选变量与外层 nounset 冲突失败，沿用本项环境／执行契约修复生成和内部提交两种脚本。41 项不同定向用例最终通过，实际 oneAPI 初始化段退出 0；不改用户环境脚本，不放宽后续严格执行。Documentation Impact：设计／任务／验收、模块和测试手册、Overview 同步；真实科学结果继续由[0015 PBE 验证](../0015-epwflow-mgb2-real-validation/public-pbe-validation.md)记录，T041／T042 不据启动修复勾选。

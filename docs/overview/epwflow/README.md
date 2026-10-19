@@ -16,6 +16,8 @@ epw_phonon 直接调用 qeflow 的 nosplit Rust 库（[说明](../qeflow/qe_phon
 
 F4 已发布合法 partial 清单时，公开显式恢复会重验固定来源、配置、模式、搜索记录和产物，再交回现有 Engine；成功模式不重算，原失败目录与次数保留，新尝试追加。缺失搜索文件、变化来源或损坏证据拒绝，合法零尝试模式从当前 F3 核验绑定，不由检查补建状态。该行为与后续仅恢复最终交付已由同一公开进程链验证；不代表真实 PBE／完整 Tc 验收。当前边界见 [0008 连续验证](../../specs/0008-epwflow-foundation/public-chain-validation.md)。
 
+生成脚本和内部提交脚本共用环境加载段，兼容 oneAPI 对可选变量的读取：仅加载期间关闭 nounset，成功后恢复，加载失败继续阻断。该行为已由实际生成脚本与本机真实环境加载验证；不代表 QE／EPW 科学阶段已完成。
+
 ## 公开程序及选项
 
 外部配置默认 `inputepw.toml`，也可由 `-c/--config` 指定；与 qeflow 的 `input.toml` 字段不同，不能自动混用。完整流程图和命令见[模块手册](../../../epwflow/README.md)。

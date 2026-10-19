@@ -127,3 +127,11 @@ T046 通过实际生成脚本顺序调用三个公开程序。第一阶段验证
 - 隔离账本累计 5 节点秒，活动分配和预留归零；累计提交 5 个替身分配，未重置计数。此值与原科学预算无关。
 
 命令、源码／程序与日志 SHA-256 记录于 validation.json，主日志 regression.log；测试命令使用 `--config 'profile.test.package.sha2.opt-level=3'` 优化测试哈希依赖，不改变生产逻辑或数值标准。全部数据为进程协议替身，不是 MgB₂ 科学结果。T047 勾选，T041／T042 与真实 PBE／完整 Tc 保持未完成；未提交真实科学作业、改写原预算／历史来源或切换默认安装。
+
+## T048：真实 oneAPI 初始化修复
+
+新 PBE 主路径首次作业 1295834 在 QE 前因 OCL_ICD_FILENAMES 未定义退出；原脚本 set -u 与 oneAPI 初始化不相容。生成及内部提交脚本已共用加载片段，仅 source 时关闭 nounset，随后恢复；环境脚本失败仍原样阻断。
+
+41 个不同用例最终通过：库 10、工作流契约 25、三个程序 6。其中新用例执行三份实际生成脚本与一份内部提交脚本的完整初始化段，覆盖引号／空格路径、可选变量、执行阶段 nounset、加载 return 17 及后续不执行。首轮新测试因 TOML 非存在键的插入方式导致测试准备失败，改用表插入后六项复测通过；原失败日志保留，不能算单次全绿或重复累计。
+
+在登录节点仅执行实际生成脚本的初始化段，本机 oneAPI 脚本在缺少该变量时加载成功、退出 0、严格选项恢复，没有启动科学程序。记录在 local_run/010-public-pbe 的 environment-regression.log、environment-retest.log、bootstrap.json／stdout／stderr；作业与原预算结算、后续科学边界见[0015 真实验证](../0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。默认安装不变，T041／T042 继续未完成。

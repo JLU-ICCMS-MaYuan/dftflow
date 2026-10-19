@@ -176,7 +176,12 @@ fn all_generation_submits_afterok_once_and_authenticates_every_stage() {
     assert!(!c.root.join("calls").exists());
     assert!(!c.root.join("campaign/ledger.json").exists());
     let dir = c.root.join("run/.epwflow/generated");
-    assert!(Command::new("bash").arg("-n").arg(dir.join("submit-all.sh")).status().unwrap().success());
+    assert!(Command::new("bash")
+        .arg("-n")
+        .arg(dir.join("submit-all.sh"))
+        .status()
+        .unwrap()
+        .success());
     c.script("sbatch", &format!("#!/bin/bash\nset -eu\nprintf '%s\\n' \"$*\" >> '{}'\nn=$(wc -l < '{}')\nprintf '%s\\n' \"$((100+n))\"\n", c.root.join("calls").display(), c.root.join("calls").display()));
     success(c.run(0, &["--submit-chain", "-w", "run"]));
     success(c.run(0, &["--submit-chain", "-w", "run"]));
@@ -205,11 +210,78 @@ fn partial_chain_receipt_is_persistent_and_never_retried() {
     for _ in 0..2 {
         assert!(!c.run(0, &["--submit-chain", "-w", "run"]).status.success());
     }
-    assert_eq!(fs::read_to_string(c.root.join("calls")).unwrap().lines().count(), 2);
-    let receipt: serde_json::Value = store::read(&c.root.join("run/.epwflow/generated/chain-submission.json")).unwrap();
+    assert_eq!(
+        fs::read_to_string(c.root.join("calls"))
+            .unwrap()
+            .lines()
+            .count(),
+        2
+    );
+    let receipt: serde_json::Value =
+        store::read(&c.root.join("run/.epwflow/generated/chain-submission.json")).unwrap();
     assert_eq!(receipt["jobs"].as_array().unwrap().len(), 1);
     assert_eq!(receipt["submitting_phase"], 2);
     assert_eq!(receipt["state"], "submitting");
     assert_eq!(receipt["responses"][1]["stdout"], "unrecognized receipt\n");
     assert_eq!(receipt["responses"][1]["exit_code"], 0);
+}
+
+#[test]
+fn environment_bootstrap_accepts_optional_variables_and_keeps_strict_execution() {
+    let c = Case::new();
+    let config = c.root.join("inputepw.toml");
+    let environment = c.root.join("environment ' with spaces.sh");
+    fs::write(
+        &environment,
+        "test \"$1\" = --force\nexport EPW_TEST_ENV=\"${EPW_TEST_OPTIONAL}ready\"\n",
+    )
+    .unwrap();
+    let mut cfg: toml::Value = toml::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
+    cfg["programs"].as_table_mut().unwrap().insert(
+        "environment_script".into(),
+        environment.to_string_lossy().to_string().into(),
+    );
+    fs::write(&config, toml::to_string_pretty(&cfg).unwrap()).unwrap();
+    success(c.run(0, &["--all"]));
+    c.script("sbatch", "#!/bin/sh\nprintf '123\\n'\n");
+    success(c.run(0, &["-s"]));
+    let workflow: serde_json::Value =
+        store::read(&c.root.join("run/.epwflow/workflow.json")).unwrap();
+    let mut scripts: Vec<_> = ["qe-data", "interpolation", "all"]
+        .iter()
+        .map(|name| c.root.join(format!("run/.epwflow/generated/{name}.sh")))
+        .collect();
+    scripts.push(PathBuf::from(workflow["script"]["path"].as_str().unwrap()));
+    for path in scripts {
+        let script = fs::read_to_string(path).unwrap();
+        // 实际生成脚本的完整初始化段，替换的只有末尾调度／科学入口。
+        let (prefix, _) = script.rsplit_once("\nexec ").unwrap();
+        let run = |suffix: &str| {
+            Command::new("/bin/bash")
+                .arg("-c")
+                .arg(format!("{prefix}\n{suffix}\n"))
+                .env_remove("EPW_TEST_OPTIONAL")
+                .env_remove("EPW_TEST_UNSET")
+                .output()
+                .unwrap()
+        };
+        let out = run("[[ $- == *u* ]]\nprintf '%s' \"$EPW_TEST_ENV\"");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(out.stdout, b"ready");
+        let out = run("printf '%s' \"$EPW_TEST_UNSET\"");
+        assert!(!out.status.success(), "执行阶段必须恢复 nounset");
+        fs::write(&environment, "return 17\n").unwrap();
+        let out = run("printf should-not-run");
+        assert_eq!(out.status.code(), Some(17));
+        assert!(out.stdout.is_empty(), "环境加载失败不得继续执行");
+        fs::write(
+            &environment,
+            "test \"$1\" = --force\nexport EPW_TEST_ENV=\"${EPW_TEST_OPTIONAL}ready\"\n",
+        )
+        .unwrap();
+    }
 }
