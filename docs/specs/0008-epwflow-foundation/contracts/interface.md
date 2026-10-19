@@ -6,6 +6,8 @@
 
 完整命令、参数、默认值、单位与行为以 Spec 的 FR-001 为规范；本接口不另改命名。所有 --help 均无科学执行副作用。参数使用 argv，显式路径按所属配置或命令规则解析，不 eval。
 
+配置路径须显式传入；本机 MgB₂ PBE 示例使用 `-c inputepw.toml`，保留同目录已有 qeflow `input.toml`。加载器接受任意文件名，仍执行 epwflow 严格字段校验；不按文件名切换配置格式，不自动合并 qeflow 字段。`delivery budget` 继续使用既有 `--config` 长选项；运行绑定快照仍为 `input-init.toml`。
+
 共同执行/错误/持久协议由 [0008 基础契约](../../0008-epwflow-foundation/contracts/interface.md) 唯一拥有；科学字段由各自 Spec 定义，全部进入同一 TOML schema_version=1。check/status 的 --json 返回 schema_version、operation_status、workflow_status、diagnostics；status 查询成功不代表科学完成。
 
 ## 输入输出与错误

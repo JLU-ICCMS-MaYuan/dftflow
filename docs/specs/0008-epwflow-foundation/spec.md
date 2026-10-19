@@ -57,6 +57,16 @@
 
 > 使用此目录现有 PBE 输入
 
+后续输入文件名需求及最新取舍：
+
+> 我希望输入文件也是使用 input.toml。 你帮我使用 issue 和 spec 修改好
+
+确认同目录已有 qeflow `input.toml` 后：
+
+> 你可以将其命名为 inputepw.toml
+
+据最新答复，本机 epwflow 输入保留为 `inputepw.toml`，原 qeflow `input.toml` 保留；不合并两套字段，不修改 CLI 默认行为。
+
 本轮先展示[完整流程草图与当前缺口](workflow-diagram.md)，并写入本机 PBE 配置；尚未定稿或实现独立脚本生成命令，不把当前整体提交接口等同于真实全链验收。
 
 ## 附件与推断来源
@@ -139,6 +149,8 @@
 ### FR-001：独立入口与公开操作
 
 新增 Rust epwflow 家族入口，提供如下公开命令；共同支持 --help，检查/状态支持 --json。以下 C 为配置路径，W 为已准备运行目录。
+
+外部配置通过 `-c/--config` 显式指定，文件名不受限制。本机 MgB₂ PBE 示例使用 `-c inputepw.toml`，与同目录 qeflow `input.toml` 区分；`input.toml` 仍可作为其他独立目录中 epwflow 配置的文件名。名称不表示字段兼容，不能直接把现有 qeflow 配置传给 epwflow。固定快照仍为 `input-init.toml`。
 
 | 命令 | 行为与副作用 |
 | --- | --- |

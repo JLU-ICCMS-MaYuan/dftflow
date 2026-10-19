@@ -48,3 +48,14 @@
 ## 2026-10-19：统一入口与原生最终阶段接入
 
 用户明确允许将本地已有 F1 前置代码审查后纳入本批提交。公开 submit／run／resume 使用固定快照、执行边界和单份受控分配；续算保留科学根目录与已验证产物，最终 F4／F5 使用原生证据重验和完整结果包。未知提交、旧活动分配、未知锁和哈希变动均不能自动重提。已通过进程契约回归，不表示真实自动链、分 q 多作业并行或三来源六组合已验收。证据与科学门变更见 [本批验收](../0015-epwflow-mgb2-real-validation/native-closeout-validation.md)。
+
+## 2026-10-19：本机输入文件名确认
+
+用户在获知 qeflow 同名配置后答复“你可以将其命名为 inputepw.toml”。本次保留原有 `inputepw.toml` 与 qeflow `input.toml`，同步本地 0008 Issue、Spec、接口、计划、任务、快速验证、流程图、模块手册与 Overview；不改 Rust 配置参数、解析器或固定快照协议。通过显式路径加载已有能力即可满足最新命名决定，避免增加不必要的配置合并逻辑。
+
+- 受测平台构建在示例目录运行 `epwflow check -c inputepw.toml --json` 返回 0、`operation_status=ok`、`workflow_status=configured`；从 `/` 使用绝对配置路径同样通过，运行版本仍为 `unverified`。
+- 同一入口读取原 qeflow `input.toml` 时明确返回配置错误，证实两套字段不能互换。
+- `bash scripts/build-native.sh test -p epwflow --locked --offline --test foundation`：10 项通过、0 失败、0 暂挂；涵盖严格配置、跨目录路径、快照及模拟提交失败等边界。
+- 文档最终变更的相对链接、Bash 代码块语法与 `git diff --check` 通过；两份本机配置、POSCAR 及两份赝势共 5 文件只读检查前后 SHA-256 一致。
+
+本次仅交付输入命名约定与文档一致性。未提交真实作业、运行科学程序、切换安装或操作线上 Issue；不据此认定完整自动链与两模式 Tc 已完成。

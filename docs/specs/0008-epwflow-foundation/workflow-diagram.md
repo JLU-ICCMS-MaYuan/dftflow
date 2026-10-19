@@ -69,6 +69,8 @@ check、status、resume 是检查或恢复工具；整体执行成功时无需�
 
 按用户选择，在 `examples/MgB2/sugon-amd/run/inputepw.toml` 写入配置。该目录按仓库规则忽略，配置作为本机运行输入留本地，不强制纳入 Git，也不复制或修改现有 POSCAR、赝势、input.toml 及声子目录。
 
+用户最新确认“你可以将其命名为 inputepw.toml”，因此保留此名称及显式 `-c inputepw.toml` 调用。原 `input.toml` 属于 qeflow，字段不兼容，不合并或覆盖；固定快照名称仍为 `input-init.toml`。
+
 - 采用现有 POSCAR 和两份 PBE USPP，SCF 4×4×2、PH 2×2×1、40／320 Ry、Gaussian 0.02 Ry；NSCF 4×4×2、16 带。
 - PH 选 coords；新工作目录为 epwflow，保存基址为 epwflow-scratch，不复用已有声子目录。
 - 细 k／q 网格采用 8×8×4／4×4×2，仅供小网格流程检查，尚未做物理收敛。

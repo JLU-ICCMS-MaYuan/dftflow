@@ -10,6 +10,8 @@
 
 ## 公开命令及当前行为
 
+外部配置由 `-c/--config` 显式指定，加载器不限定文件名。本机 MgB₂ PBE 示例采用 `inputepw.toml`，同目录原 `input.toml` 供 qeflow 使用；两套字段不能直接互换或自动合并。运行固定快照仍为 `input-init.toml`。本机配置按示例目录规则忽略，不随 Git 分发；完整调用见[模块手册](../../../epwflow/README.md)。
+
 | 命令 | 实际行为与限制 |
 | --- | --- |
 | `epwflow check -c C [--json]` | 加载并检查配置/文件；运行版本固定报告 unverified，不代表已探测 |

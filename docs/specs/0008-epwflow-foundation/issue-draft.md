@@ -47,6 +47,20 @@
 
 ## 目标与用户价值
 
+### 2026-10-19：输入文件名取舍
+
+用户先提出：
+
+> 我希望输入文件也是使用 input.toml。 你帮我使用 issue 和 spec 修改好
+
+确认示例目录已有 qeflow `input.toml` 后，用户最新答复：
+
+> 你可以将其命名为 inputepw.toml
+
+据此保留 epwflow 本机 PBE 输入 `examples/MgB2/sugon-amd/run/inputepw.toml`；原 qeflow `input.toml` 保留。调用显式传入 `-c inputepw.toml`，不新增默认查找、跨工作流合并或重命名配置。已有任意文件名支持及固定快照 `input-init.toml` 保持原协议。
+
+本次沿用本地 0008，线上 Issue 仍由用户管理。文档影响包括 Spec、接口、快速验证、流程图、模块手册与 Overview；只读验证配置，不提交科学计算，也不据此关闭 F1 或整个超导需求。
+
 用户在消耗计算资源之前，能检查 epwflow 的输入与环境，知道哪些参数、程序或已有结果不符合要求；执行时能追踪状态，并让后续所有阶段共用资源限制、防重复提交和恢复机制。
 
 本 Feature 独立交付预检和执行基础。实际 QE/EPW 科学阶段由 F2–F4 接入，不能把本 Feature 通过说成完整超导流程已可用。

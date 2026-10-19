@@ -36,6 +36,8 @@ flowchart TD
 
 本机 PBE 配置位于 `examples/MgB2/sugon-amd/run/inputepw.toml`，使用同目录 POSCAR 与 pp 中的赝势，小网格仅供流程试跑。该目录按仓库规则忽略，配置不随 Git 分发。先在同一终端设置：
 
+按最新文件名选择，epwflow 使用 `inputepw.toml`，同目录原有 `input.toml` 继续供 qeflow 使用。epwflow 通过 `-c/--config` 显式读取配置，支持其他文件名；两套配置字段不同，不能直接互换。运行固定快照仍为 `input-init.toml`。
+
 ```bash
 cd "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run"
 EPWFLOW="${EPWFLOW_BIN:-epwflow}"

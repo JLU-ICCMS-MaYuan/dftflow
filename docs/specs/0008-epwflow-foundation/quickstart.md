@@ -1,20 +1,33 @@
 # 快速验证：配置、环境检查与受控执行基础
 
-当前是实施蓝图，epwflow 尚未实现，以下不是已运行证据。完成本项后执行并将结果写入 [验收记录](acceptance.md)。
+配置检查与输入绑定已有实现；完整真实自动链仍未通过验收。下面区分隔离回归与本机命令，验证结果见[验收记录](acceptance.md)。
 
 ## 前提
 
-Rust/Cargo 和 workspace 依赖就绪；使用 contracts 的有效 input.toml，结构、赝势和目标程序真实存在。生产提交前完成 F1 版本证据与唯一预算账本登记；运行资源内 run 必须登记当前 allocation。真实路径保存在忽略目录，不将本文占位示例当成实际机器路径。
+Rust/Cargo 和 workspace 依赖就绪；使用 contracts 的有效配置，结构、赝势和目标程序真实存在。生产提交前完成 F1 版本证据与唯一预算账本登记；运行资源内 run 必须登记当前 allocation。真实路径保存在忽略目录，不将本文占位示例当成实际机器路径。
+
+配置文件名可通过 `-c/--config` 指定。本机 MgB₂ PBE 示例按用户最新选择使用 `inputepw.toml`，保留同目录供 qeflow 使用的 `input.toml`；下面命令采用该名称。隔离回归 fixture 中的 `input.toml` 仍是有效 epwflow 配置，不需要重命名。
 
 ## 命令与预期
 
+在仓库根目录执行隔离回归：
+
 ```bash
-cargo test -p epwflow --test foundation
-epwflow check -c input.toml --json
-epwflow prepare -c input.toml
-epwflow status -w run --json
-# 科学阶段尚未接入时，以下必须明确失败，不得伪装成功
-epwflow submit -c input.toml
+bash "scripts/build-native.sh" test -p epwflow --locked --offline --test foundation
+```
+
+在本机 PBE 配置目录、使用受测构建和对应运行库执行：
+
+```bash
+epwflow check -c inputepw.toml --json
+epwflow prepare -c inputepw.toml
+epwflow status -w epwflow --json
+```
+
+`prepare` 创建输入绑定，不执行科学计算。提交前先按[模块手册](../../../epwflow/README.md)核查当前账本、EPW 版本及独立参考阻断；以下命令会提交作业，不能作为只读验证直接执行：
+
+```bash
+epwflow submit -c inputepw.toml
 ```
 
 自动测试须使用隔离临时目录和可执行 fixture，不占用真实队列。真实 submit 只能在自动验证通过后、预算预留内执行。状态可区分已提交/未知/失败/成功，不能根据命令退出零推断科学成功。
