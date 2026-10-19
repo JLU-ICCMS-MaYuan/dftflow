@@ -718,6 +718,8 @@ def value(name):
 t=float(value('temps(1)'))
 assert value('nstemp')=='1'
 assert value('imag_read')=='.false.'
+assert value('epwread')=='.true.' and value('epbread')=='.false.'
+assert value('epwwrite')=='.false.' and value('wannierize')=='.false.'
 iso=value('liso')=='.true.'
 linear=value('tc_linear')=='.true.'
 kb=1.380649e-23/1.602176634e-19
@@ -768,6 +770,27 @@ print('EPW : 0.01s CPU 0.02s WALL')
             });
         let mut e = Engine::open(&cfg, &inputs, &[], &dir, mode).unwrap();
         let mut calls = 0;
+        let mut probe = || {
+            calls += 1;
+            Ok(())
+        };
+        assert_eq!(
+            e.probe_upper_endpoint(&mut probe).unwrap(),
+            search::Side::Normal
+        );
+        assert_eq!(
+            e.probe_upper_endpoint(&mut probe).unwrap(),
+            search::Side::Normal
+        );
+        assert!(e
+            .result
+            .attempts
+            .iter()
+            .all(|a| a.request.temperature_centikelvin == 5500));
+        assert_eq!(
+            e.result.attempts.len(),
+            if mode == config::Mode::Iso { 1 } else { 2 }
+        );
         e.run(&mut || {
             calls += 1;
             Ok(())
@@ -993,7 +1016,11 @@ fn native_fine_handoff_binds_binary_roles_band_offset_and_rejects_changes() {
     std::fs::write(matrix.join("ikmap"), ikmap).unwrap();
     std::fs::write(matrix.join("npool"), 1i32.to_le_bytes()).unwrap();
     let shard = [1i32.to_le_bytes(), 2i32.to_le_bytes()].concat();
-    std::fs::write(matrix.join("ephmat1"), [shard, 0.001f64.to_le_bytes().to_vec()].concat()).unwrap();
+    std::fs::write(
+        matrix.join("ephmat1"),
+        [shard, 0.001f64.to_le_bytes().to_vec()].concat(),
+    )
+    .unwrap();
     std::fs::write(dir.join("restart.fmt"), "8\n0\n0\n1\n1\n0\n").unwrap();
     std::fs::write(dir.join("epw_fine.in"), "fixture input").unwrap();
     std::fs::write(dir.join("epw.out"),"Program EPW v.5.9 starts\nibndmin = 2 ebndmin = -1.0 eV\nibndmax = 4 ebndmax = 1.0 eV\nTotal program execution\nEPW : 1s CPU 2s WALL\n").unwrap();
@@ -1026,6 +1053,23 @@ fn native_fine_handoff_binds_binary_roles_band_offset_and_rejects_changes() {
         vec![(2, 2), (2, 3), (1, 2), (1, 4)]
     );
     bound.verify(config::Mode::Aniso).unwrap();
+    let evidence_path = root.join("native-stage-report.json");
+    std::fs::write(&evidence_path, "verified stage fixture").unwrap();
+    let evidence = store::Identity::capture(&evidence_path).unwrap();
+    let stage_bound =
+        source::bind_native_roles(&root, &cfg, m.fine.as_ref().unwrap(), &m.spectra, &evidence)
+            .unwrap();
+    assert_eq!(stage_bound.interpolation_digest, evidence.sha256);
+    assert_eq!(stage_bound.states.len(), bound.states.len());
+    std::fs::write(&evidence_path, "changed").unwrap();
+    assert!(source::bind_native_roles(
+        &root,
+        &cfg,
+        m.fine.as_ref().unwrap(),
+        &m.spectra,
+        &evidence,
+    )
+    .is_err());
     std::fs::write(matrix.join("egnv"), &bytes[..bytes.len() - 1]).unwrap();
     assert!(source::bind(&root, &cfg, &m).is_err());
     assert!(fine::collect_fine(&root, &epw).is_err());

@@ -367,9 +367,35 @@ impl<'a> Engine<'a> {
         )
     }
 
+    /// 先验证搜索上端点，及早发现正常侧求解不收敛。所有调用仍计入同一尝试账本。
+    pub fn probe_upper_endpoint(
+        &mut self,
+        before: &mut impl FnMut() -> Result<()>,
+    ) -> Result<Side> {
+        let t = self.result.search.max_centikelvin;
+        if let Some(side) = self.result.search.points.get(&t) {
+            return Ok(*side);
+        }
+        ensure!(
+            matches!(self.result.search.status.as_str(), "pending" | "running"),
+            "input_conflict: 搜索停止后须显式恢复"
+        );
+        let side = if self.result.mode == Mode::Iso {
+            self.linear(t, before)?
+        } else {
+            self.nonlinear(t, before)?
+        };
+        self.result.search.observe(t, side)?;
+        self.save()?;
+        Ok(side)
+    }
+
     /// 只有 prepare_resume 明确授权后，才在原规则和剩余次数内重试已确认失败项。
     pub fn run(&mut self, before: &mut impl FnMut() -> Result<()>) -> Result<&ModeResult> {
         let outcome = (|| -> Result<()> {
+            if matches!(self.result.search.status.as_str(), "pending" | "running") {
+                self.probe_upper_endpoint(before)?;
+            }
             while let Some(t) = self.result.search.next_temperature() {
                 let side = if self.result.mode == Mode::Iso {
                     self.linear(t, before)?

@@ -5,7 +5,7 @@ use crate::foundation::{
     config::Config,
     store::{self, Identity},
 };
-use crate::interpolation::manifest::{Artifact, InterpolationManifest};
+use crate::interpolation::manifest::{Artifact, FineData, InterpolationManifest, Spectrum};
 pub use crate::interpolation::native_matrices::{eigenvalues, frequencies, FORMAT, RY_EV};
 use anyhow::{ensure, Context, Result};
 use std::{
@@ -42,6 +42,20 @@ pub fn bind(work: &Path, cfg: &Config, f3: &InterpolationManifest) -> Result<Nat
         .fine
         .as_ref()
         .context("data_invalid: F3 缺少细网格数据")?;
+    let evidence = Identity::capture(&work.join("interpolation/manifest.json"))?;
+    bind_native_roles(work, cfg, fine, &f3.spectra, &evidence)
+}
+
+/// 原生阶段验收与完整 F3 共用角色校验。调用方负责验证质量门和来源物理参数；
+/// 证据可以是阶段报告，不能因此声称完整自动链已经验收。
+pub fn bind_native_roles(
+    work: &Path,
+    cfg: &Config,
+    fine: &FineData,
+    spectra: &[Spectrum],
+    evidence: &Identity,
+) -> Result<NativeInputs> {
+    evidence.verify()?;
     ensure!(
         fine.layout == FORMAT,
         "data_invalid: F3 尚未交付原生 Eliashberg 细网格布局"
@@ -90,10 +104,10 @@ pub fn bind(work: &Path, cfg: &Config, f3: &InterpolationManifest) -> Result<Nat
     )?;
     let selected = cfg.superconductivity.spectrum_index as usize;
     ensure!(
-        selected < f3.spectra.len() && spectrum.a2f.len() == 1,
+        selected < spectra.len() && spectrum.a2f.len() == 1,
         "data_invalid: F3 所选谱越界或原生谱列数无效"
     );
-    let declared = &f3.spectra[selected];
+    let declared = &spectra[selected];
     ensure!(
         declared.energy_mev == spectrum.energy_mev && declared.a2f == spectrum.a2f[0],
         "input_conflict: F3 谱与原生来源不同"
@@ -119,8 +133,9 @@ pub fn bind(work: &Path, cfg: &Config, f3: &InterpolationManifest) -> Result<Nat
         .iter()
         .map(|p| Identity::capture(p))
         .collect::<Result<Vec<_>>>()?;
+    evidence.verify()?;
     Ok(NativeInputs {
-        interpolation_digest: store::hash_file(&work.join("interpolation/manifest.json"))?,
+        interpolation_digest: evidence.sha256.clone(),
         prefix: cfg.qe.prefix.clone(),
         k_grid: cfg.interpolation.k_grid,
         q_grid: cfg.interpolation.q_grid,
