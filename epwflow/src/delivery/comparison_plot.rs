@@ -2,7 +2,12 @@
 use super::comparison::{self, Artifact, Curve, Dataset, KINDS};
 use crate::foundation::store;
 use anyhow::{ensure, Result};
-use plotters::{coord::Shift, element::DashedPathElement, prelude::*};
+use plotters::{
+    coord::Shift,
+    element::DashedPathElement,
+    prelude::*,
+    style::text_anchor::{HPos, Pos, VPos},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -236,9 +241,9 @@ where
         )
     };
     let (xlabel, ylabel) = match kind {
-        0 => ("k path (2pi/alat)", "E - EF (eV)"),
+        0 => ("", "E - EF (eV)"),
         1 => ("E - EF (eV)", "states / (eV cell)"),
-        2 => ("q path (2pi/alat)", "Frequency (cm^-1)"),
+        2 => ("", "Frequency (cm^-1)"),
         _ => ("Frequency (cm^-1)", "states / (cm^-1 cell)"),
     };
     let mut ctx = ChartBuilder::on(area)
@@ -247,8 +252,11 @@ where
         .x_label_area_size(46)
         .y_label_area_size(72)
         .build_cartesian_2d(xmin..xmax, ymin..ymax)?;
-    ctx.configure_mesh()
-        .x_desc(xlabel)
+    let mut mesh = ctx.configure_mesh();
+    if kind == 0 || kind == 2 {
+        mesh.x_labels(0).disable_x_mesh();
+    }
+    mesh.x_desc(xlabel)
         .y_desc(ylabel)
         .label_style(("sans-serif", 16))
         .axis_desc_style(("sans-serif", 17))
@@ -266,12 +274,16 @@ where
                 vec![(tick.distance, ymin), (tick.distance, ymax)],
                 RGBColor(200, 200, 200),
             )))?;
-            // 路径标签放在绘图区上沿，避免与数值刻度混淆。
-            ctx.draw_series(std::iter::once(Text::new(
-                tick.label.clone(),
-                (tick.distance, ymax - (ymax - ymin) * 0.035),
-                ("sans-serif", 15).into_font(),
-            )))?;
+            // 标签画在底部轴外；使用屏幕坐标避免被绘图区裁掉。
+            let (x, y) = ctx.plotting_area().map_coordinate(&(tick.distance, ymin));
+            area.use_screen_coord().draw(&Text::new(
+                if tick.label == "G" { "Γ" } else { &tick.label },
+                (x, y + 12),
+                ("sans-serif", 18)
+                    .into_font()
+                    .into_text_style(area)
+                    .pos(Pos::new(HPos::Center, VPos::Top)),
+            ))?;
         }
     }
     if kind == 0 {

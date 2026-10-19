@@ -224,6 +224,63 @@ fn error_markers_validate_semantics_and_old_metadata_remains_readable() {
     }
 }
 
+/// 检查实际 SVG 的标签位置，包含总览子面板的坐标偏移。
+fn check_path_axes(svg: &str, expected_ticks: usize) {
+    let doc = roxmltree::Document::parse(svg).unwrap();
+    let texts: Vec<_> = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("text"))
+        .map(|n| {
+            (
+                n.attribute("x").unwrap().parse::<i32>().unwrap(),
+                n.attribute("y").unwrap().parse::<i32>().unwrap(),
+                n.text().unwrap_or("").trim(),
+            )
+        })
+        .collect();
+    let lines: Vec<_> = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("polyline") && n.attribute("stroke") == Some("#C8C8C8"))
+        .collect();
+    assert_eq!(lines.len(), expected_ticks);
+    for line in lines {
+        let coords: Vec<i32> = line
+            .attribute("points")
+            .unwrap()
+            .split(|c: char| c == ',' || c.is_whitespace())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.parse().unwrap())
+            .collect();
+        let x = coords[0];
+        let bottom = coords[1].max(coords[3]);
+        let labels: Vec<_> = texts
+            .iter()
+            .filter(|&&(tx, _, text)| tx == x && ["Γ", "M", "K"].contains(&text))
+            .collect();
+        assert!(
+            labels
+                .iter()
+                .any(|&&(_, y, _)| y > bottom && y < bottom + 40),
+            "高对称符号必须在底部轴外：x={x}, bottom={bottom}, labels={labels:?}"
+        );
+        assert!(
+            !texts.iter().any(|&(tx, y, text)| tx == x
+                && y > bottom
+                && y < bottom + 40
+                && text.parse::<f64>().is_ok()),
+            "高对称点处不能显示路径数值"
+        );
+    }
+    assert!(!svg.contains("k path"));
+    assert!(!svg.contains("q path"));
+    // 自动生成的数值横轴标签采用居中锚点；路径图不得保留任意数值刻度。
+    if expected_ticks == 3 {
+        assert!(!doc.descendants().any(|n| n.has_tag_name("text")
+            && n.attribute("text-anchor") == Some("middle")
+            && n.text().unwrap_or("").trim().parse::<f64>().is_ok()));
+    }
+}
+
 #[test]
 fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
     let root = if let Ok(p) = std::env::var("EPWFLOW_PREVIEW_DIR") {
@@ -272,6 +329,21 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
             .starts_with(b"%PDF"));
         let svg = fs::read_to_string(figures.join(format!("{kind}.svg"))).unwrap();
         assert!(svg.contains("SYNTHETIC STYLE TEST"));
+        match kind {
+            "electronic_bands_comparison" | "phonon_dispersion_comparison" => {
+                check_path_axes(&svg, 3);
+            }
+            "comparison_overview" => check_path_axes(&svg, 6),
+            _ => {
+                let doc = roxmltree::Document::parse(&svg).unwrap();
+                assert!(
+                    doc.descendants().any(|n| n.has_tag_name("text")
+                        && n.attribute("text-anchor") == Some("middle")
+                        && n.text().unwrap_or("").trim().parse::<f64>().is_ok()),
+                    "DOS 必须保留物理横轴的数值刻度"
+                );
+            }
+        }
         assert!(svg.contains("dis_win_min = 6.50000; dis_win_max = 7.50000"));
         assert!(svg.contains("electronic window = [-0.500, 0.500] eV relative to EF"));
         let qe = svg.find("#2D2D37").unwrap();

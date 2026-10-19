@@ -64,3 +64,8 @@ collect／plot／results check 不运行 QE、EPW 或 sbatch，不创建科学�
 ### 拟合外窗展示
 
 F3 metadata.disentanglement_window_ev 存在时，电子能带纵轴和电子 DOS 横轴严格采用 window_ev，标题同时注明实际 dis_win_min/max 的绝对 eV 和 E−E_F。独立图及总览复用同一语义；不存在该字段的旧比较包继续按其已有 window_ev 绘制。plot 不读取外部 wout，不重新运行科学程序。
+
+
+## 高对称路径的绘图轴约定
+
+电子能带与声子色散只在底部横轴下方显示高对称点符号，按真实路径距离定位；不显示路径数值刻度或 k path／q path 标题。此约定同时作用于独立图和总览子面板，DOS 物理横轴仍显示数值及单位。比较表保留原始路径距离；绘图不改写数据。
