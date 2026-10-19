@@ -12,6 +12,11 @@ assert sys.argv[1]=='--io-contract', 'Program.args 未传递'
 text=Path(sys.argv[sys.argv.index('-inp')+1]).read_text()
 def value(name):
     return re.search(r'(?m)^\s*'+re.escape(name)+r"\s*=\s*('(?:[^']|'')*'|[^\n]+)",text).group(1).strip().strip("'")
+def window_min():
+    # 部署 EPW 5.9 忽略 namelist 下界；write_winfil 随后逐行写出 wdata。
+    extra=re.findall(r"(?m)^\s*wdata\(\d+\)\s*=\s*'dis_win_min\s*=\s*([^']+)'",text)
+    assert len(extra)<=1, '外窗下界重复'
+    return extra[0] if extra else value('dis_win_min')
 prefix=value('prefix');out=Path(value('outdir'));n=int(value('nbndsub'))
 mode=(ROOT/'epw-failure').read_text().strip() if (ROOT/'epw-failure').exists() else ''
 HA=27.211386245988;RY=13.605693122994
@@ -57,7 +62,7 @@ if coarse or reread:
     wout='Using band disentanglement : T\n<<< Disentanglement convergence criteria satisfied >>>\nCycle: 14\n<<< Wannierisation convergence criteria satisfied >>>\nFinal State\n'
     wout+=''.join(f'WF centre and spread {i} ( 0 0 0 ) 1.25\n' for i in range(1,n+1))
     if coarse:
-        wout+=f'| Outer: {value("dis_win_min")} to {value("dis_win_max")} (eV)\n'
+        wout+=f'| Outer: {window_min()} to {value("dis_win_max")} (eV)\n'
         wout+=f'| Inner: {value("dis_froz_min")} to {value("dis_froz_max")} (eV)\n'
     Path(prefix+'.wout').write_text(wout)
     kept=list(range(8,17));nk=coarse_nk

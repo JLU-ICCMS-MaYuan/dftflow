@@ -20,7 +20,7 @@ F4 已发布合法 partial 清单时，公开显式恢复会重验固定来源�
 
 启动使用 scontrol 严格核对唯一作业身份、RUNNING 和固定节点数；RUNNING 零节点仅有限等待。终态计费仍仅使用 sacct，不从控制器启动结果推算用量，账表未知时保留预留。身份／资源冲突拒绝、账表滞后与完整公开续算链已通过隔离回归。真实 PBE nosplit 第一阶段已完成 SCF／PH／q2r、两类 matdyn、共享声子图、save 和完整 32 k／16 带 NSCF；公开严格清单检查 valid，14 份已有科学文件复用不变。第二阶段、细网格与完整 Tc 仍须各自验收。
 
-最新 PBE 第二阶段已自动补齐六 k／五 q 独立参考，energy_only 态数检查通过并执行原生 Wannier／粗网格；局域化固定 500 次未收敛，epmatwp 全 NaN，生产检查正确拒绝发布 F3，尚无有效比较图／细网格／Tc。NaN 原因未定，不能归因于未收敛；EPW 对 dis_win_min 的原生覆盖亦待核对。已有 243 份参考、原请求和 F2 指纹保持，失败证据与后续范围见[0015 PBE 记录](../../specs/0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。
+最新 PBE 第二阶段已自动补齐六 k／五 q 独立参考，energy_only 态数检查通过并执行原生 Wannier／粗网格；局域化固定 500 次未收敛，epmatwp 全 NaN，生产检查正确拒绝发布 F3，尚无有效比较图／细网格／Tc。已确认实际 EPW 双 FFT 分支存在数组维度及响应转换顺序错误，隔离修复提案通过契约检查，但外部程序尚未修改，尚不能确认其为 NaN 唯一根因。外窗下界被 EPW 忽略的问题已修复传参，真实四界一致性仍待验证。已有 243 份参考、原请求和 F2 指纹保持，见[0015 PBE 记录](../../specs/0015-epwflow-mgb2-real-validation/public-pbe-validation.md)及[双网格核查](../../specs/0012-epwflow-interpolation/native-double-grid-audit.md)。
 
 ## 公开程序及选项
 
@@ -159,6 +159,8 @@ MgB₂ 测试脚本与说明位于 test_auto/MgB2/epwflow；运行数据为 test
 EPW 的 `wannier.selection_mode = "energy_only"` 使用共享 Rust 纯能量选择器，根据真实 F2 本征值与排除带生成四界：外窗全谱极值±0.02 eV，冻结下界为外窗下界，上界为共同 E_F＋2 eV。显式覆盖按 `energy_reference` 换算一次；不按稀疏 HOMO/LUMO 间隔平移，也不裁剪冻结上界。每点检查外窗态数≥N、冻结态数≤N，并检查冻结窗包含质量和 EPC 目标能区。
 
 独立 W90 参数片段和 EPW 输入都只使用能量窗，不输出三项投影解纠缠参数；保留初始投影和收敛控制。`window-selection.json` 保存模式、四界、能谱哈希与逐点计数。该起点不证明插值精度通过，不自动扫描候选或升级原生程序。
+
+纯能量的 EPW 输入将 `dis_win_min` 仅通过受控 `wdata` 传给内嵌 W90，避免部署的 EPW 5.9 在读取 namelist 后清空下界；其余三界和独立 W90 片段保持同一选择值，不重复写关键字。选窗回归模拟这一原生顺序；实际四界仍以 `.wout` 为证据，不用请求值代替。重读阶段不重新选窗。
 
 未写模式的旧配置保持历史组合语义与序列化指纹；修改模式需要新建运行。wannierflow 公共默认尚未在本轮迁移。实现与验证分别见 [0016](../../specs/0016-wannier-window-selection/spec.md) 和 [验收](../../specs/0016-wannier-window-selection/acceptance.md)。
 

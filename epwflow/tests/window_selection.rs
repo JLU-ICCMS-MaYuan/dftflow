@@ -163,3 +163,24 @@ fn energy_only_rejects_target_loss_and_preserves_legacy_config_encoding() {
     assert!(ec.window_selection().is_err(), "EPC 窗不能超出冻结窗");
     assert!(toml::to_string(&c).unwrap().contains("energy_only"));
 }
+
+#[test]
+fn energy_only_lower_bound_survives_epw59_namelist_override() {
+    let mut c = cfg();
+    c.wannier.selection_mode = qf_wannier::SelectionMode::EnergyOnly;
+    c.wannier.outer_window_ev = Some([-1.5, 6.1]);
+    c.wannier.frozen_window_ev = Some([-1.5, 2.]);
+    let ec = EpwConfig::from_config(&c).unwrap().with_fermi(0.).unwrap()
+        .with_bands(&[vec![-2., -1., 3., 6.]]).unwrap();
+    let expected = ec.window_selection().unwrap().parameters["dis_win_min"];
+    let input = ec.epw_coarse_input("out").unwrap();
+    // readin 将直接下界重设为 -9999；write_winfil 的 wdata 必须单独保留下界。
+    assert!(!regex::Regex::new(r"(?m)^\s*dis_win_min\s*=").unwrap().is_match(&input));
+    let extra = regex::Regex::new(r"(?m)^\s*wdata\(\d+\) = 'dis_win_min = ([^']+)'$").unwrap();
+    let bounds = extra.captures_iter(&input).map(|v| v[1].parse::<f64>().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(bounds, vec![expected]);
+    assert_eq!(input.matches("dis_win_min").count(), 1);
+    let standalone = ec.wannier90_input().unwrap();
+    assert!(standalone.contains(&format!("dis_win_min = {expected:.16e}")));
+}

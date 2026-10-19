@@ -247,10 +247,15 @@ impl<'a> EpwConfig<'a> {
                         ))?
                     ));
                 }
-                for (name, value) in self.windows()? {
-                    s.push_str(&format!(" {name} = {value:.16e}\n"));
-                }
                 let mut data = Vec::new();
+                for (name, value) in self.windows()? {
+                    if w.selection_mode == qf_wannier::SelectionMode::EnergyOnly && name == "dis_win_min" {
+                        // 部署的 EPW 5.9 会清空 namelist 下界；由受控 wdata 传给内嵌 W90。
+                        data.push(format!("{name} = {value:.16e}"));
+                    } else {
+                        s.push_str(&format!(" {name} = {value:.16e}\n"));
+                    }
+                }
                 if w.selection_mode == qf_wannier::SelectionMode::FixedPlusProjectability {
                     data.extend([
                         qf_wannier::PROJECTABILITY_SWITCH.to_string(),

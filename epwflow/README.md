@@ -2,6 +2,8 @@
 
 EPW 工作流仅构建三个独立程序：`epw_phonon`、`epw_wannier`、`epw_superconductivity`。配置默认名为 `inputepw.toml`，运行快照为 `input-init.toml`；同目录原有 `input.toml` 继续供 qeflow 使用。
 
+纯能量模式的外窗下界经受控 `wdata` 传给内嵌 W90，以兼容现有 EPW 5.9；实际窗口仍以 `.wout` 核验。当前 PBE 原生阻断及双 FFT 源码核查见[诊断记录](../docs/specs/0012-epwflow-interpolation/native-double-grid-audit.md)，不能把接口回归通过当成已获得 Tc。
+
 三个入口、脚本生成和粗／细网格清单已接入。第一阶段直接调用 qeflow 共享执行库；第二阶段已接入独立参考、显式纯能量选窗、比较数据和四类图的自动生成。真实 PBE 全链与原生 iso／aniso Tc 的完整科学验收仍未完成。当前源码、构建产物和默认安装分别核对，旧安装不能直接使用下列新选项。当前功能见 [Overview](../docs/overview/epwflow/README.md)，整合契约见 [0008 三程序设计](../docs/specs/0008-epwflow-foundation/three-programs.md)。
 
 ## 三个阶段
