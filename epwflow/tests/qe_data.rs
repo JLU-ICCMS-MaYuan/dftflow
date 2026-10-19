@@ -625,3 +625,80 @@ fn actual_lda_native_layout() {
         store::write(&PathBuf::from(path), &report).unwrap();
     }
 }
+
+fn shared_case() -> (Case, config::Config, snapshot::RunBinding) {
+    let case = make_case("nosplit");
+    std::fs::write(case.root.join("KPATH.in"), "0 0 0 G\n0.5 0 0 X\n").unwrap();
+    for name in ["q2r", "matdyn"] {
+        make_script(&format!("{name}.x"), &case.root, &format!("#!/bin/sh\nexec /usr/bin/python3 '{}' {name} \"$@\"\n", case.root.join("qe-native.py").display()));
+    }
+    let mut cfg = config::Config::load(&case.config_path).unwrap();
+    cfg.atomic_masses.insert("Si".into(), 29.1234);
+    cfg.qe.scf.k_shift = [1, 0, 1];
+    let binding = snapshot::prepare(&cfg, &case.config_path).unwrap();
+    (case, cfg, binding)
+}
+
+#[test]
+fn shared_qeflow_nosplit_preserves_mass_shift_checkpoint_and_complete_delivery() {
+    let (case, cfg, binding) = shared_case();
+    let qe = QeSettings::from_config(&cfg).unwrap();
+    let m = scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).unwrap();
+    m.verify().unwrap();
+    assert!(m.validation.all_passed());
+    assert_eq!(m.states.unwrap().kpoints.len(), 8);
+    let calls = std::fs::read_to_string(case.root.join("scientific-calls")).unwrap();
+    assert_eq!(calls, "pw\nph\nq2r\nmatdyn\nmatdyn\npw\n");
+    let shared = cfg.work_dir.join("qe-phonon");
+    let input = std::fs::read_to_string(shared.join("scf.in")).unwrap();
+    assert!(input.contains("29.1234"));
+    assert!(input.contains("2 2 2 1 0 1"));
+    assert!(!cfg.work_dir.join("scf/snapshot/actual_prefix.save/stage-local-marker").exists());
+    assert!(shared.join("out/actual_prefix.save/stage-local-marker").is_file());
+    assert!(shared.join("save/manifest.json").is_file());
+    assert!(shared.join("phonon_combined.jpg").is_file());
+    assert!(m.artifacts.iter().any(|a| a.role == "qeflow_shared-source-identities.json"));
+    std::fs::remove_file(case.root.join("KPATH.in")).unwrap();
+    binding.verify().unwrap();
+    let fixed = config::Config::load(&cfg.work_dir.join("input-init.toml")).unwrap();
+    assert_eq!(fixed.kpath, Some(cfg.work_dir.join("KPATH-init")));
+}
+
+#[test]
+fn shared_qeflow_failures_stop_before_nscf_and_never_publish() {
+    for failure in ["energy", "truncated_dvscf"] {
+        let (case, cfg, binding) = shared_case();
+        std::fs::write(case.root.join("fixture-failure"), failure).unwrap();
+        let qe = QeSettings::from_config(&cfg).unwrap();
+        assert!(scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).is_err());
+        assert!(!cfg.work_dir.join("nscf").exists());
+        assert!(!cfg.work_dir.join("qe-data/manifest.json").exists());
+        let calls = std::fs::read_to_string(case.root.join("scientific-calls")).unwrap();
+        assert_eq!(calls.lines().filter(|s| *s == "pw").count(), 1);
+    }
+}
+
+#[test]
+fn shared_qeflow_resume_reuses_scf_ph_and_rejects_unregistered_changes() {
+    let (case, cfg, binding) = shared_case();
+    let qe = QeSettings::from_config(&cfg).unwrap();
+    std::fs::write(case.root.join("post-failure"), "fail once").unwrap();
+    assert!(scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).is_err());
+    let checkpoint = store::Identity::capture(&cfg.work_dir.join("qe-phonon/scf-checkpoint.json")).unwrap();
+    let calls = std::fs::read_to_string(case.root.join("scientific-calls")).unwrap();
+    assert_eq!(calls, "pw\nph\nq2r\n");
+    std::fs::remove_file(case.root.join("post-failure")).unwrap();
+    scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).unwrap();
+    checkpoint.verify().unwrap();
+    let calls = std::fs::read_to_string(case.root.join("scientific-calls")).unwrap();
+    assert_eq!(calls, "pw\nph\nq2r\nq2r\nmatdyn\nmatdyn\npw\n");
+
+    let (case, cfg, binding) = shared_case();
+    let qe = QeSettings::from_config(&cfg).unwrap();
+    std::fs::write(case.root.join("post-failure"), "fail").unwrap();
+    assert!(scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).is_err());
+    let calls = std::fs::read_to_string(case.root.join("scientific-calls")).unwrap();
+    std::fs::write(cfg.work_dir.join("qe-phonon/bin/ph.x"), "tampered").unwrap();
+    assert!(scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).is_err());
+    assert_eq!(calls, std::fs::read_to_string(case.root.join("scientific-calls")).unwrap());
+}

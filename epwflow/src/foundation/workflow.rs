@@ -694,7 +694,7 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
             match name {
                 "qe-data" => {
                     let qe = crate::qe_data::qe_config::QeSettings::from_config(&cfg)?;
-                    crate::qe_data::scheduler::run_registered(
+                    crate::qe_data::scheduler::run_qeflow_registered(
                         &binding,
                         &cfg,
                         &qe,

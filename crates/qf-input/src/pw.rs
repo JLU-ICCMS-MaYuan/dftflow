@@ -169,11 +169,14 @@ pub fn scf_kpoints_text(structure: &Structure, scf: &SectionMap) -> String {
         ),
         _ => get_kpoints_from_spacing(structure.lattice, &KmeshSpec::Spacing(0.04), 0.04),
     };
+    let shift: [i64; 3] = std::array::from_fn(|i| {
+        scf.get("k_shift").and_then(Value::as_array).and_then(|v| v.get(i)).and_then(Value::as_i64).unwrap_or(0)
+    });
     format!(
-        "K_POINTS automatic\n  {grid0} {grid1} {grid2} 0 0 0\n",
+        "K_POINTS automatic\n  {grid0} {grid1} {grid2} {s0} {s1} {s2}\n",
         grid0 = grid[0],
         grid1 = grid[1],
-        grid2 = grid[2]
+        grid2 = grid[2], s0 = shift[0], s1 = shift[1], s2 = shift[2]
     )
 }
 

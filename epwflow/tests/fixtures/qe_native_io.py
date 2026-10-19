@@ -5,10 +5,33 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parent
 kind, *args = sys.argv[1:]
-text = Path(args[args.index('-inp')+1]).read_text()
+text = Path(args[args.index('-inp')+1]).read_text() if '-inp' in args else sys.stdin.read()
 def value(name, default=None):
     m = re.search(r'\b'+name+r"\s*=\s*('(?:[^']|'')*'|[^,\n]+)", text, re.I)
     return m.group(1).strip().strip("'") if m else default
+if kind in ('q2r', 'matdyn'):
+    with (ROOT/'scientific-calls').open('a') as f: f.write(kind+'\n')
+    if kind == 'q2r' and (ROOT/'post-failure').exists():
+        print('Error in routine fixture'); sys.exit(2)
+    if kind == 'q2r':
+        assert Path(value('fildyn').replace('.dyn.xml', '.dyn0')).is_file()
+        Path(value('flfrc')).write_text('fixture force constants')
+    else:
+        force = Path(value('flfrc')); assert force.is_file()
+        prefix = force.stem
+        nat = len(ET.parse(Path('out')/(prefix+'.save')/'data-file-schema.xml').getroot().findall('output/atomic_structure/atomic_positions/atom'))
+        if value('fldos'):
+            Path(value('fldos')).write_text(''.join(str(i)+' '+str(nat*.1)+' '+' '.join(['0.1']*nat)+'\n' for i in range(3)))
+        else:
+            tail = text.split('/\n', 1)[1].strip().splitlines()
+            nodes = [list(map(float, line.split())) for line in tail[1:1+int(tail[0])]]
+            points = []
+            for a,b in zip(nodes,nodes[1:]):
+                n = int(a[3])
+                points.extend([[a[j]+(b[j]-a[j])*i/n for j in range(3)] for i in range(n)])
+            points.append(nodes[-1][:3])
+            Path(value('flfrq')).write_text('&plot nbnd='+str(3*nat)+', nks='+str(len(points))+' /\n'+''.join(' '.join(map(str,p))+'\n'+' '.join(['100']*(3*nat))+'\n' for p in points))
+    print('JOB DONE.'); sys.exit(0)
 prefix = value('prefix')
 out = Path(value('outdir'))
 save = out/(prefix+'.save')

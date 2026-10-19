@@ -43,3 +43,20 @@ fn shared_ph_renderer_preserves_bound_prefix_and_outdir() {
     assert!(input.contains("outdir = './tmp'"));
     assert!(input.ends_with("/\n"));
 }
+
+#[test]
+fn shared_scf_preserves_explicit_mass_and_mesh_shift() {
+    let root = std::env::temp_dir().join(format!("qf-shared-mass-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("Si.UPF"), "fixture").unwrap();
+    let mut cfg = Config::default();
+    cfg.pp_dir = Some(root.to_string_lossy().into_owned());
+    cfg.atomic_masses.insert("Si".into(), 29.1234);
+    let entries = qf_input::species::resolve_atomic_species_entries(&cfg, &["Si".into()]).unwrap();
+    assert_eq!(entries[0].1, 29.1234);
+    cfg.qe_phonon.scf.insert("kpoints".into(), json!([2, 3, 4]));
+    cfg.qe_phonon.scf.insert("k_shift".into(), json!([1, 0, 1]));
+    let cell = qf_crystal::Structure { lattice: [[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]], elements: vec!["Si".into()], counts: vec![1], positions: vec![[0.;3]], coord_type: "Direct".into(), formula: "Si".into() };
+    assert!(qf_input::pw::scf_kpoints_text(&cell, &cfg.qe_phonon.scf).contains("2 3 4 1 0 1"));
+    std::fs::remove_dir_all(root).unwrap();
+}

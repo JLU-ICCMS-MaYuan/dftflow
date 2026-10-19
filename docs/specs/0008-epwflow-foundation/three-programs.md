@@ -10,7 +10,7 @@ flowchart LR
     B --> C["epw_superconductivity<br/>细网格 EPC、α²F／λ<br/>原生 iso／aniso Tc 与图表"]
 ```
 
-这是本次目标边界；共享声子前置已经实现，三个 EPW 程序及阶段迁移仍待验证，不能把图示当作当前可执行结果。
+三个独立程序、共享 qeflow 声子执行与粗／细阶段分离已通过隔离进程验证。第二阶段独立参考及四类比较图的自动生成、真实原生 iso／aniso Tc 仍未完成；图示包含这些目标，不能作为完整科学验收证据。
 
 | 需求 | 具体行为 | 成功标准与证据 |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ flowchart LR
 - 现有 MgB₂ nosplit 输入为文本 `fildyn=MgB2.dyn`、`lqdir=false`。保留现有目录不能证明各 q 的响应势均完整；不能凭单个 `dvscf1` 发布 EPW 就绪。
 - QE 源码 `PHonon/PH/phq_readin.f90` 按 `.xml` 后缀选择 XML 动力学矩阵；`q2r.f90` 支持同一 XML 命名。为 EPW 启用 XML 时，PH 和 q2r 输入必须一致。
 - qeflow 的 nosplit 本地执行循环只执行 SCF／PH，漏掉已列出的 q2r／matdyn；复用前必须修复，提交路径也须避免重复后处理。
-- epwflow 当前独立维护 SCF／PH 调度；仅共享输入渲染不满足本次直接复用要求。将 qeflow 现有实现提供为 Rust 库接口，第一阶段通过该接口运行；预算和分配仍由 EPW 基础层负责。
+- 审查时 epwflow 独立维护 SCF／PH 调度。现已将 qeflow 实现提供为 Rust 库，第一阶段调用同一 nosplit 执行链；预算和分配由 EPW 基础层负责。旧三模式调度保留为内部历史回归路径，不作为新公开主路径。
 
 ## 实施分层与职责
 

@@ -33,6 +33,8 @@ pub const MANUAL_LATTICE_KEYS: &[&str] = &[
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Config {
     #[serde(default)]
+    pub atomic_masses: BTreeMap<String, f64>,
+    #[serde(default)]
     pub pp_dir: Option<String>,
     #[serde(default)]
     pub qe: QeSection,
@@ -247,6 +249,12 @@ pub fn load(path: Option<&str>, config_file: Option<&str>) -> Result<Config> {
         serde_json::from_value(base).context("deserialize merged config")?;
     config.pp_dir = resolve_pp_dir_path(config.pp_dir, config_file);
     config.validate_no_manual_lattice_params()?;
+    for (element, mass) in &config.atomic_masses {
+        anyhow::ensure!(mass.is_finite() && *mass > 0.0, "atomic_masses.{element} 必须为有限正数");
+    }
+    if let Some(shift) = config.qe_phonon.scf.get("k_shift") {
+        anyhow::ensure!(shift.as_array().is_some_and(|v| v.len() == 3 && v.iter().all(|n| matches!(n.as_i64(), Some(0 | 1)))), "qe_phonon.scf.k_shift 必须包含三个 0/1 整数");
+    }
     Ok(config)
 }
 

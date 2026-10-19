@@ -544,6 +544,17 @@ fn with_args(exec_cmd: &str, args: &str, redirect: &str) -> String {
 /// scf/ph/q2r/matdyn 全部输入与脚本，按状态推进剩余步骤；-r 本地顺序运行并出图，
 /// -s 生成聚合 `submit_phonon_workflow.sh` 提交。
 pub fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: bool, submit: bool) -> Result<()> {
+    run_nosplit(config, input, run, submit, None)
+}
+
+/// 已登记分配内的共享执行入口；SCF 校验后、PH 启动前交付快照检查点。
+pub fn run_nosplit_with_scf_checkpoint(
+    config: String, input: String, checkpoint: &mut dyn FnMut(&Path) -> Result<()>,
+) -> Result<()> {
+    run_nosplit(Some(config), Some(input), true, false, Some(checkpoint))
+}
+
+fn run_nosplit(config: Option<String>, input: Option<String>, run: bool, submit: bool, mut checkpoint: Option<&mut dyn FnMut(&Path) -> Result<()>>) -> Result<()> {
     let source_config = std::fs::canonicalize(config.as_deref().unwrap_or("input.toml"))?;
     let input = if source_config.file_name().and_then(|p| p.to_str()) == Some("input-init.toml") {
         Some(phonon_chain::snapshot_structure(source_config.parent().unwrap().to_str().unwrap())?)
@@ -600,6 +611,9 @@ pub fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run:
 
     if run {
         for (_, command) in &needed {
+            if command == "bash run_ph.sh" {
+                if let Some(checkpoint) = checkpoint.as_mut() { checkpoint(Path::new(&ctx.workspace))?; }
+            }
             qf_runner::run_shell(command, Path::new(&ctx.workspace))?;
             let (log, scf) = match command.as_str() {
                 "bash run_scf.sh" => ("scf.out", true),
@@ -1002,10 +1016,10 @@ fn create_phonon_context(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let in_place = current_name == work_dir_name
+    let in_place = !Path::new(&work_dir_name).is_absolute() && (current_name == work_dir_name
         || WORKSPACE_MARKERS
             .iter()
-            .any(|m| Path::new(m).exists());
+            .any(|m| Path::new(m).exists()));
     let workspace = if in_place {
         current_dir.to_string_lossy().into_owned()
     } else {

@@ -22,6 +22,7 @@ pub struct Config {
     pub schema_version:u32,pub work_dir:PathBuf,
     #[serde(default="default_outdir")] pub outdir:PathBuf,
     pub structure:PathBuf,pub pseudos:BTreeMap<String,PathBuf>,pub programs:Programs,
+    #[serde(default, skip_serializing_if="Option::is_none")] pub kpath:Option<PathBuf>,
     #[serde(default)] pub atomic_masses:BTreeMap<String,f64>,
     pub resources:Resources,pub budget:BudgetConfig,pub qe:Qe,pub phonon:Phonon,
     pub wannier:Wannier,pub interpolation:Interpolation,pub superconductivity:Superconductivity,
@@ -145,6 +146,8 @@ impl Config {
         self.work_dir=paths::destination(&paths::absolute(base,&self.work_dir)?)?;
         self.outdir=paths::destination(&paths::absolute(base,&self.outdir)?)?;
         self.structure=paths::existing(base,&self.structure,"structure",false)?;
+        if self.kpath.is_none() && base.join("KPATH.in").is_file() { self.kpath=Some(base.join("KPATH.in")); }
+        if let Some(p)=&mut self.kpath { *p=paths::existing(base,p,"kpath",false)?; }
         for (el,p) in &mut self.pseudos {*p=paths::existing(base,p,&format!("pseudos.{el}"),false)?;}
         for (n,p) in [("pw",&mut self.programs.pw),("ph",&mut self.programs.ph),("epw",&mut self.programs.epw)] {p.path=paths::existing(base,&p.path,&format!("programs.{n}.path"),true)?;}
         for (n,p) in [("wannier90",&mut self.programs.wannier90),("pw2wannier90",&mut self.programs.pw2wannier90)] {

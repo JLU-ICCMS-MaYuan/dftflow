@@ -107,7 +107,7 @@ pub fn resolve_atomic_species_entries(
         .map(|element| {
             (
                 element.clone(),
-                get_atomic_mass(element, None),
+                get_atomic_mass(element, config.atomic_masses.get(element).copied()),
                 resolved[element].clone(),
             )
         })

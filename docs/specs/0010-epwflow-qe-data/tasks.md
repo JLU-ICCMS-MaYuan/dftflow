@@ -156,4 +156,4 @@ T001→T002 后按故事和前置任务顺序执行；同一共享文件串行�
 ## 三程序收敛
 
 - [x] T100 验证 qeflow nosplit 完整本地链，增加可选 `retain_epw_data` 和原生 PH 归档，记录拒绝与兼容证据。
-- [ ] T101 将 epw_phonon 接入同一 qeflow 库，准备完整 NSCF 和严格 EPW 交付清单，并在指定 local_run 验证。
+- [x] T101 将 epw_phonon 接入同一 qeflow 库，准备完整 NSCF 和严格 EPW 交付清单；覆盖后处理失败恢复、固定质量／网格位移，在指定 local_run 验证配置与脚本生成。真实科学全链另行验收，不由替身或生成结果替代。

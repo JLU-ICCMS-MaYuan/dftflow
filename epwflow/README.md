@@ -2,14 +2,14 @@
 
 EPW 工作流仅构建三个独立程序：`epw_phonon`、`epw_wannier`、`epw_superconductivity`。配置默认名为 `inputepw.toml`，运行快照为 `input-init.toml`；同目录原有 `input.toml` 继续供 qeflow 使用。
 
-三个入口、脚本生成和粗／细网格清单已接入。第一阶段切换到 qeflow 共享执行库、独立参考的自动生成、第二阶段四类图的自动生成，以及真实原生 iso／aniso Tc 的完整验收仍在实施。当前源码、构建产物和默认安装分别核对，旧安装不能直接使用下列新选项。当前功能见 [Overview](../docs/overview/epwflow/README.md)，整合契约见 [0008 三程序设计](../docs/specs/0008-epwflow-foundation/three-programs.md)。
+三个入口、脚本生成和粗／细网格清单已接入。第一阶段已直接调用 qeflow 共享执行库。独立参考的自动生成、第二阶段四类图的自动生成，以及真实原生 iso／aniso Tc 的完整验收仍在实施。当前源码、构建产物和默认安装分别核对，旧安装不能直接使用下列新选项。当前功能见 [Overview](../docs/overview/epwflow/README.md)，整合契约见 [0008 三程序设计](../docs/specs/0008-epwflow-foundation/three-programs.md)。
 
 ## 三个阶段
 
 ```mermaid
 flowchart TD
     C["inputepw.toml + POSCAR + 赝势"] --> P["epw_phonon"]
-    P --> P1["目标：直接调用 qeflow nosplit<br/>SCF → PH → q2r → matdyn → 声子图"]
+    P --> P1["直接调用 qeflow nosplit<br/>SCF → PH → q2r → matdyn → 声子图"]
     P1 --> P2["逐 q XML dyn／dvscf／phsave<br/>保留 save；完整均匀 NSCF；严格校验"]
     P2 --> PM["qe-data/manifest.json"]
     PM --> W["epw_wannier"]
@@ -22,7 +22,7 @@ flowchart TD
     W1 -->|"质量失败"| STOP["保存诊断，阻断细网格／超导"]
 ```
 
-图中“目标”部分尚未全部接入。qeflow 原来就保留 scratch；新增的 `[qe_phonon].retain_epw_data=true` 让 nosplit 生成逐 q 响应势与 XML 动力学矩阵，并校验、归档到 `save/`，详见 [qeflow 手册](../qeflow/README.md#为-epw-保留声子数据)。第一条主路径采用 nosplit，不要求三种 q 方式都完成才交付。
+图中第二阶段的“目标”部分尚未全部接入。第一阶段固定 KPATH、q2r／matdyn 程序身份及物理输入，直接调用同一 qeflow 库；SCF 结束后、PH 前保存不可变快照，完成后再执行 EPW 的完整均匀 NSCF。qeflow 原来就保留 scratch；新增的 `[qe_phonon].retain_epw_data=true` 让 nosplit 生成逐 q 响应势与 XML 动力学矩阵，并校验、归档到 `save/`，详见 [qeflow 手册](../qeflow/README.md#为-epw-保留声子数据)。第一条主路径采用 nosplit，不要求三种 q 方式都完成才交付。
 
 ## 生成脚本、检查和执行
 
@@ -61,7 +61,7 @@ epw_wannier --resume -w "$W" -s
 epw_phonon -c inputepw.toml -r
 ```
 
-内部 `.epwflow/slurm/` 脚本属于已提交的尝试，不能手工重提。科学输出保存在 `W/calculations/<尝试号>/`；恢复沿用原科学目录，已通过阶段重新验哈希，失败现场保留。第二、三阶段缺少前置完成证据时拒绝启动；活动或未知作业不自动重提。
+内部 `.epwflow/slurm/` 脚本属于已提交的尝试，不能手工重提。科学输出保存在 `W/calculations/<尝试号>/`；恢复沿用原科学目录，已通过阶段重新验哈希，失败现场保留。共享声子链后处理失败时可复用已核验的 SCF／PH，固定请求或受控脚本被篡改则拒绝恢复。第二、三阶段缺少前置完成证据时拒绝启动；活动或未知作业不自动重提。
 
 ## 数据检查、比较和重绘
 

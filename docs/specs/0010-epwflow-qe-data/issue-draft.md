@@ -158,3 +158,7 @@
 ## 最新实施范围
 
 用户已明确三个独立程序及第一阶段直接复用 qeflow。沿用本地 0010，与 0008 [整合契约](../0008-epwflow-foundation/three-programs.md)双向关联。三种 PH 来源不再是本次首条主路径的必需完成门；优先 nosplit。Documentation Impact：更新保留数据配置、交付角色、共享实现和验证证据，科学校验与原预算不改变。
+
+## 共享声子执行链已接入
+
+第一阶段已直接调用 qeflow nosplit 库；完整 SCF／PH／q2r／matdyn、EPW 数据保留、SCF 检查点和完整 NSCF 交接通过进程回归。后处理失败可显式恢复并复用 SCF／PH；请求或受控脚本变更拒绝。证据、指定 local_run 准备及限制见 [0010 最新验收](../0010-epwflow-qe-data/acceptance.md#共享声子执行链验证)。独立参考／四类比较图自动生成与真实两模式 Tc 继续保持未完成。

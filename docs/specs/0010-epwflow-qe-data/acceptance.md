@@ -51,3 +51,15 @@
 - 完整基线运行 `bash scripts/build-native.sh test -p qeflow -p epwflow -p qf-input -p qf-phonon --locked --offline`：156 项通过，6 项真实环境测试继续暂挂。随后补充提交脚本和未适配模式用例，并对最终代码运行 `bash scripts/build-native.sh test -p qeflow -p qf-input -p qf-phonon --locked --offline`：47 项通过（qeflow 32、共享输入 8、声子库 7）。EPW 基线 111 项通过；替身结果不计真实科学验收。
 - 用户指定 local_run 下新建 `002-three-stage-cli`，复制 PBE 结构与路径，生成带保留选项的 qeflow 输入与声子脚本；核查 24 MPI、1 节点、2 小时上限、XML／逐 q 选项与 Bash 语法。只做准备，没有 ph.out 或新科学作业；原配置、结构、KPATH 和赝势哈希保持。
 - 本批没有修改共享预算或默认安装，没有运行旧替代诊断或线上 Issue 操作；继续保持真实 Tc 与整体三程序验收未完成。
+
+## 共享声子执行链验证
+
+`epw_phonon` 已切换到 `qeflow::run_nosplit_with_scf_checkpoint`，共享 SCF→PH→q2r→matdyn 和声子图实现，不启动第二次调度提交。SCF 成功、PH 之前保存独立快照，PH 工作副本与 EPW 完整均匀 NSCF 副本分别拥有可写数据。原有三模式内部接口继续用于历史回归，公开首条路径只要求 nosplit。
+
+- 固定 KPATH 与 q2r／matdyn 身份，生成受控 qeflow 配置、程序封装和赝势副本；显式原子质量、SCF 位移、物理阈值传入共享输入。归档之后仍核验原生 q 映射、响应势／扰动基底及完整电子态，发布 EPW 严格清单。
+- 请求、脚本及 SCF 检查点持久化并记录指纹。q2r 失败后恢复重用 SCF／PH；实际调用序列为 `pw ph q2r q2r matdyn matdyn pw`。SCF 日志、输入、快照和受控请求改变均拒绝。NSCF 失败现场另存，原 SCF 不重复计算。
+- 独立进程覆盖成功、SCF 能量错误、响应势截断、后处理失败恢复与脚本篡改；成功链为 `pw ph q2r matdyn matdyn pw`，并核查归档、声子图和交付身份。
+- 完整验证命令：`bash scripts/build-native.sh test -p epwflow -p qeflow -p qf-input -p qf-config -p qf-phonon --locked --offline`；**169 通过、0 失败、6 项真实环境测试暂挂**。替身结果仅证明接口和拒绝行为，不证明数值正确或真实 Tc。
+- 在用户指定 `test_auto/MgB2/local_run/003-shared-phonon` 复制 PBE 配置／结构／KPATH，实际调用三个程序生成阶段脚本，通过 `bash -n`；固定清单含 KPATH、q2r、matdyn，六份原来源哈希保持。没有生成 calculations、预留预算或调用科学程序。具体机器日志留忽略目录。
+
+独立质量参考与四类比较图自动生成、选窗外部程序兼容、真实两模式完整 Tc 仍未完成。没有新增科学作业、重置预算或切换默认安装；本地 Issue 保持未完成。

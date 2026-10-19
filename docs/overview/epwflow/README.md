@@ -6,7 +6,7 @@
 
 EPW 仅构建 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个独立程序，旧 `epwflow` 可执行入口已移除。三个程序共用配置、固定快照、预算与状态。默认生成本阶段 Slurm 脚本，不启动科学程序或预留预算；`-s` 提交，`-r` 需要已登记分配，`--resume -w` 使用固定快照恢复。源码、构建和默认安装分别核对，本次未覆盖默认安装。
 
-qeflow 已将 nosplit 提供为 Rust 库，并支持可选的 EPW 数据归档（[说明](../qeflow/qe_phonon_nosplit.md)）。当前 EPW 调度器仍使用自己的 SCF／PH 路径，尚未切换到该库；因此第一阶段直接复用完整 qeflow 声子链仍待接入。
+epw_phonon 直接调用 qeflow 的 nosplit Rust 库（[说明](../qeflow/qe_phonon_nosplit.md)），执行 SCF→PH→q2r→matdyn 和声子图，启用 EPW 原始数据归档。SCF 完成、PH 之前保存独立快照，再由 EPW 准备完整均匀 NSCF 和严格数据清单。固定 KPATH、q2r／matdyn、显式原子质量及 SCF 网格位移均传递并校验；后处理失败恢复会重验请求、脚本和 SCF 检查点，复用已完成 SCF／PH。该恢复行为已由独立进程回归验证，尚未执行新的真实科学链。
 
 粗网格阶段独立发布 `wannier/manifest.json`，没有细网格或谱；细网格在第三阶段重验前者后另行发布 `interpolation/manifest.json`，绑定原粗清单哈希，保持其不变。进程回归证明阶段顺序、原生格式角色和失败阻断；独立参考与四类比较图的自动生成、真实两模式 Tc 交付尚未完成。首条主路径采用 nosplit，不要求三来源六组合完成才交付。
 
@@ -16,7 +16,7 @@ qeflow 已将 nosplit 提供为 Rust 库，并支持可选的 EPW 数据归档�
 
 | 程序或选项 | 实际行为与限制 |
 | --- | --- |
-| `epw_phonon` | 第一阶段边界：SCF、NSCF、PH 数据交付；切换到共享 qeflow 调度仍待接入 |
+| `epw_phonon` | 直接复用 qeflow nosplit 完整声子链，保留 EPW 数据；独立 SCF 快照、完整均匀 NSCF 和严格交付 |
 | `epw_wannier` | 第二阶段边界：原生 Wannier／粗网格与质量检查；不执行细网格或 α²F |
 | `epw_superconductivity` | 第三阶段边界：细网格 EPC／谱、原生两模式求解与结果包；要求前两阶段完成证据 |
 | 默认调用 | 固定输入，生成 `.epwflow/generated/` 下的阶段脚本；可手工 sbatch，运行时验证脚本及程序身份、前置和预算 |

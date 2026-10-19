@@ -49,8 +49,11 @@ impl Case {
     }
 
     fn qe_fixture(&self) {
+        let input = fs::read_to_string(self.root.join("input.toml")).unwrap();
+        self.put("input.toml", &input.replace("[phonon]", "[phonon]\nmode = \"nosplit\""));
+        self.put("KPATH.in", "0 0 0 G\n0.5 0 0 X\n");
         self.put("qe-native.py", include_str!("fixtures/qe_native_io.py"));
-        for kind in ["pw", "ph"] {
+        for kind in ["pw", "ph", "q2r", "matdyn"] {
             self.script(
                 &format!("{kind}.x"),
                 &format!(
@@ -300,8 +303,8 @@ fn b01_boundary_executes_qe_once_and_blocks_missing_interpolation_evidence() {
     );
     assert_eq!(
         before.lines().filter(|&s| s == "ph").count(),
-        3,
-        "一次初始化和两个分 q"
+        1,
+        "复用 qeflow 一次完整 nosplit PH"
     );
     let o = c.execution(&["run", "-c", "input.toml", "--until", "qe-data"], 123);
     assert!(o.status.success());
@@ -425,6 +428,8 @@ fn b01_concurrent_entry_submits_at_most_one_job() {
 fn b01_early_worker_failure_is_not_overwritten_by_submission_receipt() {
     let c = Case::new();
     c.scheduled();
+    c.qe_fixture();
+    c.script("pw.x", "#!/bin/sh\nexit 91\n");
     c.script(
         "sbatch",
         &format!(

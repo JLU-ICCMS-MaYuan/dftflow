@@ -15,6 +15,8 @@ pub struct RunBinding {
     pub run_id: String,
     pub config_sha256: String,
     pub structure: store::Identity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kpath: Option<store::Identity>,
     pub pseudos: BTreeMap<String, store::Identity>,
     pub programs: BTreeMap<String, store::Identity>,
     pub environment_status: String,
@@ -43,6 +45,7 @@ impl RunBinding {
         self.structure
             .verify()
             .context("input_conflict: 结构快照被修改")?;
+        if let Some(path) = &self.kpath { path.verify().context("input_conflict: 路径快照被修改")?; }
         for (el, id) in &self.pseudos {
             id.verify()
                 .with_context(|| format!("input_conflict: 赝势 {el} 被修改"))?;
@@ -79,6 +82,7 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
     };
     let mut fixed = config.clone();
     fixed.structure = work.join(&init_name);
+    fixed.kpath = config.kpath.as_ref().map(|_| work.join("KPATH-init"));
     let bytes = toml::to_string_pretty(&fixed)?.into_bytes();
     if work.exists() {
         let existing = RunBinding::load(&work)?;
@@ -91,6 +95,9 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
             store::hash_file(&config.structure)? == existing.structure.sha256,
             "input_conflict: 原结构与快照不一致"
         );
+        if let Some(path) = &config.kpath {
+            ensure!(existing.kpath.as_ref().is_some_and(|id| store::hash_file(path).ok().as_ref() == Some(&id.sha256)), "input_conflict: 原路径与快照不一致");
+        }
         return Ok(existing);
     }
     let staging = work.with_file_name(format!(".epw-prepare-{}", store::token()));
@@ -100,6 +107,13 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
         let mut structure = store::Identity::capture(&staging.join(&init_name))?;
         structure.path = fixed.structure.clone();
         structure.target = fixed.structure.clone();
+        let kpath = if let Some(path) = &config.kpath {
+            fs::copy(path, staging.join("KPATH-init"))?;
+            let mut id = store::Identity::capture(&staging.join("KPATH-init"))?;
+            id.path = fixed.kpath.clone().unwrap();
+            id.target = id.path.clone();
+            Some(id)
+        } else { None };
         let mut pseudos = BTreeMap::new();
         for (el, p) in &config.pseudos {
             pseudos.insert(el.clone(), store::Identity::capture(p)?);
@@ -111,6 +125,14 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
             ("epw", &config.programs.epw),
         ] {
             programs.insert(n.to_string(), store::Identity::capture(&p.path)?);
+        }
+        if config.phonon.mode == config::PhMode::Nosplit {
+            if let Some(dir) = config.programs.ph.path.parent() {
+                for name in ["q2r", "matdyn"] {
+                    let path = dir.join(format!("{name}.x"));
+                    if path.is_file() { programs.insert(name.into(), store::Identity::capture(&path)?); }
+                }
+            }
         }
         for (n, p) in [
             ("wannier90", &config.programs.wannier90),
@@ -126,9 +148,10 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
         let config_sha256 = store::hash_bytes(&bytes);
         let binding = RunBinding {
             schema_version: 1,
-            run_id: run_id_of(&config_sha256, &structure, &pseudos, &programs),
+            run_id: run_id_of(&config_sha256, &structure, &pseudos, &programs, kpath.as_ref()),
             config_sha256,
             structure,
+            kpath,
             pseudos,
             programs,
             environment_status: "unverified".into(),
@@ -152,11 +175,13 @@ fn run_id_of(
     structure: &store::Identity,
     pseudos: &BTreeMap<String, store::Identity>,
     programs: &BTreeMap<String, store::Identity>,
+    kpath: Option<&store::Identity>,
 ) -> String {
     let mut s = String::new();
     s.push_str(config_sha);
     s.push(':');
     s.push_str(&structure.sha256);
+    if let Some(id) = kpath { s.push_str(":kpath:"); s.push_str(&id.sha256); }
     for (el, id) in pseudos {
         s.push(':');
         s.push_str(el);

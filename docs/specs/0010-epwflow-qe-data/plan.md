@@ -98,3 +98,9 @@ spec.md、plan.md、research.md、data-model.md、contracts/interface.md、tasks
 ## 2026-10-19：共享 qeflow 原实现
 
 按[整合设计](../0008-epwflow-foundation/three-programs.md)提取 qeflow 为库，首先修复 nosplit 本地后处理，再由 EPW 基础层在受控分配中直接调用。归档角色和 SHA-256 由 qf-phonon 维护，EPW 在导入时继续核对原生扰动基底和物理来源；不把归档成功当作科学通过。
+
+## 共享声子执行库接入细则
+
+首条公开主路径只接受 nosplit，调用 qeflow 的同一同步执行函数，顺序为 SCF→PH→q2r→matdyn，再由 EPW 做完整均匀 NSCF 与严格交付。共享库提供 SCF 完成检查点，EPW 在 PH 启动前验证 XML 并保存独立 SCF 快照，避免从 PH 已写过的树反推 SCF 来源。既有独立分 q 库接口保留作回归／历史适配，不作为新的公开主路径。
+
+共享配置显式传递原子质量和 SCF k_shift，防止改用默认质量或零位移。路径通过可选 kpath 字段指定并在 prepare 时固定身份；未指定且配置目录有 KPATH.in 时采用该文件。缺少路径时第一阶段在科学调用前拒绝。q2r／matdyn 从相同 PH 程序目录定位并固定文件身份；受控 argv 包装保留 launcher 和 PW／PH 的各自参数，不假设两个程序必然位于同一目录。原始输入、save 和参考保持只读，独立工作目录不与来源合并。
