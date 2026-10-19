@@ -33,6 +33,50 @@ struct Request {
     sources: Vec<Identity>,
 }
 
+/// 显式恢复允许修复编排程序；配置和五项科学来源仍必须完全一致。
+fn resume_request(cfg: &Config, launcher: &[String], current: &[Identity], previous: &Request, retry: bool) -> Result<String> {
+    ensure!(retry, "execution_failed: 独立参考已有现场，请显式 --resume");
+    ensure!(previous.schema_version == 1 && previous.sources.len() == 6 && current.len() == 6
+        && previous.digest == store::hash_bytes(&serde_json::to_vec(&(cfg, launcher, &previous.sources))?)
+        && serde_json::to_value(&previous.sources[..5])? == serde_json::to_value(&current[..5])?,
+        "input_conflict: 独立参考请求的固定输入或科学程序变化");
+    for id in &previous.sources { id.verify()?; }
+    Ok(previous.digest.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn orchestrator_upgrade_requires_explicit_resume_and_unchanged_scientific_identity() {
+        let root = std::env::temp_dir().join(format!("epw-reference-upgrade-{}", store::token()));
+        fs::create_dir(&root).unwrap();
+        let mut cfg: Config = toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
+        let mut old = Vec::new();
+        for i in 0..6 {
+            let path = root.join(i.to_string()); fs::write(&path, i.to_string()).unwrap();
+            old.push(Identity::capture(&path).unwrap());
+        }
+        let digest = store::hash_bytes(&serde_json::to_vec(&(&cfg, &[] as &[String], &old)).unwrap());
+        let previous = Request {schema_version: 1, digest: digest.clone(), sources: old.clone()};
+        let replacement = root.join("new-driver"); fs::write(&replacement, "fixed renderer").unwrap();
+        let mut current = old.clone(); current[5] = Identity::capture(&replacement).unwrap();
+        assert_eq!(resume_request(&cfg, &[], &current, &previous, true).unwrap(), digest);
+        assert!(resume_request(&cfg, &[], &current, &previous, false).is_err());
+        cfg.wannier.num_wann += 1;
+        assert!(resume_request(&cfg, &[], &current, &previous, true).is_err());
+        cfg.wannier.num_wann -= 1;
+        current[0] = current[5].clone();
+        assert!(resume_request(&cfg, &[], &current, &previous, true).is_err());
+        current[0] = old[0].clone();
+        assert!(resume_request(&cfg, &["changed-launcher".into()], &current, &previous, true).is_err());
+        fs::write(&old[5].path, "changed old driver").unwrap();
+        assert!(resume_request(&cfg, &[], &current, &previous, true).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
 fn file(path: &Path) -> Result<SourceFile> {
     Ok(SourceFile {
         path: path.canonicalize()?,
@@ -95,19 +139,14 @@ pub(super) fn ensure_sources(
         f2.fingerprints.program_sha256.get("dynmat") == Some(&sources[4].sha256),
         "input_conflict: dynmat.x 未在初始运行中冻结；请使用新运行目录或显式独立参考"
     );
-    let digest = store::hash_bytes(&serde_json::to_vec(&(cfg, launcher, &sources))?);
+    let mut digest = store::hash_bytes(&serde_json::to_vec(&(cfg, launcher, &sources))?);
     let root = work.join("quality-sources");
     let request_path = root.join("request.json");
     if request_path.exists() {
         let previous: Request = store::read(&request_path)?;
-        ensure!(
-            previous.schema_version == 1 && previous.digest == digest,
-            "input_conflict: 独立参考请求的固定输入或程序变化"
-        );
-        for id in &previous.sources {
-            id.verify()?;
-        }
-        ensure!(retry, "execution_failed: 独立参考已有现场，请显式 --resume");
+        digest = resume_request(cfg, launcher, &sources, &previous, retry)?;
+        // 原请求保持不变；参考发布同时绑定原编排程序和当前执行程序。
+        sources.push(previous.sources[5].clone());
     } else {
         ensure!(
             fs::symlink_metadata(&root).is_err(),
@@ -301,6 +340,7 @@ pub(super) fn ensure_sources(
             &gamma_text,
             geometry.atoms.len(),
         )?;
+        let native_xml = reference_asr::qe_xml_records(&corrected)?;
         let label = format!("reference-dynmat-{:04}", index + 1);
         let dir = root.join(format!("dynmat-{:04}", index + 1));
         let input = dir.join("reference.in");
@@ -322,7 +362,7 @@ pub(super) fn ensure_sources(
             Some(&immutable),
             || {
                 fs::create_dir_all(&dir)?;
-                fs::write(&dyn_xml, &corrected)?;
+                fs::write(&dyn_xml, &native_xml)?;
                 let mut text =
                     String::from("&input\n fildyn='corrected.xml', asr='no', filout='modes.out'\n");
                 for (i, el) in qe.cell.elements.iter().enumerate() {

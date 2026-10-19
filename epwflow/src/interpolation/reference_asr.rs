@@ -23,6 +23,25 @@ fn matrix(root: roxmltree::Node<'_, '_>, a: usize, b: usize) -> Result<Vec<f64>>
     Ok(values)
 }
 
+/// QE xmltools 对复数矩阵直接 READ 后续记录；标签与数值必须分行。
+/// 修正矩阵的规范串仍用于检查点摘要，文件布局单独在消费边界转换。
+pub(super) fn qe_xml_records(raw: &str) -> Result<String> {
+    let doc = roxmltree::Document::parse(raw)?;
+    let mut edits = Vec::new();
+    for node in doc.descendants().filter(|n| n.is_element() && n.tag_name().name().starts_with("PHI.")) {
+        let values = xml::numbers(node.text().context("data_invalid: PHI 缺数值")?)?;
+        ensure!(values.len() == 18, "data_invalid: PHI 不是复数 3x3 矩阵");
+        let records = values.chunks_exact(2)
+            .map(|pair| format!("  {:.17e} {:.17e}\n", pair[0], pair[1]))
+            .collect::<String>();
+        edits.push((value_range(node)?, format!("\n{records}    ")));
+    }
+    ensure!(!edits.is_empty(), "data_invalid: PH XML 缺矩阵");
+    let mut output = raw.to_owned();
+    for (range, value) in edits.into_iter().rev() { output.replace_range(range, &value); }
+    Ok(output)
+}
+
 /// 全 q 星用于 q2r；与质量参考的 QE dyndiag 一样平均 onsite 上下三角。
 pub(super) fn corrected_stars(raw: &str, gamma: &str, nat: usize) -> Result<String> {
     let doc = roxmltree::Document::parse(raw)?;
@@ -381,6 +400,23 @@ mod tests {
         assert_eq!(xml::text(doc.root_element(), "NUMBER_OF_Q").unwrap(), "1");
         assert!(!corrected.contains("DYNAMICAL_MAT_.2"));
         assert!(!corrected.contains("FREQUENCIES_THZ_CMM1"));
+    }
+
+    #[test]
+    fn qe_matrix_records_keep_values_and_separate_fortran_read_from_tags() {
+        let raw = corrected_xml(&sample([0.25, 0., 0.], 1000, 1), &sample([0.; 3], 0, 1), 2).unwrap();
+        let native = qe_xml_records(&raw).unwrap();
+        let old = roxmltree::Document::parse(&raw).unwrap();
+        let new = roxmltree::Document::parse(&native).unwrap();
+        for a in 1..=2 { for b in 1..=2 {
+            let name = format!("PHI.{a}.{b}");
+            let node = one(new.root_element(), &name).unwrap();
+            let text = node.text().unwrap();
+            assert!(text.starts_with('\n') && text.trim_end().lines().skip(1).count() == 9);
+            assert!(text.lines().skip(1).take(9).all(|line| line.split_whitespace().count() == 2));
+            assert_eq!(xml::numbers(text).unwrap(), xml::numbers(one(old.root_element(), &name).unwrap().text().unwrap()).unwrap());
+        }}
+        assert!(qe_xml_records(&raw.replace("1120 1121", "NaN 1121")).is_err());
     }
 
     #[test]

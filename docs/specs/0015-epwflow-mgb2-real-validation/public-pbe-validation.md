@@ -61,4 +61,18 @@ T049 定向验证分批 44 个不同用例最终通过：库 11、工作流契�
 
 1296305 在 25 节点秒后以 readpp 失败结束，累计 3034，终态结算、预留归零。加引号后文件名在 pp 目录处截断；本地 input_parameters.f90 明确 atom_pfile=80、pseudo_dir=256 字符。T102 继续以共同目录与带引号短相对文件名表达同一已绑定文件，超限提前拒绝；不变更原始 PBE 赝势。nscf-length-failure 保留原输入／日志。
 
+## 第一阶段真实通过与示例脚本生成
+
+提交 102fc8b 的三个程序在 bin-short-pseudo-fix 冻结，按仓库既有运行库打包规则处理测试副本，未切换安装。最终 short-pseudo-verified.log 一次 95 项通过、2 项真实环境暂挂，含完整公开连续执行和故障恢复；原空锁失败案例与中间复测日志保留。
+
+1296651 通过相同快照显式恢复，COMPLETED／0:0，21 节点秒，累计 3055、预留归零。完整 NSCF 的原生结束、32 k／16 带、96 份清单产物和两个不可约 q 经公开 --check 重验 valid；14 份既有声子／save 文件指纹不变。phonon-complete-evidence.json、phonon-status-seventh.json、phonon-check-complete.json 保存结果。第一阶段通过；第二阶段、细网格和 Tc 不据此判为完成。
+
+用户示例目录 inputepw.toml 已由同一冻结程序 --check 与 --all 检查并生成实际三阶段脚本及 epwflow/.epwflow/generated/submit-all.sh；四份脚本 bash -n 通过，没有在示例目录创建 calculations 或提交第二套科学计算。记录为 example-generation.json。
+
+## 第二阶段原生 XML 记录错误
+
+1296668 在 6 节点秒后失败并结算，共享累计 3061、预留归零。独立电子 NSCF 已正常结束；dynmat 的 readtag_zm 报 Fortran 列表读取语法错误，派生 onsite 矩阵数值与 XML 标签同一行。错误位于文件序列化，不是质量超差或求解不收敛，尚未执行原生 Wannier／细网格／超导。
+
+dynmat-record-failure 保留输入、修正 XML、stdout／stderr／退出码、两份检查点与原请求，并记录 45 份电子参考文件和 F2 清单 SHA-256。0012 T058 沿用同一固定输入修复记录布局和显式编排更新后的恢复；未调整窗口／网格或重新构建 QE／EPW。
+
 本次恢复的全部 14 份既有科学／清单文件指纹与 nscf-card-failure 基线一致，包括 SCF／PH／q2r、两类 matdyn、XML 力常数、检查点及 save 清单。T027 的真实 XML 消费与复用已验证；NSCF／第一阶段整体仍未通过，不能以声子子链完成代替它。

@@ -9,10 +9,18 @@ text = Path(args[args.index('-inp')+1]).read_text() if '-inp' in args else sys.s
 def value(name, default=None):
     m = re.search(r'\b'+name+r"\s*=\s*('(?:[^']|'')*'|[^,\n]+)", text, re.I)
     return m.group(1).strip().strip("'") if m else default
+def matrix_records(source):
+    for node in source.iter():
+        if not node.tag.startswith('PHI.'): continue
+        assert node.text.startswith('\n'), 'QE READ starts on the record after the opening tag'
+        lines=[line for line in node.text.splitlines() if line.strip()]
+        assert len(lines)==9 and all(len(line.split())==2 for line in lines)
+        assert all(math.isfinite(float(v)) for line in lines for v in line.split())
 if kind == 'dynmat':
     with (ROOT/'scientific-calls').open('a') as f: f.write('dynmat '+Path.cwd().name+'\n')
     assert value('asr') == 'no' and value('amass\\(1\\)') is not None
     source=ET.parse(value('fildyn')).getroot()
+    matrix_records(source)
     assert source.find('NUMBER_OF_Q').text.strip() == '1'
     assert source.find('FREQUENCIES_THZ_CMM1') is None
     q=source.find('DYNAMICAL_MAT_.1/Q_POINT').text
@@ -31,6 +39,7 @@ if kind in ('q2r', 'matdyn'):
         print('Error in routine fixture'); sys.exit(2)
     if kind == 'q2r':
         assert Path(value('fildyn').replace('.dyn.xml', '.dyn0')).is_file()
+        for path in Path.cwd().glob('*.dyn*.xml'): matrix_records(ET.parse(path).getroot())
         target = Path(value('flfrc'))
         if value('fildyn').endswith('.xml'): target=Path(str(target)+'.xml')
         target.write_text('fixture force constants')
@@ -148,7 +157,7 @@ else:
             ET.SubElement(root,'NUMBER_OF_Q').text='1'
             dyn=ET.SubElement(root,'DYNAMICAL_MAT_.1');ET.SubElement(dyn,'Q_POINT').text=s([.1,0,0] if mode=='wrong_q' else q)
             for i in range(1,len(atoms)+1):
-                for j in range(1,len(atoms)+1):ET.SubElement(dyn,'PHI.'+str(i)+'.'+str(j)).text=s([0.]*18)
+                for j in range(1,len(atoms)+1):ET.SubElement(dyn,'PHI.'+str(i)+'.'+str(j)).text='\n'+''.join('  0.0 0.0\n' for _ in range(9))+'    '
             freq=ET.SubElement(root,'FREQUENCIES_THZ_CMM1')
             for i in range(1,modes+1):ET.SubElement(freq,'OMEGA.'+str(i)).text='1 100'
             ET.ElementTree(root).write(prefix+'.dyn'+('' if is_coords else str(index))+'.xml')

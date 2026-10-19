@@ -331,11 +331,11 @@ pub(super) fn run(
             for p in &f2.phonon_files {
                 fs::write(
                     phonon.join(format!("{}.dyn{}.xml", cfg.qe.prefix, p.q_id)),
-                    reference_asr::corrected_stars(
+                    reference_asr::qe_xml_records(&reference_asr::corrected_stars(
                         &fs::read_to_string(&p.dyn_file)?,
                         &gamma_text,
                         geometry.atoms.len(),
-                    )?,
+                    )?)?,
                 )?;
             }
             fs::write(
