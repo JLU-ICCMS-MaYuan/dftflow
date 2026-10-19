@@ -355,7 +355,8 @@ fn qe_config_renders_expected_namelists() {
     let reference_in = qe.reference_input(out.to_str().unwrap(), &[[0., 0., 0.]]).unwrap();
     for deck in [&scf_in, &nscf_in, &reference_in] {
         for pseudo in cfg.pseudos.values() {
-            assert!(deck.contains(&format!("'{}'", pseudo.display())));
+            assert!(deck.contains(&format!("'{}'", pseudo.parent().unwrap().display())));
+            assert!(deck.contains(&format!("'{}'", pseudo.file_name().unwrap().to_str().unwrap())));
         }
     }
     let init_in = qe.phonon_init_input(out.to_str().unwrap());

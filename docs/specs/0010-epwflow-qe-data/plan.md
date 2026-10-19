@@ -108,3 +108,5 @@ spec.md、plan.md、research.md、data-model.md、contracts/interface.md、tasks
 ## 显式赝势的卡片引用
 
 适配层映射既有绝对赝势路径时使用共享 QE 字符串序列化，避免 Fortran 列表定向 READ 将斜杠解释为输入终止符。SCF／完整及参考 NSCF 走同一适配方法，不重选文件、复制其他赝势或改变物理身份；严格原生 IO fixture 在科学执行入口核验引用。
+
+T102 的实际输入使用共同 pseudo_dir 加短相对文件名，保留引号与来源身份；单独引用超长绝对名仍会被 QE atom_pfile 截断。原生字段长度检查及不同子目录／超长名拒绝纳入契约回归，不调整赝势物理内容或默认选择。

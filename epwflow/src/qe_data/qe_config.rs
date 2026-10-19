@@ -5,11 +5,13 @@ use qf_config::SectionMap;
 use qf_crystal::Structure;
 use qf_input::pw::PwParams;
 use serde_json::json;
+use std::path::PathBuf;
 
 /// 结构解析、原子质量与 PW/PH 格式由共享库维护；此处只映射 EPW 参数。
 pub struct QeSettings<'a> {
     pub config: &'a config::Config,
     pub cell: Structure,
+    pseudo_dir: PathBuf,
 }
 
 impl<'a> QeSettings<'a> {
@@ -32,19 +34,36 @@ impl<'a> QeSettings<'a> {
                 "configuration: {el} 没有受支持的原子质量"
             );
         }
-        Ok(Self { config, cell })
+        let first = cell.elements.first().context("data_invalid: 结构没有元素")?;
+        let mut pseudo_dir = config.pseudos[first].parent()
+            .context("configuration: 赝势缺少父目录")?.to_path_buf();
+        for el in &cell.elements {
+            let path = &config.pseudos[el];
+            ensure!(path.is_absolute(), "configuration: 赝势必须是绝对路径");
+            while !path.starts_with(&pseudo_dir) {
+                ensure!(pseudo_dir.pop(), "configuration: 赝势缺少共同目录");
+            }
+        }
+        ensure!(pseudo_dir.to_str().context("赝势目录不是 UTF-8")?.len() < 256,
+            "configuration: QE pseudo_dir 超过 255 字节");
+        for el in &cell.elements {
+            let name = config.pseudos[el].strip_prefix(&pseudo_dir)?.to_str()
+                .context("赝势路径不是 UTF-8")?;
+            ensure!(name.len() <= 80, "configuration: QE 赝势相对文件名超过 80 字节，请使用更近的共同目录");
+        }
+        Ok(Self { config, cell, pseudo_dir })
     }
 
     fn pw_input(&self, outdir: &str, nscf: bool, reference: Option<&[[f64; 3]]>) -> Result<String> {
         let qe = &self.config.qe;
         let mut shared = qf_config::Config::default();
         shared.qe.lattice_mode = Some(qf_config::LATTICE_MODE_CELL_PARAMETERS.into());
-        // 赝势使用已解析的绝对路径，保持显式文件身份，不在目录内自动猜选。
-        shared.pp_dir = Some("/".into());
+        // QE atom_pfile 限制为 80 字节；目录与短相对名共同定位原显式文件。
+        shared.pp_dir = Some(self.pseudo_dir.to_str().context("赝势目录不是 UTF-8")?.into());
         let mut species = String::from("ATOMIC_SPECIES\n");
         for el in &self.cell.elements {
             let path = &self.config.pseudos[el];
-            let name = path.to_str().context("赝势路径不是 UTF-8")?;
+            let name = path.strip_prefix(&self.pseudo_dir)?.to_str().context("赝势路径不是 UTF-8")?;
             ensure!(
                 path.is_absolute() && !name.chars().any(char::is_whitespace),
                 "configuration: QE 赝势卡片需要不含空白的绝对路径；请先固定到受控赝势目录"

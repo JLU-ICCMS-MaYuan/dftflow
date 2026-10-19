@@ -71,3 +71,7 @@
 ## 赝势绝对路径的 QE 卡片语法
 
 真实 PBE 完整 NSCF 在 readpp 报告 file / not found，原输入 ATOMIC_SPECIES 的绝对路径未加引号。external/q-e/Modules/read_cards.f90 使用 Fortran 列表定向 READ，斜杠是输入终止符。适配层须用共享 QE 字符串序列化引用显式路径，保留同一文件身份；SCF／完整及参考 NSCF 共用修复，原物理参数不变。协议替身须拒绝未引用绝对路径，而不是忽略赝势卡片。
+
+## 原生赝势文件名的 80 字节上限
+
+加引号后 1296305 的错误路径延长到目录 pp 后截断，证实引用之外还有长度限制。external/q-e/Modules/input_parameters.f90 的 atom_pfile 为 CHARACTER(len=80)，pseudo_dir 为 len=256；READ 的局部 256 字符变量最终赋值到 80 字符卡片字段。采用所有已绑定赝势的共同父目录与短相对名，严格保留每个源路径，不进行文件猜选／复制改名；超长或不合法表示在适配前拒绝。共同目录支持不同子目录的显式文件；原生 IO fixture 核验长度和真实解析路径。

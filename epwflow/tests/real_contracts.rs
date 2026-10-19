@@ -799,7 +799,8 @@ fn shared_qe_inputs_keep_physics_and_full_mesh() {
     assert_eq!(rows[0][0], "Mg");
     assert!((rows[0][1].parse::<f64>().unwrap() - 24.305).abs() < 1e-10);
     assert!((rows[1][1].parse::<f64>().unwrap() - 10.81).abs() < 1e-10);
-    assert_eq!(rows[0][2], format!("'{}'", cfg.pseudos["Mg"].display()));
+    assert_eq!(rows[0][2], "'Mg.upf'");
+    assert!(input.contains(&format!("pseudo_dir = '{}'", cfg.pseudos["Mg"].parent().unwrap().display())));
     let nscf = qe.nscf_input("./tmp").unwrap();
     let system = nscf
         .split("&SYSTEM\n")
@@ -856,6 +857,27 @@ fn shared_qe_inputs_keep_physics_and_full_mesh() {
     let nosplit = qe.phonon_nosplit_input("./tmp");
     assert!(nosplit.contains("ldisp = .true.") && nosplit.contains("only_init = .false."));
     assert!(!nosplit.contains("last_q"));
+}
+
+#[test]
+fn qe_species_layout_keeps_explicit_files_and_rejects_native_filename_limit() {
+    let c = Case::new();
+    let mut cfg = c.config();
+    for (el, folder) in [("Mg", "first"), ("B", "second")] {
+        let dir = c.root.join(folder);
+        fs::create_dir(&dir).unwrap();
+        let path = dir.join(format!("{el}.upf"));
+        fs::copy(&cfg.pseudos[el], &path).unwrap();
+        cfg.pseudos.insert(el.into(), path);
+    }
+    let qe = QeSettings::from_config(&cfg).unwrap();
+    let input = qe.nscf_input("./out").unwrap();
+    assert!(input.contains(&format!("pseudo_dir = '{}'", c.root.display())));
+    assert!(input.contains("'first/Mg.upf'") && input.contains("'second/B.upf'"));
+    let long = c.root.join(format!("{}.upf", "x".repeat(81)));
+    fs::copy(&cfg.pseudos["Mg"], &long).unwrap();
+    cfg.pseudos.insert("Mg".into(), long);
+    assert!(QeSettings::from_config(&cfg).err().unwrap().to_string().contains("80 字节"));
 }
 
 #[test]

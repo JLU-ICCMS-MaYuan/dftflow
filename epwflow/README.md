@@ -152,6 +152,6 @@ bash scripts/build-native.sh test -p qeflow -p epwflow -p qf-input -p qf-phonon 
 
 隔离进程测试证明接口、阶段顺序、失败阻断和来源校验；不代表真实 MgB₂ 科学验收通过。当前声子最大／RMS 门为 50／20 cm⁻¹，共享预算仍为 8 节点小时／100 GiB，不按阶段重置。已有 LDA 原生线性化 iso 区间不能代替完整双初值非线性与 aniso Tc 验收。实际科学证据及未完成项见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md) 和 [原生求解源码诊断](../docs/specs/0015-epwflow-mgb2-real-validation/native-solver-source-audit.md)。
 
-保留 EPW 数据时，q2r 的 XML 力常数输出为 `.fc.xml`，两类 matdyn 与自动比较均显式消费该路径；普通文本模式继续用 `.fc`。该衔接修复定向回归分批 47 个不同用例最终通过、1 项真实环境暂挂。PBE 已有 SCF／PH／q2r 原生完成证据，后处理及其余阶段仍按实际清单核验。
+保留 EPW 数据时，q2r 输出 `.fc.xml`，两类 matdyn 与自动比较均读取该路径；普通模式继续使用 `.fc`。恢复时复用已核验的 XML q2r。显式赝势以共同 `pseudo_dir` 与带引号的短相对文件名定位，生成前检查 QE 的原生长度限制。
 
-显式赝势绝对路径现在作为带引号的 QE 卡片字段输出；XML q2r 的成功状态可在后处理失败恢复时复用。定向验证分批 92 个不同用例最终通过、2 项真实环境暂挂。真实 PBE 已有共享声子后处理／出图／save 证据，完整 NSCF 与后续阶段仍须各自验收。
+真实 PBE 已完成共享声子链、出图与 save；完整 NSCF 和后续阶段的最新结果见 [PBE 主路径验证](../docs/specs/0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。

@@ -35,6 +35,24 @@ impl Lock {
         let t=token(); let owner=Owner{host:hostname(),pid:std::process::id(),token:t.clone(),created_unix:now(),job_id:std::env::var("SLURM_JOB_ID").ok().and_then(|s|s.parse().ok())};
         write(&path.join("owner.json"),&owner)?;Ok(Self{path,token:t})
     }
+
+    /// 先移走完整的所属锁，再清理；清理失败不得留下空的公共锁路径。
+    fn release_with(&self, cleanup: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
+        if !self.path.exists() { return Ok(()); }
+        ensure!(!fs::symlink_metadata(&self.path)?.file_type().is_symlink(), "scheduler_unknown: 锁目录是链接");
+        let owner_path = self.path.join("owner.json");
+        ensure!(!fs::symlink_metadata(&owner_path)?.file_type().is_symlink(), "scheduler_unknown: 锁 owner 是链接");
+        let owner: Owner = read(&owner_path)?;
+        if owner.token != self.token { return Ok(()); }
+        let entries = fs::read_dir(&self.path)?.collect::<std::io::Result<Vec<_>>>()?;
+        ensure!(entries.len() == 1 && entries[0].file_name() == "owner.json", "scheduler_unknown: 所属锁含未知现场，保留原锁");
+        // Unix DirEntry 可持有目录句柄，移动和清理前先释放。
+        drop(entries);
+        let retired = self.path.parent().context("锁缺少父目录")?.join(format!(".epw-released-{}", self.token));
+        ensure!(!retired.try_exists()?, "scheduler_unknown: 锁退役路径已存在");
+        fs::rename(&self.path, &retired)?;
+        cleanup(&retired)
+    }
 }
 /// 仅显式恢复使用：所有者必须属于指定旧分配，且该分配有明确终态证据。
 pub fn recover_finished_lock(target:&Path,job:u64)->Result<()> {
@@ -51,12 +69,43 @@ fn recover_lock_with(target:&Path,job:u64,terminal:impl FnOnce()->Result<()>)->R
     ensure!(owner.job_id==Some(job),"scheduler_unknown: 锁不属于原分配，不能清除未知锁");
     ensure!(fs::read_dir(&path)?.count()==1,"scheduler_unknown: 锁含未知现场");
     terminal()?;identity.verify()?;
-    fs::remove_file(owner_path)?;fs::remove_dir(path)?;Ok(())
+    let recovered = Lock {path, token: owner.token};
+    recovered.release_with(cleanup_retired_lock)
+}
+
+fn cleanup_retired_lock(retired: &Path) -> Result<()> {
+    fs::remove_file(retired.join("owner.json"))?;
+    fs::remove_dir(retired)?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod recovery_tests {
     use super::*;
+    #[test]
+    fn released_lock_cleanup_failure_never_blocks_or_removes_the_next_owner() {
+        let root=std::env::temp_dir().join(format!("epw-release-{}",token()));fs::create_dir(&root).unwrap();
+        let target=root.join("execution");let first=Lock::acquire(&target).unwrap();
+        let mut retired=None;
+        assert!(first.release_with(|path| {retired=Some(path.to_path_buf());bail!("fixture: unlink failed")}).is_err());
+        let retired=retired.unwrap();
+        assert_eq!(read::<Owner>(&retired.join("owner.json")).unwrap().token,first.token);
+        let second=Lock::acquire(&target).unwrap();
+        drop(first);
+        assert_eq!(read::<Owner>(&second.path.join("owner.json")).unwrap().token,second.token);
+        drop(second);
+        assert!(!root.join("execution.lock").exists());
+        fs::remove_file(retired.join("owner.json")).unwrap();fs::remove_dir(retired).unwrap();fs::remove_dir(root).unwrap();
+    }
+    #[test]
+    fn releasing_a_lock_preserves_unknown_contents_and_owner() {
+        let root=std::env::temp_dir().join(format!("epw-release-unknown-{}",token()));fs::create_dir(&root).unwrap();
+        let target=root.join("execution");let lock=Lock::acquire(&target).unwrap();
+        let unknown=lock.path.join("unknown");fs::write(&unknown,"keep").unwrap();
+        assert!(lock.release_with(|_|panic!("未知现场不得清理")).is_err());
+        assert!(lock.path.join("owner.json").is_file() && unknown.is_file());
+        fs::remove_file(unknown).unwrap();drop(lock);fs::remove_dir(root).unwrap();
+    }
     #[test]
     fn lock_recovery_requires_matching_allocation_and_confirmed_terminal(){
         let root=std::env::temp_dir().join(format!("epw-lock-{}",token()));fs::create_dir(&root).unwrap();
@@ -70,8 +119,7 @@ mod recovery_tests {
     }
 }
 impl Drop for Lock {fn drop(&mut self){
-    // 仅移除自己持有且内容完整的锁；异常现场保留。
-    if let Ok(owner)=read::<Owner>(&self.path.join("owner.json")){if owner.token==self.token {let _=fs::remove_file(self.path.join("owner.json"));let _=fs::remove_dir(&self.path);}}
+    if let Err(error) = self.release_with(cleanup_retired_lock) { eprintln!("lock_release: {}: {error:#}", self.path.display()); }
 }}
 pub fn hostname()->String{let mut name=[0u8;256];#[cfg(unix)] unsafe{if libc::gethostname(name.as_mut_ptr().cast(),name.len())==0 {return String::from_utf8_lossy(&name[..name.iter().position(|b|*b==0).unwrap_or(name.len())]).into_owned();}}"unknown".into()}
 pub fn now()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()}

@@ -73,10 +73,14 @@ if kind=='pw':
     species = re.search(r'ATOMIC_SPECIES\s*\n(.*?)ATOMIC_POSITIONS', text, re.S).group(1)
     for line in species.strip().splitlines():
         _, _, pseudo = line.split(None, 2)
-        # Fortran 列表定向读取不能把未引用的斜杠绝对路径当作文件名。
-        assert not pseudo.startswith('/'), 'unquoted absolute pseudopotential path'
-        if pseudo.startswith("'/"):
-            assert pseudo.endswith("'") and Path(pseudo[1:-1].replace("''", "'")).is_file()
+        # QE atom_pfile 为 80 字节；列表定向读取要求引用含斜杠的字符串。
+        if pseudo.startswith("'"):
+            assert pseudo.endswith("'")
+            pseudo = pseudo[1:-1].replace("''", "'")
+        else:
+            assert '/' not in pseudo, 'unquoted pseudopotential path'
+        assert len(pseudo.encode()) <= 80, 'QE pseudopotential filename exceeds 80 bytes'
+        assert (Path(value('pseudo_dir', './'))/pseudo).is_file()
     cell = re.search(r'CELL_PARAMETERS[^\n]*\n([^\n]+)\n([^\n]+)\n([^\n]+)', text, re.I)
     lattice = [[float(x)/BOHR for x in cell.group(i).split()] for i in (1,2,3)]
     alat = math.sqrt(dot(lattice[0],lattice[0]))
