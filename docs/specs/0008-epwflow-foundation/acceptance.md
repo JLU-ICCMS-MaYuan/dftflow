@@ -135,3 +135,11 @@ T046 通过实际生成脚本顺序调用三个公开程序。第一阶段验证
 41 个不同用例最终通过：库 10、工作流契约 25、三个程序 6。其中新用例执行三份实际生成脚本与一份内部提交脚本的完整初始化段，覆盖引号／空格路径、可选变量、执行阶段 nounset、加载 return 17 及后续不执行。首轮新测试因 TOML 非存在键的插入方式导致测试准备失败，改用表插入后六项复测通过；原失败日志保留，不能算单次全绿或重复累计。
 
 在登录节点仅执行实际生成脚本的初始化段，本机 oneAPI 脚本在缺少该变量时加载成功、退出 0、严格选项恢复，没有启动科学程序。记录在 local_run/010-public-pbe 的 environment-regression.log、environment-retest.log、bootstrap.json／stdout／stderr；作业与原预算结算、后续科学边界见[0015 真实验证](../0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。默认安装不变，T041／T042 继续未完成。
+
+## T049：控制器启动与账表结算分离
+
+启动检查改用 scontrol 的唯一作业身份、RUNNING 和固定节点数，RUNNING 零节点有限等待；结算继续只读 sacct。控制器解析拒绝错误身份、重复记录／字段、缺失／非法节点数与非运行状态。公开 worker 的资源冲突在科学执行前拒绝；控制器运行而账表 PENDING／零节点时能进入阶段，状态刷新仍拒绝不完整账表并保持预留字节不变，明确终态后按真实用量结算。
+
+分批共 **44 个不同用例最终通过、0 项未解决失败、0 ignored**：库 11、工作流契约 26、三个程序 6、完整公开链 1。首轮控制器测试替身使用 Python 3.6 不支持的 subprocess text 参数，造成 3 项失败；改用 universal_newlines 后相关集从头复测通过，失败日志保留，不计通过或重复累计。完整公开链 96.59 秒，继续验证部分求解恢复、最终交付恢复、33 份图、移动重绘和篡改拒绝。
+
+证据位于 local_run/010-public-pbe 的 controller-regression.log、controller-retest.log 与 controller-verified-cases；全部测试数值与分配为协议替身。T049 勾选，T041／T042 及真实 PBE／完整 Tc 仍未完成；原科学账本累计 2952 节点秒，三个失败分配均终态结算，未决预留为零。

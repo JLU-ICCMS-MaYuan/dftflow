@@ -72,6 +72,7 @@ runpy.run_path(str(root/name),run_name='__main__')
                 shell_quote(c.root.join("accounting").to_str().unwrap())
             ),
         );
+        c.script("scontrol", include_str!("fixtures/slurm_controller.py"));
         c.script("squeue", "#!/bin/sh\nexit 0\n");
         c.script("sbatch", &format!("#!/bin/bash\nset -eu\nprintf '%s\\n' \"$*\" >> {calls}\nn=$(wc -l < {calls})\nprintf '%s\\n' \"$((200+n))\"\n", calls=shell_quote(c.root.join("submissions").to_str().unwrap())));
         let mut cfg: config::Config = toml::from_str(include_str!("fixtures/input.toml")).unwrap();

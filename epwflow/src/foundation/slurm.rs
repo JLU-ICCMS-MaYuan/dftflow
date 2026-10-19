@@ -110,13 +110,63 @@ impl std::fmt::Display for RunningNodesPending {
 }
 impl std::error::Error for RunningNodesPending {}
 
-/// 启动前有限等待 RUNNING 的节点记账；未知记录和终态不重试，不修改预算预留。
+/// 启动读取控制器实时分配；终态计费仍由独立的 sacct 查询负责。
 pub fn running_allocation(job_id: u64) -> Result<Accounting> {
     running_with(
         10,
-        || accounting(job_id),
+        || controller_allocation(job_id),
         || std::thread::sleep(std::time::Duration::from_secs(1)),
     )
+}
+
+fn controller_allocation(job_id: u64) -> Result<Accounting> {
+    ensure!(job_id > 0, "allocation: 无效作业号");
+    let out = Command::new("scontrol")
+        .args(["show", "job", "-o", &job_id.to_string()])
+        .output()
+        .context("scheduler_unknown: 无法查询 scontrol")?;
+    ensure!(
+        out.status.success(),
+        "scheduler_unknown: scontrol 失败：{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    parse_controller(job_id, &String::from_utf8(out.stdout)?)
+}
+
+/// 仅供启动门使用，不提供计费秒数，不从环境变量猜测资源。
+fn parse_controller(job_id: u64, text: &str) -> Result<Accounting> {
+    let rows: Vec<_> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    ensure!(rows.len() == 1, "scheduler_unknown: 控制器记录缺失或不唯一");
+    let mut fields = std::collections::BTreeMap::new();
+    for field in rows[0].split_whitespace() {
+        if let Some((key, value)) = field.split_once('=') {
+            if matches!(key, "JobId" | "JobState" | "NumNodes") {
+                ensure!(
+                    fields.insert(key, value).is_none(),
+                    "scheduler_unknown: 控制器字段重复"
+                );
+            }
+        }
+    }
+    ensure!(
+        fields.get("JobId").copied() == Some(job_id.to_string().as_str()),
+        "input_conflict: 控制器作业身份冲突"
+    );
+    ensure!(
+        fields.get("JobState") == Some(&"RUNNING"),
+        "allocation: 控制器当前分配尚未运行或已终止"
+    );
+    let nodes = fields
+        .get("NumNodes")
+        .context("scheduler_unknown: 控制器缺少节点数")?
+        .parse()
+        .context("scheduler_unknown: 控制器节点数非整数")?;
+    Ok(Accounting {
+        state: "RUNNING".into(),
+        terminal: false,
+        nodes,
+        node_seconds: 0,
+    })
 }
 
 fn running_with(
@@ -136,7 +186,7 @@ fn running_with(
             pause();
         }
     }
-    bail!("scheduler_unknown: 等待 RUNNING 节点记账超时；禁止启动科学程序")
+    bail!("scheduler_unknown: 等待控制器 RUNNING 节点数超时；禁止启动科学程序")
 }
 
 /// 只采用 allocation 行，排除 batch/extern 等 step，未知状态保持预留。
@@ -274,5 +324,38 @@ mod tests {
             .is_err());
             assert_eq!(calls, 1, "{row}");
         }
+    }
+    #[test]
+    fn controller_startup_is_bound_to_one_running_job_and_has_no_billing() {
+        let a =
+            parse_controller(12, "JobId=12 JobName=fixture JobState=RUNNING NumNodes=2").unwrap();
+        assert_eq!(a.nodes, 2);
+        assert_eq!(a.node_seconds, 0);
+        for row in [
+            "",
+            "JobId=13 JobState=RUNNING NumNodes=1",
+            "JobId=12 JobState=COMPLETED NumNodes=1",
+            "JobId=12 JobState=PENDING NumNodes=1",
+            "JobId=12 JobState=RUNNING NumNodes=bad",
+            "JobId=12 JobState=RUNNING",
+            "JobId=12 JobState=RUNNING NumNodes=1 JobId=12",
+            "JobId=12 JobState=RUNNING NumNodes=1\nJobId=12 JobState=RUNNING NumNodes=1",
+        ] {
+            assert!(parse_controller(12, row).is_err(), "{row}");
+        }
+        let mut rows = [
+            "JobId=12 JobState=RUNNING NumNodes=0",
+            "JobId=12 JobState=RUNNING NumNodes=1",
+        ]
+        .into_iter();
+        let mut waits = 0;
+        let a = running_with(
+            2,
+            || parse_controller(12, rows.next().unwrap()),
+            || waits += 1,
+        )
+        .unwrap();
+        assert_eq!(a.nodes, 1);
+        assert_eq!(waits, 1);
     }
 }

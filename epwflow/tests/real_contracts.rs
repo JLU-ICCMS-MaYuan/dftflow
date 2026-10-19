@@ -50,11 +50,24 @@ impl Case {
 
     fn qe_fixture(&self) {
         let input = fs::read_to_string(self.root.join("input.toml")).unwrap();
-        self.put("input.toml", &input.replace("[phonon]", "[phonon]\nmode = \"nosplit\"")
-            .replace("frozen_window_ev = [-2.0,2.0]", "frozen_window_ev = [-0.5,0.5]")
-            .replace("energy_reference = \"f2_fermi\"", "energy_reference = \"qe_zero\""));
+        self.put(
+            "input.toml",
+            &input
+                .replace("[phonon]", "[phonon]\nmode = \"nosplit\"")
+                .replace(
+                    "frozen_window_ev = [-2.0,2.0]",
+                    "frozen_window_ev = [-0.5,0.5]",
+                )
+                .replace(
+                    "energy_reference = \"f2_fermi\"",
+                    "energy_reference = \"qe_zero\"",
+                ),
+        );
         // 此替身通过选窗能力预检，但不提供 dynmat；自动参考须在新科学调用前拒绝。
-        self.script("epw.x", "#!/bin/sh\n# dis_proj_min dis_proj_max dis_froz_proj\nexit 0\n");
+        self.script(
+            "epw.x",
+            "#!/bin/sh\n# dis_proj_min dis_proj_max dis_froz_proj\nexit 0\n",
+        );
         self.put("KPATH.in", "0 0 0 G\n0.5 0 0 X\n");
         self.put("qe-native.py", include_str!("fixtures/qe_native_io.py"));
         for kind in ["pw", "ph", "q2r", "matdyn"] {
@@ -71,6 +84,7 @@ impl Case {
         let root = std::env::temp_dir().join(format!("epw-real-contracts-{}", store::token()));
         fs::create_dir(&root).unwrap();
         let c = Self { root };
+        c.script("scontrol", include_str!("fixtures/slurm_controller.py"));
         c.put("input.toml", include_str!("fixtures/input.toml"));
         c.put("POSCAR", "MgB2\n1\n3 0 0\n-1.5 2.598 0\n0 0 3.5\nMg B\n1 2\nDirect\n0 0 0\n0.3333 0.6667 0.5\n0.6667 0.3333 0.5\n");
         for name in ["Mg.upf", "B.upf"] {
@@ -318,9 +332,16 @@ fn b01_boundary_executes_qe_once_and_blocks_missing_interpolation_evidence() {
     );
     // 模拟 QE 清单已发布、F1 尚未登记完成时进程中断；显式恢复应重验清单。
     let mut interrupted = c.workflow();
-    interrupted["completed"].as_object_mut().unwrap().remove("qe-data");
+    interrupted["completed"]
+        .as_object_mut()
+        .unwrap()
+        .remove("qe-data");
     interrupted["state"] = "failed".into();
-    fs::write(c.root.join("run/.epwflow/workflow.json"), serde_json::to_vec_pretty(&interrupted).unwrap()).unwrap();
+    fs::write(
+        c.root.join("run/.epwflow/workflow.json"),
+        serde_json::to_vec_pretty(&interrupted).unwrap(),
+    )
+    .unwrap();
     fs::remove_file(c.root.join("run/qe-data/manifest.json")).unwrap();
     c.script(
         "sacct",
@@ -328,14 +349,28 @@ fn b01_boundary_executes_qe_once_and_blocks_missing_interpolation_evidence() {
     );
     c.script("sbatch", "#!/bin/sh\nprintf '124\\n'\n");
     let recovered = c.cli(&["resume", "-w", "run", "-s", "--until", "qe-data"]);
-    assert!(recovered.status.success(), "{}", String::from_utf8_lossy(&recovered.stderr));
+    assert!(
+        recovered.status.success(),
+        "{}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
     let attempt = c.workflow()["attempt_id"].as_str().unwrap().to_owned();
     let recovered = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 124);
-    assert!(recovered.status.success(), "{}", String::from_utf8_lossy(&recovered.stderr));
+    assert!(
+        recovered.status.success(),
+        "{}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
     assert!(c.workflow()["completed"].get("qe-data").is_some());
     assert!(c.root.join("run/qe-data/manifest.json").is_file());
-    assert_eq!(before, fs::read_to_string(c.root.join("scientific-calls")).unwrap());
-    c.script("sacct", "#!/bin/sh\nprintf '123|COMPLETED|3|1|\\n124|COMPLETED|1|1|\\n125|RUNNING|0|1|\\n'\n");
+    assert_eq!(
+        before,
+        fs::read_to_string(c.root.join("scientific-calls")).unwrap()
+    );
+    c.script(
+        "sacct",
+        "#!/bin/sh\nprintf '123|COMPLETED|3|1|\\n124|COMPLETED|1|1|\\n125|RUNNING|0|1|\\n'\n",
+    );
     c.script("sbatch", "#!/bin/sh\nprintf '125\\n'\n");
     assert!(c
         .cli(&["resume", "-w", "run", "-s", "--until", "interpolation"])
@@ -349,7 +384,11 @@ fn b01_boundary_executes_qe_once_and_blocks_missing_interpolation_evidence() {
         "续算应复用原计算根目录"
     );
     assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("dynmat.x"), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(
+        String::from_utf8_lossy(&o.stderr).contains("dynmat.x"),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
     assert_eq!(c.workflow()["state"], "failed");
     assert_eq!(c.workflow()["current_stage"], "wannier");
     assert!(c.workflow()["completed"].get("qe-data").is_some());
@@ -962,4 +1001,47 @@ fn prepare_rejects_changed_bound_configuration_without_rewriting() {
     let out = c.cli(&["resume", "-w", "run", "-s"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("input_conflict"));
+}
+
+#[test]
+fn startup_uses_controller_while_delayed_accounting_still_blocks_settlement() {
+    let c = Case::new();
+    c.scheduled();
+    assert!(c
+        .cli(&["submit", "-c", "input.toml", "--until", "qe-data"])
+        .status
+        .success());
+    let attempt = c.workflow()["attempt_id"].as_str().unwrap().to_owned();
+    c.script(
+        "scontrol",
+        "#!/bin/sh\nprintf 'JobId=123 JobState=RUNNING NumNodes=2\\n'\n",
+    );
+    let rejected = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 123);
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("节点数"));
+    assert_eq!(c.workflow()["state"], "submitted");
+    assert!(c.workflow()["current_stage"].is_null());
+    c.script(
+        "scontrol",
+        "#!/bin/sh\nprintf 'JobId=123 JobState=RUNNING NumNodes=1\\n'\n",
+    );
+    c.script("sacct", "#!/bin/sh\nprintf '123|PENDING|1|0|\\n'\n");
+    let o = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 123);
+    assert!(!o.status.success()); // 原故障夹具在科学前置门失败，不是假造科学成功。
+    assert_eq!(c.workflow()["current_stage"], "qe-data");
+    let ledger = c.root.join("campaign/ledger.json");
+    let old = fs::read(&ledger).unwrap();
+    assert!(!c
+        .cli(&["status", "-w", "run", "--refresh", "--json"])
+        .status
+        .success());
+    assert_eq!(old, fs::read(&ledger).unwrap(), "未决账表不能释放预留");
+    c.script("sacct", "#!/bin/sh\nprintf '123|FAILED|7|1|\\n'\n");
+    assert!(c
+        .cli(&["status", "-w", "run", "--refresh", "--json"])
+        .status
+        .success());
+    let settled: Value = store::read(&ledger).unwrap();
+    assert_eq!(settled["spent_node_seconds"], 7);
+    assert!(settled["allocations"].as_array().unwrap().is_empty());
 }

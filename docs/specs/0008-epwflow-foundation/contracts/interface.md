@@ -62,6 +62,8 @@ budget status --ledger L [--json] 只读；reserve --ledger L --label LABEL --no
 
 reserve 返回的是请求，不是计算成功；分配耗时以 Slurm allocation 终态为准。监测超过存储限额请求终止本流程写入；因未知调度或采样延迟导致超限如实记录，不自称配额保护成功。
 
+执行入口要求可调用 scontrol，严格读取请求 JobId 的唯一 RUNNING 记录及与配置一致的 NumNodes；零节点只在有界等待内重查。启动查询不结算预算，sacct 的未知或不完整终态继续保留预留。控制器身份、状态或资源不符时禁止科学程序启动。
+
 ## 持久错误与恢复
 
 错误类别：configuration、input_conflict、environment、unsupported_version、scheduler_unknown、budget_denied、storage_denied、data_invalid、execution_failed、not_implemented。stderr 写类别/阶段/原因；JSON status 读成功可 exit 0，但明确 workflow_status。同步执行科学失败返回非零。

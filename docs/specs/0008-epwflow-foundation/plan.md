@@ -18,6 +18,8 @@ Rust 2021 edition，当前工具链 rustc 1.99.0；现有 Cargo workspace，新�
 
 预算使用整数节点秒与字节：总上限 28800 节点秒、107374182400 字节；每任务请求最多 7200 秒、1 节点、64 MPI。spent + unresolved_reserved <= limit。每个 allocation 只结算一次，sacct 的 step 行不重复计费，排队时间不计占用。Slurm ID 含 cluster，记录 AllocNodes/ElapsedRaw/State/ExitCode/Start/End；查询失败或缺终态保留预留。资源内运行须关联登记的 SLURM_JOB_ID，不能把同一 allocation 多次计费。
 
+启动时以 scontrol 的唯一作业记录确认请求 JobId、RUNNING 和固定节点数；RUNNING 零节点仅有限等待，未知／身份／资源冲突拒绝。该查询不提供计费用量；终态结算仍仅用 sacct，账表暂缺时不释放预留。避免把记账延迟混作实际未分配，也不从环境变量猜测资源。
+
 共享账本保存两条执行通道的末尾作业；锁内给新作业追加 afterany 通道依赖，科学依赖另加 afterok。只向已经提交的先行作业加边，拒绝循环。手动参考 reserve 返回同样的通道依赖与资源约束，attach 校验调度器实际记录；未遵守的外部手动任务标记预算协议违规，不冒充并发受控。该协议仅约束登记的本次任务，不管理用户无关作业。
 
 原生 sbatch --parsable：提交前持久化 attempt token、脚本哈希与预留，再执行一次；严格接受一个正整数 ID 和可选集群名。将 token 写入 job name/comment 用于 squeue/sacct 双源核对。非零退出若不能证明未收单也保留 unknown；成功响应落盘失败后凭 token 查找，零条或多条均不得自动重提。无无限重试。

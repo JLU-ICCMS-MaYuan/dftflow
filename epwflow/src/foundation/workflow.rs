@@ -664,8 +664,8 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
         budget::registered_allocation(ledger, job, &cfg.resources)?;
         let a = slurm::running_allocation(job)?;
         ensure!(
-            !a.terminal && matches!(a.state.as_str(), "RUNNING" | "COMPLETING"),
-            "allocation: 当前分配尚未运行或已终止"
+            !a.terminal && a.state == "RUNNING" && a.nodes == cfg.resources.nodes as u64,
+            "allocation: 当前分配状态或节点数与固定请求不符"
         );
         r.job_id = Some(job);
         r.state = "running".into();

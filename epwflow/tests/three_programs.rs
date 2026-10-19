@@ -32,6 +32,7 @@ impl Case {
         for name in ["pw.x", "ph.x", "epw.x", "launcher", "sbatch"] {
             c.script(name, "#!/bin/sh\nprintf 'called\\n' >> calls\nexit 91\n");
         }
+        c.script("scontrol", include_str!("fixtures/slurm_controller.py"));
         c.script("sacct", "#!/bin/sh\nprintf '123|RUNNING|0|1|\\n'\n");
         c
     }
