@@ -97,6 +97,7 @@ fn fixture(root: &Path) -> PathBuf {
         title: "SYNTHETIC STYLE TEST - NOT MgB2 RESULTS".into(),
         fermi_ev: 7.0,
         window_ev: [-0.5, 0.5],
+        disentanglement_window_ev: Some([6.5, 7.5]),
         electronic_ticks: ticks(),
         phonon_ticks: ticks(),
         electronic_energy_unit: "eV_relative_fermi".into(),
@@ -195,6 +196,10 @@ fn error_markers_validate_semantics_and_old_metadata_remains_readable() {
         .as_object_mut()
         .unwrap()
         .remove("phonon_error_markers");
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("disentanglement_window_ev");
     store::write(&dir.join("metadata.json"), &legacy).unwrap();
     rehash(&dir);
     assert!(comparison::load(&dir)
@@ -267,6 +272,8 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
             .starts_with(b"%PDF"));
         let svg = fs::read_to_string(figures.join(format!("{kind}.svg"))).unwrap();
         assert!(svg.contains("SYNTHETIC STYLE TEST"));
+        assert!(svg.contains("dis_win_min = 6.50000; dis_win_max = 7.50000"));
+        assert!(svg.contains("electronic window = [-0.500, 0.500] eV relative to EF"));
         let qe = svg.find("#2D2D37").unwrap();
         let epw = svg.find("#D34131").unwrap();
         assert!(qe < epw, "EPW 必须后绘");
@@ -587,6 +594,7 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
         reciprocal: [[1., 0.5, 0.], [0., 1.2, 0.], [0., 0., 0.9]],
         window_ev: [-0.5, 0.5],
         electronic_sigma_ev: 0.1,
+        wannier_wout: None,
         phonon_sigma_cm1: 4.0,
     };
     let config = root.join("sources.json");
@@ -634,6 +642,65 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
         store::hash_file(&root.join("epw-path.eig")).unwrap(),
         sources.epw_bands.sha256
     );
+    // 实际默认外窗来自原生日志；显示窗变化不能改变科学质量判定。
+    fs::write(
+        root.join("test.wout"),
+        " | Outer: -2.0D+0 to 3.0D+0 (eV) |\n",
+    )
+    .unwrap();
+    sources.wannier_wout = Some(file("test.wout"));
+    store::write(&config, &sources).unwrap();
+    let outer = root.join("outer-exported");
+    success(cli(
+        &[
+            "interpolation",
+            "export-comparison",
+            "--source",
+            config.to_str().unwrap(),
+            "--output",
+            outer.to_str().unwrap(),
+        ],
+        &root,
+    ));
+    let wide = comparison::load(&outer).unwrap();
+    assert_eq!(wide.metadata.disentanglement_window_ev, Some([-2.0, 3.0]));
+    let expected = [-2.0 - wide.metadata.fermi_ev, 3.0 - wide.metadata.fermi_ev];
+    assert_eq!(wide.metadata.window_ev, expected);
+    assert_eq!(
+        wide.electronic_dos[0].points.first().unwrap().0,
+        expected[0]
+    );
+    assert_eq!(wide.electronic_dos[0].points.last().unwrap().0, expected[1]);
+    assert_eq!(wide.manifest.quality_status, data.manifest.quality_status);
+    let mut invalid = wide.metadata.clone();
+    invalid.window_ev[0] -= 1.0;
+    store::write(&outer.join("metadata.json"), &invalid).unwrap();
+    rehash(&outer);
+    assert!(comparison::load(&outer).is_err());
+    // 不能只改显示窗元数据、沿用原来窄窗的 DOS 数据。
+    invalid.disentanglement_window_ev.as_mut().unwrap()[0] -= 1.0;
+    store::write(&outer.join("metadata.json"), &invalid).unwrap();
+    rehash(&outer);
+    assert!(comparison::load(&outer)
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("覆盖"));
+    fs::write(root.join("test.wout"), "altered").unwrap();
+    assert!(!cli(
+        &[
+            "interpolation",
+            "export-comparison",
+            "--source",
+            config.to_str().unwrap(),
+            "--output",
+            root.join("tampered-outer").to_str().unwrap()
+        ],
+        &root
+    )
+    .status
+    .success());
+    sources.wannier_wout = None;
     sources.reciprocal[0][1] = 0.4;
     store::write(&config, &sources).unwrap();
     let o = cli(
@@ -666,4 +733,22 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
     )
     .status
     .success());
+}
+
+#[test]
+fn outer_window_requires_one_finite_ordered_native_record() {
+    use epwflow::interpolation::comparison::parse_outer_window;
+    assert_eq!(
+        parse_outer_window(" | Outer: -4.90710 to 32.23753 (eV) |\n").unwrap(),
+        [-4.90710, 32.23753]
+    );
+    for text in [
+        "",
+        " | Outer: NaN to 3 (eV)",
+        " | Outer: 3 to 2 (eV)",
+        " | Outer: 2 to 2 (eV)",
+        " | Outer: -1 to 3 (eV)\n | Outer: -1 to 3 (eV)",
+    ] {
+        assert!(parse_outer_window(text).is_err(), "未拒绝 {text}");
+    }
 }

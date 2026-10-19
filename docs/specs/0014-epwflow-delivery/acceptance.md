@@ -81,3 +81,9 @@ comparison_plots 四项集成测试、窗边界裁剪单测和新增 matdyn 格�
 本地证据在测试目录的 `local_run/0015-native/overlay-q6-purple50-01/`：`policy.json`、`comparison-sources.json`、`quality.stdout`、`execution.json`、`results/comparison/metadata.json`、`results/figures/`、`figure-verification/checks.json`。测试与构建日志位于忽略的 `docs/local/0015-purple-policy50-*.log`。当前声子图见[测试手册](../../../test_auto/MgB2/epwflow/README.md)最新段。
 
 标注表示已核验样本中的最大值，未声称整个布里渊区最大；频率排序编号不提供振动方向或不可约表示。数据、绘图与质量门复用同一来源和规则，未维护第二套误差常数；绘图只消费规范化标注。完整三来源对照、原生能隙／Tc 与自动入口仍未完成，本段仅验收本次阈值与图像改动。
+
+## 2026-10-19：实际解纠缠外窗与编号运行目录
+
+已读取带哈希的真实 Wannier Outer：绝对 −4.90710～32.23753 eV，相对共同 E_F 为 −12.404369413～24.740260587 eV；电子 DOS 在全窗重新累积，能带与总览使用相同范围。实际重绘 15 个三格式文件及空 PATH 移动重绘通过，迁移 5977 文件哈希全部一致。当前 epwflow 完整回归 87 项通过，窗口定向复测 6 项通过。
+
+T046 本轮子项完成；五维子空间在宽窗有未匹配参考态，严格投影仍暂缓，原声子 RMS 失败仍阻断下游。完整原始来源、目录策略、验证及限制见 [0015 外窗与目录验收](../0015-epwflow-mgb2-real-validation/window-directory-validation.md)。不将本轮绘图通过扩展为整个 Feature 或科学链验收通过。

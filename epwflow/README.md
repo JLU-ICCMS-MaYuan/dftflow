@@ -36,3 +36,9 @@ MgB₂ 的 [真实测试手册](../test_auto/MgB2/epwflow/README.md) 区分旧 P
 当前真实适配只产生总 DOS；元素／轨道电子 PDOS 与元素声子 DOS 缺少严格投影时显示缺失面板，不能用总量代替。总览展示总量，元素／轨道分面位于独立 DOS 图。quality_failed 可以输出诊断图，但 workflow_complete=false；不能据图像生成成功继续细网格 EPC／超导。公开 submit/run/resume 科学链尚未接通，默认安装未更新。
 
 声子叠图和总览用紫色标注直接 PH／EPW 的最大采样误差：主图突出路径内对应频率排序模式，附带区域列出整体采样最大；路径外 q 不冒充高对称点。标注包含晶体坐标、模式编号、两侧频率与误差。当前五点最大 49.45 cm⁻¹ 小于 50，但 RMS 8.08 cm⁻¹ 仍高于 2，质量门尚未通过。
+
+## 实际拟合外窗重绘
+
+comparison 来源可选 wannier_wout={path,sha256}，采用实际 Wannier 日志的 Outer 窗，而不是固定 E_F±0.5 eV。导出重新累计整个显示范围的 DOS，电子能带／DOS 共用外窗减共同 E_F，图题注明绝对 dis_win 边界；质量验证窗不变，宽窗缺态仍显示为诊断。
+
+MgB₂ 最新运行数据位于 test_auto/MgB2/local_run/001-epw-validation；当前 026-disentanglement-window-plots 提供四图与总览的三格式。执行 `bash test_auto/MgB2/epwflow/replot_window.sh` 可只读重导出／收集和重绘。旧数据路径已退役，具体编号索引及限制见测试手册。

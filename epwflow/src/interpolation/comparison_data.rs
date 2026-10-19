@@ -94,6 +94,9 @@ pub struct Metadata {
     pub title: String,
     pub fermi_ev: f64,
     pub window_ev: [f64; 2],
+    /// 来自已核验 .wout 的绝对 eV 外窗；旧包没有该字段。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disentanglement_window_ev: Option<[f64; 2]>,
     pub electronic_ticks: Vec<Tick>,
     pub phonon_ticks: Vec<Tick>,
     pub electronic_energy_unit: String,
@@ -334,6 +337,20 @@ pub fn load(root: &Path) -> Result<Dataset> {
     }
     let _: serde_json::Value = store::read(&root.join("metrics.json"))?;
     let metadata: Metadata = store::read(&root.join("metadata.json"))?;
+    if let Some(window) = metadata.disentanglement_window_ev {
+        ensure!(
+            window.iter().all(|v| v.is_finite())
+                && window[0] < window[1]
+                && window
+                    .iter()
+                    .zip(metadata.window_ev)
+                    .all(
+                        |(absolute, relative)| (absolute - metadata.fermi_ev - relative).abs()
+                            < 1e-8
+                    ),
+            "data_invalid: Wannier 外窗与共同 Fermi 能／显示窗不符"
+        );
+    }
     ensure!(
         metadata.fermi_ev.is_finite()
             && metadata.window_ev.iter().all(|v| v.is_finite())
@@ -387,6 +404,19 @@ pub fn load(root: &Path) -> Result<Dataset> {
         }
     }
     let electronic_dos = dos(root, false, &metadata)?;
+    if metadata.disentanglement_window_ev.is_some() {
+        ensure!(
+            electronic_dos.iter().all(|curve| curve
+                .points
+                .first()
+                .is_some_and(|p| p.0 <= metadata.window_ev[0] + 1e-8)
+                && curve
+                    .points
+                    .last()
+                    .is_some_and(|p| p.0 >= metadata.window_ev[1] - 1e-8)),
+            "data_invalid: 电子 DOS 数据未覆盖实际 Wannier 外窗"
+        );
+    }
     let phonon_dos = dos(root, true, &metadata)?;
     let mut direct = Vec::new();
     for row in table(

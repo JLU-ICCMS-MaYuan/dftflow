@@ -199,16 +199,24 @@ where
             "Missing paired data / verified projection",
         );
     }
-    let xmin = selected
-        .iter()
-        .flat_map(|c| &c.points)
-        .map(|p| p.0)
-        .fold(f64::INFINITY, f64::min);
-    let xmax = selected
-        .iter()
-        .flat_map(|c| &c.points)
-        .map(|p| p.0)
-        .fold(f64::NEG_INFINITY, f64::max);
+    let xmin = if kind == 1 {
+        data.metadata.window_ev[0]
+    } else {
+        selected
+            .iter()
+            .flat_map(|c| &c.points)
+            .map(|p| p.0)
+            .fold(f64::INFINITY, f64::min)
+    };
+    let xmax = if kind == 1 {
+        data.metadata.window_ev[1]
+    } else {
+        selected
+            .iter()
+            .flat_map(|c| &c.points)
+            .map(|p| p.0)
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
     let (ymin, ymax) = if kind == 0 {
         (data.metadata.window_ev[0], data.metadata.window_ev[1])
     } else {
@@ -287,7 +295,17 @@ where
             if curve.method != method {
                 continue;
             }
-            for points in clip(&curve.points, ymin, ymax) {
+            // DOS 按能量横轴截取，能带按能量纵轴截取；保留真实边界交点。
+            let paths = if kind == 1 {
+                let swapped: Vec<_> = curve.points.iter().map(|p| (p.1, p.0)).collect();
+                clip(&swapped, xmin, xmax)
+                    .into_iter()
+                    .map(|path| path.into_iter().map(|p| (p.1, p.0)).collect())
+                    .collect()
+            } else {
+                clip(&curve.points, ymin, ymax)
+            };
+            for points in paths {
                 if method == "qe" {
                     let series = ctx.draw_series(LineSeries::new(points, color.stroke_width(2)))?;
                     if !legend {
@@ -407,6 +425,17 @@ where
         ),
         ("sans-serif", 15),
     )?;
+    let body = if let Some(window) = data.metadata.disentanglement_window_ev {
+        body.titled(
+            &format!(
+                "Wannier outer window (absolute eV): dis_win_min = {:.5}; dis_win_max = {:.5}",
+                window[0], window[1]
+            ),
+            ("sans-serif", 15),
+        )?
+    } else {
+        body
+    };
     let body = if let Some(note) = data.metadata.notes.first() {
         body.titled(note, ("sans-serif", 15))?
     } else {

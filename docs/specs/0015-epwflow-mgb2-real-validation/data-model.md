@@ -12,6 +12,6 @@
 
 为 nosplit/index/coords 各建立一条比较记录：PH 来源摘要、SCF/NSCF 与 Wannier 基底身份、参考来源、共同有效窗、路径／DOS 网格、投影规范、四类表格哈希、差异指标、图像三格式、缺项、数值质量和判定。此处是三来源可视比较记录，与原三 PH×两种超导的六组合科学验收表分开。
 
-成对数据结构遵循 [0012 模型](../0012-epwflow-interpolation/data-model.md)，结果包与图层遵循 [0014 模型](../0014-epwflow-delivery/data-model.md)。本项只记录证据指纹和结论，不创造另一套投影／DOS 计算格式；原始科学文件只读，派生数据和实际机器路径只写忽略的 `test_auto/MgB2/epwflow/local_run/0015-native/`。
+成对数据结构遵循 [0012 模型](../0012-epwflow-interpolation/data-model.md)，结果包与图层遵循 [0014 模型](../0014-epwflow-delivery/data-model.md)。本项只记录证据指纹和结论，不创造另一套投影／DOS 计算格式；原始科学文件只读，派生数据和实际机器路径只写忽略的 `test_auto/MgB2/local_run/001-epw-validation/`。
 
 合法缺项记录区别于文件损坏；缺元素／轨道投影不能填总 DOS，质量失败不能填通过。历史误差热图和本次科学叠图用不同产物角色，不覆盖已有图像。规范化数值比较保留足够精度，不能只看图片相似度。

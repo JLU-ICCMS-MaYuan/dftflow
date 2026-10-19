@@ -108,3 +108,7 @@ spec.md、plan.md、research.md、data-model.md、contracts/interface.md、tasks
 ## 2026-10-19：当前标注实现与验证计划
 
 当前执行以 Spec 最新 50/2 cm⁻¹ 为准，先前 15/2 记录作为历史保留。F3 从现有质量成对频率计算采样／路径最大，使用倒格矢对偶基恢复晶体坐标；F5 消费带哈希标注并绘制紫点与独立诊断区，0015 复核真实模式和三格式。回归覆盖非正交转换、路径内外分类、排序模式、标注语义拒绝、50 边界及 RMS 失败。使用已有结果重绘，不新增科学作业，不越过失败质量门。
+
+## 2026-10-19：外窗数据导出
+
+沿用 comparison::export，Sources 可选 wannier_wout={path,sha256}。先核验日志身份并解析唯一 Outer 行，以实际绝对边界减共同 E_F 覆盖显示 window_ev；电子 CSV 仍保存全部原始带值，DOS 重新以共同核累计 501 点。metadata 增加可选 disentanglement_window_ev 绝对窗，严格校验其与 window_ev、E_F 的关系；旧包不带字段保持原显示语义。质量参考窗和状态不变。T046 对应 FR-014/SC-009。

@@ -60,3 +60,7 @@ collect／plot／results check 不运行 QE、EPW 或 sbatch，不创建科学�
 当前四张独立图与总览均支持 PNG、SVG、PDF；总览的 DOS 面板展示总量，元素／轨道在独立 DOS 图分面。缺投影面板显示缺失，标题标记 PARTIAL RESULTS；quality=failed 与 workflow_complete=false 保留。电子能带按真实线段与能窗求交裁剪，不能把窗外线段压到边界形成假平带。只有所有新增投影、覆盖及科学标准满足后才能通过完整叠图验收。
 
 本轮 collect／plot／results check 仅交付比较包，不表示 Spec FR-002 的完整 α²F／能隙／Tc 结果包已经接通；旧 delivery 子命令兼容保留。
+
+### 拟合外窗展示
+
+F3 metadata.disentanglement_window_ev 存在时，电子能带纵轴和电子 DOS 横轴严格采用 window_ev，标题同时注明实际 dis_win_min/max 的绝对 eV 和 E−E_F。独立图及总览复用同一语义；不存在该字段的旧比较包继续按其已有 window_ev 绘制。plot 不读取外部 wout，不重新运行科学程序。

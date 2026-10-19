@@ -90,3 +90,7 @@ FR-014/015 使用同一配置绑定和现有阶段入口，不新增一套 CLI �
 ### 紫色误差标注的已实现数据字段
 
 metadata.json 的可选 `phonon_error_markers` 默认为空，兼容旧比较包。每项字段为 `scope=sampled_maximum|path_maximum`、`q_crystal[3]`、1 起始 `mode_sorted`、`qe_cm1`、`epw_cm1`、`error_cm1`、可空 `path_distance/path_label`。来源为 quality-reference.json 的直接 PH 与 EPW 频率，逐点排序匹配；晶体坐标由既有 reciprocal 逆变换，路径身份按实际采样点核对，重复路径端点取第一次出现。字段有限性、模式范围、差值一致性、scope 唯一性和路径位置均校验，元数据包含于原清单哈希。路径外最大不写伪距离或高对称点名。两个最大值只覆盖核验样本，不代表全布里渊区。
+
+### 实际外窗的诊断导出
+
+comparison Sources 新增可选 wannier_wout 文件项（path、sha256），必须为实际 Wannier `.wout`，解析唯一 `Outer: min to max (eV)` 行，支持 Fortran 指数并拒绝非有限、逆序或多条冲突窗口。给出时覆盖原 window_ev 为绝对窗减共同 E_F；不修改 quality-reference 的验证窗。metadata.json 可选 disentanglement_window_ev 保存绝对边界，缺省为空以兼容旧包；存在时校验与 window_ev、fermi_ev 的数值关系。科学带值、DOS 权重、质量门不因此变更，缺态继续报告。

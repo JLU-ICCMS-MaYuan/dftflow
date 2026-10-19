@@ -1,3 +1,32 @@
+# 当前入口：实际拟合外窗与编号运行目录
+
+运行数据现位于 `../local_run/001-epw-validation/`，各次实验目录均为编号加目的简述；完整目录索引见数据根的 README.md。科学程序要求的 tmp、save 等内部目录保留原名。PDF 位于 `091-reference-literature/`，历史输入位于 `090-historical-input-scripts/`，迁移映射和逐文件哈希位于 `092-migration-evidence/`。本脚本目录没有运行数据或兼容数据链接。
+
+当前图位于 `026-disentanglement-window-plots/results/figures/`：
+
+- [电子能带](../local_run/001-epw-validation/026-disentanglement-window-plots/results/figures/electronic_bands_comparison.png)
+- [电子 DOS](../local_run/001-epw-validation/026-disentanglement-window-plots/results/figures/electronic_dos_comparison.png)
+- [四图总览](../local_run/001-epw-validation/026-disentanglement-window-plots/results/figures/comparison_overview.png)
+
+同目录有 SVG、PDF。实际 Wannier Outer 外窗为 −4.90710～32.23753 eV，共同 E_F=7.497269413 eV，对应 E−E_F=−12.404369413～24.740260587 eV。输入没有显式 dis_win_min/max，采用程序日志报告的实际默认边界。宽窗内 QE 全部能带与五维 Wannier 子空间覆盖不同，图仅作诊断；投影继续暂缓，原声子 RMS 失败仍阻断下游。
+
+```bash
+bash test_auto/MgB2/epwflow/replot_window.sh
+```
+
+重绘入口只调用受测 Rust export-comparison／collect／plot／results check。新路径来源清单位于 026 根目录，旧清单原样归档；只读质量检查使用：
+
+```bash
+./target/linux-x86_64/x86_64-unknown-linux-gnu/debug/epwflow interpolation check \
+  -w test_auto/MgB2/local_run/001-epw-validation/026-disentanglement-window-plots --json
+```
+
+预期 quality_failed、退出 1；这是已有质量失败，不是新绘图失败。5977 个原始文件（含 PDF 和被引用历史脚本）迁移前后 SHA-256 全部相同。新配置和工作目录使用上述编号数据根，不使用旧路径。
+
+---
+
+以下为此前测试记录，其中旧位置已由上述目录索引和迁移映射替代，历史路径不再作为操作入口。
+
 # MgB₂ 原生 QE/EPW 真实测试
 
 本目录用于 Issue 0015 的真实程序测试。手册和检查器纳入 Git，机器输入、运行脚本、原始输出和预算证据保存在忽略的 `local_run/`。本轮复用已有 SCF/PH，没有重新执行 SCF 或 PH。

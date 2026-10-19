@@ -119,3 +119,7 @@ cargo build -p epwflow --locked --offline
 已实现 F3 comparison/comparison_data 和 F5 comparison/comparison_plot 子集，公开 export-comparison、collect、plot、results check；独立比较包无需 F4，能生成四张独立图和 2×2 总览、PNG／SVG／PDF。真实测试仅是讲义 LDA 6³、实际 nosplit 来源，完整 epwflow 回归 74 通过、2 项 B01 暂挂。当前状态和证据见 [验收记录](acceptance.md)，直接命令见 [测试手册](../../../test_auto/MgB2/epwflow/README.md)。
 
 后续仍须补齐严格复原子投影算符变换、EPW 质量加权本征矢与元素 DOS、其余两来源对照，以及原有独立质量覆盖、Eliashberg／Tc 和自动入口。不能把总 DOS 与合成投影样式冒充真实 PDOS；原声子最大误差 9.042613107 cm⁻¹ 仍失败，不放宽标准或自动调参。默认安装未切换，科学来源保留只读。
+
+## 2026-10-19：实际外窗与编号目录的本轮交付
+
+沿用 0012/0014 的用户最新外窗重绘与目录整理要求，见 [本轮验证](window-directory-validation.md)。5977 个原文件哈希不变，旧路径退役；当前新路径来源清单位于编号数据区 026，科学程序未重跑。宽窗和旧独立质量窗分别管理，RMS 失败及投影暂缓不变；本轮不关闭整体需求。

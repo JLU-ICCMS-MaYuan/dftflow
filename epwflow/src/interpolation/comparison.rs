@@ -47,8 +47,28 @@ pub struct Sources {
     /// 晶体坐标右乘倒格矢矩阵，得到 QE 2pi/alat 坐标。
     pub reciprocal: [[f64; 3]; 3],
     pub window_ev: [f64; 2],
+    /// 实际 Wannier 日志的外窗；给出时替代旧的诊断显示窗。
+    #[serde(default)]
+    pub wannier_wout: Option<SourceFile>,
     pub electronic_sigma_ev: f64,
     pub phonon_sigma_cm1: f64,
+}
+
+/// 读取 Wannier 实际采用的绝对能量外窗，也覆盖未显式设置 dis_win 的情况。
+pub fn parse_outer_window(text: &str) -> Result<[f64; 2]> {
+    let pattern = regex::Regex::new(r"(?m)^\s*\|\s*Outer:\s*(\S+)\s+to\s+(\S+)\s+\(eV\)")?;
+    let records: Vec<_> = pattern.captures_iter(text).collect();
+    ensure!(
+        records.len() == 1,
+        "data_invalid: Wannier 日志必须有唯一 Outer 能窗"
+    );
+    let value = |i: usize| -> Result<f64> { Ok(records[0][i].replace(['d', 'D'], "e").parse()?) };
+    let window = [value(1)?, value(2)?];
+    ensure!(
+        window.iter().all(|v| v.is_finite()) && window[0] < window[1],
+        "data_invalid: Wannier 外窗必须有限且递增"
+    );
+    Ok(window)
 }
 
 /// 相同高斯约定和物理权重用于两侧；不按输出曲线重新缩放。
@@ -178,7 +198,7 @@ fn integral(x: &[f64], y: &[f64]) -> f64 {
 }
 
 pub fn export(source: &Path, output: &Path) -> Result<()> {
-    let s: Sources = store::read(source)?;
+    let mut s: Sources = store::read(source)?;
     ensure!(
         s.schema_version == 1 && matches!(s.ph_mode.as_str(), "nosplit" | "index" | "coords"),
         "data_invalid: 来源版本或 PH 模式无效"
@@ -195,6 +215,14 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         "data_invalid: 路径不完整或距离不递增"
     );
     let fermi = nscf::parse_xml(&s.fermi_reference.checked_path(base)?)?.fermi;
+    let disentanglement_window_ev = s
+        .wannier_wout
+        .as_ref()
+        .map(|file| parse_outer_window(&fs::read_to_string(file.checked_path(base)?)?))
+        .transpose()?;
+    if let Some(window) = disentanglement_window_ev {
+        s.window_ev = window.map(|e| e - fermi);
+    }
     let qe = nscf::parse_xml(&s.qe_bands_xml.checked_path(base)?)?;
     let mesh = nscf::parse_xml(&s.qe_mesh_xml.checked_path(base)?)?;
     let epw = native::parse_bands(&fs::read_to_string(s.epw_bands.checked_path(base)?)?)?;
@@ -478,6 +506,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         title: "MgB2 QE / EPW diagnostic".into(),
         fermi_ev: fermi,
         window_ev: s.window_ev,
+        disentanglement_window_ev,
         electronic_ticks: s
             .ticks
             .iter()
