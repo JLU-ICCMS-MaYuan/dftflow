@@ -129,7 +129,7 @@ impl Config {
         let s=&self.superconductivity;
         finite_nonnegative(s.mu_star,"superconductivity.mu_star")?;
         for (n,x) in [("frequency_cutoff_ev",s.frequency_cutoff_ev),("convergence_relative",s.convergence_relative),("mixing_beta",s.mixing_beta),("initial_shape",s.initial_shape)]{positive(x,&format!("superconductivity.{n}"))?;}
-        ensure!(s.mixing_beta<=1.0&&s.max_iterations>0&&s.mixing_history>0,"configuration: superconductivity: 迭代/混合参数越界");
+        ensure!(s.mixing_beta<=1.0&&s.max_iterations>0&&(1..=8).contains(&s.mixing_history),"configuration: superconductivity: 迭代/混合参数越界（目标 EPW Broyden 历史长度须为 1..8）");
         ensure!((s.spectrum_index as usize)<i.phonon_smearings_mev.len(),"configuration: superconductivity.spectrum_index: 谱不存在");
         for x in s.initial_gaps_mev {positive(x,"superconductivity.initial_gaps_mev")?;}
         ensure!(s.initial_gaps_mev[0]!=s.initial_gaps_mev[1],"configuration: superconductivity.initial_gaps_mev: 需要不同初值");

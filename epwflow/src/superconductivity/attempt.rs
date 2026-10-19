@@ -112,7 +112,7 @@ impl Request {
                 && self.mixing_beta.is_finite()
                 && self.mixing_beta > 0.0
                 && self.mixing_beta <= 1.0
-                && self.mixing_history > 0,
+                && (1..=8).contains(&self.mixing_history),
             "configuration: 非线性迭代设置无效"
         );
         ensure!(

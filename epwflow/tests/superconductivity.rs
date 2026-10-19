@@ -456,6 +456,27 @@ fn native_attempt_runs_one_temperature_keeps_failure_and_refuses_repeat() {
 }
 
 #[test]
+fn native_broyden_history_rejects_unsupported_size_before_launch() {
+    let root = std::env::temp_dir().join(format!("epwflow-history-{}", store::token()));
+    std::fs::create_dir(&root).unwrap();
+    let mut cfg = config::Config::load(&make_config(&root)).unwrap();
+    let mut r = request(config::Mode::Iso, attempt::SolveKind::Nonlinear);
+    for history in [0, 9, u32::MAX] {
+        cfg.superconductivity.mixing_history = history;
+        r.mixing_history = history;
+        assert!(cfg.validate().is_err());
+        assert!(r.validate().is_err());
+    }
+    for history in [1, 8] {
+        cfg.superconductivity.mixing_history = history;
+        r.mixing_history = history;
+        cfg.validate().unwrap();
+        r.validate().unwrap();
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn centikelvin_search_brackets_handles_uncertain_and_detects_inconsistent() {
     let mut s = search::Search::new(1000, 5500, 50).unwrap();
     let mut seen = std::collections::BTreeSet::new();
