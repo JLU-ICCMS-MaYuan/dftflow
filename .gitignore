@@ -93,4 +93,6 @@ wannier90flow/user_guide.pdf
 ._*
 
 # EPW 真实测试：保留手册/测试入口，机器输入与计算产物只留本地。
-/test_auto/MgB2/epwflow/local_run/
+/test_auto/MgB2/epwflow/local_run
+# 历史运行输入脚本保留哈希证据，仅存本地；新脚本位于 epwflow 根目录。
+/test_auto/MgB2/epwflow/historical-inputs/

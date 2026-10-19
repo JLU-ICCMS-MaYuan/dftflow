@@ -286,12 +286,6 @@ where
             ))?;
         }
     }
-    if kind == 0 {
-        ctx.draw_series(std::iter::once(PathElement::new(
-            vec![(xmin, 0.0), (xmax, 0.0)],
-            RGBColor(190, 190, 190),
-        )))?;
-    }
     // 全部 QE 图层先完成，再画全部 EPW 图层；不按分支交错覆盖。
     for method in ["qe", "epw"] {
         let color = match (projection.split(':').next().unwrap_or("total"), method) {
@@ -397,6 +391,31 @@ where
         }
     }
     if kind == 0 || kind == 1 {
+        // 电子能量已经是 E−E_F；零点参考与四个物理窗口边界分别标识。
+        let fermi_color = RGBColor(47, 125, 60);
+        let (points, anchor, offset) = if kind == 0 {
+            ([(xmin, 0.0), (xmax, 0.0)], (xmax, 0.0), (-35, -22))
+        } else {
+            ([(0.0, ymin), (0.0, ymax)], (0.0, ymin), (7, -24))
+        };
+        ctx.draw_series(DashedLineSeries::new(
+            points,
+            14,
+            5,
+            fermi_color.stroke_width(2),
+        ))?
+        .label("E_F: E - E_F = 0 eV")
+        .legend(move |(x, y)| {
+            DashedPathElement::new([(x, y), (x + 30, y)], 14, 5, fermi_color.stroke_width(2))
+        });
+        ctx.draw_series(std::iter::once(
+            EmptyElement::at(anchor)
+                + Text::new(
+                    "E_F",
+                    offset,
+                    ("sans-serif", 17).into_font().color(&fermi_color),
+                ),
+        ))?;
         let mut boundaries = Vec::new();
         for (window, names, colors) in [
             (

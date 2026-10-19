@@ -65,3 +65,9 @@ reserve 返回的是请求，不是计算成功；分配耗时以 Slurm allocati
 错误类别：configuration、input_conflict、environment、unsupported_version、scheduler_unknown、budget_denied、storage_denied、data_invalid、execution_failed、not_implemented。stderr 写类别/阶段/原因；JSON status 读成功可 exit 0，但明确 workflow_status。同步执行科学失败返回非零。
 
 缺失/损坏 ledger 不得重新初始化已登记 campaign。锁目录含 host/pid/start_identity 与事务 token；同主机确认 owner 已死且没有关联未决写操作后，resume 可在独占恢复锁下原子认领；跨主机或未知 owner 给出诊断而不自动删除。恢复不能丢弃 intent，必须先核对 Slurm 后决定是否重试。
+
+## 2026-10-19：统一入口当前实现
+
+run/submit 支持 --until qe-data|interpolation|superconductivity|all，默认 all；resume 的可选 --until 缺省继承已有记录。workflow.json 保存 attempt_id、until、state、reservation、job_id、cluster、executable、script、completed、current_stage、error，版本 1。completed 保存清单与依赖文件身份；变更或缺失不跳过。unknown 不自动重提，不通过重启释放预算。
+
+内部 __execute 只接受匹配 token 和 Slurm 作业的已登记分配，不能作为用户绕过预算的公开捷径。当前单份分配顺序调用已有阶段；阶段成功和全链成功分开，底层科学适配未完成时记录具体失败。未来并行依赖图仍按原 Spec 验收，不据本批边界回归关闭。新阶段不再次按资源请求预留或结算同一 allocation。

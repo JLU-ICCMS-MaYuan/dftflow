@@ -7,6 +7,9 @@ Rust 的 QE/EPW 工作流模块。当前功能与限制以 [Overview](../docs/ov
 ```bash
 epwflow check -c input.toml --json
 epwflow prepare -c input.toml
+epwflow submit -c input.toml --until qe-data
+epwflow status -w /path/to/work --refresh --json
+epwflow resume -w /path/to/work -s --until interpolation
 ```
 
 对已完成的原生 EPW 目录，可只读检查，不启动科学程序或提交作业：
@@ -33,7 +36,9 @@ MgB₂ 的 [真实测试手册](../test_auto/MgB2/epwflow/README.md) 区分旧 P
 
 导出命令只读取已准备的原生数据，当前原生适配限定 MgB₂／QE 7.4.1／EPW 5.9；来源 JSON 的完整字段见上述数据契约。后续三个命令不运行 QE／EPW／Slurm，不要求已有超导结果。默认生成四张独立叠图和 2×2 总览，各含 PNG／SVG／PDF：QE 为实线，EPW 为后绘制的虚线。比较表和图像清单分别保存来源哈希，结果包可复制后独立重绘。
 
-当前真实适配只产生总 DOS；元素／轨道电子 PDOS 与元素声子 DOS 缺少严格投影时显示缺失面板，不能用总量代替。总览展示总量，元素／轨道分面位于独立 DOS 图。quality_failed 可以输出诊断图，但 workflow_complete=false；不能据图像生成成功继续细网格 EPC／超导。公开 submit/run/resume 科学链尚未接通，默认安装未更新。
+当前真实适配只产生总 DOS；元素／轨道电子 PDOS 与元素声子 DOS 缺少严格投影时显示缺失面板，不能用总量代替。总览展示总量，元素／轨道分面位于独立 DOS 图。quality_failed 可以输出诊断图，但 workflow_complete=false；不能据图像生成成功继续细网格 EPC／超导。
+
+submit/run/resume 已接入配置加载与 `--until qe-data|interpolation|superconductivity|all`，默认 all；submit 提交有界作业，run 与 resume -r 必须使用已登记分配。活动或未知作业不重复提交，阶段失败阻断下游；停止边界完成与完整流程成功分开报告。当前科学阶段仍有原生数据／矩阵元适配和 Eliashberg 缺口，不能承诺全链可用；默认安装未更新。MgB₂ 脚本位于 test_auto/MgB2/epwflow，计算实体位于 test_auto/MgB2/local_run/001-epw-validation。
 
 声子叠图和总览用紫色标注直接 PH／EPW 的最大采样误差：主图突出路径内对应频率排序模式，附带区域列出整体采样最大；路径外 q 不冒充高对称点。标注包含晶体坐标、模式编号、两侧频率与误差。当前五点最大 49.45 cm⁻¹ 小于 50，但 RMS 8.08 cm⁻¹ 仍高于 2，质量门尚未通过。
 

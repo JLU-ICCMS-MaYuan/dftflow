@@ -4,7 +4,7 @@
 
 ## 当前结论
 
-截至 2026-10-19，epwflow 已复用 qeflow 的 QE 基础库，并能只读检查真实 EPW 5.9 谱和独立插值参考。公开 `submit/run/resume` 仍未接通科学流程，原生 Eliashberg/Tc 尚未交付。当前声子最大误差门按用户要求改为 50 cm⁻¹，RMS 仍为 2 cm⁻¹；MgB₂ 原四点数值通过，但新增独立第五点实测失败，不能把原生冒烟或解析回归当作完整验收。
+截至 2026-10-19，epwflow 已复用 qeflow 的 QE 基础库，并能只读检查真实 EPW 5.9 谱和独立插值参考。公开 `submit/run/resume` 已接入有边界的阶段分派、作业记录及失败阻断；底层原生矩阵元适配和 Eliashberg/Tc 仍未交付，完整真实自动链尚未通过验收。当前声子最大误差门为 50 cm⁻¹、RMS 为 2 cm⁻¹；独立第五点加入后 RMS 实测失败，不能把原生冒烟或解析回归当作完整验收。
 
 本页依据代码、实际 CLI、回归测试和真实 QE XML 只读解析记录当前状态；检查证据见 [0015 验收记录](../../specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
 
@@ -14,11 +14,12 @@
 | --- | --- |
 | `epwflow check -c C [--json]` | 加载并检查配置/文件；运行版本固定报告 unverified，不代表已探测 |
 | `epwflow prepare -c C` | 准备输入绑定；不执行科学链路 |
-| `epwflow submit -c C`、`run -c C` | 当前无条件返回 not_implemented；没有 `--until` 参数 |
-| `epwflow status -w W [--refresh] [--json]` | 读取本地状态；当前分派忽略 refresh，不查询调度器 |
-| `epwflow resume -w W -s/-r` | 尚未接通科学续算 |
+| `epwflow submit -c C [--until B]` | 校验并固定配置，以原生 sbatch 提交一个有界分配内的阶段执行作业；记录尝试、预留和作业号，不在登录节点执行科学程序 |
+| `epwflow run -c C [--until B]` | 在已登记的 Slurm 分配内调用已有阶段；未登记、来源变化或前置失败时拒绝 |
+| `epwflow status -w W [--refresh] [--json]` | 读取实际工作流记录；refresh 查询 allocation 并结算，调度终态不能替代数值完成 |
+| `epwflow resume -w W -s/-r [--until B]` | 使用固定快照续算；有效阶段重验后复用，活动或未知任务不重提；失败尝试单独保留 |
 | `epwflow probe -c C -s/-r` | 提交探测路径尚未接通；不可把帮助信息当作版本证据 |
-| `epwflow budget status/reserve/attach/reconcile` | reconcile 读取 sacct 的分配终态与实际用时，未知状态保留预留，忽略 step 重复记录；完整提交账本与并发控制仍未接通 |
+| `epwflow budget status/reserve/attach/reconcile` | reconcile 读取 sacct 的分配终态与实际用时，未知状态保留预留，忽略 step 重复记录；自动入口保守限制最多两个未结算任务 |
 | `epwflow qe-data check/import` | 按自身 manifest 检查/导入；不直接识别旧 qeflow 声子目录，保存目录的普通文件复制也有缺陷 |
 | `epwflow interpolation check -w W [--json]` | 原生目录检查退出、结束计时、Wannier 和谱；有 quality-reference.json 时核对来源及电子/声子误差，超差非零退出；没有该参考则仅报告 native_epc_only |
 | `epwflow interpolation import -c C --source M` | 读取自身插值清单；完整实际文件角色和重读能力仍待实现 |
@@ -39,6 +40,8 @@
 ```
 
 当前没有经真实验收的“一次提交续算 EPW”使用命令。安装脚本已列入六程序/52 入口；这不证明当前机器默认入口已安装受测制品，本次未切换安装。
+
+执行边界 B 为 `qe-data|interpolation|superconductivity|all`，默认 all。入口按顺序调用已有科学调度器，校验清单和必需产物后才记录阶段成功；停止在 qe-data 的成功不会显示完整超导流程成功。阶段数据位于 W/calculations/尝试号，失败现场保留，用户工作目录提供已验证清单。未知提交保留回执与预留，需要核对后处理，不能自动退款重提。当前一次分配内顺序执行阶段，尚未交付多作业分 q 并行总链、完整科学适配和原生求解；模拟回归仅证明入口编排。
 
 ## 数据与科学结果的限制
 

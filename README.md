@@ -4,6 +4,8 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 五个 Rust 家族程序为 `qeflow`、`vaspflow`、`scflow`、`wannier90`、`substitution`；`mattersim_opt` 按约定保留 Python。
 
+新增开发中的 [epwflow](epwflow/README.md) 已支持带 `--until` 的提交／运行／续算入口；完整原生超导链仍在验收。MgB₂ [脚本手册](test_auto/MgB2/epwflow/README.md) 位于 `test_auto/MgB2/epwflow/`，计算实体位于 `test_auto/MgB2/local_run/epwflow/`。源码、受测构建与当前安装须分别核对。
+
 ## 分支约定
 
 - `master`：默认主分支，承接原 `rust` 分支的 Rust 实现及后续开发。

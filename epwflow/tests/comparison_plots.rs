@@ -283,7 +283,7 @@ fn check_path_axes(svg: &str, expected_ticks: usize) {
     }
 }
 
-fn check_window_lines(svg: &str, panel: usize, horizontal: bool) {
+fn check_electronic_reference_lines(svg: &str, panel: usize, horizontal: bool) {
     let doc = roxmltree::Document::parse(svg).unwrap();
     let points = |n: roxmltree::Node<'_, '_>| -> Vec<(i32, i32)> {
         n.attribute("points")
@@ -314,8 +314,16 @@ fn check_window_lines(svg: &str, panel: usize, horizontal: bool) {
         ("dis_win_max", "#008B8B", 0.5),
         ("dis_froz_min", "#E67D22", -0.5),
         ("dis_froz_max", "#AE49A6", 0.2),
+        ("E_F", "#2F7D3C", 0.0),
     ] {
-        assert!(svg.contains(&format!("{name}: {relative:.3} eV (E-EF)")));
+        if name == "E_F" {
+            assert!(svg.contains("E_F: E - E_F = 0 eV"));
+            assert!(doc.descendants().any(|n| n.has_tag_name("text")
+                && n.attribute("fill") == Some(color)
+                && n.text().unwrap_or("").trim() == "E_F"));
+        } else {
+            assert!(svg.contains(&format!("{name}: {relative:.3} eV (E-EF)")));
+        }
         let position = if horizontal {
             (bottom[0].1 - 1) as f64 - (relative + 0.5) * (bottom[0].1 - 1 - top) as f64
         } else {
@@ -387,10 +395,17 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
         let svg = fs::read_to_string(figures.join(format!("{kind}.svg"))).unwrap();
         assert!(svg.contains("SYNTHETIC STYLE TEST"));
         if kind == "electronic_bands_comparison" || kind == "comparison_overview" {
-            check_window_lines(&svg, 0, true);
+            check_electronic_reference_lines(&svg, 0, true);
         }
         if kind == "electronic_dos_comparison" || kind == "comparison_overview" {
-            check_window_lines(&svg, usize::from(kind == "comparison_overview"), false);
+            check_electronic_reference_lines(
+                &svg,
+                usize::from(kind == "comparison_overview"),
+                false,
+            );
+        }
+        if kind == "phonon_dispersion_comparison" || kind == "phonon_dos_comparison" {
+            assert!(!svg.contains("E_F: E - E_F = 0 eV"));
         }
         match kind {
             "electronic_bands_comparison" | "phonon_dispersion_comparison" => {
