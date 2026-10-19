@@ -24,6 +24,8 @@ struct Case {
     source_config: Identity,
     fine_report: Identity,
     fine_root: PathBuf,
+    #[serde(default)]
+    resume: bool,
 }
 
 fn allocation(cfg: &Config) -> Result<u64> {
@@ -111,7 +113,10 @@ fn actual() -> Result<()> {
         "超出本次有界分配"
     );
     let job = allocation(&cfg)?;
-    ensure!(!cfg.work_dir.exists(), "目标已存在，禁止隐式重试");
+    ensure!(
+        cfg.work_dir.exists() == c.resume,
+        "新运行与显式恢复的目标状态不符"
+    );
     let report: serde_json::Value = store::read(&c.fine_report.path)?;
     ensure!(
         report["stage"] == "fine_matrices_verified"
@@ -171,6 +176,15 @@ fn actual() -> Result<()> {
     for (mode, name) in [(Mode::Iso, "iso"), (Mode::Aniso, "aniso")] {
         let dir = root.join(name);
         let mut engine = Engine::open(&cfg, &input, &cfg.programs.launcher, &dir, mode)?;
+        if c.resume {
+            engine.prepare_resume(&mut |previous_job| {
+                ensure!(
+                    slurm::accounting(previous_job)?.terminal,
+                    "原分配仍活动，不能重提"
+                );
+                Ok(())
+            })?;
+        }
         engine.run(&mut before)?;
         println!(
             "{name}: {} {:?} {:?}",

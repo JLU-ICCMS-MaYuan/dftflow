@@ -382,7 +382,12 @@ fn dual_seed_uses_full_distribution_and_only_global_sign() {
 fn native_attempt_runs_one_temperature_keeps_failure_and_refuses_repeat() {
     let root = std::env::temp_dir().join(format!("epwflow-native-{}", store::token()));
     std::fs::create_dir_all(&root).unwrap();
-    let inputs = native_inputs(&root);
+    let mut inputs = native_inputs(&root);
+    let long_source = root.join("long-native-source-directory-for-the-80-character-fortran-field");
+    std::fs::create_dir(&long_source).unwrap();
+    std::fs::copy(&inputs.a2f.path, long_source.join("original.a2f")).unwrap();
+    inputs.a2f = store::Identity::capture(&long_source.join("original.a2f")).unwrap();
+    assert!(inputs.a2f.path.as_os_str().len() > 80);
     for mode in [config::Mode::Iso, config::Mode::Aniso] {
         let r = request(mode, attempt::SolveKind::Nonlinear);
         let mapping = if mode == config::Mode::Iso {
@@ -421,6 +426,11 @@ fn native_attempt_runs_one_temperature_keeps_failure_and_refuses_repeat() {
         assert!(input.contains("temps(1) = 20.00"));
         assert!(input.contains("gap_edge = 1.0000000000000000e-3"));
         assert!(input.contains("imag_read = .false."));
+        assert!(input.contains("fila2f = 'source.a2f'"));
+        assert_eq!(
+            store::hash_file(&dir.join("source.a2f")).unwrap(),
+            inputs.a2f.sha256
+        );
         assert!(attempt::run_attempt(&r, &inputs, &program, &[], &dir).is_err());
     }
     let r = request(config::Mode::Iso, attempt::SolveKind::Linear);
@@ -720,6 +730,8 @@ assert value('nstemp')=='1'
 assert value('imag_read')=='.false.'
 assert value('epwread')=='.true.' and value('epbread')=='.false.'
 assert value('epwwrite')=='.false.' and value('wannierize')=='.false.'
+assert value('fila2f')=="'source.a2f'"
+assert pathlib.Path('source.a2f').is_file(), '必须重读已有谱，不能重算谱'
 iso=value('liso')=='.true.'
 linear=value('tc_linear')=='.true.'
 kb=1.380649e-23/1.602176634e-19

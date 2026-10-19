@@ -218,9 +218,8 @@ pub fn render(request: &Request, input: &NativeInputs) -> Result<String> {
         request.temperature_centikelvin as f64 / 100.0, request.mu_star, request.cutoff_ev,
         request.max_iterations, request.convergence_relative, request.mixing_beta,
         request.mixing_history, request.initial_shape, input.spectral_points);
-    if iso {
-        s.push_str(&format!(" fila2f = {}\n", quoted(&input.a2f.path)?));
-    }
+    // 目标版本 fila2f 只有 80 字符；副本属于本次尝试，避免绝对路径被静默截断。
+    s.push_str(" fila2f = 'source.a2f'\n");
     s.push_str(&format!(
         " eps_acoustic = {:.16e}\n",
         input.eps_acoustic_cm1
@@ -282,6 +281,11 @@ pub fn run_attempt(
     let input_path = dir.join("epw.in");
     store::atomic_bytes(&input_path, text.as_bytes())?;
     fs::copy(&inputs.crystal.path, dir.join("crystal.fmt"))?;
+    fs::copy(&inputs.a2f.path, dir.join("source.a2f"))?;
+    ensure!(
+        store::hash_file(&dir.join("source.a2f"))? == inputs.a2f.sha256,
+        "input_conflict: 原生谱副本与来源不符"
+    );
     if request.mode == Mode::Aniso {
         fs::copy(
             &inputs
@@ -309,6 +313,7 @@ pub fn run_attempt(
         artifacts: vec![
             Identity::capture(&input_path)?,
             Identity::capture(&dir.join("crystal.fmt"))?,
+            Identity::capture(&dir.join("source.a2f"))?,
         ],
         evidence: None,
         gap: None,
