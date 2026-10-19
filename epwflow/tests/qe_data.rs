@@ -352,6 +352,12 @@ fn qe_config_renders_expected_namelists() {
     assert!(scf_in.contains("ATOMIC_POSITIONS"));
     let nscf_in = qe.nscf_input(out.to_str().unwrap()).unwrap();
     assert!(nscf_in.contains("calculation = 'nscf'") && nscf_in.contains("nbnd = 4"));
+    let reference_in = qe.reference_input(out.to_str().unwrap(), &[[0., 0., 0.]]).unwrap();
+    for deck in [&scf_in, &nscf_in, &reference_in] {
+        for pseudo in cfg.pseudos.values() {
+            assert!(deck.contains(&format!("'{}'", pseudo.display())));
+        }
+    }
     let init_in = qe.phonon_init_input(out.to_str().unwrap());
     assert!(init_in.contains("only_init = .true.") && init_in.contains("ldisp = .true."));
     let q_in = qe
@@ -701,4 +707,24 @@ fn shared_qeflow_resume_reuses_scf_ph_and_rejects_unregistered_changes() {
     std::fs::write(cfg.work_dir.join("qe-phonon/bin/ph.x"), "tampered").unwrap();
     assert!(scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).is_err());
     assert_eq!(calls, std::fs::read_to_string(case.root.join("scientific-calls")).unwrap());
+}
+
+#[test]
+fn shared_qeflow_reuses_xml_q2r_after_matdyn_failure() {
+    let (case, cfg, binding) = shared_case();
+    let qe = QeSettings::from_config(&cfg).unwrap();
+    let failure = case.root.join("comparison-failure");
+    std::fs::write(&failure, "matdyn").unwrap();
+    assert!(scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).is_err());
+    let output = store::Identity::capture(&cfg.work_dir.join("qe-phonon/q2r.out")).unwrap();
+    let force = store::Identity::capture(&cfg.work_dir.join("qe-phonon/actual_prefix.fc.xml")).unwrap();
+    std::fs::remove_file(failure).unwrap();
+    scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).unwrap();
+    output.verify().unwrap();
+    force.verify().unwrap();
+    let calls = std::fs::read_to_string(case.root.join("scientific-calls")).unwrap();
+    assert_eq!(calls.lines().filter(|l| *l == "pw").count(), 2); // SCF 与完整 NSCF。
+    for stage in ["ph", "q2r"] {
+        assert_eq!(calls.lines().filter(|l| *l == stage).count(), 1);
+    }
 }

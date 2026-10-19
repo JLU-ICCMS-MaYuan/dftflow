@@ -70,6 +70,13 @@ def cross(a,b): return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b
 def s(v): return ' '.join(format(x,'.17e') for x in v)
 BOHR=.529177210903
 if kind=='pw':
+    species = re.search(r'ATOMIC_SPECIES\s*\n(.*?)ATOMIC_POSITIONS', text, re.S).group(1)
+    for line in species.strip().splitlines():
+        _, _, pseudo = line.split(None, 2)
+        # Fortran 列表定向读取不能把未引用的斜杠绝对路径当作文件名。
+        assert not pseudo.startswith('/'), 'unquoted absolute pseudopotential path'
+        if pseudo.startswith("'/"):
+            assert pseudo.endswith("'") and Path(pseudo[1:-1].replace("''", "'")).is_file()
     cell = re.search(r'CELL_PARAMETERS[^\n]*\n([^\n]+)\n([^\n]+)\n([^\n]+)', text, re.I)
     lattice = [[float(x)/BOHR for x in cell.group(i).split()] for i in (1,2,3)]
     alat = math.sqrt(dot(lattice[0],lattice[0]))

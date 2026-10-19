@@ -50,8 +50,9 @@ impl<'a> QeSettings<'a> {
                 "configuration: QE 赝势卡片需要不含空白的绝对路径；请先固定到受控赝势目录"
             );
             species.push_str(&format!(
-                "  {el} {:.4} {name}\n",
-                qf_input::species::get_atomic_mass(el, self.config.atomic_masses.get(el).copied())
+                "  {el} {:.4} {}\n",
+                qf_input::species::get_atomic_mass(el, self.config.atomic_masses.get(el).copied()),
+                qf_input::to_qe_value(&json!(name))
             ));
         }
         let mut params = PwParams::default();

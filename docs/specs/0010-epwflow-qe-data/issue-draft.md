@@ -162,3 +162,7 @@
 ## 共享声子执行链已接入
 
 第一阶段已直接调用 qeflow nosplit 库；完整 SCF／PH／q2r／matdyn、EPW 数据保留、SCF 检查点和完整 NSCF 交接通过进程回归。后处理失败可显式恢复并复用 SCF／PH；请求或受控脚本变更拒绝。证据、指定 local_run 准备及限制见 [0010 最新验收](../0010-epwflow-qe-data/acceptance.md#共享声子执行链验证)。独立参考／四类比较图自动生成与真实两模式 Tc 继续保持未完成。
+
+## 真实 NSCF 赝势卡片修复
+
+作业 1296147 已通过共享声子后处理与 save，完整 NSCF 因未引用的绝对赝势路径在 readpp 失败。沿用 F2 显式赝势及输入正确性要求修复，使用共享 QE 字符串序列化，不改文件或物理输入。Documentation Impact：研究／任务／验收、0015 真实证据、模块和 Overview；原预算继续结算，不重做已核验 SCF／PH。

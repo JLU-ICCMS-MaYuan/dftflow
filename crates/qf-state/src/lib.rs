@@ -361,10 +361,12 @@ fn check_merge(
 
 fn check_q2r(workspace: &Path, prefix: &str) -> TaskState {
     let out = sniff(&workspace.join("q2r.out"));
-    let fc = workspace.join(format!("{prefix}.fc"));
+    let force_constants = [format!("{prefix}.fc"), format!("{prefix}.fc.xml")]
+        .iter()
+        .any(|name| workspace.join(name).metadata().map(|m| m.is_file() && m.len() > 0).unwrap_or(false));
     if !out.exists {
         TaskState::Unstarted
-    } else if out.finished && fc.exists() {
+    } else if out.finished && force_constants {
         TaskState::Finished
     } else {
         TaskState::Error
@@ -515,6 +517,24 @@ pub fn split_resume_step(status: &WorkflowStatus) -> (u8, &'static str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn q2r_completion_requires_nonempty_text_or_xml_force_constants() {
+        let dir = std::env::temp_dir().join(format!("q2r-state-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("q2r.out"), "JOB DONE.\n").unwrap();
+        assert_eq!(check_q2r(&dir, "fixture"), TaskState::Error);
+        let xml = dir.join("fixture.fc.xml");
+        std::fs::write(&xml, "").unwrap();
+        assert_eq!(check_q2r(&dir, "fixture"), TaskState::Error);
+        std::fs::write(&xml, "XML force constants").unwrap();
+        assert_eq!(check_q2r(&dir, "fixture"), TaskState::Finished);
+        std::fs::rename(&xml, dir.join("fixture.fc")).unwrap();
+        assert_eq!(check_q2r(&dir, "fixture"), TaskState::Finished);
+        std::fs::write(dir.join("q2r.out"), "unfinished\n").unwrap();
+        assert_eq!(check_q2r(&dir, "fixture"), TaskState::Error);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn resume_starts_at_one() {

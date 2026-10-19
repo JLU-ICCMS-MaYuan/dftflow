@@ -799,7 +799,7 @@ fn shared_qe_inputs_keep_physics_and_full_mesh() {
     assert_eq!(rows[0][0], "Mg");
     assert!((rows[0][1].parse::<f64>().unwrap() - 24.305).abs() < 1e-10);
     assert!((rows[1][1].parse::<f64>().unwrap() - 10.81).abs() < 1e-10);
-    assert_eq!(rows[0][2], cfg.pseudos["Mg"].to_str().unwrap());
+    assert_eq!(rows[0][2], format!("'{}'", cfg.pseudos["Mg"].display()));
     let nscf = qe.nscf_input("./tmp").unwrap();
     let system = nscf
         .split("&SYSTEM\n")

@@ -61,9 +61,10 @@ if name=='q2r.x':
  if "Si.dyn.xml" in s: assert Path('Si.dyn2.xml').is_file()
  if os.environ.get('QE_FAIL_Q2R'):
   print('Error in routine fixture'); sys.exit(2)
- Path('Si.fc').write_text('force constants')
+ Path('Si.fc.xml' if "Si.dyn.xml" in s else 'Si.fc').write_text('force constants')
 if name=='matdyn.x':
- assert Path('Si.fc').is_file(), 'q2r was skipped'
+ force=re.search(r"flfrc\s*=\s*'([^']+)'",s).group(1)
+ assert Path(force).is_file(), 'q2r product does not match matdyn input'
  if 'fldos' in s: Path('Si.phdos.dat').write_text('0 0.1 0.1\n1 0.2 0.2\n2 0.1 0.1\n')
  else: Path('Si.phband.freq').write_text('&plot nbnd=3, nks=3 /\n0 0 0\n0 1 2\n0.25 0 0\n0.5 1.5 2.5\n0.5 0 0\n1 2 3\n')
 print('JOB DONE.')

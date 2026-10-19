@@ -104,3 +104,7 @@ spec.md、plan.md、research.md、data-model.md、contracts/interface.md、tasks
 首条公开主路径只接受 nosplit，调用 qeflow 的同一同步执行函数，顺序为 SCF→PH→q2r→matdyn，再由 EPW 做完整均匀 NSCF 与严格交付。共享库提供 SCF 完成检查点，EPW 在 PH 启动前验证 XML 并保存独立 SCF 快照，避免从 PH 已写过的树反推 SCF 来源。既有独立分 q 库接口保留作回归／历史适配，不作为新的公开主路径。
 
 共享配置显式传递原子质量和 SCF k_shift，防止改用默认质量或零位移。路径通过可选 kpath 字段指定并在 prepare 时固定身份；未指定且配置目录有 KPATH.in 时采用该文件。缺少路径时第一阶段在科学调用前拒绝。q2r／matdyn 从相同 PH 程序目录定位并固定文件身份；受控 argv 包装保留 launcher 和 PW／PH 的各自参数，不假设两个程序必然位于同一目录。原始输入、save 和参考保持只读，独立工作目录不与来源合并。
+
+## 显式赝势的卡片引用
+
+适配层映射既有绝对赝势路径时使用共享 QE 字符串序列化，避免 Fortran 列表定向 READ 将斜杠解释为输入终止符。SCF／完整及参考 NSCF 走同一适配方法，不重选文件、复制其他赝势或改变物理身份；严格原生 IO fixture 在科学执行入口核验引用。

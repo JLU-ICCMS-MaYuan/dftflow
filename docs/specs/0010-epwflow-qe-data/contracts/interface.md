@@ -42,3 +42,5 @@ scf.snapshot_dir 为完整 outdir 快照，snapshot-files.json 固定全部内�
 PH 格式标识 qe7.4.1-ph-xml-c16，当前限定非磁性标量、portable 波函数和小端复数 REAL(8) 响应。save 包含 prefix.dyn0.xml、prefix.dyn_qN.xml、prefix.dvscf_qN 及 prefix.phsave/patterns.N.xml、control_ph.xml。coords 只修改派生 patterns 的 QPOINT_NUMBER 为全局 N，保留原始文件与复扰动基底，未知或截断布局拒绝。
 
 import 只接受经过原生重验的版本 2 来源，按清单角色复制目录成员并重验，保存重新定位的独立 imported/qe-data/manifest.json；不自动运行科学程序。把来源根目录或其子目录用作导入目标时拒绝。导入报告本身不代表 F1 已完成后续阶段恢复。
+
+显式绝对赝势路径在 ATOMIC_SPECIES 中必须作为带引号的 QE 字符串输出，SCF／完整 NSCF／参考 NSCF 一致。保留原路径与 SHA-256 身份，不能用未引用斜杠路径或依赖替身忽略卡片的行为证明有效输入。
