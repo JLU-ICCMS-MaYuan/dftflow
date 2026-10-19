@@ -281,7 +281,8 @@ fn actual(diagnostic: bool) -> Result<()> {
             } else {
                 None
             };
-            if let Some(side) = side {
+            // iso 的 Tc 分类必须来自线性本征值；非线性诊断仅保存在独立结果中。
+            if let Some(side) = side.filter(|_| mode == Mode::Aniso) {
                 engine.result.search.observe(t, side)?;
                 engine.save()?;
             }

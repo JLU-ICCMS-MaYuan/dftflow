@@ -854,6 +854,42 @@ print('EPW : 0.01s CPU 0.02s WALL')
         );
     }
     assert_ne!(results[0], results[1]);
+    // 固定 iso 非线性诊断可交付完整双初值，但不能冒充线性化 Tc 分类。
+    let mut diagnostic = native_modes["iso"].clone();
+    diagnostic.attempts.retain(|a| {
+        a.request.kind == attempt::SolveKind::Nonlinear && a.request.temperature_centikelvin == 2000
+    });
+    assert_eq!(diagnostic.attempts.len(), 2);
+    diagnostic.search = search::Search::new(1000, 5500, 500).unwrap();
+    diagnostic.complete = false;
+    diagnostic.reason = Some("固定非线性诊断，未执行线性 Tc 搜索".into());
+    let diagnostic_root = root.join("iso-nonlinear-diagnostic");
+    let partial = scheduler::publish(
+        &diagnostic_root,
+        "native-fixture".into(),
+        inputs.interpolation_digest.clone(),
+        config::Mode::Iso,
+        std::collections::BTreeMap::from([("iso".into(), diagnostic.clone())]),
+    )
+    .unwrap();
+    assert!(!partial.converged && !partial.located);
+    let loaded = epwflow::superconductivity::manifest::SuperconductivityManifest::load(
+        &diagnostic_root.join("manifest.json"),
+    )
+    .unwrap();
+    assert_eq!(loaded.native_modes["iso"].attempts.len(), 2);
+    diagnostic
+        .search
+        .observe(2000, search::Side::Superconducting)
+        .unwrap();
+    assert!(scheduler::publish(
+        &root.join("rejected-fake-linear"),
+        "native-fixture".into(),
+        inputs.interpolation_digest.clone(),
+        config::Mode::Iso,
+        std::collections::BTreeMap::from([("iso".into(), diagnostic)]),
+    )
+    .is_err());
     let root_sc = root.join("superconductivity");
     let original = scheduler::publish(
         &root_sc,
