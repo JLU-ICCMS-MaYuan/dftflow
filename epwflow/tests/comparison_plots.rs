@@ -169,6 +169,51 @@ fn temp() -> PathBuf {
     fs::create_dir_all(&p).unwrap();
     p
 }
+
+#[test]
+fn partial_format_replot_keeps_ownership_and_interrupted_publication_recovers() {
+    let root=temp();
+    let work=fixture(&root);
+    let results=epwflow::delivery::comparison::collect(&work,None).unwrap();
+    let plot=|formats:&[String]| epwflow::delivery::comparison_plot::plot(&results,None,formats).unwrap();
+    plot(&["png".into(),"svg".into(),"pdf".into()]);
+    let output=results.join("figures");
+    let manifest=output.join("comparison-figures.json");
+    let previous:serde_json::Value=store::read(&manifest).unwrap();
+    let png=store::hash_file(&output.join("comparison_overview.png")).unwrap();
+    plot(&["svg".into()]);
+    let current:serde_json::Value=store::read(&manifest).unwrap();
+    assert_eq!(current["files"].as_array().unwrap().len(),15);
+    assert_eq!(png,store::hash_file(&output.join("comparison_overview.png")).unwrap());
+    assert!(epwflow::delivery::comparison_plot::check_figure_formats(&results,&["png","svg","pdf"]).unwrap());
+    // 使用真实发布协议构造“首张图片已替换、清单尚未写入”的中断。
+    let stage=output.join(".native-comparison-interrupted");
+    fs::create_dir(&stage).unwrap();
+    let mut next=current.clone();
+    let name=next["files"][0]["relative_path"].as_str().unwrap().to_string();
+    let mut payload=fs::read(output.join(&name)).unwrap();
+    payload.extend_from_slice(b"\n");
+    fs::write(stage.join(&name),&payload).unwrap();
+    next["files"][0]=serde_json::to_value(Artifact::capture(&stage,&name).unwrap()).unwrap();
+    for f in next["files"].as_array().unwrap().iter().skip(1) {
+        let name=f["relative_path"].as_str().unwrap();
+        fs::copy(output.join(name),stage.join(name)).unwrap();
+    }
+    fs::rename(stage.join(&name),output.join(&name)).unwrap();
+    let mut encoded=serde_json::to_vec_pretty(&next).unwrap();encoded.push(b'\n');
+    store::write(&output.join(".comparison-figures.json.publish.json"),&serde_json::json!({
+        "schema_version":1,"stage":".native-comparison-interrupted","manifest":"comparison-figures.json",
+        "previous_digest":store::hash_file(&manifest).unwrap(),"payload":encoded,
+        "files":next["files"],"previous_files":current["files"]
+    })).unwrap();
+    assert!(epwflow::delivery::comparison_plot::check_figures(&results).is_err());
+    plot(&["png".into(),"svg".into(),"pdf".into()]);
+    assert!(epwflow::delivery::comparison_plot::check_figure_formats(&results,&["png","svg","pdf"]).unwrap());
+    assert!(!stage.exists());
+    assert!(!output.join(".comparison-figures.json.publish.json").exists());
+    assert_eq!(previous["comparison_digest"],current["comparison_digest"]);
+    fs::remove_dir_all(root).unwrap();
+}
 fn cli(args: &[&str], cwd: &Path) -> Output {
     stage_cli::command(args, cwd)
         .current_dir(cwd)

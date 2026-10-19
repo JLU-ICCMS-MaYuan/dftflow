@@ -61,3 +61,7 @@ RunBinding→StageAttempt→Artifact，后续 manifest 引用上游身份；基�
 每个原生任务复用 `native-attempts/` 请求与恢复协议，登记 `reference.exitcode`，只冻结输入文件和原 SCF 快照清单，允许工作保存副本被 QE 改写。完成检查点保留实际输出身份；显式恢复重验成功任务，只归档并重试失败任务。旧 EPW 检查点缺省退出文件仍解释为 `epw.exitcode`，不改写旧归档。
 
 自动生成只落实固定参考的执行与来源契约。真实 MgB₂ 的不等价网格外覆盖、质量数值及手动对照仍须按 FR-006 和 0015 验收，进程替身的点集不能当作科学覆盖证据。
+
+## 第二阶段自动比较请求
+
+固定请求、路径／网格、全星 ASR、原生尝试和比较发布见[自动比较设计](automatic-comparison.md)。来源清单沿用 `comparison::Sources`，图表沿用 0014 契约；不新增并行执行器或元素投影推断。

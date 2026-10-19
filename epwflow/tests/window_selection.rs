@@ -14,6 +14,25 @@ fn cfg() -> Config {
 }
 
 #[test]
+fn comparison_defaults_preserve_legacy_binding_and_invalid_sampling_is_rejected() {
+    let mut c: Config = toml::from_str(include_str!("fixtures/input.toml")).unwrap();
+    assert!(c.comparison.is_none());
+    assert!(serde_json::to_value(&c).unwrap().get("comparison").is_none());
+    c.comparison = Some(Default::default());
+    c.validate().unwrap();
+    for points in [0,1001] {
+        c.comparison.as_mut().unwrap().points_per_edge=points;
+        assert!(format!("{:#}",c.validate().unwrap_err()).contains("comparison.points_per_edge"));
+    }
+    c.comparison.as_mut().unwrap().points_per_edge=20;
+    c.comparison.as_mut().unwrap().electronic_sigma_ev=f64::NAN;
+    assert!(c.validate().is_err());
+    c.comparison.as_mut().unwrap().electronic_sigma_ev=0.1;
+    c.comparison.as_mut().unwrap().phonon_sigma_cm1=0.;
+    assert!(c.validate().is_err());
+}
+
+#[test]
 fn both_native_inputs_consume_same_upstream_selection() {
     let c = cfg();
     let ec = EpwConfig::from_config(&c)

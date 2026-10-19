@@ -113,10 +113,15 @@ fn run_coarse_stages(
         cfg.wannier.num_wann as usize,
     )?;
     let checked_quality = frozen.pair(work)?;
+    // 诊断图仍保留真实失败状态；仅在质量门与图表均完成后发布阶段清单。
+    super::automatic_comparison::run(cfg, &epw_cfg, backend, launcher, work, f2_work, retry)?;
     ensure!(
         checked_quality.passed,
         "data_invalid: 当前粗网格质量未通过，禁止细网格与超导"
     );
+    if cfg.kpath.is_some() {
+        coarse_res.artifacts.extend(super::automatic_comparison::artifacts(work)?);
+    }
     for (role, name) in [
         ("coarse_quality_sources", "quality-reference.json"),
         ("coarse_quality_binding", "quality-binding.json"),
@@ -323,6 +328,13 @@ pub fn verify_coarse(cfg: &config::Config, work: &Path) -> Result<InterpolationM
     ensure!(!coarse.artifacts.is_empty(), "data_invalid: 粗网格证据为空");
     for artifact in &coarse.artifacts {
         crate::superconductivity::source::artifact_path(work, artifact)?;
+    }
+    if cfg.kpath.is_some() {
+        ensure!(coarse.artifacts.iter().any(|a| a.producer_stage == "comparison"),
+            "data_invalid: 粗网格阶段缺少自动比较交付");
+        super::comparison_data::load(&work.join("interpolation/comparison"))?;
+        ensure!(crate::delivery::comparison_plot::check_figure_formats(&work.join("results"), &["png", "svg", "pdf"])?,
+            "data_invalid: 粗网格阶段缺少比较图");
     }
     Ok(m)
 }

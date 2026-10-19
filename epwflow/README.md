@@ -2,7 +2,7 @@
 
 EPW 工作流仅构建三个独立程序：`epw_phonon`、`epw_wannier`、`epw_superconductivity`。配置默认名为 `inputepw.toml`，运行快照为 `input-init.toml`；同目录原有 `input.toml` 继续供 qeflow 使用。
 
-三个入口、脚本生成和粗／细网格清单已接入。第一阶段已直接调用 qeflow 共享执行库。独立参考自动生成和显式纯能量选窗已接入；第二阶段四类图的自动生成，以及真实原生 iso／aniso Tc 的完整验收仍在实施。当前源码、构建产物和默认安装分别核对，旧安装不能直接使用下列新选项。当前功能见 [Overview](../docs/overview/epwflow/README.md)，整合契约见 [0008 三程序设计](../docs/specs/0008-epwflow-foundation/three-programs.md)。
+三个入口、脚本生成和粗／细网格清单已接入。第一阶段直接调用 qeflow 共享执行库；第二阶段已接入独立参考、显式纯能量选窗、比较数据和四类图的自动生成。真实 PBE 全链与原生 iso／aniso Tc 的完整科学验收仍未完成。当前源码、构建产物和默认安装分别核对，旧安装不能直接使用下列新选项。当前功能见 [Overview](../docs/overview/epwflow/README.md)，整合契约见 [0008 三程序设计](../docs/specs/0008-epwflow-foundation/three-programs.md)。
 
 ## 三个阶段
 
@@ -16,15 +16,16 @@ flowchart TD
     W --> WP["显式选窗与程序预检"]
     WP --> WR["同源独立参考：显式清单，或自动<br/>SCF 副本 → 固定点 NSCF／直接 PH → dynmat"]
     WR --> W1["Wannier／粗网格 → 独立质量检查"]
-    W1 --> W2["目标：电子能带／DOS、声子谱／DOS<br/>四张对比图与总览"]
-    W2 --> WM["wannier/manifest.json<br/>不含细网格或 α²F"]
+    W1 --> W2["自动生成同路径／DOS 网格数据<br/>电子能带／DOS、声子谱／DOS 四图与总览"]
+    W2 --> QG{"独立质量通过？"}
+    QG -->|"是"| WM["wannier/manifest.json<br/>不含细网格或 α²F"]
     WM --> S["epw_superconductivity"]
     S --> S1["细网格 EPC → 原生 α²F／λ<br/>interpolation/manifest.json"]
     S1 --> S2["原生 iso／aniso → 双初值与收敛检查<br/>有界 Tc 搜索 → 图表与结果包"]
-    W1 -->|"质量失败"| STOP["保存诊断，阻断细网格／超导"]
+    QG -->|"否"| STOP["保留失败诊断图，阻断细网格／超导"]
 ```
 
-图中第二阶段的“目标”部分尚未全部接入。第一阶段固定 KPATH、q2r／matdyn 程序身份及物理输入，直接调用同一 qeflow 库；SCF 结束后、PH 前保存不可变快照，完成后再执行 EPW 的完整均匀 NSCF。qeflow 原来就保留 scratch；新增的 `[qe_phonon].retain_epw_data=true` 让 nosplit 生成逐 q 响应势与 XML 动力学矩阵，并校验、归档到 `save/`，详见 [qeflow 手册](../qeflow/README.md#为-epw-保留声子数据)。第一条主路径采用 nosplit，不要求三种 q 方式都完成才交付。
+第一阶段固定 KPATH、q2r／matdyn 程序身份及物理输入，直接调用同一 qeflow 库；SCF 结束后、PH 前保存不可变快照，完成后再执行 EPW 的完整均匀 NSCF。qeflow 原来就保留 scratch；新增的 `[qe_phonon].retain_epw_data=true` 让 nosplit 生成逐 q 响应势与 XML 动力学矩阵，并校验、归档到 `save/`，详见 [qeflow 手册](../qeflow/README.md#为-epw-保留声子数据)。第一条主路径采用 nosplit，不要求三种 q 方式都完成才交付。
 
 ## 生成脚本、检查和执行
 
@@ -116,7 +117,20 @@ epw_phonon --budget reconcile --ledger "$LEDGER"
 
 原验收账本兼容 campaign／historical_jobs／attempts 格式：只读状态保持原文件，首次成功预算写入才保存新结构，并完整保留历史记录、累计消费及存储基线。未结算预留、未知终态或累计不一致时拒绝转换，不能换账本路径重置预算。
 
-目前四类比较图可从带哈希的既有来源导出并重绘，自动链仍需接入来源生成。图中 QE 实线先画，EPW 虚线后画；高对称点位于横轴下方，实际 Wannier 外窗和冻结窗用不同颜色标注。严格元素／轨道投影继续暂缓，缺失面板明确标注。
+第二阶段现会自动生成比较来源并输出四类图与总览，保存到实际科学目录的 `results/figures/`，各有 PNG／SVG／PDF。图中 QE 实线先画，EPW 虚线后画；高对称点位于横轴下方，实际 Wannier 外窗和冻结窗用不同颜色标注。严格元素／轨道投影继续暂缓，缺失面板明确标注。
+
+路径由固定 KPATH 展开；DOS 使用第一阶段完整均匀 NSCF 网格。第二阶段额外执行路径 NSCF、同源 PH 副本的 q2r／matdyn 和 EPW 粗网格重读，不重做 SCF／已有 PH，不提前运行细网格 EPC。质量失败仍可生成诊断图，随后拒绝发布第二阶段成功标记。来源和逐任务执行证据保存在 `comparison-native/`。
+
+可选参数整段省略时使用以下默认值；提供时三字段完整给出：
+
+```toml
+[comparison]
+points_per_edge = 20
+electronic_sigma_ev = 0.1
+phonon_sigma_cm1 = 10.0
+```
+
+`points_per_edge` 为每条边的区间数（1～1000）；核宽单位分别为 eV、cm⁻¹，必须为有限正数。改变配置须建立新运行。仅重绘 SVG 会保留已登记且哈希有效的同源 PNG／PDF；半写发布由显式绘图或阶段恢复接续，未知文件冲突仍拒绝。上述代码经过进程协议回归，不能代替真实 PBE 插值质量与 Tc 验收。
 
 ## 测试与科学边界
 

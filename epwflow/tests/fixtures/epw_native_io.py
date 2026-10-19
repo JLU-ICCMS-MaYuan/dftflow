@@ -31,8 +31,11 @@ if coarse or reread:
         assert value('wannierize')=='.false.' and 'dis_froz_max' not in text
     xml=ET.parse((out/(prefix+'.save') if coarse else ROOT/'run/nscf/out'/ (prefix+'.save'))/'data-file-schema.xml').getroot()
     kpoints=[[float(x) for x in node.text.split()] for node in xml.findall('output/band_structure/ks_energies/k_point')]
+    coarse_nk=len(kpoints)
     bg=[[float(x) for x in xml.find('output/basis_set/reciprocal_lattice/b'+str(i)).text.split()] for i in (1,2,3)]
     def cart(c):return [sum(c[i]*bg[i][j] for i in range(3)) for j in range(3)]
+    if reread:
+        kpoints=[cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]
     qcr=[list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]
     qpoints=list(map(cart,qcr))
     modes=6
@@ -44,8 +47,11 @@ if coarse or reread:
     if mode=='coarse-truncated':(out/(prefix+'.epmatwp')).write_bytes(b'broken')
     wout='Using band disentanglement : T\n<<< Disentanglement convergence criteria satisfied >>>\nCycle: 14\n<<< Wannierisation convergence criteria satisfied >>>\nFinal State\n'
     wout+=''.join(f'WF centre and spread {i} ( 0 0 0 ) 1.25\n' for i in range(1,n+1))
+    if coarse:
+        wout+=f'| Outer: {value("dis_win_min")} to {value("dis_win_max")} (eV)\n'
+        wout+=f'| Inner: {value("dis_froz_min")} to {value("dis_froz_max")} (eV)\n'
     Path(prefix+'.wout').write_text(wout)
-    kept=list(range(8,17));nk=len(kpoints)
+    kept=list(range(8,17));nk=coarse_nk
     Path(prefix+'.ukk').write_text('9 7\n'+'\n'.join(map(str,kept))+'\n'+'(0,0)\n'*(9*n*nk)+'T\n'*(9*nk)+'T\n'*7+'F\n'*9+'0 0 0\n'*n)
     if mode=='coarse-ukk':Path(prefix+'.ukk').write_text('9 7\n8\n')
     bands('band.eig',kpoints,[HA*.01*i for i in range(8,13)])

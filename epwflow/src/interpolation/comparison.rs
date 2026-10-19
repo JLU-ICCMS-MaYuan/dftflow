@@ -336,7 +336,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     }
     let modes = eph.values[0].len();
     ensure!(
-        modes == 9
+        modes > 0
             && eph
                 .values
                 .iter()
@@ -344,21 +344,44 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
                 .all(|v| v.len() == modes),
         "data_invalid: 声子模式不完整"
     );
-    // 首个原生导出适配器限定本次 MgB2 诊断，不能误标其他体系的元素。
+    // 总量比较按实际原子顺序验证 3N；缺少算符时不推断元素／轨道投影。
     let qe_text = fs::read_to_string(s.qe_mesh_xml.checked_path(base)?)?;
     let doc = roxmltree::Document::parse(&qe_text)?;
-    let atoms: Vec<_> = doc
+    let output_structure = doc.descendants().find(|n| n.has_tag_name("output"))
+        .context("data_invalid: 缺少 QE output 结构")?;
+    let atoms: Vec<_> = output_structure
         .descendants()
         .find(|n| n.has_tag_name("atomic_positions"))
         .context("data_invalid: 缺少原子顺序")?
         .children()
         .filter(|n| n.has_tag_name("atom"))
-        .filter_map(|n| n.attribute("name"))
-        .collect();
+        .map(|n| n.attribute("name").context("data_invalid: 原子缺少元素名"))
+        .collect::<Result<_>>()?;
     ensure!(
-        atoms == ["Mg", "B", "B"],
-        "data_invalid: 本适配器只验证 MgB2 原子顺序"
+        !atoms.is_empty() && modes == 3 * atoms.len(),
+        "data_invalid: 声子模式数与原子数不同"
     );
+    let path_text = fs::read_to_string(s.qe_bands_xml.checked_path(base)?)?;
+    let path_doc = roxmltree::Document::parse(&path_text)?;
+    let positions = |root: roxmltree::Node<'_, '_>| -> Result<Vec<(String, [f64; 3])>> {
+        root.descendants().find(|n| n.has_tag_name("output"))
+            .context("data_invalid: 缺少 QE output")?
+            .descendants().find(|n| n.has_tag_name("atomic_positions"))
+            .context("data_invalid: 缺少原子位置")?.children().filter(|n| n.has_tag_name("atom"))
+            .map(|n| Ok((n.attribute("name").context("data_invalid: 缺少元素名")?.into(),
+                crate::qe_data::xml::vector(n.text().context("data_invalid: 缺少原子坐标")?)?)))
+            .collect()
+    };
+    ensure!(positions(path_doc.root_element())? == positions(doc.root_element())?,
+        "input_conflict: 路径与 DOS 网格原子位置或顺序不同");
+    let mut elements = Vec::new();
+    for atom in &atoms {
+        if !elements.iter().any(|e| e == atom) { elements.push(*atom); }
+    }
+    // 旧 MgB2 包保留已请求但不可用的轨道标签；其他体系不能猜测轨道集合。
+    let orbitals = if atoms == ["Mg", "B", "B"] {
+        vec!["Mg:s".into(), "Mg:p".into(), "B:s".into(), "B:p".into()]
+    } else { vec![] };
     ensure!(
         s.window_ev.iter().all(|v| v.is_finite())
             && s.window_ev[0] <= -0.5
@@ -529,7 +552,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         .collect();
     let metrics = serde_json::json!({"schema_version":1,"quality":quality,"electronic_dos":{"qe_integral":integral(&ex,&edos[0]),"epw_integral":integral(&ex,&edos[1]),"absolute_l1":integral(&ex,&delta),"normalized_l1":(integral(&ex,&edos[0])>0.0).then(||integral(&ex,&delta)/integral(&ex,&edos[0])),"unmatched_window_states":uncovered},"phonon_dos":{"qe_integral":integral(&px,&pdos[0]),"epw_integral":integral(&px,&pdos[1]),"expected_integral":modes,"absolute_l1":integral(&px,&pdelta),"normalized_l1":(integral(&px,&pdos[0])>0.0).then(||integral(&px,&pdelta)/integral(&px,&pdos[0]))},"kernel":"exp[-(x/sigma)^2]/(sigma*sqrt(pi))","electronic_sigma_ev":s.electronic_sigma_ev,"phonon_sigma_cm1":s.phonon_sigma_cm1,"source_manifest_sha256":store::hash_file(source)?});
     let metadata = Metadata {
-        title: "MgB2 QE / EPW diagnostic".into(),
+        title: format!("{} QE / EPW diagnostic", atoms.join(" ")),
         fermi_ev: fermi,
         window_ev: s.window_ev,
         disentanglement_window_ev,
@@ -547,8 +570,8 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         phonon_frequency_unit: "cm-1".into(),
         electronic_density_unit: "states/(eV*cell)".into(),
         phonon_density_unit: "states/(cm-1*cell)".into(),
-        elements: vec!["Mg".into(), "B".into()],
-        orbitals: vec!["Mg:s".into(), "Mg:p".into(), "B:s".into(), "B:p".into()],
+        elements: elements.iter().map(|e| (*e).into()).collect(),
+        orbitals,
         electronic_projection: "unavailable".into(),
         phonon_projection: "unavailable".into(),
         phonon_error_markers: error_markers,

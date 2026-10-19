@@ -24,3 +24,4 @@ pub mod quality_binding;
 
 mod reference_asr;
 mod references;
+mod automatic_comparison;

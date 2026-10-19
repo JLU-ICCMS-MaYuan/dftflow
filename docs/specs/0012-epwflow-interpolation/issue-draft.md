@@ -250,3 +250,7 @@ F2 保存数据交接、EPW 内置 Wannier、原生粗网格重启、先参考�
 ## 自动独立参考与图表收敛
 
 沿用已确认 FR-006/014 和三程序 FR-016，将缺省独立参考生成、同源 Γ onsite ASR、逐任务恢复和来源完整性收敛为 T055；比较路径／DOS 数据与四类自动图另为 T056。显式参考仍只读，不新增 SCF、不自动调参，真实作业仍受原共享额度约束。Documentation Impact：更新 0012 设计／契约／任务／验收、0008 三程序契约、0015 验收和实际落地后的 Overview、模块手册；不据本批代码关闭整体需求。
+
+## 第二阶段自动比较实施
+
+沿用 T056，技术设计与 FR／SC 到验证映射见[自动比较设计](automatic-comparison.md)，进程验证见[专项验收](../0015-epwflow-mgb2-real-validation/automatic-comparison-validation.md)。本地 Issue 继续实施中；真实科学验收与暂缓的投影仍不关闭。文档影响：0012 的设计／任务／验收、0008 三程序说明、0014 图表契约、README 与 Overview 已同步本批代码行为。

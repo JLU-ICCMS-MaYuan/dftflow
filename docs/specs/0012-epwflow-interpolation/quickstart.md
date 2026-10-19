@@ -52,4 +52,4 @@ W、配置与输出目录应换成已准备的隔离运行路径；这里不提�
 
 ## 缺省参考与纯能量模式
 
-新三程序使用 `inputepw.toml`。第二阶段省略 `reference_manifest` 即自动计算固定点独立参考，须在第一阶段准备时能找到同一安装的 `dynmat.x`。现有 EPW 选择 `wannier.selection_mode="energy_only"`，不写组合投影参数。生成／检查不启动参考计算，执行仍在原共享预算登记的分配内；显式恢复保持点、程序与物理参数不变。命令及失败处理见[模块 README](../../../epwflow/README.md)。四类图的自动来源生成仍列 T056；本段不宣称完整科学验收。
+新三程序使用 `inputepw.toml`。第二阶段省略 `reference_manifest` 即自动计算固定点独立参考，须在第一阶段准备时能找到同一安装的 `dynmat.x`。现有 EPW 选择 `wannier.selection_mode="energy_only"`，不写组合投影参数。生成／检查不启动参考计算，执行仍在原共享预算登记的分配内；显式恢复保持点、程序与物理参数不变。命令及失败处理见[模块 README](../../../epwflow/README.md)。T056 已接通四类图的自动来源生成，固定 KPATH、比较核和 DOS 网格的说明见[自动比较设计](automatic-comparison.md)；本段不宣称完整科学验收。

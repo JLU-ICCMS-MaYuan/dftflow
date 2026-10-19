@@ -294,9 +294,13 @@ impl<'a> EpwConfig<'a> {
     /// 独立验证点按原配置写出，显式选全 q，避免 Fermi 窗口筛选留下假零频。
     pub fn write_quality_points(&self, dir: &std::path::Path) -> Result<()> {
         let quality = &self.cfg.interpolation.quality;
+        Self::write_points(dir, &quality.k_points_crystal, &quality.q_points_crystal)
+    }
+
+    pub(super) fn write_points(dir: &std::path::Path, k: &[[f64; 3]], q: &[[f64; 3]]) -> Result<()> {
         for (name, points) in [
-            ("kpoints.dat", &quality.k_points_crystal),
-            ("qpoints.dat", &quality.q_points_crystal),
+            ("kpoints.dat", k),
+            ("qpoints.dat", q),
         ] {
             ensure!(
                 !points.is_empty() && points.iter().flatten().all(|v| v.is_finite()),
@@ -311,7 +315,7 @@ impl<'a> EpwConfig<'a> {
             }
             std::fs::write(dir.join(name), text)?;
         }
-        let count = quality.q_points_crystal.len();
+        let count = q.len();
         std::fs::write(
             dir.join("selecq.fmt"),
             format!(

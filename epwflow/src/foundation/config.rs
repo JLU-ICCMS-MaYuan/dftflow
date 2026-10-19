@@ -23,6 +23,7 @@ pub struct Config {
     #[serde(default="default_outdir")] pub outdir:PathBuf,
     pub structure:PathBuf,pub pseudos:BTreeMap<String,PathBuf>,pub programs:Programs,
     #[serde(default, skip_serializing_if="Option::is_none")] pub kpath:Option<PathBuf>,
+    #[serde(default, skip_serializing_if="Option::is_none")] pub comparison:Option<Comparison>,
     #[serde(default)] pub atomic_masses:BTreeMap<String,f64>,
     pub resources:Resources,pub budget:BudgetConfig,pub qe:Qe,pub phonon:Phonon,
     pub wannier:Wannier,pub interpolation:Interpolation,pub superconductivity:Superconductivity,
@@ -47,6 +48,8 @@ pub struct Wannier {
     pub localization:Convergence,pub disentanglement:Option<Convergence>,
 }
 data!(Convergence{max_iterations:u32,tolerance_angstrom2:f64,window_iterations:u32});
+data!(Comparison{points_per_edge:u32,electronic_sigma_ev:f64,phonon_sigma_cm1:f64});
+impl Default for Comparison {fn default()->Self{Self{points_per_edge:20,electronic_sigma_ev:0.1,phonon_sigma_cm1:10.0}}}
 data!(Interpolation{k_grid:[u32;3],q_grid:[u32;3],electron_smearing:Smearing,degaussw_ev:f64,phonon_smearings_mev:Vec<f64>,spectral_points:u32,fsthick_ev:f64,eps_acoustic_cm1:f64,fermi_source:FermiSource,quality:Quality});
 data!(Quality{k_points_crystal:Vec<[f64;3]>,q_points_crystal:Vec<[f64;3]>,energy_window_ev:[f64;2],electron_max_ev:f64,electron_rms_ev:f64,phonon_max_cm1:f64,phonon_rms_cm1:f64,reference_manifest:Option<PathBuf>});
 data!(Superconductivity{mode:Mode,mu_star:f64,frequency_cutoff_ev:f64,max_iterations:u32,convergence_relative:f64,mixing_beta:f64,mixing_history:u32,initial_gaps_mev:[f64;2],initial_shape:f64,gap_temperatures_k:Vec<f64>,spectrum_index:u32,iso:Option<Tc>,aniso:Option<Tc>});
@@ -90,6 +93,11 @@ impl Config {
     }
     pub fn validate(&self)->Result<()>{
         ensure!(self.schema_version==1,"unsupported_version: schema_version 必须为 1");self.resources.validate()?;
+        if let Some(c)=&self.comparison {
+            ensure!((1..=1000).contains(&c.points_per_edge),"configuration: comparison.points_per_edge: 必须在 1..1000");
+            positive(c.electronic_sigma_ev,"comparison.electronic_sigma_ev")?;
+            positive(c.phonon_sigma_cm1,"comparison.phonon_sigma_cm1")?;
+        }
         ensure!(self.budget.campaign_id=="epic-0007","configuration: budget.campaign_id: 本次必须共用 epic-0007");
         ensure!(!self.pseudos.is_empty()&&self.pseudos.keys().all(|s|!s.is_empty()&&s.chars().all(|c|c.is_ascii_alphabetic())),"configuration: pseudos: 必须为元素到文件的非空映射");
         for (el,mass) in &self.atomic_masses {ensure!(self.pseudos.contains_key(el),"configuration: atomic_masses.{el}: 未声明对应赝势元素");positive(*mass,&format!("atomic_masses.{el}"))?;}

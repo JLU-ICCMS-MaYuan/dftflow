@@ -142,6 +142,7 @@ struct Figures {
 
 pub fn check_figures(results: &Path) -> Result<bool> {
     let output = results.join("figures");
+    super::publication::ensure_finished(&output, "comparison-figures.json")?;
     let path = output.join("comparison-figures.json");
     if !path.exists() {
         return Ok(false);
@@ -157,6 +158,14 @@ pub fn check_figures(results: &Path) -> Result<bool> {
         file.verify(&output)?;
     }
     Ok(true)
+}
+
+/// 阶段自动交付要求指定格式齐全；用户独立重绘仍可只选一种格式。
+pub fn check_figure_formats(results: &Path, formats: &[&str]) -> Result<bool> {
+    if !check_figures(results)? { return Ok(false); }
+    let record: Figures = store::read(&results.join("figures/comparison-figures.json"))?;
+    Ok(super::comparison::KINDS.iter().all(|kind| formats.iter().all(|format|
+        record.files.iter().any(|f| f.relative_path == Path::new(&format!("{kind}.{format}"))))))
 }
 
 fn missing<DB: DrawingBackend>(
@@ -608,19 +617,22 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
         "input_conflict: 图像输出不能覆盖比较数据"
     );
     let previous = output.join("comparison-figures.json");
-    let owned = if previous.exists() {
+    super::publication::recover(&output, "comparison-figures.json")?;
+    let comparison_digest = store::hash_file(&root.join("manifest.json"))?;
+    let previous_files = if previous.exists() {
         let old: Figures = store::read(&previous)?;
         ensure!(old.schema_version == 1, "data_invalid: 图像清单版本未知");
+        ensure!(old.comparison_digest == comparison_digest,
+            "input_conflict: 图像绑定其他比较来源，请使用新的输出目录");
         for f in &old.files {
             f.verify(&output)?;
         }
         old.files
-            .into_iter()
-            .map(|f| f.relative_path)
-            .collect::<std::collections::BTreeSet<_>>()
     } else {
         Default::default()
     };
+    let owned = previous_files.iter().map(|f| f.relative_path.clone())
+        .collect::<std::collections::BTreeSet<_>>();
     for name in KINDS {
         for format in formats {
             let file = PathBuf::from(format!("{name}.{format}"));
@@ -631,7 +643,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             );
         }
     }
-    let stage = output.join(format!(".comparison-{}", store::token()));
+    let stage = output.join(format!(".native-comparison-{}", store::token()));
     fs::create_dir(&stage)?;
     let mut files = Vec::new();
     for (i, name) in KINDS.iter().enumerate() {
@@ -673,23 +685,24 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             files.push(Artifact::capture(&stage, &format!("{name}.{format}"))?);
         }
     }
-    let record = Figures {
-        schema_version: 1,
-        comparison_digest: store::hash_file(&root.join("manifest.json"))?,
-        files,
-    };
-    for f in &record.files {
-        fs::rename(stage.join(&f.relative_path), output.join(&f.relative_path))?;
-    }
-    store::write(&previous, &record)?;
     // PDF-only 的中间 SVG 仅属于本次 staging，可定向移除。
     for name in KINDS {
         let svg = stage.join(format!("{name}.svg"));
-        if svg.exists() {
+        if svg.exists() && !formats.iter().any(|f| f == "svg") {
             fs::remove_file(svg)?;
         }
     }
-    fs::remove_dir(stage)?;
+    // 未请求重绘的已登记格式继续归属同一来源，避免变成无法恢复的未知文件。
+    for old in &previous_files {
+        if !files.iter().any(|f| f.relative_path == old.relative_path) {
+            fs::copy(output.join(&old.relative_path), stage.join(&old.relative_path))?;
+            files.push(old.clone());
+        }
+    }
+    files.sort_by(|a,b| a.relative_path.cmp(&b.relative_path));
+    let record = Figures { schema_version: 1, comparison_digest, files };
+    super::publication::publish(&output, &stage, "comparison-figures.json",
+        previous_files, record.files.clone(), &record)?;
     println!(
         "{}",
         serde_json::to_string_pretty(&comparison::summary(&data))?

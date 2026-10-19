@@ -23,6 +23,84 @@ fn matrix(root: roxmltree::Node<'_, '_>, a: usize, b: usize) -> Result<Vec<f64>>
     Ok(values)
 }
 
+/// 全 q 星用于 q2r；与质量参考的 QE dyndiag 一样平均 onsite 上下三角。
+pub(super) fn corrected_stars(raw: &str, gamma: &str, nat: usize) -> Result<String> {
+    let doc = roxmltree::Document::parse(raw)?;
+    let stars: Vec<_> = doc
+        .root_element()
+        .children()
+        .filter(|n| n.is_element() && n.tag_name().name().starts_with("DYNAMICAL_MAT_."))
+        .collect();
+    let count: usize = xml::text(doc.root_element(), "NUMBER_OF_Q")?
+        .trim()
+        .parse()?;
+    ensure!(
+        count > 0 && count == stars.len(),
+        "data_invalid: PH 星数量不同"
+    );
+    let mut edits = vec![];
+    for (i, star) in stars.iter().enumerate() {
+        ensure!(
+            star.tag_name().name() == format!("DYNAMICAL_MAT_.{}", i + 1),
+            "data_invalid: PH 星编号不同"
+        );
+        // 单 q 入口拥有 Γ 行和、原子数和 Fortran 布局的唯一实现。
+        let first = stars[0];
+        let mut input = raw.to_string();
+        if i > 0 {
+            let replacement = raw[star.range()].replace(star.tag_name().name(), "DYNAMICAL_MAT_.1");
+            input.replace_range(first.range(), &replacement);
+        }
+        let corrected = corrected_xml(&input, gamma, nat)?;
+        let corrected_doc = roxmltree::Document::parse(&corrected)?;
+        let first = one(corrected_doc.root_element(), "DYNAMICAL_MAT_.1")?;
+        for a in 1..=nat {
+            let mut onsite = matrix(first, a, a)?;
+            for j in 0..3 {
+                onsite[2 * (j + 3 * j) + 1] = 0.0;
+                for i in 0..j {
+                    let upper = 2 * (i + 3 * j);
+                    let lower = 2 * (j + 3 * i);
+                    onsite[upper] = 0.5 * (onsite[upper] + onsite[lower]);
+                    onsite[upper + 1] = 0.5 * (onsite[upper + 1] - onsite[lower + 1]);
+                    onsite[lower] = onsite[upper];
+                    onsite[lower + 1] = -onsite[upper + 1];
+                }
+            }
+            let target = one(*star, &format!("PHI.{a}.{a}"))?;
+            edits.push((
+                value_range(target)?,
+                onsite
+                    .iter()
+                    .map(|v| format!("{v:.17e}"))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            ));
+        }
+    }
+    // 旧频率／本征矢不属于派生矩阵。
+    for node in doc.root_element().children().filter(|n| {
+        n.is_element()
+            && matches!(
+                n.tag_name().name(),
+                "FREQUENCIES_THZ_CMM1" | "DISPLACEMENTS"
+            )
+    }) {
+        edits.push((node.range(), String::new()));
+    }
+    edits.sort_by_key(|e| e.0.start);
+    ensure!(
+        edits.windows(2).all(|w| w[0].0.end <= w[1].0.start),
+        "data_invalid: PH 修改重叠"
+    );
+    let mut output = raw.to_string();
+    for (range, value) in edits.into_iter().rev() {
+        output.replace_range(range, &value);
+    }
+    roxmltree::Document::parse(&output)?;
+    Ok(output)
+}
+
 /// PHI 为 Fortran 列主序；EPW 只对 jpol>=ipol 的 onsite 减去同源 Γ 行和。
 /// QE dyndiag 随后负责与 EPW 相同的 Hermitian 对称化和质量归一化。
 pub fn corrected_xml(raw: &str, gamma: &str, nat: usize) -> Result<String> {
@@ -192,6 +270,76 @@ mod tests {
             "<FREQUENCIES_THZ_CMM1><OMEGA.1>1 100</OMEGA.1></FREQUENCIES_THZ_CMM1></Root>",
         );
         xml
+    }
+
+    #[test]
+    fn all_stars_use_same_gamma_and_qe_hermitian_average_without_cropping() {
+        let gamma = sample([0.; 3], 0, 1);
+        let mut raw = sample([0.25, 0., 0.], 1000, 2);
+        let second = sample([0., 0.25, 0.], 2000, 1);
+        let second_doc = roxmltree::Document::parse(&second).unwrap();
+        let star = one(second_doc.root_element(), "DYNAMICAL_MAT_.1").unwrap();
+        raw = raw.replace(
+            "<DYNAMICAL_MAT_.2><Q_POINT>0 0 0</Q_POINT></DYNAMICAL_MAT_.2>",
+            &second[star.range()].replace("DYNAMICAL_MAT_.1", "DYNAMICAL_MAT_.2"),
+        );
+        let before = raw.clone();
+        let result = corrected_stars(&raw, &gamma, 2).unwrap();
+        assert_eq!(raw, before);
+        let doc = roxmltree::Document::parse(&result).unwrap();
+        let original = roxmltree::Document::parse(&raw).unwrap();
+        let gd = roxmltree::Document::parse(&gamma).unwrap();
+        let g = one(gd.root_element(), "DYNAMICAL_MAT_.1").unwrap();
+        assert_eq!(
+            one(doc.root_element(), "NUMBER_OF_Q").unwrap().text(),
+            Some("2")
+        );
+        assert!(!result.contains("FREQUENCIES_THZ_CMM1"));
+        for n in 1..=2 {
+            let old = one(original.root_element(), &format!("DYNAMICAL_MAT_.{n}")).unwrap();
+            let new = one(doc.root_element(), &format!("DYNAMICAL_MAT_.{n}")).unwrap();
+            assert_eq!(
+                xml::text(old, "Q_POINT").unwrap(),
+                xml::text(new, "Q_POINT").unwrap()
+            );
+            for a in 1..=2 {
+                assert_eq!(
+                    matrix(new, a, 3 - a).unwrap(),
+                    matrix(old, a, 3 - a).unwrap()
+                );
+                let old = matrix(old, a, a).unwrap();
+                let actual = matrix(new, a, a).unwrap();
+                let g1 = matrix(g, a, 1).unwrap();
+                let g2 = matrix(g, a, 2).unwrap();
+                for j in 0..3 {
+                    for i in 0..=j {
+                        let u = 2 * (i + 3 * j);
+                        let l = 2 * (j + 3 * i);
+                        let corrected_re = old[u] - g1[u] - g2[u];
+                        let expected_re = if i == j {
+                            corrected_re
+                        } else {
+                            0.5 * (corrected_re + old[l])
+                        };
+                        assert_eq!(actual[u], expected_re);
+                        assert_eq!(actual[l], expected_re);
+                        let expected_im = if i == j {
+                            0.
+                        } else {
+                            0.5 * (old[u + 1] - g1[u + 1] - g2[u + 1] - old[l + 1])
+                        };
+                        assert_eq!(actual[u + 1], expected_im);
+                        if i != j {
+                            assert_eq!(actual[l + 1], -expected_im);
+                        }
+                    }
+                }
+            }
+        }
+        assert!(corrected_stars(&sample([0.; 3], 0, 2), &gamma, 2).is_err());
+        assert!(
+            corrected_stars(&raw.replace("<NUMBER_OF_Q>2", "<NUMBER_OF_Q>3"), &gamma, 2).is_err()
+        );
     }
 
     #[test]

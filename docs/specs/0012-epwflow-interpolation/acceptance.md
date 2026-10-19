@@ -152,3 +152,7 @@ T054 的代码恢复子集已完成。原生粗网格与逐展宽细网格在准
 ## 自动独立参考与显式纯能量模式
 
 实施、故障记录、验证与剩余边界见[专项验收](../0015-epwflow-mgb2-real-validation/native-reference-validation.md)。本项不替代四类图自动来源或真实 Tc 验收。
+
+## 第二阶段自动比较
+
+T056 的固定路径／DOS 原生生成、三格式图、质量失败诊断和逐任务恢复已完成进程验证，见[专项验收](../0015-epwflow-mgb2-real-validation/automatic-comparison-validation.md)。真实 PBE／Tc 和严格投影仍未完成。

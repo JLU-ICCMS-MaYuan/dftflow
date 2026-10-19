@@ -306,6 +306,9 @@ pub fn resume(work: &Path, until: Option<Boundary>, submit: bool, resource: bool
             for target in [
                 b.work_dir.join(".epwflow/execution"),
                 calculation.join("superconductivity/execution"),
+                calculation.join("interpolation/comparison"),
+                calculation.join("results/comparison"),
+                calculation.join("results/figures/comparison-figures"),
                 record_path(&b.work_dir),
                 cfg.budget.ledger.clone(),
             ] {

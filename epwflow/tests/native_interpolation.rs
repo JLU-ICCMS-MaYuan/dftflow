@@ -21,10 +21,11 @@ use std::{
 struct Case {
     root: PathBuf,
     cfg: config::Config,
+    preserve: bool,
 }
 impl Drop for Case {
     fn drop(&mut self) {
-        if !std::thread::panicking() {
+        if !self.preserve && !std::thread::panicking() {
             let _ = fs::remove_dir_all(&self.root);
         }
     }
@@ -34,8 +35,13 @@ fn executable(path: &Path, text: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
 fn case(failure: &str) -> Case { case_with_auto(failure, false) }
-fn case_with_auto(failure: &str, automatic: bool) -> Case {
-    let root = std::env::temp_dir().join(format!("epwflow-native-interp-{}", store::token()));
+fn case_with_auto(failure: &str, automatic: bool) -> Case { case_options(failure, automatic, false) }
+fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
+    let retained = compare.then(|| std::env::var_os("DFTFLOW_NATIVE_COMPARISON_TEST_ROOT")).flatten();
+    let preserve = retained.is_some();
+    let parent = retained.map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    fs::create_dir_all(&parent).unwrap();
+    let root = parent.join(format!("epwflow-native-interp-{}", store::token()));
     fs::create_dir(&root).unwrap();
     let mut cfg: config::Config = toml::from_str(include_str!("fixtures/input.toml")).unwrap();
     cfg.work_dir = root.join("run");
@@ -55,7 +61,7 @@ fn case_with_auto(failure: &str, automatic: bool) -> Case {
         include_str!("fixtures/qe_native_io.py"),
     )
     .unwrap();
-    for name in ["pw", "ph", "dynmat"] {
+    for name in ["pw", "ph", "dynmat", "q2r", "matdyn"] {
         let p = root.join(format!("{name}.x"));
         executable(
             &p,
@@ -112,6 +118,12 @@ fn case_with_auto(failure: &str, automatic: bool) -> Case {
     cfg.interpolation.quality.reference_manifest = if automatic { None } else { Some(root.join("reference.json")) };
     cfg.interpolation.quality.q_points_crystal =
         vec![[0., 0., 0.], [0.25, 0., 0.], [0.5, 0., 0.], [0.75, 0., 0.]];
+    if compare {
+        let kpath = root.join("KPATH.in");
+        fs::write(&kpath,"0 0 0 G\n0.5 0 0 X\n0 0.5 0 Y\n0.5 0.5 0 M\n").unwrap();
+        cfg.kpath = Some(kpath);
+        cfg.comparison = Some(config::Comparison { points_per_edge: 2, electronic_sigma_ev: 0.1, phonon_sigma_cm1: 10. });
+    }
     let binding = snapshot::prepare(&cfg, &root.join("input.toml")).unwrap();
     let f2 = qe_data::scheduler::run_registered(
         &binding,
@@ -189,7 +201,7 @@ fn case_with_auto(failure: &str, automatic: bool) -> Case {
     .unwrap();
     }
     fs::write(root.join("epw-failure"), failure).unwrap();
-    Case { root, cfg }
+    Case { root, cfg, preserve }
 }
 fn run(c: &Case) -> anyhow::Result<interpolation::manifest::InterpolationManifest> {
     interpolation::scheduler::run_registered(
@@ -377,6 +389,101 @@ fn retry_fine(c: &Case) -> anyhow::Result<interpolation::manifest::Interpolation
     interpolation::scheduler::run_fine_with_retry(&c.cfg, Backend::Local, &[], &c.cfg.work_dir, true)
 }
 fn calls(c: &Case) -> String { fs::read_to_string(c.root.join("epw-calls")).unwrap() }
+
+#[test]
+fn automatic_comparison_delivers_stage_two_figures_from_native_path_and_mesh() {
+    let c = case_options("", true, true);
+    let work = &c.cfg.work_dir;
+    let f2 = qe_data::manifest::QeManifest::load(&work.join("qe-data/manifest.json")).unwrap();
+    let before: Vec<_> = f2.artifacts.iter().map(|a| a.sha256.clone()).collect();
+    let m = interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).unwrap();
+    assert!(m.fine.is_none());
+    assert!(!work.join("fine").exists());
+    assert!(m.coarse.unwrap().artifacts.iter().any(|a| a.producer_stage == "comparison"));
+    interpolation::scheduler::verify_coarse(&c.cfg,work).unwrap();
+    let dataset = interpolation::comparison_data::load(&work.join("interpolation/comparison")).unwrap();
+    assert_eq!(dataset.metadata.elements,["Si"]);
+    assert_eq!(dataset.manifest.quality_status,"passed");
+    assert!(!dataset.manifest.missing.is_empty()); // 暂缓投影不冒充完整结果。
+    let figures: serde_json::Value = store::read(&work.join("results/figures/comparison-figures.json")).unwrap();
+    assert_eq!(figures["files"].as_array().unwrap().len(),15);
+    let source: interpolation::comparison::Sources = store::read(&work.join("comparison-native/sources.json")).unwrap();
+    assert_eq!(source.path.len(),6);
+    assert_eq!(source.mesh.len(),8);
+    assert!(work.join("comparison-native/phonon/reference.fc.xml").is_file());
+    let matdyn_input=fs::read_to_string(work.join("comparison-native/phonon/matdyn.in")).unwrap();
+    assert!(matdyn_input.contains("asr='no'") && matdyn_input.contains("q_in_band_form=.false."));
+    let epw = interpolation::native::parse_bands(&fs::read_to_string(&source.epw_bands.path).unwrap()).unwrap();
+    assert_eq!(epw.values.len(),14);
+    assert_eq!(calls(&c).lines().filter(|l|l.starts_with("coarse ")).count(),1);
+    assert_eq!(calls(&c).lines().filter(|l|l.starts_with("reread ")).count(),1);
+    let qe_calls=fs::read_to_string(c.root.join("scientific-calls")).unwrap();
+    assert_eq!(qe_calls.lines().filter(|l|*l=="q2r").count(),1);
+    assert_eq!(qe_calls.lines().filter(|l|*l=="matdyn").count(),1);
+    f2.verify().unwrap();
+    assert_eq!(before,f2.artifacts.iter().map(|a|a.sha256.clone()).collect::<Vec<_>>());
+    // 发布成功标记前中断；已有仅 SVG 重绘不能替代自动交付的三格式。
+    fs::remove_file(work.join("wannier/manifest.json")).unwrap();
+    epwflow::delivery::comparison_plot::plot(&work.join("results"),None,&["svg".into()]).unwrap();
+    assert!(epwflow::delivery::comparison_plot::check_figure_formats(&work.join("results"), &["png","svg","pdf"]).unwrap());
+    // 模拟开始自动交付前只有 SVG 的独立比较结果，补齐必须复用成功科学任务。
+    let figure_manifest=work.join("results/figures/comparison-figures.json");
+    let mut partial:serde_json::Value=store::read(&figure_manifest).unwrap();
+    partial["files"].as_array_mut().unwrap().retain(|f| {
+        let name=f["relative_path"].as_str().unwrap();
+        if name.ends_with(".svg") {true} else {
+            fs::remove_file(work.join("results/figures").join(name)).unwrap(); false
+        }
+    });
+    store::write(&figure_manifest,&partial).unwrap();
+    assert!(!epwflow::delivery::comparison_plot::check_figure_formats(&work.join("results"), &["png","svg","pdf"]).unwrap());
+    interpolation::scheduler::run_coarse_with_retry(&c.cfg,Backend::Local,&[],work,work,true).unwrap();
+    interpolation::scheduler::verify_coarse(&c.cfg,work).unwrap();
+    assert!(epwflow::delivery::comparison_plot::check_figure_formats(&work.join("results"), &["png","svg","pdf"]).unwrap());
+    // 移动后的数据包只调用绘图，不访问原生来源或创建任务。
+    let moved=c.root.join("moved");
+    fs::rename(work.join("results"),&moved).unwrap();
+    epwflow::delivery::comparison_plot::plot(&moved,None,&["svg".into()]).unwrap();
+    assert_eq!(qe_calls,fs::read_to_string(c.root.join("scientific-calls")).unwrap());
+    assert_eq!(calls(&c).lines().count(),2);
+}
+
+#[test]
+fn automatic_comparison_resume_only_retries_failed_native_task_and_rejects_tamper() {
+    let c=case_options("",true,true);
+    let work=&c.cfg.work_dir;
+    fs::write(c.root.join("comparison-failure"),"matdyn").unwrap();
+    assert!(interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).is_err());
+    assert!(!work.join("wannier/manifest.json").exists());
+    let qe_before=fs::read_to_string(c.root.join("scientific-calls")).unwrap();
+    fs::remove_file(c.root.join("comparison-failure")).unwrap();
+    interpolation::scheduler::run_coarse_with_retry(&c.cfg,Backend::Local,&[],work,work,true).unwrap();
+    let qe_after=fs::read_to_string(c.root.join("scientific-calls")).unwrap();
+    assert_eq!(qe_before.lines().filter(|l|*l=="pw"||l.starts_with("ph")).collect::<Vec<_>>(),
+        qe_after.lines().filter(|l|*l=="pw"||l.starts_with("ph")).collect::<Vec<_>>());
+    assert_eq!(calls(&c).lines().count(),2);
+    assert!(work.join("native-attempts/history").read_dir().unwrap().any(|e|
+        e.unwrap().file_name().to_string_lossy().starts_with("comparison-phonon-")));
+    fs::write(work.join("comparison-native/electron/reference.out"),"tampered").unwrap();
+    assert!(interpolation::scheduler::run_coarse_with_retry(&c.cfg,Backend::Local,&[],work,work,true).is_err());
+    assert_eq!(qe_after,fs::read_to_string(c.root.join("scientific-calls")).unwrap());
+}
+
+#[test]
+fn automatic_comparison_quality_failure_only_publishes_diagnostics() {
+    let c=case_options("quality",true,true);
+    let work=&c.cfg.work_dir;
+    let error=interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).unwrap_err();
+    assert!(format!("{error:#}").contains("质量未通过"),"{error:#}");
+    assert!(!work.join("wannier/manifest.json").exists());
+    assert!(!work.join("interpolation/manifest.json").exists());
+    assert!(!work.join("fine").exists());
+    let data=interpolation::comparison_data::load(&work.join("results/comparison")).unwrap();
+    assert_eq!(data.manifest.quality_status,"failed");
+    assert!(epwflow::delivery::comparison_plot::check_figures(&work.join("results")).unwrap());
+    assert!(interpolation::scheduler::run_fine_registered(&c.cfg,Backend::Local,&[],work).is_err());
+    assert_eq!(calls(&c).lines().count(),2);
+}
 
 #[test]
 fn failed_coarse_requires_explicit_retry_and_archives_evidence() {
