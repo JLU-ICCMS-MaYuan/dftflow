@@ -32,6 +32,26 @@ pub fn ensure_finished(root: &Path, manifest: &str) -> Result<()> {
     );
     Ok(())
 }
+/// 同源部分重绘继续登记未请求的有效格式，发布器仍校验全部新旧哈希。
+pub fn retain_unmodified(
+    root: &Path,
+    stage: &Path,
+    previous: &[Artifact],
+    files: &mut Vec<Artifact>,
+) -> Result<()> {
+    for old in previous {
+        if !files.iter().any(|f| f.relative_path == old.relative_path) {
+            old.verify(root)?;
+            fs::copy(
+                root.join(&old.relative_path),
+                stage.join(&old.relative_path),
+            )?;
+            files.push(old.clone());
+        }
+    }
+    files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    Ok(())
+}
 fn prepare<T: Serialize>(
     root: &Path,
     stage: &Path,

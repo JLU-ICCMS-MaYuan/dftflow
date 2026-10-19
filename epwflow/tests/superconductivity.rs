@@ -742,58 +742,10 @@ fn native_engine_both_modes_use_process_results_and_keep_independent_intervals()
     let mut native_modes = std::collections::BTreeMap::new();
     // 此进程只模拟目标版本的 IO/收敛契约。阈值用于验证独立搜索，不是物理模型。
     let script = root.join("epw-fixture.py");
-    write_script(
-        &script,
-        r#"#!/usr/bin/python3
-import sys,re,math,pathlib
-text=pathlib.Path(sys.argv[-1]).read_text()
-def value(name):
-    return re.search(r'(?m)^\s*'+re.escape(name)+r'\s*=\s*([^\n]+)',text).group(1).strip()
-t=float(value('temps(1)'))
-assert value('nstemp')=='1'
-assert value('imag_read')=='.false.'
-assert value('epwread')=='.true.' and value('epbread')=='.false.'
-assert value('epwwrite')=='.false.' and value('wannierize')=='.false.'
-assert value('fila2f')=="'source.a2f'"
-assert pathlib.Path('source.a2f').is_file(), '必须重读已有谱，不能重算谱'
-iso=value('liso')=='.true.'
-linear=value('tc_linear')=='.true.'
-kb=1.380649e-23/1.602176634e-19
-nf=int(.5*(float(value('wscut'))/(math.pi*kb*t)-1))+1
-print('Program EPW v.5.9 starts')
-boundary=32 if iso else 36
-if linear:
-    print('Start: Solving (isotropic) linearized Eliashberg equation with solver = lapack')
-    print(f'For the first Temp. {t:.2f} K')
-    print(f'Total number of frequency points nsiw(1) = {nf}')
-    print('Temp. Max. nsiw wscut Nr. of iters')
-    rho=1.2 if t<boundary else .8
-    cut=(2*nf+1)*math.pi*kb*t
-    print(f'{t:.2f} {rho:.7f} {nf} {cut:.4f} 1')
-    print('Finish: Solving (isotropic) linearized Eliashberg equation')
-else:
-    print(f'temp(1) = {t:.5f} K')
-    print('Solve '+('isotropic' if iso else 'anisotropic')+' Eliashberg equations on imaginary-axis')
-    print(f'Total number of frequency points nsiw(1) = {nf}')
-    d=2.0 if t<boundary else 1e-6
-    print('iter ethr znormi deltai [meV]')
-    print(f'1 1e-2 1.5 {d}')
-    print(f'2 1e-10 1.5 {d}')
-    print('Convergence was reached in nsiter = 2')
-    name='mgb2.imag_'+('iso' if iso else 'aniso')+f'_{t:06.2f}'
-    with open(name,'w') as f:
-        f.write('w [eV] znorm(w) delta(w) [eV]\n' if iso else '# w [eV] Enk-Ef [eV] znorm(w) delta(w) [eV]\n')
-        for n in range(nf):
-            w=(2*n+1)*math.pi*kb*t
-            for e in ([None] if iso else [-.01,.02]):
-                f.write(f'{w:.10e} '+('' if e is None else f'{e:.10e} ')+f'1.5 {d/1000:.10e}\n')
-print('Total program execution')
-print('EPW : 0.01s CPU 0.02s WALL')
-"#,
-    );
+    write_script(&script, include_str!("fixtures/epw_tc_io.py"));
     cfg.programs.epw = config::Program {
         path: script,
-        args: vec![],
+        args: vec!["--engine-fixture-states".into()],
     };
     let mut results = vec![];
     for mode in [config::Mode::Iso, config::Mode::Aniso] {
@@ -1033,8 +985,11 @@ print('EPW : 0.01s CPU 0.02s WALL')
         store::hash_file(&moved.join("gap_states.csv")).unwrap(),
         before
     );
-    // 重绘后只验证已登记格式；三格式完成门不能误判。
-    assert!(!epwflow::delivery::native_plot::check(&moved).unwrap());
+    // 同源部分重绘保留其他有效格式的归属，三格式完成门仍通过。
+    assert!(epwflow::delivery::native_plot::check(&moved).unwrap());
+    epwflow::delivery::plot_results(
+        &moved, None, &["png".into(), "svg".into(), "pdf".into()],
+    ).unwrap();
     if let Ok(dest) = std::env::var("EPWFLOW_FIXTURE_ARTIFACTS") {
         std::fs::create_dir_all(&dest).unwrap();
         for name in ["summary.png", "summary.svg", "summary.pdf"] {

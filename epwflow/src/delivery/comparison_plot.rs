@@ -693,13 +693,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
         }
     }
     // 未请求重绘的已登记格式继续归属同一来源，避免变成无法恢复的未知文件。
-    for old in &previous_files {
-        if !files.iter().any(|f| f.relative_path == old.relative_path) {
-            fs::copy(output.join(&old.relative_path), stage.join(&old.relative_path))?;
-            files.push(old.clone());
-        }
-    }
-    files.sort_by(|a,b| a.relative_path.cmp(&b.relative_path));
+    super::publication::retain_unmodified(&output, &stage, &previous_files, &mut files)?;
     let record = Figures { schema_version: 1, comparison_digest, files };
     super::publication::publish(&output, &stage, "comparison-figures.json",
         previous_files, record.files.clone(), &record)?;

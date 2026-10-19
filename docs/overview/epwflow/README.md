@@ -12,6 +12,10 @@ epw_phonon 直接调用 qeflow 的 nosplit Rust 库（[说明](../qeflow/qe_phon
 
 粗网格阶段独立发布 `wannier/manifest.json`，没有细网格或谱；细网格在第三阶段重验前者后另行发布 `interpolation/manifest.json`，绑定原粗清单哈希，保持其不变。进程回归证明阶段顺序、原生格式角色和失败阻断；缺省独立参考已自动生成；四类比较图的自动生成已接入；真实 PBE 全链与两模式 Tc 交付尚未完成。首条主路径采用 nosplit，不要求三来源六组合完成才交付。
 
+最终交付在工作流结果根目录先收集、再出图；结果清单已存在而图表未完成时，显式恢复仍交由 F5 接续，不重新执行已验证的科学阶段。该根目录的原生结果／比较结果／两类图像锁复用现有 owner 与 Slurm 终态校验，不能清除未知锁。原生图与比较图共用同源格式保留逻辑；SVG 重绘保留已登记的 PNG／PDF，原生来源改变须重绘全部已有格式或新目录，比较来源改变须新目录。已由文件级与公开进程故障检查验证。
+
+这些证据不覆盖 F4 已发布 partial 清单后的公开续算，也不代表真实 PBE／完整 Tc 验收。当前边界见 [0008 连续验证](../../specs/0008-epwflow-foundation/public-chain-validation.md)。
+
 ## 公开程序及选项
 
 外部配置默认 `inputepw.toml`，也可由 `-c/--config` 指定；与 qeflow 的 `input.toml` 字段不同，不能自动混用。完整流程图和命令见[模块手册](../../../epwflow/README.md)。

@@ -29,13 +29,22 @@ if coarse or reread:
     else:
         assert not (out/(prefix+'.save')).exists(), '重读不需要 QE 保存树'
         assert value('wannierize')=='.false.' and 'dis_froz_max' not in text
-    xml=ET.parse((out/(prefix+'.save') if coarse else ROOT/'run/nscf/out'/ (prefix+'.save'))/'data-file-schema.xml').getroot()
+    if coarse:
+        mesh_xml=out/(prefix+'.save')/'data-file-schema.xml'
+    else:
+        candidates=[parent/'nscf/out'/(prefix+'.save')/'data-file-schema.xml' for parent in Path.cwd().parents]
+        # 独立重读单测把目标放在科学目录之外；仍只允许同一 fixture 的原 run。
+        candidates.append(ROOT/'run/nscf/out'/(prefix+'.save')/'data-file-schema.xml')
+        candidates={p.resolve() for p in candidates if p.is_file()}
+        assert len(candidates)==1, '重读须来自唯一 fixture 科学目录的 NSCF'
+        mesh_xml=next(iter(candidates))
+    xml=ET.parse(mesh_xml).getroot()
     kpoints=[[float(x) for x in node.text.split()] for node in xml.findall('output/band_structure/ks_energies/k_point')]
     coarse_nk=len(kpoints)
     bg=[[float(x) for x in xml.find('output/basis_set/reciprocal_lattice/b'+str(i)).text.split()] for i in (1,2,3)]
     def cart(c):return [sum(c[i]*bg[i][j] for i in range(3)) for j in range(3)]
-    if reread:
-        kpoints=[cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]
+    # band_plot 对首次粗网格与重读都消费 filkf；NSCF 点数只用于 ukk 布局。
+    kpoints=[cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]
     qcr=[list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]
     qpoints=list(map(cart,qcr))
     modes=6

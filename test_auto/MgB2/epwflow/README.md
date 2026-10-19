@@ -9,14 +9,18 @@
 | `003-shared-phonon` | 接入 qeflow 后，固定 KPATH／后处理程序身份的实际三脚本生成 |
 | `004-three-stage-chain` | 三个私有运行库程序副本、总提交脚本生成与原预算只读核查 |
 | `005-three-stage-recovery` | 粗／细检查点、失败归档、成功展宽复用与发布中断进程回归；使用测试替身 |
+| `006-auto-quality-reference` | 显式纯能量选窗、独立参考与现有 EPW 输入兼容；使用测试替身 |
+| `007-auto-comparison` | 自动比较／三格式图进程回归，以及 PBE 四脚本的生成检查 |
+| `008-public-chain` | 三个公开程序连续执行、最终交付恢复与部分格式归属回归；使用测试替身 |
 
-本轮没有提交新科学任务或切换默认安装。PBE 配置不能使用旧 LDA 质量参考；PBE 独立参考自动生成和第二阶段四类比较图自动生成仍待收敛，现有 EPW 的组合选窗关键字兼容仍阻断第二阶段。隔离进程回归和生成脚本不代表真实 Tc 通过。
+本轮没有提交新科学任务或切换默认安装。PBE 配置不能使用旧 LDA 质量参考；独立参考和第二阶段四类比较图的自动生成已接入；当前选择显式 `energy_only`，使用现有 EPW，不发送其不支持的组合选窗关键字。真实 PBE 全链仍须验收。隔离进程回归和生成脚本不代表真实 Tc 通过。
 
 ## 构建与使用
 
 ```bash
 bash scripts/build-native.sh build -p epwflow --bins --locked --offline
-# 复用本轮固定目录时使用其已打包的程序副本。
+# 以下 004 只复现历史脚本；新功能须按主手册准备新目录和当前程序。
+# 复现 004 时使用其已打包的旧程序副本，不覆盖绑定。
 EPW_BIN_DIR="$PWD/test_auto/MgB2/local_run/004-three-stage-chain/bin"
 CONFIG="$PWD/test_auto/MgB2/local_run/004-three-stage-chain/inputepw.toml"
 WORK="$PWD/test_auto/MgB2/local_run/004-three-stage-chain/epwflow"
@@ -64,3 +68,16 @@ env -u TMPDIR bash scripts/build-native.sh test -p epwflow --lib \
 ```
 
 共享声子链和原生尝试均使用固定输入；质量失败不会通过重试重新选窗，未知目录、变化来源或篡改证据拒绝恢复。旧的无原生检查点历史目录不自动收编，历史导入与新科学链仍另行验收。
+
+## 三个公开程序连续执行与最终交付恢复
+
+008 使用隔离 QE／EPW／Slurm 进程替身，从三个公开程序及实际生成脚本执行到结果包；验证最终图目录冲突保留、终态所属锁回收、科学调用和原清单不变、复制后部分格式重绘与篡改拒绝。全部样本数值是 IO 契约数据，不是 MgB₂ Tc。原预算账本和历史科学来源不写入。
+
+```bash
+env -u TMPDIR \
+  DFTFLOW_THREE_STAGE_TEST_ROOT="$PWD/test_auto/MgB2/local_run/008-public-chain/cases-user" \
+  bash "scripts/build-native.sh" test -p epwflow --test three_stage_execution \
+  --locked --offline -- --test-threads=1 --nocapture
+```
+
+测试会生成独立命名案例并保留逐步日志；失败后的原始证据不算通过。已结算分配从活动数组移除，累计消耗必须保留；只读状态检查在显式 refresh 时结算。源代码、当前构建和默认安装分别核验。F4 partial 清单的公开续算另由 0008 T047 跟踪，本项最终交付恢复不覆盖它。

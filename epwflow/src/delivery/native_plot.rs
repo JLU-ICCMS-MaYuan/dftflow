@@ -476,8 +476,20 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
     };
     let mut owned = BTreeSet::new();
     let previous_files = old.as_ref().map(|o| o.files.clone()).unwrap_or_default();
+    let data_digest = store::hash_file(&results.join("manifest.json"))?;
     if let Some(old) = old {
         ensure!(old.schema_version == 1, "unsupported_version: 图像版本");
+        ensure!(
+            old.data_digest == data_digest
+                || old.files.iter().all(|file| {
+                    KINDS.iter().any(|name| {
+                        formats.iter().any(|format| {
+                            file.relative_path == Path::new(&format!("{name}.{format}"))
+                        })
+                    })
+                }),
+            "input_conflict: 数据来源改变，须重绘全部已有格式或使用新输出目录"
+        );
         for f in old.files {
             f.verify(&output)?;
             owned.insert(f.relative_path);
@@ -525,9 +537,10 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             fs::remove_file(svg)?;
         }
     }
+    super::publication::retain_unmodified(&output, &stage, &previous_files, &mut files)?;
     let figures = Figures {
         schema_version: 1,
-        data_digest: store::hash_file(&results.join("manifest.json"))?,
+        data_digest,
         files,
     };
     super::publication::publish(

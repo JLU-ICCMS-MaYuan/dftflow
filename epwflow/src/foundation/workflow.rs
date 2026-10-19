@@ -309,6 +309,10 @@ pub fn resume(work: &Path, until: Option<Boundary>, submit: bool, resource: bool
                 calculation.join("interpolation/comparison"),
                 calculation.join("results/comparison"),
                 calculation.join("results/figures/comparison-figures"),
+                b.work_dir.join("results/native-results"),
+                b.work_dir.join("results/comparison"),
+                b.work_dir.join("results/figures/native-figures"),
+                b.work_dir.join("results/figures/comparison-figures"),
                 record_path(&b.work_dir),
                 cfg.budget.ledger.clone(),
             ] {
@@ -696,7 +700,8 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
                 verify_stage(name, &manifest, &cfg, &binding)?;
                 continue;
             }
-            if record.retry_failed && manifest.exists() {
+            // F5 先收集再出图；未登记的 results 必须由 F5 接续完整交付。
+            if record.retry_failed && name != "results" && manifest.exists() {
                 let completion = verify_stage(name, &manifest, &cfg, &binding)?;
                 record.completed.insert(name.into(), completion);
                 save(work, &record)?;

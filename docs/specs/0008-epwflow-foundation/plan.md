@@ -92,3 +92,7 @@ spec.md、plan.md、research.md、data-model.md、contracts/interface.md、tasks
 ## 2026-10-19：三个独立程序整合
 
 按[集中契约](three-programs.md)实施。共用库保持单一配置／预算／状态规则；三个独立二进制分别负责声子交付、粗网格拟合和细网格超导。第一步提取现有 qeflow 为库并修复本地 nosplit 后处理，随后接入三个程序及阶段清单。
+
+## 公开三阶段连续执行验证
+
+沿用三程序 FR-014～017 和恢复 FR-006，实施与验证映射见[连续执行设计](public-chain-validation.md)。复用现有科学与发布模块，不新增入口或替代科学实现。

@@ -116,3 +116,80 @@ fn distribution_rejects_duplicate_or_invalid_physical_states() {
     data.states[0].delta_mev = f64::NAN;
     assert!(gap_distributions(&data).is_err());
 }
+
+#[test]
+fn partial_redraw_retains_formats_and_requires_full_redraw_after_source_change() {
+    use epwflow::{
+        delivery::{
+            comparison::Artifact,
+            native::{self, Manifest},
+            native_plot,
+        },
+        foundation::store,
+        interpolation::manifest::Spectrum,
+    };
+    use std::fs;
+    let root = std::env::temp_dir().join(format!("native-format-{}", store::token()));
+    fs::create_dir(&root).unwrap();
+    let mut data = fixture();
+    data.spectra.push(Spectrum {
+        smearing_id: "synthetic".into(),
+        energy_mev: vec![0., 10., 20.],
+        a2f: vec![0., 0.2, 0.1],
+        lambda_integral: 0.35,
+        lambda_sum: 0.35,
+        cutoff_ev: 0.02,
+    });
+    let names = [
+        "summary.json",
+        "a2f.csv",
+        "coupling.csv",
+        "gap_summary.csv",
+        "gap_states.csv",
+        "tc.csv",
+        "report.md",
+    ];
+    for name in &names[1..] {
+        fs::write(root.join(name), "synthetic IO fixture\n").unwrap();
+    }
+    let write_bundle = |data: &Data| {
+        store::write(&root.join("summary.json"), data).unwrap();
+        let manifest = Manifest {
+            schema_version: 1,
+            kind: "epwflow-native-results".into(),
+            run_id: data.run_id.clone(),
+            complete: data.complete,
+            files: names
+                .iter()
+                .map(|name| Artifact::capture(&root, name).unwrap())
+                .collect(),
+            sources: vec![],
+        };
+        store::write(&root.join("manifest.json"), &manifest).unwrap();
+        native::load(&root).unwrap();
+    };
+    write_bundle(&data);
+    let formats = ["png".into(), "svg".into(), "pdf".into()];
+    native_plot::plot(&root, None, &formats).unwrap();
+    let png = store::Identity::capture(&root.join("figures/a2f_coupling.png")).unwrap();
+    let pdf = store::Identity::capture(&root.join("figures/a2f_coupling.pdf")).unwrap();
+    native_plot::plot(&root, None, &["svg".into()]).unwrap();
+    png.verify().unwrap();
+    pdf.verify().unwrap();
+    assert!(native_plot::check(&root).unwrap());
+    native_plot::plot(&root, None, &formats).unwrap();
+    assert!(native_plot::check(&root).unwrap());
+
+    data.spectra[0].a2f[1] = 0.3;
+    write_bundle(&data);
+    let figures = store::Identity::capture(&root.join("figures/native-figures.json")).unwrap();
+    let err = native_plot::plot(&root, None, &["svg".into()]).unwrap_err();
+    assert!(err.to_string().contains("数据来源改变"));
+    figures.verify().unwrap();
+    native_plot::plot(&root, None, &formats).unwrap();
+    assert!(native_plot::check(&root).unwrap());
+    fs::write(root.join("figures/a2f_coupling.png"), "tampered").unwrap();
+    assert!(native_plot::check(&root).is_err());
+    assert!(native_plot::plot(&root, None, &formats).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
