@@ -1,4 +1,5 @@
 //! 0015：原生 EPW 输出的格式、来源与完整覆盖检查。
+
 use epwflow::interpolation::native::{self, NativeBands, NativeSpectrum};
 use std::{fs, process::Command};
 
@@ -133,12 +134,11 @@ fn native_cli_checks_actual_files_and_reports_unverified_science() {
     fs::write(root.join("mgb2.wout"), wout).unwrap();
     let before = epwflow::foundation::store::hash_file(&root.join("mgb2.a2f")).unwrap();
     let run = || {
-        Command::new(env!("CARGO_BIN_EXE_epwflow"))
+        Command::new(env!("CARGO_BIN_EXE_epw_wannier"))
             .current_dir("/")
             .env("PATH", "")
             .args([
-                "interpolation",
-                "check",
+                "--check",
                 "-w",
                 root.to_str().unwrap(),
                 "--json",
@@ -461,12 +461,11 @@ fn readonly_quality_cli_reports_numeric_failure_and_rejects_changed_sources() {
     .unwrap();
     let before = store::hash_file(&root.join("reference.xml")).unwrap();
     let run = || {
-        Command::new(env!("CARGO_BIN_EXE_epwflow"))
+        Command::new(env!("CARGO_BIN_EXE_epw_wannier"))
             .env("PATH", "")
             .current_dir("/")
             .args([
-                "interpolation",
-                "check",
+                "--check",
                 "-w",
                 root.to_str().unwrap(),
                 "--json",

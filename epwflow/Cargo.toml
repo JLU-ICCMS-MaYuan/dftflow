@@ -2,7 +2,20 @@
 name = "epwflow"
 version = "0.1.0"
 edition = "2021"
+autobins = false
 description = "受控的 QE/EPW 超导计算工作流"
+
+[[bin]]
+name = "epw_phonon"
+path = "src/bin/epw_phonon.rs"
+
+[[bin]]
+name = "epw_wannier"
+path = "src/bin/epw_wannier.rs"
+
+[[bin]]
+name = "epw_superconductivity"
+path = "src/bin/epw_superconductivity.rs"
 
 [dependencies]
 qf-wannier = { path = "../crates/qf-wannier" }

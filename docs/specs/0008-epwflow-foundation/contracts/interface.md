@@ -4,9 +4,9 @@
 
 ## 公开接口
 
-完整命令、参数、默认值、单位与行为以 Spec 的 FR-001 为规范；本接口不另改命名。所有 --help 均无科学执行副作用。参数使用 argv，显式路径按所属配置或命令规则解析，不 eval。
+公开接口已由 Spec FR-014～017 与[三程序契约](../three-programs.md)更新；仅构建三个阶段程序。所有 --help 均无科学执行副作用。参数使用 argv，显式路径按所属配置或命令规则解析，不 eval。
 
-配置路径须显式传入；本机 MgB₂ PBE 示例使用 `-c inputepw.toml`，保留同目录已有 qeflow `input.toml`。加载器接受任意文件名，仍执行 epwflow 严格字段校验；不按文件名切换配置格式，不自动合并 qeflow 字段。`delivery budget` 继续使用既有 `--config` 长选项；运行绑定快照仍为 `input-init.toml`。
+配置默认 `inputepw.toml`，也可用 `-c` 指定；保留同目录已有 qeflow `input.toml`。加载器接受任意文件名，仍执行 epwflow 严格字段校验；不按文件名切换配置格式，不自动合并 qeflow 字段。账本通过三个程序的 `--budget` 选项操作；运行绑定快照仍为 `input-init.toml`。
 
 共同执行/错误/持久协议由 [0008 基础契约](../../0008-epwflow-foundation/contracts/interface.md) 唯一拥有；科学字段由各自 Spec 定义，全部进入同一 TOML schema_version=1。check/status 的 --json 返回 schema_version、operation_status、workflow_status、diagnostics；status 查询成功不代表科学完成。
 
@@ -14,7 +14,7 @@
 
 读取经过绑定的 input-init.toml 及前置 manifest；每次读取确认版本和指纹。缺字段/类型错误/单位不符返回非零并报告字段路径；状态未知、预算拒绝和数据无效用独立错误类别，不自动重试。可预期的未定位或部分结果以结构化状态表示，不填伪造数值。
 
-F1 返回配置/运行绑定与阶段协议，F2 返回 qe-data/manifest.json，F3 返回 interpolation/manifest.json，F4 返回 superconductivity/manifest.json 与 tc.json，F5 返回 results/manifest.json。每个 manifest 列出完整角色清单、尺寸、哈希、生产阶段、上游摘要与验证状态。文件记录采用相对 artifact_root 的路径；绝对机器路径只存在实际运行的忽略目录。拒绝路径穿越和指向来源的可写链接。
+F1 返回配置/运行绑定与阶段协议，F2 返回 qe-data/manifest.json，粗网格返回 wannier/manifest.json，细网格返回 interpolation/manifest.json，F4 返回 superconductivity/manifest.json 与 tc.json，F5 返回 results/manifest.json。每个 manifest 列出完整角色清单、尺寸、哈希、生产阶段、上游摘要与验证状态。文件记录采用相对 artifact_root 的路径；绝对机器路径只存在实际运行的忽略目录。拒绝路径穿越和指向来源的可写链接。
 
 ## 本项数据字段
 
@@ -68,8 +68,12 @@ reserve 返回的是请求，不是计算成功；分配耗时以 Slurm allocati
 
 缺失/损坏 ledger 不得重新初始化已登记 campaign。锁目录含 host/pid/start_identity 与事务 token；同主机确认 owner 已死且没有关联未决写操作后，resume 可在独占恢复锁下原子认领；跨主机或未知 owner 给出诊断而不自动删除。恢复不能丢弃 intent，必须先核对 Slurm 后决定是否重试。
 
-## 2026-10-19：统一入口当前实现
+## 2026-10-19：三个独立入口当前实现
 
-run/submit 支持 --until qe-data|interpolation|superconductivity|all，默认 all；resume 的可选 --until 缺省继承已有记录。workflow.json 保存 attempt_id、until、state、reservation、job_id、cluster、executable、script、completed、current_stage、error，版本 1。completed 保存清单与依赖文件身份；变更或缺失不跳过。unknown 不自动重提，不通过重启释放预算。
+`epw_phonon`、`epw_wannier`、`epw_superconductivity` 各固定一个阶段，默认生成脚本；`-s` 提交、`-r` 在已登记分配内运行。`--resume -w` 使用固定快照恢复。完整选项见[模块手册](../../../../epwflow/README.md)。第二、三阶段需要前一个程序的有效完成证据；不能改用其他程序执行原阶段尝试。
 
-内部 __execute 只接受匹配 token 和 Slurm 作业的已登记分配，不能作为用户绕过预算的公开捷径。当前单份分配顺序调用已有阶段；阶段成功和全链成功分开，底层科学适配未完成时记录具体失败。未来并行依赖图仍按原 Spec 验收，不据本批边界回归关闭。新阶段不再次按资源请求预留或结算同一 allocation。
+`workflow.json` 仍使用版本 1，保存 attempt_id、until、state、reservation、job_id、cluster、executable、script、completed、current_stage、error；until 为内部存储边界，不再作为公开选项。completed 保存清单与依赖文件身份；变更或缺失不跳过。unknown 不自动重提，不通过重启释放预算。
+
+`generated/<边界>.json` 绑定脚本和生成程序身份；只生成时不预留预算。手工 sbatch 后计算节点入口核对固定来源、脚本、程序、前置证据与当前运行分配，登记同一 allocation 一次。内部提交脚本改用隐藏的 `--execute-attempt`，只接受匹配阶段、token 与作业身份的已登记分配；用户不能手工重提内部提交脚本。
+
+粗阶段完成记录为 wannier，细阶段为 interpolation；细网格清单绑定原粗清单哈希，不改写前者。阶段成功与完整真实科学验收分开；qeflow 执行库接入、自动参考／比较图及原生两模式完整 Tc 验收仍未完成。

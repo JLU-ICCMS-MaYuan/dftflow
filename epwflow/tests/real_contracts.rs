@@ -2,6 +2,9 @@
 //! 已知未修复项显式 ignore；用 --ignored 单独运行，失败不代表科学验收通过。
 #![cfg(unix)]
 
+#[path = "support/cli.rs"]
+mod stage_cli;
+
 use epwflow::foundation::{config::Config, process, stage::Backend, store};
 use epwflow::interpolation::adapter;
 use epwflow::qe_data::{nscf, qe_config::QeSettings, reuse, scf};
@@ -19,12 +22,11 @@ struct Case {
 
 impl Case {
     fn execution(&self, args: &[&str], job: u64) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_epwflow"))
+        stage_cli::command(args, &self.root)
             .current_dir(&self.root)
             .env("EPWFLOW_LOCAL_STATE", self.root.join("state"))
             .env("PATH", format!("{}:/usr/bin:/bin", self.root.display()))
             .env("SLURM_JOB_ID", job.to_string())
-            .args(args)
             .output()
             .unwrap()
     }
@@ -90,7 +92,7 @@ impl Case {
     }
 
     fn cli(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_epwflow"))
+        stage_cli::command(args, &self.root)
             .current_dir(&self.root)
             .env("EPWFLOW_LOCAL_STATE", self.root.join("state"))
             .env("XDG_STATE_HOME", self.root.join("xdg-state"))
@@ -98,7 +100,6 @@ impl Case {
             .env("PATH", &self.root)
             .env_remove("SLURM_JOB_ID")
             .env_remove("SLURM_JOBID")
-            .args(args)
             .output()
             .unwrap()
     }
@@ -223,7 +224,7 @@ fn b01_submission_is_persistent_and_idempotent() {
     assert_eq!(record["cluster"], "test-cluster");
     assert_eq!(record["until"], "qe-data");
     let script = fs::read_to_string(record["script"]["path"].as_str().unwrap()).unwrap();
-    assert!(script.contains("__execute"));
+    assert!(script.contains("--execute-attempt"));
     assert!(!script.contains("mpirun"));
     assert!(!c.root.join("scientific-calls").exists());
     assert!(!c
@@ -327,7 +328,7 @@ fn b01_boundary_executes_qe_once_and_blocks_missing_interpolation_evidence() {
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("缺少独立插值质量来源清单"));
     assert_eq!(c.workflow()["state"], "failed");
-    assert_eq!(c.workflow()["current_stage"], "interpolation");
+    assert_eq!(c.workflow()["current_stage"], "wannier");
     assert_eq!(
         before,
         fs::read_to_string(c.root.join("scientific-calls")).unwrap(),
@@ -345,7 +346,7 @@ fn b01_worker_failure_is_recorded_and_does_not_release_unknown_budget() {
     let c = Case::new();
     c.scheduled();
     assert!(c
-        .cli(&["submit", "-c", "input.toml", "--until", "interpolation"])
+        .cli(&["submit", "-c", "input.toml", "--until", "qe-data"])
         .status
         .success());
     let attempt = c.workflow()["attempt_id"].as_str().unwrap().to_owned();

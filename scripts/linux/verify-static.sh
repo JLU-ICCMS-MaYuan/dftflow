@@ -3,7 +3,7 @@ set -euo pipefail
 bin_dir="${1:?用法: verify-static.sh <bin_dir>}"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
-for name in qeflow vaspflow scflow wannier90 substitution epwflow; do
+for name in qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity; do
     binary="$bin_dir/$name"
     file "$binary"
     readelf -h "$binary" > "$work_dir/header"

@@ -1,3 +1,5 @@
+#[path = "support/cli.rs"]
+mod stage_cli;
 use std::{collections::BTreeMap, fs, path::PathBuf, process::{Command, Output}, sync::atomic::{AtomicU64, Ordering}};
 use epwflow::foundation::{environment, state, storage};
 use std::os::unix::fs::PermissionsExt;
@@ -16,11 +18,11 @@ impl Case {
     }
     fn put(&self, name:&str,text:&str) { fs::write(self.root.join(name),text).unwrap(); }
     fn script(&self,name:&str,text:&str) { self.put(name,text); fs::set_permissions(self.root.join(name),fs::Permissions::from_mode(0o755)).unwrap(); }
-    fn cmd(&self) -> Command {
-        let mut c=Command::new(env!("CARGO_BIN_EXE_epwflow"));
+    fn cmd(&self, args: &[&str]) -> Command {
+        let mut c=stage_cli::command(args, &self.root);
         c.current_dir(&self.root).env("EPWFLOW_LOCAL_STATE",self.root.join("state")).env("XDG_STATE_HOME",self.root.join("state")).env("PATH",format!("{}:/usr/bin:/bin", self.root.display())); c
     }
-    fn run(&self,args:&[&str])->Output {self.cmd().args(args).output().unwrap()}
+    fn run(&self,args:&[&str])->Output {self.cmd(args).output().unwrap()}
     fn json(&self,args:&[&str])->serde_json::Value { let o=self.run(args);assert!(o.status.success(),"{}",String::from_utf8_lossy(&o.stderr));serde_json::from_slice(&o.stdout).unwrap() }
     fn edit(&self,from:&str,to:&str) {let p=self.root.join("input.toml");let t=fs::read_to_string(&p).unwrap();assert!(t.contains(from));fs::write(p,t.replace(from,to)).unwrap();}
 }
@@ -32,7 +34,7 @@ fn readonly_check_all_modes_and_cross_directory() {
     for ph in ["nosplit","index","coords"] {for sc in ["iso","aniso","both"] {
         let c=Case::new();c.edit("[phonon]",&format!("[phonon]\nmode = \"{ph}\""));c.edit("mode = \"both\"",&format!("mode = \"{sc}\""));
         let a=c.json(&["check","-c","input.toml","--json"]);
-        let b=c.cmd().current_dir("/").args(["check","-c",c.root.join("input.toml").to_str().unwrap(),"--json"]).output().unwrap();
+        let b=c.cmd(&["check","-c",c.root.join("input.toml").to_str().unwrap(),"--json"]).current_dir("/").output().unwrap();
         assert!(b.status.success()); assert_eq!(a,serde_json::from_slice::<serde_json::Value>(&b.stdout).unwrap());
         assert_eq!(a["environment"]["runtime_version"],"unverified");
         assert!(!c.root.join("run").exists());assert!(!c.root.join("state").exists());assert!(!c.root.join("calls").exists());

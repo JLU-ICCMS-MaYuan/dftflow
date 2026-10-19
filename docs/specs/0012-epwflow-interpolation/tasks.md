@@ -197,3 +197,7 @@ T049/T050 验证范围、133 项回归及真实文件只读证据见 [原生执�
 - [x] T053 [US3/US5] 显式细网格温度，修复所选 q 与完整网格计数区分；生产函数完成真实 40³/20³ EPC，验证 24 个分片、500 点谱及两种 λ，保留失败日志后只读恢复归集。对应 FR-007/008/012 的执行子集；证据见 [细网格验收](../0015-epwflow-mgb2-real-validation/native-fine-validation.md)。
 
 T052/T053 不替代 T051 的历史来源自动导入／阶段恢复、独立数值对照及六组合验收，也不表示已经得到 Tc。
+
+## 三程序阶段边界更新
+
+按已确认的[三程序契约](../0008-epwflow-foundation/three-programs.md)，Wannier／粗网格与质量独立发布 wannier/manifest.json；细网格 EPC／α²F 在第三个程序执行，并另行发布 interpolation/manifest.json。阶段分离和来源不变进程回归已通过，见[0008 验收](../0008-epwflow-foundation/acceptance.md)；自动参考／四类比较图及真实完整科学验收仍未完成。

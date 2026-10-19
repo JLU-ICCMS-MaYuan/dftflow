@@ -194,7 +194,20 @@ fn native_pipeline_pairs_new_coarse_and_isolates_smearings() {
     let c = case("");
     let work = &c.cfg.work_dir;
     let before = store::hash_file(&work.join("nscf/out/scf.save/data-file-schema.xml")).unwrap();
-    let f3 = run(&c).unwrap();
+    let coarse = interpolation::scheduler::run_coarse_registered(
+        &c.cfg, Backend::Local, &[], work, work,
+    ).unwrap();
+    assert!(coarse.validation.all_passed());
+    assert!(coarse.fine.is_none() && coarse.spectra.is_empty());
+    assert!(!work.join("fine").exists());
+    assert!(!work.join("interpolation/manifest.json").exists());
+    assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 1);
+    assert!(epwflow::superconductivity::source::bind(work, &c.cfg, &coarse).is_err());
+    let identity = store::Identity::capture(&work.join("wannier/manifest.json")).unwrap();
+    let f3 = interpolation::scheduler::run_fine_registered(
+        &c.cfg, Backend::Local, &[], work,
+    ).unwrap();
+    identity.verify().unwrap();
     assert!(f3.validation.all_passed());
     assert_eq!(f3.spectra.len(), 2);
     assert!(
@@ -329,4 +342,18 @@ fn actual_lda_coarse_restart_and_wannier() {
         store::write(Path::new(&p),&serde_json::json!({"schema_version":1,"status":"read_only_passed","native_programs_executed":0,"wannier_iterations":r.num_iter,"max_spread_angstrom2":r.max_spread_angstrom2,"files":before,"source_hashes_unchanged":true})).unwrap();
     }
     fs::remove_dir_all(target).unwrap();
+}
+
+#[test]
+fn fine_stage_requires_immutable_coarse_handoff_before_any_native_call() {
+    let c = case("");
+    let work = &c.cfg.work_dir;
+    assert!(interpolation::scheduler::run_fine_registered(&c.cfg, Backend::Local, &[], work).is_err());
+    assert!(!c.root.join("epw-calls").exists());
+    interpolation::scheduler::run_coarse_registered(&c.cfg, Backend::Local, &[], work, work).unwrap();
+    let calls = fs::read_to_string(c.root.join("epw-calls")).unwrap();
+    fs::write(work.join("coarse/band.eig"), "tampered").unwrap();
+    assert!(interpolation::scheduler::run_fine_registered(&c.cfg, Backend::Local, &[], work).is_err());
+    assert_eq!(calls, fs::read_to_string(c.root.join("epw-calls")).unwrap());
+    assert!(!work.join("fine").exists());
 }

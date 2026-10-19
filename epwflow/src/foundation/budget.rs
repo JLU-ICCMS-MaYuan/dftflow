@@ -270,6 +270,16 @@ pub fn registered_allocation(ledger: &BudgetLedger, job: u64, r: &super::config:
     ledger.require_allocation(job, r)
 }
 
+/// 仅生成脚本的计算节点入口可自动登记；已有分配仍复用原预留并检查额度。
+pub fn register_generated(ledger: &mut BudgetLedger, job: u64, r: &super::config::Resources) -> Result<String> {
+    if ledger.allocations.iter().any(|a| a.job_id == Some(job)) {
+        return registered_allocation(ledger, job, r);
+    }
+    let token = reserve_workflow(ledger, &format!("generated:{job}"), r)?;
+    attach_once(ledger, &token, job)?;
+    Ok(token)
+}
+
 /// 依据调度证据结算终态；同一 allocation 仅结算一次；未知作业保留预留不退款。
 pub fn reconcile(ledger: &mut BudgetLedger) -> Result<u64> {
     // 先取得全部证据，查询失败时不做部分修改；with_ledger 随后原子发布。

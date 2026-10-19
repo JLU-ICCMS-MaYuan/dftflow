@@ -181,6 +181,107 @@ pub fn start(config_path: &Path, until: Boundary, submit: bool) -> Result<()> {
     let b = snapshot::prepare(&cfg, config_path)?;
     start_bound(&b.work_dir, until, submit, false)
 }
+
+fn require_phase(work: &Path, until: Boundary, retry: bool) -> Result<()> {
+    let (cfg, binding) = fixed(work)?;
+    let prerequisite = match until {
+        Boundary::QeData => None,
+        Boundary::Interpolation => Some("qe-data"),
+        Boundary::All => Some("wannier"),
+        _ => bail!("input_conflict: 三程序阶段边界无效"),
+    };
+    if let Some(name) = prerequisite {
+        let r = load(work).context("required: 前一个程序尚未交付有效完成记录")?;
+        let done = r.completed.get(name).context("required: 前置阶段未完成，请先运行对应程序")?;
+        done.verify()?;
+        verify_stage(name, &done.manifest.path, &cfg, &binding)?;
+    }
+    if record_path(work).exists() {
+        let r = load(work)?;
+        ensure!(retry || r.state != "failed", "execution_failed: 上次失败，请显式 --resume");
+        ensure!(r.until <= until, "input_conflict: 禁止退回已经推进的阶段");
+    }
+    Ok(())
+}
+
+pub fn start_phase(config: &Path, until: Boundary, submit: bool) -> Result<()> {
+    let cfg = Config::load(config)?;
+    let b = snapshot::prepare(&cfg, config)?;
+    require_phase(&b.work_dir, until, false)?;
+    let extend = record_path(&b.work_dir).exists() && load(&b.work_dir)?.state == "succeeded";
+    start_bound(&b.work_dir, until, submit, extend)
+}
+
+pub fn resume_phase(work: &Path, until: Boundary, submit: bool, resource: bool) -> Result<()> {
+    require_phase(work, until, true)?;
+    resume(work, Some(until), submit, resource)
+}
+
+pub fn execute_phase(work: &Path, attempt: &str, until: Boundary) -> Result<()> {
+    ensure!(load(work)?.until == until, "input_conflict: 工作程序与记录阶段不同");
+    execute(work, attempt)
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Generated {
+    schema_version: u32,
+    until: Boundary,
+    executable: store::Identity,
+    script: store::Identity,
+}
+
+fn generated_path(work: &Path, until: Boundary) -> PathBuf {
+    work.join(".epwflow/generated").join(format!("{}.json", until.name()))
+}
+
+/// 生成阶段脚本只固定输入，不查询调度器、不预留预算、不运行科学程序。
+pub fn generate_phase(config: &Path, until: Boundary) -> Result<PathBuf> {
+    let cfg = Config::load(config)?;
+    let b = snapshot::prepare(&cfg, config)?;
+    let target = generated_path(&b.work_dir, until);
+    let _lock = store::Lock::acquire(&target)?;
+    if target.exists() {
+        let g: Generated = store::read(&target)?;
+        ensure!(g.schema_version == 1 && g.until == until && g.executable.path == std::env::current_exe()?, "input_conflict: 已生成脚本身份不同");
+        g.executable.verify()?;
+        g.script.verify()?;
+        return Ok(g.script.path);
+    }
+    let executable = store::Identity::capture(&std::env::current_exe()?)?;
+    let path = target.with_extension("sh");
+    ensure!(!path.exists(), "input_conflict: 已有未登记脚本，保留现场");
+    let r = &cfg.resources;
+    let quote = slurm::shell_quote;
+    let mut body = format!("#!/bin/bash\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}:{:02}:{:02}\n#SBATCH --output={}\n#SBATCH --error={}\nset -euo pipefail\nexport OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\ncd {}\n",
+        r.partition, r.nodes, r.mpi, r.wall_seconds / 3600, r.wall_seconds / 60 % 60, r.wall_seconds % 60,
+        quote(&path.with_extension("%j.out").to_string_lossy()), quote(&path.with_extension("%j.err").to_string_lossy()), quote(&b.work_dir.to_string_lossy()));
+    if let Some(env) = &cfg.programs.environment_script {
+        body.push_str(&format!("source {} --force\n", quote(&env.to_string_lossy())));
+    }
+    body.push_str(&format!("exec {} --run-script -w {}\n", quote(&executable.path.to_string_lossy()), quote(&b.work_dir.to_string_lossy())));
+    store::atomic_bytes(&path, body.as_bytes())?;
+    store::write(&target, &Generated { schema_version: 1, until, executable, script: store::Identity::capture(&path)? })?;
+    Ok(path)
+}
+
+pub fn run_generated(work: &Path, until: Boundary) -> Result<()> {
+    let (cfg, b) = fixed(work)?;
+    let g: Generated = store::read(&generated_path(&b.work_dir, until))?;
+    ensure!(g.schema_version == 1 && g.until == until && g.executable.path == std::env::current_exe()?, "input_conflict: 生成脚本身份不同");
+    g.executable.verify()?;
+    g.script.verify()?;
+    require_phase(&b.work_dir, until, false)?;
+    let job = job_id()?;
+    let a = slurm::running_allocation(job)?;
+    ensure!(!a.terminal && a.state == "RUNNING" && a.nodes == cfg.resources.nodes as u64, "allocation: 当前分配状态或节点数不符");
+    budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
+        budget::reconcile(ledger)?;
+        budget::register_generated(ledger, job, &cfg.resources).map(|_| ())
+    })?;
+    let extend = record_path(&b.work_dir).exists() && load(&b.work_dir)?.state == "succeeded";
+    start_bound(&b.work_dir, until, false, extend)
+}
 pub fn resume(work: &Path, until: Option<Boundary>, submit: bool, resource: bool) -> Result<()> {
     ensure!(
         submit != resource,
@@ -277,7 +378,7 @@ fn start_bound(work: &Path, until: Boundary, submit: bool, retry: bool) -> Resul
             ));
         }
         body.push_str(&format!(
-            "exec {} __execute -w {} --attempt {}\n",
+            "exec {} --execute-attempt {} -w {}\n",
             quote(
                 record
                     .executable
@@ -285,8 +386,8 @@ fn start_bound(work: &Path, until: Boundary, submit: bool, retry: bool) -> Resul
                     .to_str()
                     .context("程序路径不是 UTF-8")?
             ),
-            quote(work.to_str().unwrap()),
-            quote(&record.attempt_id)
+            quote(&record.attempt_id),
+            quote(work.to_str().unwrap())
         ));
         store::atomic_bytes(&script, body.as_bytes())?;
         record.script = Some(store::Identity::capture(&script)?);
@@ -450,6 +551,14 @@ fn verify_stage(
                 }
             }
         }
+        "wannier" => {
+            let stage_work = manifest.parent().and_then(Path::parent).context("清单路径")?;
+            let m = crate::interpolation::scheduler::verify_coarse(cfg, stage_work)?;
+            ensure!(m.run_id == binding.run_id, "input_conflict: 粗网格运行身份冲突");
+            for a in m.coarse.unwrap().artifacts {
+                files(&stage_work.join(a.relative_path), &mut artifacts)?;
+            }
+        }
         "interpolation" => {
             let m = crate::interpolation::manifest::InterpolationManifest::load(manifest)?;
             ensure!(
@@ -558,7 +667,8 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
     let result = (|| -> Result<()> {
         for (name, boundary) in [
             ("qe-data", Boundary::QeData),
-            ("interpolation", Boundary::Interpolation),
+            ("wannier", Boundary::Interpolation),
+            ("interpolation", Boundary::Superconductivity),
             ("superconductivity", Boundary::Superconductivity),
             ("results", Boundary::All),
         ] {
@@ -593,13 +703,14 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
                         &calculation,
                     )?;
                 }
+                "wannier" => {
+                    crate::interpolation::scheduler::run_coarse_registered(
+                        &cfg, Backend::Local, &cfg.programs.launcher, &calculation, &calculation,
+                    )?;
+                }
                 "interpolation" => {
-                    crate::interpolation::scheduler::run_registered(
-                        &cfg,
-                        Backend::Local,
-                        &cfg.programs.launcher,
-                        &calculation,
-                        &calculation,
+                    crate::interpolation::scheduler::run_fine_registered(
+                        &cfg, Backend::Local, &cfg.programs.launcher, &calculation,
                     )?;
                 }
                 "superconductivity" => {

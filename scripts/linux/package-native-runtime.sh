@@ -13,13 +13,13 @@ for name in ld-linux-x86-64.so.2 libc.so.6 libm.so.6 libpthread.so.0 libdl.so.2 
     cp -L "/lib64/$name" "$native_prefix/lib/$name"
 done
 cp -L "$(gcc -print-file-name=libgcc_s.so.1)" "$native_prefix/lib/libgcc_s.so.1"
-for name in qeflow vaspflow scflow wannier90 substitution epwflow; do
+for name in qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity; do
     cp "$source_bin/$name" "$dest_bin/$name"
     patchelf --set-interpreter "$native_prefix/lib/ld-linux-x86-64.so.2" \
         --add-rpath "$native_prefix/lib" "$dest_bin/$name"
     "$dest_bin/$name" --help >/dev/null
 done
 # 保留构建原件和打包后的指纹，便于核对二进制来源。
-(cd "$source_bin"; sha256sum qeflow vaspflow scflow wannier90 substitution epwflow) > "$dest_bin/SOURCE-SHA256SUMS"
-(cd "$dest_bin"; sha256sum qeflow vaspflow scflow wannier90 substitution epwflow) > "$dest_bin/SHA256SUMS"
+(cd "$source_bin"; sha256sum qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity) > "$dest_bin/SOURCE-SHA256SUMS"
+(cd "$dest_bin"; sha256sum qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity) > "$dest_bin/SHA256SUMS"
 echo "打包完成：$dest_bin；依赖前缀：$native_prefix。共享路径需要在计算节点可读。"

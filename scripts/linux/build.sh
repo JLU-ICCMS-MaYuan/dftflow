@@ -21,7 +21,7 @@ docker run --rm --platform linux/amd64 \
       cargo -Zhost-config -Ztarget-applies-to-host --config .cargo/linux-host.toml test --release --workspace --locked --target x86_64-unknown-linux-musl -j4
       cargo -Zhost-config -Ztarget-applies-to-host --config .cargo/linux-host.toml build --workspace --locked --release --target x86_64-unknown-linux-musl -j4
       mkdir -p dist/linux-x86_64-musl/bin
-      for name in qeflow vaspflow scflow wannier90 substitution epwflow; do
+      for name in qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity; do
         cp /build/x86_64-unknown-linux-musl/release/$name dist/linux-x86_64-musl/bin/
         strip dist/linux-x86_64-musl/bin/$name
       done

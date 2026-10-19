@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# install-compat.sh —— 为六个家族二进制创建兼容入口（0004 T027）。
+# install-compat.sh —— 为八个家族二进制创建兼容入口（0004 T027）。
 #
 # 用法：./install-compat.sh <bin_dir> [target_dir]
-#   <bin_dir>   六个二进制所在目录（如 target/release）
+#   <bin_dir>   八个二进制所在目录（如 target/release）
 #   target_dir  兼容入口安装目录（默认 ~/.local/bin）
 #
 # 实现方式：为每个入口创建指向稳定版本目录中家族二进制的软链接，
-# 二进制按 argv[0] 分派到对应子命令；cargo 只交付 6 个二进制，不增加第七个。
+# 二进制按 argv[0] 分派到对应子命令；cargo 只交付 8 个二进制，其中 EPW 仅有三个独立程序。
 set -euo pipefail
 
 BIN_DIR="${1:?用法: install-compat.sh <bin_dir> [target_dir]}"
 TARGET_DIR="${2:-$HOME/.local/bin}"
 
-for binary in qeflow vaspflow scflow wannier90 substitution epwflow; do
+for binary in qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity; do
     test -x "$BIN_DIR/$binary" || { echo "缺少可执行文件: $BIN_DIR/$binary" >&2; exit 1; }
 done
 BIN_DIR="$(cd "$BIN_DIR" && pwd)"
@@ -54,8 +54,13 @@ if [[ -L "$legacy_dyn0" && -L "$TARGET_DIR/qeflow" ]] && \
     rm "$legacy_dyn0"
 fi
 
+# 只移除本安装器管理的旧 EPW 入口，其他独立安装保持原样。
+if [[ -L "$TARGET_DIR/epwflow" ]] && [[ "$(readlink "$TARGET_DIR/epwflow")" == "$BIN_DIR/epwflow" ]]; then
+    rm -- "$TARGET_DIR/epwflow"
+fi
+
 # 同时安装家族入口，供生成的跨 flow 脚本使用。
-for family in qeflow vaspflow wannier90 epwflow; do link_entry "$family" "$family"; done
+for family in qeflow vaspflow wannier90 epw_phonon epw_wannier epw_superconductivity; do link_entry "$family" "$family"; done
 
 # qeflow 家族（17 个 qe_*；独立 dyn0 工具不由此安装）
 for entry in \
@@ -92,5 +97,5 @@ done
 # scflow 家族（1 个）
 link_entry scflow scflow
 
-echo "已安装 六份家族二进制、52 个入口（含 48 个旧命令）到 $TARGET_DIR"
+echo "已安装 八份家族二进制、54 个入口（含 48 个旧命令）到 $TARGET_DIR"
 echo "请确认 $TARGET_DIR 在 PATH 中：export PATH=\"$TARGET_DIR:\$PATH\""

@@ -4,7 +4,7 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 五个 Rust 家族程序为 `qeflow`、`vaspflow`、`scflow`、`wannier90`、`substitution`；`mattersim_opt` 按约定保留 Python。
 
-新增开发中的 [epwflow](epwflow/README.md) 已支持带 `--until` 的提交／运行／续算入口；完整原生超导链仍在验收。MgB₂ [脚本手册](test_auto/MgB2/epwflow/README.md) 位于 `test_auto/MgB2/epwflow/`，计算实体位于 `test_auto/MgB2/local_run/epwflow/`。源码、受测构建与当前安装须分别核对。 qeflow 的 nosplit 声子流程现可通过 `[qe_phonon].retain_epw_data=true` 为 EPW 归档原生数据，见 [保留数据说明](qeflow/README.md#为-epw-保留声子数据)；三个独立 EPW 程序的整合仍在实施。
+开发中的 [epwflow](epwflow/README.md) 仅构建 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个阶段程序，支持检查、脚本生成、提交和恢复；完整真实原生超导链仍在验收。qeflow 的 nosplit 流程现可通过 `[qe_phonon].retain_epw_data=true` 归档 EPW 所需声子数据，见 [保留数据说明](qeflow/README.md#为-epw-保留声子数据)。MgB₂ 运行数据位于 `test_auto/MgB2/local_run/` 的编号目录；源码、受测构建和当前安装分别核对。
 
 ## 分支约定
 

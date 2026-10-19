@@ -181,7 +181,11 @@ pub fn run() {
 }
 
 fn dispatch(cli: Cli) -> Result<()> {
-    match cli.command {
+    dispatch_command(cli.command)
+}
+
+pub(crate) fn dispatch_command(command: EpwCommand) -> Result<()> {
+    match command {
         EpwCommand::Check { config, json } => check(&config, json),
         EpwCommand::Prepare { config } => prepare(&config),
         EpwCommand::Submit { config, until } => workflow::start(&config, until, true),

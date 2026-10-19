@@ -1,4 +1,7 @@
 //! 经真实 CLI 验证叠图、可移植重绘和拒绝无效来源；样式数据明确为合成。
+#[path = "support/cli.rs"]
+mod stage_cli;
+
 use epwflow::{
     delivery::comparison::{
         self, Artifact, Manifest, Metadata, PhononErrorMarker, Tick, KINDS, TABLES,
@@ -9,7 +12,7 @@ use epwflow::{
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
 };
 
 fn fixture(root: &Path) -> PathBuf {
@@ -167,8 +170,7 @@ fn temp() -> PathBuf {
     p
 }
 fn cli(args: &[&str], cwd: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_epwflow"))
-        .args(args)
+    stage_cli::command(args, cwd)
         .current_dir(cwd)
         .env("PATH", cwd.join("traps"))
         .output()

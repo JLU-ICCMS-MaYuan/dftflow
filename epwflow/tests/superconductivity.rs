@@ -1,5 +1,8 @@
 //! F4 行为测试：FR-001~FR-013。隔离临时目录与可执行 fixture。
 
+#[path = "support/cli.rs"]
+mod stage_cli;
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
@@ -960,8 +963,7 @@ print('EPW : 0.01s CPU 0.02s WALL')
     let output = epwflow::delivery::collect_results(&root, None).unwrap();
     epwflow::delivery::collect_results(&root, None).unwrap();
     for action in ["collect", "results"] {
-        let cli = std::process::Command::new(env!("CARGO_BIN_EXE_epwflow"))
-            .args(["delivery", action, "-w", root.to_str().unwrap(), "--json"])
+        let cli = stage_cli::command(&["delivery", action, "-w", root.to_str().unwrap(), "--json"], &root)
             .env("PATH", "")
             .output()
             .unwrap();
@@ -989,8 +991,8 @@ print('EPW : 0.01s CPU 0.02s WALL')
         epwflow::delivery::native::check(&moved).unwrap()["source_verification"],
         "unavailable"
     );
-    let command = std::process::Command::new(env!("CARGO_BIN_EXE_epwflow"))
-        .args(["plot", "--results", moved.to_str().unwrap()])
+    let command = std::process::Command::new(env!("CARGO_BIN_EXE_epw_superconductivity"))
+        .args(["--plot", "--results", moved.to_str().unwrap()])
         .env("PATH", "")
         .output()
         .unwrap();

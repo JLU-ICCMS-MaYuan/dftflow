@@ -142,3 +142,7 @@ F3 复用单一窗口解析器读取已核验 wout 的 Outer／Inner，将绝对
 沿用 D01/D04/D05/D06/D11 和 T051 的已确认范围，先用生产函数在已登记分配中验收现有 LDA 6³ 粗网格重读，再调用同一个 `fine::run_fine_at` 执行 40³/20³。重读输入显式 `epwread=true, epbread=false, wannierize=false`，不触发 0016 选窗；新产生的六 k／五 q 输出经 `quality_binding` 复核后才允许细网格。细网格输入显式采用配置首个固定温度，避免 EPW 未指定温度时默认 300 K。
 
 真实测试默认忽略；显式执行必须绑定冻结配置、粗网格全部角色、原 `.wout`／输入／输出、原 NSCF XML、赝势及实际程序哈希，验证实际 Slurm 分配和原共享账本。每次试验使用新编号目录，失败保留现场；不重复 SCF／NSCF／PH。测试只报告生产函数的阶段证据，不生成虚构 F2 来源，不宣称公开自动链的历史导入已完成。完整 F2/F3 来源契约、阶段恢复、三来源六组合仍由 T051 跟踪；不以真实测试替代这些主路径任务。
+
+## 三程序阶段边界更新
+
+按已确认的[三程序契约](../0008-epwflow-foundation/three-programs.md)，Wannier／粗网格与质量独立发布 wannier/manifest.json；细网格 EPC／α²F 在第三个程序执行，并另行发布 interpolation/manifest.json。阶段分离和来源不变进程回归已通过，见[0008 验收](../0008-epwflow-foundation/acceptance.md)；自动参考／四类比较图及真实完整科学验收仍未完成。

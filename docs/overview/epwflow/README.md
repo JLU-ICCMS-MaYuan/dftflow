@@ -4,48 +4,38 @@
 
 ## 当前结论
 
-qeflow 已将原 nosplit 声子流程提供为 Rust 库，并支持可选的 EPW 数据归档（[说明](../qeflow/qe_phonon_nosplit.md)）。当前 EPW 调度器仍使用自己的 SCF／PH 路径，尚未切换到该库；因此还不能声称第一阶段已经直接复用完整 qeflow 声子链。
+EPW 仅构建 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个独立程序，旧 `epwflow` 可执行入口已移除。三个程序共用配置、固定快照、预算与状态。默认生成本阶段 Slurm 脚本，不启动科学程序或预留预算；`-s` 提交，`-r` 需要已登记分配，`--resume -w` 使用固定快照恢复。源码、构建和默认安装分别核对，本次未覆盖默认安装。
 
-截至 2026-10-19，epwflow 已复用 qeflow 的 QE 基础库，并能只读检查真实 EPW 5.9 谱和独立插值参考。公开 `submit/run/resume` 已接入有边界的阶段分派、作业记录及失败阻断；底层原生矩阵元适配和 Eliashberg/Tc 仍未交付，完整真实自动链尚未通过验收。当前声子最大误差门为 50 cm⁻¹、RMS 为 2 cm⁻¹；独立第五点加入后 RMS 实测失败，不能把原生冒烟或解析回归当作完整验收。
+qeflow 已将 nosplit 提供为 Rust 库，并支持可选的 EPW 数据归档（[说明](../qeflow/qe_phonon_nosplit.md)）。当前 EPW 调度器仍使用自己的 SCF／PH 路径，尚未切换到该库；因此第一阶段直接复用完整 qeflow 声子链仍待接入。
 
-本页依据代码、实际 CLI、回归测试和真实 QE XML 只读解析记录当前状态；检查证据见 [0015 验收记录](../../specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
+粗网格阶段独立发布 `wannier/manifest.json`，没有细网格或谱；细网格在第三阶段重验前者后另行发布 `interpolation/manifest.json`，绑定原粗清单哈希，保持其不变。进程回归证明阶段顺序、原生格式角色和失败阻断；独立参考与四类比较图的自动生成、真实两模式 Tc 交付尚未完成。首条主路径采用 nosplit，不要求三来源六组合完成才交付。
 
-## 公开命令及当前行为
+## 公开程序及选项
 
-外部配置由 `-c/--config` 显式指定，加载器不限定文件名。本机 MgB₂ PBE 示例采用 `inputepw.toml`，同目录原 `input.toml` 供 qeflow 使用；两套字段不能直接互换或自动合并。运行固定快照仍为 `input-init.toml`。本机配置按示例目录规则忽略，不随 Git 分发；完整调用见[模块手册](../../../epwflow/README.md)。
+外部配置默认 `inputepw.toml`，也可由 `-c/--config` 指定；与 qeflow 的 `input.toml` 字段不同，不能自动混用。完整流程图和命令见[模块手册](../../../epwflow/README.md)。
 
-| 命令 | 实际行为与限制 |
+| 程序或选项 | 实际行为与限制 |
 | --- | --- |
-| `epwflow check -c C [--json]` | 加载并检查配置/文件；运行版本固定报告 unverified，不代表已探测 |
-| `epwflow prepare -c C` | 准备输入绑定；不执行科学链路 |
-| `epwflow submit -c C [--until B]` | 校验并固定配置，以原生 sbatch 提交一个有界分配内的阶段执行作业；记录尝试、预留和作业号，不在登录节点执行科学程序 |
-| `epwflow run -c C [--until B]` | 在已登记的 Slurm 分配内调用已有阶段；未登记、来源变化或前置失败时拒绝 |
-| `epwflow status -w W [--refresh] [--json]` | 读取实际工作流记录；refresh 查询 allocation 并结算，调度终态不能替代数值完成 |
-| `epwflow resume -w W -s/-r [--until B]` | 使用固定快照续算；有效阶段重验后复用，活动或未知任务不重提；失败尝试单独保留 |
-| `epwflow probe -c C -s/-r` | 提交探测路径尚未接通；不可把帮助信息当作版本证据 |
-| `epwflow budget status/reserve/attach/reconcile` | reconcile 读取 sacct 的分配终态与实际用时，未知状态保留预留，忽略 step 重复记录；自动入口保守限制最多两个未结算任务 |
-| `epwflow qe-data check/import` | 按自身 manifest 检查/导入；不直接识别旧 qeflow 声子目录，保存目录的普通文件复制也有缺陷 |
-| `epwflow interpolation check -w W [--json]` | 原生目录检查退出、结束计时、Wannier 和谱；有 quality-reference.json 时核对来源及电子/声子误差，超差非零退出；没有该参考则仅报告 native_epc_only |
-| `epwflow interpolation import -c C --source M` | 读取自身插值清单；完整实际文件角色和重读能力仍待实现 |
-| `epwflow superconductivity check/import` | 读取自身求解清单；清单中的数值来源受下述限制 |
-| `epwflow interpolation export-comparison --source S --output D` | 只读导出已有 MgB₂ 原生路径／均匀网格与总 DOS；不提交科学计算；严格投影尚缺 |
-| `epwflow collect -w W [--output R]` | 校验并收集 interpolation/comparison，不要求 F4；当前仅交付独立比较包 |
-| `epwflow plot --results R [--output D] [--formats png,svg,pdf]` | 四张独立叠图及 2×2 总览，QE 实线先画、EPW 虚线后画；缺投影明示，默认三格式 |
-| `epwflow results check --results R [--json]` | 只读检查比较表及默认图目录清单／哈希；操作成功与完整性／质量状态分开 |
-| `epwflow delivery collect/results/budget` | 从已有结构化结果收集、读取及显示；操作成功不等于科学结果正确 |
+| `epw_phonon` | 第一阶段边界：SCF、NSCF、PH 数据交付；切换到共享 qeflow 调度仍待接入 |
+| `epw_wannier` | 第二阶段边界：原生 Wannier／粗网格与质量检查；不执行细网格或 α²F |
+| `epw_superconductivity` | 第三阶段边界：细网格 EPC／谱、原生两模式求解与结果包；要求前两阶段完成证据 |
+| 默认调用 | 固定输入，生成 `.epwflow/generated/` 下的阶段脚本；可手工 sbatch，运行时验证脚本及程序身份、前置和预算 |
+| `--check [-w W] [--json]` | 无 -w 时检查配置／文件，运行版本为 unverified；有 -w 时核查本阶段数据或原生质量来源 |
+| `--prepare-only` | 只固定输入和身份，不执行或提交 |
+| `-s`／`-r` | 提交一个有界分配，或在已登记分配中同步执行；回执不能替代数值完成 |
+| `--status -w W [--refresh] [--json]` | 查询记录，refresh 读取 allocation 并结算；未知预算不退款 |
+| `--resume -w W -s/-r` | 固定快照恢复，重验完成证据；失败现场保留，活动或未知任务不重提 |
+| `--import M` | 核查、隔离并登记本阶段既有清单；不自动识别任意旧声子目录 |
+| `--export-comparison S --output D` | 仅 epw_wannier，从既有带哈希来源导出原生比较数据 |
+| `--collect -w W` | 后两程序收集已有比较／超导数据；不生成缺失科学输出 |
+| `--plot --results R` | 四类比较图／总览或原生超导图，默认 PNG／SVG／PDF；可以移动结果包后独立重绘 |
+| `--results-check --results R [--json]` | 核查结果表、来源及图哈希，操作成功与科学完整性分开 |
+| `--budget status/reserve/attach/reconcile` | 共用原账本与 8 节点小时／100 GiB 上限；不按阶段重置 |
+| `--probe -s/-r` | 仍明确报未接入／分配要求，不把帮助输出当作版本探测证据 |
 
-先按本机平台构建说明加载 native 环境和配置，再核查受测入口。下面以构建目录变量为例，实际路径不能用默认安装路径替代：
+执行数据位于 `W/calculations/<尝试号>/`，恢复沿用原科学目录；共享工作流记录每个阶段的清单与产物哈希。内部 `.epwflow/slurm/` 脚本属于登记尝试，不能手工重提；可手工提交的是 `generated/` 下的用户脚本。安装与打包脚本已迁移到八个程序、54 个入口；默认安装未切换。
 
-```bash
-"$DFTFLOW_BUILD_BIN/epwflow" --help
-"$DFTFLOW_BUILD_BIN/epwflow" qe-data --help
-"$DFTFLOW_BUILD_BIN/epwflow" interpolation --help
-"$DFTFLOW_BUILD_BIN/epwflow" interpolation check -w "$NATIVE_RESULT" --json
-```
-
-当前没有经真实验收的“一次提交续算 EPW”使用命令。安装脚本已列入六程序/52 入口；这不证明当前机器默认入口已安装受测制品，本次未切换安装。
-
-执行边界 B 为 `qe-data|interpolation|superconductivity|all`，默认 all。入口按顺序调用已有科学调度器，校验清单和必需产物后才记录阶段成功；停止在 qe-data 的成功不会显示完整超导流程成功。阶段数据位于 W/calculations/尝试号，失败现场保留，用户工作目录提供已验证清单。未知提交保留回执与预留，需要核对后处理，不能自动退款重提。当前一次分配内顺序执行阶段，尚未交付多作业分 q 并行总链、完整科学适配和原生求解；模拟回归仅证明入口编排。
+下列早期科学和接口记录保留历史语境。当前质量门为最大／RMS 50／20 cm⁻¹，已实现行为以本节、[原生适配](native-superconductivity.md)及最新验收记录为准。
 
 ## 数据与科学结果的限制
 
@@ -73,7 +63,7 @@ qeflow 已将原 nosplit 声子流程提供为 Rust 库，并支持可选的 EPW
 
 ## 源码依据
 
-公开命令见 `epwflow/src/foundation/cli.rs`；恢复与预算见 `snapshot.rs`、`budget.rs`；数据导入与 XML 见 `qe_data/reuse.rs`、`nscf.rs`；原生输入/谱/质量见 `interpolation/{epw_config,native,native_quality}.rs`；阶段边界见两项 scheduler。模块存在不等于完整工作流可用。
+公开命令见 `epwflow/src/foundation/program.rs`；恢复与预算见 `snapshot.rs`、`budget.rs`；数据导入与 XML 见 `qe_data/reuse.rs`、`nscf.rs`；原生输入/谱/质量见 `interpolation/{epw_config,native,native_quality}.rs`；阶段边界见两项 scheduler。模块存在不等于完整工作流可用。
 
 ## 与 qeflow 的实际复用关系
 
