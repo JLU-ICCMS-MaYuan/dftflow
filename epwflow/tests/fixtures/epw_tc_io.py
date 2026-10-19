@@ -20,6 +20,10 @@ print('Program EPW v.5.9 starts')
 boundary=32 if iso else 36
 with (pathlib.Path(__file__).resolve().parent/'tc-calls.jsonl').open('a') as f:
     f.write(json.dumps({'mode':'iso' if iso else 'aniso','temperature_k':t,'linear':linear,'work':str(pathlib.Path.cwd())})+'\n')
+# 测试自有标志模拟暂态进程失败，不改动冻结的程序与输入身份。
+if iso and (pathlib.Path(__file__).resolve().parent/'tc-failure').exists():
+    print('fixture transient failure', file=sys.stderr)
+    sys.exit(17)
 energies=[]
 if not iso:
     if '--engine-fixture-states' in sys.argv:

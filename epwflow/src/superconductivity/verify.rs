@@ -198,15 +198,35 @@ pub fn mode(result: &ModeResult, interpolation_digest: &str) -> Result<()> {
 
 /// 统一阶段边界完成门：与固定配置和当前 F3 身份联合验证。
 pub fn complete(work: &Path, cfg: &Config, run_id: &str) -> Result<Vec<Identity>> {
+    let (m, artifacts) = published(work, cfg, run_id)?;
+    ensure!(
+        m.converged && m.located && m.validation.all_passed(),
+        "data_invalid: 原生超导阶段尚未完成"
+    );
+    Ok(artifacts)
+}
+
+/// 重验已发布证据；false 表示合法 partial，可交回原有 Engine 显式恢复。
+/// 损坏、来源或配置冲突仍返回错误，检查不创建缺失的搜索状态。
+pub fn published_complete(work: &Path, cfg: &Config, run_id: &str) -> Result<bool> {
+    let (m, _) = published(work, cfg, run_id)?;
+    Ok(m.converged)
+}
+
+fn published(
+    work: &Path,
+    cfg: &Config,
+    run_id: &str,
+) -> Result<(super::manifest::SuperconductivityManifest, Vec<Identity>)> {
     let path = work.join("superconductivity/manifest.json");
     let m = super::manifest::SuperconductivityManifest::load(&path)?;
     ensure!(
-        m.schema_version == 2
-            && m.run_id == run_id
-            && m.converged
-            && m.located
-            && m.validation.all_passed(),
-        "data_invalid: 原生超导阶段尚未完成"
+        m.schema_version == 2 && m.run_id == run_id,
+        "input_conflict: 原生超导版本/运行身份不符"
+    );
+    ensure!(
+        !m.converged || (m.located && m.validation.all_passed()),
+        "data_invalid: 原生超导完成状态与验证冲突"
     );
     ensure!(
         store::hash_file(&work.join("interpolation/manifest.json"))? == m.interpolation_digest,
@@ -228,21 +248,25 @@ pub fn complete(work: &Path, cfg: &Config, run_id: &str) -> Result<Vec<Identity>
     let mut artifacts = m.artifacts.clone();
     ensure!(!artifacts.is_empty(), "data_invalid: 缺少原生交付产物");
     for r in m.native_modes.values() {
-        ensure!(r.complete, "data_invalid: 某模式未完成");
-        let source = &record(
-            &r.attempts
-                .iter()
-                .find_map(|a| a.record.as_ref())
-                .context("缺尝试")?
-                .path,
-        )?
-        .source;
+        let source = if let Some(id) = r.attempts.iter().find_map(|a| a.record.as_ref()) {
+            record(&id.path)?.source
+        } else {
+            // 预算等前置错误也可留下零尝试模式，来源仍须绑定当前原生 F3。
+            let f3 = crate::interpolation::manifest::InterpolationManifest::load(
+                &work.join("interpolation/manifest.json"),
+            )?;
+            super::source::bind(work, cfg, &f3)?
+        };
         let root = path
             .parent()
             .unwrap()
             .join(if r.mode == Mode::Iso { "iso" } else { "aniso" });
+        ensure!(
+            root.join("search.json").is_file(),
+            "data_invalid: 缺少已发布搜索记录"
+        );
         let current =
-            super::engine::Engine::open(cfg, source, &cfg.programs.launcher, &root, r.mode)?;
+            super::engine::Engine::open(cfg, &source, &cfg.programs.launcher, &root, r.mode)?;
         ensure!(
             serde_json::to_value(current.result)? == serde_json::to_value(r)?,
             "input_conflict: 搜索记录与固定配置/交付清单冲突"
@@ -253,5 +277,5 @@ pub fn complete(work: &Path, cfg: &Config, run_id: &str) -> Result<Vec<Identity>
             }
         }
     }
-    Ok(artifacts)
+    Ok((m, artifacts))
 }

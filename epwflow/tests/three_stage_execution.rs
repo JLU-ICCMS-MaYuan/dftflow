@@ -154,7 +154,7 @@ runpy.run_path(str(root/name),run_name='__main__')
     fn accounting(&self, active: Option<u64>) {
         self.put(
             "accounting",
-            &(201..=204)
+            &(201..=205)
                 .map(|id| {
                     format!(
                         "{id}|{}|1|1|\n",
@@ -239,7 +239,7 @@ fn copy_results(source: &std::path::Path, target: &std::path::Path) {
 }
 
 #[test]
-fn public_chain_executes_three_stages_and_resumes_only_unfinished_delivery() {
+fn public_chain_resumes_partial_solver_then_only_unfinished_delivery() {
     let c = Case::new();
     success(c.cli(0, &["--all"], "generate"));
     let generated = c.root.join("run/.epwflow/generated");
@@ -276,11 +276,119 @@ fn public_chain_executes_three_stages_and_resumes_only_unfinished_delivery() {
     fs::create_dir_all(conflict.parent().unwrap()).unwrap();
     fs::write(&conflict, "test-owned conflict").unwrap();
     c.accounting(Some(203));
-    let o = c.bash(
-        generated.join("all.sh"),
-        Some(203),
-        "superconductivity-conflict",
+    c.put("tc-failure", "test-owned transient failure");
+    let o = c.bash(generated.join("all.sh"), Some(203), "partial-solver");
+    assert!(!o.status.success());
+    assert_eq!(c.workflow()["current_stage"], "superconductivity");
+    assert!(c.workflow()["completed"].get("superconductivity").is_none());
+    let fine = store::Identity::capture(&calc.join("interpolation/manifest.json")).unwrap();
+    let partial_path = calc.join("superconductivity/manifest.json");
+    let partial: Value = store::read(&partial_path).unwrap();
+    assert_eq!(partial["converged"], false);
+    assert_eq!(partial["native_modes"]["iso"]["complete"], false);
+    assert_eq!(partial["native_modes"]["aniso"]["complete"], true);
+    let failed_iso = partial["native_modes"]["iso"]["attempts"]
+        .as_array()
+        .unwrap();
+    assert_eq!(failed_iso.len(), 1);
+    assert_eq!(failed_iso[0]["status"], "failed");
+    let mut retained = vec![];
+    for mode in ["iso", "aniso"] {
+        for a in partial["native_modes"][mode]["attempts"]
+            .as_array()
+            .unwrap()
+        {
+            let id: store::Identity = serde_json::from_value(a["record"].clone()).unwrap();
+            retained.push(id);
+        }
+    }
+    // 通过实际生产者发布的 partial 重验，检查本身不得启动进程或修补状态。
+    let cfg = config::Config::load(&c.root.join("inputepw.toml")).unwrap();
+    let run_id = partial["run_id"].as_str().unwrap();
+    let inspect = || epwflow::superconductivity::verify::published_complete(&calc, &cfg, run_id);
+    assert!(!inspect().unwrap());
+    assert!(epwflow::superconductivity::verify::complete(&calc, &cfg, run_id).is_err());
+    assert!(
+        epwflow::superconductivity::verify::published_complete(&calc, &cfg, "wrong-run").is_err()
     );
+    let mut changed_cfg = cfg.clone();
+    changed_cfg.superconductivity.max_iterations += 1;
+    assert!(
+        epwflow::superconductivity::verify::published_complete(&calc, &changed_cfg, run_id)
+            .is_err()
+    );
+    let original_manifest = fs::read(&partial_path).unwrap();
+    let mut missing_mode = partial.clone();
+    missing_mode["native_modes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("aniso");
+    store::write(&partial_path, &missing_mode).unwrap();
+    assert!(inspect().is_err());
+    fs::write(&partial_path, &original_manifest).unwrap();
+    for path in [
+        calc.join("superconductivity/temperatures.csv"),
+        fine.path.clone(),
+    ] {
+        let original = fs::read(&path).unwrap();
+        fs::write(&path, "tampered").unwrap();
+        assert!(inspect().is_err());
+        fs::write(&path, original).unwrap();
+    }
+    let search_path = calc.join("superconductivity/iso/search.json");
+    let original_search = fs::read(&search_path).unwrap();
+    fs::remove_file(&search_path).unwrap();
+    assert!(inspect().is_err());
+    assert!(!search_path.exists(), "只读检查不得重建缺失的搜索文件");
+    fs::write(&search_path, &original_search).unwrap();
+    // 预算拒绝等前置错误可产生零尝试；仍由当前 F3 原生角色核验其绑定。
+    let f3 = epwflow::interpolation::manifest::InterpolationManifest::load(&fine.path).unwrap();
+    let source = epwflow::superconductivity::source::bind(&calc, &cfg, &f3).unwrap();
+    let empty_root = c.root.join("empty-search-binding");
+    let empty = epwflow::superconductivity::engine::Engine::open(
+        &cfg,
+        &source,
+        &cfg.programs.launcher,
+        &empty_root,
+        config::Mode::Iso,
+    )
+    .unwrap()
+    .result;
+    let saved_outputs: Vec<_> = ["manifest.json", "tc.json", "temperatures.csv"]
+        .into_iter()
+        .map(|name| {
+            let path = calc.join("superconductivity").join(name);
+            let bytes = fs::read(&path).unwrap();
+            (path, bytes)
+        })
+        .collect();
+    let mut modes: std::collections::BTreeMap<
+        String,
+        epwflow::superconductivity::engine::ModeResult,
+    > = serde_json::from_value(partial["native_modes"].clone()).unwrap();
+    store::write(&search_path, &empty).unwrap();
+    modes.insert("iso".into(), empty);
+    epwflow::superconductivity::scheduler::publish(
+        &calc.join("superconductivity"),
+        run_id.into(),
+        fine.sha256.clone(),
+        config::Mode::Both,
+        modes,
+    )
+    .unwrap();
+    assert!(!inspect().unwrap());
+    fs::write(&search_path, &original_search).unwrap();
+    for (path, bytes) in saved_outputs {
+        fs::write(path, bytes).unwrap();
+    }
+    assert!(!inspect().unwrap());
+    let partial_calls = c.calls();
+    fs::remove_file(c.root.join("tc-failure")).unwrap();
+    c.accounting(None);
+    success(c.cli(2, &["--resume", "-w", "run", "-s"], "partial-resume-submit"));
+    let retry = PathBuf::from(c.workflow()["script"]["path"].as_str().unwrap());
+    c.accounting(Some(204));
+    let o = c.bash(retry, Some(204), "superconductivity-conflict");
     assert!(!o.status.success());
     let failed = c.workflow();
     assert_eq!(
@@ -299,11 +407,29 @@ fn public_chain_executes_three_stages_and_resumes_only_unfinished_delivery() {
     assert!(c.root.join("run/results/manifest.json").exists());
     let before = c.calls();
     assert!(before.1.lines().any(|l| l.starts_with("fine ")));
-    let fine = store::Identity::capture(&calc.join("interpolation/manifest.json")).unwrap();
+    fine.verify().unwrap();
     let superconductivity =
         store::Identity::capture(&calc.join("superconductivity/manifest.json")).unwrap();
     let f4: Value = store::read(&superconductivity.path).unwrap();
     assert_eq!(f4["converged"], true);
+    assert_eq!(partial_calls.0, before.0, "SCF／PH 不得重复");
+    assert_eq!(partial_calls.1, before.1, "粗／细网格不得重复");
+    let aniso_calls = |s: &str| {
+        s.lines()
+            .filter(|l| serde_json::from_str::<Value>(l).unwrap()["mode"] == "aniso")
+            .count()
+    };
+    assert_eq!(aniso_calls(&partial_calls.2), aniso_calls(&before.2));
+    assert_eq!(
+        f4["native_modes"]["aniso"],
+        partial["native_modes"]["aniso"]
+    );
+    let iso_attempts = f4["native_modes"]["iso"]["attempts"].as_array().unwrap();
+    assert!(iso_attempts.len() > failed_iso.len());
+    assert_eq!(&iso_attempts[..failed_iso.len()], failed_iso);
+    for id in &retained {
+        id.verify().unwrap();
+    }
     assert_eq!(f4["native_modes"].as_object().unwrap().len(), 2);
     for (mode, boundary) in [("iso", 3200), ("aniso", 3600)] {
         let search = &f4["native_modes"][mode]["search"];
@@ -330,7 +456,7 @@ fn public_chain_executes_three_stages_and_resumes_only_unfinished_delivery() {
             &lock.join("owner.json"),
             &json!({
                 "host":"fixture", "pid":u32::MAX, "token":"test-owned-final-lock",
-                "created_unix":0, "job_id":203,
+                "created_unix":0, "job_id":204,
             }),
         )
         .unwrap();
@@ -338,8 +464,8 @@ fn public_chain_executes_three_stages_and_resumes_only_unfinished_delivery() {
     c.accounting(None);
     success(c.cli(2, &["--resume", "-w", "run", "-s"], "resume-submit"));
     let script = PathBuf::from(c.workflow()["script"]["path"].as_str().unwrap());
-    c.accounting(Some(204));
-    success(c.bash(script, Some(204), "resume-delivery"));
+    c.accounting(Some(205));
+    success(c.bash(script, Some(205), "resume-delivery"));
     for name in final_locks {
         assert!(!c.root.join("run/results").join(name).exists());
     }
@@ -375,7 +501,7 @@ fn public_chain_executes_three_stages_and_resumes_only_unfinished_delivery() {
         }
     }
     let ledger: Value = store::read(&c.root.join("fixture-ledger.json")).unwrap();
-    assert_eq!(ledger["spent_node_seconds"], 4);
+    assert_eq!(ledger["spent_node_seconds"], 5);
     assert_eq!(ledger["allocations"].as_array().unwrap().len(), 0);
     assert_eq!(ledger["reservations"].as_array().unwrap().len(), 0);
     assert_eq!(
@@ -383,7 +509,7 @@ fn public_chain_executes_three_stages_and_resumes_only_unfinished_delivery() {
             .unwrap()
             .lines()
             .count(),
-        4
+        5
     );
     // 复制到新位置后独立重绘；保留原包的工作流完成证据，篡改副本必须拒绝。
     let moved = c.root.join("moved-results");

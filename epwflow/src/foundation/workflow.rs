@@ -700,8 +700,14 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
                 verify_stage(name, &manifest, &cfg, &binding)?;
                 continue;
             }
+            // F4 的合法 partial 由原有 Engine 续算；冲突证据不能绕过校验。
+            let partial_solver = record.retry_failed && name == "superconductivity"
+                && manifest.exists()
+                && !crate::superconductivity::verify::published_complete(
+                    &calculation, &cfg, &binding.run_id,
+                )?;
             // F5 先收集再出图；未登记的 results 必须由 F5 接续完整交付。
-            if record.retry_failed && name != "results" && manifest.exists() {
+            if record.retry_failed && name != "results" && !partial_solver && manifest.exists() {
                 let completion = verify_stage(name, &manifest, &cfg, &binding)?;
                 record.completed.insert(name.into(), completion);
                 save(work, &record)?;

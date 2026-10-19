@@ -69,15 +69,15 @@ env -u TMPDIR bash scripts/build-native.sh test -p epwflow --lib \
 
 共享声子链和原生尝试均使用固定输入；质量失败不会通过重试重新选窗，未知目录、变化来源或篡改证据拒绝恢复。旧的无原生检查点历史目录不自动收编，历史导入与新科学链仍另行验收。
 
-## 三个公开程序连续执行与最终交付恢复
+## 三个公开程序连续执行与部分超导／最终交付恢复
 
-008 使用隔离 QE／EPW／Slurm 进程替身，从三个公开程序及实际生成脚本执行到结果包；验证最终图目录冲突保留、终态所属锁回收、科学调用和原清单不变、复制后部分格式重绘与篡改拒绝。全部样本数值是 IO 契约数据，不是 MgB₂ Tc。原预算账本和历史科学来源不写入。
+008／009 使用隔离 QE／EPW／Slurm 进程替身，从三个公开程序及实际生成脚本执行到结果包；验证最终图目录冲突保留、终态所属锁回收、科学调用和原清单不变、复制后部分格式重绘与篡改拒绝。全部样本数值是 IO 契约数据，不是 MgB₂ Tc。原预算账本和历史科学来源不写入。
 
 ```bash
 env -u TMPDIR \
-  DFTFLOW_THREE_STAGE_TEST_ROOT="$PWD/test_auto/MgB2/local_run/008-public-chain/cases-user" \
+  DFTFLOW_THREE_STAGE_TEST_ROOT="$PWD/test_auto/MgB2/local_run/009-partial-resume/cases-user" \
   bash "scripts/build-native.sh" test -p epwflow --test three_stage_execution \
   --locked --offline -- --test-threads=1 --nocapture
 ```
 
-测试会生成独立命名案例并保留逐步日志；失败后的原始证据不算通过。已结算分配从活动数组移除，累计消耗必须保留；只读状态检查在显式 refresh 时结算。源代码、当前构建和默认安装分别核验。F4 partial 清单的公开续算另由 0008 T047 跟踪，本项最终交付恢复不覆盖它。
+测试会生成独立命名案例并保留逐步日志；失败后的原始证据不算通过。已结算分配从活动数组移除，累计消耗必须保留；只读状态检查在显式 refresh 时结算。源代码、当前构建和默认安装分别核验。009 进一步验证 F4 已发布 partial 时的公开续算，保留成功模式和失败计数，拒绝变化来源、配置、模式、篡改产物和缺搜索文件；合法零尝试清单可核验。0008 T047 的定向回归 55 项通过，全部仍为进程替身证据，不是实际科学验收。
