@@ -1,11 +1,17 @@
-use anyhow::{ensure, Context, Result};
-use regex::Regex;
-use std::path::Path;
-use super::manifest::{Artifact, PhResponse, QPoint};
+//! 原生 PH 交付到 EPW save，局部扰动模式与其响应势始终成对。
 use super::super::foundation::store;
-use std::collections::BTreeMap;
+use super::{
+    manifest::{Artifact, PhResponse, QPoint},
+    native_ph,
+    xml::Geometry,
+};
+use anyhow::{ensure, Context, Result};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 
-/// 已归集的 PH 响应集：验证通过的响应、总 q 数与产物清单。
 #[derive(Debug, Clone)]
 pub struct CollectedPh {
     pub responses: Vec<PhResponse>,
@@ -13,133 +19,122 @@ pub struct CollectedPh {
     pub artifacts: Vec<Artifact>,
 }
 
-/// 从 dyn 文件解析声子模数量（omega(n) 行），同时校验非空与有限。
 pub fn parse_dyn_mode_count(path: &Path) -> Result<usize> {
-    ensure!(path.exists(), "data_invalid: dyn 文件缺失 {}", path.display());
-    let len = std::fs::metadata(path)
-        .with_context(|| format!("data_invalid: 无法读取 {}", path.display()))?
-        .len();
-    ensure!(len > 0, "data_invalid: dyn 文件为空 {}", path.display());
-    let txt = std::fs::read_to_string(path)
-        .with_context(|| format!("data_invalid: 无法读取 {}", path.display()))?;
-    let re = Regex::new(r"omega\(\s*(\d+)\s*\)").expect("collect_ph: 正则编译失败");
-    let n = re.captures_iter(&txt).count();
-    ensure!(n > 0, "data_invalid: dyn 未解析到任何 omega 模行 {}", path.display());
-    Ok(n)
+    native_ph::dyn_modes(path)
 }
 
-fn copy_file(src: &Path, dst: &Path) -> Result<u64> {
-    ensure!(src.exists(), "data_invalid: 源文件缺失 {}", src.display());
-    if let Some(p) = dst.parent() {
-        std::fs::create_dir_all(p)?;
-    }
-    std::fs::copy(src, dst).with_context(|| format!("data_invalid: 复制 {} 失败", src.display()))
-}
-
-fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
-    if !src.exists() {
-        return Ok(());
-    }
-    std::fs::create_dir_all(dst)?;
-    for e in std::fs::read_dir(src)? {
-        let e = e?;
-        let target = dst.join(e.file_name());
-        if e.file_type()?.is_dir() {
-            copy_dir(&e.path(), &target)?;
-        } else {
-            std::fs::copy(&e.path(), &target)?;
-        }
-    }
-    Ok(())
-}
-
-/// 根据各阶段实际 outdir 归集响应数据，校验完整性并构建 EPW 消费布局（FR-007）。
-/// 每个响应势必须与实际产生它的扰动模式配对；缺失/空/截断文件不得放行。
-pub fn collect(work: &Path, qpoints: &[QPoint], responses: &[PhResponse]) -> Result<CollectedPh> {
-    ensure!(!responses.is_empty(), "data_invalid: 无 PH 响应可归集");
+pub fn collect(
+    work: &Path,
+    qpoints: &[QPoint],
+    responses: &[PhResponse],
+    prefix: &str,
+    geometry: &Geometry,
+) -> Result<CollectedPh> {
     ensure!(
-        responses.len() == qpoints.len(),
-        "data_invalid: 响应数 {} 与 q 点数 {} 不一致",
-        responses.len(),
-        qpoints.len()
+        !qpoints.is_empty() && qpoints.len() == responses.len(),
+        "data_invalid: PH 响应与 q 点数不符"
     );
-    let epw_dir = work.join("qe-data");
-    std::fs::create_dir_all(&epw_dir)?;
-    let mut artifacts = Vec::new();
-    let mut out_responses = Vec::new();
+    let mut by_q = BTreeMap::new();
     for r in responses {
-        // 校验每个响应与物理 q 配对且全局编号有效。
         ensure!(
-            r.q_id >= 1 && (r.q_id as usize) <= qpoints.len(),
-            "data_invalid: 响应 q_id {} 超出 q 点范围",
-            r.q_id
+            by_q.insert(r.q_id, r).is_none(),
+            "data_invalid: PH 重复 q 响应"
         );
-        let mut out = r.clone();
-        let roles: Vec<(&str, std::path::PathBuf)> = vec![
-            ("dyn", r.dyn_file.clone()),
-            ("patterns", r.patterns.clone()),
-            ("control_metadata", r.control_metadata.clone()),
-        ];
-        for (role, p) in &roles {
-            ensure!(
-                p.exists() && std::fs::metadata(p)?.len() > 0,
-                "data_invalid: 响应角色 {role} 缺失或为空: {}",
-                p.display()
-            );
-            let size = std::fs::metadata(p)?.len();
-            let sha = store::hash_file(p)?;
-            let dest = epw_dir.join(format!("{role}_q{}.bin", r.q_id));
-            copy_file(p, &dest)?;
-            artifacts.push(Artifact {
-                role: format!("{role}_q{}", r.q_id),
-                relative_path: dest.strip_prefix(work).unwrap_or(&dest).to_path_buf(),
-                byte_size: size,
-                sha256: sha,
-                producer_stage: "phonon".to_string(),
-                input_digest: String::new(),
-                format_version: "1".to_string(),
-            });
+    }
+    let mut source_checks = BTreeMap::new();
+    for q in qpoints {
+        let r = by_q
+            .get(&q.global_index)
+            .context("data_invalid: 缺少物理 q 响应")?;
+        native_ph::verify(r, q, geometry)?;
+        native_ph::control(&r.control_metadata, qpoints)?;
+        for p in [
+            &r.dyn_file,
+            &r.patterns,
+            &r.control_metadata,
+            r.dvscf.as_ref().unwrap(),
+        ] {
+            source_checks.insert(p.clone(), store::hash_file(p)?);
         }
-        if let Some(dv) = &r.dvscf {
-            ensure!(
-                dv.exists() && std::fs::metadata(dv)?.len() > 0,
-                "data_invalid: dvscf 缺失或为空: {}",
-                dv.display()
-            );
-            let size = std::fs::metadata(dv)?.len();
-            let sha = store::hash_file(dv)?;
-            let dest = epw_dir.join(format!("dvscf_q{}.bin", r.q_id));
-            copy_file(dv, &dest)?;
-            artifacts.push(Artifact {
-                role: format!("dvscf_q{}", r.q_id),
-                relative_path: dest.strip_prefix(work).unwrap_or(&dest).to_path_buf(),
-                byte_size: size,
-                sha256: sha,
-                producer_stage: "phonon".to_string(),
-                input_digest: String::new(),
-                format_version: "1".to_string(),
-            });
+    }
+    let dest = work.join("qe-data/save");
+    ensure!(
+        !dest.exists(),
+        "input_conflict: PH 交付目录已存在，保留原现场"
+    );
+    let phsave = dest.join(format!("{prefix}.phsave"));
+    fs::create_dir_all(&phsave)?;
+    let mut paths = BTreeMap::new();
+    let mut output = vec![];
+    let dyn0 = dest.join(format!("{prefix}.dyn0.xml"));
+    fs::copy(&qpoints[0].source_dyn0, &dyn0)?;
+    paths.insert("dyn0".to_string(), dyn0);
+    let control = phsave.join("control_ph.xml");
+    fs::copy(&responses[0].control_metadata, &control)?;
+    paths.insert("phsave_control".into(), control.clone());
+    for q in qpoints {
+        let r = by_q[&q.global_index];
+        let dyn_file = dest.join(format!("{prefix}.dyn_q{}.xml", q.global_index));
+        let dvscf = dest.join(format!("{prefix}.dvscf_q{}", q.global_index));
+        fs::copy(&r.dyn_file, &dyn_file)?;
+        fs::copy(r.dvscf.as_ref().unwrap(), &dvscf)?;
+        let patterns = phsave.join(format!("patterns.{}.xml", q.global_index));
+        let original = fs::read_to_string(&r.patterns)?;
+        let doc = roxmltree::Document::parse(&original)?;
+        let q_node = doc
+            .descendants()
+            .find(|n| n.has_tag_name("QPOINT_NUMBER"))
+            .context("data_invalid: patterns 缺内部 q")?;
+        let range = q_node.range();
+        // 只更改内部整数标签，保留每个局部计算的完整复扰动基底。
+        let normalized = format!(
+            "{}<QPOINT_NUMBER>{}</QPOINT_NUMBER>{}",
+            &original[..range.start],
+            q.global_index,
+            &original[range.end..]
+        );
+        fs::write(&patterns, normalized)?;
+        native_ph::patterns(&patterns, q.global_index, geometry.atoms.len() * 3)?;
+        for (role, p) in [
+            ("dyn", &dyn_file),
+            ("patterns", &patterns),
+            ("dvscf", &dvscf),
+        ] {
+            paths.insert(format!("{role}_q{}", q.global_index), p.clone());
         }
-        let modes = parse_dyn_mode_count(&r.dyn_file)?;
-        if out.perturbations == 0 {
-            out.perturbations = modes;
-        } else {
-            ensure!(
-                out.perturbations == modes,
-                "data_invalid: q={} 扰动数 {} 与 dyn 模数 {} 不一致",
-                r.q_id,
-                out.perturbations,
-                modes
-            );
-        }
-        // 共享 phsave 目录：逐 q 的 patterns.N 汇聚到统一布局。
-        let phsave_src = r.patterns.parent().context("data_invalid: patterns 缺父目录")?;
-        copy_dir(phsave_src, &epw_dir.join("phsave"))?;
-        out_responses.push(out);
+        output.push(PhResponse {
+            q_id: q.global_index,
+            dyn_file,
+            patterns,
+            dvscf: Some(dvscf),
+            control_metadata: control.clone(),
+            format: native_ph::FORMAT.into(),
+            perturbations: geometry.atoms.len() * 3,
+        });
+    }
+    let mut artifacts = vec![];
+    let mut unique = BTreeSet::new();
+    for (role, p) in paths {
+        ensure!(unique.insert(p.clone()), "data_invalid: PH 角色路径冲突");
+        artifacts.push(Artifact {
+            role,
+            relative_path: p.strip_prefix(work)?.into(),
+            byte_size: fs::metadata(&p)?.len(),
+            sha256: store::hash_file(&p)?,
+            producer_stage: "phonon".into(),
+            input_digest: String::new(),
+            format_version: native_ph::FORMAT.into(),
+        });
+    }
+    for (p, sha) in source_checks {
+        ensure!(
+            store::hash_file(&p)? == sha,
+            "input_conflict: PH 来源在归集期间变化"
+        );
     }
     Ok(CollectedPh {
-        responses: out_responses,
-        total_q: responses.len(),
+        responses: output,
+        total_q: qpoints.len(),
         artifacts,
     })
 }

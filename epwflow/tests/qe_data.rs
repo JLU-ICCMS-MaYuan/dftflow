@@ -12,7 +12,7 @@ use epwflow::foundation::store;
 use epwflow::qe_data::cli::QeDataCommand;
 use epwflow::qe_data::collect_ph;
 use epwflow::qe_data::compare;
-use epwflow::qe_data::manifest::{Artifact, ElectronicStates, PhResponse, QeManifest, QPoint, Validation};
+use epwflow::qe_data::manifest::{Artifact, ElectronicStates, QeManifest, Validation};
 use epwflow::qe_data::qe_config::QeSettings;
 use epwflow::qe_data::reuse;
 use epwflow::qe_data::scheduler;
@@ -23,7 +23,8 @@ static INIT: Once = Once::new();
 /// 隔离状态根，避免与机器或其它测试共享 campaign 注册表（FR-010）。
 fn setup_state_root() {
     INIT.call_once(|| {
-        let dir = std::env::temp_dir().join(format!("epwflow-qe-data-state-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("epwflow-qe-data-state-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         std::env::set_var("EPWFLOW_LOCAL_STATE", &dir);
     });
@@ -31,7 +32,8 @@ fn setup_state_root() {
 
 fn write_script(path: &PathBuf, body: &str) {
     std::fs::write(path, body).expect("写 fixture 失败");
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod fixture 失败");
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+        .expect("chmod fixture 失败");
 }
 
 fn make_script(name: &str, dir: &PathBuf, body: &str) -> PathBuf {
@@ -53,7 +55,16 @@ fn poscar() -> &'static str {
      0.25 0.25 0.25\n"
 }
 
-fn base_config(work: &PathBuf, out: &PathBuf, structure: &PathBuf, pw: &PathBuf, ph: &PathBuf, epw: &PathBuf, mode: &str, ledger: &PathBuf) -> String {
+fn base_config(
+    work: &PathBuf,
+    out: &PathBuf,
+    structure: &PathBuf,
+    pw: &PathBuf,
+    ph: &PathBuf,
+    epw: &PathBuf,
+    mode: &str,
+    ledger: &PathBuf,
+) -> String {
     format!(
         r#"schema_version = 1
 work_dir = "{work}"
@@ -90,7 +101,7 @@ campaign_id = "epic-0007"
 ledger = "{ledger}"
 
 [qe]
-prefix = "scf"
+prefix = "actual_prefix"
 ecutwfc_ry = 30.0
 ecutrho_ry = 240.0
 occupations = "fixed"
@@ -172,78 +183,21 @@ fn make_case(mode: &str) -> Case {
     let structure = root.join("POSCAR");
     std::fs::write(&structure, poscar()).unwrap();
 
-    let pw = make_script(
-        "pw.x",
-        &root,
-        r#"#!/bin/bash
-inp="$2"
-base=$(basename "$inp")
-mkdir -p out
-case "$base" in
-  scf.in)
-    printf 'convergence has been achieved\n!    total energy              =    -100.12345678 Ry\nJOB DONE.\n'
-    mkdir -p out/scf.save
-    printf '<xml/>\n' > out/scf.save/data-file-schema.xml
-    ;;
-  nscf.in)
-    mkdir -p out/nscf.save
-    cat > out/nscf.save/data-file-schema.xml <<'XML'
-<espresso><output><band_structure>
-<nbnd>2</nbnd><nks>2</nks><fermi_energy>10.5</fermi_energy>
-<ks_energies><k_point weight="0.5">0.0 0.0 0.0</k_point><eigenvalues size="2">1.0 2.0</eigenvalues></ks_energies>
-<ks_energies><k_point weight="0.5">0.25 0.0 0.0</k_point><eigenvalues size="2">1.1 2.1</eigenvalues></ks_energies>
-</band_structure></output></espresso>
-XML
-    ;;
-esac
-exit 0
-"#,
-    );
-    let ph = make_script(
-        "ph.x",
-        &root,
-        r#"#!/bin/bash
-inp="$2"
-base=$(basename "$inp")
-mkdir -p out
-case "$base" in
-  ph_init.in)
-    cat > out/ph.dyn0 <<'DYN'
-Dynamical matrix file
-q = ( 0.0 0.0 0.0 )
-q = ( 0.5 0.0 0.0 )
-DYN
-    ;;
-  ph.in)
-    if grep -q 'ldisp = .true.' "$inp" && ! grep -q 'start_q' "$inp"; then
-      for i in 1 2; do
-        printf 'omega(   1) =    100.0 [cm-1]\nomega(   2) =    200.0 [cm-1]\n' > "out/ph.dyn$i"
-        mkdir -p out/ph.phsave/_ph0
-        printf 'patterns\n' > "out/ph.phsave/patterns.$i"
-        printf 'dvscf\n' > "out/ph.dvscf_q.$i"
-        printf 'control\n' > "out/ph.phsave/_ph0/control_ph.xml"
-      done
-    elif grep -q 'start_q' "$inp"; then
-      idx=$(sed -n 's/.*start_q *= *\([0-9]*\).*/\1/p' "$inp")
-      printf 'omega(   1) =    100.0 [cm-1]\nomega(   2) =    200.0 [cm-1]\n' > "out/ph.dyn$idx"
-      mkdir -p out/ph.phsave/_ph0
-      printf 'patterns\n' > "out/ph.phsave/patterns.$idx"
-      printf 'dvscf\n' > "out/ph.dvscf_q.$idx"
-      printf 'control\n' > "out/ph.phsave/_ph0/control_ph.xml"
-    else
-      x=$(tail -n 1 "$inp" | awk '{print $1}')
-      idx=$(awk "BEGIN{printf \"%d\", ($x*2)+1}")
-      printf 'omega(   1) =    100.0 [cm-1]\nomega(   2) =    200.0 [cm-1]\n' > "out/ph.dyn$idx"
-      mkdir -p out/ph.phsave/_ph0
-      printf 'patterns\n' > "out/ph.phsave/patterns.$idx"
-      printf 'dvscf\n' > "out/ph.dvscf_q.$idx"
-      printf 'control\n' > "out/ph.phsave/_ph0/control_ph.xml"
-    fi
-    ;;
-esac
-exit 0
-"#,
-    );
+    std::fs::write(
+        root.join("qe-native.py"),
+        include_str!("fixtures/qe_native_io.py"),
+    )
+    .unwrap();
+    let wrapper = |kind: &str| {
+        format!(
+            "#!/bin/sh\nexec /usr/bin/python3 '{}' {} \"$@\"\n",
+            root.join("qe-native.py").display(),
+            kind
+        )
+    };
+    let pw = make_script("pw.x", &root, &wrapper("pw"));
+    let ph = make_script("ph.x", &root, &wrapper("ph"));
+
     let _epw = make_script("epw.x", &root, "#!/bin/bash\nexit 0\n");
 
     let work = root.join("work");
@@ -256,7 +210,7 @@ exit 0
     Case { root, config_path }
 }
 
-fn run_pipeline(case: &Case) -> QeManifest {
+fn try_pipeline(case: &Case) -> anyhow::Result<QeManifest> {
     // 序列化预算相关运行，并为每次运行隔离 state root，避免共享 campaign 注册表冲突。
     static BUDGET_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _guard = BUDGET_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -267,7 +221,76 @@ fn run_pipeline(case: &Case) -> QeManifest {
     let cfg = config::Config::load(&case.config_path).expect("配置加载失败");
     let binding = snapshot::prepare(&cfg, &case.config_path).expect("prepare 失败");
     let qe = QeSettings::from_config(&cfg).expect("QeSettings 失败");
-    scheduler::run(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).expect("scheduler 失败")
+    scheduler::run(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir)
+}
+
+fn run_pipeline(case: &Case) -> QeManifest {
+    try_pipeline(case).expect("scheduler 失败")
+}
+
+#[test]
+fn native_qe_rejects_incomplete_and_mismatched_outputs() {
+    for failure in [
+        "energy",
+        "missing_wfc",
+        "duplicate_k",
+        "wrong_q",
+        "truncated_dvscf",
+    ] {
+        let case = make_case("index");
+        std::fs::write(case.root.join("fixture-failure"), failure).unwrap();
+        assert!(try_pipeline(&case).is_err(), "{failure} 应拒绝");
+        assert!(
+            !case.root.join("work/qe-data/manifest.json").exists(),
+            "{failure} 不能发布成功清单"
+        );
+    }
+}
+
+#[test]
+fn scf_snapshot_and_ph_copies_are_independent() {
+    use std::os::unix::fs::MetadataExt;
+    let case = make_case("coords");
+    let m = run_pipeline(&case);
+    let work = case.root.join("work");
+    epwflow::qe_data::save::verify_snapshot(&work).unwrap();
+    assert!(work.join("scf/snapshot/outside-save.wfc").exists());
+    let name = "actual_prefix.save/charge-density.dat";
+    let paths = [
+        work.join("scf/out").join(name),
+        work.join("scf/snapshot").join(name),
+        work.join("nscf/out").join(name),
+        work.join("ph/01/out").join(name),
+        work.join("ph/02/out").join(name),
+    ];
+    let inodes = paths
+        .iter()
+        .map(|p| std::fs::metadata(p).unwrap().ino())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(inodes.len(), paths.len(), "每阶段必须独立物理复制");
+    assert!(!work
+        .join("scf/snapshot/actual_prefix.save/stage-local-marker")
+        .exists());
+    assert!((m.qpoints[1].crystal[0] - 0.5).abs() < 1e-9);
+    assert!(
+        m.qpoints[1]
+            .crystal
+            .iter()
+            .zip(m.qpoints[1].cartesian)
+            .any(|(a, b)| (a - b).abs() > 1e-4),
+        "非正交转换不能使用单位矩阵"
+    );
+    let pattern = std::fs::read_to_string(&m.phonon_files[1].patterns).unwrap();
+    assert!(pattern.contains("<QPOINT_NUMBER>2</QPOINT_NUMBER>"));
+    let original =
+        std::fs::read_to_string(work.join("ph/02/out/_ph0/actual_prefix.phsave/patterns.1.xml"))
+            .unwrap();
+    assert!(original.contains("<QPOINT_NUMBER>1</QPOINT_NUMBER>"));
+    m.verify().unwrap();
+    let victim = &m.states.as_ref().unwrap().wavefunctions.join("wfc1.dat");
+    std::fs::write(victim, "tampered").unwrap();
+    assert!(m.verify().is_err());
+    assert!(reuse::import_from_run(&work, &case.root.join("bad-import")).is_err());
 }
 
 // ---------- FR-001/003~010：三种 PH 模式完整 qe-data 闭环 ----------
@@ -276,7 +299,11 @@ fn run_pipeline(case: &Case) -> QeManifest {
 fn qe_data_index_mode_full_pipeline() {
     let case = make_case("index");
     let m = run_pipeline(&case);
-    assert!(m.validation.all_passed(), "index 模式校验未通过: {:?}", m.validation.status);
+    assert!(
+        m.validation.all_passed(),
+        "index 模式校验未通过: {:?}",
+        m.validation.status
+    );
     assert_eq!(m.qpoints.len(), 2);
     assert_eq!(m.phonon_files.len(), 2);
     assert!(m.scf.is_some());
@@ -289,7 +316,11 @@ fn qe_data_index_mode_full_pipeline() {
 fn qe_data_coords_mode_full_pipeline() {
     let case = make_case("coords");
     let m = run_pipeline(&case);
-    assert!(m.validation.all_passed(), "coords 模式校验未通过: {:?}", m.validation.status);
+    assert!(
+        m.validation.all_passed(),
+        "coords 模式校验未通过: {:?}",
+        m.validation.status
+    );
     assert_eq!(m.qpoints.len(), 2);
     assert_eq!(m.phonon_files.len(), 2);
 }
@@ -298,7 +329,11 @@ fn qe_data_coords_mode_full_pipeline() {
 fn qe_data_nosplit_mode_full_pipeline() {
     let case = make_case("nosplit");
     let m = run_pipeline(&case);
-    assert!(m.validation.all_passed(), "nosplit 模式校验未通过: {:?}", m.validation.status);
+    assert!(
+        m.validation.all_passed(),
+        "nosplit 模式校验未通过: {:?}",
+        m.validation.status
+    );
     assert_eq!(m.qpoints.len(), 2);
     assert_eq!(m.phonon_files.len(), 2);
 }
@@ -319,7 +354,9 @@ fn qe_config_renders_expected_namelists() {
     assert!(nscf_in.contains("calculation = 'nscf'") && nscf_in.contains("nbnd = 4"));
     let init_in = qe.phonon_init_input(out.to_str().unwrap());
     assert!(init_in.contains("only_init = .true.") && init_in.contains("ldisp = .true."));
-    let q_in = qe.phonon_q_input(out.to_str().unwrap(), &config::PhMode::Index, None, 1).unwrap();
+    let q_in = qe
+        .phonon_q_input(out.to_str().unwrap(), &config::PhMode::Index, None, 1)
+        .unwrap();
     assert!(q_in.contains("start_q = 1") && q_in.contains("last_q = 1"));
 }
 
@@ -327,7 +364,13 @@ fn qe_config_renders_expected_namelists() {
 
 #[test]
 fn scf_energy_parsing() {
-    assert!(scf::parse_scf_energy("!    total energy              =    -100.12345678 Ry").unwrap().abs() - 100.12345678 < 1e-9);
+    assert!(
+        scf::parse_scf_energy("!    total energy              =    -100.12345678 Ry")
+            .unwrap()
+            .abs()
+            - 100.12345678
+            < 1e-9
+    );
     assert!(scf::parse_scf_energy("no energy here").is_err());
 }
 
@@ -360,58 +403,46 @@ fn qmap_parsing_and_periodic() {
     let dir = std::env::temp_dir().join(format!("epwflow-qmap-{}", store::token()));
     std::fs::create_dir_all(&dir).unwrap();
     let p = dir.join("ph.dyn0");
-    std::fs::write(&p, "Dynamical matrix file\nq = ( 0.0 0.0 0.0 )\nq = ( 0.5 0.0 0.0 )\n").unwrap();
-    let qs = qmap::parse_dyn0(&p).unwrap();
+    std::fs::write(&p, "2 2 2\n2\n0 0 0\n0.5 0 0\n").unwrap();
+    let geometry = epwflow::qe_data::xml::Geometry {
+        alat: 1.0,
+        lattice: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        reciprocal: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        atoms: vec![],
+        fft: [2; 3],
+    };
+    let qs = qmap::parse_dyn0(&p, &geometry, [2; 3], false).unwrap();
     assert_eq!(qs.len(), 2);
     assert_eq!(qs[0].global_index, 1);
     assert_eq!(qs[1].global_index, 2);
-    assert!(qmap::directory_of(7) == "007");
+    assert!(qmap::directory_of(7) == "07");
     assert!(qmap::directory_of(123) == "123");
-    assert!(qmap::same_q_modulo_periodic([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
-    assert!(!qmap::same_q_modulo_periodic([0.0, 0.0, 0.0], [0.5, 0.0, 0.0]));
-    assert!(qmap::parse_dyn0(&dir.join("empty.dyn0")).is_err());
+    assert!(qmap::same_q_modulo_periodic(
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0]
+    ));
+    assert!(!qmap::same_q_modulo_periodic(
+        [0.0, 0.0, 0.0],
+        [0.5, 0.0, 0.0]
+    ));
+    assert!(qmap::parse_dyn0(&dir.join("empty.dyn0"), &geometry, [2; 3], false).is_err());
 }
 
 // ---------- FR-007：响应归集（成功与缺失） ----------
 
 #[test]
 fn collect_ph_success_and_missing() {
-    let dir = std::env::temp_dir().join(format!("epwflow-collect-{}", store::token()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let qp = QPoint {
-        global_index: 1,
-        local_index: 1,
-        directory: "001".into(),
-        crystal: [0.0, 0.0, 0.0],
-        cartesian: [0.0, 0.0, 0.0],
-        alat: 1.0,
-        reciprocal_basis: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
-        source_dyn0: dir.join("ph.dyn0"),
-    };
-    let out = dir.join("out");
-    std::fs::create_dir_all(&out).unwrap();
-    std::fs::write(out.join("ph.dyn1"), "omega(   1) = 100.0\nomega(   2) = 200.0\n").unwrap();
-    std::fs::create_dir_all(out.join("ph.phsave").join("_ph0")).unwrap();
-    std::fs::write(out.join("ph.phsave").join("patterns.1"), "p").unwrap();
-    std::fs::write(out.join("ph.phsave").join("_ph0").join("control_ph.xml"), "c").unwrap();
-    std::fs::write(out.join("ph.dvscf_q.1"), "d").unwrap();
-    let resp = PhResponse {
-        q_id: 1,
-        dyn_file: out.join("ph.dyn1"),
-        patterns: out.join("ph.phsave").join("patterns.1"),
-        dvscf: Some(out.join("ph.dvscf_q.1")),
-        control_metadata: out.join("ph.phsave").join("_ph0").join("control_ph.xml"),
-        format: "qe-ph".into(),
-        perturbations: 0,
-    };
-    let collected = collect_ph::collect(&dir, &[qp.clone()], &[resp.clone()]).unwrap();
-    assert_eq!(collected.total_q, 1);
-    assert_eq!(collected.responses[0].perturbations, 2);
-    assert!(!collected.artifacts.is_empty());
-
-    // 缺失 dyn 文件必须拒绝。
-    let bad = PhResponse { q_id: 1, dyn_file: out.join("missing.dyn1"), ..resp };
-    assert!(collect_ph::collect(&dir, &[qp], &[bad]).is_err());
+    let case = make_case("coords");
+    let m = run_pipeline(&case);
+    assert_eq!(m.qpoints[1].local_index, 1);
+    let work = case.root.join("work");
+    let geometry = epwflow::qe_data::xml::Geometry::read(
+        &work.join("scf/snapshot/actual_prefix.save/data-file-schema.xml"),
+    )
+    .unwrap();
+    let mut bad = m.phonon_files.clone();
+    bad[0].dyn_file = case.root.join("missing.xml");
+    assert!(collect_ph::collect(&work, &m.qpoints, &bad, "actual_prefix", &geometry).is_err());
 }
 
 // ---------- FR-008：清单加载与版本 ----------
@@ -422,6 +453,8 @@ fn manifest_load_version_check() {
     std::fs::create_dir_all(&dir).unwrap();
     let m = QeManifest {
         schema_version: 1,
+        artifact_root: None,
+        artifacts: vec![],
         run_id: "r1".into(),
         fingerprints: epwflow::qe_data::manifest::Fingerprints {
             structure_sha256: "s".into(),
@@ -449,68 +482,68 @@ fn manifest_load_version_check() {
 
 #[test]
 fn compare_tolerances() {
-    assert!(compare::compare_scalar(1.0, 1.0 + 1e-8, compare::TOL_SCF_ENERGY_RY));
-    assert!(!compare::compare_scalar(1.0, 1.0 + 1e-6, compare::TOL_SCF_ENERGY_RY));
-    assert!(compare::coordinate_match_periodic([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], compare::TOL_COORD));
-    assert!(!compare::coordinate_match_periodic([0.0, 0.0, 0.0], [0.5, 0.0, 0.0], compare::TOL_COORD));
+    assert!(compare::compare_scalar(
+        1.0,
+        1.0 + 1e-8,
+        compare::TOL_SCF_ENERGY_RY
+    ));
+    assert!(!compare::compare_scalar(
+        1.0,
+        1.0 + 1e-6,
+        compare::TOL_SCF_ENERGY_RY
+    ));
+    assert!(compare::coordinate_match_periodic(
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        compare::TOL_COORD
+    ));
+    assert!(!compare::coordinate_match_periodic(
+        [0.0, 0.0, 0.0],
+        [0.5, 0.0, 0.0],
+        compare::TOL_COORD
+    ));
     assert!(compare::compare_weights(&[1.0, 1.0], &[2.0, 2.0]));
     assert!(!compare::compare_weights(&[1.0, 1.0], &[1.0, 2.0]));
-    assert!(compare::compare_eigenvalues(&[vec![1.0, 2.0]], &[vec![1.0 + 1e-6, 2.0]], compare::TOL_NSCF_EIGEN_EV));
-    assert!(!compare::compare_eigenvalues(&[vec![1.0, 2.0]], &[vec![1.0 + 1e-3, 2.0]], compare::TOL_NSCF_EIGEN_EV));
-    assert!(compare::compare_frequencies(&[-1.0, 2.0], &[-1.0, 2.0], compare::TOL_FREQ_CM1));
-    assert!(!compare::compare_frequencies(&[-1.0], &[1.0], compare::TOL_FREQ_CM1)); // 虚频符号保留
+    assert!(compare::compare_eigenvalues(
+        &[vec![1.0, 2.0]],
+        &[vec![1.0 + 1e-6, 2.0]],
+        compare::TOL_NSCF_EIGEN_EV
+    ));
+    assert!(!compare::compare_eigenvalues(
+        &[vec![1.0, 2.0]],
+        &[vec![1.0 + 1e-3, 2.0]],
+        compare::TOL_NSCF_EIGEN_EV
+    ));
+    assert!(compare::compare_frequencies(
+        &[-1.0, 2.0],
+        &[-1.0, 2.0],
+        compare::TOL_FREQ_CM1
+    ));
+    assert!(!compare::compare_frequencies(
+        &[-1.0],
+        &[1.0],
+        compare::TOL_FREQ_CM1
+    )); // 虚频符号保留
 }
 
 // ---------- FR-009：导入复用（来源不可变、哈希重验） ----------
 
 #[test]
 fn reuse_import_from_run() {
-    let dir = std::env::temp_dir().join(format!("epwflow-reuse-{}", store::token()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let src = dir.join("source");
-    let qe_data_dir = src.join("qe-data");
-    std::fs::create_dir_all(&qe_data_dir).unwrap();
-    let dyn_path = qe_data_dir.join("ph.dyn1");
-    std::fs::write(&dyn_path, "omega(   1) = 100.0\n").unwrap();
-    std::fs::write(qe_data_dir.join("patterns.1"), "p").unwrap();
-    std::fs::write(qe_data_dir.join("control.1"), "c").unwrap();
-    let m = QeManifest {
-        schema_version: 1,
-        run_id: "src1".into(),
-        fingerprints: epwflow::qe_data::manifest::Fingerprints {
-            structure_sha256: "s".into(),
-            pseudo_sha256: Default::default(),
-            program_sha256: Default::default(),
-        },
-        scf: None,
-        states: None,
-        qpoints: vec![],
-        phonon_files: vec![PhResponse {
-            q_id: 1,
-            dyn_file: dyn_path.clone(),
-            patterns: qe_data_dir.join("patterns.1"),
-            dvscf: None,
-            control_metadata: qe_data_dir.join("control.1"),
-            format: "qe-ph".into(),
-            perturbations: 1,
-        }],
-        validation: Validation {
-            status: "valid".into(),
-            checks: vec![epwflow::qe_data::manifest::Check { name: "x".into(), passed: true, detail: "".into() }],
-            units: Default::default(),
-            thresholds: Default::default(),
-            evidence: vec![],
-        },
-    };
-    store::write(&qe_data_dir.join("manifest.json"), &m).unwrap();
-
-    let target = dir.join("target");
-    std::fs::create_dir_all(&target).unwrap();
-    let report = reuse::import_from_run(&src, &target).expect("导入失败");
+    let case = make_case("index");
+    let original = run_pipeline(&case);
+    let source = case.root.join("work");
+    let target = case.root.join("target");
+    let report = reuse::import_from_run(&source, &target).unwrap();
     assert_eq!(report.status, "imported");
-    assert!(!report.imported_roles.is_empty());
-    // 来源文件执行前后哈希不变：导入后来源仍在。
-    assert!(dyn_path.exists());
+    let imported = QeManifest::load(&target.join("imported/qe-data/manifest.json")).unwrap();
+    assert_eq!(original.artifacts.len(), imported.artifacts.len());
+    original.verify().unwrap();
+    imported.verify().unwrap();
+    assert_ne!(
+        original.scf.unwrap().snapshot_dir,
+        imported.scf.unwrap().snapshot_dir
+    );
 }
 
 // ---------- FR-001/012：qe-data check 命令（缺清单返回 no_data） ----------
@@ -520,7 +553,10 @@ fn qe_data_check_no_data() {
     let dir = std::env::temp_dir().join(format!("epwflow-check-{}", store::token()));
     std::fs::create_dir_all(&dir).unwrap();
     // 不应因缺清单而崩溃；返回 no_data。
-    let r = epwflow::qe_data::cli::run(QeDataCommand::Check { work: dir.clone(), json: true });
+    let r = epwflow::qe_data::cli::run(QeDataCommand::Check {
+        work: dir.clone(),
+        json: true,
+    });
     assert!(r.is_ok());
 }
 
@@ -529,3 +565,63 @@ fn qe_data_check_no_data() {
 fn _use_artifact(_a: Artifact) {}
 #[allow(dead_code)]
 fn _use_states(_s: ElectronicStates) {}
+
+/// 显式只读检查机器上的真实历史来源；不提交作业，不修改科学文件。
+#[test]
+#[ignore = "需要 EPWFLOW_REAL_QE_ROOT 指向已有 LDA 证据，显式执行只读核验"]
+fn actual_lda_native_layout() {
+    use epwflow::qe_data::{manifest::PhResponse, native_ph, xml};
+    let root = PathBuf::from(std::env::var("EPWFLOW_REAL_QE_ROOT").expect("缺少实际证据根目录"));
+    let scf = root.join("014-lda-fsr-scf-nscf-phonon/phonon/tmp/mgb2.save/data-file-schema.xml");
+    let nscf =
+        root.join("014-lda-fsr-scf-nscf-phonon/electrons/tmp/mgb2.save/data-file-schema.xml");
+    let geo = xml::Geometry::read(&scf).unwrap();
+    let states = epwflow::qe_data::nscf::parse_xml(&nscf).unwrap();
+    epwflow::qe_data::nscf::validate_grid(&states, [6; 3], 16, &geo).unwrap();
+    let ph = root.join("019-lda-q6-phonon-wannier/phonon");
+    let qs = qmap::parse_dyn0(&ph.join("mgb2.dyn0"), &geo, [6; 3], false).unwrap();
+    let control = ph.join("tmp/_ph0/mgb2.phsave/control_ph.xml");
+    native_ph::control(&control, &qs).unwrap();
+    let mut paths = vec![scf, nscf, control.clone(), ph.join("mgb2.dyn0")];
+    let mut responses = vec![];
+    for q in &qs {
+        let base = ph.join("tmp/_ph0");
+        let dv = if q.global_index == 1 {
+            base.join("mgb2.dvscf1")
+        } else {
+            base.join(format!("mgb2.q_{}/mgb2.dvscf1", q.global_index))
+        };
+        let r = PhResponse {
+            q_id: q.global_index,
+            dyn_file: ph.join(format!("mgb2.dyn{}.xml", q.global_index)),
+            patterns: base.join(format!("mgb2.phsave/patterns.{}.xml", q.global_index)),
+            dvscf: Some(dv),
+            control_metadata: control.clone(),
+            format: native_ph::FORMAT.into(),
+            perturbations: 9,
+        };
+        paths.extend([
+            r.dyn_file.clone(),
+            r.patterns.clone(),
+            r.dvscf.clone().unwrap(),
+        ]);
+        responses.push(r);
+    }
+    let before = paths
+        .iter()
+        .map(|p| store::hash_file(p).unwrap())
+        .collect::<Vec<_>>();
+    for (q, r) in qs.iter().zip(&responses) {
+        native_ph::verify(r, q, &geo).unwrap();
+    }
+    let after = paths
+        .iter()
+        .map(|p| store::hash_file(p).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(before, after, "只读核验不能改变来源");
+    let report = serde_json::json!({"qpoints":qs.len(),"modes_per_q":9,"nks":states.kpoints.len(),"bands":states.nbnd,"native_response_validation":true,"source_unchanged":true,"sources":paths.iter().zip(before).map(|(p,h)|serde_json::json!({"path":p,"sha256":h})).collect::<Vec<_>>()});
+    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    if let Ok(path) = std::env::var("EPWFLOW_REAL_CHECK_REPORT") {
+        store::write(&PathBuf::from(path), &report).unwrap();
+    }
+}

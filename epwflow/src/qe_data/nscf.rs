@@ -108,35 +108,75 @@ pub fn run_nscf(
     let dir = work.join("nscf");
     std::fs::create_dir_all(&dir)?;
     let outdir = dir.join("out");
-    std::fs::create_dir_all(&outdir)?;
+    super::save::stage_scf(work, &outdir, &qe.config.qe.prefix)?;
     let input = qe.nscf_input(outdir.to_str().unwrap())?;
     std::fs::write(dir.join("nscf.in"), &input)?;
-    let prog = &qe.config.programs.pw.path;
-    let cmd: Vec<String> = launcher
-        .iter()
-        .cloned()
-        .chain(std::iter::once(prog.to_string_lossy().into_owned()))
-        .chain(std::iter::once("-inp".to_string()))
-        .chain(std::iter::once(
-            dir.join("nscf.in").to_string_lossy().into_owned(),
-        ))
-        .collect();
-    match backend {
-        Backend::Local => {
-            let _r = super::super::foundation::process::run(&cmd, &dir)?;
-        }
-        Backend::Slurm => {
-            super::super::foundation::slurm::submit_via_sbatch(
-                launcher,
-                &cmd[launcher.len()..],
-                &dir,
-                "nscf",
-            )?;
-        }
-    }
-    let xml = outdir.join("nscf.save").join("data-file-schema.xml");
+    super::execution::run(
+        &qe.config.programs.pw,
+        &dir.join("nscf.in"),
+        &dir,
+        launcher,
+        backend,
+        "nscf",
+        false,
+    )?;
+    super::save::verify_snapshot(work)?;
+    super::xml::validate_save(&outdir, &qe.config.qe.prefix, qe, None)?;
+    let xml = outdir
+        .join(format!("{}.save", qe.config.qe.prefix))
+        .join("data-file-schema.xml");
     let mut states = parse_xml(&xml)?;
     states.k_grid = qe.config.qe.nscf.k_grid;
-    states.wavefunctions = outdir.join("nscf.save");
+    validate_grid(
+        &states,
+        qe.config.qe.nscf.k_grid,
+        qe.config.qe.nscf.nbnd as usize,
+        &super::xml::Geometry::read(&xml)?,
+    )?;
+    states.wavefunctions = xml.parent().unwrap().into();
     Ok(states)
+}
+
+/// 验证实际完整 Γ 中心网格及等权重，保留 XML 原始笛卡尔坐标约定。
+pub fn validate_grid(
+    states: &ElectronicStates,
+    grid: [u32; 3],
+    bands: usize,
+    geometry: &super::xml::Geometry,
+) -> Result<()> {
+    use anyhow::ensure;
+    use std::collections::BTreeSet;
+    let count = grid.iter().map(|&n| n as usize).product::<usize>();
+    ensure!(
+        states.nbnd == bands
+            && states.kpoints.len() == count
+            && states.eigenvalues.len() == count
+            && states.weights.len() == count,
+        "data_invalid: NSCF 实际带数或完整 k 网格不符"
+    );
+    let sum: f64 = states.weights.iter().sum();
+    ensure!(
+        sum.is_finite()
+            && sum > 0.0
+            && states
+                .weights
+                .iter()
+                .all(|w| (w / sum - 1.0 / count as f64).abs() < 1e-9),
+        "data_invalid: NSCF 权重不等或非有限"
+    );
+    let mut indices = BTreeSet::new();
+    for point in &states.kpoints {
+        let c = geometry.crystal(*point);
+        let mut index = [0u32; 3];
+        for a in 0..3 {
+            let t = c[a] * grid[a] as f64;
+            ensure!(
+                (t - t.round()).abs() < 1e-8,
+                "data_invalid: NSCF k 点不在固定均匀网格上"
+            );
+            index[a] = (t.round() as i64).rem_euclid(grid[a] as i64) as u32;
+        }
+        ensure!(indices.insert(index), "data_invalid: NSCF 存在重复 k 点");
+    }
+    Ok(())
 }

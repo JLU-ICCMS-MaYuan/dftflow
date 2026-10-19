@@ -1,10 +1,10 @@
 # 数据模型：QE 三模式数据准备
 
-所有持久结构 schema_version=1；未知版本拒绝。依赖以角色和 SHA-256 绑定，不靠可变绝对路径判断同一科学数据。
+QeManifest 新发布版本为 schema_version=2，新增 artifact_root 与 artifacts；版本 1 仅兼容读取，不作为下游执行依据。其他持久结构沿用原版本；未知版本拒绝。依赖以角色和 SHA-256 绑定，不靠可变绝对路径判断同一科学数据。
 
 ## QeManifest
 
-字段：`schema_version,run_id,fingerprints,scf,states,qpoints,phonon_files,validation`。
+字段：`schema_version,artifact_root,artifacts,run_id,fingerprints,scf,states,qpoints,phonon_files,validation`。
 
 约束与生命周期：完整校验后发布；import 前重验。缺失必需值拒绝，数值必须有限。
 

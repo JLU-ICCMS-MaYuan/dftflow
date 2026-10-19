@@ -1,53 +1,78 @@
-use anyhow::{bail, Context, Result};
-use regex::Regex;
+//! QE dyn0 的实际网格和不可约 q 点，不以单位矩阵代替非正交倒格矢。
+use super::{
+    manifest::QPoint,
+    xml::{self, Geometry},
+};
+use anyhow::{ensure, Context, Result};
 use std::path::Path;
-use super::manifest::QPoint;
 
-/// 解析 dyn0 中的 q 点列表；每行 `q = ( x y z )` 对应一个全局序号的不可约 q。
-/// global_index 唯一、1 起始；并给出数字目录与 dyn0 来源；坐标系按 2π/a 记录。
-pub fn parse_dyn0(path: &Path) -> Result<Vec<QPoint>> {
-    let txt = std::fs::read_to_string(path)
-        .with_context(|| format!("data_invalid: 无法读取 dyn0 {}", path.display()))?;
-    let re = Regex::new(r"q\s*=\s*\(\s*([-0-9.eE+]+)\s+([-0-9.eE+]+)\s+([-0-9.eE+]+)\s*\)")
-        .expect("qmap: 正则编译失败");
-    let mut points = Vec::new();
-    let mut global_index = 0usize;
-    for caps in re.captures_iter(&txt) {
-        global_index += 1;
-        let parse = |i: usize| -> Result<f64> {
-            caps[i]
-                .parse::<f64>()
-                .with_context(|| format!("data_invalid: dyn0 q 坐标非数值 at q={global_index}"))
-        };
-        let x = parse(1)?;
-        let y = parse(2)?;
-        let z = parse(3)?;
+pub fn parse_dyn0(
+    path: &Path,
+    geometry: &Geometry,
+    expected_grid: [u32; 3],
+    coords: bool,
+) -> Result<Vec<QPoint>> {
+    let raw = std::fs::read_to_string(path)?;
+    let mut lines = raw.lines().filter(|line| !line.trim().is_empty());
+    let grid = lines
+        .next()
+        .context("data_invalid: dyn0 缺网格")?
+        .split_whitespace()
+        .map(str::parse::<u32>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    ensure!(grid == expected_grid, "data_invalid: dyn0 网格与配置不符");
+    let count: usize = lines
+        .next()
+        .context("data_invalid: dyn0 缺 q 数")?
+        .trim()
+        .parse()?;
+    ensure!(count > 0, "data_invalid: dyn0 q 数为零");
+    let values = lines.map(xml::vector).collect::<Result<Vec<_>>>()?;
+    ensure!(
+        values.len() == count,
+        "data_invalid: dyn0 声明数量与坐标数不符"
+    );
+    let mut points: Vec<QPoint> = vec![];
+    let width = count.to_string().len().max(2);
+    for (n, cartesian) in values.into_iter().enumerate() {
+        let crystal = geometry.crystal(cartesian);
+        ensure!(
+            crystal
+                .iter()
+                .zip(expected_grid)
+                .all(|(x, g)| (x * g as f64 - (x * g as f64).round()).abs() < 1e-8),
+            "data_invalid: dyn0 q 点不属于固定均匀网格"
+        );
+        ensure!(
+            points
+                .iter()
+                .all(|q| !same_q_modulo_periodic(q.crystal, crystal)),
+            "data_invalid: dyn0 重复物理 q"
+        );
         points.push(QPoint {
-            global_index,
-            local_index: global_index,
-            directory: format!("{:03}", global_index),
-            crystal: [x, y, z],
-            cartesian: [x, y, z],
-            alat: 1.0,
-            reciprocal_basis: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
-            source_dyn0: path.to_path_buf(),
+            global_index: n + 1,
+            local_index: if coords { 1 } else { n + 1 },
+            directory: format!("{:0width$}", n + 1),
+            crystal,
+            cartesian,
+            alat: geometry.alat,
+            reciprocal_basis: geometry.reciprocal,
+            source_dyn0: path.into(),
         });
     }
-    if global_index == 0 {
-        bail!("data_invalid: dyn0 未解析到任何 q 点");
-    }
-    // 校验：dyn0 声明的 q 数量必须与解析记录一致（FR-006）。
+    ensure!(
+        points[0].crystal.iter().all(|x| x.abs() < 1e-9),
+        "data_invalid: 目标 EPW 网格第一 q 必须为 Γ"
+    );
     Ok(points)
 }
 
-/// 给定全局序号返回数字目录名（至少两位，超过 99 自动扩展）。
 pub fn directory_of(global_index: usize) -> String {
-    format!("{:03}", global_index)
+    format!("{global_index:02}")
 }
 
-/// 坐标按倒格矢周期判断同一采样点（FR-006）：允许周期平移后匹配。
 pub fn same_q_modulo_periodic(a: [f64; 3], b: [f64; 3]) -> bool {
     a.iter()
-        .zip(b.iter())
-        .all(|(x, y)| (x - y).fract().abs() < 1e-9 || (1.0 - (x - y).fract().abs()).abs() < 1e-9)
+        .zip(b)
+        .all(|(x, y)| (x - y - (x - y).round()).abs() < 1e-9)
 }

@@ -1,8 +1,8 @@
+use super::super::foundation::{config, snapshot, status};
+use super::manifest::QeManifest;
 use anyhow::{Context, Result};
 use clap::Subcommand;
 use std::path::{Path, PathBuf};
-use super::manifest::QeManifest;
-use super::super::foundation::{config, snapshot, status};
 
 /// qe-data 子命令：独立验收 QE 数据准备阶段边界（FR-001）。
 #[derive(Subcommand)]
@@ -53,7 +53,13 @@ fn check(work: &Path, json: bool) -> Result<()> {
     if json {
         let v = status::envelope(
             "ok",
-            if m.validation.all_passed() { "valid" } else { "invalid" },
+            if m.schema_version == 1 {
+                "legacy_unverified"
+            } else if m.validation.all_passed() {
+                "valid"
+            } else {
+                "invalid"
+            },
             serde_json::json!({
                 "run_id": m.run_id,
                 "schema_version": m.schema_version,
@@ -71,7 +77,11 @@ fn check(work: &Path, json: bool) -> Result<()> {
         println!("n_qpoints: {}", m.qpoints.len());
         println!("n_phonon_files: {}", m.phonon_files.len());
         for c in &m.validation.checks {
-            println!("  check {}: {}", c.name, if c.passed { "pass" } else { "fail" });
+            println!(
+                "  check {}: {}",
+                c.name,
+                if c.passed { "pass" } else { "fail" }
+            );
         }
     }
     Ok(())

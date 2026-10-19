@@ -63,3 +63,7 @@
 用户明确要求避免重新实现 QE 流程。源码核查发现共享 qf-input 已有 PW/PH 写出、qf-crystal 已有结构解析；epwflow 的独立生成器却把三阶段 prefix 分别写成 scf/nscf/ph、原子质量写成 1，并把 PH 网格放在 namelist 外。决定移除这套重复实现，增加必要的共享纯渲染接口供两入口调用。
 
 不能直接复用旧 generate_split_inputs（含逐 q SCF）或旧 build_nscf_pw_params（nosym 在 CONTROL）；复用对象以 0006 当前单 SCF 链路及修正后的共享生成器为准。真实 PH 产物的 EPW 配对验证由适配层补充，不放宽现有数据契约。
+
+## D08：修复主路径与目标格式，而非保留伪布局
+
+当前 SCF／NSCF 硬编码保存树、PH 人造路径及 omega 格式不符合真实 QE 7.4.1。采用已确认的完整 outdir 快照、实际 prefix 与原生 PH XML；文件复制核对哈希，缺电荷、波函数、q 映射或响应维度时明确拒绝。旧合成测试样本更新为实际格式，不在生产读取器内增加专门服务测试的兼容分支。来源与标准保持不变。

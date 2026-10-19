@@ -114,7 +114,10 @@ impl<'a> QeSettings<'a> {
             ("lqdir", json!(true)),
             ("recover", json!(false)),
             ("only_wfc", json!(false)),
-            ("fildyn", json!(format!("{}.dyn", self.config.qe.prefix))),
+            (
+                "fildyn",
+                json!(format!("{}.dyn.xml", self.config.qe.prefix)),
+            ),
             ("fildvscf", json!("dvscf")),
             ("nq1", json!(p.q_grid[0])),
             ("nq2", json!(p.q_grid[1])),

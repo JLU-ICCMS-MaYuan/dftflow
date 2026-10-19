@@ -1,24 +1,109 @@
-use anyhow::{bail, Result};
-use std::path::Path;
-use super::super::foundation::stage::Backend;
-use super::manifest::{PhResponse, QPoint};
-use super::qe_config::QeSettings;
-use super::qmap;
+//! 单 SCF 后的独立 PH 保存树与目标 QE 原生输出映射。
+use super::super::foundation::{config::PhMode, stage::Backend};
+use super::{
+    manifest::{PhResponse, QPoint},
+    native_ph,
+    qe_config::QeSettings,
+    qmap, save, xml,
+};
+use anyhow::{ensure, Result};
+use std::path::{Path, PathBuf};
 
-/// 构建单 q 的响应产物引用（FR-005/007）：dyn、patterns、dvscf 与元数据统一配对。
-fn make_response(outdir: &Path, q: &QPoint) -> PhResponse {
-    PhResponse {
-        q_id: q.global_index,
-        dyn_file: outdir.join(format!("ph.dyn{}", q.global_index)),
-        patterns: outdir.join(format!("ph.phsave/patterns.{}", q.global_index)),
-        dvscf: Some(outdir.join(format!("ph.dvscf_q.{}", q.global_index))),
-        control_metadata: outdir.join("ph.phsave/_ph0/control_ph.xml"),
-        format: "qe-ph".to_string(),
-        perturbations: 0,
-    }
+pub fn geometry(qe: &QeSettings, work: &Path) -> Result<xml::Geometry> {
+    save::verify_snapshot(work)?;
+    xml::Geometry::read(
+        &work
+            .join("scf/snapshot")
+            .join(format!("{}.save/data-file-schema.xml", qe.config.qe.prefix)),
+    )
 }
 
-/// PH 初始化：写 only_init 输入、执行、解析 dyn0 得到不可约 q 列表（FR-005/006）。
+fn execute(
+    qe: &QeSettings,
+    work: &Path,
+    dir: &Path,
+    input: &str,
+    name: &str,
+    launcher: &[String],
+    backend: Backend,
+) -> Result<()> {
+    std::fs::create_dir_all(dir)?;
+    save::stage_scf(work, &dir.join("out"), &qe.config.qe.prefix)?;
+    let file = dir.join(format!("{name}.in"));
+    std::fs::write(&file, input)?;
+    super::execution::run(
+        &qe.config.programs.ph,
+        &file,
+        dir,
+        launcher,
+        backend,
+        name,
+        false,
+    )?;
+    save::verify_snapshot(work)
+}
+
+fn dyn0(qe: &QeSettings, dir: &Path, geometry: &xml::Geometry) -> Result<Vec<QPoint>> {
+    qmap::parse_dyn0(
+        &dir.join(format!("{}.dyn0", qe.config.qe.prefix)),
+        geometry,
+        qe.config.phonon.q_grid,
+        matches!(qe.config.phonon.mode, PhMode::Coords),
+    )
+}
+
+fn control(qe: &QeSettings, dir: &Path) -> PathBuf {
+    dir.join("out/_ph0")
+        .join(format!("{}.phsave/control_ph.xml", qe.config.qe.prefix))
+}
+
+fn response(
+    qe: &QeSettings,
+    dir: &Path,
+    q: &QPoint,
+    control: &Path,
+    geometry: &xml::Geometry,
+) -> Result<PhResponse> {
+    let prefix = &qe.config.qe.prefix;
+    let root = dir.join("out/_ph0");
+    let gamma = q.crystal.iter().all(|x| x.abs() < 1e-9);
+    let dv_dir = if gamma {
+        root.clone()
+    } else {
+        root.join(format!("{prefix}.q_{}", q.local_index))
+    };
+    let candidates = [
+        dv_dir.join(format!("{prefix}.dvscf")),
+        dv_dir.join(format!("{prefix}.dvscf1")),
+    ];
+    let files = candidates
+        .iter()
+        .filter(|p| p.is_file())
+        .collect::<Vec<_>>();
+    ensure!(
+        files.len() == 1,
+        "data_invalid: 缺少或存在歧义的原生 dvscf q={}",
+        q.global_index
+    );
+    // coords 的 fildyn 为不带全局编号的单 q 文件，内部 q 固定为 1。
+    let dyn_name = if matches!(qe.config.phonon.mode, PhMode::Coords) {
+        format!("{prefix}.dyn.xml")
+    } else {
+        format!("{prefix}.dyn{}.xml", q.global_index)
+    };
+    let result = PhResponse {
+        q_id: q.global_index,
+        dyn_file: dir.join(dyn_name),
+        patterns: root.join(format!("{prefix}.phsave/patterns.{}.xml", q.local_index)),
+        dvscf: Some(files[0].to_path_buf()),
+        control_metadata: control.into(),
+        format: native_ph::FORMAT.into(),
+        perturbations: geometry.atoms.len() * 3,
+    };
+    native_ph::verify(&result, q, geometry)?;
+    Ok(result)
+}
+
 pub fn run_init(
     qe: &QeSettings,
     work: &Path,
@@ -26,35 +111,14 @@ pub fn run_init(
     backend: Backend,
 ) -> Result<Vec<QPoint>> {
     let dir = work.join("ph_init");
-    std::fs::create_dir_all(&dir)?;
-    let outdir = dir.join("out");
-    std::fs::create_dir_all(&outdir)?;
-    let input = qe.phonon_init_input(outdir.to_str().unwrap());
-    std::fs::write(dir.join("ph_init.in"), &input)?;
-    let prog = &qe.config.programs.ph.path;
-    let cmd: Vec<String> = launcher
-        .iter()
-        .cloned()
-        .chain(std::iter::once(prog.to_string_lossy().into_owned()))
-        .chain(std::iter::once("-inp".to_string()))
-        .chain(std::iter::once(dir.join("ph_init.in").to_string_lossy().into_owned()))
-        .collect();
-    match backend {
-        Backend::Local => {
-            let _r = super::super::foundation::process::run(&cmd, &dir)?;
-        }
-        Backend::Slurm => {
-            super::super::foundation::slurm::submit_via_sbatch(launcher, &cmd[launcher.len()..], &dir, "ph_init")?;
-        }
-    }
-    let dyn0 = outdir.join("ph.dyn0");
-    if !dyn0.exists() {
-        bail!("data_invalid: PH 初始化未产生 dyn0，禁止后续分 q 提交");
-    }
-    qmap::parse_dyn0(&dyn0)
+    let input = qe.phonon_init_input(dir.join("out").to_str().unwrap());
+    execute(qe, work, &dir, &input, "ph_init", launcher, backend)?;
+    let geometry = geometry(qe, work)?;
+    let points = dyn0(qe, &dir, &geometry)?;
+    native_ph::control(&control(qe, &dir), &points)?;
+    Ok(points)
 }
 
-/// PH 分 q：写该 q 输入、执行、归集 dyn/patterns/dvscf（FR-005/007，index/coords）。
 pub fn run_q(
     qe: &QeSettings,
     work: &Path,
@@ -63,76 +127,41 @@ pub fn run_q(
     q: &QPoint,
     q_index: usize,
 ) -> Result<PhResponse> {
+    ensure!(q_index == q.global_index, "data_invalid: 分 q 全局索引不符");
     let dir = work.join("ph").join(&q.directory);
-    std::fs::create_dir_all(&dir)?;
-    let outdir = dir.join("out");
-    std::fs::create_dir_all(&outdir)?;
-    let input = qe.phonon_q_input(outdir.to_str().unwrap(), &qe.config.phonon.mode, Some(q), q_index)?;
-    std::fs::write(dir.join("ph.in"), &input)?;
-    let prog = &qe.config.programs.ph.path;
-    let cmd: Vec<String> = launcher
-        .iter()
-        .cloned()
-        .chain(std::iter::once(prog.to_string_lossy().into_owned()))
-        .chain(std::iter::once("-inp".to_string()))
-        .chain(std::iter::once(dir.join("ph.in").to_string_lossy().into_owned()))
-        .collect();
-    match backend {
-        Backend::Local => {
-            let _r = super::super::foundation::process::run(&cmd, &dir)?;
-        }
-        Backend::Slurm => {
-            super::super::foundation::slurm::submit_via_sbatch(launcher, &cmd[launcher.len()..], &dir, &format!("ph_{}", q.global_index))?;
-        }
-    }
-    let resp = make_response(&outdir, q);
-    if !resp.dyn_file.exists() {
-        bail!("data_invalid: q={} 缺少动力学矩阵 dyn{}", q.global_index, q.global_index);
-    }
-    Ok(resp)
+    let input = qe.phonon_q_input(
+        dir.join("out").to_str().unwrap(),
+        &qe.config.phonon.mode,
+        Some(q),
+        q_index,
+    )?;
+    execute(qe, work, &dir, &input, "ph", launcher, backend)?;
+    response(
+        qe,
+        &dir,
+        q,
+        &control(qe, &work.join("ph_init")),
+        &geometry(qe, work)?,
+    )
 }
 
-/// nosplit：单个 PH 任务计算完整 q 网格，校验 dyn0 与全部对应数据（FR-005）。
+/// nosplit 自己产生完整 dyn0 与 control，不增加一遍 only_init 计算。
 pub fn run_nosplit(
     qe: &QeSettings,
     work: &Path,
     launcher: &[String],
     backend: Backend,
-    qpoints: &[QPoint],
-) -> Result<Vec<PhResponse>> {
+) -> Result<(Vec<QPoint>, Vec<PhResponse>)> {
     let dir = work.join("ph_nosplit");
-    std::fs::create_dir_all(&dir)?;
-    let outdir = dir.join("out");
-    std::fs::create_dir_all(&outdir)?;
-    let input = qe.phonon_nosplit_input(outdir.to_str().unwrap());
-    std::fs::write(dir.join("ph.in"), &input)?;
-    let prog = &qe.config.programs.ph.path;
-    let cmd: Vec<String> = launcher
+    let input = qe.phonon_nosplit_input(dir.join("out").to_str().unwrap());
+    execute(qe, work, &dir, &input, "ph", launcher, backend)?;
+    let geometry = geometry(qe, work)?;
+    let points = dyn0(qe, &dir, &geometry)?;
+    let meta = control(qe, &dir);
+    native_ph::control(&meta, &points)?;
+    let responses = points
         .iter()
-        .cloned()
-        .chain(std::iter::once(prog.to_string_lossy().into_owned()))
-        .chain(std::iter::once("-inp".to_string()))
-        .chain(std::iter::once(dir.join("ph.in").to_string_lossy().into_owned()))
-        .collect();
-    match backend {
-        Backend::Local => {
-            let _r = super::super::foundation::process::run(&cmd, &dir)?;
-        }
-        Backend::Slurm => {
-            super::super::foundation::slurm::submit_via_sbatch(launcher, &cmd[launcher.len()..], &dir, "ph_nosplit")?;
-        }
-    }
-    let mut responses = Vec::new();
-    for q in qpoints {
-        let resp = make_response(&outdir, q);
-        if !resp.dyn_file.exists() {
-            bail!(
-                "data_invalid: nosplit 缺 q={} 的动力学矩阵 dyn{}",
-                q.global_index,
-                q.global_index
-            );
-        }
-        responses.push(resp);
-    }
-    Ok(responses)
+        .map(|q| response(qe, &dir, q, &meta, &geometry))
+        .collect::<Result<Vec<_>>>()?;
+    Ok((points, responses))
 }

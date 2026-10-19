@@ -1,14 +1,14 @@
+use super::super::foundation::{budget, config, snapshot, stage::Backend, store};
+use super::{
+    collect_ph, compare,
+    manifest::{Fingerprints, QeManifest, ScfRecord, Validation},
+    nscf, phonon, qe_acceptance,
+    qe_config::QeSettings,
+    reuse, scf,
+};
 use anyhow::{bail, ensure, Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
-use super::super::foundation::{
-    budget, config, snapshot,
-    stage::Backend, store,
-};
-use super::{
-    collect_ph, compare, manifest::{Fingerprints, QeManifest, ScfRecord, Validation},
-    nscf, phonon, qe_config::QeSettings, qe_acceptance, reuse, scf,
-};
 
 /// 在共享预算账本上预留本运行资源；超限拒绝（FR-010）。
 fn charge_budget(binding: &snapshot::RunBinding, cfg: &config::Config) -> Result<String> {
@@ -38,7 +38,11 @@ pub fn run(
 ) -> Result<QeManifest> {
     let _token = charge_budget(binding, cfg)?;
     let result = run_registered(binding, cfg, qe, backend, launcher, work)?;
-    budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, budget::reconcile)?;
+    budget::with_ledger(
+        &cfg.budget.ledger,
+        &cfg.budget.campaign_id,
+        budget::reconcile,
+    )?;
     Ok(result)
 }
 
@@ -55,22 +59,28 @@ pub fn run_registered(
     let scf_res = scf::run_scf(qe, work, launcher, backend)?;
     // 2. 完整均匀 NSCF。
     let states = nscf::run_nscf(qe, work, launcher, backend)?;
-    // 3. PH 初始化（正常退出后才有 q 列表）。
-    let qpoints = phonon::run_init(qe, work, launcher, backend)?;
-    // 4. 分 q 子任务：不重复 SCF，各 q 独立可写保存树；nosplit 为单任务全网格。
-    let mut responses = Vec::new();
-    match qe.config.phonon.mode {
+    // nosplit 直接产生全网格；其余模式初始化成功后才展开独立 q 任务。
+    let (qpoints, responses) = match qe.config.phonon.mode {
         super::super::foundation::config::PhMode::Nosplit => {
-            responses = phonon::run_nosplit(qe, work, launcher, backend, &qpoints)?;
+            phonon::run_nosplit(qe, work, launcher, backend)?
         }
         _ => {
+            let qpoints = phonon::run_init(qe, work, launcher, backend)?;
+            let mut responses = Vec::new();
             for (i, q) in qpoints.iter().enumerate() {
                 responses.push(phonon::run_q(qe, work, launcher, backend, q, i + 1)?);
             }
+            (qpoints, responses)
         }
-    }
+    };
     // 5. 响应数据完整归集。
-    let collected = collect_ph::collect(work, &qpoints, &responses)?;
+    let collected = collect_ph::collect(
+        work,
+        &qpoints,
+        &responses,
+        &qe.config.qe.prefix,
+        &phonon::geometry(qe, work)?,
+    )?;
     collect_ph::write_q_index_map(work, &qpoints)?;
 
     // 6. 构建指纹（来源不可变，来自绑定）。
@@ -102,9 +112,15 @@ pub fn run_registered(
         thresholds: BTreeMap::new(),
         evidence: Vec::new(),
     };
-    validation.units.insert("scf_energy".to_string(), "Ry".to_string());
-    validation.units.insert("kpoints".to_string(), "count".to_string());
-    validation.units.insert("qpoints".to_string(), "count".to_string());
+    validation
+        .units
+        .insert("scf_energy".to_string(), "Ry".to_string());
+    validation
+        .units
+        .insert("kpoints".to_string(), "count".to_string());
+    validation
+        .units
+        .insert("qpoints".to_string(), "count".to_string());
     validation.check(
         "scf_energy_finite",
         scf_res.energy_ry.is_finite(),
@@ -131,8 +147,38 @@ pub fn run_registered(
         &format!("artifacts={}", collected.artifacts.len()),
     );
 
+    let mut artifacts = collected.artifacts;
+    for (stage, root) in [
+        ("scf", scf_res.snapshot_dir.clone()),
+        ("nscf", work.join("nscf/out")),
+    ] {
+        for f in super::save::files(&root)? {
+            let path = root.join(&f.relative_path);
+            artifacts.push(super::manifest::Artifact {
+                role: format!("{stage}_{}", f.relative_path.display()),
+                relative_path: path.strip_prefix(work)?.into(),
+                byte_size: f.byte_size,
+                sha256: f.sha256,
+                producer_stage: stage.into(),
+                input_digest: String::new(),
+                format_version: "qe7.4.1-portable".into(),
+            });
+        }
+    }
+    let identity = work.join("scf/snapshot-files.json");
+    artifacts.push(super::manifest::Artifact {
+        role: "scf_snapshot_identity".into(),
+        relative_path: identity.strip_prefix(work)?.into(),
+        byte_size: std::fs::metadata(&identity)?.len(),
+        sha256: store::hash_file(&identity)?,
+        producer_stage: "scf".into(),
+        input_digest: String::new(),
+        format_version: "1".into(),
+    });
     let manifest = QeManifest {
-        schema_version: 1,
+        schema_version: 2,
+        artifact_root: Some(work.canonicalize()?),
+        artifacts,
         run_id: binding.run_id.clone(),
         fingerprints,
         scf: Some(scf_record),
@@ -144,6 +190,7 @@ pub fn run_registered(
 
     // 8. 仅当全部必需本地校验通过才发布可供下一阶段消费的清单。
     if manifest.validation.all_passed() {
+        manifest.verify()?;
         let out = work.join("qe-data").join("manifest.json");
         store::write(&out, &manifest)?;
     } else {
@@ -172,7 +219,10 @@ pub fn verify_binding(binding: &snapshot::RunBinding) -> Result<()> {
 }
 
 /// 内部最小参考数值对照（FR-011）的便捷入口：把当前清单与参考清单比较。
-pub fn diff_with_reference(current: &QeManifest, reference: &QeManifest) -> compare::ComparisonReport {
+pub fn diff_with_reference(
+    current: &QeManifest,
+    reference: &QeManifest,
+) -> compare::ComparisonReport {
     compare::compare_manifests(current, reference)
 }
 
@@ -182,10 +232,7 @@ pub fn register_import(source_work: &Path, work: &Path) -> Result<reuse::ImportR
 }
 
 /// 记录真实验收证据（FR-012），落盘到 work/qe-data/acceptance.json。
-pub fn record_acceptance(
-    work: &Path,
-    record: &qe_acceptance::AcceptanceRecord,
-) -> Result<()> {
+pub fn record_acceptance(work: &Path, record: &qe_acceptance::AcceptanceRecord) -> Result<()> {
     ensure!(
         record.require_evidence().is_ok(),
         "data_invalid: 验收记录缺少真实证据，拒绝落盘冒充"

@@ -29,7 +29,16 @@ fn poscar() -> &'static str {
     "Si\n1.0\n0.0 0.5 0.5\n0.5 0.0 0.5\n0.5 0.5 0.0\nSi\n2\nDirect\n0.0 0.0 0.0\n0.25 0.25 0.25\n"
 }
 
-fn base_config(work: &PathBuf, structure: &PathBuf, pw: &PathBuf, ph: &PathBuf, epw: &PathBuf, wan: &PathBuf, pw2: &PathBuf, ledger: &PathBuf) -> String {
+fn base_config(
+    work: &PathBuf,
+    structure: &PathBuf,
+    pw: &PathBuf,
+    ph: &PathBuf,
+    epw: &PathBuf,
+    wan: &PathBuf,
+    pw2: &PathBuf,
+    ledger: &PathBuf,
+) -> String {
     format!(
         r#"schema_version = 1
 work_dir = "{work}"
@@ -159,32 +168,44 @@ fn make_case() -> Case {
     let ph = root.join("ph.x");
     write_script(&ph, "#!/bin/bash\nexit 0\n");
     let epw = root.join("epw.x");
-    write_script(&epw, r#"#!/bin/bash
+    write_script(
+        &epw,
+        r#"#!/bin/bash
 inp="$2"; base=$(basename "$inp"); mkdir -p out
 case "$base" in
   epw_coarse.in) printf 'coarse ok\n' > epw.out; printf 'ephmat\n' > coarse.ephmat ;;
   epw_fine.in) printf 'fine ok\n' > epw.out; printf '100.0 200.0 300.0\n' > fine_frequencies.dat; printf '1.0 2.0 3.0\n' > fine_eigenvalues.dat; printf 'kq\n' > fine_kqmap.dat; printf 'shard\n' > fine_ephmat_shard.dat ;;
 esac
 exit 0
-"#);
+"#,
+    );
     let wan = root.join("wannier90.x");
-    write_script(&wan, r#"#!/bin/bash
+    write_script(
+        &wan,
+        r#"#!/bin/bash
 seed="$1"; printf 'Convergence reached\nSpread = 1.5\n' > "$seed.wout"
 exit 0
-"#);
+"#,
+    );
     let pw2 = root.join("pw2wannier90.x");
     write_script(&pw2, "#!/bin/bash\nexit 0\n");
 
     let work = root.join("work");
     let ledger = root.join("ledger.json");
     let config_path = root.join("config.toml");
-    std::fs::write(&config_path, base_config(&work, &structure, &pw, &ph, &epw, &wan, &pw2, &ledger)).unwrap();
+    std::fs::write(
+        &config_path,
+        base_config(&work, &structure, &pw, &ph, &epw, &wan, &pw2, &ledger),
+    )
+    .unwrap();
 
     // 植入有效的 F2 清单与参考频率（F3 仅依赖其状态，不重跑 F2）。
     let f2_dir = work.join("qe-data");
     std::fs::create_dir_all(&f2_dir).unwrap();
     let f2 = qe_manifest::QeManifest {
         schema_version: 1,
+        artifact_root: None,
+        artifacts: vec![],
         run_id: "f2".into(),
         fingerprints: qe_manifest::Fingerprints {
             structure_sha256: "s".into(),
@@ -197,16 +218,28 @@ exit 0
         phonon_files: vec![],
         validation: Validation {
             status: "valid".into(),
-            checks: vec![qe_manifest::Check { name: "x".into(), passed: true, detail: "".into() }],
+            checks: vec![qe_manifest::Check {
+                name: "x".into(),
+                passed: true,
+                detail: "".into(),
+            }],
             units: Default::default(),
             thresholds: Default::default(),
             evidence: vec![],
         },
     };
     store::write(&f2_dir.join("manifest.json"), &f2).unwrap();
-    std::fs::write(f2_dir.join("reference_frequencies.dat"), "100.0 200.0 300.0\n").unwrap();
+    std::fs::write(
+        f2_dir.join("reference_frequencies.dat"),
+        "100.0 200.0 300.0\n",
+    )
+    .unwrap();
 
-    Case { root, config_path, work }
+    Case {
+        root,
+        config_path,
+        work,
+    }
 }
 
 // 旧夹具只写自述 valid 与简化文件，不能作为完整科学链的正向验收。
@@ -217,14 +250,23 @@ fn incomplete_fixture_cannot_publish_interpolation() {
     let result = scheduler::run(&cfg, Backend::Local, &[], &case.work, &case.work);
     assert!(result.is_err());
     assert!(!case.work.join("interpolation/manifest.json").exists());
-    assert!(!case.root.join("ledger.json").exists(), "输入不完整时不能先预留资源");
+    assert!(
+        !case.root.join("ledger.json").exists(),
+        "输入不完整时不能先预留资源"
+    );
 }
 
 #[test]
 fn interpolation_check_no_data() {
     let dir = std::env::temp_dir().join(format!("epwflow-interp-check-{}", store::token()));
     std::fs::create_dir_all(&dir).unwrap();
-    assert!(epwflow::interpolation::cli::run(InterpolationCommand::Check { work: dir.clone(), json: true }).is_ok());
+    assert!(
+        epwflow::interpolation::cli::run(InterpolationCommand::Check {
+            work: dir.clone(),
+            json: true
+        })
+        .is_ok()
+    );
 }
 
 // ---------- FR-002：配置与能量参考 ----------
@@ -233,8 +275,12 @@ fn interpolation_check_no_data() {
 fn epw_config_renders_and_requires_energy_reference() {
     let case = make_case();
     let cfg = config::Config::load(&case.config_path).unwrap();
-    let ec = EpwConfig::from_config(&cfg).unwrap().with_fermi(5.0).unwrap()
-        .with_bands(&[vec![0., 4., 6., 10.]]).unwrap();
+    let ec = EpwConfig::from_config(&cfg)
+        .unwrap()
+        .with_fermi(5.0)
+        .unwrap()
+        .with_bands(&[vec![0., 4., 6., 10.]])
+        .unwrap();
     let win = ec.wannier90_input().unwrap();
     assert!(win.contains("num_wann = 2") && !win.contains("energy_reference"));
     let coarse_in = ec.epw_coarse_input("out").unwrap();
@@ -249,8 +295,10 @@ fn epw_config_renders_and_requires_energy_reference() {
 fn adapter_rejects_empty_and_invalid_f2() {
     let case = make_case();
     let cfg = config::Config::load(&case.config_path).unwrap();
-    assert!(adapter::bind_f2(&case.work.join("qe-data").join("manifest.json"), &cfg).is_err(),
-        "空 F2 不能凭自述 valid 放行");
+    assert!(
+        adapter::bind_f2(&case.work.join("qe-data").join("manifest.json"), &cfg).is_err(),
+        "空 F2 不能凭自述 valid 放行"
+    );
 
     // 篡改 F2 校验状态后必须拒绝。
     let f2_dir = case.work.join("qe-data");
@@ -302,7 +350,8 @@ fn spectral_low_frequency_and_lambda() {
     let w = spectral::apply_low_frequency_rule(&[0.0, -0.05, 5.0], 0.1);
     assert_eq!(w, vec![0.0, -0.1, 5.0]);
     let a2f = vec![0.5, 0.5, 0.5];
-    let spec = spectral::compute_spectrum(&[100.0, 200.0, 300.0], &a2f, "sm0001", 0.2, 0.1).unwrap();
+    let spec =
+        spectral::compute_spectrum(&[100.0, 200.0, 300.0], &a2f, "sm0001", 0.2, 0.1).unwrap();
     assert!(spec.lambda_integral.is_finite());
     assert!(spec.lambda_sum > 0.0);
 }
@@ -381,7 +430,10 @@ fn interpolation_reuse_rejects_unvalidated_manifest() {
     store::write(&src.join("manifest.json"), &m).unwrap();
     let target = dir.join("target");
     std::fs::create_dir_all(&target).unwrap();
-    assert!(reuse::import_from_run(&dir.join("source"), &target).is_err(), "没有校验项不能仅凭 valid 导入");
+    assert!(
+        reuse::import_from_run(&dir.join("source"), &target).is_err(),
+        "没有校验项不能仅凭 valid 导入"
+    );
 }
 
 // 避免未使用告警。

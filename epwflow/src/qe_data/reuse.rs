@@ -1,8 +1,8 @@
+use super::super::foundation::store;
+use super::manifest::QeManifest;
 use anyhow::{bail, ensure, Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
-use super::manifest::QeManifest;
-use super::super::foundation::store;
 
 /// 导入报告：来源清单、导入角色、复制后校验与证据。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -26,56 +26,83 @@ pub struct Check {
 /// 仅当来源清单 status=valid 且所有必需角色经重验（哈希一致）才登记为可复用阶段。
 pub fn import_from_run(source_work: &Path, work: &Path) -> Result<ImportReport> {
     let source_manifest_path = source_work.join("qe-data").join("manifest.json");
-    let source = QeManifest::load(&source_manifest_path)
-        .with_context(|| format!("data_invalid: 无法加载来源清单 {}", source_manifest_path.display()))?;
+    let source = QeManifest::load(&source_manifest_path).with_context(|| {
+        format!(
+            "data_invalid: 无法加载来源清单 {}",
+            source_manifest_path.display()
+        )
+    })?;
     ensure!(
         source.validation.all_passed(),
         "data_invalid: 来源清单校验未通过，拒绝复用"
     );
 
-    let target = work.join("imported").join("qe-data");
+    source.verify()?;
+    let source_root = source
+        .artifact_root
+        .as_ref()
+        .context("data_invalid: 缺原生产物根目录")?
+        .canonicalize()?;
+    std::fs::create_dir_all(work)?;
+    ensure!(
+        !work.canonicalize()?.starts_with(&source_root),
+        "input_conflict: 不能把导入目标放入来源树"
+    );
+    let target = work.join("imported/qe-data");
+    ensure!(!target.exists(), "input_conflict: 导入目标已存在");
     std::fs::create_dir_all(&target)?;
-    let mut checks = Vec::new();
-    let mut roles = Vec::new();
-
-    // 复制并逐文件重验来源响应文件，防止来源被篡改后冒充。
-    let mut copy_role = |role: &str, src: &Path, rep: &mut Vec<String>| -> Result<()> {
-        ensure!(src.exists(), "data_invalid: 来源角色 {role} 文件缺失 {}", src.display());
-        let dest = target.join(src.file_name().context("data_invalid: 文件缺名")?);
-        std::fs::copy(src, &dest)
-            .with_context(|| format!("data_invalid: 复制来源 {role} 失败"))?;
-        let src_sha = store::hash_file(src)?;
-        let dst_sha = store::hash_file(&dest)?;
-        let ok = src_sha == dst_sha;
+    let mut checks = vec![];
+    let mut roles = vec![];
+    for a in &source.artifacts {
+        let src = source_root.join(&a.relative_path);
+        let dst = target.join(&a.relative_path);
+        std::fs::create_dir_all(dst.parent().unwrap())?;
+        std::fs::copy(&src, &dst)?;
+        ensure!(
+            store::hash_file(&dst)? == a.sha256,
+            "input_conflict: 导入复制后身份不符"
+        );
+        roles.push(a.role.clone());
         checks.push(Check {
-            role: role.to_string(),
-            passed: ok,
-            detail: if ok {
-                "复制前后哈希一致".to_string()
-            } else {
-                "复制前后哈希不一致（来源可能被篡改）".to_string()
-            },
+            role: a.role.clone(),
+            passed: true,
+            detail: "按原生清单复制并重验身份".into(),
         });
-        if ok {
-            rep.push(role.to_string());
-        }
-        Ok(())
+    }
+    source.verify()?;
+    let rebase = |p: &std::path::PathBuf| -> Result<std::path::PathBuf> {
+        Ok(target.join(
+            p.strip_prefix(&source_root)
+                .context("data_invalid: 来源角色越出 artifact_root")?,
+        ))
     };
-
-    for ph in &source.phonon_files {
-        copy_role(&format!("dyn_q{}", ph.q_id), &ph.dyn_file, &mut roles)?;
-        copy_role(&format!("patterns_q{}", ph.q_id), &ph.patterns, &mut roles)?;
-        copy_role(&format!("control_q{}", ph.q_id), &ph.control_metadata, &mut roles)?;
-        if let Some(dv) = &ph.dvscf {
-            copy_role(&format!("dvscf_q{}", ph.q_id), dv, &mut roles)?;
-        }
+    let mut imported = source.clone();
+    imported.artifact_root = Some(target.canonicalize()?);
+    if let Some(r) = &mut imported.scf {
+        r.snapshot_dir = rebase(&r.snapshot_dir)?;
     }
-    if let Some(scf) = &source.scf {
-        copy_role("scf_snapshot", &scf.snapshot_dir, &mut roles)?;
+    if let Some(r) = &mut imported.states {
+        r.wavefunctions = rebase(&r.wavefunctions)?;
     }
-    if let Some(st) = &source.states {
-        copy_role("nscf_wavefunctions", &st.wavefunctions, &mut roles)?;
+    for r in &mut imported.phonon_files {
+        r.dyn_file = rebase(&r.dyn_file)?;
+        r.patterns = rebase(&r.patterns)?;
+        r.control_metadata = rebase(&r.control_metadata)?;
+        r.dvscf = r.dvscf.as_ref().map(rebase).transpose()?;
     }
+    let imported_dyn0 = target.join(
+        &source
+            .artifacts
+            .iter()
+            .find(|a| a.role == "dyn0")
+            .context("data_invalid: 来源缺 dyn0")?
+            .relative_path,
+    );
+    for q in &mut imported.qpoints {
+        q.source_dyn0 = imported_dyn0.clone();
+    }
+    imported.verify()?;
+    store::write(&target.join("manifest.json"), &imported)?;
 
     let all_ok = checks.iter().all(|c| c.passed);
     let report = ImportReport {
@@ -99,7 +126,10 @@ pub fn list_importable(source_work: &Path) -> Result<BTreeMap<String, String>> {
     let mut m = BTreeMap::new();
     m.insert("run_id".to_string(), source.run_id);
     m.insert("status".to_string(), source.validation.status.clone());
-    m.insert("structure".to_string(), source.fingerprints.structure_sha256.clone());
+    m.insert(
+        "structure".to_string(),
+        source.fingerprints.structure_sha256.clone(),
+    );
     m.insert("n_qpoints".to_string(), source.qpoints.len().to_string());
     m.insert(
         "n_phonon_files".to_string(),

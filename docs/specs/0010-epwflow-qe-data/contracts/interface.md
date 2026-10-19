@@ -1,6 +1,6 @@
 # CLI 与数据契约：QE 三模式数据准备
 
-**版本**：1；**需求**：[Spec](../spec.md)；**模型**：[数据模型](../data-model.md)。
+**当前 QE 清单版本**：2（历史版本 1 仅只读兼容）；**需求**：[Spec](../spec.md)；**模型**：[数据模型](../data-model.md)。
 
 ## 公开接口
 
@@ -32,3 +32,13 @@ F1 返回配置/运行绑定与阶段协议，F2 返回 qe-data/manifest.json，
 scf_xml、charge_density、wavefunction、dyn0、dyn_global_i、pattern_global_i、dvscf_global_i、phsave_control；额外赝势角色由已验证目标适配器声明，未支持组合拒绝。NSCF 消费完整 scf_snapshot，PH 消费各自副本；F3 只消费 published qe-data manifest。
 
 Artifact={role,relative_path,byte_size,sha256,producer_stage,input_digest,format_version}；validation={status,checks,units,thresholds,evidence}。只有 status=valid 的必需角色完整才发布该阶段 manifest。format_version 未知或文件集合与已验证适配器不符即拒绝；不靠 glob 命中一个文件放行。
+
+## 原生版本 2 保存树交接
+
+QeManifest 新增 artifact_root 与 artifacts。新运行只发布版本 2，逐文件核对相对路径、完整文件集合、大小、SHA-256 及原生 q／NSCF 数值；F3 与统一入口拒绝仅有版本 1 valid 标签的历史文件。独立 check 可展示 legacy_unverified，不把旧清单当作可执行来源。
+
+scf.snapshot_dir 为完整 outdir 快照，snapshot-files.json 固定全部内容；NSCF、PH 初始化和各 q 从该树独立复制。scf／nscf／ph 日志和错误日志均在对应阶段目录归档，阶段函数只在同一已登记分配内同步执行。nosplit 直接产生 dyn0 和完整响应，不额外 only_init。
+
+PH 格式标识 qe7.4.1-ph-xml-c16，当前限定非磁性标量、portable 波函数和小端复数 REAL(8) 响应。save 包含 prefix.dyn0.xml、prefix.dyn_qN.xml、prefix.dvscf_qN 及 prefix.phsave/patterns.N.xml、control_ph.xml。coords 只修改派生 patterns 的 QPOINT_NUMBER 为全局 N，保留原始文件与复扰动基底，未知或截断布局拒绝。
+
+import 只接受经过原生重验的版本 2 来源，按清单角色复制目录成员并重验，保存重新定位的独立 imported/qe-data/manifest.json；不自动运行科学程序。把来源根目录或其子目录用作导入目标时拒绝。导入报告本身不代表 F1 已完成后续阶段恢复。

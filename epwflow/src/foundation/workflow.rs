@@ -407,6 +407,7 @@ fn verify_stage(
     match name {
         "qe-data" => {
             let m = crate::qe_data::manifest::QeManifest::load(manifest)?;
+            m.verify()?;
             ensure!(
                 m.validation.all_passed()
                     && m.run_id == binding.run_id

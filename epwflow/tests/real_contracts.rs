@@ -47,59 +47,16 @@ impl Case {
     }
 
     fn qe_fixture(&self) {
-        // 简化的进程/文件契约替身，只证明编排，不作为 MgB2 科学参考。
-        let mut xml=String::from("<espresso><output><band_structure><nbnd>16</nbnd><nks>32</nks><fermi_energy>0.1</fermi_energy>");
-        for i in 0..4 {
-            for j in 0..4 {
-                for k in 0..2 {
-                    let x = i as f64 / 4.0;
-                    let y = (x + 2.0 * j as f64 / 4.0) / 3.0_f64.sqrt();
-                    let z = k as f64 / 2.0 * 3.0 / 3.5;
-                    xml.push_str(&format!("<ks_energies><k_point weight=\"0.03125\">{x} {y} {z}</k_point><eigenvalues>{}</eigenvalues></ks_energies>",vec!["0.1";16].join(" ")));
-                }
-            }
+        self.put("qe-native.py", include_str!("fixtures/qe_native_io.py"));
+        for kind in ["pw", "ph"] {
+            self.script(
+                &format!("{kind}.x"),
+                &format!(
+                    "#!/bin/sh\nexec /usr/bin/python3 '{}' {kind} \"$@\"\n",
+                    self.root.join("qe-native.py").display()
+                ),
+            );
         }
-        xml.push_str("</band_structure></output></espresso>");
-        self.put("states.xml", &xml);
-        self.script(
-            "pw.x",
-            &format!(
-                r#"#!/bin/sh
-set -eu
-printf 'pw\n' >> '{root}/scientific-calls'
-case "$2" in
- */scf.in)
-  mkdir -p out/scf.save
-  printf 'snapshot\n' > out/scf.save/data-file-schema.xml
-  printf 'wfc\n' > out/scf.save/wfc1.dat
-  printf 'convergence has been achieved\n! total energy = -10.0 Ry\nJOB DONE.\n';;
- */nscf.in)
-  mkdir -p out/nscf.save
-  cp '{root}/states.xml' out/nscf.save/data-file-schema.xml
-  printf 'wfc\n' > out/nscf.save/wfc1.dat;;
- *) exit 89;;
-esac
-"#,
-                root = self.root.display()
-            ),
-        );
-        self.script("ph.x",&format!(r#"#!/bin/sh
-set -eu
-printf 'ph\n' >> '{root}/scientific-calls'
-mkdir -p out
-case "$2" in
- */ph_init.in)
-  printf 'q = ( 0.0 0.0 0.0 )\nq = ( 0.5 0.0 0.0 )\n' > out/ph.dyn0;;
- *)
-  idx=$(sed -n 's/.*start_q *= *\([0-9]*\).*/\1/p' "$2")
-  mkdir -p out/ph.phsave/_ph0
-  i=1
-  while [ "$i" -le 9 ]; do printf 'omega( %s ) = 100 [cm-1]\n' "$i"; i=$((i+1)); done > "out/ph.dyn$idx"
-  printf 'pattern\n' > "out/ph.phsave/patterns.$idx"
-  printf 'dvscf\n' > "out/ph.dvscf_q.$idx"
-  printf 'control\n' > out/ph.phsave/_ph0/control_ph.xml;;
-esac
-"#,root=self.root.display()));
     }
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!("epw-real-contracts-{}", store::token()));
@@ -362,7 +319,11 @@ fn b01_boundary_executes_qe_once_and_blocks_missing_interpolation_evidence() {
         .success());
     let attempt = c.workflow()["attempt_id"].as_str().unwrap().to_owned();
     let o = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 124);
-    assert_eq!(c.workflow()["calculation_dir"], calculation_dir, "续算应复用原计算根目录");
+    assert_eq!(
+        c.workflow()["calculation_dir"],
+        calculation_dir,
+        "续算应复用原计算根目录"
+    );
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("缺少独立插值质量来源清单"));
     assert_eq!(c.workflow()["state"], "failed");
