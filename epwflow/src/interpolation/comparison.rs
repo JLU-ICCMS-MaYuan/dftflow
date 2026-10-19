@@ -54,21 +54,41 @@ pub struct Sources {
     pub phonon_sigma_cm1: f64,
 }
 
-/// 读取 Wannier 实际采用的绝对能量外窗，也覆盖未显式设置 dis_win 的情况。
-pub fn parse_outer_window(text: &str) -> Result<[f64; 2]> {
-    let pattern = regex::Regex::new(r"(?m)^\s*\|\s*Outer:\s*(\S+)\s+to\s+(\S+)\s+\(eV\)")?;
-    let records: Vec<_> = pattern.captures_iter(text).collect();
+fn parse_window(text: &str, name: &str) -> Result<Option<[f64; 2]>> {
+    let label = format!("{name}:");
+    let records: Vec<_> = text
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix('|'))
+        .filter_map(|line| line.trim_start().strip_prefix(&label))
+        .collect();
+    if records.is_empty() {
+        return Ok(None);
+    }
     ensure!(
         records.len() == 1,
-        "data_invalid: Wannier 日志必须有唯一 Outer 能窗"
+        "data_invalid: Wannier 日志必须有唯一 {name} 能窗"
     );
-    let value = |i: usize| -> Result<f64> { Ok(records[0][i].replace(['d', 'D'], "e").parse()?) };
+    let pattern = regex::Regex::new(r"^\s*(\S+)\s+to\s+(\S+)\s+\(eV\)")?;
+    let record = pattern
+        .captures(records[0])
+        .with_context(|| format!("data_invalid: Wannier {name} 能窗格式无效"))?;
+    let value = |i: usize| -> Result<f64> { Ok(record[i].replace(['d', 'D'], "e").parse()?) };
     let window = [value(1)?, value(2)?];
     ensure!(
         window.iter().all(|v| v.is_finite()) && window[0] < window[1],
-        "data_invalid: Wannier 外窗必须有限且递增"
+        "data_invalid: Wannier {name} 能窗必须有限且递增"
     );
-    Ok(window)
+    Ok(Some(window))
+}
+
+/// 读取 Wannier 实际采用的绝对能量外窗，也覆盖未显式设置 dis_win 的情况。
+pub fn parse_outer_window(text: &str) -> Result<[f64; 2]> {
+    parse_window(text, "Outer")?.context("data_invalid: Wannier 日志缺少 Outer 能窗")
+}
+
+/// 未记录 Inner 时返回缺失，不能用外窗或显示窗代替冻结窗。
+pub fn parse_frozen_window(text: &str) -> Result<Option<[f64; 2]>> {
+    parse_window(text, "Inner")
 }
 
 /// 相同高斯约定和物理权重用于两侧；不按输出曲线重新缩放。
@@ -215,11 +235,17 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         "data_invalid: 路径不完整或距离不递增"
     );
     let fermi = nscf::parse_xml(&s.fermi_reference.checked_path(base)?)?.fermi;
-    let disentanglement_window_ev = s
+    let wannier_log = s
         .wannier_wout
         .as_ref()
-        .map(|file| parse_outer_window(&fs::read_to_string(file.checked_path(base)?)?))
+        .map(|file| fs::read_to_string(file.checked_path(base)?).map_err(anyhow::Error::from))
         .transpose()?;
+    let disentanglement_window_ev = wannier_log.as_deref().map(parse_outer_window).transpose()?;
+    let frozen_window_ev = wannier_log
+        .as_deref()
+        .map(parse_frozen_window)
+        .transpose()?
+        .flatten();
     if let Some(window) = disentanglement_window_ev {
         s.window_ev = window.map(|e| e - fermi);
     }
@@ -507,6 +533,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         fermi_ev: fermi,
         window_ev: s.window_ev,
         disentanglement_window_ev,
+        frozen_window_ev,
         electronic_ticks: s
             .ticks
             .iter()

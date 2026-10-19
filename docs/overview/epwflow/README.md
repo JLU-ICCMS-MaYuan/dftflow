@@ -130,3 +130,13 @@ MgB₂ 测试脚本与说明位于 test_auto/MgB2/epwflow；运行数据为 test
 ## 高对称路径横轴
 
 电子能带与声子色散的高对称点符号位于底部横轴下方，按实际路径位置居中；不显示路径距离的数值刻度、k path／q path 标题或图内顶部的重复标签。G 显示为 Γ，其他符号沿用元数据。独立图和 2×2 总览共用该规则，电子／声子 DOS 保留能量／频率数值刻度。绘图只改变展示，不改写路径与科学结果表。
+
+## 能带与电子 DOS 的实际窗口边界
+
+比较来源中的 `wannier_wout` 同时读取实际 Outer／Inner，以绝对 eV 保存 `disentanglement_window_ev`、`frozen_window_ev`；冻结窗必须有限、递增且包含于外窗。旧比较包没有冻结窗时仍可重绘，并明确未记录，不从显示窗猜测边界。
+
+`plot` 在电子能带画水平虚线、电子 DOS 画竖直虚线，独立图和总览一致：蓝色为 `dis_win_min`，青色为 `dis_win_max`，橙色为 `dis_froz_min`，紫红色为 `dis_froz_max`。图例给出变量名和相对共同 E_F 的能量，图题保留绝对值。重合边界用交错颜色保留同一真实位置；高对称路径符号仍在底部轴下。
+
+真实 MgB₂ 的两个下边界均为 −4.90710 eV，冻结窗上界为 8.80000 eV，外窗上界为 32.23753 eV；共同 E_F=7.497269413025949 eV。本次只标注实际计算窗口，不修改物理输入。带冻结窗元数据的新包通过原有 `collect`／`plot` 命令绘制；旧包若需补全边界，应在独立目录使用带指纹的原始 `.wout` 重新 `interpolation export-comparison`，不能手改旧清单。
+
+源码与数据校验见 `interpolation/comparison.rs`、`comparison_data.rs`，绘图见 `delivery/comparison_plot.rs`；7 项比较回归及真实三格式核验见 [0014 验收记录](../../specs/0014-epwflow-delivery/acceptance.md)。投影暂缓、宽窗缺态及科学质量失败状态保留。

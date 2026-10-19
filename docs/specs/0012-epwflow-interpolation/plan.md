@@ -112,3 +112,8 @@ spec.md、plan.md、research.md、data-model.md、contracts/interface.md、tasks
 ## 2026-10-19：外窗数据导出
 
 沿用 comparison::export，Sources 可选 wannier_wout={path,sha256}。先核验日志身份并解析唯一 Outer 行，以实际绝对边界减共同 E_F 覆盖显示 window_ev；电子 CSV 仍保存全部原始带值，DOS 重新以共同核累计 501 点。metadata 增加可选 disentanglement_window_ev 绝对窗，严格校验其与 window_ev、E_F 的关系；旧包不带字段保持原显示语义。质量参考窗和状态不变。T046 对应 FR-014/SC-009。
+
+
+## 2026-10-19：窗口边界的数据与绘制
+
+F3 复用单一窗口解析器读取已核验 wout 的 Outer／Inner，将绝对边界写入比较元数据；frozen_window_ev 为可选字段，旧包无字段继续可读，但不会补造四条边界。加载时检查冻结窗包含关系。F5 只读元数据，用共同 E_F 将四边界定位到能量轴：能带水平、DOS 竖直；复用绘图函数服务独立图与总览。四个颜色的虚线和图例分别识别参数，相同能量在原坐标按像素相位交错绘制，避免遮盖。CLI 回归检查实际 SVG 的方向、位置、颜色、图例、重合和旧包；用真实 MgB₂ 只读重导出并查看三格式。

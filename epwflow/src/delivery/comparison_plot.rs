@@ -396,6 +396,57 @@ where
             }
         }
     }
+    if kind == 0 || kind == 1 {
+        let mut boundaries = Vec::new();
+        for (window, names, colors) in [
+            (
+                data.metadata.disentanglement_window_ev,
+                ["dis_win_min", "dis_win_max"],
+                [RGBColor(39, 114, 197), RGBColor(0, 139, 139)],
+            ),
+            (
+                data.metadata.frozen_window_ev,
+                ["dis_froz_min", "dis_froz_max"],
+                [RGBColor(230, 125, 34), RGBColor(174, 73, 166)],
+            ),
+        ] {
+            if let Some(window) = window {
+                for i in 0..2 {
+                    boundaries.push((names[i], window[i] - data.metadata.fermi_ev, colors[i]));
+                }
+            }
+        }
+        for (i, &(name, energy, color)) in boundaries.iter().enumerate() {
+            let same_energy = |other: &(_, f64, _)| (other.1 - energy).abs() < 1e-8;
+            let count = boundaries.iter().filter(|b| same_energy(b)).count();
+            let index = boundaries[..i].iter().filter(|b| same_energy(b)).count();
+            let (start, end) = if kind == 0 {
+                ((xmin, energy), (xmax, energy))
+            } else {
+                ((energy, ymin), (energy, ymax))
+            };
+            let plot = ctx.plotting_area();
+            let (x0, y0) = plot.map_coordinate(&start);
+            let (x1, y1) = plot.map_coordinate(&end);
+            // 同能量边界仅改变虚线相位，两种颜色都保留在真实能量上。
+            let offset = index as i32 * 18;
+            let first = (
+                x0 + (x1 - x0).signum() * offset,
+                y0 + (y1 - y0).signum() * offset,
+            );
+            plot.use_screen_coord().draw(&DashedPathElement::new(
+                [first, (x1, y1)],
+                12,
+                count as u32 * 18 - 12,
+                color.stroke_width(2),
+            ))?;
+            ctx.draw_series(std::iter::empty::<PathElement<(f64, f64)>>())?
+                .label(format!("{name}: {energy:.3} eV (E-EF)"))
+                .legend(move |(x, y)| {
+                    DashedPathElement::new([(x, y), (x + 30, y)], 12, 6, color.stroke_width(2))
+                });
+        }
+    }
     ctx.configure_series_labels()
         .background_style(WHITE.mix(0.9))
         .border_style(RGBColor(180, 180, 180))
@@ -447,6 +498,20 @@ where
         )?
     } else {
         body
+    };
+    let body = if let Some(window) = data.metadata.frozen_window_ev {
+        body.titled(
+            &format!(
+                "Frozen window (absolute eV): dis_froz_min = {:.5}; dis_froz_max = {:.5}",
+                window[0], window[1]
+            ),
+            ("sans-serif", 15),
+        )?
+    } else {
+        body.titled(
+            "Frozen window not recorded; no frozen-window markers",
+            ("sans-serif", 15),
+        )?
     };
     let body = if let Some(note) = data.metadata.notes.first() {
         body.titled(note, ("sans-serif", 15))?

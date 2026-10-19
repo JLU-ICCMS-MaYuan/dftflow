@@ -94,3 +94,8 @@ metadata.json 的可选 `phonon_error_markers` 默认为空，兼容旧比较包
 ### 实际外窗的诊断导出
 
 comparison Sources 新增可选 wannier_wout 文件项（path、sha256），必须为实际 Wannier `.wout`，解析唯一 `Outer: min to max (eV)` 行，支持 Fortran 指数并拒绝非有限、逆序或多条冲突窗口。给出时覆盖原 window_ev 为绝对窗减共同 E_F；不修改 quality-reference 的验证窗。metadata.json 可选 disentanglement_window_ev 保存绝对边界，缺省为空以兼容旧包；存在时校验与 window_ev、fermi_ev 的数值关系。科学带值、DOS 权重、质量门不因此变更，缺态继续报告。
+
+
+### 外窗与冻结窗边界
+
+metadata.frozen_window_ev 是可选的绝对 eV 二元数组，来自同一已核验 wannier_wout 的唯一 Inner 记录；缺失代表未记录。存在时必须有限、递增且包含于 disentanglement_window_ev。四个边界均由绝对值减同一 fermi_ev 后定位，图例使用 dis_win_min/max、dis_froz_min/max 并注明 E−E_F；曲线数据与 display window 不因标注而改变。重合边界不偏移，交错显示不同颜色的虚线。旧包不能根据显示范围推断物理窗口；未知、无效或篡改数据依现有清单规则拒绝。

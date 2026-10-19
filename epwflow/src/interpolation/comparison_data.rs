@@ -97,6 +97,9 @@ pub struct Metadata {
     /// 来自已核验 .wout 的绝对 eV 外窗；旧包没有该字段。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disentanglement_window_ev: Option<[f64; 2]>,
+    /// 同一 .wout 的实际冻结窗；绝对 eV，缺失时不推断。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frozen_window_ev: Option<[f64; 2]>,
     pub electronic_ticks: Vec<Tick>,
     pub phonon_ticks: Vec<Tick>,
     pub electronic_energy_unit: String,
@@ -349,6 +352,18 @@ pub fn load(root: &Path) -> Result<Dataset> {
                             < 1e-8
                     ),
             "data_invalid: Wannier 外窗与共同 Fermi 能／显示窗不符"
+        );
+    }
+    if let Some(frozen) = metadata.frozen_window_ev {
+        let outer = metadata
+            .disentanglement_window_ev
+            .context("data_invalid: 冻结窗缺少对应的实际外窗")?;
+        ensure!(
+            frozen.iter().all(|v| v.is_finite())
+                && frozen[0] < frozen[1]
+                && frozen[0] >= outer[0]
+                && frozen[1] <= outer[1],
+            "data_invalid: 冻结窗必须有限、递增且包含于外窗"
         );
     }
     ensure!(

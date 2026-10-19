@@ -98,6 +98,7 @@ fn fixture(root: &Path) -> PathBuf {
         fermi_ev: 7.0,
         window_ev: [-0.5, 0.5],
         disentanglement_window_ev: Some([6.5, 7.5]),
+        frozen_window_ev: Some([6.5, 7.2]),
         electronic_ticks: ticks(),
         phonon_ticks: ticks(),
         electronic_energy_unit: "eV_relative_fermi".into(),
@@ -200,6 +201,7 @@ fn error_markers_validate_semantics_and_old_metadata_remains_readable() {
         .as_object_mut()
         .unwrap()
         .remove("disentanglement_window_ev");
+    legacy.as_object_mut().unwrap().remove("frozen_window_ev");
     store::write(&dir.join("metadata.json"), &legacy).unwrap();
     rehash(&dir);
     assert!(comparison::load(&dir)
@@ -281,6 +283,61 @@ fn check_path_axes(svg: &str, expected_ticks: usize) {
     }
 }
 
+fn check_window_lines(svg: &str, panel: usize, horizontal: bool) {
+    let doc = roxmltree::Document::parse(svg).unwrap();
+    let points = |n: roxmltree::Node<'_, '_>| -> Vec<(i32, i32)> {
+        n.attribute("points")
+            .unwrap()
+            .split_whitespace()
+            .map(|p| {
+                let (x, y) = p.split_once(',').unwrap();
+                (x.parse().unwrap(), y.parse().unwrap())
+            })
+            .collect()
+    };
+    let axes: Vec<_> = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("polyline") && n.attribute("stroke") == Some("#000000"))
+        .map(points)
+        .filter(|p| p.len() == 2 && p[0].1 == p[1].1 && p[1].0 - p[0].0 > 100)
+        .collect();
+    let bottom = &axes[panel];
+    let top = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("polyline") && n.attribute("stroke") == Some("#000000"))
+        .map(points)
+        .find(|p| p.len() == 2 && p[0].0 == bottom[0].0 - 1 && p[1].1 == bottom[0].1 - 1)
+        .unwrap()[0]
+        .1;
+    for (name, color, relative) in [
+        ("dis_win_min", "#2772C5", -0.5),
+        ("dis_win_max", "#008B8B", 0.5),
+        ("dis_froz_min", "#E67D22", -0.5),
+        ("dis_froz_max", "#AE49A6", 0.2),
+    ] {
+        assert!(svg.contains(&format!("{name}: {relative:.3} eV (E-EF)")));
+        let position = if horizontal {
+            (bottom[0].1 - 1) as f64 - (relative + 0.5) * (bottom[0].1 - 1 - top) as f64
+        } else {
+            bottom[0].0 as f64 + (relative + 0.5) * (bottom[1].0 - bottom[0].0) as f64
+        };
+        let segments = doc
+            .descendants()
+            .filter(|n| n.has_tag_name("polyline") && n.attribute("stroke") == Some(color))
+            .map(points)
+            .filter(|p| p.len() == 2)
+            .filter(|p| {
+                if horizontal {
+                    p[0].1 == p[1].1 && (p[0].1 as f64 - position).abs() <= 1.0
+                } else {
+                    p[0].0 == p[1].0 && (p[0].0 as f64 - position).abs() <= 1.0
+                }
+            })
+            .count();
+        assert!(segments >= 3, "{name} 必须在正确能量位置画出多段彩色虚线");
+    }
+}
+
 #[test]
 fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
     let root = if let Ok(p) = std::env::var("EPWFLOW_PREVIEW_DIR") {
@@ -329,6 +386,12 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
             .starts_with(b"%PDF"));
         let svg = fs::read_to_string(figures.join(format!("{kind}.svg"))).unwrap();
         assert!(svg.contains("SYNTHETIC STYLE TEST"));
+        if kind == "electronic_bands_comparison" || kind == "comparison_overview" {
+            check_window_lines(&svg, 0, true);
+        }
+        if kind == "electronic_dos_comparison" || kind == "comparison_overview" {
+            check_window_lines(&svg, usize::from(kind == "comparison_overview"), false);
+        }
         match kind {
             "electronic_bands_comparison" | "phonon_dispersion_comparison" => {
                 check_path_axes(&svg, 3);
@@ -717,7 +780,7 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
     // 实际默认外窗来自原生日志；显示窗变化不能改变科学质量判定。
     fs::write(
         root.join("test.wout"),
-        " | Outer: -2.0D+0 to 3.0D+0 (eV) |\n",
+        " | Outer: -2.0D+0 to 3.0D+0 (eV) |\n | Inner: -2.0D+0 to 2.0D+0 (eV) |\n",
     )
     .unwrap();
     sources.wannier_wout = Some(file("test.wout"));
@@ -736,6 +799,7 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
     ));
     let wide = comparison::load(&outer).unwrap();
     assert_eq!(wide.metadata.disentanglement_window_ev, Some([-2.0, 3.0]));
+    assert_eq!(wide.metadata.frozen_window_ev, Some([-2.0, 2.0]));
     let expected = [-2.0 - wide.metadata.fermi_ev, 3.0 - wide.metadata.fermi_ev];
     assert_eq!(wide.metadata.window_ev, expected);
     assert_eq!(
@@ -823,4 +887,64 @@ fn outer_window_requires_one_finite_ordered_native_record() {
     ] {
         assert!(parse_outer_window(text).is_err(), "未拒绝 {text}");
     }
+}
+
+#[test]
+fn frozen_window_rejects_invalid_records_and_metadata_without_inventing_legacy_bounds() {
+    use epwflow::interpolation::comparison::parse_frozen_window;
+    assert_eq!(
+        parse_frozen_window(" | Outer: -2 to 3 (eV) |\n").unwrap(),
+        None
+    );
+    assert_eq!(
+        parse_frozen_window(" | Inner: -2.0D+0 to 1.0D+0 (eV) |\n").unwrap(),
+        Some([-2.0, 1.0])
+    );
+    for text in [
+        " | Inner: NaN to 3 (eV)",
+        " | Inner: -1 to inf (eV)",
+        " | Inner: 3 to 2 (eV)",
+        " | Inner: 2 to 2 (eV)",
+        " | Inner: -1 to 3 (Ry)",
+        " | Inner: broken",
+        " | Inner: -1 to 3 (eV)\n | Inner: -1 to 3 (eV)",
+    ] {
+        assert!(parse_frozen_window(text).is_err(), "未拒绝 {text}");
+    }
+    let root = temp();
+    let work = fixture(&root);
+    let dir = work.join("interpolation/comparison");
+    let original: Metadata = store::read(&dir.join("metadata.json")).unwrap();
+    for frozen in [[6.4, 7.2], [6.8, 7.6], [7.2, 6.8], [7.2, 7.2]] {
+        let mut metadata = original.clone();
+        metadata.frozen_window_ev = Some(frozen);
+        store::write(&dir.join("metadata.json"), &metadata).unwrap();
+        rehash(&dir);
+        assert!(comparison::load(&dir).is_err(), "未拒绝 {frozen:?}");
+    }
+    let mut metadata = original.clone();
+    metadata.disentanglement_window_ev = None;
+    store::write(&dir.join("metadata.json"), &metadata).unwrap();
+    rehash(&dir);
+    assert!(comparison::load(&dir).is_err());
+    metadata = original;
+    metadata.frozen_window_ev = None;
+    store::write(&dir.join("metadata.json"), &metadata).unwrap();
+    rehash(&dir);
+    success(cli(&["collect", "-w", work.to_str().unwrap()], &root));
+    success(cli(
+        &[
+            "plot",
+            "--results",
+            work.join("results").to_str().unwrap(),
+            "--formats",
+            "svg",
+        ],
+        &root,
+    ));
+    let svg =
+        fs::read_to_string(work.join("results/figures/electronic_bands_comparison.svg")).unwrap();
+    assert!(svg.contains("Frozen window not recorded"));
+    assert!(!svg.contains("dis_froz_min:"));
+    assert!(svg.contains("dis_win_min:"));
 }

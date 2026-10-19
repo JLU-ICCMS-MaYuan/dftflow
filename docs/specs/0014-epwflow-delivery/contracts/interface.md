@@ -69,3 +69,8 @@ F3 metadata.disentanglement_window_ev 存在时，电子能带纵轴和电子 DO
 ## 高对称路径的绘图轴约定
 
 电子能带与声子色散只在底部横轴下方显示高对称点符号，按真实路径距离定位；不显示路径数值刻度或 k path／q path 标题。此约定同时作用于独立图和总览子面板，DOS 物理横轴仍显示数值及单位。比较表保留原始路径距离；绘图不改写数据。
+
+
+### 外窗与冻结窗边界
+
+metadata.frozen_window_ev 是可选的绝对 eV 二元数组，来自同一已核验 wannier_wout 的唯一 Inner 记录；缺失代表未记录。存在时必须有限、递增且包含于 disentanglement_window_ev。四个边界均由绝对值减同一 fermi_ev 后定位，图例使用 dis_win_min/max、dis_froz_min/max 并注明 E−E_F；曲线数据与 display window 不因标注而改变。重合边界不偏移，交错显示不同颜色的虚线。旧包不能根据显示范围推断物理窗口；未知、无效或篡改数据依现有清单规则拒绝。
