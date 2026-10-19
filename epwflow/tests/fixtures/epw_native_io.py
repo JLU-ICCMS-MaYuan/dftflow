@@ -56,7 +56,7 @@ else:
     assert Path('epwdata.fmt').exists() and (out/(prefix+'.epmatwp')).stat().st_size==16*n*n*6
     assert not Path('save').exists(), '细网格应重读粗网格，无需复制响应势'
     assert not Path('selecq.fmt').exists(), '不能复用粗网格验证点选择'
-    if mode=='fine-exit':print('fine failed evidence');sys.exit(17)
+    if mode=='fine-exit' or (mode=='fine-second-exit' and Path.cwd().name=='smearing-0002'):print('fine failed evidence');sys.exit(17)
     matrix=out/(prefix+'.ephmat');matrix.mkdir()
     grid=[int(value('nkf'+str(i))) for i in (1,2,3)];qgrid=[int(value('nqf'+str(i))) for i in (1,2,3)]
     e=integer([2,*grid,2,n])+real([0.2,0.2,2.,float(value('degaussw'))/RY,float(value('fsthick'))/RY])

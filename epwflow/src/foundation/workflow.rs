@@ -693,6 +693,14 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
                 verify_stage(name, &manifest, &cfg, &binding)?;
                 continue;
             }
+            if record.retry_failed && manifest.exists() {
+                let completion = verify_stage(name, &manifest, &cfg, &binding)?;
+                record.completed.insert(name.into(), completion);
+                save(work, &record)?;
+                let receipt = work.join(name).join("manifest.json");
+                if receipt != manifest { store::atomic_bytes(&receipt, &fs::read(&manifest)?)?; }
+                continue;
+            }
             record.current_stage = Some(name.into());
             save(work, &record)?;
             match name {
@@ -708,13 +716,13 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
                     )?;
                 }
                 "wannier" => {
-                    crate::interpolation::scheduler::run_coarse_registered(
-                        &cfg, Backend::Local, &cfg.programs.launcher, &calculation, &calculation,
+                    crate::interpolation::scheduler::run_coarse_with_retry(
+                        &cfg, Backend::Local, &cfg.programs.launcher, &calculation, &calculation, record.retry_failed,
                     )?;
                 }
                 "interpolation" => {
-                    crate::interpolation::scheduler::run_fine_registered(
-                        &cfg, Backend::Local, &cfg.programs.launcher, &calculation,
+                    crate::interpolation::scheduler::run_fine_with_retry(
+                        &cfg, Backend::Local, &cfg.programs.launcher, &calculation, record.retry_failed,
                     )?;
                 }
                 "superconductivity" => {

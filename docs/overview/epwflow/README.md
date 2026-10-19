@@ -8,6 +8,8 @@ EPW 仅构建 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个独�
 
 epw_phonon 直接调用 qeflow 的 nosplit Rust 库（[说明](../qeflow/qe_phonon_nosplit.md)），执行 SCF→PH→q2r→matdyn 和声子图，启用 EPW 原始数据归档。SCF 完成、PH 之前保存独立快照，再由 EPW 准备完整均匀 NSCF 和严格数据清单。固定 KPATH、q2r／matdyn、显式原子质量及 SCF 网格位移均传递并校验；后处理失败恢复会重验请求、脚本和 SCF 检查点，复用已完成 SCF／PH。该恢复行为已由独立进程回归验证，尚未执行新的真实科学链。
 
+粗／细原生尝试在 native-attempts 保存固定请求、物化输入和成功输出指纹。显式恢复可重验归集完整输出，或将失败现场归档后按原参数重试；成功展宽不重复执行。质量失败仍阻断，来源或证据变化拒绝恢复。阶段清单已发布但工作流完成状态未登记时，可重验后补登记。恢复回归使用独立进程测试替身，不替代真实科学验收。
+
 粗网格阶段独立发布 `wannier/manifest.json`，没有细网格或谱；细网格在第三阶段重验前者后另行发布 `interpolation/manifest.json`，绑定原粗清单哈希，保持其不变。进程回归证明阶段顺序、原生格式角色和失败阻断；独立参考与四类比较图的自动生成、真实两模式 Tc 交付尚未完成。首条主路径采用 nosplit，不要求三来源六组合完成才交付。
 
 ## 公开程序及选项
@@ -25,7 +27,7 @@ epw_phonon 直接调用 qeflow 的 nosplit Rust 库（[说明](../qeflow/qe_phon
 | `--prepare-only` | 只固定输入和身份，不执行或提交 |
 | `-s`／`-r` | 提交一个有界分配，或在已登记分配中同步执行；回执不能替代数值完成 |
 | `--status -w W [--refresh] [--json]` | 查询记录，refresh 读取 allocation 并结算；未知预算不退款 |
-| `--resume -w W -s/-r` | 固定快照恢复，重验完成证据；失败现场保留，活动或未知任务不重提；粗／细阶段中途失败恢复仍未收敛 |
+| `--resume -w W -s/-r` | 固定快照恢复，重验完成证据；失败现场保留，活动或未知任务不重提；粗／细检查点重验完整输出、归档失败尝试并复用成功展宽 |
 | `--import M` | 核查、隔离并登记本阶段既有清单；不自动识别任意旧声子目录 |
 | `--export-comparison S --output D` | 仅 epw_wannier，从既有带哈希来源导出原生比较数据 |
 | `--collect -w W` | 后两程序收集已有比较／超导数据；不生成缺失科学输出 |

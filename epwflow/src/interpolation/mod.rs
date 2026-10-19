@@ -1,5 +1,6 @@
 //! F3 Wannier 化与 EPW 插值模块族（spec 0012，FR-001~FR-013）。
 pub mod adapter;
+mod attempt;
 pub mod cli;
 pub mod coarse;
 pub mod compare;

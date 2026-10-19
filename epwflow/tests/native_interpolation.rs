@@ -357,3 +357,124 @@ fn fine_stage_requires_immutable_coarse_handoff_before_any_native_call() {
     assert_eq!(calls, fs::read_to_string(c.root.join("epw-calls")).unwrap());
     assert!(!work.join("fine").exists());
 }
+
+fn retry_coarse(c: &Case) -> anyhow::Result<interpolation::manifest::InterpolationManifest> {
+    interpolation::scheduler::run_coarse_with_retry(&c.cfg, Backend::Local, &[], &c.cfg.work_dir, &c.cfg.work_dir, true)
+}
+fn retry_fine(c: &Case) -> anyhow::Result<interpolation::manifest::InterpolationManifest> {
+    interpolation::scheduler::run_fine_with_retry(&c.cfg, Backend::Local, &[], &c.cfg.work_dir, true)
+}
+fn calls(c: &Case) -> String { fs::read_to_string(c.root.join("epw-calls")).unwrap() }
+
+#[test]
+fn failed_coarse_requires_explicit_retry_and_archives_evidence() {
+    let c = case("coarse-truncated");
+    assert!(run(&c).is_err());
+    let log = calls(&c);
+    let qe_calls = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
+    let source = store::Identity::capture(&c.cfg.work_dir.join("nscf/out/scf.save/data-file-schema.xml")).unwrap();
+    assert!(run(&c).is_err());
+    assert_eq!(calls(&c), log);
+    fs::write(c.root.join("epw-failure"), "").unwrap();
+    retry_coarse(&c).unwrap();
+    source.verify().unwrap();
+    assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(), qe_calls);
+    assert_eq!(calls(&c).lines().count(), 2);
+    let history = c.cfg.work_dir.join("native-attempts/history");
+    let archives: Vec<_> = fs::read_dir(history).unwrap().map(|e| e.unwrap().path()).filter(|p| p.is_dir()).collect();
+    assert_eq!(archives.len(), 1);
+    assert_eq!(fs::read(archives[0].join("out/scf.epmatwp")).unwrap(), b"broken");
+    assert!(!c.cfg.work_dir.join("fine").exists());
+    assert!(!c.cfg.budget.ledger.exists());
+}
+
+#[test]
+fn quality_failure_reuses_native_output_and_still_blocks_fine() {
+    let c = case("quality");
+    assert!(run(&c).is_err());
+    let log = calls(&c);
+    let before = store::Identity::capture(&c.cfg.work_dir.join("quality-report.json")).unwrap();
+    // 改变进程故障开关不能诱发重新求解以绕过质量门。
+    fs::write(c.root.join("epw-failure"), "").unwrap();
+    assert!(retry_coarse(&c).is_err());
+    before.verify().unwrap();
+    assert_eq!(calls(&c), log);
+    assert!(!c.cfg.work_dir.join("native-attempts/history").exists());
+    assert!(!c.cfg.work_dir.join("fine").exists());
+}
+
+#[test]
+fn second_smearing_retry_keeps_first_and_coarse_unchanged() {
+    let c = case("fine-second-exit");
+    assert!(run(&c).is_err());
+    assert_eq!(calls(&c).lines().count(), 3);
+    let coarse = store::Identity::capture(&c.cfg.work_dir.join("wannier/manifest.json")).unwrap();
+    let first = store::Identity::capture(&c.cfg.work_dir.join("fine/smearing-0001/scf.a2f")).unwrap();
+    let checkpoint = store::Identity::capture(&c.cfg.work_dir.join("native-attempts/fine-smearing-0001.json")).unwrap();
+    fs::write(c.root.join("epw-failure"), "").unwrap();
+    let m = retry_fine(&c).unwrap();
+    coarse.verify().unwrap(); first.verify().unwrap(); checkpoint.verify().unwrap();
+    assert_eq!(calls(&c).lines().count(), 4);
+    assert_eq!(calls(&c).matches("smearing-0001").count(), 1);
+    epwflow::superconductivity::source::bind(&c.cfg.work_dir, &c.cfg, &m).unwrap().verify(config::Mode::Aniso).unwrap();
+    let archives: Vec<_> = fs::read_dir(c.cfg.work_dir.join("native-attempts/history")).unwrap().map(|e| e.unwrap().path()).filter(|p| p.is_dir()).collect();
+    assert_eq!(archives.len(), 1);
+    assert!(fs::read_to_string(archives[0].join("epw.out")).unwrap().contains("fine failed evidence"));
+}
+
+#[test]
+fn completed_native_attempt_recovers_publication_interruption_without_execution() {
+    let c = case("");
+    run(&c).unwrap();
+    let log = calls(&c);
+    // 模拟已写完原生成功输出，但尚未写检查点与质量发布完成的崩溃窗口。
+    fs::remove_file(c.cfg.work_dir.join("wannier/manifest.json")).unwrap();
+    fs::remove_file(c.cfg.work_dir.join("interpolation/manifest.json")).unwrap();
+    fs::remove_file(c.cfg.work_dir.join("quality-binding.json")).unwrap();
+    let path = c.cfg.work_dir.join("native-attempts/coarse.json");
+    let mut checkpoint: serde_json::Value = store::read(&path).unwrap();
+    checkpoint["state"] = "running".into(); checkpoint["outputs"] = serde_json::json!([]);
+    store::write(&path, &checkpoint).unwrap();
+    retry_coarse(&c).unwrap();
+    retry_fine(&c).unwrap();
+    assert_eq!(calls(&c), log);
+    assert!(!c.cfg.work_dir.join("native-attempts/history").exists());
+}
+
+#[test]
+fn retry_rejects_tampered_complete_or_running_inputs_and_unknown_directories() {
+    for kind in ["input", "output", "running-input", "request", "unknown", "quality", "quality-link", "empty-receipt"] {
+        let mut c = case(if kind == "running-input" { "coarse-truncated" } else { "" });
+        if kind == "unknown" {
+            fs::create_dir(c.cfg.work_dir.join("coarse")).unwrap();
+            fs::write(c.cfg.work_dir.join("coarse/keep"), "unknown").unwrap();
+            assert!(retry_coarse(&c).is_err());
+            assert!(!c.root.join("epw-calls").exists());
+            assert_eq!(fs::read_to_string(c.cfg.work_dir.join("coarse/keep")).unwrap(), "unknown");
+            continue;
+        }
+        let _ = run(&c);
+        let log = calls(&c);
+        match kind {
+            "input" | "running-input" => fs::write(c.cfg.work_dir.join("coarse/epw_coarse.in"), "changed").unwrap(),
+            "output" => fs::write(c.cfg.work_dir.join("coarse/band.eig"), "changed").unwrap(),
+            "request" => c.cfg.wannier.outer_window_ev = Some([1.4, 5.]),
+            "quality" => fs::write(c.cfg.work_dir.join("quality-report.json"), "changed").unwrap(),
+            "quality-link" => {
+                let path = c.cfg.work_dir.join("quality-report.json");
+                fs::rename(&path, c.root.join("report.json")).unwrap();
+                std::os::unix::fs::symlink(c.root.join("report.json"), path).unwrap();
+            },
+            "empty-receipt" => {
+                let path = c.cfg.work_dir.join("native-attempts/coarse.json");
+                let mut receipt: serde_json::Value = store::read(&path).unwrap();
+                receipt["inputs"] = serde_json::json!([]);
+                store::write(&path, &receipt).unwrap();
+            },
+            _ => unreachable!(),
+        }
+        assert!(retry_coarse(&c).is_err(), "{kind}");
+        assert_eq!(calls(&c), log, "{kind}");
+        assert!(!c.cfg.work_dir.join("native-attempts/history").exists());
+    }
+}

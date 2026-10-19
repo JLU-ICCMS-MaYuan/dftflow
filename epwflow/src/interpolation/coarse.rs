@@ -83,6 +83,12 @@ pub fn run_coarse(
     launcher: &[String],
     backend: Backend,
 ) -> Result<CoarseResult> {
+    prepare_coarse(epw_cfg, work)?;
+    run_epw(epw_cfg, &work.join("coarse"), "epw_coarse.in", launcher, backend)?;
+    collect_coarse(work, epw_cfg)
+}
+
+pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
     let dir = work.join("coarse");
     ensure!(
         dir.join("out").is_dir() && dir.join("save").is_dir(),
@@ -102,8 +108,7 @@ pub fn run_coarse(
         dir.join("epw_coarse.in"),
         epw_cfg.epw_coarse_input("./out")?,
     )?;
-    run_epw(epw_cfg, &dir, "epw_coarse.in", launcher, backend)?;
-    collect_coarse(work, epw_cfg)
+    Ok(())
 }
 
 /// 隔离重读已验证的原生粗网格；只生成质量点输出，保留原 Wannier 结果。

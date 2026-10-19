@@ -130,3 +130,20 @@ F2 保存数据交接、EPW 内置 Wannier、原生粗网格重启、先参考�
 ## 原生粗重读／细网格真实验证
 
 生产函数完成原 LDA 规范的六 k／五 q 重读和 40³/20³ EPC；33 份细网格产物、24 个矩阵分片与 500 点谱通过修复后的只读重验。λ_integral=0.6853853、λ_sum=0.6853511。保留两次启动／交接失败及最后归集断言失败，未把 Slurm FAILED 改为成功；真实 EPC 两次原生进程均为 0。质量、预算、哈希、故障和限制见 [0015 细网格验收](../0015-epwflow-mgb2-real-validation/native-fine-validation.md)。没有据此通过独立手工对照、公开历史导入／恢复、原生 Tc 或六组合。
+
+
+## 三程序阶段内恢复验收
+
+T054 的代码恢复子集已完成。原生粗网格与逐展宽细网格在准备前保存固定请求，物化后记录输入身份，成功后记录原生角色和退出码身份。显式恢复保留失败目录和历史检查点，先登记归档再移动；归档中断可继续，缺失或冲突拒绝。完整原生输出可以直接重验归集；成功展宽及原粗清单保持不变。未知目录、变化参数／来源、输入／输出篡改、空身份及质量发布链接拒绝。质量失败不重新执行 EPW，不选新参数，仍阻断细网格。
+
+质量三文件发布中断只补齐完全一致的缺项。F1 显式恢复可重验已发布清单后补登记完成，不重复执行该阶段；必须先恢复实际失败的程序，再启动下一阶段。入口进程用例模拟 QE 清单已发布、完成登记未写入，实际验证恢复前后 SCF／PH 调用次数不变。
+
+定向命令：`bash scripts/build-native.sh test -p epwflow --lib --test native_interpolation --test real_contracts --locked --offline`，**40 通过、0 失败、1 项真实环境暂挂**。新增六项用例包含归档中断、失败粗网格、质量失败、第二展宽失败、发布中断和篡改／未知现场；重复运行不累加。日志在指定 local_run/005-three-stage-recovery。首次完整回归中的新增发布中断用例使用了错误的下一阶段恢复入口，前置门正确拒绝；改为先恢复原阶段后，上述定向用例全部通过。初次日志保留，不掩盖失败。
+
+本轮只用独立进程替身，无新增真实科学作业或共享预算消费。T051 的历史导入、独立参考与四类图自动生成、组合选窗外部兼容、真实 iso／aniso Tc 和六组合仍未完成；不据 T054 勾选关闭 Feature。
+
+
+指定目录内临时 fixture 的一次完整并发回归还出现两项既有 QE 用例失败：qe_data_index_mode_full_pipeline／reuse_import_from_run 的 Python 替身在 Path.cwd() 得到 FileNotFoundError（ph_init 退出 1）。此前同组 17 项曾在相同位置通过；失败现场和 regression-final.log 保留。随后系统临时目录的串行声子组 17 项全部通过。尚未确认目录异常的根因，不将其归因于数值算法，也不通过修改科学输入隐藏；完整串行结果另附。
+
+
+最终完整命令：`env -u TMPDIR bash scripts/build-native.sh test -p epwflow -p qeflow -p qf-input -p qf-config -p qf-phonon --locked --offline -- --test-threads=1`，**179 通过、0 失败、6 项真实环境暂挂**。这是一次完整串行运行的统计，不将定向复测重复累加；系统临时目录用于临时 fixture，指定 local_run/005 保存持久日志与 validation.json。并发目录异常仍保留待核查，不据串行通过宣称其根因已修复。10 份 Markdown、111 个本地链接、7 个 Bash 代码块及测试替身语法检查通过，git diff --check 通过。

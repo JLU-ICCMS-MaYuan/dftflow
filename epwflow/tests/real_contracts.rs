@@ -312,17 +312,33 @@ fn b01_boundary_executes_qe_once_and_blocks_missing_interpolation_evidence() {
         before,
         fs::read_to_string(c.root.join("scientific-calls")).unwrap()
     );
+    // 模拟 QE 清单已发布、F1 尚未登记完成时进程中断；显式恢复应重验清单。
+    let mut interrupted = c.workflow();
+    interrupted["completed"].as_object_mut().unwrap().remove("qe-data");
+    interrupted["state"] = "failed".into();
+    fs::write(c.root.join("run/.epwflow/workflow.json"), serde_json::to_vec_pretty(&interrupted).unwrap()).unwrap();
+    fs::remove_file(c.root.join("run/qe-data/manifest.json")).unwrap();
     c.script(
         "sacct",
         "#!/bin/sh\nprintf '123|COMPLETED|3|1|\\n124|RUNNING|0|1|\\n'\n",
     );
     c.script("sbatch", "#!/bin/sh\nprintf '124\\n'\n");
+    let recovered = c.cli(&["resume", "-w", "run", "-s", "--until", "qe-data"]);
+    assert!(recovered.status.success(), "{}", String::from_utf8_lossy(&recovered.stderr));
+    let attempt = c.workflow()["attempt_id"].as_str().unwrap().to_owned();
+    let recovered = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 124);
+    assert!(recovered.status.success(), "{}", String::from_utf8_lossy(&recovered.stderr));
+    assert!(c.workflow()["completed"].get("qe-data").is_some());
+    assert!(c.root.join("run/qe-data/manifest.json").is_file());
+    assert_eq!(before, fs::read_to_string(c.root.join("scientific-calls")).unwrap());
+    c.script("sacct", "#!/bin/sh\nprintf '123|COMPLETED|3|1|\\n124|COMPLETED|1|1|\\n125|RUNNING|0|1|\\n'\n");
+    c.script("sbatch", "#!/bin/sh\nprintf '125\\n'\n");
     assert!(c
         .cli(&["resume", "-w", "run", "-s", "--until", "interpolation"])
         .status
         .success());
     let attempt = c.workflow()["attempt_id"].as_str().unwrap().to_owned();
-    let o = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 124);
+    let o = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 125);
     assert_eq!(
         c.workflow()["calculation_dir"],
         calculation_dir,
@@ -332,6 +348,8 @@ fn b01_boundary_executes_qe_once_and_blocks_missing_interpolation_evidence() {
     assert!(String::from_utf8_lossy(&o.stderr).contains("缺少独立插值质量来源清单"));
     assert_eq!(c.workflow()["state"], "failed");
     assert_eq!(c.workflow()["current_stage"], "wannier");
+    assert!(c.workflow()["completed"].get("qe-data").is_some());
+    assert!(c.root.join("run/qe-data/manifest.json").is_file());
     assert_eq!(
         before,
         fs::read_to_string(c.root.join("scientific-calls")).unwrap(),

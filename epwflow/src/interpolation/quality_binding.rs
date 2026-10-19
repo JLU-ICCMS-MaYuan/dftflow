@@ -146,23 +146,27 @@ impl Frozen {
             sha256: origin.sha256.clone(),
         });
         let path = work.join("quality-reference.json");
-        ensure!(
-            !path.exists() && !work.join("quality-binding.json").exists(),
-            "input_conflict: 已有质量发布现场"
-        );
-        store::write(&path, &sources)?;
+        // 发布中断后只补齐内容完全一致的文件，未知或变化现场一律拒绝。
+        write_matching(&path, &sources)?;
         let report = native_quality::check_current_coarse(&path, &work.join("coarse"))?;
-        store::write(&work.join("quality-report.json"), &report)?;
-        store::write(
+        write_matching(&work.join("quality-report.json"), &report)?;
+        write_matching(
             &work.join("quality-binding.json"),
-            &Binding {
-                schema_version: 1,
-                origin,
-                paired: Identity::capture(&path)?,
-            },
+            &Binding { schema_version: 1, origin, paired: Identity::capture(&path)? },
         )?;
         Ok(report)
     }
+}
+
+fn write_matching(path: &Path, value: &impl Serialize) -> Result<()> {
+    if let Ok(meta) = fs::symlink_metadata(path) {
+        ensure!(meta.is_file() && !meta.file_type().is_symlink(),
+            "input_conflict: 已有质量发布必须是普通文件");
+        let mut bytes = serde_json::to_vec_pretty(value)?;
+        bytes.push(b'\n');
+        ensure!(fs::read(path)? == bytes, "input_conflict: 已有质量发布内容变化 {}", path.display());
+        Ok(())
+    } else { store::write(path, value) }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -26,24 +26,21 @@ pub fn run_fine(
     launcher: &[String],
     backend: Backend,
 ) -> Result<FineResult> {
-    run_fine_at(
-        epw_cfg,
-        work,
-        &work.join("fine"),
-        smearing_mev,
-        launcher,
-        backend,
-    )
+    run_fine_at(epw_cfg, work, &work.join("fine"), smearing_mev, launcher, backend)
 }
 
 pub fn run_fine_at(
-    epw_cfg: &EpwConfig,
-    work: &Path,
-    dir: &Path,
-    smearing_mev: f64,
-    launcher: &[String],
-    backend: Backend,
+    epw_cfg: &EpwConfig, work: &Path, dir: &Path, smearing_mev: f64,
+    launcher: &[String], backend: Backend,
 ) -> Result<FineResult> {
+    prepare_fine_at(epw_cfg, work, dir, smearing_mev)?;
+    super::coarse::run_epw(epw_cfg, dir, "epw_fine.in", launcher, backend)?;
+    collect_native_fine_at(work, dir, epw_cfg)
+}
+
+pub(super) fn prepare_fine_at(
+    epw_cfg: &EpwConfig, work: &Path, dir: &Path, smearing_mev: f64,
+) -> Result<()> {
     let structure = crate::qe_data::qe_config::QeSettings::from_config(epw_cfg.cfg)?;
     let coarse = work.join("coarse");
     super::restart::stage(
@@ -58,8 +55,7 @@ pub fn run_fine_at(
         dir.join("epw_fine.in"),
         epw_cfg.epw_fine_input("./out", smearing_mev)?,
     )?;
-    super::coarse::run_epw(epw_cfg, dir, "epw_fine.in", launcher, backend)?;
-    collect_native_fine_at(work, dir, epw_cfg)
+    Ok(())
 }
 
 /// 归集细网格数据；空文件、截断矩阵、索引错位、非有限数均检出（FR-007/SC-003）。

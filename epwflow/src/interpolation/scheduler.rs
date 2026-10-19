@@ -32,7 +32,7 @@ pub fn run(
     work: &Path,
     f2_work: &Path,
 ) -> Result<InterpolationManifest> {
-    run_coarse_stages(cfg, backend, launcher, work, f2_work, true)?;
+    run_coarse_stages(cfg, backend, launcher, work, f2_work, true, false)?;
     let result = run_fine_registered(cfg, backend, launcher, work)?;
     budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, budget::reconcile)?;
     Ok(result)
@@ -53,11 +53,31 @@ pub fn run_registered(
 pub fn run_coarse_registered(
     cfg: &config::Config, backend: Backend, launcher: &[String], work: &Path, f2_work: &Path,
 ) -> Result<InterpolationManifest> {
-    run_coarse_stages(cfg, backend, launcher, work, f2_work, false)
+    run_coarse_with_retry(cfg, backend, launcher, work, f2_work, false)
+}
+
+/// 显式恢复可重验完整原生输出，或归档失败尝试后按固定参数重试一次。
+pub fn run_coarse_with_retry(
+    cfg: &config::Config, backend: Backend, launcher: &[String], work: &Path,
+    f2_work: &Path, retry: bool,
+) -> Result<InterpolationManifest> {
+    run_coarse_stages(cfg, backend, launcher, work, f2_work, false, retry)
+}
+
+fn attempt_digest(cfg: &config::Config, launcher: &[String], sources: &[store::Identity], extra: &str) -> Result<String> {
+    Ok(store::hash_bytes(&serde_json::to_vec(&(cfg, launcher,
+        store::Identity::capture(&cfg.programs.epw.path)?, sources, extra))?))
+}
+
+fn artifact_evidence(work: &Path, artifacts: &[super::manifest::Artifact]) -> Result<Vec<store::Identity>> {
+    artifacts.iter().map(|a| {
+        let path = crate::superconductivity::source::artifact_path(work, a)?;
+        store::Identity::capture(&path)
+    }).collect()
 }
 
 fn run_coarse_stages(
-    cfg: &config::Config, backend: Backend, launcher: &[String], work: &Path, f2_work: &Path, charge: bool,
+    cfg: &config::Config, backend: Backend, launcher: &[String], work: &Path, f2_work: &Path, charge: bool, retry: bool,
 ) -> Result<InterpolationManifest> {
     let f2_manifest_path = f2_work.join("qe-data").join("manifest.json");
     let binding = adapter::bind_f2(&f2_manifest_path, cfg)?;
@@ -72,8 +92,15 @@ fn run_coarse_stages(
     if charge { charge_budget(cfg, "f3")?; }
     // EPW 在一次粗网格执行中完成内置 Wannier 化，不另启动不完整的独立链。
     let f2 = crate::qe_data::manifest::QeManifest::load(&f2_manifest_path)?;
-    coarse::stage_f2(&f2, work)?;
-    let mut coarse_res = coarse::run_coarse(&epw_cfg, work, launcher, backend)?;
+    let digest = attempt_digest(cfg, launcher, &[
+        store::Identity::capture(&f2_manifest_path)?, frozen.source.clone(),
+    ], "coarse")?;
+    let mut coarse_res = super::attempt::run(work, "coarse", &work.join("coarse"), digest, retry,
+        || { coarse::stage_f2(&f2, work)?; coarse::prepare_coarse(&epw_cfg, work) },
+        || coarse::run_epw(&epw_cfg, &work.join("coarse"), "epw_coarse.in", launcher, backend),
+        || coarse::collect_coarse(work, &epw_cfg),
+        |r| artifact_evidence(work, &r.artifacts))?;
+    f2.verify()?;
     let wan = wannier::check_native(
         &work.join("coarse").join(format!("{}.wout", cfg.qe.prefix)),
         cfg.wannier.num_wann as usize,
@@ -184,6 +211,12 @@ pub fn run_fine_registered(
     launcher: &[String],
     work: &Path,
 ) -> Result<InterpolationManifest> {
+    run_fine_with_retry(cfg, backend, launcher, work, false)
+}
+
+pub fn run_fine_with_retry(
+    cfg: &config::Config, backend: Backend, launcher: &[String], work: &Path, retry: bool,
+) -> Result<InterpolationManifest> {
     let identity = store::Identity::capture(&work.join("wannier/manifest.json"))?;
     let mut manifest = verify_coarse(cfg, work)?;
     ensure!(!work.join("interpolation/manifest.json").exists(),
@@ -214,7 +247,14 @@ pub fn run_fine_registered(
             );
         }
         let dir = work.join("fine").join(format!("smearing-{:04}", index + 1));
-        let fr = fine::run_fine_at(&epw_cfg, work, &dir, *smearing_mev, launcher, backend)?;
+        let digest = attempt_digest(cfg, launcher, &[
+            identity.clone(), store::Identity::capture(&work.join("qe-data/manifest.json"))?,
+        ], &format!("fine-{smearing_mev:.16e}"))?;
+        let fr = super::attempt::run(work, &format!("fine-smearing-{:04}", index + 1), &dir, digest, retry,
+            || fine::prepare_fine_at(&epw_cfg, work, &dir, *smearing_mev),
+            || coarse::run_epw(&epw_cfg, &dir, "epw_fine.in", launcher, backend),
+            || fine::collect_native_fine_at(work, &dir, &epw_cfg),
+            |r| artifact_evidence(work, &r.artifacts))?;
         let raw = native::NativeSpectrum::read(
             &dir.join(format!("{}.a2f", cfg.qe.prefix)),
             cfg.interpolation.spectral_points as usize,

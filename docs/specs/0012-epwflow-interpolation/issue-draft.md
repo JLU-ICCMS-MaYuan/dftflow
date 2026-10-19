@@ -241,3 +241,7 @@ F2 保存数据交接、EPW 内置 Wannier、原生粗网格重启、先参考�
 ## 三程序阶段边界更新
 
 按已确认的[三程序契约](../0008-epwflow-foundation/three-programs.md)，Wannier／粗网格与质量独立发布 wannier/manifest.json；细网格 EPC／α²F 在第三个程序执行，并另行发布 interpolation/manifest.json。阶段分离和来源不变进程回归已通过，见[0008 验收](../0008-epwflow-foundation/acceptance.md)；自动参考／四类比较图及真实完整科学验收仍未完成。
+
+## 三程序的阶段内恢复
+
+沿用 FR-010 与 T051，将当前粗／细阶段中途失败恢复拆为 T054：每次显式恢复最多重试原参数的一次失败尝试，保留旧现场，复用逐展宽成功证据与已完成原生输出；未知目录、固定来源和完成证据变化拒绝。Documentation Impact：同步模块手册、Overview、阶段恢复契约与独立进程验收；完整科学验收仍未完成。
