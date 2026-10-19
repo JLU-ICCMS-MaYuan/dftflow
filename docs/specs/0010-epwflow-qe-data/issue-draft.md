@@ -2,7 +2,7 @@
 
 **类型**：`type:feature`。
 
-**状态**：本地 Issue 与详细 Spec 已确认；正式文档已落档，待共同文档质量门；业务实现与验收尚未开始。
+**状态**：epw_phonon 已直接复用 qeflow nosplit，保留数据、完整 NSCF 与严格交接通过进程回归；真实完整链仍待验收。
 
 **父级**：[Epic 0007](../0007-epwflow-superconductivity/issue-draft.md) 的 F2；**前置**：[0008 执行基础](../0008-epwflow-foundation/issue-draft.md)；**来源**：[总体规划](../../plan/epwflow-superconductivity.md)。0010 为本地需求编号，0009 已用于声子绘图；线上 Issue 仍由用户管理。
 

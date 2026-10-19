@@ -237,18 +237,22 @@ fn generated_path(work: &Path, until: Boundary) -> PathBuf {
 
 /// 生成阶段脚本只固定输入，不查询调度器、不预留预算、不运行科学程序。
 pub fn generate_phase(config: &Path, until: Boundary) -> Result<PathBuf> {
+    generate_phase_for(config, until, &std::env::current_exe()?)
+}
+
+pub(super) fn generate_phase_for(config: &Path, until: Boundary, executable_path: &Path) -> Result<PathBuf> {
     let cfg = Config::load(config)?;
     let b = snapshot::prepare(&cfg, config)?;
     let target = generated_path(&b.work_dir, until);
     let _lock = store::Lock::acquire(&target)?;
     if target.exists() {
         let g: Generated = store::read(&target)?;
-        ensure!(g.schema_version == 1 && g.until == until && g.executable.path == std::env::current_exe()?, "input_conflict: 已生成脚本身份不同");
+        ensure!(g.schema_version == 1 && g.until == until && g.executable.path == executable_path, "input_conflict: 已生成脚本身份不同");
         g.executable.verify()?;
         g.script.verify()?;
         return Ok(g.script.path);
     }
-    let executable = store::Identity::capture(&std::env::current_exe()?)?;
+    let executable = store::Identity::capture(executable_path)?;
     let path = target.with_extension("sh");
     ensure!(!path.exists(), "input_conflict: 已有未登记脚本，保留现场");
     let r = &cfg.resources;

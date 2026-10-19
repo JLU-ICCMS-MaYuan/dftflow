@@ -41,7 +41,7 @@ enum BudgetOperation {
 
 #[derive(Parser)]
 #[command(about = "生成、提交或恢复本阶段；默认读取 inputepw.toml 并生成脚本")]
-#[command(group(ArgGroup::new("operation").args(["check", "prepare_only", "status", "probe", "import", "collect", "plot", "results_check", "export_comparison", "budget", "execute_attempt", "run_script"])))]
+#[command(group(ArgGroup::new("operation").args(["check", "prepare_only", "status", "probe", "import", "collect", "plot", "results_check", "export_comparison", "budget", "execute_attempt", "run_script", "all", "submit_chain"])))]
 struct Options {
     #[arg(short = 'c', long, default_value = "inputepw.toml")]
     config: PathBuf,
@@ -107,6 +107,11 @@ struct Options {
     execute_attempt: Option<String>,
     #[arg(long, hide = true)]
     run_script: bool,
+    /// 仅 epw_phonon：生成三个阶段脚本和总提交脚本，不提交。
+    #[arg(long, conflicts_with_all = ["submit", "run", "resume"])]
+    all: bool,
+    #[arg(long, hide = true, conflicts_with_all = ["submit", "run", "resume"])]
+    submit_chain: bool,
 }
 
 pub fn run(phase: Phase) {
@@ -122,6 +127,13 @@ pub fn run(phase: Phase) {
 fn dispatch(phase: Phase, o: Options) -> Result<()> {
     let work = || o.work.clone().context("required: 此操作需要 -w/--work");
     let results = || o.results.clone().context("required: 此操作需要 --results");
+    if o.all || o.submit_chain {
+        ensure!(phase == Phase::Phonon, "input_conflict: 总脚本仅由 epw_phonon 管理");
+        if o.submit_chain { return super::chain::submit(&work()?); }
+        let path = super::chain::generate(&o.config)?;
+        println!("script: {}\nworkflow_complete: false", path.display());
+        return Ok(());
+    }
     let maintenance = o.check
         || o.prepare_only
         || o.status

@@ -19,18 +19,19 @@ epw_phonon 直接调用 qeflow 的 nosplit Rust 库（[说明](../qeflow/qe_phon
 | `epw_phonon` | 直接复用 qeflow nosplit 完整声子链，保留 EPW 数据；独立 SCF 快照、完整均匀 NSCF 和严格交付 |
 | `epw_wannier` | 第二阶段边界：原生 Wannier／粗网格与质量检查；不执行细网格或 α²F |
 | `epw_superconductivity` | 第三阶段边界：细网格 EPC／谱、原生两模式求解与结果包；要求前两阶段完成证据 |
+| `epw_phonon --all` | 只生成三份阶段脚本及总提交脚本；运行后用 afterok 串联，持久化逐次回执，未知或部分提交不自动重试 |
 | 默认调用 | 固定输入，生成 `.epwflow/generated/` 下的阶段脚本；可手工 sbatch，运行时验证脚本及程序身份、前置和预算 |
 | `--check [-w W] [--json]` | 无 -w 时检查配置／文件，运行版本为 unverified；有 -w 时核查本阶段数据或原生质量来源 |
 | `--prepare-only` | 只固定输入和身份，不执行或提交 |
 | `-s`／`-r` | 提交一个有界分配，或在已登记分配中同步执行；回执不能替代数值完成 |
 | `--status -w W [--refresh] [--json]` | 查询记录，refresh 读取 allocation 并结算；未知预算不退款 |
-| `--resume -w W -s/-r` | 固定快照恢复，重验完成证据；失败现场保留，活动或未知任务不重提 |
+| `--resume -w W -s/-r` | 固定快照恢复，重验完成证据；失败现场保留，活动或未知任务不重提；粗／细阶段中途失败恢复仍未收敛 |
 | `--import M` | 核查、隔离并登记本阶段既有清单；不自动识别任意旧声子目录 |
 | `--export-comparison S --output D` | 仅 epw_wannier，从既有带哈希来源导出原生比较数据 |
 | `--collect -w W` | 后两程序收集已有比较／超导数据；不生成缺失科学输出 |
 | `--plot --results R` | 四类比较图／总览或原生超导图，默认 PNG／SVG／PDF；可以移动结果包后独立重绘 |
 | `--results-check --results R [--json]` | 核查结果表、来源及图哈希，操作成功与科学完整性分开 |
-| `--budget status/reserve/attach/reconcile` | 共用原账本与 8 节点小时／100 GiB 上限；不按阶段重置 |
+| `--budget status/reserve/attach/reconcile` | 兼容原验收账本；只读不改写，成功写入保留完整历史、消费和存储基线，未结算或不一致拒绝。共用原账本与 8 节点小时／100 GiB 上限；不按阶段重置 |
 | `--probe -s/-r` | 仍明确报未接入／分配要求，不把帮助输出当作版本探测证据 |
 
 执行数据位于 `W/calculations/<尝试号>/`，恢复沿用原科学目录；共享工作流记录每个阶段的清单与产物哈希。内部 `.epwflow/slurm/` 脚本属于登记尝试，不能手工重提；可手工提交的是 `generated/` 下的用户脚本。安装与打包脚本已迁移到八个程序、54 个入口；默认安装未切换。

@@ -167,3 +167,49 @@ fn generated_script_is_authenticated_and_registers_one_allocation() {
     let after: serde_json::Value = store::read(&c.root.join("campaign/ledger.json")).unwrap();
     assert_eq!(l, after);
 }
+
+#[test]
+fn all_generation_submits_afterok_once_and_authenticates_every_stage() {
+    let c = Case::new();
+    success(c.run(0, &["--all"]));
+    success(c.run(0, &["--all"]));
+    assert!(!c.root.join("calls").exists());
+    assert!(!c.root.join("campaign/ledger.json").exists());
+    let dir = c.root.join("run/.epwflow/generated");
+    assert!(Command::new("bash").arg("-n").arg(dir.join("submit-all.sh")).status().unwrap().success());
+    c.script("sbatch", &format!("#!/bin/bash\nset -eu\nprintf '%s\\n' \"$*\" >> '{}'\nn=$(wc -l < '{}')\nprintf '%s\\n' \"$((100+n))\"\n", c.root.join("calls").display(), c.root.join("calls").display()));
+    success(c.run(0, &["--submit-chain", "-w", "run"]));
+    success(c.run(0, &["--submit-chain", "-w", "run"]));
+    let calls = fs::read_to_string(c.root.join("calls")).unwrap();
+    let rows: Vec<_> = calls.lines().collect();
+    assert_eq!(rows.len(), 3);
+    assert!(!rows[0].contains("--dependency"));
+    assert!(rows[1].contains("--dependency=afterok:101"));
+    assert!(rows[2].contains("--dependency=afterok:102"));
+    assert!(rows.iter().all(|s| s.contains("--kill-on-invalid-dep=yes")));
+    let receipt: serde_json::Value = store::read(&dir.join("chain-submission.json")).unwrap();
+    assert_eq!(receipt["state"], "submitted");
+    assert_eq!(receipt["jobs"].as_array().unwrap().len(), 3);
+    assert!(!c.root.join("campaign/ledger.json").exists());
+    fs::write(dir.join("all.sh"), "#!/bin/bash\nexit 0\n").unwrap();
+    assert!(!c.run(0, &["--submit-chain", "-w", "run"]).status.success());
+    assert_eq!(fs::read_to_string(c.root.join("calls")).unwrap(), calls);
+    assert!(!c.run(1, &["--all"]).status.success());
+}
+
+#[test]
+fn partial_chain_receipt_is_persistent_and_never_retried() {
+    let c = Case::new();
+    success(c.run(0, &["--all"]));
+    c.script("sbatch", &format!("#!/bin/bash\nset -eu\nprintf '%s\\n' \"$*\" >> '{}'\nn=$(wc -l < '{}')\nif [ \"$n\" = 1 ]; then printf '101\\n'; else printf 'unrecognized receipt\\n'; fi\n", c.root.join("calls").display(), c.root.join("calls").display()));
+    for _ in 0..2 {
+        assert!(!c.run(0, &["--submit-chain", "-w", "run"]).status.success());
+    }
+    assert_eq!(fs::read_to_string(c.root.join("calls")).unwrap().lines().count(), 2);
+    let receipt: serde_json::Value = store::read(&c.root.join("run/.epwflow/generated/chain-submission.json")).unwrap();
+    assert_eq!(receipt["jobs"].as_array().unwrap().len(), 1);
+    assert_eq!(receipt["submitting_phase"], 2);
+    assert_eq!(receipt["state"], "submitting");
+    assert_eq!(receipt["responses"][1]["stdout"], "unrecognized receipt\n");
+    assert_eq!(receipt["responses"][1]["exit_code"], 0);
+}

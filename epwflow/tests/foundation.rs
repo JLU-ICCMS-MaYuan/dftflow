@@ -29,6 +29,52 @@ impl Case {
 impl Drop for Case {fn drop(&mut self){ fs::remove_dir_all(&self.root).unwrap(); }}
 fn fail(o:Output, expected:&str) {assert!(!o.status.success());assert!(String::from_utf8_lossy(&o.stderr).contains(expected),"expected {expected}: {}",String::from_utf8_lossy(&o.stderr));}
 
+fn legacy_budget() -> serde_json::Value {
+    serde_json::json!({"campaign":"epic-0007", "limits":{"node_seconds":28800,"concurrent_jobs":2,"storage_bytes":107374182400u64},
+        "historical_policy":"保守计入原预算", "historical_jobs":[{"job_id":"101","node_seconds":100}],
+        "attempts":[{"job_id":102,"node_seconds":300,"reserved_node_seconds":0,"state":"FAILED","extra_evidence":"保留"}],
+        "spent_node_seconds":400,"storage_actual_bytes":1073741824u64})
+}
+
+#[test]
+fn legacy_budget_read_is_immutable_and_first_write_preserves_spending_and_evidence() {
+    let c=Case::new(); let source=legacy_budget();
+    c.put("legacy.json", &serde_json::to_string_pretty(&source).unwrap());
+    let before=fs::read(c.root.join("legacy.json")).unwrap();
+    let s=c.json(&["budget","status","--ledger","legacy.json","--json"]);
+    assert_eq!(s["spent_node_seconds"],400);
+    assert_eq!(s["historical_storage_bytes"],1073741824u64);
+    assert_eq!(fs::read(c.root.join("legacy.json")).unwrap(),before);
+    assert!(!c.root.join("state").exists());
+    assert!(c.run(&["budget","reserve","--ledger","legacy.json","--label","next","--nodes","1","--mpi","1","--wall-seconds","7200","--storage-bytes","1"]).status.success());
+    let ledger:serde_json::Value=epwflow::foundation::store::read(&c.root.join("legacy.json")).unwrap();
+    assert_eq!(ledger["spent_node_seconds"],400);
+    assert_eq!(ledger["legacy_source"],source);
+    assert_eq!(ledger["reservations"][0]["node_seconds"],7200);
+    let token=ledger["reservations"][0]["id"].as_str().unwrap();
+    fail(c.run(&["budget","attach","--ledger","legacy.json","--token",token,"--job","101"]),"历史分配已结算");
+    assert_eq!(epwflow::foundation::store::read::<serde_json::Value>(&c.root.join("legacy.json")).unwrap(),ledger);
+}
+
+#[test]
+fn legacy_budget_rejects_unknown_reservations_totals_and_storage_reset() {
+    for kind in 0..4 {
+        let c=Case::new();let mut source=legacy_budget();
+        match kind {
+            0=>source["attempts"][0]["state"]=serde_json::json!("RUNNING"),
+            1=>source["attempts"][0]["reserved_node_seconds"]=serde_json::json!(7200),
+            2=>source["spent_node_seconds"]=serde_json::json!(399),
+            _=>source["storage_actual_bytes"]=serde_json::json!(107374182400u64),
+        }
+        c.put("legacy.json", &serde_json::to_string(&source).unwrap());
+        let before=fs::read(c.root.join("legacy.json")).unwrap();
+        let out=if kind==3 {c.run(&["budget","reserve","--ledger","legacy.json","--label","overflow","--nodes","1","--mpi","1","--wall-seconds","1","--storage-bytes","1"])}
+            else {c.run(&["budget","status","--ledger","legacy.json","--json"])};
+        assert!(!out.status.success());
+        assert_eq!(fs::read(c.root.join("legacy.json")).unwrap(),before);
+    }
+}
+
 #[test]
 fn readonly_check_all_modes_and_cross_directory() {
     for ph in ["nosplit","index","coords"] {for sc in ["iso","aniso","both"] {

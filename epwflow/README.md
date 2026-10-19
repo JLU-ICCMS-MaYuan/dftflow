@@ -34,6 +34,11 @@ epw_phonon -c inputepw.toml
 epw_wannier -c inputepw.toml
 epw_superconductivity -c inputepw.toml
 
+# 一条命令生成三个阶段脚本和总提交脚本；仍不提交。
+epw_phonon --all -c inputepw.toml
+# 需要执行时运行生成的总脚本：
+bash "$W/.epwflow/generated/submit-all.sh"
+
 # 检查配置，不调用科学程序或 Slurm。
 epw_phonon --check -c inputepw.toml --json
 
@@ -54,14 +59,16 @@ epw_phonon --status -w "$W" --refresh --json
 epw_wannier -c inputepw.toml -s
 epw_superconductivity -c inputepw.toml -s
 
-# 失败后显式恢复；使用固定快照，不重新读取外部输入。
-epw_wannier --resume -w "$W" -s
+# 第一阶段后处理失败后显式恢复；不重新读取外部输入。
+epw_phonon --resume -w "$W" -s
 
 # 在已经登记的 Slurm 分配内执行；登录节点不能直接执行。
 epw_phonon -c inputepw.toml -r
 ```
 
-内部 `.epwflow/slurm/` 脚本属于已提交的尝试，不能手工重提。科学输出保存在 `W/calculations/<尝试号>/`；恢复沿用原科学目录，已通过阶段重新验哈希，失败现场保留。共享声子链后处理失败时可复用已核验的 SCF／PH，固定请求或受控脚本被篡改则拒绝恢复。第二、三阶段缺少前置完成证据时拒绝启动；活动或未知作业不自动重提。
+总提交脚本用 Slurm `afterok` 串联三个作业，并设置依赖无效时取消后续作业。逐次提交回执保存在 `chain-submission.json`；完整重复调用返回既有回执，部分或未知提交禁止自动重提。每个计算节点入口仍分别登记并检查原共享预算；总提交成功不代表科学完成，尚缺的独立参考或选窗兼容会明确阻断。失败后按对应阶段显式恢复；旧的依赖作业不会自动改绑新作业号。
+
+内部 `.epwflow/slurm/` 脚本属于已提交的尝试，不能手工重提。科学输出保存在 `W/calculations/<尝试号>/`；恢复沿用原科学目录，已通过阶段重新验哈希，失败现场保留。共享声子链后处理失败时可复用已核验的 SCF／PH，固定请求或受控脚本被篡改则拒绝恢复。粗／细网格执行中途失败的完整恢复仍未收敛，原生求解器的显式失败恢复另有进程回归；不能据选项存在认为所有阶段都可自动续算。第二、三阶段缺少前置完成证据时拒绝启动；活动或未知作业不自动重提。
 
 ## 数据检查、比较和重绘
 
@@ -86,6 +93,8 @@ epw_phonon --import "$QE_MANIFEST" -c inputepw.toml
 epw_phonon --budget status --ledger "$LEDGER" --json
 epw_phonon --budget reconcile --ledger "$LEDGER"
 ```
+
+原验收账本兼容 campaign／historical_jobs／attempts 格式：只读状态保持原文件，首次成功预算写入才保存新结构，并完整保留历史记录、累计消费及存储基线。未结算预留、未知终态或累计不一致时拒绝转换，不能换账本路径重置预算。
 
 目前四类比较图可从带哈希的既有来源导出并重绘，自动链仍需接入来源生成。图中 QE 实线先画，EPW 虚线后画；高对称点位于横轴下方，实际 Wannier 外窗和冻结窗用不同颜色标注。严格元素／轨道投影继续暂缓，缺失面板明确标注。
 

@@ -1,4 +1,5 @@
 pub mod budget;
+pub mod chain;
 pub mod cli;
 pub mod config;
 pub mod environment;

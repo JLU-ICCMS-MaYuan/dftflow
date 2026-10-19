@@ -48,6 +48,8 @@ pub struct BudgetLedger {
     lanes: u32,
     storage_roots: Vec<PathBuf>,
     revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    legacy_source: Option<serde_json::Value>,
 }
 
 impl BudgetLedger {
@@ -81,11 +83,17 @@ impl BudgetLedger {
             lanes: 0,
             storage_roots: vec![],
             revision: 0,
+            legacy_source: None,
         }
     }
     fn load_or_init(path: &Path, campaign_id: &str) -> Result<Self> {
         if path.exists() {
-            let l: Self = store::read(path)?;
+            let source: serde_json::Value = store::read(path)?;
+            let l: Self = if source.get("schema_version").is_some() {
+                serde_json::from_value(source)?
+            } else {
+                Self::from_legacy(source)?
+            };
             ensure!(
                 l.schema_version == 1,
                 "unsupported_version: 账本 schema_version 必须为 1"
@@ -123,11 +131,60 @@ impl BudgetLedger {
             .iter()
             .map(|r| r.storage_bytes)
             .chain(self.allocations.iter().map(|a| a.storage_bytes))
-            .sum()
+            .sum::<u64>() + self.legacy_storage()
     }
     fn save(&self, path: &Path) -> Result<()> {
         store::write(path, self)
     }
+
+    fn legacy_storage(&self) -> u64 {
+        self.legacy_source.as_ref().and_then(|s| s["storage_actual_bytes"].as_u64()).unwrap_or(0)
+    }
+
+    fn historical_job(&self, job: u64) -> bool {
+        self.legacy_source.as_ref().is_some_and(|s| {
+            ["historical_jobs", "attempts"].iter().flat_map(|key| s[*key].as_array().into_iter().flatten())
+                .any(|r| legacy_job_id(&r["job_id"]).ok() == Some(job))
+        })
+    }
+
+    fn from_legacy(source: serde_json::Value) -> Result<Self> {
+        let campaign = source["campaign"].as_str().context("unsupported_version: 未识别的历史账本")?;
+        let number = |v: &serde_json::Value| -> Result<u64> { v.as_u64().context("budget_denied: 历史账本缺非负整数") };
+        let nodes = number(&source["limits"]["node_seconds"])?;
+        let storage = number(&source["limits"]["storage_bytes"])?;
+        let lanes = number(&source["limits"]["concurrent_jobs"])?;
+        ensure!(nodes > 0 && nodes <= LIMIT_NODE_SECONDS && storage > 0 && storage <= LIMIT_STORAGE_BYTES
+            && lanes > 0 && lanes <= LIMIT_MAX_LANES as u64, "budget_denied: 历史上限不符合原授权");
+        let spent = number(&source["spent_node_seconds"])?;
+        number(&source["storage_actual_bytes"])?;
+        let mut ids = std::collections::BTreeSet::new();
+        let mut total = 0u64;
+        for key in ["historical_jobs", "attempts"] {
+            for item in source[key].as_array().context("budget_denied: 历史任务列表缺失")? {
+                ensure!(ids.insert(legacy_job_id(&item["job_id"])?), "budget_denied: 历史作业重复计账");
+                if key == "attempts" {
+                    let state = item["state"].as_str().and_then(|s| s.split_whitespace().next()).unwrap_or("");
+                    ensure!(matches!(state, "COMPLETED" | "FAILED" | "CANCELLED" | "TIMEOUT" | "NODE_FAIL" | "OUT_OF_MEMORY" | "PREEMPTED" | "BOOT_FAIL" | "DEADLINE" | "REVOKED")
+                        && number(&item["reserved_node_seconds"])? == 0,
+                        "scheduler_unknown: 历史尝试尚未明确结算，禁止转换或清空预留");
+                }
+                total = total.checked_add(number(&item["node_seconds"])?).context("budget_denied: 历史消费溢出")?;
+            }
+        }
+        ensure!(total == spent, "budget_denied: 历史累计消费与逐项记录不一致");
+        let mut ledger = Self::init(campaign);
+        ledger.limits = Limits { node_seconds: nodes, storage_bytes: storage, max_lanes: lanes as u32 };
+        ledger.spent_node_seconds = spent;
+        ledger.legacy_source = Some(source);
+        Ok(ledger)
+    }
+}
+
+fn legacy_job_id(v: &serde_json::Value) -> Result<u64> {
+    let id = match v.as_u64() { Some(n) => n, None => v.as_str().context("budget_denied: 历史作业号缺失")?.parse()? };
+    ensure!(id > 0, "budget_denied: 历史作业号无效");
+    Ok(id)
 }
 
 fn campaigns_registry() -> Result<PathBuf> {
@@ -179,6 +236,7 @@ where
     let ledger_path = normalized.as_path();
     let _lock = store::Lock::acquire(ledger_path)?;
     let mut ledger = BudgetLedger::load_or_init(ledger_path, campaign_id)?;
+    register_campaign(ledger_path, campaign_id)?;
     let r = f(&mut ledger)?;
     ledger.revision += 1;
     ledger.save(ledger_path)?;
@@ -206,7 +264,7 @@ pub fn reserve(
         "budget_denied: 节点时间预留超过授权上限"
     );
     ensure!(
-        ledger.reserved_storage() + storage_bytes <= ledger.limits.storage_bytes,
+        ledger.reserved_storage().checked_add(storage_bytes).is_some_and(|n| n <= ledger.limits.storage_bytes),
         "budget_denied: 存储预留超过授权上限"
     );
     let id = store::token();
@@ -225,6 +283,7 @@ pub fn attach(ledger: &mut BudgetLedger, token: &str, job_id: Option<u64>) -> Re
         job_id.is_some_and(|id| id > 0),
         "budget_denied: 需要有效作业号"
     );
+    ensure!(!job_id.is_some_and(|job| ledger.historical_job(job)), "budget_denied: 历史分配已结算，禁止重新登记");
     ensure!(
         !ledger.allocations.iter().any(|a| a.job_id == job_id),
         "budget_denied: 分配已登记，不可重复计费"
@@ -328,5 +387,6 @@ pub fn status_json(ledger_path: &Path, campaign_id: &str) -> Result<serde_json::
         "reserved_node_seconds": ledger.reserved_node_seconds(),
         "lanes": ledger.lanes,
         "revision": ledger.revision,
+        "historical_storage_bytes": ledger.legacy_storage(),
     }))
 }
