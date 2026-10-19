@@ -16,15 +16,20 @@ prefix=value('prefix');out=Path(value('outdir'));n=int(value('nbndsub'))
 mode=(ROOT/'epw-failure').read_text().strip() if (ROOT/'epw-failure').exists() else ''
 HA=27.211386245988;RY=13.605693122994
 coarse=value('epwread')=='.false.'
-with (ROOT/'epw-calls').open('a') as f:f.write(('coarse' if coarse else 'fine')+' '+str(Path.cwd())+'\n')
+reread=not coarse and 'band_plot = .true.' in text
+with (ROOT/'epw-calls').open('a') as f:f.write(('coarse' if coarse else 'reread' if reread else 'fine')+' '+str(Path.cwd())+'\n')
 def integer(v):return struct.pack('<'+'i'*len(v),*v)
 def real(v):return struct.pack('<'+'d'*len(v),*v)
 def bands(name, points, vals):
     Path(name).write_text(f'&plot nbnd= {len(vals)}, nks= {len(points)} /\n'+''.join(' '.join(map(str,q))+'\n'+' '.join(map(str,vals))+'\n' for q in points))
-if coarse:
-    assert (out/(prefix+'.save')/'charge-density.dat').read_bytes()==b'fixture-density'
-    assert (Path(value('dvscf_dir'))/(prefix+'.dvscf_q2')).is_file(), 'PH 未交付'
-    xml=ET.parse(out/(prefix+'.save')/'data-file-schema.xml').getroot()
+if coarse or reread:
+    if coarse:
+        assert (out/(prefix+'.save')/'charge-density.dat').read_bytes()==b'fixture-density'
+        assert (Path(value('dvscf_dir'))/(prefix+'.dvscf_q2')).is_file(), 'PH 未交付'
+    else:
+        assert not (out/(prefix+'.save')).exists(), '重读不需要 QE 保存树'
+        assert value('wannierize')=='.false.' and 'dis_froz_max' not in text
+    xml=ET.parse((out/(prefix+'.save') if coarse else ROOT/'run/nscf/out'/ (prefix+'.save'))/'data-file-schema.xml').getroot()
     kpoints=[[float(x) for x in node.text.split()] for node in xml.findall('output/band_structure/ks_energies/k_point')]
     bg=[[float(x) for x in xml.find('output/basis_set/reciprocal_lattice/b'+str(i)).text.split()] for i in (1,2,3)]
     def cart(c):return [sum(c[i]*bg[i][j] for i in range(3)) for j in range(3)]
@@ -40,9 +45,14 @@ if coarse:
     wout='Using band disentanglement : T\n<<< Disentanglement convergence criteria satisfied >>>\nCycle: 14\n<<< Wannierisation convergence criteria satisfied >>>\nFinal State\n'
     wout+=''.join(f'WF centre and spread {i} ( 0 0 0 ) 1.25\n' for i in range(1,n+1))
     Path(prefix+'.wout').write_text(wout)
+    kept=list(range(8,17));nk=len(kpoints)
+    Path(prefix+'.ukk').write_text('9 7\n'+'\n'.join(map(str,kept))+'\n'+'(0,0)\n'*(9*n*nk)+'T\n'*(9*nk)+'T\n'*7+'F\n'*9+'0 0 0\n'*n)
+    if mode=='coarse-ukk':Path(prefix+'.ukk').write_text('9 7\n8\n')
     bands('band.eig',kpoints,[HA*.01*i for i in range(8,13)])
     bands('phband.freq',qpoints,[100/8.065543937+(20 if mode=='quality' else 0)]*6)
 else:
+    assert value('nstemp')=='1' and float(value('temps'))==5., '未显式采用固定温度，EPW 会默认 300 K'
+    assert Path(prefix+'.ukk').is_file(), 'epwread 仍须 loadbm 读取原 ukk'
     assert Path('epwdata.fmt').exists() and (out/(prefix+'.epmatwp')).stat().st_size==16*n*n*6
     assert not Path('save').exists(), '细网格应重读粗网格，无需复制响应势'
     assert not Path('selecq.fmt').exists(), '不能复用粗网格验证点选择'
@@ -56,8 +66,10 @@ else:
     (matrix/'freq').write_bytes(freq);(matrix/'npool').write_bytes(integer([1]));(matrix/'ikmap').write_bytes(integer([1]*(2*product(grid))))
     (matrix/'ephmat1').write_bytes(integer([1,2])+real([.001]))
     if mode=='fine-truncated':(matrix/'ephmat1').write_bytes(integer([1,2]))
-    Path('restart.fmt').write_text(str(nq)+'\n0\n0\n1\n1\n0\n')
-    Path('selecq.fmt').write_text(f'{nq}\n{nq}\n'+ ' '.join(map(str,range(1,nq+1)))+'\n')
+    selected=nq-1
+    Path('restart.fmt').write_text(str(selected)+'\n0\n0\n1\n1\n0\n')
+    Path('selecq.fmt').write_text(f'{selected}\n{nq}\n'+ ' '.join(map(str,range(1,selected+1)))+'\n')
+    if mode=='fine-selection':Path('selecq.fmt').write_text(f'{selected}\n{nq+1}\n'+ ' '.join(map(str,range(1,selected+1)))+'\n')
     scale=float(value('degaussq'))
     samples=int(value('nqstep'))
     a2f='w[meV] a2f and integrated 2*a2f/w for 1 smearing values\n'

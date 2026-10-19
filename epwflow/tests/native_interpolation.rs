@@ -232,7 +232,7 @@ fn native_pipeline_pairs_new_coarse_and_isolates_smearings() {
 
 #[test]
 fn native_pipeline_failure_preserves_evidence_and_blocks_downstream() {
-    for failure in ["quality", "coarse-truncated", "fine-exit", "fine-truncated"] {
+    for failure in ["quality", "coarse-truncated", "coarse-ukk", "fine-exit", "fine-truncated", "fine-selection"] {
         let c = case(failure);
         let err = run(&c).unwrap_err().to_string();
         assert!(
@@ -273,6 +273,25 @@ fn reference_changes_and_wrong_points_stop_before_native_calls() {
         assert!(!c.root.join("epw-calls").exists());
         assert!(!c.cfg.work_dir.join("coarse").exists());
     }
+}
+
+#[test]
+fn reread_quality_keeps_source_and_does_not_select_a_new_window() {
+    let c = case("");
+    run(&c).unwrap();
+    let source = c.cfg.work_dir.join("coarse");
+    let before = store::hash_file(&source.join("out/scf.epmatwp")).unwrap();
+    let target = c.root.join("reread");
+    let ep = interpolation::epw_config::EpwConfig::from_config(&c.cfg).unwrap()
+        .with_fermi(qe_data::nscf::parse_xml(&c.cfg.work_dir.join("nscf/out/scf.save/data-file-schema.xml")).unwrap().fermi).unwrap();
+    let r = interpolation::coarse::reread_quality(&ep, &source, &source.join("out"), &target, &[], Backend::Local).unwrap();
+    assert_eq!(r.artifacts.len(), 12);
+    assert!(interpolation::quality_binding::freeze(&c.cfg,
+        qe_data::nscf::parse_xml(&c.cfg.work_dir.join("nscf/out/scf.save/data-file-schema.xml")).unwrap().fermi).unwrap().pair(&target).unwrap().passed);
+    assert_eq!(store::hash_file(&source.join("out/scf.epmatwp")).unwrap(), before);
+    let input = fs::read_to_string(target.join("coarse/epw_coarse.in")).unwrap();
+    for keyword in ["dis_froz", "dis_proj", "proj(", "wdata("] { assert!(!input.contains(keyword)); }
+    assert!(interpolation::coarse::reread_quality(&ep, &source, &source.join("out"), &target, &[], Backend::Local).is_err());
 }
 
 #[test]

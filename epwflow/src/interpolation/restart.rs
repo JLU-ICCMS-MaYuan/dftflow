@@ -20,6 +20,42 @@ fn numbers(text: &str) -> Result<Vec<f64>> {
         .collect()
 }
 
+/// EPW 主程序即使 epwread=true 也先调用 loadbm；必须交付原 .ukk 能带流形。
+fn band_manifold(path: &Path, nwann: usize) -> Result<()> {
+    let text = fs::read_to_string(path)?;
+    let mut rows = text.lines().map(str::trim).filter(|s| !s.is_empty()).peekable();
+    let header = rows.next().context("data_invalid: 缺 ukk 头")?.split_whitespace()
+        .map(str::parse::<usize>).collect::<std::result::Result<Vec<_>,_>>()?;
+    ensure!(header.len() == 2 && header[0] >= nwann && nwann > 0, "data_invalid: ukk 带数错误");
+    let bands = header[0];
+    let kept = (0..bands).map(|_| rows.next().context("data_invalid: ukk 带映射截断")?
+        .parse::<usize>().map_err(Into::into)).collect::<Result<Vec<_>>>()?;
+    ensure!(kept[0] > 0 && kept.windows(2).all(|w| w[0] < w[1]), "data_invalid: ukk 带映射无效");
+    let mut rotations = 0;
+    while rows.peek().is_some_and(|s| s.starts_with('(')) {
+        ensure!(numbers(rows.next().unwrap())?.len() == 2, "data_invalid: ukk 复数布局错误");
+        rotations += 1;
+    }
+    ensure!(rotations > 0 && rotations % (bands * nwann) == 0, "data_invalid: ukk 旋转矩阵截断");
+    let points = rotations / (bands * nwann);
+    let mut flags = vec![];
+    while rows.peek().is_some_and(|s| matches!(*s, "T" | "F")) {
+        flags.push(rows.next().unwrap() == "T");
+    }
+    let window_size = points * bands;
+    ensure!(flags.len() > window_size, "data_invalid: ukk 窗口／排除带截断");
+    let excluded = &flags[window_size..];
+    ensure!(header[1] <= excluded.len()
+        && excluded.iter().enumerate().filter(|(_, x)| !**x).map(|(i, _)| i+1).eq(kept)
+        && flags[..window_size].chunks_exact(bands).all(|w| w.iter().filter(|v| **v).count() >= nwann),
+        "data_invalid: ukk 流形／排除带不相容");
+    for _ in 0..nwann {
+        ensure!(numbers(rows.next().context("data_invalid: ukk 中心截断")?)?.len() == 3, "data_invalid: ukk 中心维度错误");
+    }
+    ensure!(rows.next().is_none(), "data_invalid: ukk 多余记录");
+    Ok(())
+}
+
 pub fn files(
     dir: &Path,
     out: &Path,
@@ -27,6 +63,7 @@ pub fn files(
     nwann: usize,
     modes: usize,
 ) -> Result<Vec<(String, PathBuf)>> {
+    band_manifold(&dir.join(format!("{prefix}.ukk")), nwann)?;
     let text = fs::read_to_string(dir.join("epwdata.fmt"))?;
     let mut lines = text.lines();
     let ef = numbers(lines.next().context("data_invalid: 缺少粗网格 Fermi 能")?)?;
@@ -138,7 +175,8 @@ pub fn files(
             "data_invalid: epmatwp 非有限或截断"
         );
     }
-    let mut result = vec![("coarse_epmatwp".into(), matrix)];
+    let mut result = vec![("coarse_epmatwp".into(), matrix),
+        ("coarse_ukk".into(), dir.join(format!("{prefix}.ukk")))];
     for name in [
         "epwdata.fmt",
         "crystal.fmt",

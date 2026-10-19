@@ -84,3 +84,13 @@
 问题属于主路径实现缺失：生成粗网格之前要求其输出已存在；重复调用不完整的独立 Wannier90；缺少 F2 保存数据和原生重启交接；多展宽覆写。修复采用目标版本 EPW 自带的 Wannier90 库和真实重启布局，继续沿用 F1 同一分配、账本与 F3 质量所有权，不新增科学执行链。
 
 依据为已安装 QE 7.4.1 的 EPW/src/io/io.f90、readin.f90 及已有 LDA 原生文件。epwread=true, epbread=false 跳过 QE read_file，细网格应消费粗网格重启，不重做 NSCF，也不需要 PH 响应副本。原 coarse.ephmat 和 fine_* 简化文本只用于早期 fixture，不能作为原生生产回退。版本与测试限制见 [原生执行验收](../0015-epwflow-mgb2-real-validation/native-interpolation-validation.md)。
+
+
+## 原生重读质量检查的适配依据
+
+`RestartQuality` 对应 D01 已区分的 `epwread` 质量验证点路径；只复制经目标格式核验的六个重启角色和原 `.wout`，重新写出全部固定验证点。与首次 Wannier 路径分开渲染，不能透传任何新选窗参数。调用方仍负责来源物理参数及规范绑定，此函数不把无 F2 清单的历史输出登记为自动阶段完成。
+
+目标 EPW `readin.f90` 在没有 `nstemp/temps` 时设置 300 K。细网格写矩阵元路径现显式采用配置中的首个固定温度；真实验收固定 10 K，保持已有准备输入。测试函数直接调用生产重读、质量和细网格代码，不复制科学计算逻辑。
+
+
+真实 EPW 执行进一步证实 `epw.f90` 在 `wannierize=false` 时仍先调用 `io.f90::loadbm`；因此重启角色必须包含原 `.ukk`。依据 `pw2wan.f90::write_filukk` 核对完整记录，不能仅用原六文件完整性判断可执行。修复与证据见 [细网格验收](../0015-epwflow-mgb2-real-validation/native-fine-validation.md)。

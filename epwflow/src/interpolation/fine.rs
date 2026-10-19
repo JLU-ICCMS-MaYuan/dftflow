@@ -174,11 +174,18 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
         .split_whitespace()
         .map(str::parse::<u64>)
         .collect::<std::result::Result<Vec<_>, _>>()?;
-    let selected = fs::read_to_string(dir.join("selecq.fmt"))?
+    let selection = fs::read_to_string(dir.join("selecq.fmt"))?
         .split_whitespace()
-        .nth(1)
-        .context("data_invalid: 缺少细网格选择数量")?
-        .parse::<u64>()?;
+        .map(str::parse::<u64>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let selected = *selection.first().context("data_invalid: 缺少细网格选择数量")?;
+    let qtotal = cfg.interpolation.q_grid.iter().map(|n| *n as u64).product::<u64>();
+    ensure!(selected > 0 && selected <= qtotal
+        && selection.get(1) == Some(&qtotal)
+        && selection.len() as u64 == selected + 2
+        && selection[2..].iter().all(|n| *n > 0 && *n <= qtotal)
+        && selection[2..].iter().collect::<BTreeSet<_>>().len() as u64 == selected,
+        "data_invalid: 细网格选择数量、完整 q 数或索引不符");
     ensure!(
         restart.len() == 4 + 2 * npool as usize
             && restart[0] == selected
