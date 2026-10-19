@@ -151,3 +151,5 @@ bash scripts/build-native.sh test -p qeflow -p epwflow -p qf-input -p qf-phonon 
 ```
 
 隔离进程测试证明接口、阶段顺序、失败阻断和来源校验；不代表真实 MgB₂ 科学验收通过。当前声子最大／RMS 门为 50／20 cm⁻¹，共享预算仍为 8 节点小时／100 GiB，不按阶段重置。已有 LDA 原生线性化 iso 区间不能代替完整双初值非线性与 aniso Tc 验收。实际科学证据及未完成项见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md) 和 [原生求解源码诊断](../docs/specs/0015-epwflow-mgb2-real-validation/native-solver-source-audit.md)。
+
+保留 EPW 数据时，q2r 的 XML 力常数输出为 `.fc.xml`，两类 matdyn 与自动比较均显式消费该路径；普通文本模式继续用 `.fc`。该衔接修复定向回归分批 47 个不同用例最终通过、1 项真实环境暂挂。PBE 已有 SCF／PH／q2r 原生完成证据，后处理及其余阶段仍按实际清单核验。

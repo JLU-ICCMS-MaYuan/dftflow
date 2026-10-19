@@ -216,3 +216,7 @@ US6 源码与 18 项测试完成，验收见 [acceptance.md](acceptance.md)。�
 ### 追加交付结果
 
 本地实现、43 项定向测试、安装与使用文档更新完成。详细证据见 [验收记录](acceptance.md) 的 2026-10-15 追加验收；线上 Issue 状态及远程链接由用户维护。
+
+## EPW 共享链的 XML 力常数衔接
+
+沿用本项 retain_epw_data 后处理范围修复真实 PBE 作业 1296010 的 matdyn 缺文件：q2r 已成功生成 `.fc.xml`，输入却仍读 `.fc`。T027 覆盖普通／XML 两种模式的声子谱和 DOS、失败恢复与真实证据；Documentation Impact 为本项 Spec／设计／任务／验收、0012 自动比较同类输入、0015 真实记录、模块及 Overview。线上 Issue 仍由用户管理，不改变物理参数或安装。

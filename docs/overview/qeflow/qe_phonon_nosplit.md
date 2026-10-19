@@ -37,3 +37,5 @@ sbatch nosplit_job.sh
 [CLI 定义与分派](../../../qeflow/src/lib.rs)；[薄二进制入口](../../../qeflow/src/bin/qeflow.rs)；[原生 PH 归档](../../../crates/qf-phonon/src/epw.rs)。默认目录的回归与安装验证见 [0006 US4 验收](../../specs/0006-qe-phonon-submit-chain/acceptance.md)。
 
 参见 [三种模式与实际验收边界](phonon-workflow.md)；[0006 验收](../../specs/0006-qe-phonon-submit-chain/acceptance.md)。
+
+retain_epw_data 的 XML 动力学矩阵经 q2r 输出 `.fc.xml`，声子谱与 DOS 的 matdyn 输入都显式读取该文件；普通模式保持文本 `.fc`。实际输入生成、严格原生 IO 替身及完整公开链回归已验证此衔接，真实 PBE 后处理续算仍按 0015 证据核验。

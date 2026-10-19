@@ -141,9 +141,49 @@ fn preparation_and_submission_output_is_concise_and_errors_are_visible() {
         String::from_utf8(submitted.stdout).unwrap(),
         "已提交声子流程作业 12345\n"
     );
-    assert!(fs::read_to_string(w.0.join("calc/submit_phonon_workflow.sh")).unwrap().contains("input-init.toml"));
+    assert!(
+        fs::read_to_string(w.0.join("calc/submit_phonon_workflow.sh"))
+            .unwrap()
+            .contains("input-init.toml")
+    );
     let failed = invoke(&["-s"], true);
     assert!(!failed.status.success());
     assert!(failed.stdout.is_empty());
     assert!(String::from_utf8_lossy(&failed.stderr).contains("allocation-denied"));
+}
+
+#[test]
+fn retained_xml_force_constants_are_consumed_by_both_matdyn_inputs() {
+    let w = setup();
+    fs::write(w.0.join("POSCAR"), structure(4)).unwrap();
+    for retain in [false, true] {
+        // 每种模式用独立工作目录及固定快照。
+        let name = format!("calc-{retain}");
+        let work = w.0.join(&name);
+        fs::create_dir(&work).unwrap();
+        fs::copy(w.0.join("calc/KPATH.in"), work.join("KPATH.in")).unwrap();
+        fs::write(w.0.join("input.toml"), format!(
+            "pp_dir = 'pp'\n[qe]\nlattice_mode = 'cell_parameters'\n[qe_phonon]\nwork_dir = '{name}'\nprefix = 'Si'\nretain_epw_data = {retain}\n"
+        )).unwrap();
+        let out = Command::new(env!("CARGO_BIN_EXE_qeflow"))
+            .args(["qe-phonon-nosplit", "-c", "input.toml"])
+            .current_dir(&w.0)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let q2r = fs::read_to_string(work.join("q2r.in")).unwrap();
+        assert!(q2r.contains("flfrc = 'Si.fc'"), "{q2r}");
+        let expected = if retain { "Si.fc.xml" } else { "Si.fc" };
+        for name in ["matdyn_phband.in", "matdyn_phdos.in"] {
+            let text = fs::read_to_string(work.join(name)).unwrap();
+            assert!(
+                text.contains(&format!("flfrc = '{expected}'")),
+                "{name}: {text}"
+            );
+        }
+    }
 }

@@ -103,3 +103,7 @@
 - PHonon/PH/io_dyn_mat.f90 的 NUMBER_OF_Q 和逐星 DYNAMICAL_MAT_ 允许裁出独立的第一个 q；原频率／本征矢尾部移除，原始文件保留。PHonon/PH/dynmat.f90 使用 asr=no；rigid.f90 的 dyndiag 负责 Hermitian、原子质量和本征值；write_eigenvectors.f90 的 writemodes 输出带符号 cm-1。
 - 不新增 Rust 线性代数实现；QE 原生对角化避免自制质量单位和数值算法分叉。固定物理参数和数值门保持，转换行为需单独测试矩阵列序、Γ 身份、星裁剪和虚频符号。
 - 验证映射：FR-006→共享 QE 输入／直接 PH／ASR 派生→T055→真实进程接口与负向用例；FR-010→共用检查点→逐任务恢复与来源篡改拒绝；FR-014→比较数据→T056→自动四类图及独立重绘。完整真实科学证据仍由 0015 追踪。
+
+## XML 力常数的实际消费路径
+
+真实第一阶段暴露的 q2r→matdyn 同类问题也存在于自动比较：本地 QE do_q2r.f90 在 XML 模式调用 write_dyn_mat_header，io_dyn_mat.f90 明确追加 .xml，而 matdyn.f90 根据输入后缀选读取器。自动比较必须消费 reference.fc.xml；此前协议替身曾替消费者追加后缀，掩盖了输入错误，需同步收紧替身和断言。

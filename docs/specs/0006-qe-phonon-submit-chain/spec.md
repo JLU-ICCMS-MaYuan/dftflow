@@ -296,3 +296,7 @@ FR-009 是后来明确批准的 FR-006 旧生成入口保留规则的例外；�
 ## 2026-10-19：供 EPW 复用的声子保留选项
 
 用户希望第一阶段直接使用现有 qe_phonon 并保留 EPW 所需 save。完整原话与取舍见 [0010 Spec](../0010-epwflow-qe-data/spec.md#原始需求记录)，设计见[三程序契约](../0008-epwflow-foundation/three-programs.md)。沿用 0006 修复 nosplit 本地后处理缺口；可选 `[qe_phonon].retain_epw_data=true` 首版只适配 nosplit，默认不改变已有输入。
+
+## XML 力常数衔接修复
+
+真实 PBE 第一阶段已完成 SCF／PH／q2r，但 matdyn 错误读取 `.fc`。retain_epw_data 的 XML 动力学矩阵使 QE q2r 在 flfrc 基名后追加 `.xml`；声子谱与 DOS 的 matdyn 输入都必须显式读取该实际输出，普通非保留模式继续使用文本 `.fc`。不复制或重命名 XML 冒充文本，不因本修复重做已核验 SCF／PH／q2r。验收覆盖两种格式、两类 matdyn 及公开进程续算；实际科学结果归 0015。

@@ -412,6 +412,7 @@ fn automatic_comparison_delivers_stage_two_figures_from_native_path_and_mesh() {
     assert_eq!(source.mesh.len(),8);
     assert!(work.join("comparison-native/phonon/reference.fc.xml").is_file());
     let matdyn_input=fs::read_to_string(work.join("comparison-native/phonon/matdyn.in")).unwrap();
+    assert!(matdyn_input.contains("flfrc='reference.fc.xml'"));
     assert!(matdyn_input.contains("asr='no'") && matdyn_input.contains("q_in_band_form=.false."));
     let epw = interpolation::native::parse_bands(&fs::read_to_string(&source.epw_bands.path).unwrap()).unwrap();
     assert_eq!(epw.values.len(),14);

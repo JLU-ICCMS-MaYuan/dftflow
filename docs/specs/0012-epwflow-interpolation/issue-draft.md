@@ -254,3 +254,7 @@ F2 保存数据交接、EPW 内置 Wannier、原生粗网格重启、先参考�
 ## 第二阶段自动比较实施
 
 沿用 T056，技术设计与 FR／SC 到验证映射见[自动比较设计](automatic-comparison.md)，进程验证见[专项验收](../0015-epwflow-mgb2-real-validation/automatic-comparison-validation.md)。本地 Issue 继续实施中；真实科学验收与暂缓的投影仍不关闭。文档影响：0012 的设计／任务／验收、0008 三程序说明、0014 图表契约、README 与 Overview 已同步本批代码行为。
+
+## 自动比较 XML 力常数修复
+
+沿用既有自动比较要求修复 matdyn 的 flfrc：与 0006 真实失败同源，读取 q2r 实际输出 reference.fc.xml。协议替身严格遵照输入路径，不代替消费者补后缀。Documentation Impact：研究／任务／验收、0015 真实证据、模块及 Overview；不新增需求或修改科学判据。

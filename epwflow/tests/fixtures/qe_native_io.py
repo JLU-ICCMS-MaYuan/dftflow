@@ -32,13 +32,12 @@ if kind in ('q2r', 'matdyn'):
     if kind == 'q2r':
         assert Path(value('fildyn').replace('.dyn.xml', '.dyn0')).is_file()
         target = Path(value('flfrc'))
-        if Path('matdyn.in').exists(): target=Path(str(target)+'.xml')
+        if value('fildyn').endswith('.xml'): target=Path(str(target)+'.xml')
         target.write_text('fixture force constants')
     else:
         force = Path(value('flfrc'))
-        if Path('matdyn.in').exists(): force=Path(str(force)+'.xml')
         assert force.is_file()
-        prefix = force.stem
+        prefix = force.name.split('.fc')[0]
         if Path('matdyn.in').exists():
             nat = int(ET.parse(next(Path.cwd().glob('*.dyn*.xml'))).getroot().find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)
             assert value('asr') == 'no' and value('amass\\(1\\)') is not None

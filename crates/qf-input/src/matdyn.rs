@@ -15,6 +15,16 @@ use crate::to_qe_value;
 
 const KPATH_TOL: f64 = 1.0e-6;
 
+/// XML 动力学矩阵使 q2r 在 flfrc 基名后追加 .xml；matdyn 须显式读取。
+fn force_constants_file(config: &Config, prefix: &str) -> String {
+    let base = derive_filenames(prefix).flfrc;
+    if config.qe_phonon.retain_epw_data {
+        format!("{base}.xml")
+    } else {
+        base
+    }
+}
+
 /// `run_vaspkit_for_kpath`：KPATH.in 缺失时用 vaspkit 3→303 静默生成。
 pub fn run_vaspkit_for_kpath(work_dir: &str) -> Result<()> {
     let output = Command::new("vaspkit")
@@ -281,7 +291,10 @@ pub fn write_matdyn_phband_input(
         .and_then(|v| v.as_str())
         .unwrap_or("simple");
     s.push_str(&format!("  asr = {}\n", to_qe_value(&json!(zasr))));
-    s.push_str(&format!("  flfrc = {}\n", to_qe_value(&json!(names.flfrc))));
+    s.push_str(&format!(
+        "  flfrc = {}\n",
+        to_qe_value(&json!(force_constants_file(config, prefix)))
+    ));
     s.push_str(&format!("  flfrq = {}\n", to_qe_value(&json!(names.flfrq))));
     s.push_str("  q_in_cryst_coord = .true.\n");
     if band_cfg
@@ -335,7 +348,10 @@ pub fn write_matdyn_phdos_input(
         .and_then(|v| v.as_str())
         .unwrap_or("simple");
     s.push_str(&format!("  asr = {}\n", to_qe_value(&json!(zasr))));
-    s.push_str(&format!("  flfrc = {}\n", to_qe_value(&json!(names.flfrc))));
+    s.push_str(&format!(
+        "  flfrc = {}\n",
+        to_qe_value(&json!(force_constants_file(config, prefix)))
+    ));
     s.push_str(&format!("  fldos = {}\n", to_qe_value(&json!(names.fldos))));
     let dos_val = dos_cfg
         .get("dos")

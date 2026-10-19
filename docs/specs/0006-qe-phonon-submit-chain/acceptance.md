@@ -139,3 +139,9 @@ FR-001～006、SC-001～004 的本地实现、自动测试、真实计算与安�
 - 完整基线运行 `bash scripts/build-native.sh test -p qeflow -p epwflow -p qf-input -p qf-phonon --locked --offline`：156 项通过，6 项真实环境测试继续暂挂。随后补充提交脚本和未适配模式用例，并对最终代码运行 `bash scripts/build-native.sh test -p qeflow -p qf-input -p qf-phonon --locked --offline`：47 项通过（qeflow 32、共享输入 8、声子库 7）。EPW 基线 111 项通过；替身结果不计真实科学验收。
 - 用户指定 local_run 下新建 `002-three-stage-cli`，复制 PBE 结构与路径，生成带保留选项的 qeflow 输入与声子脚本；核查 24 MPI、1 节点、2 小时上限、XML／逐 q 选项与 Bash 语法。只做准备，没有 ph.out 或新科学作业；原配置、结构、KPATH 和赝势哈希保持。
 - 本批没有修改共享预算或默认安装，没有运行旧替代诊断或线上 Issue 操作；继续保持真实 Tc 与整体三程序验收未完成。
+
+## XML 力常数输入修复的隔离验证
+
+真实 PBE 的 SCF／PH／q2r 已成功，matdyn 因 `.fc` 与 `.fc.xml` 不符失败，详见[0015 记录](../0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。共享 matdyn 两类输入现在按 retain_epw_data 选择实际文件名，q2r 的基名保持不变；自动比较同类路径同步修复，测试消费者不再补后缀。
+
+定向验证分批共 47 个不同用例最终通过、0 项未解决失败、1 项既有真实环境暂挂：qeflow 输入 4、工作流契约 26、原生插值 16、完整公开链 1。新增输入测试首轮错误复用快照，改为两套独立工作目录后四项复测通过；原失败日志保留，不重复累计。完整公开链 94.80 秒，33 份图、部分求解与最终交付恢复、移动重绘和篡改拒绝均通过。证据在 local_run/010-public-pbe 的 xml-regression.log、xml-retest.log 与 xml-verified-cases；进程替身不代替真实科学通过，T027 的真实续算部分继续核验。

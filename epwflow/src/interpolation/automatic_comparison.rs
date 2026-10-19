@@ -345,7 +345,7 @@ pub(super) fn run(
                     cfg.qe.prefix
                 ),
             )?;
-            let mut input = String::from("&input\n flfrc='reference.fc'\n flfrq='reference.freq'\n asr='no'\n q_in_cryst_coord=.false.\n q_in_band_form=.false.\n");
+            let mut input = String::from("&input\n flfrc='reference.fc.xml'\n flfrq='reference.freq'\n asr='no'\n q_in_cryst_coord=.false.\n q_in_band_form=.false.\n");
             for (i, el) in qe.cell.elements.iter().enumerate() {
                 let mass =
                     qf_input::species::get_atomic_mass(el, cfg.atomic_masses.get(el).copied());
