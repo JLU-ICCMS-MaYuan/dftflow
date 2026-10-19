@@ -2,7 +2,7 @@ use super::super::foundation::stage::Backend;
 use super::super::foundation::store;
 use super::epw_config::EpwConfig;
 use super::manifest::{Artifact, FineData};
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use std::path::Path;
 
 /// 细网格运行结果（FR-007）。
@@ -18,7 +18,7 @@ pub struct FineResult {
     pub artifacts: Vec<Artifact>,
 }
 
-/// 运行细网格 EPW（带指定展宽），写谱函数与矩阵元（FR-007/008）。
+/// 默认单展宽路径；生产调度使用 run_fine_at 为各展宽隔离目录。
 pub fn run_fine(
     epw_cfg: &EpwConfig,
     work: &Path,
@@ -26,103 +26,45 @@ pub fn run_fine(
     launcher: &[String],
     backend: Backend,
 ) -> Result<FineResult> {
-    let dir = work.join("fine");
-    std::fs::create_dir_all(&dir)?;
-    let outdir = dir.join("out");
-    std::fs::create_dir_all(&outdir)?;
+    run_fine_at(
+        epw_cfg,
+        work,
+        &work.join("fine"),
+        smearing_mev,
+        launcher,
+        backend,
+    )
+}
+
+pub fn run_fine_at(
+    epw_cfg: &EpwConfig,
+    work: &Path,
+    dir: &Path,
+    smearing_mev: f64,
+    launcher: &[String],
+    backend: Backend,
+) -> Result<FineResult> {
+    let structure = crate::qe_data::qe_config::QeSettings::from_config(epw_cfg.cfg)?;
+    let coarse = work.join("coarse");
+    super::restart::stage(
+        &coarse,
+        &coarse.join("out"),
+        &epw_cfg.cfg.qe.prefix,
+        epw_cfg.cfg.wannier.num_wann as usize,
+        structure.cell.positions.len() * 3,
+        dir,
+    )?;
     std::fs::write(
         dir.join("epw_fine.in"),
-        epw_cfg.epw_fine_input(outdir.to_str().unwrap(), smearing_mev)?,
+        epw_cfg.epw_fine_input("./out", smearing_mev)?,
     )?;
-    let prog = &epw_cfg.cfg.programs.epw.path;
-    let mut cmd: Vec<String> = launcher.iter().cloned().collect();
-    cmd.push(prog.to_string_lossy().into_owned());
-    cmd.push("-inp".to_string());
-    cmd.push(dir.join("epw_fine.in").to_string_lossy().into_owned());
-    match backend {
-        Backend::Local => {
-            let report = super::super::foundation::process::run(&cmd, &dir)?;
-            std::fs::copy(&report.stdout_path, dir.join("epw.out"))?;
-            std::fs::copy(&report.stderr_path, dir.join("epw.err"))?;
-            super::native::checked_log(&std::fs::read_to_string(dir.join("epw.out"))?, 0)?;
-        }
-        Backend::Slurm => {
-            bail!("allocation: 细网格须在 F1 已登记分配内执行，不能异步提交后立即归集");
-        }
-    }
-    let out = dir.join("epw.out");
-    ensure!(out.exists(), "data_invalid: 细网格 EPW 未产生 epw.out");
-    collect_fine(work, epw_cfg)
+    super::coarse::run_epw(epw_cfg, dir, "epw_fine.in", launcher, backend)?;
+    collect_native_fine_at(work, dir, epw_cfg)
 }
 
 /// 归集细网格数据；空文件、截断矩阵、索引错位、非有限数均检出（FR-007/SC-003）。
 pub fn collect_fine(work: &Path, epw_cfg: &EpwConfig) -> Result<FineResult> {
-    let dir = work.join("fine");
-    if dir
-        .join("out")
-        .join(format!("{}.ephmat", epw_cfg.cfg.qe.prefix))
-        .exists()
-    {
-        return collect_native_fine(work, epw_cfg);
-    }
-    let freq = dir.join("fine_frequencies.dat");
-    let eig = dir.join("fine_eigenvalues.dat");
-    let kqmap = dir.join("fine_kqmap.dat");
-    let shard = dir.join("fine_ephmat_shard.dat");
-    for p in [&freq, &eig, &kqmap, &shard] {
-        ensure!(
-            p.exists() && std::fs::metadata(p)?.len() > 0,
-            "data_invalid: 细网格角色缺失或空 {}",
-            p.display()
-        );
-    }
-    let frequencies = read_f64_col(&freq)?;
-    let energies = read_f64_col(&eig)?;
-    ensure!(
-        frequencies.iter().all(|x| x.is_finite()),
-        "data_invalid: 细网格频率含非有限数"
-    );
-    let weights = vec![1.0; frequencies.len()];
-    let mut artifacts = Vec::new();
-    for (role, p) in [
-        ("fine_frequencies", freq.clone()),
-        ("fine_eigenvalues", eig.clone()),
-        ("fine_kqmap", kqmap.clone()),
-        ("fine_ephmat_shard", shard.clone()),
-    ] {
-        let size = std::fs::metadata(&p)?.len();
-        let sha = store::hash_file(&p)?;
-        artifacts.push(Artifact {
-            role: role.to_string(),
-            relative_path: p.strip_prefix(work).unwrap_or(&p).to_path_buf(),
-            byte_size: size,
-            sha256: sha,
-            producer_stage: "fine".to_string(),
-            input_digest: String::new(),
-            format_version: "1".to_string(),
-        });
-    }
-    let nfreq = frequencies.len();
-    Ok(FineResult {
-        kpoints: (epw_cfg.cfg.interpolation.k_grid[0]
-            * 2
-            * epw_cfg.cfg.interpolation.k_grid[1]
-            * 2
-            * epw_cfg.cfg.interpolation.k_grid[2]
-            * 2) as usize,
-        qpoints: (epw_cfg.cfg.interpolation.q_grid[0]
-            * 2
-            * epw_cfg.cfg.interpolation.q_grid[1]
-            * 2
-            * epw_cfg.cfg.interpolation.q_grid[2]
-            * 2) as usize,
-        frequencies,
-        energies,
-        weights,
-        kqmap: nfreq,
-        ephmat_shards: 1,
-        artifacts,
-    })
+    collect_native_fine_at(work, &work.join("fine"), epw_cfg)
 }
 
 /// 单一列 f64 文本读取（空格/换行分隔）。
@@ -163,14 +105,13 @@ pub fn into_fine_data(r: &FineResult) -> FineData {
 }
 
 /// 原生角色直接来自 EPW，不把简化文本转写成二进制矩阵元。
-fn collect_native_fine(work: &Path, epw_cfg: &EpwConfig) -> Result<FineResult> {
+pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> Result<FineResult> {
     use super::native_matrices::{self, FORMAT};
     use std::{
         collections::{BTreeMap, BTreeSet},
         fs,
     };
     let cfg = epw_cfg.cfg;
-    let dir = work.join("fine");
     super::native::checked_log(&fs::read_to_string(dir.join("epw.out"))?, 0)?;
     let matrix = dir.join("out").join(format!("{}.ephmat", cfg.qe.prefix));
     let e = native_matrices::eigenvalues(&fs::read(matrix.join("egnv"))?)?;
@@ -227,8 +168,29 @@ fn collect_native_fine(work: &Path, epw_cfg: &EpwConfig) -> Result<FineResult> {
         shards.len() == npool as usize && shards.keys().copied().eq(1..=npool as usize),
         "data_invalid: 缺少原生矩阵分片"
     );
+    // io_supercond.f90 的最终写入计数可检出完整头部后截断的矩阵。
+    let restart_path = dir.join("restart.fmt");
+    let restart = fs::read_to_string(&restart_path)?
+        .split_whitespace()
+        .map(str::parse::<u64>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let selected = fs::read_to_string(dir.join("selecq.fmt"))?
+        .split_whitespace()
+        .nth(1)
+        .context("data_invalid: 缺少细网格选择数量")?
+        .parse::<u64>()?;
+    ensure!(
+        restart.len() == 4 + 2 * npool as usize
+            && restart[0] == selected
+            && selected > 0
+            && restart[1] == 0
+            && restart[2] == 0
+            && restart[3] == npool as u64,
+        "data_invalid: 细网格重启计数未完成或布局不符"
+    );
     let mut covered = 0usize;
     let mut roles = vec![
+        ("fine_restart".into(), restart_path),
         ("fine_egnv".to_string(), matrix.join("egnv")),
         ("fine_freq".into(), matrix.join("freq")),
         ("fine_ikmap".into(), matrix.join("ikmap")),
@@ -252,6 +214,29 @@ fn collect_native_fine(work: &Path, epw_cfg: &EpwConfig) -> Result<FineResult> {
                 && fs::metadata(&path)?.len() % 8 == 0,
             "data_invalid: 矩阵分片头/布局错误"
         );
+        let expected_bytes = restart[3 + id]
+            .checked_mul(8)
+            .and_then(|x| x.checked_add(8))
+            .context("data_invalid: 细矩阵尺寸溢出")?;
+        ensure!(
+            fs::metadata(&path)?.len() == expected_bytes,
+            "data_invalid: 矩阵分片负载与最终写入计数不同"
+        );
+        let mut matrix_file = std::io::BufReader::new(fs::File::open(&path)?);
+        matrix_file.read_exact(&mut header)?;
+        let mut remaining = expected_bytes - 8;
+        let mut buffer = [0u8; 65536];
+        while remaining > 0 {
+            let size = remaining.min(buffer.len() as u64) as usize;
+            matrix_file.read_exact(&mut buffer[..size])?;
+            ensure!(
+                buffer[..size]
+                    .chunks_exact(8)
+                    .all(|b| f64::from_le_bytes(b.try_into().unwrap()).is_finite()),
+                "data_invalid: 细矩阵含非有限数"
+            );
+            remaining -= size as u64;
+        }
         covered += n as usize;
         roles.push((format!("fine_ephmat_{id:04}"), path));
     }

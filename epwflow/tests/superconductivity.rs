@@ -993,7 +993,8 @@ fn native_fine_handoff_binds_binary_roles_band_offset_and_rejects_changes() {
     std::fs::write(matrix.join("ikmap"), ikmap).unwrap();
     std::fs::write(matrix.join("npool"), 1i32.to_le_bytes()).unwrap();
     let shard = [1i32.to_le_bytes(), 2i32.to_le_bytes()].concat();
-    std::fs::write(matrix.join("ephmat1"), shard).unwrap();
+    std::fs::write(matrix.join("ephmat1"), [shard, 0.001f64.to_le_bytes().to_vec()].concat()).unwrap();
+    std::fs::write(dir.join("restart.fmt"), "8\n0\n0\n1\n1\n0\n").unwrap();
     std::fs::write(dir.join("epw_fine.in"), "fixture input").unwrap();
     std::fs::write(dir.join("epw.out"),"Program EPW v.5.9 starts\nibndmin = 2 ebndmin = -1.0 eV\nibndmax = 4 ebndmax = 1.0 eV\nTotal program execution\nEPW : 1s CPU 2s WALL\n").unwrap();
     std::fs::write(dir.join("crystal.fmt"), "fixture crystal").unwrap();

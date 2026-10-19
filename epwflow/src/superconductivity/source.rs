@@ -90,8 +90,8 @@ pub fn bind(work: &Path, cfg: &Config, f3: &InterpolationManifest) -> Result<Nat
     )?;
     let selected = cfg.superconductivity.spectrum_index as usize;
     ensure!(
-        selected + 1 == f3.spectra.len() && spectrum.a2f.len() == 1,
-        "data_invalid: F3 只有最后一次细网格来源；不得混用其他展宽"
+        selected < f3.spectra.len() && spectrum.a2f.len() == 1,
+        "data_invalid: F3 所选谱越界或原生谱列数无效"
     );
     let declared = &f3.spectra[selected];
     ensure!(

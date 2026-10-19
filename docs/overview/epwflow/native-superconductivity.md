@@ -44,10 +44,12 @@ collect／plot 通过发布日志记录新旧文件身份，中断时可显式�
 ## 当前科学门与未完成边界
 
 - 用户最新指定的声子最大／RMS 门为 50／20 cm⁻¹。已有五点、45 模实际重验为 49.448071／8.075133，通过新门；电子六点验证窗内四态最大／RMS 为 0.013028／0.008787 eV。阈值变化不代表插值数值改善或全费米面覆盖充分。
-- F2 已修复实际 prefix、完整快照、NSCF／PH 独立副本和原生 PH 交接，三模式进程及已有 LDA 216 k／28 q 只读核验通过；新 F2 版本 2 交付由 F1／F3 重验。F3 粗网格生成前的质量输出依赖、Wannier 主路径和粗／细重读布局仍有代码阻断；F2 部分失败续算与导入自动复用也尚未收敛。
+- F2 已修复实际 prefix、完整快照、NSCF／PH 独立副本和原生 PH 交接，三模式进程及已有 LDA 216 k／28 q 只读核验通过；新 F2 版本 2 交付由 F1／F3 重验。F3 已接通 F2 数据复制、内置 Wannier、先生成后配对的质量检查及分展宽重启交接，进程回归和既有 LDA 粗重启只读核验通过。现有安装的选窗关键字兼容、历史粗网格受控导入、F2/F3 阶段内恢复和真实细网格仍未收敛。
 - 真实 LAPACK、正常侧及临界附近收敛、固定能隙温度、独立手动参考与三来源六组合均未验收。
 - 本批未运行 9³ PH、新 NSCF、细网格或超导，未覆盖默认安装。真实 MgB₂ 原生 Δ／Z 与 Tc 尚未得到。
 
 源码依据为 superconductivity/engine.rs、verify.rs、manifest.rs 与 delivery/native.rs、native_plot.rs、publication.rs；回归见 superconductivity.rs、real_contracts.rs。设计、验证和待办见 [代码收尾验收](../../specs/0015-epwflow-mgb2-real-validation/native-closeout-validation.md) 与 [0013 任务](../../specs/0013-epwflow-superconductivity-tc/tasks.md)。
 
 F2 当前代码事实与真实文件证据见 [原生 QE 交接验收](../../specs/0015-epwflow-mgb2-real-validation/native-qe-handoff-validation.md)。仅有版本 1 F2 清单可历史读取但不能供 F3 执行；版本 2 逐文件核对完整保存集合、原生数值与 q 响应，不以 valid 标签替代身份。
+
+F3 当前路径将每个展宽写入 fine/smearing-NNNN，F4 使用 spectrum_index 所选目录；其余展宽文件仍带前缀角色保留并验源。质量来源在粗网格前冻结、粗网格后派生并记录身份，F1/F4 重验同一绑定。粗网格不再调用独立不完整的 Wannier 链，也不要求虚构 coarse.ephmat；细网格不回退简化文本，并用最终写入计数检查矩阵负载。代码与只读证据及未完成项见 [原生插值验收](../../specs/0015-epwflow-mgb2-real-validation/native-interpolation-validation.md)。

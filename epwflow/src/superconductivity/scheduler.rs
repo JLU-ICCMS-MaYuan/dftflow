@@ -7,7 +7,7 @@ use crate::{
         stage::Backend,
         store,
     },
-    interpolation::{manifest::InterpolationManifest, native_quality},
+    interpolation::manifest::InterpolationManifest,
 };
 use anyhow::{bail, ensure, Context, Result};
 use std::{collections::BTreeMap, path::Path};
@@ -35,13 +35,7 @@ pub fn run_with_retry(
         f3.validation.all_passed() && f3.quality.as_ref().is_some_and(|q| q.status == "valid"),
         "data_invalid: 插值质量尚未通过，F4 不得放行"
     );
-    let quality = cfg
-        .interpolation
-        .quality
-        .reference_manifest
-        .as_ref()
-        .context("data_invalid: 缺少独立插值质量来源")?;
-    let checked = native_quality::check_current_coarse(quality, &work.join("coarse"))?;
+    let checked = crate::interpolation::quality_binding::check(cfg, &work)?;
     ensure!(
         checked.passed,
         "data_invalid: 独立插值质量失败，禁止原生超导"
@@ -63,7 +57,7 @@ pub fn run_with_retry(
             "input_conflict: F3 清单改变"
         );
         ensure!(
-            native_quality::check_current_coarse(quality, &work.join("coarse"))?.passed,
+            crate::interpolation::quality_binding::check(cfg, &work)?.passed,
             "data_invalid: F3 质量来源改变"
         );
         Ok(())

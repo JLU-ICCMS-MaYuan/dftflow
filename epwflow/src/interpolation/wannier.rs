@@ -1,11 +1,9 @@
-use super::super::foundation::stage::Backend;
+//! EPW 内置 Wannier90 的原生收敛与最终展宽；不再运行独立重复链。
 use super::super::foundation::store;
-use super::epw_config::EpwConfig;
 use anyhow::{ensure, Context, Result};
 use regex::Regex;
 use std::path::Path;
 
-/// Wannier 化成功结果（FR-004）。
 #[derive(Debug, Clone)]
 pub struct WannierResult {
     pub num_iter: usize,
@@ -14,113 +12,64 @@ pub struct WannierResult {
     pub wannier_digest: String,
 }
 
-/// 解析 wannier90 .wout：迭代次数、收敛标志与最终最大 spread（FR-004）。
 pub fn parse_wannier_log(log: &Path) -> Result<WannierResult> {
-    let txt = std::fs::read_to_string(log)
-        .with_context(|| format!("data_invalid: 无法读取 {}", log.display()))?;
-    let conv_re = Regex::new(r"(?im)^\s*(?:\|\s*)?Convergence (?:was )?reached\b")
-        .expect("wannier: 正则编译失败");
-    let conv = conv_re.is_match(&txt);
+    let txt = std::fs::read_to_string(log)?;
+    ensure!(!Regex::new(r"(?i)convergence\s+(?:was\s+)?not\s+(?:reached|achieved)|not\s+converged|error in routine")?.is_match(&txt),
+        "data_invalid: Wannier 明确未收敛或报错");
     ensure!(
-        !txt.to_lowercase().contains("convergence not reached")
-            && !txt.to_lowercase().contains("convergence was not reached"),
-        "data_invalid: Wannier 明确未收敛"
+        txt.contains("<<< Wannierisation convergence criteria satisfied >>>"),
+        "data_invalid: 缺少原生 Wannier 局域化收敛证据"
     );
-    let iter_re =
-        Regex::new(r"Number of iterations\s*[:=]\s*(\d+)").expect("wannier: 正则编译失败");
+    let disentangled = Regex::new(r"Using band disentanglement\s*:\s*T")?.is_match(&txt);
+    ensure!(
+        !disentangled || txt.contains("<<< Disentanglement convergence criteria satisfied >>>"),
+        "data_invalid: 缺少原生解纠缠收敛证据"
+    );
+    let final_state = txt
+        .rsplit_once("Final State")
+        .context("data_invalid: 缺少 Wannier 最终状态")?
+        .1;
+    let spread_re = Regex::new(r"(?m)^\s*WF centre and spread\s+(\d+)\s+\([^\n]*\)\s+(\S+)\s*$")?;
+    let mut ids = std::collections::BTreeSet::new();
+    let mut max_spread = 0f64;
+    for c in spread_re.captures_iter(final_state) {
+        let id: usize = c[1].parse()?;
+        let spread: f64 = c[2].replace(['D', 'd'], "e").parse()?;
+        ensure!(
+            id == ids.len() + 1 && ids.insert(id) && spread.is_finite() && spread > 0.0,
+            "data_invalid: Wannier 最终 spread 或 WF 编号无效"
+        );
+        max_spread = max_spread.max(spread);
+    }
+    ensure!(!ids.is_empty(), "data_invalid: 缺少完整最终 Wannier 展宽");
+    let iter_re = Regex::new(r"(?m)^\s*Cycle:\s*(\d+)\s*$")?;
     let num_iter = iter_re
-        .captures(&txt)
-        .and_then(|c| c[1].parse::<usize>().ok())
-        .unwrap_or(0);
-    let spread_re = Regex::new(r"Spread\s*[=:]\s*([-\d.eE+]+)").expect("wannier: 正则编译失败");
-    let spreads: Vec<f64> = spread_re
         .captures_iter(&txt)
-        .filter_map(|c| c[1].parse::<f64>().ok())
-        .collect();
-    let max_spread = spreads.iter().cloned().fold(f64::NAN, f64::max);
-    let finite = max_spread.is_finite() && max_spread > 0.0;
-    ensure!(conv, "data_invalid: Wannier 未报告收敛");
-    ensure!(finite, "data_invalid: Wannier 最终 spread 非有限或为零");
+        .last()
+        .context("data_invalid: 缺 Wannier 迭代记录")?[1]
+        .parse()?;
     Ok(WannierResult {
         num_iter,
-        converged: conv && finite,
+        converged: true,
         max_spread_angstrom2: max_spread,
-        wannier_digest: String::new(),
+        wannier_digest: store::hash_file(log)?,
     })
 }
 
-fn exec(
-    prog: &Path,
-    args: &[&str],
-    dir: &Path,
-    launcher: &[String],
-    backend: Backend,
-) -> Result<()> {
-    let mut cmd: Vec<String> = launcher.iter().cloned().collect();
-    cmd.push(prog.to_string_lossy().into_owned());
-    for a in args {
-        cmd.push(a.to_string());
-    }
-    match backend {
-        Backend::Local => {
-            super::super::foundation::process::run(&cmd, dir)?;
-        }
-        Backend::Slurm => {
-            super::super::foundation::slurm::submit_via_sbatch(
-                launcher,
-                &cmd[launcher.len()..],
-                dir,
-                "wannier",
-            )?;
-        }
-    }
-    Ok(())
-}
-
-/// 运行 Wannier 化（wannier90 + pw2wannier90），返回成功结果与来源摘要（FR-004）。
-pub fn run_wannier(
-    epw_cfg: &EpwConfig,
-    work: &Path,
-    launcher: &[String],
-    backend: Backend,
-) -> Result<WannierResult> {
-    let dir = work.join("wannier");
-    std::fs::create_dir_all(&dir)?;
-    qf_wannier::write_selection(&dir.join("window-selection.json"), &epw_cfg.window_selection()?)?;
-    qf_wannier::require_projectability_keywords(
-        &epw_cfg.cfg.programs.wannier90.as_ref().context("configuration: 缺少 programs.wannier90")?.path,
-    )?;
-    let outdir = dir.join("out");
-    std::fs::create_dir_all(&outdir)?;
-    std::fs::write(dir.join("scf.win"), epw_cfg.wannier90_input()?)?;
-    let pw2 = epw_cfg.pw2wannier90_input(outdir.to_str().unwrap())?;
-    std::fs::write(dir.join("pw2wan.in"), &pw2)?;
-
-    let w90 = &epw_cfg
-        .cfg
-        .programs
-        .wannier90
-        .as_ref()
-        .context("configuration: 缺少 programs.wannier90")?
-        .path;
-    // 先 pw2wannier90 生成 .nnkp，再 wannier90 主计算。
-    let pw2 = &epw_cfg
-        .cfg
-        .programs
-        .pw2wannier90
-        .as_ref()
-        .context("configuration: 缺少 programs.pw2wannier90")?
-        .path;
-    exec(pw2, &["scf"], &dir, launcher, backend)?;
-    exec(w90, &["scf"], &dir, launcher, backend)?;
-
-    let log = dir.join("scf.wout");
+pub fn check_native(log: &Path, nwann: usize) -> Result<WannierResult> {
+    let result = parse_wannier_log(log)?;
+    let txt = std::fs::read_to_string(log)?;
+    let final_state = txt
+        .rsplit_once("Final State")
+        .context("data_invalid: 缺 Wannier 最终状态")?
+        .1;
     ensure!(
-        log.exists(),
-        "data_invalid: wannier90 未产生 scf.wout，禁止后续插值"
+        final_state
+            .lines()
+            .filter(|line| line.trim_start().starts_with("WF centre and spread"))
+            .count()
+            == nwann,
+        "data_invalid: 最终 Wannier 函数数量不符"
     );
-    let mut res = parse_wannier_log(&log)?;
-    // 来源摘要：对 wannier 输出目录做整体哈希。
-    res.wannier_digest = store::hash_file(&log)?;
-    Ok(res)
+    Ok(result)
 }

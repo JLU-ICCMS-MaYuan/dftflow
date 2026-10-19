@@ -316,10 +316,22 @@ fn wannier_convergence_parsing() {
     let dir = std::env::temp_dir().join(format!("epwflow-wan-{}", store::token()));
     std::fs::create_dir_all(&dir).unwrap();
     let wout = dir.join("scf.wout");
-    std::fs::write(&wout, "Convergence reached\nSpread = 1.234\nSpread = 1.1\n").unwrap();
+    let native = "Using band disentanglement : T\n<<< Disentanglement convergence criteria satisfied >>>\nCycle: 14\n<<< Wannierisation convergence criteria satisfied >>>\nFinal State\nWF centre and spread 1 ( 0 0 0 ) 1.234\nWF centre and spread 2 ( 0 0 0 ) 1.1\n";
+    std::fs::write(&wout, native).unwrap();
     let r = wannier::parse_wannier_log(&wout).unwrap();
     assert!(r.converged);
     assert!((r.max_spread_angstrom2 - 1.234).abs() < 1e-9);
+    assert_eq!(r.num_iter, 14);
+    wannier::check_native(&wout, 2).unwrap();
+    assert!(wannier::check_native(&wout, 3).is_err());
+    for broken in [
+        native.replace("<<< Disentanglement convergence criteria satisfied >>>", ""),
+        native.replace("1.234", "NaN"),
+        native.replace("spread 2", "spread 3"),
+    ] {
+        std::fs::write(&wout, broken).unwrap();
+        assert!(wannier::parse_wannier_log(&wout).is_err());
+    }
     // 未收敛必须拒绝。
     std::fs::write(&wout, "Spread = 1.0\n").unwrap();
     assert!(wannier::parse_wannier_log(&wout).is_err());

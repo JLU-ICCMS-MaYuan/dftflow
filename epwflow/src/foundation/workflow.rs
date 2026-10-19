@@ -459,6 +459,9 @@ fn verify_stage(
                 "data_invalid: 插值质量/原生数据尚未通过"
             );
             // 清单本身不足以证明可重读，沿用专门适配器的校验。
+            let stage_work = manifest.parent().and_then(Path::parent).context("清单路径")?;
+            ensure!(crate::interpolation::quality_binding::check(cfg, stage_work)?.passed, "data_invalid: 当前粗网格质量失败");
+            crate::superconductivity::source::bind(stage_work, cfg, &m)?;
             let coarse = m.coarse.context("data_invalid: 缺少粗网格数据")?;
             let fine = m.fine.context("data_invalid: 缺少细网格数据")?;
             for a in coarse.artifacts.iter().chain(fine.artifacts.iter()) {

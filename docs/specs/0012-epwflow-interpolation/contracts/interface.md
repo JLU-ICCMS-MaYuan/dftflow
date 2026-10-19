@@ -105,3 +105,11 @@ metadata.frozen_window_ev 是可选的绝对 eV 二元数组，来自同一已�
 对应 FR-009/012、SC-003/007。本次只调整共享 RMS 常数与边界回归。五点、45 模及相同 ASR、单位、电子窗保持不变；旧失败报告不改写。新的只读报告留在编号目录 029。
 
 科学求解与真实验收共用原预算；9³ PH 暂缓，不新增需求或另建线上 Issue。阈值调整不表述为插值改进，真实 Tc、独立手动参考与完整自动链仍须各自提供证据。
+
+## 原生执行交接细化
+
+quality.energy_window_ev 为相对已绑定 F2 Fermi 的 eV；QualitySources.window_ev 仍为绝对 eV。首次执行只核验原质量清单的独立参考／来源，不要求其中旧插值输出存在。当前粗网格完成后生成工作目录内 quality-reference.json、quality-report.json 和 quality-binding.json；绑定含原清单和新配对清单的路径、规范目标、字节及 SHA-256，F1／F4 必须重验。
+
+粗网格格式标识 epw5.9-coarse-le-c16；必需重启角色是 coarse_epmatwp、coarse_epwdata、coarse_crystal、coarse_wigner、coarse_vmedata、coarse_dmedata，另记录输入、日志、Wannier 日志和独立验证输出。epmatwp 位于 coarse/out，文本重启文件位于 coarse 根。只支持已核验的小端 REAL(8) 复数布局，未知布局拒绝。
+
+每个展宽在 fine/smearing-NNNN 独立运行；fine 主数据来自 spectrum_index 所选目录，其余展宽的产物角色以 smearing_NNNN_ 前缀保存于同一 artifacts 列表，所有文件均须验源。F4 仅使用未加前缀的所选谱／矩阵角色，不再要求所选谱恰为最后一个展宽。版本 1 的清单外壳不变；本细化不允许旧简化文本进入原生生产路径。
