@@ -80,3 +80,6 @@
 ## 新确认的 EPW 显式纯能量模式
 
 用户选择“增加纯能量窗口模式，使用现有 EPW”。新增 energy_only 选择与四界／逐点计数、目标覆盖、旧配置兼容和两种输入的行为验证；没有继续原生程序升级。共享库与 EPW 选窗专项 14 项通过，自动参考／原生进程回归和脚本生成证据见[专项验收](../0015-epwflow-mgb2-real-validation/native-reference-validation.md)。新模式的真实科学精度与候选对照尚未验收；不关闭 T010b／T011 或宣称获得 Tc。
+## PBE 首次原生纯能量执行的边界
+
+0015 的 1297009 已通过 energy_only 的逐点态数检查并执行原生 EPW 5.9，未使用三项组合投影解纠缠参数。外窗每点 12 态，冻结 4～5 态；实际四界、日志与 SHA-256 见[真实记录](../0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。EPW 警告忽略 dis_win_min，实际 Outer 下界与请求相差 0.02 eV；0012 Issue／T062 继续核对有效窗口契约，不宣称四界完整一致或科学验收通过。局域化未收敛及 EPC NaN 分别保留为阻断，没有自动扫描窗口或增加迭代。

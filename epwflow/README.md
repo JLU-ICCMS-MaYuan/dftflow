@@ -156,4 +156,4 @@ bash scripts/build-native.sh test -p qeflow -p epwflow -p qf-input -p qf-phonon 
 
 保留 EPW 数据时，q2r 输出 `.fc.xml`，两类 matdyn 与自动比较均读取该路径；普通模式继续使用 `.fc`。恢复时复用已核验的 XML q2r。显式赝势以共同 `pseudo_dir` 与带引号的短相对文件名定位，生成前检查 QE 的原生长度限制。
 
-真实 PBE 已完成共享声子链、出图与 save；完整 NSCF 和后续阶段的最新结果见 [PBE 主路径验证](../docs/specs/0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。
+真实 PBE 已完成第一阶段、完整 NSCF 和第二阶段独立参考。当前原生粗网格因 Wannier 局域化未收敛及 EPC 非有限值被拒绝，尚无有效四类比较图和 Tc；EPW 的实际窗口覆盖语义也待核对。最新证据及未完成项见 [PBE 主路径验证](../docs/specs/0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。

@@ -20,6 +20,8 @@ F4 已发布合法 partial 清单时，公开显式恢复会重验固定来源�
 
 启动使用 scontrol 严格核对唯一作业身份、RUNNING 和固定节点数；RUNNING 零节点仅有限等待。终态计费仍仅使用 sacct，不从控制器启动结果推算用量，账表未知时保留预留。身份／资源冲突拒绝、账表滞后与完整公开续算链已通过隔离回归。真实 PBE nosplit 第一阶段已完成 SCF／PH／q2r、两类 matdyn、共享声子图、save 和完整 32 k／16 带 NSCF；公开严格清单检查 valid，14 份已有科学文件复用不变。第二阶段、细网格与完整 Tc 仍须各自验收。
 
+最新 PBE 第二阶段已自动补齐六 k／五 q 独立参考，energy_only 态数检查通过并执行原生 Wannier／粗网格；局域化固定 500 次未收敛，epmatwp 全 NaN，生产检查正确拒绝发布 F3，尚无有效比较图／细网格／Tc。NaN 原因未定，不能归因于未收敛；EPW 对 dis_win_min 的原生覆盖亦待核对。已有 243 份参考、原请求和 F2 指纹保持，失败证据与后续范围见[0015 PBE 记录](../../specs/0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。
+
 ## 公开程序及选项
 
 外部配置默认 `inputepw.toml`，也可由 `-c/--config` 指定；与 qeflow 的 `input.toml` 字段不同，不能自动混用。完整流程图和命令见[模块手册](../../../epwflow/README.md)。
