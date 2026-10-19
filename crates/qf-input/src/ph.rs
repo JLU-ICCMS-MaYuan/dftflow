@@ -20,6 +20,19 @@ pub fn ph_grid_config(config: &Config, prefix: &str) -> SectionMap {
     ph_cfg.remove("qpoints");
     let names = derive_filenames(prefix);
     ph_cfg.insert("fildyn".to_string(), json!(names.fildyn));
+    if config.qe_phonon.retain_epw_data {
+        ph_cfg.insert("fildyn".into(), json!(format!("{prefix}.dyn.xml")));
+        ph_cfg.insert("fildvscf".into(), json!("dvscf"));
+        for key in ["ldisp", "lqdir"] {
+            ph_cfg.insert(key.into(), json!(true));
+        }
+        for key in ["only_init", "only_wfc", "recover"] {
+            ph_cfg.insert(key.into(), json!(false));
+        }
+        for key in ["start_q", "last_q", "start_irr", "last_irr"] {
+            ph_cfg.remove(key);
+        }
+    }
     ph_cfg
 }
 

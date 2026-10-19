@@ -139,6 +139,9 @@ impl VaspSection {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct QePhononSection {
+    /// 为 EPW 生成逐 q 响应势与 XML 动力学矩阵，并归档到 save。
+    #[serde(default)]
+    pub retain_epw_data: bool,
     #[serde(default)]
     pub work_dir: Option<String>,
     /// `[qe_phonon].prefix`（复刻 `input_deck/prefix.resolve_prefix` 的优先来源）。

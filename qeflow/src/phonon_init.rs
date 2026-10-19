@@ -5,6 +5,8 @@ use serde_json::{json, Value};
 use std::{fs, path::PathBuf};
 
 pub(super) fn prepare_input(ctx: &PhononCtx) -> Result<()> {
+    ensure!(!ctx.cfg.qe_phonon.retain_epw_data,
+        "retain_epw_data 目前仅适配完整 qe-phonon-nosplit，不能用于单独初始化或分 q");
     let mut cfg = ctx.cfg.clone();
     for key in ["ldisp", "only_init", "lqdir"] {
         cfg.qe_phonon.ph.insert(key.into(), json!(true));

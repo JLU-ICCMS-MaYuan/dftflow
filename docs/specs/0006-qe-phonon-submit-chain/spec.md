@@ -292,3 +292,7 @@ FR-009 是后来明确批准的 FR-006 旧生成入口保留规则的例外；�
 - SC-010：真实 CLI 生成脚本，修改/删除外部输入后执行 pre、q 检查及 post 仍完成原目录；篡改快照明确失败；nosplit 脚本亦固定配置。
 
 沿用本地 Issue 草稿，不操作线上 Issue；包含实现、安装与隔离验证，不提交真实计算。输入网格已按用户要求改为 [4,4,2]。
+
+## 2026-10-19：供 EPW 复用的声子保留选项
+
+用户希望第一阶段直接使用现有 qe_phonon 并保留 EPW 所需 save。完整原话与取舍见 [0010 Spec](../0010-epwflow-qe-data/spec.md#原始需求记录)，设计见[三程序契约](../0008-epwflow-foundation/three-programs.md)。沿用 0006 修复 nosplit 本地后处理缺口；可选 `[qe_phonon].retain_epw_data=true` 首版只适配 nosplit，默认不改变已有输入。

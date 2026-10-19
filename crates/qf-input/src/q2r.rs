@@ -16,7 +16,12 @@ pub fn write_q2r_input(workspace: &str, config: &Config, prefix: &str) -> Result
     fs::create_dir_all(workspace)?;
     let path = format!("{workspace}/q2r.in");
     let mut s = String::from("&input\n");
-    s.push_str(&format!("  fildyn = {}\n", to_qe_value(&json!(names.fildyn))));
+    let fildyn = if config.qe_phonon.retain_epw_data {
+        format!("{prefix}.dyn.xml")
+    } else {
+        names.fildyn
+    };
+    s.push_str(&format!("  fildyn = {}\n", to_qe_value(&json!(fildyn))));
     s.push_str(&format!("  flfrc = {}\n", to_qe_value(&json!(names.flfrc))));
     for (k, v) in &q2r_cfg {
         s.push_str(&format!("  {k} = {}\n", to_qe_value(v)));

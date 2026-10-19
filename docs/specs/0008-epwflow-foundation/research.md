@@ -73,3 +73,7 @@
 现有源码：crates/qf-input/src/pw.rs、crates/qf-runner/src/lib.rs、qeflow/src/phonon_chain.rs、crates/qf-phonon/src/merge.rs、scripts/install-current.sh、scripts/verify-entries.sh。参考 external/epwpy 固定 b54bb53d4f5de665ed08958cb6194be8efdf645d。目标 QE 7.4.1 安装源码的 EPW/src/readin.f90、wannierization.f90、supercond_driver.f90、supercond_iso.f90、supercond_aniso.f90、io/io_supercond.f90 为版本适配事实来源；实际路径只记 docs/local。
 
 源码声明 EPW 5.9 尚不等于实际程序身份。数值、节点兼容性和二进制读取必须用真实运行验证；网页工具本轮不可用，不能声称在线文档已核实。目标源码之外的新版本需独立适配。现有 qeflow 声子谱通过不能证明 EPW 输入完整。所有尚未运行的验收维持未完成。
+
+### D09：三个程序与声子复用
+
+依据用户最新明确选择，采用三个独立程序，不采用一个程序的三个子命令，也不新增第四个兼容程序。源码表明 qeflow 已保留 scratch，缺口在逐 q 数据生成与交付；因此提取现有实现为库、增加显式 EPW 数据归档，优于复制声子工作流。证据和细分职责见[整合契约](three-programs.md)。

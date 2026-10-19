@@ -563,6 +563,8 @@ pub fn run(
         Some(snapshot_structure(Path::new(&config).parent().unwrap().to_str().unwrap())?)
     } else { input };
     let ctx = context(&config, input.as_deref(), mode)?;
+    ensure!(!ctx.cfg.qe_phonon.retain_epw_data,
+        "retain_epw_data 的 EPW 交付目前仅支持 qe-phonon-nosplit；分 q 不可冒充已适配");
     if Path::new(&config) != Path::new(&ctx.workspace).join("input-init.toml") {
         bind_inputs(&ctx, &config, mode)?;
     } else { verify_snapshot(Path::new(&ctx.workspace))?; verify_mode(&ctx.workspace, mode)?; }

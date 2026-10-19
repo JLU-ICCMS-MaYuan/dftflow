@@ -4,6 +4,8 @@
 
 ## 当前结论
 
+qeflow 已将原 nosplit 声子流程提供为 Rust 库，并支持可选的 EPW 数据归档（[说明](../qeflow/qe_phonon_nosplit.md)）。当前 EPW 调度器仍使用自己的 SCF／PH 路径，尚未切换到该库；因此还不能声称第一阶段已经直接复用完整 qeflow 声子链。
+
 截至 2026-10-19，epwflow 已复用 qeflow 的 QE 基础库，并能只读检查真实 EPW 5.9 谱和独立插值参考。公开 `submit/run/resume` 已接入有边界的阶段分派、作业记录及失败阻断；底层原生矩阵元适配和 Eliashberg/Tc 仍未交付，完整真实自动链尚未通过验收。当前声子最大误差门为 50 cm⁻¹、RMS 为 2 cm⁻¹；独立第五点加入后 RMS 实测失败，不能把原生冒烟或解析回归当作完整验收。
 
 本页依据代码、实际 CLI、回归测试和真实 QE XML 只读解析记录当前状态；检查证据见 [0015 验收记录](../../specs/0015-epwflow-mgb2-real-validation/acceptance.md)。

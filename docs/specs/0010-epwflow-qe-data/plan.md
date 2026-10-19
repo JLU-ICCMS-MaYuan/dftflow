@@ -94,3 +94,7 @@ spec.md、plan.md、research.md、data-model.md、contracts/interface.md、tasks
 验证以目标 QE 7.4.1 已有输出的只读解析和真实格式独立进程测试为依据；合成进程不证明科学收敛。F3 主链布局、原生 Tc 和讲义图继续单独验收，不加密 PH 或放宽已确认质量门。
 
 新发布 QeManifest 为版本 2，artifact_root 与 artifacts 唯一绑定原生角色；旧版本 1 只保留历史读取。导入按角色保留目录并重新绑定根目录；前置消费同时核对结构、赝势与 PW／PH 程序身份。阶段内失败恢复与导入自动复用仍由 T042 跟进，不以复制报告当作恢复完成。
+
+## 2026-10-19：共享 qeflow 原实现
+
+按[整合设计](../0008-epwflow-foundation/three-programs.md)提取 qeflow 为库，首先修复 nosplit 本地后处理，再由 EPW 基础层在受控分配中直接调用。归档角色和 SHA-256 由 qf-phonon 维护，EPW 在导入时继续核对原生扰动基底和物理来源；不把归档成功当作科学通过。

@@ -8,6 +8,17 @@
 
 ## 原始需求记录
 
+本次三程序整合需求原文（替代此前单一 epwflow 多子命令与三 PH 来源必需验收的入口要求；科学判据和共享预算不变）：
+
+> 1\. qe的声子计算工作流，这一部分直接引用 qe_phonon的部分，然后算完之后，就把这epw 计算需要用到的 save 目录中的内容准备好。\
+> 2\. wannier 选择窗口然后拟合电子能带，电子 dos，声子谱，声子 dos，然后出图。\
+> 3\. 细网格插值，然后计算超导，然后出图。\
+> \
+> “最多三个 CLI”采用哪种形式？三个独立程序，各负责一个阶段：采用三个独立程序：`epw_phonon`、`epw_wannier`、`epw_superconductivity`. 更重要的是，第一个阶段基本上完全可以使用 qeflow里面的 qe-phonon来完成，并且也不必须可以支持三种 q 点的计算方式。你可能需要做的就是为 qeflow里面的计算声子的功能追加一个保留 save 的功能。我不确定，你可以帮我检查检查是不是这样。\
+> \
+> 所以说 epwflow最多只能有三个 CLI，你来帮我看看怎么整合已有的代码，变成这三个CLI。然后使用 issue 和 spec 来完成当前的代码。然后在此基础上进行测试。测试目录是：/data/home/mayuan/code/dftflow/test_auto/MgB2/local_run
+
+
 > epwflow 因为可以从 qe scf   qe phonon开始计算，如果可以复用 qeflow 里面的代码？我觉得还是不要从头搞一套了。
 
 > 然后我希望你能模仿 epwpy写一个 epwflow。能够全自动的计算 epw 的超导。也是用 rust 来写。使用 [$big-project-planer](/data/home/mayuan/.codex/skills/big-project-planer/SKILL.md) 来规划，然后提交 issue和 spec来执行。
@@ -143,3 +154,7 @@
 已修复实际 prefix、完整 SCF 快照、NSCF／PH 独立副本、实际 dyn0 和非正交 q、原生 PH XML／扰动基底／响应势尺寸及 EPW save 交接。新交付为版本 2 清单，F1／F3 和导入重验角色及实际数据；旧版仅历史读取。三模式独立进程通过，并对已有真实 LDA 216 k／16 带／28 q／每 q 9 模只读核验通过，88 文件哈希不变。证据及限制见 [交接验收](../0015-epwflow-mgb2-real-validation/native-qe-handoff-validation.md)。
 
 本批没有运行新的 SCF／PH 或最小 EPW 读取，仍缺真实全链、阶段内失败恢复及导入自动复用；不关闭 Issue 或勾选整体真实验收。共享预算 2241 节点秒、预留 0，无新增科学作业。
+
+## 最新实施范围
+
+用户已明确三个独立程序及第一阶段直接复用 qeflow。沿用本地 0010，与 0008 [整合契约](../0008-epwflow-foundation/three-programs.md)双向关联。三种 PH 来源不再是本次首条主路径的必需完成门；优先 nosplit。Documentation Impact：更新保留数据配置、交付角色、共享实现和验证证据，科学校验与原预算不改变。

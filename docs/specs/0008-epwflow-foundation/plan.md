@@ -88,3 +88,7 @@ spec.md、plan.md、research.md、data-model.md、contracts/interface.md、tasks
 ## 2026-10-19：入口实施阶段
 
 当前采用 foundation/workflow.rs 实施公开配置／边界分派、单次受限 Slurm 执行、持久尝试和完成证据；详细流程与剩余科学／并行范围见 [0015 入口计划](../0015-epwflow-mgb2-real-validation/plan.md)。先以已有阶段适配器验证入口，禁止将旧提交后即读输出路径作为异步成功。此实现不取消原多作业和完整预算质量门，F1 整体验收仍未完成。
+
+## 2026-10-19：三个独立程序整合
+
+按[集中契约](three-programs.md)实施。共用库保持单一配置／预算／状态规则；三个独立二进制分别负责声子交付、粗网格拟合和细网格超导。第一步提取现有 qeflow 为库并修复本地 nosplit 后处理，随后接入三个程序及阶段清单。

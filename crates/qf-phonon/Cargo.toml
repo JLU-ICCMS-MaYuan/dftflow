@@ -16,3 +16,4 @@ qf-crystal = { path = "../qf-crystal" }
 qf-io = { path = "../qf-io" }
 qf-input = { path = "../qf-input" }
 qf-runner = { path = "../qf-runner" }
+sha2 = "0.10"

@@ -152,3 +152,8 @@ T001→T002 后按故事和前置任务顺序执行；同一共享文件串行�
 以上三项证据见 [原生 QE 交接验收](../0015-epwflow-mgb2-real-validation/native-qe-handoff-validation.md)，不代替原有真实科学 SC-007/008。
 
 - [ ] T042 [US3/US4] 收敛 F1 对导入 F2 阶段的自动复用、F2 阶段内部分失败续算及 outdir 基址布局；保留旧尝试且不得重复已验证 SCF。覆盖资源与未知现场边界，对应 FR-003/008～010、SC-003/005/006。
+
+## 三程序收敛
+
+- [x] T100 验证 qeflow nosplit 完整本地链，增加可选 `retain_epw_data` 和原生 PH 归档，记录拒绝与兼容证据。
+- [ ] T101 将 epw_phonon 接入同一 qeflow 库，准备完整 NSCF 和严格 EPW 交付清单，并在指定 local_run 验证。

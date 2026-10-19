@@ -128,3 +128,14 @@ FR-001～006、SC-001～004 的本地实现、自动测试、真实计算与安�
 ### 并行恢复补充核验
 
 结构恢复改为临时文件加原子替换；上述跨进程回归同时运行两个 q 脚本。最终额外重跑 phonon_chain 的 8 项全部通过，日志 docs/local/phonon-additions/tests-parallel.log；随后重新安装并重做 51 入口、三模式模拟提交及安装版重绘核验，制品来源更新到最终提交。
+
+## 2026-10-19：三程序整合的共享声子前置
+
+本批完成的是 qeflow 可复用库、nosplit 后处理修复与可选 EPW 原始数据归档。完整需求和剩余任务见[三程序契约](../0008-epwflow-foundation/three-programs.md)。三个 EPW 程序尚未交付，EPW 严格导入适配、第二阶段四类图与第三阶段细网格／两模式 Tc 仍待完成，不能据此关闭需求。
+
+- 原 qeflow 声子主体提取为 `qeflow/src/lib.rs`，既有二进制调用同一实现；公开库接口 `run_qe_phonon_nosplit` 可供 EPW 直接调用。本批尚未把 EPW 旧调度器切换到该接口。
+- `[qe_phonon].retain_epw_data` 默认 false；启用时 PH 与 q2r 使用一致的 XML 名称，逐 q 保存 dvscf。qf-phonon 归档 dyn0、逐 q dyn／dvscf 和 phsave，保存 SHA-256；缺失、歧义、冲突、篡改及归档期间来源变化拒绝发布或复用。归档清单不冒充 EPW 的物理和模式验证。
+- 修复 nosplit 本地跳过 q2r／matdyn、提交脚本重复后处理；本地科学步骤核对退出及结束日志。未适配的分 q／单独初始化不允许启用保留选项。
+- 完整基线运行 `bash scripts/build-native.sh test -p qeflow -p epwflow -p qf-input -p qf-phonon --locked --offline`：156 项通过，6 项真实环境测试继续暂挂。随后补充提交脚本和未适配模式用例，并对最终代码运行 `bash scripts/build-native.sh test -p qeflow -p qf-input -p qf-phonon --locked --offline`：47 项通过（qeflow 32、共享输入 8、声子库 7）。EPW 基线 111 项通过；替身结果不计真实科学验收。
+- 用户指定 local_run 下新建 `002-three-stage-cli`，复制 PBE 结构与路径，生成带保留选项的 qeflow 输入与声子脚本；核查 24 MPI、1 节点、2 小时上限、XML／逐 q 选项与 Bash 语法。只做准备，没有 ph.out 或新科学作业；原配置、结构、KPATH 和赝势哈希保持。
+- 本批没有修改共享预算或默认安装，没有运行旧替代诊断或线上 Issue 操作；继续保持真实 Tc 与整体三程序验收未完成。

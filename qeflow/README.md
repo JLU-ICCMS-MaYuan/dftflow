@@ -30,6 +30,19 @@ qe_process_phonon --help
 
 SCF/NSCF 使用 `-c/--config` 读取配置，`-i/--input` 指定结构，`-r/--run` 执行，`-s/--submit` 提交；默认不执行实际计算。声子总流程的具体运行方式和当前限制以算例手册为准。
 
+## 为 EPW 保留声子数据
+
+`qe-phonon-nosplit` 可在配置中启用：
+
+```toml
+[qe_phonon]
+retain_epw_data = true
+```
+
+该选项默认关闭。启用后 PH 使用 XML 动力学矩阵和独立的逐 q 响应势，q2r 同步使用 XML 输入名；完成后把 dyn0、逐 q dyn／dvscf 及完整 phsave 复制到工作目录 `save/`，写入带 SHA-256 的 `manifest.json`。原 SCF 保存目录和 PH scratch 保留；缺文件、归档冲突或已归档内容被修改时拒绝发布或复用。首版只支持 nosplit，分 q 与单独初始化会明确拒绝此选项。
+
+这份清单证明归档文件身份和完整角色，不证明 EPW 已经完成科学校验。完整 NSCF、扰动基底、质量参考、细网格和超导仍由 EPW 阶段负责。`nosplit -r` 已依次执行 SCF、PH、q2r 和两次 matdyn，并在结束检查后归档绘图；原声子实现同时通过 `qeflow` Rust 库提供复用，不再需要复制一套执行链。
+
 ## 分 q 点全链路（Issue 0006）
 
 qe_phonon_split_index / qe_phonon_split_coords 保留 -c/-i，默认仅准备，-s 一次安排整个 Slurm 依赖链，-r 在已有计算资源中顺序执行。只计算一次 SCF，各 q 独立复制保存数据；显式坐标为 QE Cartesian（2π/a₀）。qe_split_submit --chain 可用于前置阶段安排 q 点与 post。作业与状态记录见 [0006 契约](../docs/specs/0006-qe-phonon-submit-chain/contracts/cli.md)。
