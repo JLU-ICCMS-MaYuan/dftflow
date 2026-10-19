@@ -26,6 +26,8 @@ DFTFlow 为第一性原理计算准备输入、组织外部求解器和调度任
 - [Rust 架构、平台构建与安装](dftflow-rust.md)。
 - [声子绘图旧入口](qe-phonon-plot.md)、[scflow 旧入口](scflow.md)：保留链接，具体用法由家族页面维护。
 
+- [epwflow 实际拟合外窗、比较诊断与测试数据目录](epwflow/README.md#实际解纠缠外窗与测试目录)：已支持按实际 Wannier 外窗重绘；宽窗缺态、暂缓投影及科学质量失败分别保留。
+
 ## 整体关系
 
 ```mermaid

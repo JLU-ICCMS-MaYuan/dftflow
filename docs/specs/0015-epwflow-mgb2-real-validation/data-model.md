@@ -15,3 +15,17 @@
 成对数据结构遵循 [0012 模型](../0012-epwflow-interpolation/data-model.md)，结果包与图层遵循 [0014 模型](../0014-epwflow-delivery/data-model.md)。本项只记录证据指纹和结论，不创造另一套投影／DOS 计算格式；原始科学文件只读，派生数据和实际机器路径只写忽略的 `test_auto/MgB2/local_run/001-epw-validation/`。
 
 合法缺项记录区别于文件损坏；缺元素／轨道投影不能填总 DOS，质量失败不能填通过。历史误差热图和本次科学叠图用不同产物角色，不覆盖已有图像。规范化数值比较保留足够精度，不能只看图片相似度。
+
+## 实际外窗与迁移证据
+
+以下是 #15 的验收证据字段，复用 F3／F5 已有实体，不新增生产数据格式：
+
+| 证据 | 事实来源与核对关系 |
+| --- | --- |
+| 实际外窗身份 | `Sources.wannier_wout` 的 path／sha256，原生日志唯一 Outer；原生 epwdata 身份与比较基底一致 |
+| 窗口与共同零点 | metadata 的 `disentanglement_window_ev` 为绝对 eV、`window_ev` 为相对 E_F；逐边界相减一致，DOS 覆盖完整 window_ev；独立验证窗单独保留 |
+| 窗内覆盖与图像 | 比较 manifest 缺项、metrics、四类表和图像 manifest；缺态／缺投影与 quality_failed 不因出图成功被清除 |
+| 迁移台账 | 原相对位置／新位置、文件大小／SHA-256、原文件集合及链接目标；迁移前后逐项一致，当前目录 README 给出编号用途 |
+| 当前来源绑定 | 026 中 comparison-sources／quality-reference 与 source-relocation；新路径核对原哈希并关联旧清单，历史 JSON 原样留存 |
+
+实际记录见 [外窗与目录验收](window-directory-validation.md)。迁移清单包含本机位置，保持本地忽略；仓库只保存通用契约和验证结论。结果包重绘所需数据属于包内，不能依赖这些本机原始来源路径。

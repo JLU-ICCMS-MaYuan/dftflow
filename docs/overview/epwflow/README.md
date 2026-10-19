@@ -113,6 +113,19 @@ MgB₂ 测试脚本与说明位于 test_auto/MgB2/epwflow；运行数据为 test
 
 真实 LDA 示例外窗为 −4.90710～32.23753 eV（绝对），E_F=7.497269413 eV；相对范围约 −12.40437～24.74026 eV。五维 Wannier 子空间不能覆盖全部窗内 QE 态，保留未匹配态诊断，不据扩大图窗认证拟合质量；元素／轨道投影继续暂缓，原声子 RMS 质量失败不变。
 
+| 窗口或状态 | 当前含义 |
+| --- | --- |
+| dis_win 外窗 | 实际解纠缠候选态范围；新比较包按核验后的 Outer 显示能带和 DOS，不等于所有 QE 态都属于 Wannier 子空间 |
+| dis_froz 冻结窗 | Wannier 冻结约束；外窗重绘不修改该约束 |
+| 独立质量验证窗 | quality-reference 中固定的取样和验收范围；本轮重绘不扩大其已验证范围 |
+| 比较操作成功 | 结果包／图像通过结构与哈希检查；不表示 comparison_complete、workflow_complete 或科学质量通过 |
+
+当前 MgB₂ 外窗重绘入口为 `bash test_auto/MgB2/epwflow/replot_window.sh`。首次没有比较 manifest 时导出，已有表时只收集和重绘；来源改变须在独立目录重新导出。四张独立图加总览均有 PNG／SVG／PDF，结果包可搬移后仅用包内数据重绘。当前 026 结果的电子 DOS 为总量；2527 个未匹配参考态及缺投影保留为诊断，不能解释成整个外窗拟合通过。
+
+目录索引位于数据根 README：019 是 LDA 6³ PH／Wannier 来源，026 是外窗图，090／091／092 分别为历史输入脚本、参考文献、迁移证据。迁移核对的 5977 个原实体文件内容不变，11 个链接改指新位置；历史 JSON 的旧路径原样保存，当前操作使用单独的新路径来源清单。
+
+源码依据为 `interpolation/comparison.rs` 的实际窗导出、`comparison_data.rs` 的能量／覆盖校验、`delivery/comparison_plot.rs` 的坐标与图层；回归见 `epwflow/tests/comparison_plots.rs`。已验证结果与可执行命令见 [#15 外窗与目录验收](../../specs/0015-epwflow-mgb2-real-validation/window-directory-validation.md)、[当前快速验证](../../specs/0015-epwflow-mgb2-real-validation/quickstart.md)。
+
 
 ## 高对称路径横轴
 

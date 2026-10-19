@@ -306,3 +306,9 @@ T020～T023 与 SC-005 仍按严格投影、三种来源及完整要求保持未
 本地证据在测试目录的 `local_run/0015-native/overlay-q6-purple50-01/`：`policy.json`、`comparison-sources.json`、`quality.stdout`、`execution.json`、`results/comparison/metadata.json`、`results/figures/`、`figure-verification/checks.json`。测试与构建日志位于忽略的 `docs/local/0015-purple-policy50-*.log`。当前声子图见[测试手册](../../../test_auto/MgB2/epwflow/README.md)最新段。
 
 标注表示已核验样本中的最大值，未声称整个布里渊区最大；频率排序编号不提供振动方向或不可约表示。数据、绘图与质量门复用同一来源和规则，未维护第二套误差常数；绘图只消费规范化标注。完整三来源对照、原生能隙／Tc 与自动入口仍未完成，本段仅验收本次阈值与图像改动。
+
+## 2026-10-19：#15 外窗与目录子项的正式追踪补齐
+
+本轮按用户要求同时使用 Issue、Spec 与 Overview 三类功能，补齐本地 #15 的 US4、FR-012/013、SC-006/007、设计、数据／验证契约及 T028/T029 映射。窗口与目录实现仍为 377cee2，真实证据见 [外窗与目录验收](window-directory-validation.md)，本轮一致性分析见 [覆盖分析](window-directory-analysis.md)。
+
+本轮为文档收敛，复查已记录的实际边界、图包和迁移结果；没有新增科学运行，不将历史 87 项整体工作区回归归为本次新增测试。完成的是窗口／目录子项及文档映射，不关闭科学质量、严格投影、完整自动链或整个 #15，也不代表线上 Issue 已更新。

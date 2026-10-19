@@ -51,11 +51,37 @@
 > 我希望你可以在声子谱的图上标出来哪个高对称点的哪个振动模式的误差最大，把那个点标为紫色。然后把最大误差限制放宽为： 50cm-1
 
 
+用户最初提出的 QE／Wannier／EPW 叠图要求：
+
+> 我不知道你的代码里面有没有增加 qe能带和电子态密度计算和 wannier 插值的能带和电子态密度的重叠对比图，电子态密度最好是分轨道的那种。然后我还希望有 qe 声子谱+声子态密度和 epw 的插值的声子谱和声子态密度的重叠对比图。都是用 第一性原理的实现，epw 的虚线盖在实线上。你看看有没有这个需求，如果没有新建 issue 和 spec，就新建。
+
+用户追加的实际拟合外窗、目录整理与 #15 维护要求：
+
+> 我希望你能展示拟合窗口：dis_win_max和 dis_win_min范围内的 电子 dos 和能带结构。所以需要你重新绘图。
+>
+> 我还希望你能重新整理/data/home/mayuan/code/dftflow/test_auto/MgB2/epwflow/local_run这些内容，把他们迁移到/data/home/mayuan/code/dftflow/test_auto/MgB2/local_run里面，并且我希望能对每个目录重新命名：命名方式为：编号+简述目的。
+>
+> test_auto/MgB2/epwflow/ 只用来放置测试脚本。
+
+> 我需要你把这个需求使用 issue， spec 和 overview 三个功能在 #15 需求上进一步完善实现。
+
 ## 目标与范围
 
 先复用 nosplit/index/coords 三套已有 MgB₂ 声子，在隔离目录用小网格打通真实 NSCF→Wannier→插值检查→EPW 细网格→α²F/λ；再验证既有设计中的从 SCF 开始的链路及 EPW 超导求解。测试和修复原需求内的缺陷，不增加新物理模型。
 
-## 已发现的问题
+## 本次补充：实际外窗与编号目录
+
+本地 #15 继续使用唯一类型 `type:maintenance`，关联 Epic [0007](../0007-epwflow-superconductivity/issue-draft.md)，依赖 [0012 数据契约](../0012-epwflow-interpolation/contracts/interface.md) 与 [0014 图表契约](../0014-epwflow-delivery/contracts/interface.md)。本项扩充真实验证，不另建 Feature 或线上 Issue，线上协作状态仍由用户管理；本地记录不代表线上已更新或整体已关闭。
+
+| 本次范围 | 验收条件与当前证据 |
+| --- | --- |
+| 电子实际拟合外窗 | Spec US4／FR-012／SC-006：从实际 Wannier Outer 取得绝对边界，按共同 E_F 显示完整窗能带和重新累积的 DOS；三格式、旧包及拒绝测试见 [本轮验收](window-directory-validation.md) |
+| 运行目录整理 | Spec US4／FR-013／SC-007：运行实体按编号和用途归入 local_run，脚本区无数据或兼容数据链接；5977 文件哈希一致，历史清单保持原样，新路径清单可用 |
+| 文档一致性 | T029：完整原话、正式 FR/SC、设计、契约、任务与 [当前功能](../../overview/epwflow/README.md#实际解纠缠外窗与测试目录) 互相对应，见 [覆盖分析](window-directory-analysis.md) |
+
+以上窗口与目录子项已有实现和真实验证；整体三来源、严格投影、科学质量及原生超导验收仍有未完成项。本次不改变 50/2 cm⁻¹ 质量门、不扩大 Wannier 基底、不增加科学作业或预算，不关闭 #15。完整草案的历史确认状态保留，不能把本次补充冒充整版确认。
+
+## 已发现的问题（初查基线）
 
 最新源码 62fda76 与远端一致。41 项现有测试通过，但实际 submit/run 返回 not_implemented，--until 未接入；F3 由频率公式构造 α²F，F4 使用经验 Tc/BCS 能隙，不能证明真实 EPW 结果。旧声子目录没有新 epwflow 清单，现有 import 还把 SCF 保存目录作为普通文件复制。预算结算没有查询实际调度终态。必须先复现并修复，不能以现有绿灯代替真实验收。
 
@@ -67,7 +93,16 @@
 4. 用独立手动 QE/EPW 参考核对能带、声子插值、α²F/λ；后续验证原生两种 Eliashberg、完整链路及恢复。全部适用标准通过才关闭，冒烟通过不等于科学正确或 Epic 完成。
 5. 共用原授权：单作业≤1节点/64MPI/2小时、并发≤2、累计8节点小时/100GiB；不因新编号重置。缺少历史用量依据时先核对，不假定剩余额度。保留旧数据，不用改参数或放宽容差掩盖失败。
 
+6. 外窗与目录子项须符合 US4／FR-012/013、SC-006/007；三类文档和当前操作入口一致。已有子项验收记录不豁免第 1～5 项或线上双向链接核验。
+
 ## Documentation Impact
+
+本次外窗与目录子项的文档影响如下；本节后续未勾选项属于整个 #15 的关闭门，不能由子项替代：
+
+- [x] 更新本目录 Spec／Plan／Research／数据模型／契约／任务／快速验证；需求与证据映射见 [覆盖分析](window-directory-analysis.md)。
+- [x] 更新 [epwflow Overview](../../overview/epwflow/README.md#实际解纠缠外窗与测试目录) 及 [总入口](../../overview/README.md)，只记录已实现行为和实际限制。
+- [x] 本次无需增加根 README 启动方式：公开命令不变，当前操作由 Overview 和本目录 quickstart 引导；测试入口说明已随 377cee2 更新。
+- [ ] 线上 Issue／Spec 双向远程链接核验：沿用用户自管约定，本次未写入线上、未推送，不能勾选。
 
 - [ ] 新建并维护本目录 Spec、设计、任务和验收证据。
 - [ ] 按真实证据修正 epwflow Overview 与 F1–F5 过度完成声明。

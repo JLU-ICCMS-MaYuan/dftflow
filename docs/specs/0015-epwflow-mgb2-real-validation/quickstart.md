@@ -1,4 +1,36 @@
-# 直接验证命令与当前限制
+# 当前验证入口：实际外窗与编号目录
+
+本页先列 US4／FR-012/013 的已验证子集，再保留早期失败复现。当前代码交付及三格式证据见 [外窗与目录验收](window-directory-validation.md)，需求覆盖见 [分析](window-directory-analysis.md)。受测构建制品与默认安装分别核对，不以系统 PATH 的 epwflow 代替受测程序。
+
+在仓库根目录执行，运行实体须已存在：
+
+```bash
+EPWFLOW_BIN="$PWD/target/linux-x86_64/x86_64-unknown-linux-gnu/debug/epwflow"
+WORK="$PWD/test_auto/MgB2/local_run/001-epw-validation/026-disentanglement-window-plots"
+EPWFLOW_BIN="$EPWFLOW_BIN" bash "test_auto/MgB2/epwflow/replot_window.sh" "$WORK"
+"$EPWFLOW_BIN" results check --results "$WORK/results" --json
+```
+
+脚本首次无比较 manifest 时导出，已有比较表时只收集并重绘；来源或窗改变应在新运行目录重新导出。该入口不调用科学程序或 sbatch。预期生成四类独立图加总览，每张 PNG／SVG／PDF；结果检查可成功并报告 `figures_verified=true`，同时保持 `quality_status=failed`、`comparison_complete=false`、`workflow_complete=false`。
+
+实际绝对外窗 −4.90710～32.23753 eV，E_F=7.497269413025949 eV，对应图中 −12.404369413～24.740260587 eV。原输入未显式设置 dis_win_min/max，实际边界来自已核验 wout。总 DOS 不是严格轨道 PDOS；后者继续暂缓。
+
+只读独立质量复查：
+
+```bash
+"$EPWFLOW_BIN" interpolation check -w "$WORK" --json
+```
+
+预期 `quality_failed`、退出 1，五点声子最大／RMS=49.448071／8.075133 cm⁻¹；50／2 门下 RMS 失败。不继续细网格／超导。
+
+目录根 `test_auto/MgB2/local_run/001-epw-validation/README.md` 列出编号和用途，`026.../results/figures/` 是当前外窗图，`092-migration-evidence/` 保存逐文件映射与指纹。`epwflow/` 仅放脚本和说明，无运行数据链接；历史清单旧路径只供追溯，当前使用 026 中的新路径清单。
+
+---
+
+## 历史失败复现（仅对应初查基线）
+
+以下测试数量、分工、旧路径和命令失败预期是早期记录，不表示当前入口仍有相同行为，也不用于创建新计算。
+
 
 ```bash
 git pull --ff-only --no-recurse-submodules origin master
