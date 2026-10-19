@@ -231,8 +231,15 @@ pub fn frequencies(text: &str, expected_q: [f64; 3], modes: usize) -> Result<Vec
         .collect();
     ensure!(qlines.len() == 1, "data_invalid: dynmat 缺少唯一 q");
     let q = xml::vector(qlines[0])?;
+    // 已部署 QE 输出四位小数，本地 writemodes 为八位；物理 q 已在原 PH XML 核验。
+    let display = regex::Regex::new(r"^[+-]?\d+\.(\d{4}|\d{8})$")?;
+    let mut precision = Vec::new();
+    for token in qlines[0].split_whitespace() {
+        let digits = display.captures(token).context("data_invalid: dynmat q 显示格式未知")?[1].len();
+        precision.push(0.5 * 10f64.powi(-(digits as i32)) + 1e-12);
+    }
     ensure!(
-        q.iter().zip(expected_q).all(|(a, b)| (a - b).abs() < 1e-6),
+        q.iter().zip(expected_q).zip(precision).all(|((a, b), tol)| (a - b).abs() <= tol),
         "input_conflict: dynmat 输出 q 不同"
     );
     let pattern = regex::Regex::new(
@@ -438,7 +445,7 @@ mod tests {
 
     #[test]
     fn dynmat_requires_signed_frequencies_units_q_and_complete_modes() {
-        let text = "q = 0.25 0 0\nfreq (1) = -1.000000 [THz] = -33.356410 [cm-1]\nfreq (2) = 0.000000 [THz] = 0.000000 [cm-1]\nfreq (3) = 2.000000 [THz] = 66.712819 [cm-1]\n";
+        let text = "q = 0.2500 0.0000 0.0000\nfreq (1) = -1.000000 [THz] = -33.356410 [cm-1]\nfreq (2) = 0.000000 [THz] = 0.000000 [cm-1]\nfreq (3) = 2.000000 [THz] = 66.712819 [cm-1]\n";
         assert_eq!(
             frequencies(text, [0.25, 0., 0.], 3).unwrap(),
             [-33.356410, 0., 66.712819]
@@ -452,6 +459,13 @@ mod tests {
             text.lines().take(3).collect::<Vec<_>>().join("\n"),
         ] {
             assert!(frequencies(&bad, [0.25, 0., 0.], 3).is_err());
+        }
+        for (printed, expected) in [("0.0833", 1./12.), ("-0.0833", -1./12.), ("0.08333333", 1./12.)] {
+            let rounded = text.replace("0.2500", printed);
+            frequencies(&rounded, [expected, 0., 0.], 3).unwrap();
+        }
+        for printed in ["0.0834", "0.08333339", "0.08", "0.0833333", "NaN"] {
+            assert!(frequencies(&text.replace("0.2500", printed), [1./12., 0., 0.], 3).is_err());
         }
     }
 }

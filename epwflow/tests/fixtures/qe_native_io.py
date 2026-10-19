@@ -23,7 +23,7 @@ if kind == 'dynmat':
     matrix_records(source)
     assert source.find('NUMBER_OF_Q').text.strip() == '1'
     assert source.find('FREQUENCIES_THZ_CMM1') is None
-    q=source.find('DYNAMICAL_MAT_.1/Q_POINT').text
+    q=' '.join('{:.4f}'.format(float(v)) for v in source.find('DYNAMICAL_MAT_.1/Q_POINT').text.split())
     nat=int(source.find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)
     if (ROOT/'reference-failure').exists() and (ROOT/'reference-failure').read_text().strip() == Path.cwd().name:
         print('Error in routine reference fixture'); sys.exit(2)
