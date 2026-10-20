@@ -68,10 +68,7 @@ epw_wannier：独立参考 + Wannier／粗网格 → 质量核验 + 比较图
 epw_superconductivity：细网格 EPC → 超导求解 → 最终结果包
 ```
 
-| 程序 | `work/.epwflow/generated/` 中的脚本 | 主要科学目录与完成依据 |
-| --- | --- | --- |
-| `epw_phonon` | `qe-data.sh` | `CALC/qe-phonon/`、`scf/`、`nscf/`、`qe-data/manifest.json` |
-| `epw_wannier` | `interpolation.sh` | `CALC/quality-sources/`、`coarse/`；成功后发布 `wannier/manifest.json` 和 `results/` 比较包 |
+| 程序 | `work/.epwflow/generated/` 中的脚本 | 主要科学目录与完成依据 | | --- | --- | --- | | `epw_phonon` | `qe-data.sh` | `CALC/qe-phonon/`、`scf/`、`nscf/`、`qe-data/manifest.json` | | `epw_wannier` | `interpolation.sh` | `CALC/quality-sources/`、`coarse/`；成功后发布 `wannier/manifest.json` 和 `results/` 比较包 |
 | `epw_superconductivity` | `all.sh` | 后续生成 `CALC/fine/`、`interpolation/`、`superconductivity/`；完整交付到 `work/results/` |
 
 `submit-all.sh` 才是一次提交三个阶段依赖链的入口；`all.sh` 在这里是第三阶段的内部脚本名。脚本名、程序名和目录名没有完全统一，是阅读困难的一个实际原因。
@@ -106,7 +103,7 @@ epw_superconductivity：细网格 EPC → 超导求解 → 最终结果包
 REPO="/data/home/mayuan/code/dftflow"
 RUN_DIR="$REPO/examples/MgB2/sugon-amd/run"
 EPW_DIR="$RUN_DIR/epwflow"
-EPW_BIN="$REPO/test_auto/MgB2/local_run/010-public-pbe/bin-window-contract"
+EPW_BIN="$REPO/bin/epwflow"
 CFG="$EPW_DIR/epwinput.toml"
 W="$EPW_DIR/work"
 LEDGER="$REPO/docs/local/epwflow-campaign.json"
@@ -135,7 +132,9 @@ ls -l "$CFG" "$RUN_DIR/POSCAR" "$RUN_DIR/pp"
 
 结构文件使用 `/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/POSCAR`，赝势目录使用 `/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/pp`。两者均位于本目录的上一级 `run/`，无需复制到 `epwflow/`。
 
-`EPW_BIN` 指向当前已有、供登录／计算节点使用的运行库兼容打包制品，并与本目录原有生成脚本的程序路径一致；它不是默认安装。若该目录已清理，先重新核对受测制品位置，不直接换成 PATH 中的旧程序。帮助输出只能确认入口可启动，不能证明 QE／EPW 在计算节点已通过运行检查。
+`EPW_BIN` 指向仓库 `bin/epwflow/` 中的运行库兼容安装副本；其他模块分别位于 `bin/qeflow/`、`bin/vaspflow/` 等目录。安装方法见[根 README](../../../../../README.md#安装更新与旧节点兼容)。不直接换成 PATH 中可能较旧的程序。帮助输出只能确认入口可启动，不能证明 QE／EPW 在计算节点已通过运行检查。
+
+**已有运行的路径绑定**：历史生成脚本和工作流记录可能仍引用测试目录中的旧程序，本次保留这些文件及其哈希，不手改脚本或身份清单。新安装副本可用于只读状态和数据检查；已有生成脚本仍按原程序身份使用，不能从新路径对其重复生成，否则会报“已生成脚本身份不同”。新运行统一从 `bin/epwflow/` 生成；已有失败运行先排除科学错误，再按第 7 节显式恢复，不能通过换安装目录消除原计算失败。
 
 本例的配置文件名是 **`epwinput.toml`**，因此所有新运行命令显式传 `-c`；程序默认寻找的名称仍是 `inputepw.toml`。
 
@@ -318,7 +317,7 @@ squeue -u "$USER"
 ```bash
 cd "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow"
 
-EPW_BIN="/data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/010-public-pbe/bin-window-contract"
+EPW_BIN="/data/home/mayuan/code/dftflow/bin/epwflow"
 CFG="$PWD/epwinput.toml"
 W="$PWD/work"
 
@@ -329,7 +328,7 @@ printf '%s\n' "$CALC"
 | 命令 | 具体作用 |
 | --- | --- |
 | `cd ".../run/epwflow"` | 进入本例目录；后面的 `$PWD` 才会指向这里 |
-| `EPW_BIN=".../bin-window-contract"` | 记住受测程序目录，后续通过 `"$EPW_BIN/epw_wannier"` 调用第二阶段程序 |
+| `EPW_BIN=".../bin/epwflow"` | 记住按模块安装的程序目录，后续通过 `"$EPW_BIN/epw_wannier"` 调用第二阶段程序 |
 | `CFG="$PWD/epwinput.toml"` | `$PWD` 是当前目录的绝对路径；拼接后得到本例配置文件的完整路径 |
 | `W="$PWD/work"` | 记住工作目录路径，后续从中读取状态和生成脚本；不会创建 `work/` |
 | `CALC=$(python ...)` | 从本次运行记录中读取 `calculation_dir`，把实际计算目录的绝对路径存入变量 `CALC` |

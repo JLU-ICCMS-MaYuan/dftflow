@@ -4,9 +4,9 @@
 
 ## 当前交付物
 
-主 workspace 生成五个程序：qeflow、vaspflow、scflow、wannier90、substitution。它们通过 argv[0] 识别兼容命令，避免为每个旧 CLI 单独构建二进制。安装器创建 **51 个唯一入口**：48 个旧命令名，加 qeflow/vaspflow/wannier90 三个家族名；scflow、substitution 已计入旧名，不再重复相加。
+主 workspace 生成八个程序：原五个家族程序 qeflow、vaspflow、scflow、wannier90、substitution，以及三个 EPW 阶段程序 epw_phonon、epw_wannier、epw_superconductivity。原五个家族通过 argv[0] 识别兼容命令，共 51 个唯一入口；加三个 EPW 程序后，主安装器验证 **54 个入口**。三个 EPW 入口是独立二进制，不分派到旧 epwflow 命令。
 
-[独立 qf-gen-dyn0](tools/qf-gen-dyn0.md) 是另一个 Cargo 工程，单独构建与安装，不计入主 workspace 的五个目标或 51 个入口。保留的 Python mattersim_opt 通过 pyproject.toml 提供，也不由 Rust 安装器安装。源码中的语言迁移范围与历史验收见 [0004](../specs/0004-dftflow-rust/spec.md)。
+[独立 qf-gen-dyn0](tools/qf-gen-dyn0.md) 是另一个 Cargo 工程，单独构建，不计入主 workspace 的八个目标或 54 个入口；分组安装器可通过显式参数一并安装它。保留的 Python mattersim_opt 通过 pyproject.toml 提供，不由 Rust 安装器安装。源码中的语言迁移范围与历史验收见 [0004](../specs/0004-dftflow-rust/spec.md)。
 
 | 程序 | 实现职责 | 用法导航 |
 | --- | --- | --- |
@@ -15,6 +15,7 @@
 | wannier90 | Wannier 接口、能窗与绘图 | [CLI](wannierflow/README.md) |
 | scflow | EPC 数值分析与结果输出 | [CLI](scflow/README.md) |
 | substitution | 元素替换、状态与跨 flow 调用 | [CLI](substitutionflow/README.md) |
+| 三个 EPW 阶段程序 | QE 声子数据、Wannier／插值、细网格与原生超导流程；科学验收边界见模块页 | [CLI](epwflow/README.md) |
 
 ## 公共模块关系
 
@@ -57,13 +58,17 @@ command -v qeflow
 command -v qe_phonon_split_index
 command -v qf-gen-dyn0
 
-# 更新已经构建并完成所需兼容打包的五个程序
-bash scripts/install-current.sh /path/to/built/bin
+# 将八个已经构建并完成所需兼容打包的程序按模块安装
+bash scripts/install-bin.sh /path/to/built/bin
+# 显式安装独立 dyn0（不提供第三个参数时保留已有工具）
+bash scripts/install-bin.sh /path/to/built/bin "$PWD/bin" /path/to/qf-gen-dyn0
 ```
 
-[install-current.sh](../../scripts/install-current.sh) 默认更新到 ~/.local/share/dftflow/current/bin，入口位于 ~/.local/bin；额外参数可指定安装根目录及入口目录。程序先复制到临时目录，通过 51 个入口验证后逐文件原子替换；更新锁避免并发安装，退出清理临时副本，不创建时间戳版本。五程序并非整组原子切换，应在无活动计算链时更新；固定配置快照不等于固定程序版本。
+[install-bin.sh](../../scripts/install-bin.sh) 默认安装到仓库 `bin/`，按 `epwflow`、`qeflow`、`vaspflow`、`scflow`、`wannierflow`、`substitutionflow` 分组；可显式安装的独立工具在 `bin/tools/`。真实二进制只复制一份，兼容命令使用组内相对软链接，例如 `bin/qeflow/qe_scf -> qeflow`。`bin/` 不入 Git，构建缓存仍在 `target/`。
 
-[install-compat.sh](../../scripts/install-compat.sh) 负责入口软链接，默认覆盖旧入口；仅显式设置 DFTFLOW_BACKUP_ENTRIES=1 时备份。主安装器保留独立 qf-gen-dyn0，独立工具不计入五主程序和 51 入口。本机独立工具使用 tools/qf-gen-dyn0/current/bin。历史清理与迁移方法见 [清理指南](../specs/0011-build-history-cleanup/quickstart.md)。
+分组安装复用 [install-compat.sh](../../scripts/install-compat.sh) 的入口清单和全部 54 个入口启动检查；通过后预检目标冲突并逐文件替换，安装锁避免并发写入，退出清理临时副本，不创建历史版本。显式 dyn0 额外检查启动。缺失／损坏来源或目标目录冲突在替换前拒绝；更新仍不是整组事务，应在无活动计算链时进行。
+
+本次分组安装不改 PATH 或 `~/.local/bin`。[install-current.sh](../../scripts/install-current.sh) 保留为显式兼容方式，其默认位置仍是 `~/.local/share/dftflow/current/bin`。历史程序、已生成脚本和 EPW 身份记录不会自动迁移；已有记录绑定程序的绝对路径、链接目标和哈希，不改写这些记录绕过校验。历史清理方法见 [清理指南](../specs/0011-build-history-cleanup/quickstart.md)。
 
 登录节点与计算节点 glibc 不匹配时，项目提供 [package-native-runtime.sh](../../scripts/linux/package-native-runtime.sh)，打包一致的加载器与运行库并用 patchelf 修正制品。该方式依赖共享可读路径，不代表跨任意 Linux 的通用静态包；不通过修改系统库或全局 LD_LIBRARY_PATH 来切换。
 

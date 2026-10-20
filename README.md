@@ -14,45 +14,35 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 ## 编译产物与安装目录
 
-编译和安装是两步：Cargo 先把产物写进仓库的 `target/`，再把需要使用的程序更新到固定 `current/bin/` 目录，最后在 `~/.local/bin` 创建命令软链接。`~` 是当前用户的家目录；下面的路径是本机采用的安装布局，不是 Cargo 强制指定的目录。
+编译和安装是两步：Cargo 把构建缓存和原始产物写入 `target/`；日常使用的可执行程序复制到仓库的 `bin/<模块>/`，同一路径更新覆盖，不放在测试数据目录中。`bin/` 是本机制品目录，不提交 Git。
 
 ```text
 仓库/
-├── target/linux-x86_64/x86_64-unknown-linux-gnu/release/  Linux 原生构建产物
-├── target/macos-arm64/aarch64-apple-darwin/release/      Apple Silicon 构建产物
-├── dist/linux-x86_64-musl/                              Linux 静态交付包
-└── docs/local/                                        本机环境、构建日志与验收证据
+├── bin/
+│   ├── epwflow/          epw_phonon、epw_wannier、epw_superconductivity
+│   ├── qeflow/           qeflow 与 qe_* 兼容入口
+│   ├── vaspflow/         vaspflow 与 vasp_* 兼容入口
+│   ├── substitutionflow/ substitution 与 substitution_* 兼容入口
+│   ├── scflow/           scflow
+│   ├── wannierflow/      wannier90 与 wannier_* 兼容入口
+│   └── tools/            独立 qf-gen-dyn0（显式安装时）
+├── target/               按平台存放构建缓存与原始可执行文件
+├── dist/                 平台交付包
+└── docs/local/           本机环境、制品来源、哈希和验证证据
 
-~/.local/
-├── bin/                                               PATH 中的命令入口
-│   ├── qeflow -> ../share/dftflow/current/bin/qeflow
-│   ├── qe_phonon_split_coords -> 同一个 qeflow
-└── share/dftflow/
-    ├── current/bin/                            五个家族程序的当前安装副本
-    ├── native/linux-x86_64/                            本机原生依赖与兼容运行库
-    │   ├── include/                                   OpenBLAS、spglib 等头文件
-    │   ├── lib/                                       库、私有 glibc 加载器及 pkgconfig/
-    │   ├── lib64/                                     本机 spglib 静态库等及 pkgconfig/
-    │   └── bin/                                       依赖工具预留目录，本机目前为空
-    └── tools/qf-gen-dyn0/current/bin/                   独立 dyn0 工具
+~/.local/share/dftflow/native/linux-x86_64/
+├── include/              OpenBLAS、spglib 等头文件
+├── lib/                  原生库、私有 glibc 加载器和 pkgconfig/
+└── lib64/                本机 spglib 等库和 pkgconfig/
 ```
 
-图中软链接是示意关系，安装器实际写入固定程序目录的绝对路径。各目录用途如下：
+例如，本机 EPW 三程序统一使用 `/data/home/mayuan/code/dftflow/bin/epwflow/`，QE 使用 `/data/home/mayuan/code/dftflow/bin/qeflow/`。组内兼容入口是指向同组真实程序的相对软链接：`bin/qeflow/qe_scf -> qeflow`，不重复复制二进制。`qf-gen-dyn0` 来自独立 Cargo 工程，放在 `bin/tools/`。
 
-| 目录 | 存放内容与用途 |
-| --- | --- |
-| 仓库 `target/` | 编译缓存、中间文件和原始可执行文件；不同平台单独存放，`release/` 中还有 Cargo 的其他产物。清理构建缓存不会删除已经复制到 `current/bin/` 的安装副本。 |
-| `current/bin/` | 当前使用的 `qeflow`、`vaspflow`、`scflow`、`wannier90`、`substitution`。更新覆盖同一路径，不保留时间戳版本。 |
-| `native/linux-x86_64/include/` | 编译需要的 C 头文件，例如 `cblas.h`、`openblas_config.h`、`spglib.h`。 |
-| `native/linux-x86_64/lib/` | 本机 OpenBLAS 0.3.30 的 `libopenblas.a`、绘图所需字体等共享库，以及为旧 glibc 计算节点准备的加载器、libc 等运行库。`pkgconfig/*.pc` 告诉编译工具到哪里找头文件和库。 |
-| `native/linux-x86_64/lib64/` | 本机 spglib 2.6.0 的 `libsymspg.a` 和相关构建元数据；`lib`/`lib64` 是依赖安装工具的目录选择，并不表示本机同时装了 32 位和 64 位两套程序。 |
-| `tools/` | 不属于五个家族程序的独立工具，目前是 `qf-gen-dyn0`；由它自己的 Cargo 工程单独编译和安装。 |
-| `~/.local/bin/` | 用户输入的 `qe_*` 等命令所在位置。软链接决定当前使用哪个版本，加入 PATH 后无需每次输入完整路径。 |
-| 仓库 `docs/local/` | 不入 Git 的机器路径、编译环境、日志、制品哈希和测试图片；不是运行程序必须遍历的安装目录。 |
+安装器只整理 DFTFlow 自身已经构建、完成必要运行库打包的程序，不移动外部 `pw.x`、`ph.x`、`epw.x` 或 VASP。原生依赖仍在本机前缀中，尤其 `native/` 的私有加载器和运行库不能因整理 `bin/` 而删除。`lib`/`lib64` 是依赖安装目录的选择，不表示同时维护两套位数不同的程序。
 
-选择 `~/.local/share/dftflow/` 是为了使用用户权限安装，集中保存当前程序、原生依赖和独立工具。主程序入口固定指向 `current/bin/`，后续更新无需调整 PATH；安装器默认不再备份旧入口。历史 `.dftflow-backup-*` 不属于当前安装流程。
+新路径可以直接调用，例如 `"$PWD/bin/qeflow/qe_scf" --help`。本次分组安装不修改 PATH 或 `~/.local/bin`；旧的 `scripts/install-current.sh` 仍作为显式兼容安装方式保留，其默认目标仍为 `~/.local/share/dftflow/current/bin`。已有脚本或运行记录绑定的旧程序先保留，不改写科学身份记录，也不把历史目录全量清理当作安装步骤。
 
-更新按程序逐文件原子替换；已经运行的进程继续使用原文件，新启动的命令使用更新后的程序。五个程序并非整组同时切换，应在没有活动计算链时更新，避免同一链使用不同程序版本。生成脚本引用 `current` 时，提交后的配置快照仍固定，但程序本身不锁定历史版本。`native/` 被私有加载器引用，必须保留。
+更新按程序逐文件原子替换，不保证所有程序同时切换；应在没有活动计算链时更新。生成脚本和 EPW 身份记录可能固定了程序绝对路径、链接目标和哈希，仅复制到新目录不会自动迁移这些绑定；已有运行按其恢复约定处理，新运行使用 `bin/<模块>/`。
 
 历史安装副本与构建缓存的清理方法见 [编译历史清理指南](docs/specs/0011-build-history-cleanup/quickstart.md)。
 
@@ -139,7 +129,7 @@ cmake --install spglib-build
 在仓库根目录执行，Rust/Cargo 与上述原生依赖应已就绪：
 
 ```bash
-# 五个家族程序的 release 构建
+# 八个 workspace 程序的 release 构建
 bash scripts/build-native.sh
 
 # 完整 release 测试
@@ -185,12 +175,18 @@ bash scripts/linux/build.sh
 
 ```bash
 build_bin="$PWD/target/linux-x86_64/x86_64-unknown-linux-gnu/release"
-bash scripts/install-current.sh "$build_bin"
+bash scripts/install-bin.sh "$build_bin"
 ```
 
-脚本先复制到临时目录并验证 51 个入口，再逐文件替换 `~/.local/share/dftflow/current/bin/`，最后更新 `~/.local/bin/` 的固定软链接；成功或失败退出均清理临时副本。支持额外参数指定安装根目录与入口目录，不生成历史版本。
+脚本先复制到临时目录并验证 54 个入口，再按模块逐文件替换仓库 `bin/` 下的程序和相对软链接；成功或失败退出均清理临时副本和安装锁。缺失、不可启动的源程序或目标目录冲突会在替换前拒绝，不生成历史版本。可用第二个参数指定其他分组安装根目录。
 
-安装器提供 48 个旧名及家族入口，共 51 个命令名，底层是五份二进制；按入口名字分派到对应子命令。已有同名入口默认覆盖（设置 `DFTFLOW_BACKUP_ENTRIES=1` 才备份），安装目录必须与源目录不同。独立 [dyn0 工具](tools/qf-gen-dyn0/README.md) 从自己的 Cargo 工程编译，不由主安装器安装。
+安装器提供 54 个命令名：五个原家族程序的 51 个入口，加三个独立 EPW 阶段程序。兼容名字按入口名分派到对应子命令。独立 [dyn0 工具](tools/qf-gen-dyn0/README.md) 需从自己的 Cargo 工程编译；显式传第三个参数时安装到 `bin/tools/`，不传时保留已有独立工具：
+
+```bash
+bash scripts/install-bin.sh "$build_bin" "$PWD/bin" \
+    "/path/to/built/qf-gen-dyn0"
+```
+
 
 本机登录节点与计算节点的 glibc 不一致，实际安装副本额外设置了私有加载器和运行库搜索路径，原始 `target/` 产物保留。这是当前共享文件系统上的兼容打包方式：
 
@@ -199,11 +195,11 @@ bash scripts/install-current.sh "$build_bin"
 package_dir=$(mktemp -d)
 bash scripts/linux/package-native-runtime.sh \
     "$build_bin" "$package_dir" "$DFTFLOW_NATIVE_PREFIX"
-bash scripts/install-current.sh "$package_dir"
+bash scripts/install-bin.sh "$package_dir"
 rm -r -- "$package_dir"
 ```
 
-先完成兼容打包，再安装到 `current`。打包设置私有 ELF interpreter 和 rpath；计算节点必须能访问同一共享路径。不要把含私有 glibc 的目录加入全局 `LD_LIBRARY_PATH`。此方式绑定本机运行库路径；通用 Linux 静态交付仍使用 musl 包。
+先完成兼容打包，再安装到仓库 `bin/<模块>/`。打包设置私有 ELF interpreter 和 rpath；计算节点必须能访问同一共享路径。不要把含私有 glibc 的目录加入全局 `LD_LIBRARY_PATH`。此方式绑定本机运行库路径；通用 Linux 静态交付仍使用 musl 包。
 
 `qe_scf` / `qe_nscf` 支持 `-i/--input`、`-c/--config`、`-r/--run`、`-s/--submit`；默认配置 `input.toml`。仅准备时不运行，`-r` 实际执行，`-s` 提交 `run_qe.sh`；运行和提交互斥。NSCF 继承 SCF 的 XML、电荷密度和 PAW 数据。
 

@@ -17,6 +17,8 @@
 
 ## 构建与使用
 
+日常受测程序统一安装到仓库 `bin/epwflow/`，构建缓存仍由 Cargo 放入 `target/`。从已完成兼容打包的八程序目录运行 `bash scripts/install-bin.sh /path/to/compatible/bin`；`submit.sh` 默认读取仓库 `bin/epwflow/`，仍可通过 `EPW_BIN_DIR` 显式指定历史绑定程序。以下 004 的旧路径只用于其历史现场复现，不作为新运行的安装目录；不覆盖旧脚本绑定或原生科学结果。
+
 ```bash
 bash scripts/build-native.sh build -p epwflow --bins --locked --offline
 # 以下 004 只复现历史脚本；新功能须按主手册准备新目录和当前程序。

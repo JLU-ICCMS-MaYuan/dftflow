@@ -15,5 +15,5 @@ case "$1" in
 esac
 config_path="$2"
 shift 2
-bin_dir="${EPW_BIN_DIR:-$repo_dir/target/linux-x86_64/x86_64-unknown-linux-gnu/debug}"
+bin_dir="${EPW_BIN_DIR:-$repo_dir/bin/epwflow}"
 exec "$bin_dir/$program" -s -c "$config_path" "$@"
