@@ -1,5 +1,7 @@
 # MgB₂ / sugon-amd 声子全流程
 
+当前 QE／EPW 编号工作区的操作入口见 [run/README.md](run/README.md)：进入 `run/`、修改根 `input.toml`、执行三个公开 EPW 程序，已有相容 QE 结果可复用。下文保留独立 qeflow 声子算例的准备与运行方式，其目录及配置规则适用于该独立算例。
+
 ## 配置与范围
 
 本机使用 QE 7.4.1、Slurm amd7513 分区、单节点 64 MPI 进程，配置保存在 docs/local/MgB2-sugon-amd.env。

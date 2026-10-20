@@ -57,7 +57,7 @@ pub fn collect(
             source_checks.insert(p.clone(), store::hash_file(p)?);
         }
     }
-    let dest = work.join("qe-data/save");
+    let dest = crate::foundation::layout::path(&work, "qe-data/save");
     ensure!(
         !dest.exists(),
         "input_conflict: PH 交付目录已存在，保留原现场"
@@ -141,7 +141,7 @@ pub fn collect(
 
 /// 把 q 点映射落盘为可定位 JSON（FR-008 的 q_index_map.json）。
 pub fn write_q_index_map(work: &Path, qpoints: &[QPoint]) -> Result<()> {
-    let path = work.join("qe-data").join("q_index_map.json");
+    let path = crate::foundation::layout::path(&work, "qe-data").join("q_index_map.json");
     let map: BTreeMap<usize, serde_json::Value> = qpoints
         .iter()
         .map(|q| {

@@ -30,6 +30,14 @@ verify() {
 }
 install_grouped "$source_bin" "$dyn0"
 verify
+mkdir -p "$test_dir/module-bin/qeflow"
+printf '保留其他模块\n' > "$test_dir/module-bin/qeflow/unchanged"
+bash "$repo_dir/scripts/install-bin.sh" --module epwflow "$source_bin" "$test_dir/module-bin" >/dev/null
+for program in epw_phonon epw_wannier epw_superconductivity; do
+    cmp "$source_bin/$program" "$test_dir/module-bin/epwflow/$program"
+done
+[[ $(cat "$test_dir/module-bin/qeflow/unchanged") == '保留其他模块' ]]
+[[ $(find "$test_dir/module-bin/epwflow" -type f | wc -l) -eq 3 ]]
 install_grouped "$source_bin"
 verify
 mkdir "$test_dir/invalid"

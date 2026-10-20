@@ -280,6 +280,7 @@ pub fn run_attempt(
     })?;
     let input_path = dir.join("epw.in");
     store::atomic_bytes(&input_path, text.as_bytes())?;
+    crate::foundation::workspace::native_script(program,&input_path,dir,launcher,"epw",false,false)?;
     fs::copy(&inputs.crystal.path, dir.join("crystal.fmt"))?;
     fs::copy(&inputs.a2f.path, dir.join("source.a2f"))?;
     ensure!(

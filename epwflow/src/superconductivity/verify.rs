@@ -218,7 +218,7 @@ fn published(
     cfg: &Config,
     run_id: &str,
 ) -> Result<(super::manifest::SuperconductivityManifest, Vec<Identity>)> {
-    let path = work.join("superconductivity/manifest.json");
+    let path = crate::foundation::layout::path(&work, "superconductivity/manifest.json");
     let m = super::manifest::SuperconductivityManifest::load(&path)?;
     ensure!(
         m.schema_version == 2 && m.run_id == run_id,
@@ -229,7 +229,7 @@ fn published(
         "data_invalid: 原生超导完成状态与验证冲突"
     );
     ensure!(
-        store::hash_file(&work.join("interpolation/manifest.json"))? == m.interpolation_digest,
+        store::hash_file(&crate::foundation::layout::path(&work, "interpolation/manifest.json"))? == m.interpolation_digest,
         "input_conflict: 当前 F3 改变"
     );
     let expected = match cfg.superconductivity.mode {
@@ -253,7 +253,7 @@ fn published(
         } else {
             // 预算等前置错误也可留下零尝试模式，来源仍须绑定当前原生 F3。
             let f3 = crate::interpolation::manifest::InterpolationManifest::load(
-                &work.join("interpolation/manifest.json"),
+                &crate::foundation::layout::path(&work, "interpolation/manifest.json"),
             )?;
             super::source::bind(work, cfg, &f3)?
         };

@@ -81,9 +81,9 @@ pub fn copy_tree(source: &Path, target: &Path) -> Result<Vec<TreeFile>> {
 }
 
 pub fn snapshot(outdir: &Path, work: &Path) -> Result<PathBuf> {
-    let target = work.join("scf/snapshot");
+    let target = crate::foundation::layout::path(&work, "scf/snapshot");
     let entries = copy_tree(outdir, &target)?;
-    store::write(&work.join("scf/snapshot-files.json"), &entries)?;
+    store::write(&crate::foundation::layout::path(&work, "scf/snapshot-files.json"), &entries)?;
     for e in &entries {
         let p = target.join(&e.relative_path);
         let mut permissions = fs::metadata(&p)?.permissions();
@@ -94,10 +94,10 @@ pub fn snapshot(outdir: &Path, work: &Path) -> Result<PathBuf> {
 }
 
 pub fn verify_snapshot(work: &Path) -> Result<()> {
-    let expected: Vec<TreeFile> = store::read(&work.join("scf/snapshot-files.json"))
+    let expected: Vec<TreeFile> = store::read(&crate::foundation::layout::path(&work, "scf/snapshot-files.json"))
         .context("data_invalid: 缺少完整 SCF 快照身份")?;
     ensure!(
-        expected == files(&work.join("scf/snapshot"))?,
+        expected == files(&crate::foundation::layout::path(&work, "scf/snapshot"))?,
         "input_conflict: SCF 快照被修改"
     );
     Ok(())
@@ -105,7 +105,7 @@ pub fn verify_snapshot(work: &Path) -> Result<()> {
 
 pub fn stage_scf(work: &Path, outdir: &Path, prefix: &str) -> Result<()> {
     verify_snapshot(work)?;
-    copy_tree(&work.join("scf/snapshot"), outdir)?;
+    copy_tree(&crate::foundation::layout::path(&work, "scf/snapshot"), outdir)?;
     nonempty(&outdir.join(format!("{prefix}.save/data-file-schema.xml")))?;
     verify_snapshot(work)
 }

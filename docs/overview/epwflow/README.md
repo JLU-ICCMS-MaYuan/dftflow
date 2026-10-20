@@ -2,7 +2,24 @@
 
 当前科学门已按最新指令改为最大 50／RMS 20 cm⁻¹；原五点实测 49.448071／8.075133，已由新代码只读复核通过。后文旧门失败段落保留历史语境，不能作为当前下游门限。原生代码收尾与尚缺的真实 Tc 证据见[原生超导适配](native-superconductivity.md)。最新真实阶段已完成 LDA 40³/20³ EPC，λ_integral=0.6853853、λ_sum=0.6853511；iso 原生线性化 Tc 区间为 36.71～37.06 K，两模式非线性能隙与完整 Tc 验收仍未通过。下文早期未运行细网格的记录保留历史语境，当前事实以本段及原生超导适配页为准。
 
-## 当前结论
+## 编号工作区与当前配置续算
+
+新工作区设置 `layout="numbered"`，默认配置为根 `input.toml`，采用八个实际计算目录：SCF、NSCF、`qe_eband/qe_eledos`、三种 PH 模式之一、Wannier、粗 EPC、细 EPC、iso/aniso。实际计算的输入、`submit.sh` 与日志共目录；依赖上游数值的子任务在执行到该步时生成。隐藏目录 `.epwflow` 保存状态、尝试和历史，不以链接伪装计算目录。
+
+三个公开程序保持，`epw_wannier --stage wannier|coarse` 和 `epw_superconductivity --stage fine|superconductivity` 分离科学边界；默认分别到第 6、8 步。`epw_phonon` 管理第 1～4 步，复用共享 qeflow/qf 输入、执行和后处理组件。PH 使用独立 SCF 快照，不额外做 SCF；nosplit、coords、index 均校验后交付 `save/`。
+
+生成、提交和 `--resume` 都读取当前根配置，按本阶段参数、程序及上游产物指纹决定复用。资源变更不让科学结果失效；细网格只影响 7/8，能窗影响 5～8，粗 q 更新 PH 和 6～8，保留相容 SCF、NSCF、Wannier。对比展宽由独立后处理清单管理，不重做拟合/EPC；路径参考变化只补相应参考和粗网格重读。已提交任务使用独立参数快照，活动/终态未知的工作区禁止重提。
+
+第 5 步通过 EPW 内嵌 Wannier 拟合，随后由原生 Wannier90/postw90 生成电子能带和总 DOS；非磁标量 DOS 显式统一自旋数与展宽。第 6 步核验 `.ukk` 的完整格式、k 点数和保留带后复制复用，`wannierize=false`，仍执行独立质量门和四类三格式比较。细矩阵与原生 iso/aniso 沿用现有校验/求解组件，partial 不发布阶段完成清单；失败后相容的成功子尝试保留。
+
+并行预检覆盖生成、提交、脚本启动；手工 `sbatch` 同样校验实际 Slurm 分配。EPW 当前单 image、每 pool 一个 MPI；粗阶段读取实际 NSCF，细阶段按本次 nkf 检查空 pool。32 k 配 64 pool 明确报错退出，不更改用户物理网格。QE 保留自身整除规则。旧工作区提供 `--import-work`，核验后复制 SCF、NSCF、PH、后处理和相容独立参考，来源保持只读；中断物化有恢复记录。
+
+程序仍受原质量门、共享预算与来源保护约束，严格投影继续暂缓。上述布局、调度、复用及防护通过隔离公开进程/脚本验证；真实 MgB₂ 迁移只核验文件和哈希，不运行科学作业，也不将旧数值冒烟算作新链科学验收。使用见 [模块手册](../../../epwflow/README.md)、[MgB₂ 操作说明](../../../examples/MgB2/sugon-amd/run/README.md)，证据见 [0018 验收](../../specs/0018-epwflow-stage-workspaces/acceptance.md)。
+
+## 历史固定工作区与兼容行为
+
+本节的固定快照、旧目录和 `--resume -w` 约束适用于未设置 `layout` 的历史工作区。新编号工作区使用上一节的当前配置机制；其他科学格式、质量与数值边界继续按实际适用范围核验。
+
 
 EPW 仅构建 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个独立程序，旧 `epwflow` 可执行入口已移除。三个程序共用配置、固定快照、预算与状态。默认生成本阶段 Slurm 脚本，不启动科学程序或预留预算；`-s` 提交，`-r` 需要已登记分配，`--resume -w` 使用固定快照恢复。源码、构建和安装分别核对；2026-10-20 的 MPI 恢复版本已更新仓库 bin/epwflow 中的三个程序，历史冻结测试程序保持。
 

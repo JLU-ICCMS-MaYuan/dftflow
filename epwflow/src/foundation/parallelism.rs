@@ -2,6 +2,55 @@
 use super::{config::Config, snapshot::RunBinding};
 use anyhow::{ensure, Context, Result};
 
+/// 仅读取显式数量，不替用户修正或补充并行参数。
+fn read_count(args: &[String], flags: &[&str], default: u32) -> Result<u32> {
+    let mut found = None;
+    for (i, value) in args.iter().enumerate() {
+        if flags.contains(&value.as_str()) {
+            ensure!(found.is_none(), "configuration: 并行参数重复");
+            let count = args.get(i+1).context("configuration: 并行参数缺少数量")?.parse::<u32>()?;
+            ensure!(count>0, "configuration: 并行数量必须为正");
+            found=Some(count);
+        } else {
+            ensure!(!flags.iter().any(|f| value.starts_with(&format!("{f}="))),
+                "configuration: 并行数量需要独立参数值");
+        }
+    }
+    Ok(found.unwrap_or(default))
+}
+
+pub fn preflight(cfg: &Config, step: super::stages::Step, allocation: bool) -> Result<()> {
+    let mpi=cfg.resources.mpi;
+    let launched=read_count(&cfg.programs.launcher, &["-np","-n","--np","--ntasks"],1)?;
+    ensure!(launched==mpi, "configuration: MPI 启动数量 {launched} 与 resources.mpi={mpi} 不一致");
+    if allocation {
+        let tasks=std::env::var("SLURM_NTASKS").context("allocation: 缺少 SLURM_NTASKS")?.parse::<u32>()?;
+        ensure!(tasks==mpi,"allocation: Slurm ntasks={tasks} 与 MPI={mpi} 不一致");
+    }
+    let epw=step.epw();
+    let args=if epw { &cfg.programs.epw.args } else if step==super::stages::Step::Phonon { &cfg.programs.ph.args } else { &cfg.programs.pw.args };
+    let pools=read_count(args,&["-nk","-npool","--npool","-npools"],1)?;
+    let images=read_count(args,&["-ni","-nimage","--nimage"],1)?;
+    ensure!(mpi%images==0 && (mpi/images)%pools==0,"configuration: MPI={mpi}, image={images}, pool={pools} 不能整除");
+    if epw {
+        let grid=if step>=super::stages::Step::Fine {cfg.interpolation.k_grid} else {cfg.qe.nscf.k_grid};
+        let mut nk=grid.iter().map(|&x|u64::from(x)).product::<u64>();
+        if step<super::stages::Step::Fine {
+            let xml=super::layout::path(&cfg.work_dir,"nscf/out").join(format!("{}.save/data-file-schema.xml",cfg.qe.prefix));
+            if xml.is_file() && (!super::layout::enabled(&cfg.work_dir) || super::stages::reusable(cfg,super::stages::Step::Nscf)?) {
+                let states=crate::qe_data::nscf::parse_xml(&xml)?;
+                ensure!(states.kpoints.len() as u64==nk,"data_invalid: 实际 NSCF k 点 {} 与网格 {grid:?}={nk} 不一致",states.kpoints.len());
+                nk=states.kpoints.len() as u64;
+            }
+        }
+        ensure!(u64::from(pools)<=nk,
+            "configuration: 网格={grid:?}, k 点数={nk}, MPI={mpi}, pool={pools}；存在空 pool 未分配 k 点，可能导致数组越界，停止执行");
+        ensure!(images==1 && pools==mpi,
+            "configuration: 当前 EPW 单 image 路径要求每 pool 一个 MPI：网格={grid:?}, k 点数={nk}, MPI={mpi}, pool={pools}, image={images}");
+    }
+    Ok(())
+}
+
 fn count_arg(args: &mut Vec<String>, flags: &[&str], count: u32, required: bool) -> Result<()> {
     ensure!(
         !args

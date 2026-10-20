@@ -19,8 +19,8 @@ pub struct CoarseResult {
 
 pub fn stage_f2(f2: &QeManifest, work: &Path) -> Result<()> {
     f2.verify()?;
-    let dir = work.join("coarse");
-    ensure!(!dir.exists(), "input_conflict: 粗网格目标已存在，保留现场");
+    let dir = crate::foundation::layout::path(&work, "coarse");
+    ensure!(!dir.exists() || (crate::foundation::layout::enabled(work) && !dir.join("out").exists() && !dir.join("epw.out").exists()), "input_conflict: 粗网格目标已存在，保留现场");
     let states = f2.states.as_ref().context("data_invalid: 缺少 F2 NSCF")?;
     save::copy_tree(
         states
@@ -37,6 +37,20 @@ pub fn stage_f2(f2: &QeManifest, work: &Path) -> Result<()> {
         .parent()
         .context("data_invalid: PH 缺父目录")?;
     save::copy_tree(ph_dir, &dir.join("save"))?;
+    if crate::foundation::layout::enabled(work) {
+        let source=work.join("5.epw-wannier");
+        let completion:crate::foundation::stages::Completion=store::read(&crate::foundation::stages::receipt(work,crate::foundation::stages::Step::Wannier))?;
+        completion.verify()?;
+        // 固定实际前缀；不从目录名猜测科学身份。
+        let ukk=std::fs::read_dir(&source)?.filter_map(|e|e.ok()).map(|e|e.path()).find(|p|p.extension().is_some_and(|e|e=="ukk")).context("data_invalid: Wannier 变换缺失")?;
+        let prefix=ukk.file_stem().context("data_invalid: ukk 无前缀")?.to_string_lossy();
+        for suffix in ["ukk","wout","win"] {
+            let name=format!("{prefix}.{suffix}");
+            save::nonempty(&source.join(&name))?;
+            fs::copy(source.join(&name),dir.join(&name))?;
+        }
+        store::write(&dir.join("wannier-source.json"),&completion)?;
+    }
     f2.verify()
 }
 
@@ -52,6 +66,7 @@ pub fn run_epw(
         "allocation: EPW 须在 F1 已登记分配内同步运行"
     );
     let program = &epw_cfg.cfg.programs.epw;
+    crate::foundation::workspace::native_script(program,&dir.join(input_name),dir,launcher,"epw",false,false)?;
     let mut cmd = launcher.to_vec();
     cmd.push(program.path.to_string_lossy().into_owned());
     cmd.extend(program.args.clone());
@@ -84,12 +99,12 @@ pub fn run_coarse(
     backend: Backend,
 ) -> Result<CoarseResult> {
     prepare_coarse(epw_cfg, work)?;
-    run_epw(epw_cfg, &work.join("coarse"), "epw_coarse.in", launcher, backend)?;
+    run_epw(epw_cfg, &crate::foundation::layout::path(&work, "coarse"), "epw_coarse.in", launcher, backend)?;
     collect_coarse(work, epw_cfg)
 }
 
 pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
-    let dir = work.join("coarse");
+    let dir = crate::foundation::layout::path(&work, "coarse");
     ensure!(
         dir.join("out").is_dir() && dir.join("save").is_dir(),
         "data_invalid: 粗网格缺少原生 F2 保存数据"
@@ -106,7 +121,7 @@ pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
     epw_cfg.write_quality_points(&dir)?;
     fs::write(
         dir.join("epw_coarse.in"),
-        epw_cfg.epw_coarse_input("./out")?,
+        if crate::foundation::layout::enabled(work) {epw_cfg.native_input(super::epw_config::NativeStage::ReuseWannier,"./out","./save",epw_cfg.cfg.interpolation.phonon_smearings_mev[0])?}else{epw_cfg.epw_coarse_input("./out")?},
     )?;
     Ok(())
 }
@@ -126,7 +141,7 @@ pub fn reread_quality(
     let wout = source.join(format!("{}.wout", cfg.qe.prefix));
     super::wannier::check_native(&wout, cfg.wannier.num_wann as usize)?;
     let original = store::Identity::capture(&wout)?;
-    let dir = work.join("coarse");
+    let dir = crate::foundation::layout::path(&work, "coarse");
     restart::stage(source, source_out, &cfg.qe.prefix,
         cfg.wannier.num_wann as usize, structure.cell.positions.len() * 3, &dir)?;
     fs::copy(&wout, dir.join(wout.file_name().unwrap()))?;
@@ -140,7 +155,7 @@ pub fn reread_quality(
 }
 
 pub fn collect_coarse(work: &Path, epw_cfg: &EpwConfig) -> Result<CoarseResult> {
-    let dir = work.join("coarse");
+    let dir = crate::foundation::layout::path(&work, "coarse");
     super::native::checked_log(&fs::read_to_string(dir.join("epw.out"))?, 0)?;
     let cfg = epw_cfg.cfg;
     let structure = crate::qe_data::qe_config::QeSettings::from_config(cfg)?;

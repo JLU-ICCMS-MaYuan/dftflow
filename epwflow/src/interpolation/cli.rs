@@ -40,7 +40,7 @@ pub fn run(cmd: InterpolationCommand) -> Result<()> {
 }
 
 fn check(work: &Path, json: bool) -> Result<()> {
-    let quality_path = work.join("quality-reference.json");
+    let quality_path = crate::foundation::layout::path(&work, "quality-reference.json");
     if quality_path.is_file() {
         let report = super::native_quality::inspect(&quality_path)?;
         if json {
@@ -55,7 +55,7 @@ fn check(work: &Path, json: bool) -> Result<()> {
         anyhow::ensure!(report.passed, "data_invalid: 独立插值质量未通过，禁止细网格与超导下游");
         return Ok(());
     }
-    let path = work.join("interpolation").join("manifest.json");
+    let path = crate::foundation::layout::path(&work, "interpolation").join("manifest.json");
     if !path.exists() {
         if work.join("epw.in").is_file() || work.join("epw.out").is_file() {
             let report = super::native::inspect(work)?;

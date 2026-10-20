@@ -126,7 +126,7 @@ fn check_points(
 }
 
 /// KPATH 在公开第一阶段已冻结。旧无路径内部调用不改变粗网格接口。
-pub(super) fn run(
+pub(crate) fn run(
     cfg: &Config,
     epw: &EpwConfig,
     backend: Backend,
@@ -142,7 +142,7 @@ pub(super) fn run(
         backend == Backend::Local,
         "allocation: 自动比较必须在已登记分配内同步执行"
     );
-    let f2_path = f2_work.join("qe-data/manifest.json");
+    let f2_path = crate::foundation::layout::path(&f2_work, "qe-data/manifest.json");
     let f2 = QeManifest::load(&f2_path)?;
     f2.verify()?;
     save::verify_snapshot(f2_work)?;
@@ -192,7 +192,7 @@ pub(super) fn run(
             "input_conflict: 自动比较的 {role}.x 未在 F1 冻结或已改变"
         );
     }
-    let coarse_dir = work.join("coarse");
+    let coarse_dir = crate::foundation::layout::path(&work, "coarse");
     let modes = geometry.atoms.len() * 3;
     let nwann = cfg.wannier.num_wann as usize;
     let mut identities = vec![
@@ -203,7 +203,7 @@ pub(super) fn run(
         Identity::capture(&cfg.programs.pw.path)?,
         Identity::capture(&cfg.programs.epw.path)?,
         Identity::capture(&std::env::current_exe()?)?,
-        Identity::capture(&work.join("quality-reference.json"))?,
+        Identity::capture(&crate::foundation::layout::path(&work, "quality-reference.json"))?,
         Identity::capture(&coarse_dir.join(format!("{}.wout", cfg.qe.prefix)))?,
     ];
     for (_, p) in restart::files(
@@ -216,8 +216,10 @@ pub(super) fn run(
         identities.push(Identity::capture(&p)?);
     }
     let (identity_cfg, identity_launcher) = crate::foundation::parallelism::request_identity(cfg, launcher)?;
-    let digest = store::hash_bytes(&serde_json::to_vec(&(&identity_cfg, &identity_launcher, &identities))?);
-    let root = work.join("comparison-native");
+    let digest = if crate::foundation::layout::enabled(work) {
+        crate::foundation::stages::request_digest(cfg,crate::foundation::stages::Step::Coarse,&identities,"comparison")?
+    }else{store::hash_bytes(&serde_json::to_vec(&(&identity_cfg, &identity_launcher, &identities))?)};
+    let root = crate::foundation::layout::path(&work, "comparison-native");
     let request_path = root.join("request.json");
     if request_path.exists() {
         let previous: Request = store::read(&request_path)?;
@@ -248,7 +250,7 @@ pub(super) fn run(
     let electron_xml = electron.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix));
     let inputs = [
         electron_input.clone(),
-        f2_work.join("scf/snapshot-files.json"),
+        crate::foundation::layout::path(&f2_work, "scf/snapshot-files.json"),
     ];
     attempt::run_with_inputs(
         work,
@@ -457,7 +459,7 @@ pub(super) fn run(
         schema_version: 1,
         run_id: f2.run_id,
         ph_mode: format!("{:?}", cfg.phonon.mode).to_lowercase(),
-        quality_reference: file(&work.join("quality-reference.json"))?,
+        quality_reference: file(&crate::foundation::layout::path(&work, "quality-reference.json"))?,
         fermi_reference: file(&states.wavefunctions.join("data-file-schema.xml"))?,
         qe_bands_xml: file(&electron_xml)?,
         qe_mesh_xml: file(&states.wavefunctions.join("data-file-schema.xml"))?,
@@ -486,7 +488,7 @@ pub(super) fn run(
     } else {
         store::write(&source_path, &sources)?;
     }
-    let output = work.join("interpolation/comparison");
+    let output = crate::foundation::layout::path(&work, "interpolation/comparison");
     if output.exists() {
         let data = comparison_data::load(&output)?;
         ensure!(
@@ -522,8 +524,8 @@ pub(super) fn run(
 
 pub(super) fn artifacts(work: &Path) -> Result<Vec<super::manifest::Artifact>> {
     let mut paths = vec![
-        work.join("comparison-native/request.json"),
-        work.join("comparison-native/sources.json"),
+        crate::foundation::layout::path(&work, "comparison-native/request.json"),
+        crate::foundation::layout::path(&work, "comparison-native/sources.json"),
     ];
     for dir in [
         "interpolation/comparison",
@@ -531,12 +533,12 @@ pub(super) fn artifacts(work: &Path) -> Result<Vec<super::manifest::Artifact>> {
         "results/figures",
     ] {
         paths.extend(
-            save::files(&work.join(dir))?
+            save::files(&crate::foundation::layout::path(work,dir))?
                 .iter()
-                .map(|f| work.join(dir).join(&f.relative_path)),
+                .map(|f| crate::foundation::layout::path(work,dir).join(&f.relative_path)),
         );
     }
-    let digest = store::hash_file(&work.join("comparison-native/sources.json"))?;
+    let digest = store::hash_file(&crate::foundation::layout::path(&work, "comparison-native/sources.json"))?;
     paths
         .into_iter()
         .enumerate()

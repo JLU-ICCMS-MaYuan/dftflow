@@ -30,7 +30,7 @@ pub fn run(cmd: SuperconductivityCommand) -> Result<()> {
 }
 
 fn check(work: &Path, json: bool) -> Result<()> {
-    let path = work.join("superconductivity").join("manifest.json");
+    let path = crate::foundation::layout::path(&work, "superconductivity").join("manifest.json");
     if !path.exists() {
         if json {
             status::print_json(&status::envelope(

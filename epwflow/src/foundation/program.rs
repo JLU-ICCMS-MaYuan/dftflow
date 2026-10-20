@@ -40,11 +40,21 @@ enum BudgetOperation {
 }
 
 #[derive(Parser)]
-#[command(about = "生成、提交或恢复本阶段；默认读取 inputepw.toml 并生成脚本")]
+#[command(about = "生成、提交或恢复本阶段；默认读取当前 input.toml 并生成脚本")]
 #[command(group(ArgGroup::new("operation").args(["check", "prepare_only", "status", "probe", "import", "collect", "plot", "results_check", "export_comparison", "budget", "execute_attempt", "run_script", "all", "submit_chain"])))]
 struct Options {
-    #[arg(short = 'c', long, default_value = "inputepw.toml")]
+    #[arg(short = 'c', long, default_value = "input.toml")]
     config: PathBuf,
+    /// 编号工作区：选择本程序的独立科学阶段。
+    #[arg(long, value_enum)]
+    stage: Option<super::stages::Step>,
+    /// 一次性校验并导入旧 epwflow/work，保留原来源。
+    #[arg(long)]
+    import_work: Option<PathBuf>,
+    #[arg(long, hide = true)]
+    workspace_attempt: Option<PathBuf>,
+    #[arg(long, hide = true)]
+    workspace_task: Option<PathBuf>,
     #[arg(short = 'w', long)]
     work: Option<PathBuf>,
     /// 提交本阶段的有界 Slurm 作业。
@@ -125,7 +135,34 @@ pub fn run(phase: Phase) {
     }
 }
 
-fn dispatch(phase: Phase, o: Options) -> Result<()> {
+fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
+    if o.config==PathBuf::from("input.toml") && !o.config.exists() && PathBuf::from("inputepw.toml").is_file(){o.config=PathBuf::from("inputepw.toml");}
+    if let Some(path)=&o.workspace_attempt { return super::workspace::execute(path); }
+    if let Some(path)=&o.workspace_task { return super::workspace::execute_task(path); }
+    if let Some(source)=&o.import_work { return super::workspace::import_legacy(&o.config,source); }
+    let numbered = if o.config.is_file() && o.work.as_ref().is_none_or(|w|super::layout::enabled(w)) {
+        super::config::Config::load(&o.config)?.layout.as_deref()==Some("numbered")
+    } else {false};
+    if numbered && !o.probe && o.budget.is_none() && o.import.is_none() && !o.collect && !o.plot && !o.results_check && o.export_comparison.is_none() {
+        use super::stages::Step;
+        let target=match (phase,o.stage) {
+            (Phase::Phonon,None)=>Step::Phonon,
+            (Phase::Wannier,None)=>Step::Coarse,
+            (Phase::Wannier,Some(s @ (Step::Wannier|Step::Coarse)))=>s,
+            (Phase::Superconductivity,None)=>Step::Superconductivity,
+            (Phase::Superconductivity,Some(s @ (Step::Fine|Step::Superconductivity)))=>s,
+            _=>anyhow::bail!("input_conflict: --stage 不属于当前程序"),
+        };
+        ensure!(o.mpi.is_none(),"configuration: 编号工作区请修改 input.toml 的资源及启动器/pool");
+        let cfg=super::config::Config::load(&o.config)?;
+        if o.status {if o.json{status::print_json(&super::workspace::report(&cfg)?);return Ok(())}return super::workspace::status(&cfg)}
+        if o.check {for s in target.closure(){if s==target || !super::stages::reusable(&cfg,s)?{super::parallelism::preflight(&cfg,s,false)?;}} if o.json{status::print_json(&serde_json::json!({"operation_status":"ok","workflow_status":"configured","workflow_complete":false,"checks":["configuration","input_files","program_paths","mpi_pool_image"]}));}else{println!("operation_status: ok\nworkflow_status: configured");}return Ok(())}
+        if o.submit || o.run {return super::workspace::start(&o.config,target,o.submit)}
+        let path=super::workspace::generate(&o.config,if o.all {Step::Superconductivity}else{target})?;
+        println!("script: {}\nworkflow_status: configured\nworkflow_complete: false",path.display());
+        return Ok(())
+    }
+    ensure!(o.stage.is_none(),"input_conflict: --stage 需要 layout='numbered' 的当前配置");
     let work = || o.work.clone().context("required: 此操作需要 -w/--work");
     let results = || o.results.clone().context("required: 此操作需要 --results");
     if o.all || o.submit_chain {

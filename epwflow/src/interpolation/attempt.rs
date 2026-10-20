@@ -116,11 +116,17 @@ fn archive(receipt: &mut Receipt, target: &Path, root: &Path, label: &str) -> Re
     );
     fs::create_dir_all(root.join("history"))?;
     if exists(&receipt.directory) {
-        ensure!(
-            !exists(destination),
-            "input_conflict: 原现场与归档同时存在，保留现场"
-        );
-        fs::rename(&receipt.directory, destination)?;
+        if crate::foundation::layout::enabled(receipt.directory.parent().context("data_invalid: 粗网格缺父目录")?) && label=="coarse" {
+            fs::create_dir_all(destination)?;
+            for entry in fs::read_dir(&receipt.directory)? {
+                let entry=entry?;
+                if ["quality-sources","quality-reference.json","quality-binding.json","quality-report.json"].iter().any(|n|entry.file_name()==*n) {continue}
+                fs::rename(entry.path(),destination.join(entry.file_name()))?;
+            }
+        }else{
+            ensure!(!exists(destination),"input_conflict: 原现场与归档同时存在，保留现场");
+            fs::rename(&receipt.directory, destination)?;
+        }
     }
     ensure!(
         !receipt.archive_had_directory || exists(destination),
@@ -173,7 +179,7 @@ pub(super) fn run_with_inputs<T>(
             && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
         "input_conflict: 原生尝试路径无效"
     );
-    let root = work.join("native-attempts");
+    let root = crate::foundation::layout::path(&work, "native-attempts");
     let target = root.join(format!("{label}.json"));
     if target.exists() {
         let mut previous: Receipt = store::read(&target)?;
@@ -217,7 +223,7 @@ pub(super) fn run_with_inputs<T>(
         archive(&mut previous, &target, &root, label)?;
     } else {
         ensure!(
-            !exists(dir),
+            !exists(dir) || (crate::foundation::layout::enabled(work) && label=="coarse" && !dir.join("epw.out").exists() && !dir.join("out").exists()),
             "input_conflict: 原生目录缺少持久请求，保留未知现场"
         );
     }
@@ -255,7 +261,7 @@ mod tests {
     fn interrupted_archive_resumes_and_missing_evidence_is_rejected() {
         for missing in [false, true] {
             let work = std::env::temp_dir().join(format!("epw-archive-{}", store::token()));
-            let root = work.join("native-attempts");
+            let root = crate::foundation::layout::path(&work, "native-attempts");
             let destination = root.join("history/coarse-test");
             fs::create_dir_all(&destination).unwrap();
             fs::write(destination.join("evidence"), "failed output").unwrap();
@@ -263,7 +269,7 @@ mod tests {
                 schema_version: 1,
                 id: "test".into(),
                 digest: "fixed".into(),
-                directory: work.join("coarse"),
+                directory: crate::foundation::layout::path(&work, "coarse"),
                 state: State::Archiving,
                 inputs: vec![],
                 outputs: vec![],

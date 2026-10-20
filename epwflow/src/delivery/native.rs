@@ -215,8 +215,8 @@ fn csv(value: &str) -> String {
 }
 
 pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
-    let f3_path = work.join("interpolation/manifest.json");
-    let f4_path = work.join("superconductivity/manifest.json");
+    let f3_path = crate::foundation::layout::path(&work, "interpolation/manifest.json");
+    let f4_path = crate::foundation::layout::path(&work, "superconductivity/manifest.json");
     let f3 = InterpolationManifest::load(&f3_path)?;
     let f4 = SuperconductivityManifest::load(&f4_path)?;
     ensure!(
@@ -301,7 +301,7 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
     sources.insert(0, Identity::capture(&f3_path)?);
     let output = output
         .map(PathBuf::from)
-        .unwrap_or_else(|| work.join("results"));
+        .unwrap_or_else(|| crate::foundation::layout::path(work,"results"));
     fs::create_dir_all(&output)?;
     let _lock = store::Lock::acquire(&output.join("native-results"))?;
     super::publication::recover(&output, "manifest.json")?;

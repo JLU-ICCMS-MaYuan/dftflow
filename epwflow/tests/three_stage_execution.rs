@@ -157,7 +157,7 @@ runpy.run_path(str(root/name),run_name='__main__')
     fn accounting(&self, active: Option<u64>) {
         self.put(
             "accounting",
-            &(201..=205)
+            &(201..=220)
                 .map(|id| {
                     format!(
                         "{id}|{}|1|1|\n",
@@ -733,4 +733,230 @@ fn public_chain_resumes_partial_solver_then_only_unfinished_delivery() {
         &json!({"kind":"synthetic process contract","scientific_validation":false}),
     )
     .unwrap();
+}
+
+// 0018：编号工作区协议；替身仍仅验证 IO、命令、依赖与复用，不作科学验收。
+impl Case {
+    fn numbered() -> Self {
+        let c=Self::new();
+        let mut cfg=config::Config::load(&c.root.join("inputepw.toml")).unwrap();
+        cfg.layout=Some("numbered".into());cfg.resources.mpi=1;
+        cfg.programs.epw.args.extend(["-nk".into(),"1".into()]);
+        c.put("input.toml",&toml::to_string_pretty(&cfg).unwrap());
+        let qe=include_str!("fixtures/qe_native_io.py").replace("nscf=value('calculation')=='nscf'","nscf=value('calculation') in ('nscf','bands')")
+            .replace("nat = len(ET.parse(Path('out')/(prefix+'.save')/'data-file-schema.xml').getroot().findall('output/atomic_structure/atomic_positions/atom'))", "nat = int(ET.parse(next(Path.cwd().glob('*.dyn*.xml'))).getroot().find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)");
+        c.put("qe_native_io.py",&qe);
+        let epw=include_str!("fixtures/epw_native_io.py")
+            .replace("coarse=value('epwread')=='.false.'","coarse=value('epwread')=='.false.'\nwannier_only='elph = .false.' in text\nreuse=coarse and 'wannierize = .false.' in text")
+            .replace("('coarse' if coarse else", "('wannier' if wannier_only else 'coarse' if coarse else")
+            .replace("assert (Path(value('dvscf_dir'))/(prefix+'.dvscf_q2')).is_file(), 'PH 未交付'", "assert wannier_only or (Path(value('dvscf_dir'))/(prefix+'.dvscf_q2')).is_file(), 'PH 未交付'")
+            .replace("kpoints=[cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]", "kpoints=kpoints if wannier_only else [cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]")
+            .replace("qcr=[list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]", "qcr=[[0,0,0]] if wannier_only else [list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]")
+            .replace("if coarse:\n        lower=window_min()", "if coarse and not reuse:\n        lower=window_min()")
+            .replace("Path(prefix+'.wout').write_text(wout)","if not reuse:Path(prefix+'.wout').write_text(wout)\n    if wannier_only:\n        Path(prefix+'.win').write_text('num_wann = '+str(n)+'\\n')\n        Path(prefix+'.chk').write_text('fixture checkpoint')")
+            .replace("parent/'nscf/out'", "parent/'2.qe-nscf/out'")
+            .replace("ROOT/'run/nscf/out'", "ROOT/'run/2.qe-nscf/out'");
+        c.put("epw_native_io.py",&epw);
+        for kind in ["bands","dos","wannier90","postw90"] {
+            c.script(&format!("{kind}.x"),&format!(r#"#!/usr/bin/python3
+from pathlib import Path
+import re,sys,xml.etree.ElementTree as ET
+kind={kind:?}
+if kind in ['bands','dos']:
+    text=Path(sys.argv[sys.argv.index('-inp')+1]).read_text()
+    prefix=re.search(r"prefix\s*=\s*'([^']+)'",text).group(1)
+    xml=ET.parse(Path('out')/(prefix+'.save')/'data-file-schema.xml').getroot()
+    ks=xml.findall('output/band_structure/ks_energies')
+    if kind=='bands':
+        Path(prefix+'_band').write_text('fixture band file')
+        Path(prefix+'_band.gnu').write_text(''.join('0 '+str(i)+'\n1 '+str(i)+'\n\n' for i in range(16)))
+    else:
+        Path(prefix+'.tdos').write_text('\n'.join(str(i/10)+' 1' for i in range(-100,100)))
+    print('JOB DONE.')
+elif kind=='wannier90':
+    prefix=sys.argv[1]
+    assert 'restart = plot' in Path(prefix+'.win').read_text()
+    Path(prefix+'_band.dat').write_text(''.join('0 '+str(i)+'\n1 '+str(i)+'\n\n' for i in range(5)))
+    Path(prefix+'_band.labelinfo.dat').write_text('G 1 0\nX 2 1\n')
+else:
+    prefix=sys.argv[1]
+    Path(prefix+'_dos.dat').write_text('\n'.join(str(i/10)+' 1' for i in range(-100,100)))
+"#));
+        }
+        c
+    }
+    fn numbered_cli(&self,i:usize,args:&[&str],job:Option<u64>,label:&str)->Output {
+        let mut cmd=Command::new(BINS[i]);cmd.args(["-c",self.root.join("input.toml").to_str().unwrap()]).args(args);
+        self.environment(&mut cmd,job);if job.is_some(){let cfg=config::Config::load(&self.root.join("input.toml")).unwrap();cmd.env("SLURM_NTASKS",cfg.resources.mpi.to_string());}
+        let o=cmd.output().unwrap();self.put(&format!("{label}.stderr"),&String::from_utf8_lossy(&o.stderr));self.put(&format!("{label}.stdout"),&String::from_utf8_lossy(&o.stdout));o
+    }
+    fn numbered_change(&self,change:impl FnOnce(&mut config::Config)) {
+        let p=self.root.join("input.toml");let mut cfg=config::Config::load(&p).unwrap();change(&mut cfg);fs::write(p,toml::to_string_pretty(&cfg).unwrap()).unwrap();
+    }
+}
+
+#[test]
+fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
+    use epwflow::foundation::{stages::{self,Step},layout};
+    let c=Case::numbered();c.accounting(Some(201));
+    success(c.numbered_cli(0,&["-r"],Some(201),"numbered-qe"));
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    for step in [Step::Scf,Step::Nscf,Step::Electronic,Step::Phonon] {assert!(stages::reusable(&cfg,step).unwrap());}
+    assert!(c.root.join("run/1.qe-scf/scf.in").is_file());
+    assert!(c.root.join("run/4.qe-phonon-nosplit/save/scf.dvscf_q2").is_file());
+    let qe_calls=c.calls().0;
+    c.accounting(Some(202));
+    success(c.numbered_cli(1,&["--stage","wannier","-r"],Some(202),"numbered-wannier"));
+    assert!(!c.root.join("run/6.epw-coarse/epw.out").exists());
+    let wan_hash=store::hash_file(&c.root.join("run/5.epw-wannier/scf.ukk")).unwrap();
+    let key=stages::scientific_key(&cfg,Step::Wannier).unwrap();
+    c.accounting(Some(203));
+    success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(203),"numbered-coarse"));
+    assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),qe_calls.lines().filter(|s|*s=="pw").count()+2); // 仅独立电子参考与路径参考。
+    assert_eq!(wan_hash,store::hash_file(&c.root.join("run/5.epw-wannier/scf.ukk")).unwrap());
+    assert!(fs::read_to_string(c.root.join("run/6.epw-coarse/epw_coarse.in")).unwrap().contains("wannierize = .false."));
+    assert_eq!(stages::scientific_key(&cfg,Step::Wannier).unwrap(),key);
+    assert!(layout::path(&cfg.work_dir,"wannier/manifest.json").is_file());
+    c.accounting(Some(204));
+    success(c.numbered_cli(2,&["--stage","fine","-r"],Some(204),"numbered-fine"));
+    let calls=c.calls();
+    c.numbered_change(|cfg|cfg.interpolation.q_grid=[4;3]);
+    c.accounting(Some(205));
+    success(c.numbered_cli(2,&["--stage","fine","-r"],Some(205),"numbered-fine-new-grid"));
+    assert_eq!(c.calls().0,calls.0,"细网格变化不能执行 QE");
+    assert_eq!(c.calls().1.matches("wannier ").count(),1,"细网格变化不能重复拟合");
+    assert!(c.root.join("run/7.epw-fine/smearing-0001/submit.sh").is_file());
+    let before=c.calls();
+    c.script("launcher","#!/bin/sh\nshift 2\nexec \"$@\"\n");
+    c.numbered_change(|cfg|{cfg.resources.mpi=2;cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"2".into()];cfg.programs.epw.args[2]="2".into();});
+    c.accounting(None);
+    success(c.numbered_cli(1,&["--stage","coarse","-s"],None,"numbered-resource-reuse"));
+    assert_eq!(before,c.calls(),"改资源不能重算已有科学结果");
+    c.numbered_change(|cfg|cfg.comparison.as_mut().unwrap().electronic_sigma_ev=0.15);
+    c.accounting(Some(206));
+    success(c.numbered_cli(1,&["--stage","coarse","-r"],Some(206),"numbered-post-only"));
+    assert_eq!(before,c.calls(),"改展宽只能运行原生后处理和重绘");
+    assert!(stages::reusable(&config::Config::load(&c.root.join("input.toml")).unwrap(),Step::Fine).unwrap());
+    c.numbered_change(|cfg|cfg.comparison.as_mut().unwrap().electronic_sigma_ev=0.1);c.accounting(Some(211));
+    success(c.numbered_cli(1,&["--stage","coarse","-r"],Some(211),"numbered-post-revert"));assert_eq!(before,c.calls());
+    let post:Value=store::read(&c.root.join("run/.epwflow/post/coarse-sources.json")).unwrap();assert_eq!(post["electronic_sigma_ev"],0.1);
+    c.accounting(Some(207));
+    c.put("tc-failure","test failure");
+    let failed=c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(207),"numbered-superconductivity-partial");assert!(!failed.status.success());
+    let partial:Value=store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();assert_ne!(partial["validation"]["status"],"valid");
+    c.numbered_change(|cfg|{cfg.resources.mpi=3;cfg.programs.launcher[2]="3".into();cfg.programs.epw.args[2]="3".into();});
+    fs::remove_file(c.root.join("tc-failure")).unwrap();c.accounting(Some(210));
+    success(c.numbered_cli(2,&["--stage","superconductivity","--resume","-r"],Some(210),"numbered-superconductivity"));
+    assert_eq!(before.0,c.calls().0);assert!(!c.calls().2.is_empty());
+    let completed:Value=store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();assert_eq!(partial["native_modes"]["aniso"],completed["native_modes"]["aniso"]);
+    let coarse_calls=c.calls().1.matches("coarse ").count();
+    c.numbered_change(|cfg|cfg.comparison.as_mut().unwrap().points_per_edge=3);c.accounting(Some(212));
+    success(c.numbered_cli(1,&["--stage","coarse","-r"],Some(212),"numbered-path-density"));
+    assert_eq!(coarse_calls,c.calls().1.matches("coarse ").count(),"路径后处理不能重算 EPC");
+    assert_eq!(c.calls().1.matches("wannier ").count(),1);
+    assert!(stages::reusable(&config::Config::load(&c.root.join("input.toml")).unwrap(),Step::Fine).unwrap());
+    let before=c.calls();
+    c.numbered_change(|cfg|cfg.wannier.outer_window_ev.as_mut().unwrap()[0]=1.4);
+    c.accounting(Some(208));
+    success(c.numbered_cli(1,&["--stage","wannier","-r"],Some(208),"numbered-new-window"));
+    assert_eq!(before.0,c.calls().0,"能窗变化不能重算 QE");
+    assert_eq!(c.calls().1.matches("wannier ").count(),2);
+    let wan=store::Identity::capture(&c.root.join("run/5.epw-wannier/scf.ukk")).unwrap();
+    c.numbered_change(|cfg|cfg.phonon.q_grid=[2,1,2]);
+    c.accounting(Some(209));
+    success(c.numbered_cli(1,&["--stage","coarse","-r"],Some(209),"numbered-new-coarse-q"));
+    wan.verify().unwrap();assert_eq!(c.calls().1.matches("wannier ").count(),2,"粗 q 不能重复拟合");
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    assert!(stages::reusable(&cfg,Step::Coarse).unwrap());assert!(!stages::reusable(&cfg,Step::Fine).unwrap());
+    c.numbered_change(|cfg|{cfg.resources.mpi=16;cfg.programs.launcher[2]="16".into();cfg.programs.epw.args[2]="16".into();});
+    success(c.numbered_cli(2,&["--stage","fine","--check"],None,"fine-resources-exceed-cached-coarse-grid"));
+    // 每个真正计算的叶目录可直接找到提交脚本。
+    for entry in epwflow::qe_data::save::files(&cfg.work_dir).unwrap() {
+        if entry.relative_path.starts_with(".epwflow"){continue}
+        let path=cfg.work_dir.join(&entry.relative_path);
+        if path.extension().is_some_and(|e|e=="in") && path.file_name().unwrap()!="elepdos.in" {
+            assert!(path.parent().unwrap().join("submit.sh").is_file(),"缺少脚本 {}",path.display());
+        }
+    }
+}
+
+#[test]
+fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
+    let c=Case::numbered();
+    c.script("launcher","#!/bin/sh\nshift 2\nexec \"$@\"\n");
+    c.numbered_change(|cfg|{cfg.qe.nscf.k_grid=[4,4,2];cfg.resources.mpi=64;cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"64".into()];cfg.programs.epw.args=vec!["--io-contract".into(),"-nk".into(),"64".into()];});
+    let o=c.numbered_cli(1,&[],None,"numbered-empty-pool");assert!(!o.status.success());
+    let error=String::from_utf8_lossy(&o.stderr);assert!(error.contains("k 点数=32")&&error.contains("pool=64")&&error.contains("空 pool"),"{error}");
+    assert_eq!(c.calls().0,"");
+    c.numbered_change(|cfg|{cfg.resources.mpi=32;cfg.programs.launcher[2]="32".into();cfg.programs.epw.args[2]="32".into();});
+    success(c.numbered_cli(1,&[],None,"numbered-legal-generation"));
+    c.accounting(Some(201));
+    let o=c.bash(c.root.join("run/5.epw-wannier/submit.sh"),Some(201),"manual-slurm-mismatch");
+    assert!(!o.status.success());assert_eq!(c.calls().0,"");
+}
+
+#[test]
+fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
+    let c=Case::numbered();c.accounting(Some(201));
+    success(c.numbered_cli(0,&["-s"],None,"numbered-submit"));
+    let active:Value=store::read(&c.root.join("run/.epwflow/active.json")).unwrap();
+    let frozen=PathBuf::from(active["config"]["path"].as_str().unwrap());let before=fs::read(&frozen).unwrap();
+    c.numbered_change(|cfg|cfg.resources.wall_seconds=300);
+    let o=c.numbered_cli(0,&["-s","--resume"],None,"numbered-duplicate");assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("活动任务"));assert_eq!(fs::read(frozen).unwrap(),before);
+    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(),1);
+    let script=PathBuf::from(active["script" ]["path"].as_str().unwrap());
+    c.put("input.toml","invalid pending edits must not affect submitted job");
+    let mut cmd=Command::new("/bin/bash");cmd.arg(script);c.environment(&mut cmd,Some(201));cmd.current_dir("/").env("SLURM_NTASKS","1");
+    success(cmd.output().unwrap());
+    let finished:Value=store::read(&c.root.join("run/.epwflow/active.json")).unwrap();assert_eq!(finished["state"],"succeeded");
+}
+
+#[test]
+fn numbered_three_ph_modes_deliver_verified_save_and_local_scripts() {
+    use epwflow::foundation::{stages::Step,config::PhMode};
+    for mode in [PhMode::Nosplit,PhMode::Coords,PhMode::Index] {
+        let c=Case::numbered();c.numbered_change(|cfg|cfg.phonon.mode=mode);c.accounting(Some(201));
+        success(c.numbered_cli(0,&["-r"],Some(201),"three-ph-modes"));
+        let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+        let ph=Step::Phonon.directory(&cfg);
+        let m=epwflow::qe_data::manifest::QeManifest::load(&ph.join("save/manifest.json")).unwrap();m.verify().unwrap();
+        assert_eq!(m.qpoints.len(),2);assert!(ph.join("save/scf.dvscf_q2").is_file());
+        for q in m.qpoints {assert_eq!(q.local_index,if mode==PhMode::Coords{1}else{q.global_index});}
+        if mode!=PhMode::Nosplit {assert!(ph.join("init/submit.sh").is_file());}
+        assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),3,"SCF/NSCF/能带各一次，PH 不增加 SCF");
+    }
+}
+
+#[test]
+fn numbered_import_verifies_legacy_source_and_materializes_without_qe() {
+    use epwflow::foundation::stages::{self,Step};
+    let c=Case::numbered();c.accounting(Some(201));
+    success(c.cli(0,&["-c","inputepw.toml","-s"],"legacy-source-submit"));
+    success(c.bash(c.workflow()["script"]["path"].as_str().unwrap(),Some(201),"legacy-source-qe"));
+    c.accounting(None);
+    let source=c.root.join("run");let before=epwflow::qe_data::save::files(&source).unwrap();let calls=c.calls();
+    c.numbered_change(|cfg|cfg.work_dir=c.root.join("numbered"));
+    success(c.numbered_cli(0,&["--import-work",source.to_str().unwrap()],None,"numbered-import"));
+    assert_eq!(before,epwflow::qe_data::save::files(&source).unwrap());assert_eq!(calls,c.calls());
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    for step in [Step::Scf,Step::Nscf,Step::Phonon] {assert!(stages::reusable(&cfg,step).unwrap());}
+    assert!(Step::Phonon.directory(&cfg).join("scf.phdos.dat").is_file());
+    success(c.numbered_cli(0,&["--import-work",source.to_str().unwrap()],None,"numbered-import-repeat"));
+    assert_eq!(before,epwflow::qe_data::save::files(&source).unwrap());
+}
+
+#[test]
+fn numbered_failed_coarse_resume_changes_resources_and_preserves_qe_and_references() {
+    let c=Case::numbered();c.accounting(Some(201));
+    success(c.numbered_cli(1,&["--stage","wannier","-r"],Some(201),"fit"));
+    c.put("fail-coarse","test");c.accounting(Some(202));
+    assert!(!c.numbered_cli(1,&["--stage","coarse","-r"],Some(202),"failed-coarse").status.success());
+    let calls=c.calls().0;
+    let reference=store::Identity::capture(&c.root.join("run/6.epw-coarse/quality-sources/reference.json")).unwrap();
+    c.script("launcher","#!/bin/sh\nshift 2\nexec \"$@\"\n");
+    c.numbered_change(|cfg|{cfg.resources.mpi=2;cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"2".into()];cfg.programs.epw.args[2]="2".into();});
+    fs::remove_file(c.root.join("fail-coarse")).unwrap();c.accounting(Some(203));
+    success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(203),"coarse-recovered"));
+    reference.verify().unwrap();assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),calls.lines().filter(|s|*s=="pw").count()+1,"只新增路径比较，已成功 QE 和独立参考保留");
 }

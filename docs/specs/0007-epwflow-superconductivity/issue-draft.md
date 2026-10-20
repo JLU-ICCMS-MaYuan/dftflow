@@ -177,3 +177,7 @@ Epic 最终草稿确认：
 | 验证／0015 | 三种真实 PH 来源的图像、PDOS、数值、入口与重绘证据；FR-011、SC-005 | [Spec](../0015-epwflow-mgb2-real-validation/spec.md) |
 
 本次 Documentation Impact 为上述 Issue／Spec 和配套设计／任务落档；实际数据适配、四图与总览、真实验收及 Overview 回写仍待完成。数据就绪、质量通过、图像完成和 Epic 完成分别判定，不改变原六组合关闭条件、科学容差或共享预算。当前 6³ 质量失败不能因叠图交付而转为通过。
+
+## 2026-10-20：后续独立 Feature 0018
+
+用户明确授权新增 [0018 编号工作区与当前配置续算](../0018-epwflow-stage-workspaces/issue-draft.md)，其 [Spec](../0018-epwflow-stage-workspaces/spec.md) 管理八阶段目录、输入与脚本共目录、增量复用、提交快照、并行预检和旧数据导入。与本 Epic 的 0008／0010／0012／0013／0014 及验证 0015 关联；工程与真实科学证据见 [0018 验收](../0018-epwflow-stage-workspaces/acceptance.md)。该后续 Feature 不改变原科学验收标准、共享预算或本 Epic 的关闭条件；线上父子关系仍由用户维护。

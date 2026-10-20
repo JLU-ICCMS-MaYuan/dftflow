@@ -21,7 +21,11 @@ fn numbers(text: &str) -> Result<Vec<f64>> {
 }
 
 /// EPW 主程序即使 epwread=true 也先调用 loadbm；必须交付原 .ukk 能带流形。
-fn band_manifold(path: &Path, nwann: usize) -> Result<()> {
+pub fn band_manifold(path: &Path, nwann: usize) -> Result<()> {
+    manifold_dimensions(path,nwann).map(|_| ())
+}
+
+pub fn manifold_dimensions(path: &Path, nwann: usize) -> Result<(usize,Vec<usize>)> {
     let text = fs::read_to_string(path)?;
     let mut rows = text.lines().map(str::trim).filter(|s| !s.is_empty()).peekable();
     let header = rows.next().context("data_invalid: 缺 ukk 头")?.split_whitespace()
@@ -46,14 +50,14 @@ fn band_manifold(path: &Path, nwann: usize) -> Result<()> {
     ensure!(flags.len() > window_size, "data_invalid: ukk 窗口／排除带截断");
     let excluded = &flags[window_size..];
     ensure!(header[1] <= excluded.len()
-        && excluded.iter().enumerate().filter(|(_, x)| !**x).map(|(i, _)| i+1).eq(kept)
+        && excluded.iter().enumerate().filter(|(_, x)| !**x).map(|(i, _)| i+1).eq(kept.iter().copied())
         && flags[..window_size].chunks_exact(bands).all(|w| w.iter().filter(|v| **v).count() >= nwann),
         "data_invalid: ukk 流形／排除带不相容");
     for _ in 0..nwann {
         ensure!(numbers(rows.next().context("data_invalid: ukk 中心截断")?)?.len() == 3, "data_invalid: ukk 中心维度错误");
     }
     ensure!(rows.next().is_none(), "data_invalid: ukk 多余记录");
-    Ok(())
+    Ok((points, kept))
 }
 
 pub fn files(

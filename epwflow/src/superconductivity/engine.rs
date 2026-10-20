@@ -72,13 +72,15 @@ impl<'a> Engine<'a> {
         }
         .context("configuration: 缺少模式搜索配置")?;
         let id = Identity::capture(&cfg.programs.epw.path)?;
-        let binding_digest = store::hash_bytes(&serde_json::to_vec(&(
+        let binding_digest = if crate::foundation::layout::enabled(&cfg.work_dir) {
+            store::hash_bytes(&serde_json::to_vec(&(crate::foundation::stages::scientific_key(cfg,crate::foundation::stages::Step::Superconductivity)?,source,&id))?)
+        } else {store::hash_bytes(&serde_json::to_vec(&(
             source,
             &cfg.superconductivity,
             &cfg.programs.epw,
             launcher,
             &id,
-        ))?);
+        ))?)};
         fs::create_dir_all(root)?;
         let file = root.join("search.json");
         let result: ModeResult = if file.exists() {

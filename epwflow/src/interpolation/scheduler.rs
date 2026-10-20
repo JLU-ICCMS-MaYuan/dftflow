@@ -65,6 +65,9 @@ pub fn run_coarse_with_retry(
 }
 
 fn attempt_digest(cfg: &config::Config, launcher: &[String], sources: &[store::Identity], extra: &str) -> Result<String> {
+    if crate::foundation::layout::enabled(&cfg.work_dir) {
+        return crate::foundation::stages::request_digest(cfg,if extra.starts_with("fine-"){crate::foundation::stages::Step::Fine}else{crate::foundation::stages::Step::Coarse},sources,extra);
+    }
     let (cfg, launcher) = crate::foundation::parallelism::request_identity(cfg, launcher)?;
     Ok(store::hash_bytes(&serde_json::to_vec(&(&cfg, &launcher,
         store::Identity::capture(&cfg.programs.epw.path)?, sources, extra))?))
@@ -80,7 +83,7 @@ fn artifact_evidence(work: &Path, artifacts: &[super::manifest::Artifact]) -> Re
 fn run_coarse_stages(
     cfg: &config::Config, backend: Backend, launcher: &[String], work: &Path, f2_work: &Path, charge: bool, retry: bool,
 ) -> Result<InterpolationManifest> {
-    let f2_manifest_path = f2_work.join("qe-data").join("manifest.json");
+    let f2_manifest_path = crate::foundation::layout::path(&f2_work, "qe-data").join("manifest.json");
     let binding = adapter::bind_f2(&f2_manifest_path, cfg)?;
     // 显式参考仍在任何科学执行前验证；自动参考须先通过程序与选窗预检。
     let supplied = cfg.interpolation.quality.reference_manifest.as_ref()
@@ -103,14 +106,14 @@ fn run_coarse_stages(
     let digest = attempt_digest(cfg, launcher, &[
         store::Identity::capture(&f2_manifest_path)?, frozen.source.clone(),
     ], "coarse")?;
-    let mut coarse_res = super::attempt::run(work, "coarse", &work.join("coarse"), digest, retry,
+    let mut coarse_res = super::attempt::run(work, "coarse", &crate::foundation::layout::path(&work, "coarse"), digest, retry,
         || { coarse::stage_f2(&f2, work)?; coarse::prepare_coarse(&epw_cfg, work) },
-        || coarse::run_epw(&epw_cfg, &work.join("coarse"), "epw_coarse.in", launcher, backend),
+        || coarse::run_epw(&epw_cfg, &crate::foundation::layout::path(&work, "coarse"), "epw_coarse.in", launcher, backend),
         || coarse::collect_coarse(work, &epw_cfg),
         |r| artifact_evidence(work, &r.artifacts))?;
     f2.verify()?;
     let wan = wannier::check_native(
-        &work.join("coarse").join(format!("{}.wout", cfg.qe.prefix)),
+        &crate::foundation::layout::path(&work, "coarse").join(format!("{}.wout", cfg.qe.prefix)),
         cfg.wannier.num_wann as usize,
     )?;
     let checked_quality = frozen.pair(work)?;
@@ -120,7 +123,7 @@ fn run_coarse_stages(
         checked_quality.passed,
         "data_invalid: 当前粗网格质量未通过，禁止细网格与超导"
     );
-    if cfg.kpath.is_some() {
+    if cfg.kpath.is_some() && !crate::foundation::layout::enabled(work) {
         coarse_res.artifacts.extend(super::automatic_comparison::artifacts(work)?);
     }
     for (role, name) in [
@@ -128,10 +131,10 @@ fn run_coarse_stages(
         ("coarse_quality_binding", "quality-binding.json"),
         ("coarse_quality_report", "quality-report.json"),
     ] {
-        let path = work.join(name);
+        let path = crate::foundation::layout::path(&work,name);
         coarse_res.artifacts.push(super::manifest::Artifact {
             role: role.into(),
-            relative_path: name.into(),
+            relative_path: crate::foundation::layout::path(work,name).strip_prefix(work)?.into(),
             byte_size: std::fs::metadata(&path)?.len(),
             sha256: store::hash_file(&path)?,
             producer_stage: "quality".into(),
@@ -200,7 +203,7 @@ fn run_coarse_stages(
     };
 
     if manifest.validation.all_passed() {
-        let out = work.join("wannier").join("manifest.json");
+        let out = crate::foundation::layout::path(&work, "wannier").join("manifest.json");
         store::write(&out, &manifest)?;
     } else {
         bail!(
@@ -224,11 +227,11 @@ pub fn run_fine_registered(
 pub fn run_fine_with_retry(
     cfg: &config::Config, backend: Backend, launcher: &[String], work: &Path, retry: bool,
 ) -> Result<InterpolationManifest> {
-    let identity = store::Identity::capture(&work.join("wannier/manifest.json"))?;
+    let identity = store::Identity::capture(&crate::foundation::layout::path(&work, "wannier/manifest.json"))?;
     let mut manifest = verify_coarse(cfg, work)?;
-    ensure!(!work.join("interpolation/manifest.json").exists(),
+    ensure!(!crate::foundation::layout::path(&work, "interpolation/manifest.json").exists(),
         "input_conflict: 细网格清单已存在，保留现场");
-    let f2 = adapter::bind_f2(&work.join("qe-data/manifest.json"), cfg)?;
+    let f2 = adapter::bind_f2(&crate::foundation::layout::path(&work, "qe-data/manifest.json"), cfg)?;
     ensure!(f2.f2_digest == manifest.f2_digest, "input_conflict: 粗网格 QE 来源变化");
     let structure = crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
     let epw_cfg = epw_config::EpwConfig::from_config(cfg)?
@@ -236,7 +239,7 @@ pub fn run_fine_with_retry(
         .with_bands(&f2.eigenvalues)?
         .with_species(&structure.cell.elements)?;
     epw_cfg.check_native_windows(&std::fs::read_to_string(
-        work.join("coarse").join(format!("{}.wout", cfg.qe.prefix)),
+        crate::foundation::layout::path(&work, "coarse").join(format!("{}.wout", cfg.qe.prefix)),
     )?)?;
     let coarse = manifest.coarse.as_ref().context("data_invalid: 缺粗网格")?;
     // 细网格 EPW：每个展宽一列（FR-007/008）。
@@ -256,9 +259,9 @@ pub fn run_fine_with_retry(
                 "input_conflict: 粗网格或质量来源在细网格执行前改变"
             );
         }
-        let dir = work.join("fine").join(format!("smearing-{:04}", index + 1));
+        let dir = crate::foundation::layout::path(&work, "fine").join(format!("smearing-{:04}", index + 1));
         let digest = attempt_digest(cfg, launcher, &[
-            identity.clone(), store::Identity::capture(&work.join("qe-data/manifest.json"))?,
+            identity.clone(), store::Identity::capture(&crate::foundation::layout::path(&work, "qe-data/manifest.json"))?,
         ], &format!("fine-{smearing_mev:.16e}"))?;
         let fr = super::attempt::run(work, &format!("fine-smearing-{:04}", index + 1), &dir, digest, retry,
             || fine::prepare_fine_at(&epw_cfg, work, &dir, *smearing_mev),
@@ -304,7 +307,7 @@ pub fn run_fine_with_retry(
     identity.verify()?;
     manifest.coarse.as_mut().unwrap().artifacts.push(super::manifest::Artifact {
         role: "coarse_stage_manifest".into(),
-        relative_path: "wannier/manifest.json".into(),
+        relative_path: crate::foundation::layout::path(work,"wannier/manifest.json").strip_prefix(work)?.into(),
         byte_size: identity.bytes,
         sha256: identity.sha256,
         producer_stage: "wannier".into(),
@@ -317,13 +320,13 @@ pub fn run_fine_with_retry(
     manifest.validation.check("fine_complete", manifest.fine.is_some(), "细网格数据完整");
     manifest.validation.check("spectra_present", !manifest.spectra.is_empty(), "原生谱已核验");
     ensure!(manifest.validation.all_passed(), "data_invalid: 细网格校验失败");
-    store::write(&work.join("interpolation/manifest.json"), &manifest)?;
+    store::write(&crate::foundation::layout::path(&work, "interpolation/manifest.json"), &manifest)?;
     Ok(manifest)
 }
 
 /// 清单、质量来源、每个粗网格文件均须仍然有效，且不得混入细网格结果。
 pub fn verify_coarse(cfg: &config::Config, work: &Path) -> Result<InterpolationManifest> {
-    let m = InterpolationManifest::load(&work.join("wannier/manifest.json"))?;
+    let m = InterpolationManifest::load(&crate::foundation::layout::path(&work, "wannier/manifest.json"))?;
     ensure!(m.validation.all_passed()
         && m.quality.as_ref().is_some_and(|q| q.status == "valid")
         && m.fine.is_none() && m.spectra.is_empty(), "data_invalid: 粗网格阶段清单无效");
@@ -334,10 +337,10 @@ pub fn verify_coarse(cfg: &config::Config, work: &Path) -> Result<InterpolationM
         crate::superconductivity::source::artifact_path(work, artifact)?;
     }
     if cfg.kpath.is_some() {
-        ensure!(coarse.artifacts.iter().any(|a| a.producer_stage == "comparison"),
+        ensure!(crate::foundation::layout::enabled(work) || coarse.artifacts.iter().any(|a| a.producer_stage == "comparison"),
             "data_invalid: 粗网格阶段缺少自动比较交付");
-        super::comparison_data::load(&work.join("interpolation/comparison"))?;
-        ensure!(crate::delivery::comparison_plot::check_figure_formats(&work.join("results"), &["png", "svg", "pdf"])?,
+        super::comparison_data::load(&crate::foundation::layout::path(&work, "interpolation/comparison"))?;
+        ensure!(crate::delivery::comparison_plot::check_figure_formats(&crate::foundation::layout::path(work,"results"), &["png", "svg", "pdf"])?,
             "data_invalid: 粗网格阶段缺少比较图");
     }
     Ok(m)

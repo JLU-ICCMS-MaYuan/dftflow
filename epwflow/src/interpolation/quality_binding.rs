@@ -36,12 +36,12 @@ pub fn freeze(cfg: &Config, fermi: f64) -> Result<Frozen> {
     freeze_at(cfg, fermi, path)
 }
 
-pub(super) fn reference_path(cfg: &Config, work: &Path) -> std::path::PathBuf {
-    cfg.interpolation.quality.reference_manifest.clone()
-        .unwrap_or_else(|| work.join("quality-sources/reference.json"))
+pub(super) fn reference_path(cfg: &Config, work: &Path) -> Result<std::path::PathBuf> {
+    if let Some(p)=&cfg.interpolation.quality.reference_manifest{return Ok(p.clone())}
+    Ok(crate::foundation::workspace_import::reference(cfg)?.unwrap_or_else(||crate::foundation::layout::path(work,"quality-sources/reference.json")))
 }
 
-pub(super) fn freeze_at(cfg: &Config, fermi: f64, path: &Path) -> Result<Frozen> {
+pub(crate) fn freeze_at(cfg: &Config, fermi: f64, path: &Path) -> Result<Frozen> {
     let base = path.parent().context("data_invalid: 质量清单缺父目录")?;
     let mut s: QualitySources = store::read(path)?;
     ensure!(
@@ -142,7 +142,7 @@ impl Frozen {
         let origin = self.source.clone();
         let mut sources = self.sources;
         let source_file = |name: &str| -> Result<SourceFile> {
-            let path = work.join("coarse").join(name).canonicalize()?;
+            let path = crate::foundation::layout::path(&work, "coarse").join(name).canonicalize()?;
             Ok(SourceFile {
                 sha256: store::hash_file(&path)?,
                 path,
@@ -154,13 +154,13 @@ impl Frozen {
             path: origin.path.clone(),
             sha256: origin.sha256.clone(),
         });
-        let path = work.join("quality-reference.json");
+        let path = crate::foundation::layout::path(&work, "quality-reference.json");
         // 发布中断后只补齐内容完全一致的文件，未知或变化现场一律拒绝。
         write_matching(&path, &sources)?;
-        let report = native_quality::check_current_coarse(&path, &work.join("coarse"))?;
-        write_matching(&work.join("quality-report.json"), &report)?;
+        let report = native_quality::check_current_coarse(&path, &crate::foundation::layout::path(&work, "coarse"))?;
+        write_matching(&crate::foundation::layout::path(&work, "quality-report.json"), &report)?;
         write_matching(
-            &work.join("quality-binding.json"),
+            &crate::foundation::layout::path(&work, "quality-binding.json"),
             &Binding { schema_version: 1, origin, paired: Identity::capture(&path)? },
         )?;
         Ok(report)
@@ -188,15 +188,15 @@ struct Binding {
 
 /// F4 重验配对来源及原配置身份；兼容已有显式指向当前 coarse 的历史清单。
 pub fn check(cfg: &Config, work: &Path) -> Result<NativeQuality> {
-    let source = reference_path(cfg, work);
-    let binding_path = work.join("quality-binding.json");
+    let source = reference_path(cfg, work)?;
+    let binding_path = crate::foundation::layout::path(&work, "quality-binding.json");
     let path = if binding_path.exists() {
         let binding: Binding = store::read(&binding_path)?;
         ensure!(
             binding.schema_version == 1
                 && binding.origin.path.canonicalize()? == source.canonicalize()?
                 && binding.paired.path.canonicalize()?
-                    == work.join("quality-reference.json").canonicalize()?,
+                    == crate::foundation::layout::path(&work, "quality-reference.json").canonicalize()?,
             "input_conflict: 质量绑定不属于当前来源或工作目录"
         );
         binding.origin.verify()?;
@@ -205,5 +205,5 @@ pub fn check(cfg: &Config, work: &Path) -> Result<NativeQuality> {
     } else {
         source.clone()
     };
-    native_quality::check_current_coarse(&path, &work.join("coarse"))
+    native_quality::check_current_coarse(&path, &crate::foundation::layout::path(&work, "coarse"))
 }

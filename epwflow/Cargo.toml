@@ -19,6 +19,7 @@ path = "src/bin/epw_superconductivity.rs"
 
 [dependencies]
 qeflow = { path = "../qeflow" }
+wannier90flow = { path = "../wannier90flow" }
 qf-phonon = { path = "../crates/qf-phonon" }
 qf-wannier = { path = "../crates/qf-wannier" }
 anyhow = { workspace = true }

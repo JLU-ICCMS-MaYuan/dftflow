@@ -42,7 +42,7 @@ pub fn bind(work: &Path, cfg: &Config, f3: &InterpolationManifest) -> Result<Nat
         .fine
         .as_ref()
         .context("data_invalid: F3 缺少细网格数据")?;
-    let evidence = Identity::capture(&work.join("interpolation/manifest.json"))?;
+    let evidence = Identity::capture(&crate::foundation::layout::path(&work, "interpolation/manifest.json"))?;
     bind_native_roles(work, cfg, fine, &f3.spectra, &evidence)
 }
 

@@ -12,8 +12,7 @@ use std::path::{Path, PathBuf};
 pub fn geometry(qe: &QeSettings, work: &Path) -> Result<xml::Geometry> {
     save::verify_snapshot(work)?;
     xml::Geometry::read(
-        &work
-            .join("scf/snapshot")
+        &crate::foundation::layout::path(&work, "scf/snapshot")
             .join(format!("{}.save/data-file-schema.xml", qe.config.qe.prefix)),
     )
 }
@@ -111,7 +110,7 @@ pub fn run_init(
     launcher: &[String],
     backend: Backend,
 ) -> Result<Vec<QPoint>> {
-    let dir = work.join("ph_init");
+    let dir = crate::foundation::layout::path(&work, "ph_init");
     let input = qe.phonon_init_input(dir.join("out").to_str().unwrap());
     execute(qe, work, &dir, &input, "ph_init", launcher, backend)?;
     let geometry = geometry(qe, work)?;
@@ -129,7 +128,7 @@ pub fn run_q(
     q_index: usize,
 ) -> Result<PhResponse> {
     ensure!(q_index == q.global_index, "data_invalid: 分 q 全局索引不符");
-    let dir = work.join("ph").join(&q.directory);
+    let dir = crate::foundation::layout::path(&work, "ph").join(&q.directory);
     let input = qe.phonon_q_input(
         dir.join("out").to_str().unwrap(),
         &qe.config.phonon.mode,
@@ -141,7 +140,7 @@ pub fn run_q(
         qe,
         &dir,
         q,
-        &control(qe, &work.join("ph_init")),
+        &control(qe, &crate::foundation::layout::path(&work, "ph_init")),
         &geometry(qe, work)?,
     )
 }
@@ -153,7 +152,7 @@ pub fn run_nosplit(
     launcher: &[String],
     backend: Backend,
 ) -> Result<(Vec<QPoint>, Vec<PhResponse>)> {
-    let dir = work.join("ph_nosplit");
+    let dir = crate::foundation::layout::path(&work, "ph_nosplit");
     let input = qe.phonon_nosplit_input(dir.join("out").to_str().unwrap());
     execute(qe, work, &dir, &input, "ph", launcher, backend)?;
     let geometry = geometry(qe, work)?;

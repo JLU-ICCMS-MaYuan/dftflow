@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # 将已有兼容制品按模块安装到仓库 bin；不改变 PATH 或历史运行绑定。
-# 用法：install-bin.sh SOURCE_BIN [BIN_ROOT] [DYN0_BINARY]
+# 用法：install-bin.sh [--module epwflow] SOURCE_BIN [BIN_ROOT] [DYN0_BINARY]
 set -euo pipefail
+selected_module=""
+if [[ "${1:-}" == --module ]]; then
+    [[ "${2:-}" == epwflow ]] || { echo '按模块安装当前支持 epwflow' >&2; exit 1; }
+    selected_module="$2"
+    shift 2
+fi
 script_dir=$(cd "$(dirname "$0")" && pwd)
 repo_dir=$(cd "$script_dir/.." && pwd)
 source_bin=$(cd "${1:?用法: install-bin.sh SOURCE_BIN [BIN_ROOT] [DYN0_BINARY]}" && pwd -P)
@@ -20,13 +26,23 @@ cleanup() {
 trap cleanup EXIT
 stage=$(mktemp -d "$bin_root/.install-bin.XXXXXX")
 mkdir "$stage/source"
-for program in qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity; do
+programs=(qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity)
+if [[ -n "$selected_module" ]]; then programs=(epw_phonon epw_wannier epw_superconductivity); fi
+for program in "${programs[@]}"; do
     [[ -f "$source_bin/$program" && -x "$source_bin/$program" ]] || { echo "缺少可执行文件: $source_bin/$program" >&2; exit 1; }
     cp -p "$source_bin/$program" "$stage/source/$program"
 done
 # 入口映射和启动检查复用现有实现，避免维护第二套命令名清单。
-bash "$script_dir/verify-entries.sh" "$stage/source" >/dev/null
-bash "$script_dir/install-compat.sh" "$stage/source" "$stage/entries" >/dev/null
+if [[ -z "$selected_module" ]]; then
+    bash "$script_dir/verify-entries.sh" "$stage/source" >/dev/null
+    bash "$script_dir/install-compat.sh" "$stage/source" "$stage/entries" >/dev/null
+else
+    mkdir "$stage/entries"
+    for program in "${programs[@]}"; do
+        "$stage/source/$program" --help >/dev/null
+        ln -s "../source/$program" "$stage/entries/$program"
+    done
+fi
 for entry in "$stage/entries/"*; do
     program=$(basename "$(readlink "$entry")")
     case "$program" in
@@ -69,4 +85,4 @@ for module_dir in "$stage/grouped/"*; do
         mv -f "$entry" "$bin_root/$module/$(basename "$entry")"
     done
 done
-echo "已更新分组安装目录：$bin_root（54 个主入口；独立 dyn0 按显式参数安装）"
+echo "已更新分组安装目录：$bin_root（${selected_module:-全部模块}；独立 dyn0 按显式参数安装）"

@@ -1,163 +1,130 @@
 # epwflow
 
-EPW 工作流仅构建三个独立程序：`epw_phonon`、`epw_wannier`、`epw_superconductivity`。配置默认名为 `inputepw.toml`，运行快照为 `input-init.toml`；同目录原有 `input.toml` 继续供 qeflow 使用。
-
-纯能量模式的外窗下界经受控 `wdata` 传给内嵌 W90，以兼容现有 EPW 5.9。第二阶段发布前、第三阶段启动细网格前，均核对 `.wout` 的实际四界；缺失、冲突或超出原生显示舍入的偏差会阻断。当前 PBE 原生阻断及双 FFT 源码核查见[诊断记录](../docs/specs/0012-epwflow-interpolation/native-double-grid-audit.md)，不能把接口回归通过当成已获得 Tc。
-
-三个入口、脚本生成和粗／细网格清单已接入。第一阶段直接调用 qeflow 共享执行库；第二阶段已接入独立参考、显式纯能量选窗、比较数据和四类图的自动生成。真实 PBE 全链与原生 iso／aniso Tc 的完整科学验收仍未完成。当前源码、构建产物和默认安装分别核对，旧安装不能直接使用下列新选项。当前功能见 [Overview](../docs/overview/epwflow/README.md)，整合契约见 [0008 三程序设计](../docs/specs/0008-epwflow-foundation/three-programs.md)。
-
-## 三个阶段
-
-```mermaid
-flowchart TD
-    C["inputepw.toml + POSCAR + 赝势"] --> P["epw_phonon"]
-    P --> P1["直接调用 qeflow nosplit<br/>SCF → PH → q2r → matdyn → 声子图"]
-    P1 --> P2["逐 q XML dyn／dvscf／phsave<br/>保留 save；完整均匀 NSCF；严格校验"]
-    P2 --> PM["qe-data/manifest.json"]
-    PM --> W["epw_wannier"]
-    W --> WP["显式选窗与程序预检"]
-    WP --> WR["同源独立参考：显式清单，或自动<br/>SCF 副本 → 固定点 NSCF／直接 PH → dynmat"]
-    WR --> W1["Wannier／粗网格 → 独立质量检查"]
-    W1 --> W2["自动生成同路径／DOS 网格数据<br/>电子能带／DOS、声子谱／DOS 四图与总览"]
-    W2 --> QG{"独立质量通过？"}
-    QG -->|"是"| WM["wannier/manifest.json<br/>不含细网格或 α²F"]
-    WM --> S["epw_superconductivity"]
-    S --> S1["细网格 EPC → 原生 α²F／λ<br/>interpolation/manifest.json"]
-    S1 --> S2["原生 iso／aniso → 双初值与收敛检查<br/>有界 Tc 搜索 → 图表与结果包"]
-    QG -->|"否"| STOP["保留失败诊断图，阻断细网格／超导"]
-```
-
-第一阶段固定 KPATH、q2r／matdyn 程序身份及物理输入，直接调用同一 qeflow 库；SCF 结束后、PH 前保存不可变快照，完成后再执行 EPW 的完整均匀 NSCF。qeflow 原来就保留 scratch；新增的 `[qe_phonon].retain_epw_data=true` 让 nosplit 生成逐 q 响应势与 XML 动力学矩阵，并校验、归档到 `save/`，详见 [qeflow 手册](../qeflow/README.md#为-epw-保留声子数据)。第一条主路径采用 nosplit，不要求三种 q 方式都完成才交付。
-
-## 生成脚本、检查和执行
-
-三个程序的日常安装位置为仓库 `bin/epwflow/`，通过根目录的 `scripts/install-bin.sh` 从已有兼容制品安装。可使用绝对路径，或将该模块目录加入当前终端 PATH。以下命令在配置所在目录执行；`W` 取配置中的 `work_dir`。示例测试数据放在 `test_auto/MgB2/local_run/` 的编号目录，历史绑定程序和计算目录保留。仅复制程序不会迁移已有生成脚本的绝对路径身份，不手改已登记脚本或清单。
+三个公开程序管理 QE 到超导的八个阶段。编号工作区使用根目录 `input.toml`，每次生成、提交或 `--resume` 都读取当前配置，按阶段核验参数和上游文件哈希，复用相容结果。
 
 ```bash
-# 默认只固定输入并生成本阶段脚本，不提交、不执行科学程序、不预留预算。
-epw_phonon -c inputepw.toml
-epw_wannier -c inputepw.toml
-epw_superconductivity -c inputepw.toml
-
-# 一条命令生成三个阶段脚本和总提交脚本；仍不提交。
-epw_phonon --all -c inputepw.toml
-# 需要执行时运行生成的总脚本：
-bash "$W/.epwflow/generated/submit-all.sh"
-
-# 检查配置，不调用科学程序或 Slurm。
-epw_phonon --check -c inputepw.toml --json
-
-# 只准备固定快照。
-epw_phonon --prepare-only -c inputepw.toml
+source /data/home/mayuan/code/dftflow/scripts/env.sh
+cd /data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run
+# 修改 input.toml 后执行需要到达的阶段：
+epw_wannier --stage wannier -s
 ```
 
-生成脚本位于 `W/.epwflow/generated/`，依次为 `qe-data.sh`、`interpolation.sh`、`all.sh`。三个脚本分别对应三个程序；最后一个名字来自内部完成边界，执行第三阶段时仍要求前两阶段已有有效完成证据。手工 `sbatch` 这些生成脚本时，计算节点入口先验证脚本和程序身份、前置证据及分配，再登记共享预算。
+MgB₂ 当前目录与数据导入说明见 [算例说明](../examples/MgB2/sugon-amd/run/README.md)。完整需求和验收见 [0018](../docs/specs/0018-epwflow-stage-workspaces/spec.md)；当前功能入口为 [Overview](../docs/overview/epwflow/README.md)。
 
-```bash
-# 直接提交第一阶段；成功回执只说明已提交。
-epw_phonon -c inputepw.toml -s
+## 输入与布局
 
-# 查询和结算；W 必须替换为实际 work_dir。
-epw_phonon --status -w "$W" --refresh --json
-
-# 第一阶段完成后再提交第二阶段，第二阶段完成后再提交第三阶段。
-epw_wannier -c inputepw.toml -s
-epw_superconductivity -c inputepw.toml -s
-
-# 按失败阶段显式恢复，使用固定快照；每次只选择实际失败的程序。
-epw_phonon --resume -w "$W" -s
-epw_wannier --resume -w "$W" -s
-epw_superconductivity --resume -w "$W" -s
-
-# 在已经登记的 Slurm 分配内执行；登录节点不能直接执行。
-epw_phonon -c inputepw.toml -r
-```
-
-总提交脚本用 Slurm `afterok` 串联三个作业，并设置依赖无效时取消后续作业。逐次提交回执保存在 `chain-submission.json`；完整重复调用返回既有回执，部分或未知提交禁止自动重提。每个计算节点入口仍分别登记并检查原共享预算；总提交成功不代表科学完成，独立参考、选窗或科学检查失败会明确阻断。失败后按对应阶段显式恢复；旧的依赖作业不会自动改绑新作业号。
-
-执行节点须能调用 `scontrol` 和 `sacct`：前者核对当前作业的唯一运行分配及固定节点数，后者负责终态结算。记账暂缺时保留预算预留；不通过环境变量补造资源或用量。
-
-内部 `.epwflow/slurm/` 脚本属于已提交的尝试，不能手工重提。科学输出保存在 `W/calculations/<尝试号>/`；恢复沿用原科学目录，已通过阶段重新验哈希，失败现场保留。共享声子链后处理失败时可复用已核验的 SCF／PH，固定请求或受控脚本被篡改则拒绝恢复。粗／细阶段通过 native-attempts 检查点重验完整原生输出；显式恢复时将失败尝试归档到 history，按原参数重试，成功展宽直接复用。质量失败只复核原结果，未知目录、变化来源或篡改证据拒绝恢复。清单已发布但完成状态未登记时，重验清单后补齐登记，不再执行该阶段。此恢复已通过进程故障注入，实际新科学链仍待验收。第二、三阶段缺少前置完成证据时拒绝启动；活动或未知作业不自动重提。
-
-仅调整失败粗阶段的 MPI／pool 数时，可用 `epw_wannier --resume -w "$W" --mpi 32 -s`。此例外要求原作业已结束、Wannier 尚未交付、单 image 且 pool 数不超过完整粗 k 点数；同步改变尝试级 Slurm／预算／启动器和 pool 数，保留原固定快照与已验证 QE／独立参考，不重跑已完成的 QE 主链。新尝试记录 `mpi_override`，状态显示 `effective_mpi`；后续 `epw_superconductivity --resume -w "$W" -s` 继承该设置。已交付粗数据后的布局变更和其他科学配置变化不受此例外支持，尚未生成的比较参考仍按原要求计算。
-
-## 现有 EPW 的纯能量选窗与自动参考
-
-在 `inputepw.toml` 中显式选择：
+新配置在原 EPW TOML 基础上设置：
 
 ```toml
-[wannier]
-selection_mode = "energy_only"
-# 其余 num_wann、projections、收敛标准等继续填写。
-energy_reference = "f2_fermi"
-# 可选：outer_window_ev、frozen_window_ev，或单独 frozen_max_ev。
+layout = "numbered"
+work_dir = "."
+structure = "POSCAR"
+kpath = "KPATH.in"
+# pseudos、programs、resources、qe 等其余节仍然完整填写。
 ```
 
-默认四界从本次 F2 本征值生成：外窗为排除带后的全谱极值±0.02 eV，冻结下界为外窗下界，上界为共同 E_F＋2 eV。每个 k 点必须满足外窗态数≥N、冻结态数≤N，冻结窗还须覆盖质量与 EPC 目标能区；不合法即停止，不静默截低上界。实际选择保存为 `coarse/window-selection.json`。该模式保留初始投影，不输出 `dis_proj_min`／`dis_proj_max`／`dis_froz_proj`；未填写模式的旧配置保持历史组合行为，显式切换模式须用新运行目录。详见 [0016 契约](../docs/specs/0016-wannier-window-selection/spec.md)。
+只有根 `input.toml` 需要日常维护；程序生成的原生输入、内部快照和清单由程序管理。相对路径按 TOML 所在目录解释，`work_dir = "."` 不再额外嵌套 epwflow。
 
-省略 `interpolation.quality.reference_manifest` 时，第二阶段使用第一阶段冻结的 SCF 副本，执行固定 k 的独立 NSCF，以及缺少的固定 q 的直接 PH；不重做 SCF。声子参考采用同源 Γ onsite ASR，交给 `ph.x` 同目录的 `dynmat.x` 对角化。该程序在新运行准备时冻结身份；旧运行没有该身份时须新建运行或提供显式参考。原始文件、输入、日志、退出码和派生参考均保存在 `quality-sources/`，失败沿用显式恢复和历史归档。独立点的物理覆盖仍须验收，自动生成不等于科学质量通过。
+```text
+run/
+├── input.toml、POSCAR、pp/、KPATH.in、submit_all.sh
+├── 1.qe-scf/
+├── 2.qe-nscf/
+├── 3.qe-electronic/
+│   ├── qe_eband/
+│   └── qe_eledos/
+├── 4.qe-phonon-nosplit/       # 也可为 coords 或 index
+│   └── save/
+├── 5.epw-wannier/
+├── 6.epw-coarse/
+│   ├── quality-sources/
+│   ├── comparison-native/
+│   ├── comparison/
+│   └── results/figures/
+├── 7.epw-fine/
+├── 8.epw-superconductivity/
+│   ├── iso/
+│   └── aniso/
+└── .epwflow/
+```
 
-自动参考尚未完整发布时，显式恢复可使用修复后的编排程序，原冻结程序必须保留并通过校验；固定科学配置、科学程序和数据来源须保持一致。仅上述尝试级 MPI／pool 调整可在重验原固定请求后复用兼容参考，其余 launcher 变化拒绝。成功参考任务复用，失败任务先归档再执行，原请求和矩阵规范摘要不变；最终参考保留新旧编排程序身份。不能通过替换 QE／EPW 或改动科学输入续算原请求。
+每个实际计算目录包含原生输入、`submit.sh` 和日志。分 q、独立参考、细网格展宽及各温度尝试也在自己的目录生成提交脚本。依赖上游产物才能确定的输入和子任务在运行到该阶段时生成；未得到 NSCF 时不会伪造 EPW 选窗。脚本固定工作目录，能够从其他目录提交。根目录 `submit_all.sh` 将完整依赖交给一个有界 Slurm 分配顺序执行。
 
-## 数据检查、比较和重绘
+第 1～4 步复用 qeflow／共享输入、执行及后处理组件，SCF 只做一次并保留独立快照。NSCF 为 EPW 所需的完整均匀网格。`qe_eband` 使用 `pw.x bands` 和 `bands.x`，`qe_eledos` 使用 `dos.x`。PH 三种模式都严格校验 q 点、动力学矩阵、dvscf 和 phsave 后归集到第 4 步 `save/`。
 
-`CALC` 是工作流记录中 `calculation_dir` 的实际路径。已有原生数据可只读检查；独立质量参考必须属于当前物理输入，PBE 不能引用旧 LDA 参考。
+第 5 步只拟合 Wannier；原生 `wannier90.x restart=plot` 和 `postw90.x` 生成电子能带、总 DOS 对比。程序优先读取 `[programs.wannier90]`、`[programs.postw90]`，缺省使用 `pw.x` 同目录的程序。两侧使用共同 Fermi 能、相同高斯展宽，非磁标量路径将 postw90 态密度乘两重自旋，原文件保持不变，规范化数据另存 CSV。实际能窗与高对称点一并标注。
+
+第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，生成电子、声子对比和独立质量报告。第 7 步生成细网格矩阵元、α²F、λ；第 8 步运行原生 iso／aniso 和有界 Tc 搜索。严格元素／轨道投影继续暂缓，图像不能替代独立质量门。
+
+## 命令
+
+以下命令都在根 `input.toml` 所在目录执行。可用 `-c /绝对路径/input.toml` 从其他位置调用。
+
+| 命令 | 到达的阶段 |
+| --- | --- |
+| `epw_phonon -s` | 第 1～4 步 |
+| `epw_wannier --stage wannier -s` | 第 5 步 |
+| `epw_wannier --stage coarse -s` | 第 6 步 |
+| `epw_wannier -s` | 默认到第 6 步 |
+| `epw_superconductivity --stage fine -s` | 第 7 步 |
+| `epw_superconductivity --stage superconductivity -s` | 第 8 步 |
+| `epw_superconductivity -s` | 默认到第 8 步 |
+
+前置步骤相容时复用；缺失或过期时按依赖补齐。去掉 `-s` 只生成输入和脚本，不运行科学程序、不提交任务。`--resume -s` 也读取当前配置；无需手动寻找 `CALC` 或填写多份阶段 TOML。`-r` 只允许在已经获得的 Slurm 分配内执行。
 
 ```bash
-epw_phonon --check -w "$CALC" --json
-epw_wannier --check -w "$CALC" --json
-epw_superconductivity --check -w "$CALC" --json
-
-# 原生比较来源必须已经存在；此命令不生成缺失的科学输出。
-epw_wannier --export-comparison "$SOURCES" --output "$COMPARISON"
-epw_wannier --collect -w "$CALC"
-epw_wannier --plot --results "$RESULTS" --formats png,svg,pdf
-epw_wannier --results-check --results "$RESULTS" --json
-
-# 超导结果包也可独立重绘。
-epw_superconductivity --plot --results "$RESULTS"
-
-# 阶段导入与共享预算。
-epw_phonon --import "$QE_MANIFEST" -c inputepw.toml
-epw_phonon --budget status --ledger "$LEDGER" --json
-epw_phonon --budget reconcile --ledger "$LEDGER"
+epw_phonon --check --json        # 配置、文件路径与相应并行预检
+epw_wannier --status --json      # 按当前配置判断各阶段 reuse/update
+epw_phonon --all                # 仅生成完整依赖的目录和脚本
+bash submit_all.sh               # 提交完整依赖
+# 也可手动提交某一生成脚本；启动仍经过相同预检：
+sbatch 5.epw-wannier/submit.sh
 ```
 
-原验收账本兼容 campaign／historical_jobs／attempts 格式：只读状态保持原文件，首次成功预算写入才保存新结构，并完整保留历史记录、累计消费及存储基线。未结算预留、未知终态或累计不一致时拒绝转换，不能换账本路径重置预算。
+`operation_status=ok` 表示这次检查操作通过；`workflow_status=configured` 表示配置及脚本已准备。两者都不表示 QE／EPW 已运行、计算收敛、质量通过或 Tc 已得到。`--status` 的 `reuse` 同时要求科学键、上游产物键和本阶段输出哈希有效，`update` 表示当前请求需要执行。活动任务和终态未知任务会阻止再次生成或提交，以保护现场。
 
-第二阶段现会自动生成比较来源并输出四类图与总览，保存到实际科学目录的 `results/figures/`，各有 PNG／SVG／PDF。图中 QE 实线先画，EPW 虚线后画；高对称点位于横轴下方，实际 Wannier 外窗和冻结窗用不同颜色标注。严格元素／轨道投影继续暂缓，缺失面板明确标注。
+## 改参和复用
 
-路径由固定 KPATH 展开；DOS 使用第一阶段完整均匀 NSCF 网格。第二阶段额外执行路径 NSCF、同源 PH 副本的 q2r／matdyn 和 EPW 粗网格重读，不重做 SCF／已有 PH，不提前运行细网格 EPC。质量失败仍可生成诊断图，随后拒绝发布第二阶段成功标记。来源和逐任务执行证据保存在 `comparison-native/`。
+| 修改 | 更新范围 |
+| --- | --- |
+| MPI、pool、分区、时限 | 只更新后续提交资源，已有相容科学结果保留 |
+| `interpolation.k_grid/q_grid`，即 nkf／nqf | 第 7、8 步 |
+| Wannier 能窗、初始投影、函数数目 | 第 5～8 步 |
+| `phonon.q_grid`，即粗 nq | PH、声子后处理及第 6～8 步；SCF、NSCF、Wannier 保留 |
+| 结构、赝势、截断能 | 从最早受影响的上游开始 |
+| 比较展宽 | 原生 DOS 后处理及重绘，不重做拟合、PH 或 EPC |
 
-可选参数整段省略时使用以下默认值；提供时三字段完整给出：
+路径点数改变需要补齐相应路径参考；它不改变已有 Wannier 变换。失效现场移动到 `.epwflow/history/`，不会混合新旧数据。已成功的原生子尝试重验后复用，失败子尝试归档后重试。文件损坏、来源冲突及科学质量失败会明确停止，不凭完成标记跳过核验。
 
-```toml
-[comparison]
-points_per_edge = 20
-electronic_sigma_ev = 0.1
-phonon_sigma_cm1 = 10.0
-```
+每次提交在 `.epwflow/attempts/` 保存本次完整配置和输入副本；排队期间改根配置不会改变已提交任务。后续提交从新的根配置建立新尝试，不再受旧 64 进程快照限制。当前整工作区串行，活动或未知任务不会重复提交。共享预算路径在配置中保留，用户无需手动配置 `LEDGER` 变量；累计消费不重置。
 
-`points_per_edge` 为每条边的区间数（1～1000）；核宽单位分别为 eV、cm⁻¹，必须为有限正数。改变配置须建立新运行。仅重绘 SVG 会保留已登记且哈希有效的同源 PNG／PDF；半写发布由显式绘图或阶段恢复接续，未知文件冲突仍拒绝。上述代码经过进程协议回归，不能代替真实 PBE 插值质量与 Tc 验收。
+## 并行预检
 
-第三阶段的超导清单已记录 partial 时，也用 `epw_superconductivity --resume -w "$W" -s` 显式续算。恢复先重验固定来源、配置、模式、搜索状态和产物；保留已成功模式、失败证据与次数，只追加剩余合法尝试。损坏／变化来源拒绝，未知或活动作业不重提。
+生成、提交前和脚本启动时均校验 Slurm ntasks、MPI 数、pool 和 image。EPW 当前支持单 image，要求一个 MPI 对应一个 pool，且 pool 数不超过该次可分配 k 点数。粗网格读取实际 NSCF 点数，细网格使用本次 nkf。QE 采用自己的整除规则，允许每 pool 多个 MPI。
 
-第三阶段求解成功而最终出图失败时，仍用 `epw_superconductivity --resume -w "$W" -s` 恢复。结果清单存在不代表图表交付完成；恢复重验已有科学完成记录，由交付模块接续收集和出图。最终结果目录的遗留锁只在 owner 匹配原作业且其终态明确时回收，未知文件与未知锁继续拒绝覆盖。
+例如完整粗网格 `4×4×2=32` 点配 `MPI=64, pool=64` 会打印网格、32 点、64 MPI／pool 和空 pool 原因，然后非零退出。程序不会调整物理网格或并行参数来绕过错误。完整原生粗矩阵按 EPW 5.9 便携格式检查；`.ukk` 额外检查 k 点数和保留能带。失败的细矩阵重启现场不会带到不同资源的新尝试；完整细矩阵由原生求解器按原分片重新分配。
 
-原生超导图只重绘 SVG 也会保留同源、哈希有效的 PNG／PDF 归属。原生结果来源改变时须重绘全部已有格式或使用新输出目录；比较结果来源改变仍须使用新输出目录。重绘不执行科学程序。
+## 旧工作区导入
 
-跨登录／计算节点运行时，使用完成[原生运行库兼容打包](../docs/overview/dftflow-rust.md)的三个程序；源码构建制品和节点运行制品分别核对，打包不切换默认安装。
-
-生成和内部提交脚本加载用户指定的环境文件时，暂时关闭 nounset，以兼容 oneAPI 的可选变量；加载结束后恢复。环境加载失败仍阻断，后续执行保持严格检查。
-
-## 测试与科学边界
+一次性导入前，在新根配置设置 `layout="numbered"`、当前目标 `work_dir`，保持要复用的科学参数与旧 QE 相容，资源可以不同：
 
 ```bash
-bash scripts/build-native.sh test -p qeflow -p epwflow -p qf-input -p qf-phonon --locked --offline
+epw_phonon --import-work epwflow/work
 ```
 
-隔离进程测试证明接口、阶段顺序、失败阻断和来源校验；不代表真实 MgB₂ 科学验收通过。当前声子最大／RMS 门为 50／20 cm⁻¹，共享预算仍为 8 节点小时／100 GiB，不按阶段重置。已有 LDA 原生线性化 iso 区间不能代替完整双初值非线性与 aniso Tc 验收。实际科学证据及未完成项见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md) 和 [原生求解源码诊断](../docs/specs/0015-epwflow-mgb2-real-validation/native-solver-source-audit.md)。
+导入核验旧运行绑定、完整 QE 清单、文件集合与 SHA-256，复制 SCF、NSCF、三模式 PH 归集和已有声子后处理，建立新阶段清单和来源记录。旧来源不删除、不改写；已有 QE 不会重算。导入日志保存于 `.epwflow/legacy-import.json`，中断的受控物化可根据 `importing.json` 继续。目标已有未知同名目录或旧任务未结束时停止，不覆盖。
 
-保留 EPW 数据时，q2r 输出 `.fc.xml`，两类 matdyn 与自动比较均读取该路径；普通模式继续使用 `.fc`。恢复时复用已核验的 XML q2r。显式赝势以共同 `pseudo_dir` 与带引号的短相对文件名定位，生成前检查 QE 的原生长度限制。
+未设置 `layout` 的历史工作区仍保留原固定绑定行为，原有 `--resume -w 旧work --mpi ...` 只服务旧失败粗阶段。日常新流程使用根配置；历史接口细节见 [0008 三程序设计](../docs/specs/0008-epwflow-foundation/three-programs.md)。
 
-真实 PBE 已完成第一阶段、完整 NSCF 和第二阶段独立参考。当前原生粗网格因 Wannier 局域化未收敛及 EPC 非有限值被拒绝，尚无有效四类比较图和 Tc；窗口传参和运行时核对已修复，真实四界一致性仍待重跑验证。最新证据及未完成项见 [PBE 主路径验证](../docs/specs/0015-epwflow-mgb2-real-validation/public-pbe-validation.md)。
+## 构建和验证
+
+```bash
+bash scripts/build-native.sh build -p epwflow --locked
+# 先准备与计算节点兼容的原生运行制品，再仅安装本模块：
+bash scripts/install-bin.sh --module epwflow /兼容制品目录
+bash scripts/build-native.sh test -p epwflow -p qeflow --locked
+```
+
+`bin/` 已被 Git 忽略，按 `epwflow`、`qeflow`、`scflow`、`substitutionflow`、`vaspflow`、`wannierflow` 分组。`scripts/env.sh` 将模块路径加入当前终端 PATH，不要求在测试目录寻找可执行文件。
+
+公开进程及脚本测试使用隔离替身，证明调度、布局、复用和数据防护，不认证科学数值。真实 MgB₂ 全链和原生 iso／aniso Tc 仍需真实科学验收；本需求不代用户提交真实任务。质量、预算与来源保护保持原约束，见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。

@@ -222,6 +222,16 @@ rm -r -- "$package_dir"
 
 `qe_scf` / `qe_nscf` 支持 `-i/--input`、`-c/--config`、`-r/--run`、`-s/--submit`；默认配置 `input.toml`。仅准备时不运行，`-r` 实际执行，`-s` 提交 `run_qe.sh`；运行和提交互斥。NSCF 继承 SCF 的 XML、电荷密度和 PAW 数据。
 
+## QE／EPW 编号工作区
+
+新 EPW 配置使用 `layout = "numbered"`、`work_dir = "."` 和根 `input.toml`。
+修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。
+`--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
+输入、`submit.sh` 和日志位于各实际计算目录，空 pool 在生成、提交及脚本启动时阻断。
+旧工作区可只读核验后一次性导入，不为目录改版重跑 QE。
+详见 [模块手册](epwflow/README.md) 和 [MgB₂ 直接操作说明](examples/MgB2/sugon-amd/run/README.md)。
+仅更新三个 EPW 程序可使用 `bash scripts/install-bin.sh --module epwflow /兼容制品目录`。
+
 ## QE 声子一次提交
 
 [MgB₂ 分机器算例](examples/MgB2/README.md) 支持 index、coords 和 nosplit。分 q 模式仅计算一次 SCF，入口自动安排所有 q 点与依赖后的合并/绘图；详见 [0006](docs/specs/0006-qe-phonon-submit-chain/spec.md)。

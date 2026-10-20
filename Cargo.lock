@@ -607,6 +607,7 @@ dependencies = [
  "sha2",
  "svg2pdf",
  "toml",
+ "wannier90flow",
 ]
 
 [[package]]

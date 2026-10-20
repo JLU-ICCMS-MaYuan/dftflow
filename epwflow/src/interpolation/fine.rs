@@ -26,7 +26,7 @@ pub fn run_fine(
     launcher: &[String],
     backend: Backend,
 ) -> Result<FineResult> {
-    run_fine_at(epw_cfg, work, &work.join("fine"), smearing_mev, launcher, backend)
+    run_fine_at(epw_cfg, work, &crate::foundation::layout::path(&work, "fine"), smearing_mev, launcher, backend)
 }
 
 pub fn run_fine_at(
@@ -42,7 +42,7 @@ pub(super) fn prepare_fine_at(
     epw_cfg: &EpwConfig, work: &Path, dir: &Path, smearing_mev: f64,
 ) -> Result<()> {
     let structure = crate::qe_data::qe_config::QeSettings::from_config(epw_cfg.cfg)?;
-    let coarse = work.join("coarse");
+    let coarse = crate::foundation::layout::path(&work, "coarse");
     super::restart::stage(
         &coarse,
         &coarse.join("out"),
@@ -60,7 +60,7 @@ pub(super) fn prepare_fine_at(
 
 /// 归集细网格数据；空文件、截断矩阵、索引错位、非有限数均检出（FR-007/SC-003）。
 pub fn collect_fine(work: &Path, epw_cfg: &EpwConfig) -> Result<FineResult> {
-    collect_native_fine_at(work, &work.join("fine"), epw_cfg)
+    collect_native_fine_at(work, &crate::foundation::layout::path(&work, "fine"), epw_cfg)
 }
 
 /// 单一列 f64 文本读取（空格/换行分隔）。

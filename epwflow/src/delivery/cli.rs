@@ -46,9 +46,9 @@ fn collect(work: &PathBuf, json: bool) -> Result<()> {
 }
 
 fn results(work: &PathBuf, json: bool) -> Result<()> {
-    let path = work.join("results").join("manifest.json");
+    let path = crate::foundation::layout::path(work,"results").join("manifest.json");
     if path.exists() && crate::foundation::store::read::<serde_json::Value>(&path)?["kind"] == "epwflow-native-results" {
-        return print_native(&work.join("results"), json);
+        return print_native(&crate::foundation::layout::path(work,"results"), json);
     }
     let b = ResultsBundle::load(&path).with_context(|| format!("data_invalid: 无法加载 {}", path.display()))?;
     print_bundle(&b, json);

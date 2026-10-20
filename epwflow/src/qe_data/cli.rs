@@ -33,7 +33,7 @@ pub fn run(cmd: QeDataCommand) -> Result<()> {
 
 /// 只读核查 qe-data 清单与来源；缺失则明确报告未知/未完成。
 fn check(work: &Path, json: bool) -> Result<()> {
-    let manifest_path = work.join("qe-data").join("manifest.json");
+    let manifest_path = crate::foundation::layout::path(&work, "qe-data").join("manifest.json");
     if !manifest_path.exists() {
         if json {
             let v = status::envelope(

@@ -10,11 +10,11 @@ use super::super::foundation::store;
 pub fn run(work: &Path) -> Result<ResultsBundle> {
     let bundle = collect::collect(work)?;
     let cells = acceptance::acceptance_table(&bundle);
-    let out = work.join("results");
+    let out = crate::foundation::layout::path(work,"results");
     std::fs::create_dir_all(&out)?;
 
     // 仅当存在插值谱时绘 α²F 图（FR-001）。
-    let f3_path = work.join("interpolation").join("manifest.json");
+    let f3_path = crate::foundation::layout::path(&work, "interpolation").join("manifest.json");
     if f3_path.exists() {
         if let Ok(f3) = super::super::interpolation::manifest::InterpolationManifest::load(&f3_path) {
             if let (Some(fine), Some(spec)) = (f3.fine.as_ref(), f3.spectra.first()) {

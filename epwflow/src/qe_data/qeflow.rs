@@ -50,14 +50,14 @@ impl Checkpoint {
         self.input.verify()?;
         save::verify_snapshot(work)?;
         xml::validate_save(
-            &work.join("scf/snapshot"),
+            &crate::foundation::layout::path(&work, "scf/snapshot"),
             &qe.config.qe.prefix,
             qe,
             Some(self.energy_ry),
         )?;
         Ok(ScfResult {
             energy_ry: self.energy_ry,
-            snapshot_dir: work.join("scf/snapshot"),
+            snapshot_dir: crate::foundation::layout::path(&work, "scf/snapshot"),
             attempt_count: 1,
             success_count: 1,
         })
@@ -84,7 +84,7 @@ pub fn run(
             .as_ref()
             .context("required: 共享声子流程需要 kpath 或配置目录中的 KPATH.in")?,
     )?;
-    let dir = work.join("qe-phonon");
+    let dir = crate::foundation::layout::path(&work, "qe-phonon");
     let request_path = dir.join("shared-request.json");
     let digest = store::hash_bytes(&serde_json::to_vec(
         &json!({"config": cfg, "launcher": launcher}),

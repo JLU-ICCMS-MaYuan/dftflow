@@ -81,7 +81,7 @@ pub fn run_qeflow_registered(
     binding: &snapshot::RunBinding, cfg: &config::Config, qe: &QeSettings,
     backend: Backend, launcher: &[String], work: &Path,
 ) -> Result<QeManifest> {
-    ensure!(!work.join("qe-data/manifest.json").exists(), "input_conflict: QE 数据已发布，请复用完成记录");
+    ensure!(!crate::foundation::layout::path(&work, "qe-data/manifest.json").exists(), "input_conflict: QE 数据已发布，请复用完成记录");
     binding.verify()?;
     for role in ["q2r", "matdyn"] {
         let id = binding.programs.get(role).with_context(|| format!("environment: 缺少固定的 {role}.x；请用完整 QE 目录建立新运行"))?;
@@ -91,28 +91,17 @@ pub fn run_qeflow_registered(
     ensure!(binding.kpath.as_ref().is_some_and(|id| store::hash_file(path).ok().as_ref() == Some(&id.sha256)), "input_conflict: 路径未绑定或发生变化");
     let (scf_res, qpoints, responses) = super::qeflow::run(cfg, qe, backend, launcher, work)?;
     // 失败的 NSCF 保存树不能与新尝试合并；保留原现场后重新从 SCF 快照启动。
-    let nscf_dir = work.join("nscf");
+    let nscf_dir = crate::foundation::layout::path(&work, "nscf");
     if nscf_dir.exists() { std::fs::rename(&nscf_dir, work.join(format!("nscf-failed-{}", store::token())))?; }
     let states = nscf::run_nscf(qe, work, launcher, backend)?;
     publish(binding, qe, work, scf_res, states, qpoints, responses)
 }
 
-fn publish(
+pub(crate) fn publish(
     binding: &snapshot::RunBinding, qe: &QeSettings, work: &Path,
     scf_res: scf::ScfResult, states: super::manifest::ElectronicStates,
     qpoints: Vec<super::manifest::QPoint>, responses: Vec<super::manifest::PhResponse>,
 ) -> Result<QeManifest> {
-    // 5. 响应数据完整归集。
-    let collected = collect_ph::collect(
-        work,
-        &qpoints,
-        &responses,
-        &qe.config.qe.prefix,
-        &phonon::geometry(qe, work)?,
-    )?;
-    collect_ph::write_q_index_map(work, &qpoints)?;
-
-    // 6. 构建指纹（来源不可变，来自绑定）。
     let fingerprints = Fingerprints {
         structure_sha256: binding.structure.sha256.clone(),
         pseudo_sha256: binding
@@ -126,6 +115,24 @@ fn publish(
             .map(|(k, v)| (k.clone(), v.sha256.clone()))
             .collect(),
     };
+    publish_data(&binding.run_id, fingerprints, qe, work, scf_res, states, qpoints, responses)
+}
+
+pub(crate) fn publish_data(
+    run_id: &str, fingerprints: Fingerprints, qe: &QeSettings, work: &Path,
+    scf_res: scf::ScfResult, states: super::manifest::ElectronicStates,
+    qpoints: Vec<super::manifest::QPoint>, responses: Vec<super::manifest::PhResponse>,
+) -> Result<QeManifest> {
+    // 5. 响应数据完整归集。
+    let collected = collect_ph::collect(
+        work,
+        &qpoints,
+        &responses,
+        &qe.config.qe.prefix,
+        &phonon::geometry(qe, work)?,
+    )?;
+    collect_ph::write_q_index_map(work, &qpoints)?;
+
     let scf_record = ScfRecord {
         total_energy_ry: scf_res.energy_ry,
         attempt_count: scf_res.attempt_count,
@@ -177,8 +184,8 @@ fn publish(
     );
 
     let mut artifacts = collected.artifacts;
-    let shared = work.join("qe-phonon");
-    if shared.exists() {
+    let shared = crate::foundation::layout::path(&work, "qe-phonon");
+    if shared.exists() && !crate::foundation::layout::enabled(work) {
         for name in ["shared-source-identities.json", "shared-request.json", "scf-checkpoint.json", "input.qeflow.toml", "input-init.toml", "scf.in", "ph.in", "q2r.in", "matdyn_phband.in", "matdyn_phdos.in", "save/manifest.json"] {
             let path = shared.join(name);
             artifacts.push(super::manifest::Artifact {
@@ -190,7 +197,7 @@ fn publish(
     }
     for (stage, root) in [
         ("scf", scf_res.snapshot_dir.clone()),
-        ("nscf", work.join("nscf/out")),
+        ("nscf", crate::foundation::layout::path(&work, "nscf/out")),
     ] {
         for f in super::save::files(&root)? {
             let path = root.join(&f.relative_path);
@@ -205,7 +212,7 @@ fn publish(
             });
         }
     }
-    let identity = work.join("scf/snapshot-files.json");
+    let identity = crate::foundation::layout::path(&work, "scf/snapshot-files.json");
     artifacts.push(super::manifest::Artifact {
         role: "scf_snapshot_identity".into(),
         relative_path: identity.strip_prefix(work)?.into(),
@@ -219,7 +226,7 @@ fn publish(
         schema_version: 2,
         artifact_root: Some(work.canonicalize()?),
         artifacts,
-        run_id: binding.run_id.clone(),
+        run_id: run_id.to_owned(),
         fingerprints,
         scf: Some(scf_record),
         states: Some(states),
@@ -231,7 +238,7 @@ fn publish(
     // 8. 仅当全部必需本地校验通过才发布可供下一阶段消费的清单。
     if manifest.validation.all_passed() {
         manifest.verify()?;
-        let out = work.join("qe-data").join("manifest.json");
+        let out = crate::foundation::layout::path(&work, "qe-data").join("manifest.json");
         store::write(&out, &manifest)?;
     } else {
         for c in &manifest.validation.checks {
@@ -277,5 +284,5 @@ pub fn record_acceptance(work: &Path, record: &qe_acceptance::AcceptanceRecord) 
         record.require_evidence().is_ok(),
         "data_invalid: 验收记录缺少真实证据，拒绝落盘冒充"
     );
-    qe_acceptance::write(&work.join("qe-data").join("acceptance.json"), record)
+    qe_acceptance::write(&crate::foundation::layout::path(&work, "qe-data").join("acceptance.json"), record)
 }

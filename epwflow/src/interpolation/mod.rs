@@ -24,4 +24,4 @@ pub mod quality_binding;
 
 mod reference_asr;
 mod references;
-mod automatic_comparison;
+pub(crate) mod automatic_comparison;

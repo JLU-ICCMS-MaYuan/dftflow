@@ -31,7 +31,7 @@ pub fn run_scf(
     launcher: &[String],
     backend: Backend,
 ) -> Result<ScfResult> {
-    let dir = work.join("scf");
+    let dir = crate::foundation::layout::path(&work, "scf");
     std::fs::create_dir_all(&dir)?;
     let outdir = dir.join("out");
     std::fs::create_dir_all(&outdir)?;
@@ -61,8 +61,8 @@ pub fn run_scf(
 
 /// 复用已验证 SCF 快照：仅当来源、参数、版本与布局一致时登记，否则拒绝。
 pub fn reuse_scf(source_save: &Path, work: &Path) -> Result<std::path::PathBuf> {
-    let snapshot = work.join("scf").join("snapshot");
+    let snapshot = crate::foundation::layout::path(&work, "scf").join("snapshot");
     let entries = super::save::copy_tree(source_save, &snapshot)?;
-    super::super::foundation::store::write(&work.join("scf/snapshot-files.json"), &entries)?;
+    super::super::foundation::store::write(&crate::foundation::layout::path(&work, "scf/snapshot-files.json"), &entries)?;
     Ok(snapshot)
 }

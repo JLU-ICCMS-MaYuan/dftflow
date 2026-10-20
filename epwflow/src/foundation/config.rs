@@ -19,6 +19,7 @@ enumeration!(EnergyReference{QeZero,F2Fermi});
 enumeration!(FermiSource{F2,FineFixedElectrons});
 #[derive(Debug,Clone,Serialize,Deserialize)] #[serde(deny_unknown_fields)]
 pub struct Config {
+    #[serde(default, skip_serializing_if="Option::is_none")] pub layout:Option<String>,
     pub schema_version:u32,pub work_dir:PathBuf,
     #[serde(default="default_outdir")] pub outdir:PathBuf,
     pub structure:PathBuf,pub pseudos:BTreeMap<String,PathBuf>,pub programs:Programs,
@@ -30,7 +31,13 @@ pub struct Config {
 }
 fn default_outdir()->PathBuf{PathBuf::from("./tmp")}
 data!(Program{path:PathBuf,args:Vec<String>});
-data!(Programs{pw:Program,ph:Program,epw:Program,launcher:Vec<String>,environment_script:Option<PathBuf>,wannier90:Option<Program>,pw2wannier90:Option<Program>});
+#[derive(Debug,Clone,Serialize,Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Programs {
+    pub pw:Program, pub ph:Program, pub epw:Program, pub launcher:Vec<String>,
+    pub environment_script:Option<PathBuf>, pub wannier90:Option<Program>, pub pw2wannier90:Option<Program>,
+    #[serde(default,skip_serializing_if="Option::is_none")] pub postw90:Option<Program>,
+}
 data!(Resources{partition:String,nodes:u32,mpi:u32,wall_seconds:u64,storage_bytes:u64});
 data!(BudgetConfig{campaign_id:String,ledger:PathBuf});
 data!(Qe{prefix:String,ecutwfc_ry:f64,ecutrho_ry:f64,occupations:Occupations,smearing:Option<Smearing>,degauss_ry:Option<f64>,scf:Scf,nscf:Nscf});
@@ -89,9 +96,12 @@ impl Config {
         let mut c:Self=toml::from_str(&raw).context("configuration: TOML 字段/类型错误")?;
         c.validate()?;
         c.resolve(path.parent().context("configuration: 配置缺少父目录")?)?;
+        let marker=c.work_dir.join(".epwflow/layout.json");
+        if marker.is_file(){let layout:super::layout::Layout=super::store::read(&marker)?;ensure!(layout.schema_version==1,"unsupported_version: 工作区布局版本");}
         Ok(c)
     }
     pub fn validate(&self)->Result<()>{
+        ensure!(self.layout.as_deref().is_none_or(|v|v=="numbered"),"configuration: layout 只支持 numbered");
         ensure!(self.schema_version==1,"unsupported_version: schema_version 必须为 1");self.resources.validate()?;
         if let Some(c)=&self.comparison {
             ensure!((1..=1000).contains(&c.points_per_edge),"configuration: comparison.points_per_edge: 必须在 1..1000");
@@ -171,7 +181,7 @@ impl Config {
         if let Some(p)=&mut self.kpath { *p=paths::existing(base,p,"kpath",false)?; }
         for (el,p) in &mut self.pseudos {*p=paths::existing(base,p,&format!("pseudos.{el}"),false)?;}
         for (n,p) in [("pw",&mut self.programs.pw),("ph",&mut self.programs.ph),("epw",&mut self.programs.epw)] {p.path=paths::existing(base,&p.path,&format!("programs.{n}.path"),true)?;}
-        for (n,p) in [("wannier90",&mut self.programs.wannier90),("pw2wannier90",&mut self.programs.pw2wannier90)] {
+        for (n,p) in [("wannier90",&mut self.programs.wannier90),("pw2wannier90",&mut self.programs.pw2wannier90),("postw90",&mut self.programs.postw90)] {
             if let Some(pr)=p { pr.path=paths::existing(base,&pr.path,&format!("programs.{n}.path"),true)?; }
         }
         if let Some(p)=self.programs.launcher.first_mut(){*p=paths::command(base,p)?.to_string_lossy().into_owned();}
@@ -180,7 +190,7 @@ impl Config {
         self.budget.ledger=paths::destination(&paths::absolute(base,&self.budget.ledger)?)?;
         // 输入不得在后续要由本运行拥有的工作树内；防止准备与复制相互覆盖。
         for p in std::iter::once(&self.structure).chain(self.pseudos.values()) {
-            if p.starts_with(&self.work_dir) { // 已绑定配置中结构快照例外由 snapshot 校验。
+            if p.starts_with(&self.work_dir) && self.layout.as_deref()!=Some("numbered") { // 已绑定配置中结构快照例外由 snapshot 校验。
                 ensure!(p.file_name().is_some_and(|n|n.to_string_lossy().ends_with("-init")),"configuration: 输入位于工作目录内部");
             }
         }

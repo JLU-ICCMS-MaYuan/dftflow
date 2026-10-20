@@ -21,13 +21,13 @@ pub fn collect_results(
 ) -> anyhow::Result<std::path::PathBuf> {
     let result = output
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| work.join("results"));
+        .unwrap_or_else(|| crate::foundation::layout::path(work,"results"));
     let mut found = false;
-    if work.join("superconductivity/manifest.json").exists() {
+    if crate::foundation::layout::path(&work, "superconductivity/manifest.json").exists() {
         native::collect(work, Some(&result))?;
         found = true;
     }
-    if work.join("interpolation/comparison/manifest.json").exists() {
+    if crate::foundation::layout::path(&work, "interpolation/comparison/manifest.json").exists() {
         comparison::collect(work, Some(&result))?;
         found = true;
     }

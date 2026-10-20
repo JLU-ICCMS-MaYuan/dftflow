@@ -36,6 +36,14 @@ struct Request {
 /// 显式恢复允许修复编排程序；配置和五项科学来源仍必须完全一致。
 fn resume_request(cfg: &Config, launcher: &[String], current: &[Identity], previous: &Request, retry: bool) -> Result<String> {
     ensure!(retry, "execution_failed: 独立参考已有现场，请显式 --resume");
+    if crate::foundation::layout::enabled(&cfg.work_dir) {
+        ensure!(retry && previous.schema_version==1 && previous.sources.len()==6 && current.len()==6,
+            "input_conflict: 独立参考请求无效");
+        let digest=crate::foundation::stages::request_digest(cfg,crate::foundation::stages::Step::Coarse,&previous.sources,"references")?;
+        ensure!(digest==previous.digest && serde_json::to_value(&previous.sources[..5])?==serde_json::to_value(&current[..5])?,"input_conflict: 独立参考科学来源变化");
+        for id in &previous.sources{id.verify()?;}
+        return Ok(digest);
+    }
     let (cfg, launcher) = crate::foundation::parallelism::request_identity(cfg, launcher)?;
     ensure!(previous.schema_version == 1 && previous.sources.len() == 6 && current.len() == 6
         && previous.digest == store::hash_bytes(&serde_json::to_vec(&(&cfg, &launcher, &previous.sources))?)
@@ -106,11 +114,12 @@ pub(super) fn ensure_sources(
     if let Some(path) = &cfg.interpolation.quality.reference_manifest {
         return Ok(path.clone());
     }
+    if let Some(path)=crate::foundation::workspace_import::reference(cfg)? {return Ok(path)}
     ensure!(
         matches!(backend, Backend::Local),
         "allocation: 自动参考必须在已登记分配内执行"
     );
-    let f2_path = f2_work.join("qe-data/manifest.json");
+    let f2_path = crate::foundation::layout::path(&f2_work, "qe-data/manifest.json");
     let f2 = QeManifest::load(&f2_path)?;
     f2.verify()?;
     save::verify_snapshot(f2_work)?;
@@ -130,7 +139,7 @@ pub(super) fn ensure_sources(
     );
     let mut sources = vec![
         Identity::capture(&f2_path)?,
-        Identity::capture(&f2_work.join("scf/snapshot-files.json"))?,
+        Identity::capture(&crate::foundation::layout::path(&f2_work, "scf/snapshot-files.json"))?,
         Identity::capture(&cfg.programs.pw.path)?,
         Identity::capture(&cfg.programs.ph.path)?,
         Identity::capture(&dynmat.path)?,
@@ -141,8 +150,10 @@ pub(super) fn ensure_sources(
         "input_conflict: dynmat.x 未在初始运行中冻结；请使用新运行目录或显式独立参考"
     );
     let (identity_cfg, identity_launcher) = crate::foundation::parallelism::request_identity(cfg, launcher)?;
-    let mut digest = store::hash_bytes(&serde_json::to_vec(&(&identity_cfg, &identity_launcher, &sources))?);
-    let root = work.join("quality-sources");
+    let mut digest = if crate::foundation::layout::enabled(work) {
+        crate::foundation::stages::request_digest(cfg,crate::foundation::stages::Step::Coarse,&sources,"references")?
+    }else{store::hash_bytes(&serde_json::to_vec(&(&identity_cfg, &identity_launcher, &sources))?)};
+    let root = crate::foundation::layout::path(&work, "quality-sources");
     let request_path = root.join("request.json");
     if request_path.exists() {
         let previous: Request = store::read(&request_path)?;
@@ -174,7 +185,7 @@ pub(super) fn ensure_sources(
     let electron_dir = root.join("electron");
     let input = electron_dir.join("reference.in");
     let xml = electron_dir.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix));
-    let immutable = [input.clone(), f2_work.join("scf/snapshot-files.json")];
+    let immutable = [input.clone(), crate::foundation::layout::path(&f2_work, "scf/snapshot-files.json")];
     let electron = attempt::run_with_inputs(
         work,
         "reference-electron",
@@ -286,7 +297,7 @@ pub(super) fn ensure_sources(
             let label = format!("reference-ph-{:04}", index + 1);
             let dir = root.join(format!("ph-{:04}", index + 1));
             let input = dir.join("reference.in");
-            let immutable = [input.clone(), f2_work.join("scf/snapshot-files.json")];
+            let immutable = [input.clone(), crate::foundation::layout::path(&f2_work, "scf/snapshot-files.json")];
             let response = attempt::run_with_inputs(
                 work,
                 &label,

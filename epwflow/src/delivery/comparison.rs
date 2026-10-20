@@ -19,11 +19,11 @@ pub fn summary(data: &Dataset) -> serde_json::Value {
 }
 
 pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
-    let source = work.join("interpolation/comparison");
+    let source = crate::foundation::layout::path(&work, "interpolation/comparison");
     let data = load(&source)?;
     let output = output
         .map(PathBuf::from)
-        .unwrap_or_else(|| work.join("results"));
+        .unwrap_or_else(|| crate::foundation::layout::path(work,"results"));
     fs::create_dir_all(&output)?;
     let _lock = store::Lock::acquire(&output.join("comparison"))?;
     if output.join("comparison").is_dir() {

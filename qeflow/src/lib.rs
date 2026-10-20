@@ -5,6 +5,7 @@
 mod phonon_chain;
 #[path = "phonon_init.rs"]
 mod phonon_init;
+pub mod native;
 
 use clap::{Parser, Subcommand};
 use anyhow::{Context, Result};

@@ -752,7 +752,7 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
                 let completion = verify_stage(name, &manifest, &cfg, &binding)?;
                 record.completed.insert(name.into(), completion);
                 save(work, &record)?;
-                let receipt = work.join(name).join("manifest.json");
+                let receipt = crate::foundation::layout::path(&work,name).join("manifest.json");
                 if receipt != manifest { store::atomic_bytes(&receipt, &fs::read(&manifest)?)?; }
                 continue;
             }
@@ -790,13 +790,13 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
                     )?;
                 }
                 _ => {
-                    crate::delivery::finalize_to(&calculation, Some(&work.join("results")))?;
+                    crate::delivery::finalize_to(&calculation, Some(&crate::foundation::layout::path(work,"results")))?;
                 }
             }
             let completion = verify_stage(name, &manifest, &cfg, &binding)?;
             record.completed.insert(name.into(), completion);
             save(work, &record)?;
-            let receipt = work.join(name).join("manifest.json");
+            let receipt = crate::foundation::layout::path(&work,name).join("manifest.json");
             if receipt != manifest {
                 store::atomic_bytes(&receipt, &fs::read(&manifest)?)?;
             }

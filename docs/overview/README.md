@@ -12,7 +12,7 @@ DFTFlow 为第一性原理计算准备输入、组织外部求解器和调度任
 | [vaspflow](vaspflow/README.md) | VASP 输入、优化、电子/体积场/COHP 分析 | vaspflow；按需 VASP/VASPKIT/LOBSTER |
 | [wannierflow](wannierflow/README.md) | Wannier 初始化、能窗与结果分析 | 家族命令 wannier90；Wannier90 与 QE 接口 |
 | [scflow](scflow/README.md) | 已有 QE EPC 数据的超导后处理 | scflow；Rust 数值与绘图库 |
-| [epwflow](epwflow/README.md) | 共享 QE 输入、受控执行入口、原生谱与独立质量检查 | Rust epwflow；原生两模式执行、续算及结果包已有回归，MgB₂ Tc 与完整链路尚未验收 |
+| [epwflow](epwflow/README.md) | 八阶段编号目录、当前配置增量续算、并行预检、原生谱与质量检查 | Rust epwflow；原生两模式执行、续算及结果包已有回归，MgB₂ Tc 与完整链路尚未验收 |
 | [substitutionflow](substitutionflow/README.md) | 元素替换、阶段组织、批量汇总 | substitution；调用其他 flow |
 | [mattersimflow](mattersimflow/README.md) | 机器学习势预优化 | Python mattersim_opt；MatterSim/ASE |
 | [独立工具](tools/README.md) | 独立 Rust dyn0 算法工具 | qf-gen-dyn0；单独 Cargo 工程 |

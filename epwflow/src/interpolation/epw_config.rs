@@ -12,6 +12,8 @@ pub struct EpwConfig<'a> {
 /// 在生成细网格矩阵元之前，先在固定验证点完成 Wannier/粗网格检查。
 #[derive(Clone, Copy)]
 pub enum NativeStage {
+    WannierOnly,
+    ReuseWannier,
     CoarseQuality,
     /// 只重读既有 Wannier 规范，在全部独立点重新插值，不重新选窗。
     RestartQuality,
@@ -250,7 +252,7 @@ impl<'a> EpwConfig<'a> {
             config::FermiSource::FineFixedElectrons => s.push_str(" efermi_read = .false.\n"),
         }
         match stage {
-            NativeStage::CoarseQuality => {
+            NativeStage::WannierOnly | NativeStage::CoarseQuality => {
                 s.push_str(" epwread = .false.\n epwwrite = .true.\n wannierize = .true.\n ephwrite = .false.\n eliashberg = .false.\n band_plot = .true.\n selecqread = .true.\n filkf = 'kpoints.dat'\n filqf = 'qpoints.dat'\n");
                 s.push_str(&format!(" num_iter = {}\n", w.localization.max_iterations));
                 for (j, p) in w.projections.iter().enumerate() {
@@ -300,6 +302,9 @@ impl<'a> EpwConfig<'a> {
                     s.push_str(&format!(" wdata({}) = {}\n", j + 1, quoted(line)?));
                 }
             }
+            NativeStage::ReuseWannier => {
+                s.push_str(" epwread = .false.\n epwwrite = .true.\n wannierize = .false.\n ephwrite = .false.\n eliashberg = .false.\n band_plot = .true.\n selecqread = .true.\n filkf = 'kpoints.dat'\n filqf = 'qpoints.dat'\n");
+            }
             NativeStage::RestartQuality => {
                 s.push_str(" epwread = .true.\n epwwrite = .false.\n epbread = .false.\n wannierize = .false.\n ephwrite = .false.\n eliashberg = .false.\n band_plot = .true.\n selecqread = .true.\n filkf = 'kpoints.dat'\n filqf = 'qpoints.dat'\n");
             }
@@ -315,6 +320,10 @@ impl<'a> EpwConfig<'a> {
             }
         }
         s.push_str("/\n");
+        if matches!(stage, NativeStage::WannierOnly) {
+            s=s.replace(" elph = .true."," elph = .false.")
+                .replace(" band_plot = .true."," band_plot = .false.");
+        }
         Ok(s)
     }
 

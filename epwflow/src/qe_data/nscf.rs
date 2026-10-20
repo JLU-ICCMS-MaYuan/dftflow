@@ -105,7 +105,7 @@ pub fn run_nscf(
     launcher: &[String],
     backend: Backend,
 ) -> Result<ElectronicStates> {
-    let dir = work.join("nscf");
+    let dir = crate::foundation::layout::path(&work, "nscf");
     std::fs::create_dir_all(&dir)?;
     let outdir = dir.join("out");
     super::save::stage_scf(work, &outdir, &qe.config.qe.prefix)?;

@@ -8,9 +8,9 @@ use super::super::superconductivity::manifest::SuperconductivityManifest;
 /// 一次入口自动收集各阶段交付（FR-001）：读取 qe-data / interpolation / superconductivity 清单，
 /// 聚合 Tc、能隙、λ 等，并构建六组合覆盖表的“实际运行”单元格。
 pub fn collect(work: &Path) -> Result<ResultsBundle> {
-    let f2_path = work.join("qe-data").join("manifest.json");
-    let f3_path = work.join("interpolation").join("manifest.json");
-    let f4_path = work.join("superconductivity").join("manifest.json");
+    let f2_path = crate::foundation::layout::path(&work, "qe-data").join("manifest.json");
+    let f3_path = crate::foundation::layout::path(&work, "interpolation").join("manifest.json");
+    let f4_path = crate::foundation::layout::path(&work, "superconductivity").join("manifest.json");
 
     let _f2 = if f2_path.exists() {
         Some(QeManifest::load(&f2_path).context("data_invalid: 无法加载 qe-data 清单")?)

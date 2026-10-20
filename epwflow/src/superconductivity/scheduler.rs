@@ -29,7 +29,7 @@ pub fn run_with_retry(
     retry: bool,
 ) -> Result<SuperconductivityManifest> {
     let work = std::fs::canonicalize(work)?;
-    let path = work.join("interpolation/manifest.json");
+    let path = crate::foundation::layout::path(&work, "interpolation/manifest.json");
     let f3 = InterpolationManifest::load(&path)?;
     ensure!(
         f3.validation.all_passed() && f3.quality.as_ref().is_some_and(|q| q.status == "valid"),
@@ -63,7 +63,7 @@ pub fn run_with_retry(
         Ok(())
     };
     before()?;
-    let root = work.join("superconductivity");
+    let root = crate::foundation::layout::path(&work, "superconductivity");
     std::fs::create_dir_all(&root)?;
     let _lock = store::Lock::acquire(&root.join("execution"))?;
     let modes = match cfg.superconductivity.mode {
