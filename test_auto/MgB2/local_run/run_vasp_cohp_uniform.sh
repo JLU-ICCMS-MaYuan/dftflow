@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 echo '[qeflow] ------------------------------------------------------------'
 echo '[qeflow] workflow: '
 echo '[qeflow] prefix: vasp_cohp_uniform'

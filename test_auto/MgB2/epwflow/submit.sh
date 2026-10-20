@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # 主节点测试入口；每次只提交一个明确的阶段。
-set -euo pipefail
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_dir="$(cd "$script_dir/../../.." && pwd)"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit $?
+repo_dir="$(cd "$script_dir/../../.." && pwd)" || exit $?
 if [[ $# -lt 2 ]]; then
     echo '用法：bash submit.sh phonon|wannier|superconductivity 配置.toml [阶段选项]' >&2
     exit 2

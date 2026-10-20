@@ -1755,7 +1755,7 @@ def test_continue_workflow_submit_refreshes_status_before_building_scripts(chdir
     summary = continue_workflow("ht_out", run_calc=False, submit=True, config_file=str(config_path))
 
     script_lines = Path("ht_out/submit_group_01.sh").read_text(encoding="utf-8").splitlines()
-    assert "set -e" in script_lines
+    assert "set -e" not in script_lines
     target_cd = f'if ! cd "{pressure_dir.resolve()}"; then'
     target_index = script_lines.index(target_cd)
     assert "总未完成单元数" in summary

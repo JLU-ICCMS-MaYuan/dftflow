@@ -183,7 +183,7 @@ fn all_generation_submits_afterok_once_and_authenticates_every_stage() {
         .status()
         .unwrap()
         .success());
-    c.script("sbatch", &format!("#!/bin/bash\nset -eu\nprintf '%s\\n' \"$*\" >> '{}'\nn=$(wc -l < '{}')\nprintf '%s\\n' \"$((100+n))\"\n", c.root.join("calls").display(), c.root.join("calls").display()));
+    c.script("sbatch", &format!("#!/bin/bash\nprintf '%s\\n' \"$*\" >> '{}'\nn=$(wc -l < '{}')\nprintf '%s\\n' \"$((100+n))\"\n", c.root.join("calls").display(), c.root.join("calls").display()));
     success(c.run(0, &["--submit-chain", "-w", "run"]));
     success(c.run(0, &["--submit-chain", "-w", "run"]));
     let calls = fs::read_to_string(c.root.join("calls")).unwrap();
@@ -207,7 +207,7 @@ fn all_generation_submits_afterok_once_and_authenticates_every_stage() {
 fn partial_chain_receipt_is_persistent_and_never_retried() {
     let c = Case::new();
     success(c.run(0, &["--all"]));
-    c.script("sbatch", &format!("#!/bin/bash\nset -eu\nprintf '%s\\n' \"$*\" >> '{}'\nn=$(wc -l < '{}')\nif [ \"$n\" = 1 ]; then printf '101\\n'; else printf 'unrecognized receipt\\n'; fi\n", c.root.join("calls").display(), c.root.join("calls").display()));
+    c.script("sbatch", &format!("#!/bin/bash\nprintf '%s\\n' \"$*\" >> '{}'\nn=$(wc -l < '{}')\nif [ \"$n\" = 1 ]; then printf '101\\n'; else printf 'unrecognized receipt\\n'; fi\n", c.root.join("calls").display(), c.root.join("calls").display()));
     for _ in 0..2 {
         assert!(!c.run(0, &["--submit-chain", "-w", "run"]).status.success());
     }
@@ -228,7 +228,7 @@ fn partial_chain_receipt_is_persistent_and_never_retried() {
 }
 
 #[test]
-fn environment_bootstrap_accepts_optional_variables_and_keeps_strict_execution() {
+fn environment_bootstrap_leaves_shell_options_unset_and_propagates_failure() {
     let c = Case::new();
     let config = c.root.join("inputepw.toml");
     let environment = c.root.join("environment ' with spaces.sh");
@@ -266,7 +266,7 @@ fn environment_bootstrap_accepts_optional_variables_and_keeps_strict_execution()
                 .output()
                 .unwrap()
         };
-        let out = run("[[ $- == *u* ]]\nprintf '%s' \"$EPW_TEST_ENV\"");
+        let out = run("[[ $- != *u* && $- != *e* ]] || exit 1\nif shopt -qo pipefail; then exit 1; fi\nprintf '%s' \"$EPW_TEST_ENV\"");
         assert!(
             out.status.success(),
             "{}",
@@ -274,7 +274,8 @@ fn environment_bootstrap_accepts_optional_variables_and_keeps_strict_execution()
         );
         assert_eq!(out.stdout, b"ready");
         let out = run("printf '%s' \"$EPW_TEST_UNSET\"");
-        assert!(!out.status.success(), "执行阶段必须恢复 nounset");
+        assert!(out.status.success(), "执行阶段不得开启 nounset");
+        assert!(out.stdout.is_empty());
         fs::write(&environment, "return 17\n").unwrap();
         let out = run("printf should-not-run");
         assert_eq!(out.status.code(), Some(17));

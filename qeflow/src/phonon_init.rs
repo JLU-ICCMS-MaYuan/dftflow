@@ -203,7 +203,7 @@ pub(super) fn entry(
     prepare_input(&ctx)?;
     let quote = phonon_chain::quote;
     let script = format!(
-        "#!/bin/bash\n{}\nset -e\ncd {}\n{} qe-ph-init-run -c {} -i {}\n",
+        "#!/bin/bash\n{}\ncd {} || exit $?\n{} qe-ph-init-run -c {} -i {}\n",
         ctx.cfg.slurm.header.as_deref().unwrap_or(""),
         quote(&ctx.workspace),
         quote(

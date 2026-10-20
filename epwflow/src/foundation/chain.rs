@@ -114,7 +114,7 @@ pub fn generate(config: &Path) -> Result<PathBuf> {
         "input_conflict: 已有未登记总脚本，保留现场"
     );
     let body = format!(
-        "#!/bin/bash\nset -euo pipefail\nexec {} --submit-chain -w {}\n",
+        "#!/bin/bash\nexec {} --submit-chain -w {}\n",
         slurm::shell_quote(&programs[0].path.to_string_lossy()),
         slurm::shell_quote(&b.work_dir.to_string_lossy())
     );

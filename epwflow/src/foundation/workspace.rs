@@ -200,14 +200,11 @@ fn script(cfg: &Config, dir: &Path, a: &Attempt) -> Result<PathBuf> {
     fs::create_dir_all(dir)?;
     let q = slurm::shell_quote;
     let r = &cfg.resources;
-    let mut text=format!("#!/bin/bash\n#SBATCH --job-name=epw-{}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n#SBATCH --output={}\n#SBATCH --error={}\nset -euo pipefail\ncd -- {}\n",
+    let mut text=format!("#!/bin/bash\n#SBATCH --job-name=epw-{}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n#SBATCH --output={}\n#SBATCH --error={}\ncd -- {} || exit $?\n",
         a.target.name(),r.partition,r.nodes,r.mpi,(r.wall_seconds+59)/60,
         dir.join("slurm-%j.out").display(),dir.join("slurm-%j.err").display(),q(&dir.to_string_lossy()));
     if let Some(p) = &cfg.programs.environment_script {
-        text.push_str(&format!(
-            "set +u\nsource {} --force\nset -u\n",
-            q(&p.to_string_lossy())
-        ));
+        text.push_str(&super::workflow::source_environment(p)?);
     }
     text.push_str(&format!(
         "exec {} --workspace-attempt {}\n",
@@ -304,7 +301,7 @@ fn generate_locked(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf>
     let config = super::paths::absolute(&std::env::current_dir()?, config)?;
     // 一个有界分配内按依赖顺序运行；无需在登录节点等待其他作业结束。
     let all = format!(
-        "#!/bin/bash\nset -euo pipefail\ncd -- {}\nexec {} -c {} -s\n",
+        "#!/bin/bash\ncd -- {} || exit $?\nexec {} -c {} -s\n",
         q(&cfg.work_dir.to_string_lossy()),
         q(&bins.join("epw_superconductivity").to_string_lossy()),
         q(&config.to_string_lossy())

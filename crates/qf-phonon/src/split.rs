@@ -86,7 +86,7 @@ fn write_split_run_script(
     prefix: &str,
     q_name: &str,
 ) -> Result<String> {
-    let mut commands: Vec<String> = vec!["set -e".to_string()];
+    let mut commands: Vec<String> = Vec::new();
     for (step, command) in [("split_scf", pw_command), ("split_ph", ph_command)] {
         commands.push(qf_runner::echo_qeflow(&"-".repeat(60)));
         commands.push(qf_runner::echo_qeflow(&format!("workflow: {workflow_name}")));

@@ -243,11 +243,10 @@ struct Generated {
     script: store::Identity,
 }
 
-// oneAPI 等用户脚本可能读取未定义的可选变量；仅加载期间关闭 nounset。
-// errexit 保持启用，source 非零退出仍阻断，执行阶段恢复严格选项。
-fn source_environment(path: &Path) -> Result<String> {
+// 不改变 shell 选项；环境脚本加载失败时显式传播退出码。
+pub(super) fn source_environment(path: &Path) -> Result<String> {
     Ok(format!(
-        "set +u\nsource {} --force\nset -u\n",
+        "source {} --force || exit $?\n",
         slurm::shell_quote(path.to_str().context("环境脚本不是 UTF-8")?)
     ))
 }
@@ -278,7 +277,7 @@ pub(super) fn generate_phase_for(config: &Path, until: Boundary, executable_path
     ensure!(!path.exists(), "input_conflict: 已有未登记脚本，保留现场");
     let r = &cfg.resources;
     let quote = slurm::shell_quote;
-    let mut body = format!("#!/bin/bash\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}:{:02}:{:02}\n#SBATCH --output={}\n#SBATCH --error={}\nset -euo pipefail\nexport OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\ncd {}\n",
+    let mut body = format!("#!/bin/bash\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}:{:02}:{:02}\n#SBATCH --output={}\n#SBATCH --error={}\nexport OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\ncd {} || exit $?\n",
         r.partition, r.nodes, r.mpi, r.wall_seconds / 3600, r.wall_seconds / 60 % 60, r.wall_seconds % 60,
         quote(&path.with_extension("%j.out").to_string_lossy()), quote(&path.with_extension("%j.err").to_string_lossy()), quote(&b.work_dir.to_string_lossy()));
     if let Some(env) = &cfg.programs.environment_script {
@@ -421,9 +420,9 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
             .join(".epwflow/slurm")
             .join(format!("{}.sh", record.attempt_id));
         let quote = slurm::shell_quote;
-        let mut body = String::from("#!/bin/bash\nset -euo pipefail\nexport OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\n");
+        let mut body = String::from("#!/bin/bash\nexport OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\n");
         body.push_str(&format!(
-            "cd {}\n",
+            "cd {} || exit $?\n",
             quote(work.to_str().context("工作目录不是 UTF-8")?)
         ));
         if let Some(env) = &cfg.programs.environment_script {

@@ -76,7 +76,7 @@ runpy.run_path(str(root/name),run_name='__main__')
         );
         c.script("scontrol", include_str!("fixtures/slurm_controller.py"));
         c.script("squeue", "#!/bin/sh\nexit 0\n");
-        c.script("sbatch", &format!("#!/bin/bash\nset -eu\nprintf '%s\\n' \"$*\" >> {calls}\nn=$(wc -l < {calls})\nprintf '%s\\n' \"$((200+n))\"\n", calls=shell_quote(c.root.join("submissions").to_str().unwrap())));
+        c.script("sbatch", &format!("#!/bin/bash\nprintf '%s\\n' \"$*\" >> {calls}\nn=$(wc -l < {calls})\nprintf '%s\\n' \"$((200+n))\"\n", calls=shell_quote(c.root.join("submissions").to_str().unwrap())));
         let mut cfg: config::Config = toml::from_str(include_str!("fixtures/input.toml")).unwrap();
         cfg.work_dir = c.root.join("run");
         cfg.outdir = c.root.join("scratch");
@@ -793,6 +793,36 @@ else:
     fn numbered_change(&self,change:impl FnOnce(&mut config::Config)) {
         let p=self.root.join("input.toml");let mut cfg=config::Config::load(&p).unwrap();change(&mut cfg);fs::write(p,toml::to_string_pretty(&cfg).unwrap()).unwrap();
     }
+}
+
+#[test]
+fn numbered_scripts_leave_shell_options_unset_and_stop_on_environment_failure() {
+    let c = Case::numbered();
+    let environment = c.root.join("environment with spaces.sh");
+    c.numbered_change(|cfg| cfg.programs.environment_script = Some(environment.clone()));
+    fs::write(&environment, "export EPW_TEST_ENV=\"${EPW_TEST_OPTIONAL}ready\"\n").unwrap();
+    success(c.numbered_cli(0, &[], None, "generate-with-environment"));
+    let work = c.root.join("run");
+    let mut checked = 0;
+    for entry in epwflow::qe_data::save::files(&work).unwrap() {
+        if !entry.relative_path.ends_with("submit.sh") { continue; }
+        let script = fs::read_to_string(work.join(&entry.relative_path)).unwrap();
+        let (prefix, _) = script.rsplit_once("\nexec ").unwrap();
+        let run = |suffix: &str| Command::new("/bin/bash")
+            .args(["-c", &format!("{prefix}\n{suffix}")])
+            .env_remove("EPW_TEST_OPTIONAL")
+            .output().unwrap();
+        let out = run("[[ $- != *u* && $- != *e* ]] || exit 1\nif shopt -qo pipefail; then exit 1; fi\nprintf '%s' \"$EPW_TEST_ENV\"");
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(out.stdout, b"ready");
+        fs::write(&environment, "return 17\n").unwrap();
+        let out = run("printf should-not-run");
+        assert_eq!(out.status.code(), Some(17));
+        assert!(out.stdout.is_empty());
+        fs::write(&environment, "export EPW_TEST_ENV=\"${EPW_TEST_OPTIONAL}ready\"\n").unwrap();
+        checked += 1;
+    }
+    assert!(checked > 0);
 }
 
 #[test]

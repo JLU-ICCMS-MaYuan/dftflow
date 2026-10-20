@@ -410,7 +410,7 @@ fn native_attempt_runs_one_temperature_keeps_failure_and_refuses_repeat() {
             }
         );
         // 路径通过程序 args 传递，不执行命令字符串插值。
-        write_script(&script,&format!("#!/bin/bash\nset -eu\ntest \"$2\" = '-inp'\ntest -f \"$3\"\ncat \"$1/stdout.fixture\"\ncp \"$1/gap.fixture\" '{output_name}'\n"));
+        write_script(&script,&format!("#!/bin/bash\ntest \"$2\" = '-inp' || exit $?\ntest -f \"$3\" || exit $?\ncat \"$1/stdout.fixture\" || exit $?\ncp \"$1/gap.fixture\" '{output_name}'\n"));
         let program = config::Program {
             path: script,
             args: vec![root.to_string_lossy().into_owned()],
@@ -650,7 +650,7 @@ fn native_engine_persists_counts_reuses_valid_and_does_not_retry_failed() {
     let req = request(config::Mode::Iso, attempt::SolveKind::Linear);
     std::fs::write(root.join("stdout.fixture"), solve_log(&req)).unwrap();
     let script = root.join("native-fixture");
-    write_script(&script, "#!/bin/bash\nset -eu\ncat \"$1/stdout.fixture\"\n");
+    write_script(&script, "#!/bin/bash\ncat \"$1/stdout.fixture\"\n");
     cfg.programs.epw = config::Program {
         path: script,
         args: vec![root.to_string_lossy().into_owned()],

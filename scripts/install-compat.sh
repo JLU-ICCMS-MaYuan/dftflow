@@ -7,7 +7,6 @@
 #
 # 实现方式：为每个入口创建指向稳定版本目录中家族二进制的软链接，
 # 二进制按 argv[0] 分派到对应子命令；cargo 只交付 8 个二进制，其中 EPW 仅有三个独立程序。
-set -euo pipefail
 
 BIN_DIR="${1:?用法: install-compat.sh <bin_dir> [target_dir]}"
 TARGET_DIR="${2:-$HOME/.local/bin}"
@@ -15,15 +14,15 @@ TARGET_DIR="${2:-$HOME/.local/bin}"
 for binary in qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity; do
     test -x "$BIN_DIR/$binary" || { echo "缺少可执行文件: $BIN_DIR/$binary" >&2; exit 1; }
 done
-BIN_DIR="$(cd "$BIN_DIR" && pwd)"
-mkdir -p "$TARGET_DIR"
-TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
+BIN_DIR="$(cd "$BIN_DIR" && pwd)" || exit $?
+mkdir -p "$TARGET_DIR" || exit $?
+TARGET_DIR="$(cd "$TARGET_DIR" && pwd)" || exit $?
 if [[ "$BIN_DIR" == "$TARGET_DIR" ]]; then
     echo "源目录与安装目录不能相同" >&2
     exit 1
 fi
 # 默认覆盖旧入口；仅显式要求时保留备份。
-BACKUP_DIR="$TARGET_DIR/.dftflow-backup-$(date +%Y%m%d-%H%M%S)-$$"
+BACKUP_DIR="$TARGET_DIR/.dftflow-backup-$(date +%Y%m%d-%H%M%S)-$$" || exit $?
 
 link_entry() {
     local name="$1" target_binary="$2"
@@ -33,12 +32,12 @@ link_entry() {
         exit 1
     fi
     if [[ "${DFTFLOW_BACKUP_ENTRIES:-0}" == 1 ]] && [[ -e "$dest" || -L "$dest" ]]; then
-        mkdir -p "$BACKUP_DIR"
-        cp -P "$dest" "$BACKUP_DIR/$name"
+        mkdir -p "$BACKUP_DIR" || exit $?
+        cp -P "$dest" "$BACKUP_DIR/$name" || exit $?
     fi
     local temp="$TARGET_DIR/.dftflow-$name-$$"
-    ln -s "$BIN_DIR/$target_binary" "$temp"
-    mv -f "$temp" "$dest"
+    ln -s "$BIN_DIR/$target_binary" "$temp" || exit $?
+    mv -f "$temp" "$dest" || exit $?
 
 }
 
@@ -48,19 +47,19 @@ legacy_dyn0="$TARGET_DIR/qf-gen-dyn0"
 if [[ -L "$legacy_dyn0" && -L "$TARGET_DIR/qeflow" ]] && \
    [[ "$(readlink "$legacy_dyn0")" == "$(readlink "$TARGET_DIR/qeflow")" ]]; then
     if [[ "${DFTFLOW_BACKUP_ENTRIES:-0}" == 1 ]]; then
-        mkdir -p "$BACKUP_DIR"
-        cp -P "$legacy_dyn0" "$BACKUP_DIR/qf-gen-dyn0"
+        mkdir -p "$BACKUP_DIR" || exit $?
+        cp -P "$legacy_dyn0" "$BACKUP_DIR/qf-gen-dyn0" || exit $?
     fi
-    rm "$legacy_dyn0"
+    rm "$legacy_dyn0" || exit $?
 fi
 
 # 只移除本安装器管理的旧 EPW 入口，其他独立安装保持原样。
 if [[ -L "$TARGET_DIR/epwflow" ]] && [[ "$(readlink "$TARGET_DIR/epwflow")" == "$BIN_DIR/epwflow" ]]; then
-    rm -- "$TARGET_DIR/epwflow"
+    rm -- "$TARGET_DIR/epwflow" || exit $?
 fi
 
 # 同时安装家族入口，供生成的跨 flow 脚本使用。
-for family in qeflow vaspflow wannier90 epw_phonon epw_wannier epw_superconductivity; do link_entry "$family" "$family"; done
+for family in qeflow vaspflow wannier90 epw_phonon epw_wannier epw_superconductivity; do link_entry "$family" "$family" || exit $?; done
 
 # qeflow 家族（17 个 qe_*；独立 dyn0 工具不由此安装）
 for entry in \

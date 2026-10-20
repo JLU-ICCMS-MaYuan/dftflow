@@ -24,7 +24,6 @@ pub fn submit_via_sbatch(
     let script = dir.join(format!("submit-{name}.sh"));
     let mut body = String::from("#!/bin/bash\n");
     body.push_str(&format!("#SBATCH --job-name={name}\n"));
-    body.push_str("set -euo pipefail\n");
     let line = {
         let mut v = launcher.to_vec();
         v.extend_from_slice(command);

@@ -496,8 +496,8 @@ fn run_qe_steps(
         slurm_header: &slurm_header,
     };
     let script = if script_name == "run_qe.sh" {
-        let mut commands = vec!["set -e".to_string(), "echo 'Job started at' `date`".to_string()];
-        commands.extend(steps.iter().map(|(_, cmd)| cmd.clone()));
+        let mut commands = vec!["echo 'Job started at' `date`".to_string()];
+        commands.extend(steps.iter().map(|(_, cmd)| format!("{cmd} || exit $?")));
         commands.push("echo 'Job finished at' `date`".to_string());
         qf_runner::write_job_script(&absolute, script_name, &slurm_header, &commands)?
     } else {

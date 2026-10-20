@@ -97,7 +97,7 @@ print('JOB DONE.')
 fn submitted_nosplit_script_runs_post_once_and_exports_from_frozen_config() {
     let c = Case::new(true);
     let sbatch = c.0.join("bin/sbatch");
-    fs::write(&sbatch, "#!/bin/sh\nset -eu\nfor script do :; done\nbash \"$script\" > worker.log 2>&1\necho 12345\n").unwrap();
+    fs::write(&sbatch, "#!/bin/sh\nfor script do :; done\nbash \"$script\" > worker.log 2>&1 || exit $?\necho 12345\n").unwrap();
     fs::set_permissions(&sbatch, fs::Permissions::from_mode(0o755)).unwrap();
     let result = c.command().arg("-s").output().unwrap();
     assert!(

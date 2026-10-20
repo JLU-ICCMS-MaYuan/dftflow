@@ -200,8 +200,8 @@ pub fn create_run_script(work_dir: &str, prefix: &str, cfg: &Value) -> Result<()
 
     let script_path = format!("{work_dir}/run_wannier90.sh");
     let content = format!(
-        "{}\n\ncd \"$(dirname \"$0\")\"\n\necho \"Prep NNKP at $(date)\"\n{exec_path} -pp \"{prefix}\"\n\necho \"Run pw2wannier90 at $(date)\"\nif [ ! -f \"{pw2_input_name}\" ]; then\n  echo \"缺少 pw2wannier90 输入文件: {pw2_input_name}\"\n  exit 1\nfi\n{pw2_exec_path} < \"{pw2_input_name}\" > PW2WAN.log 2>&1\n\necho \"Run Wannier90 (requires *.amn/*.mmn ready)\"\n{exec_path} \"{prefix}\" > WANNIER90.log 2>&1\n",
-        format!("{}\nset -euo pipefail", slurm_header.trim())
+        "{}\n\ncd \"$(dirname \"$0\")\" || exit $?\n\necho \"Prep NNKP at $(date)\"\n{exec_path} -pp \"{prefix}\" || exit $?\n\necho \"Run pw2wannier90 at $(date)\"\nif [ ! -f \"{pw2_input_name}\" ]; then\n  echo \"缺少 pw2wannier90 输入文件: {pw2_input_name}\"\n  exit 1\nfi\n{pw2_exec_path} < \"{pw2_input_name}\" > PW2WAN.log 2>&1 || exit $?\n\necho \"Run Wannier90 (requires *.amn/*.mmn ready)\"\n{exec_path} \"{prefix}\" > WANNIER90.log 2>&1\n",
+        slurm_header.trim()
     );
     std::fs::write(&script_path, content)?;
     #[cfg(unix)]

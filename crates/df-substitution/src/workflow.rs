@@ -615,7 +615,7 @@ fn build_submit_scripts_from_units(
     for (index, group) in groups.iter().enumerate() {
         let script_name = format!("submit_group_{:02}.sh", index + 1);
         let script_path = format!("{output_dir}/{script_name}");
-        let mut commands: Vec<String> = vec!["set -e".to_string()];
+        let mut commands: Vec<String> = Vec::new();
         for unit in group {
             commands.extend(unit.commands.clone());
         }

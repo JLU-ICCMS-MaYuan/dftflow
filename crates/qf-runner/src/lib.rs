@@ -248,7 +248,7 @@ pub fn write_labeled_script(
         work_dir: ctx.workspace.to_str().unwrap_or(""),
         stage,
     };
-    let mut cmds = vec!["set -e".to_string()];
+    let mut cmds = Vec::new();
     cmds.extend(build_labeled_commands(
         steps,
         start_index,
@@ -372,12 +372,12 @@ pub fn write_split_stage_script(
     ctx: &ScriptContext,
     tasks: &HashMap<String, TaskState>,
 ) -> Result<PathBuf> {
-    let mut cmds: Vec<String> = vec!["set -e".to_string()];
+    let mut cmds: Vec<String> = Vec::new();
     let mut names: Vec<&String> = tasks.keys().collect();
     names.sort();
     for q_name in names {
         if tasks.get(q_name) != Some(&TaskState::Finished) {
-            cmds.push(format!("(cd {q_name} && bash run_split.sh)"));
+            cmds.push(format!("(cd {q_name} && bash run_split.sh) || exit $?"));
         }
     }
     write_job_script(

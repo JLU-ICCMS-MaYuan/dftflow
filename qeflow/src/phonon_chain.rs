@@ -210,7 +210,7 @@ fn stage_script(ctx: &PhononCtx, file: &str, command: &str) -> Result<()> {
     fs::write(
         Path::new(&ctx.workspace).join(file),
         format!(
-            "#!/bin/bash\n{header}\nset -e\ncd {}\n{command}\n",
+            "#!/bin/bash\n{header}\ncd {} || exit $?\n{command}\n",
             quote(&ctx.workspace)
         ),
     )?;

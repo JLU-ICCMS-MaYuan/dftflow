@@ -141,7 +141,7 @@ pub fn run(
             argv.push(program.to_string_lossy().into_owned());
             argv.extend_from_slice(args);
             let text = format!(
-                "#!/bin/bash\nset -euo pipefail\nexec {} \"$@\"\n",
+                "#!/bin/bash\nexec {} \"$@\"\n",
                 argv.iter()
                     .map(|s| shell_quote(s))
                     .collect::<Vec<_>>()
