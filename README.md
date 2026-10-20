@@ -42,6 +42,23 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 新路径可以直接调用，例如 `"$PWD/bin/qeflow/qe_scf" --help`。本次分组安装不修改 PATH 或 `~/.local/bin`；旧的 `scripts/install-current.sh` 仍作为显式兼容安装方式保留，其默认目标仍为 `~/.local/share/dftflow/current/bin`。已有脚本或运行记录绑定的旧程序先保留，不改写科学身份记录，也不把历史目录全量清理当作安装步骤。
 
+### 在任意目录直接使用命令
+
+本机使用 Bash，将下面一行加入 `~/.bashrc`，并在当前终端执行一次；后续终端会自动加载：
+
+```bash
+export PATH="$(printf '%s:' "/data/home/mayuan/code/dftflow/bin/"{epwflow,qeflow,scflow,substitutionflow,vaspflow,wannierflow,tools})$PATH"
+```
+
+这一行将七个模块目录加入 `PATH`，放在旧入口前面。`PATH` 不会递归搜索子目录，因此只加入仓库 `bin/` 无法找到其中的程序。其他机器将前缀改成实际仓库的 `bin/` 路径；无需复制程序或修改科学计算配置。
+
+```bash
+command -v epw_phonon epw_wannier epw_superconductivity qe_scf
+epw_phonon --help
+```
+
+确认显示的是仓库 `bin/<模块>/` 下的入口后，进入计算目录直接执行命令，例如 `epw_phonon -c epwinput.toml`。添加 `PATH` 本身不提交计算，也不迁移已有运行绑定。
+
 更新按程序逐文件原子替换，不保证所有程序同时切换；应在没有活动计算链时更新。生成脚本和 EPW 身份记录可能固定了程序绝对路径、链接目标和哈希，仅复制到新目录不会自动迁移这些绑定；已有运行按其恢复约定处理，新运行使用 `bin/<模块>/`。
 
 历史安装副本与构建缓存的清理方法见 [编译历史清理指南](docs/specs/0011-build-history-cleanup/quickstart.md)。
