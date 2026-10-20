@@ -2,6 +2,102 @@
 
 本目录用于逐阶段手动测试 `epw_phonon`、`epw_wannier`、`epw_superconductivity`。当前先测试 EPW；其他工作流的说明见相邻目录。小网格参数用于检查流程，不能作为已经收敛的 MgB₂ Tc。
 
+## 0. 先看目录逻辑：输入、运行记录、科学计算分三层
+
+**日常只需记住：在 `epwflow/` 核对输入，在 `work/.epwflow/` 查作业，在 `work/calculations/` 看实际计算。三个程序接力使用同一套数据，不会各建一套互不相干的工作目录。**
+
+### 当前目录实际长什么样
+
+下图按 **2026-10-20** 的实际目录核对，省略了大量波函数和逐 q 文件。自动编号只是程序生成的唯一标识，没有物理含义，无需记忆或手工命名。
+
+```text
+run/
+├── POSCAR                                  # 共用结构
+├── pp/                                     # 共用赝势
+└── epwflow/                                # 本例的输入与操作入口
+    ├── README.md                           # 本手册
+    ├── epwinput.toml                        # 用户填写的配置
+    ├── KPATH.in                             # 高对称路径
+    ├── .epwflow/                            # 外层旧准备记录，与当前运行区分
+    │   ├── generated/                      # 旧 24 进程脚本，指向外层 epwflow/
+    │   └── preparation-history/
+    │       └── 0a391efde412aa34-mpi24/      # 旧 work、配置和准备锁的归档
+    └── work/                               # 当前这一次运行的完整工作目录
+        ├── input-init.toml                  # 启动时固定的配置
+        ├── POSCAR-init、KPATH-init           # 启动时固定的结构、路径
+        ├── run-binding.json                 # 输入、程序及路径的身份记录
+        ├── .epwflow/                        # 当前运行的调度与恢复记录
+        │   ├── workflow.json                # 最新阶段、作业号、实际计算目录
+        │   ├── generated/                   # 当前 64 进程的阶段脚本与依赖脚本
+        │   ├── slurm/                       # 实际提交脚本、提交回执及 Slurm 日志
+        │   └── history/                     # 前一次阶段执行记录
+        ├── qe-data/manifest.json            # 第一阶段清单的副本，方便工作流查询
+        └── calculations/
+            └── 18e028b4840e50b5-2bbfe5-a/  # 当前实际科学目录，后续简称 CALC
+                ├── qe-phonon/              # 复用 qeflow 的 SCF→PH→q2r→matdyn
+                │   ├── scf.in、scf.out      # 自洽电子计算输入、输出
+                │   ├── ph.in、ph.out        # 声子计算输入、输出
+                │   ├── out/                # QE 保存树、波函数及响应数据
+                │   └── phband/、phdos/      # QE 声子色散与 DOS 图
+                ├── scf/snapshot/            # PH 前冻结的 SCF 保存树，供下游复用
+                ├── nscf/                    # 完整均匀 k 网格的非自洽计算与 out/
+                ├── qe-data/                 # 交给 EPW 的数据清单、q 点映射和 save/
+                ├── quality-sources/         # 独立 QE 参考，用来检查插值误差
+                │   ├── electron/            # 独立电子参考
+                │   ├── ph-*/、dynmat-*/     # 独立声子参考与频率提取
+                │   └── reference.json       # 参考来源清单
+                ├── coarse/                  # 原生 EPW：Wannier 与粗网格计算现场
+                │   ├── epw_coarse.in        # EPW 输入
+                │   ├── epw.out、epw.err      # EPW 原始输出、错误
+                │   ├── MgB2.win、MgB2.wout  # Wannier 输入、输出
+                │   └── out/、save/          # 本阶段使用的电子态和响应数据
+                └── native-attempts/         # 原生子步骤的执行、恢复与归档记录
+```
+
+`manifest.json` 是“这批数据包含哪些文件、来自哪里、校验是否通过”的清单，不是科学结果本身。当前 `work/qe-data/manifest.json` 与 `CALC/qe-data/manifest.json` 内容一致；前者是清单副本，并没有再复制一套完整计算。真正的数据位置由清单及 `workflow.json` 中的 `calculation_dir` 指定。
+
+### 三个程序怎样接力
+
+```text
+epwinput.toml + ../POSCAR + ../pp/ + KPATH.in
+    ↓ 固定输入到 work/，生成调度脚本
+epw_phonon：QE 声子链 + 完整均匀 NSCF → qe-data 清单
+    ↓ 复用同一个 CALC
+epw_wannier：独立参考 + Wannier／粗网格 → 质量核验 + 比较图
+    ↓ 前一阶段完成且质量通过后
+epw_superconductivity：细网格 EPC → 超导求解 → 最终结果包
+```
+
+| 程序 | `work/.epwflow/generated/` 中的脚本 | 主要科学目录与完成依据 |
+| --- | --- | --- |
+| `epw_phonon` | `qe-data.sh` | `CALC/qe-phonon/`、`scf/`、`nscf/`、`qe-data/manifest.json` |
+| `epw_wannier` | `interpolation.sh` | `CALC/quality-sources/`、`coarse/`；成功后发布 `wannier/manifest.json` 和 `results/` 比较包 |
+| `epw_superconductivity` | `all.sh` | 后续生成 `CALC/fine/`、`interpolation/`、`superconductivity/`；完整交付到 `work/results/` |
+
+`submit-all.sh` 才是一次提交三个阶段依赖链的入口；`all.sh` 在这里是第三阶段的内部脚本名。脚本名、程序名和目录名没有完全统一，是阅读困难的一个实际原因。
+
+**不要把上表的后续产物当作已经存在。** 本次核对时，第一阶段历史记录为成功，第二阶段最新记录为 `failed`，错误为 EPW 退出状态 1；实际科学目录已有 `coarse/`，但尚无 `wannier/manifest.json`、比较包 `CALC/results/`、`fine/` 或最终 `work/results/`。这表示第二阶段留下了执行现场，不能据目录存在认定阶段完成。后续实时状态按第 5、6 节查询。
+
+### 为什么看起来重复、零散
+
+| 容易困惑的地方 | 实际原因与读法 |
+| --- | --- |
+| 外层、`work/` 里都有 `.epwflow/` | 外层保留旧准备文件；当前以 `work/run-binding.json` 和 `work/.epwflow/workflow.json` 为准。两套 `chain.json` 的 `run_id` 不同，外层旧脚本不能作为本次提交入口 |
+| 第二阶段作业号变了，科学目录却还是旧编号 | 第一阶段作业为 `1303823`，第二阶段为 `1304067`，后者仍指向上图同一 `CALC`。作业号标识 Slurm 分配，目录编号标识被复用的科学现场，两者不必相同 |
+| `scf/` 里不是完整的 SCF 输入输出 | 实际 SCF 由共享声子链执行，日志在 `qe-phonon/scf.out`；`scf/` 保存供下游复用的冻结快照 |
+| 多处都有 `out/`、`save/`，甚至更深的 `.epwflow/` | 不同原生阶段各有保存数据、暂存副本和启动日志；区分它们时要看完整父路径。例如 `nscf/out/` 与 `coarse/out/` 分属不同阶段 |
+| 配置写了 `scratch/`，目录却不存在 | 顶层 `outdir` 目前只作为基址记录，实际大文件仍写在上述阶段目录；详见第 2 节 |
+| 比较图和最终图不在同一处 | 第二阶段比较包在 `CALC/results/`；第三阶段完整交付在 `work/results/`。`qe-phonon/phband/` 等是更早的 QE 单独图 |
+
+### 平时找什么，就看哪里
+
+- **核对下一次新运行的参数**：看 `epwinput.toml`；当前已绑定运行使用 `work/input-init.toml`，不能改快照绕过一致性检查。
+- **看提交到了哪一步**：看 `work/.epwflow/workflow.json` 的 `current_stage`、`state`、`error` 和 `calculation_dir`。
+- **看排队脚本与作业错误**：看 `work/.epwflow/slurm/`。例如第二阶段调度错误在 `1304067.err`，原生报错在 `CALC/coarse/epw.out`、`epw.err`。
+- **看科学结果与图**：先从运行记录读取 `CALC`（第 5 节有完整命令），再按阶段查上述位置。
+
+这种布局同时照顾固定输入、作业恢复和原生程序各自的文件习惯；历史准备文件及不统一的命名又增加了阅读负担。本节按现状解释，不通过移动或重命名文件整理外观，因为运行绑定和清单中已有绝对路径及哈希。
+
 ## 1. 确认目录、程序和输入
 
 在登录节点执行。以下变量只在当前终端有效，新开终端需重新设置：
@@ -28,7 +124,7 @@ ls -l "$CFG" "$RUN_DIR/POSCAR" "$RUN_DIR/pp"
 | --- | --- |
 | `REPO` | DFTFlow 仓库根目录 |
 | `RUN_DIR` | 本例的 `run/` 目录，存放共用的 POSCAR 和赝势 |
-| `EPW_DIR` | 本例的 `epwflow/` 目录，存放 README 和配置 |
+| `EPW_DIR` | 本例的 `epwflow/` 目录，存放 README、配置和本次 `work/` |
 | `EPW_BIN` | 存放三个受测 EPW 工作流程序的目录；后续用完整路径调用，避免误用其他版本 |
 | `CFG` | 本例配置文件 `epwinput.toml` 的完整路径；`-c "$CFG"` 指定读取它 |
 | `W` | 本次运行的 `epwflow/work/` 目录；这里的赋值供命令引用，实际工作目录仍由配置中的 `work_dir` 决定 |
@@ -77,7 +173,8 @@ rg -n '^(work_dir|outdir)\s*=' "$CFG"
 | `work/input-init.toml`、`POSCAR-init`、`KPATH-init`、`run-binding.json` | 固定配置、结构和路径快照，以及输入／程序身份绑定；续算时用于确认来源一致 |
 | `work/.epwflow/` | 生成脚本、提交尝试、Slurm 日志和 `workflow.json`；记录作业、阶段状态及实际 `calculation_dir` |
 | `work/calculations/<尝试号>/` | 实际科学目录，含输入、输出日志、保存树、清单、独立参考和诊断结果；恢复可继续复用原科学目录 |
-| `work/results/` | 完整流程收集的最终结果包和图表；第二阶段的比较结果另在实际科学目录的 `results/` 下 |
+| `work/qe-data/manifest.json` | 第一阶段清单的副本；实际数据仍在 `calculations/<尝试号>/` 下 |
+| `work/results/` | 后续完整流程收集的最终结果包和图表；第二阶段的比较结果另在实际科学目录的 `results/` 下，不保证此刻已生成 |
 | `scratch/` | 配置中声明的外部中间数据基址，对应顶层 `outdir`；当前三程序主路径尚未将实际中间数据写入此基址，因此它可能不存在或为空 |
 
 **当前实际行为**：`outdir="./scratch"` 会被解析并记录为 `outdir_base`，但不能据此认为波函数都在 `scratch/`。当前共享 nosplit、完整 NSCF 和原生 EPW 分别使用实际科学目录下的 `qe-phonon/out/`、`nscf/out/`、`coarse/out/`、`fine/` 下各展宽子目录的 `out/` 等位置。例如第一阶段可能有：
@@ -336,4 +433,4 @@ bash "$W/.epwflow/generated/submit-all.sh"
 
 这是另一种提交方式，不与逐阶段 `-s` 混用。总脚本在登录节点用 `bash` 执行；总回执位于 `.epwflow/generated/chain-submission.json`。部分或未知提交须先核查，不删除回执后重提。依赖链提交成功也不替代逐阶段科学验收。
 
-完整命令和当前边界见[模块手册](../../../../../epwflow/README.md)与[当前功能总览](../../../../../docs/overview/epwflow/README.md)。本 README 提供手动操作步骤，不记录作业完成状态；原生证据和工作流记录才是本次运行的核查依据。
+完整命令和当前边界见[模块手册](../../../../../epwflow/README.md)与[当前功能总览](../../../../../docs/overview/epwflow/README.md)。第 0 节是标明日期的目录核对截面，其余章节提供手动操作步骤；后续实时状态以原生证据和工作流记录为准。
