@@ -43,7 +43,33 @@ Mg = "../pp/mg_pbe_v1.4.uspp.F.UPF"
 B = "../pp/b_pbe_v1.4.uspp.F.UPF"
 ```
 
-这里将运行状态放入 `epwflow/work/`，scratch 放入 `epwflow/scratch/`，配置和 README 留在本目录，结构和赝势复用上一级 `run/` 中的文件。工作目录必须由程序初始化；**不要预先 `mkdir work`**，也不要将包含 README 和输入的本目录直接作为新 `work_dir`。原来的 `work_dir="./epwflow"` 会在本目录下再建立一层同名目录，与上述 `W` 不一致。
+这里将运行工作目录设为 `epwflow/work/`，将配置中的 `outdir` 基址设为 `epwflow/scratch/`。配置和 README 留在本目录，结构和赝势复用上一级 `run/` 中的文件。工作目录必须由程序初始化；**不要预先 `mkdir work`**，也不要将包含 README 和输入的本目录直接作为新 `work_dir`。原来的 `work_dir="./epwflow"` 会在本目录下再建立一层同名目录，与上述 `W` 不一致。
+
+### work/ 和 scratch/ 分别放什么
+
+`work/` 是这次运行的完整工作目录：保存固定输入、提交和恢复记录、实际科学计算文件以及结果。它不只是存放日志的小目录；当前实现也将波函数、响应势等大文件保存在其下。
+
+| 位置（相对于 `epwflow/`） | 内容与作用 |
+| --- | --- |
+| `work/input-init.toml`、`POSCAR-init`、`KPATH-init`、`run-binding.json` | 固定配置、结构和路径快照，以及输入／程序身份绑定；续算时用于确认来源一致 |
+| `work/.epwflow/` | 生成脚本、提交尝试、Slurm 日志和 `workflow.json`；记录作业、阶段状态及实际 `calculation_dir` |
+| `work/calculations/<尝试号>/` | 实际科学目录，含输入、输出日志、保存树、清单、独立参考和诊断结果；恢复可继续复用原科学目录 |
+| `work/results/` | 完整流程收集的最终结果包和图表；第二阶段的比较结果另在实际科学目录的 `results/` 下 |
+| `scratch/` | 配置中声明的外部中间数据基址，对应顶层 `outdir`；当前三程序主路径尚未将实际中间数据写入此基址，因此它可能不存在或为空 |
+
+**当前实际行为**：`outdir="./scratch"` 会被解析并记录为 `outdir_base`，但不能据此认为波函数都在 `scratch/`。当前共享 nosplit、完整 NSCF 和原生 EPW 分别使用实际科学目录下的 `qe-phonon/out/`、`nscf/out/`、`coarse/out/`、`fine/` 下各展宽子目录的 `out/` 等位置。例如第一阶段可能有：
+
+```text
+epwflow/work/calculations/<尝试号>/
+├── qe-phonon/out/MgB2.save/  # 共享 QE 声子链使用的保存数据
+├── scf/snapshot/            # PH 前冻结的独立 SCF 保存树
+├── nscf/out/MgB2.save/      # 完整均匀 NSCF 的电子态与波函数
+└── qe-data/manifest.json    # 第一阶段交付清单
+```
+
+上述内容随阶段推进生成，不要求手工建立。`scratch/` 为空不代表计算没有运行；应查看 `workflow.json` 中的实际科学目录、原生日志和阶段清单。更改顶层 `outdir` 当前也不会把这些阶段内的 `out/` 自动搬到其他磁盘。实现依据见 [共享声子链](../../../../../epwflow/src/qe_data/qeflow.rs)、[NSCF 执行](../../../../../epwflow/src/qe_data/nscf.rs)和[工作流执行](../../../../../epwflow/src/foundation/workflow.rs)。
+
+运行和续算期间保留整个 `work/`；其中的 `.save`、波函数、响应势、SCF 快照和矩阵元不只是可随手删除的临时文件，下游计算及身份校验仍可能依赖它们。是否清理应在任务结束并完成结果归档后逐项核对，不能仅按目录名判断。当前说明仅解释目录用途，不执行清理或改变数据存放方式。
 
 若 `pp/` 中实际文件名不同，按实际文件名填写元素映射；确认使用本例的 PBE 赝势，不能静默更换赝势而保留旧带号和科学结论。首次使用可从仓库已有路径文件复制 KPATH，仅在目标不存在时执行：
 
