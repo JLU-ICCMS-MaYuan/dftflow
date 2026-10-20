@@ -1,0 +1,202 @@
+# MgB₂ 在 sugon-amd 上的 EPW 手动测试
+
+本目录用于逐阶段手动测试 `epw_phonon`、`epw_wannier`、`epw_superconductivity`。当前先测试 EPW；其他工作流的说明见相邻目录。小网格参数用于检查流程，不能作为已经收敛的 MgB₂ Tc。
+
+## 1. 确认目录、程序和输入
+
+在登录节点执行。以下变量只在当前终端有效，新开终端需重新设置：
+
+```bash
+REPO="/data/home/mayuan/code/dftflow"
+EPW_DIR="$REPO/examples/MgB2/sugon-amd/run/epwflow"
+EPW_BIN="$REPO/test_auto/MgB2/local_run/010-public-pbe/bin-window-contract"
+CFG="$EPW_DIR/epwinput.toml"
+W="$EPW_DIR/work"
+LEDGER="$REPO/docs/local/epwflow-campaign.json"
+cd "$EPW_DIR"
+
+ls -l "$CFG" "$EPW_DIR/POS" "$EPW_DIR/pp"
+"$EPW_BIN/epw_phonon" --help
+"$EPW_BIN/epw_wannier" --help
+"$EPW_BIN/epw_superconductivity" --help
+```
+
+`POS` 是用户指定的结构文件名，内容应为 POSCAR 格式；`pp/` 是用户指定的赝势目录。`realpath` 输出路径不等于文件一定存在，先用 `ls` 确认实际文件可读。
+
+`EPW_BIN` 指向当前已有、供登录／计算节点使用的运行库兼容打包制品，并与本目录原有生成脚本的程序路径一致；它不是默认安装。若该目录已清理，先重新核对受测制品位置，不直接换成 PATH 中的旧程序。帮助输出只能确认入口可启动，不能证明 QE／EPW 在计算节点已通过运行检查。
+
+本例的配置文件名是 **`epwinput.toml`**，因此所有新运行命令显式传 `-c`；程序默认寻找的名称仍是 `inputepw.toml`。
+
+## 2. 核对配置中的相对路径
+
+相对路径以配置文件所在目录解析。将配置移入本目录后，须核对 `epwinput.toml` 的以下字段；只替换对应字段，保留其余物理参数和程序配置，不重复添加 `[pseudos]` 表：
+
+```toml
+work_dir = "./work"
+outdir = "./scratch"
+structure = "./POS"
+kpath = "./KPATH.in"
+
+[pseudos]
+Mg = "./pp/mg_pbe_v1.4.uspp.F.UPF"
+B = "./pp/b_pbe_v1.4.uspp.F.UPF"
+```
+
+这里将运行状态放入 `epwflow/work/`，scratch 放入 `epwflow/scratch/`，输入和 README 留在本目录。工作目录必须由程序初始化；**不要预先 `mkdir work`**，也不要将包含 README 和输入的本目录直接作为新 `work_dir`。原来的 `work_dir="./epwflow"` 会在本目录下再建立一层同名目录，与上述 `W` 不一致。
+
+若 `pp/` 中实际文件名不同，按实际文件名填写元素映射；确认使用本例的 PBE 赝势，不能静默更换赝势而保留旧带号和科学结论。首次使用可从仓库已有路径文件复制 KPATH，仅在目标不存在时执行：
+
+```bash
+if [ ! -e "$EPW_DIR/KPATH.in" ]; then
+    cp "$REPO/examples/MgB2/KPATH.in" "$EPW_DIR/KPATH.in"
+fi
+ls -l "$EPW_DIR/POS" "$EPW_DIR/KPATH.in" \
+    "$EPW_DIR/pp/mg_pbe_v1.4.uspp.F.UPF" \
+    "$EPW_DIR/pp/b_pbe_v1.4.uspp.F.UPF"
+```
+
+这些配置说明针对新的 `work/` 运行。如果已有 `run-binding.json` 和固定快照，不修改快照、来源、受控脚本或已绑定的工作目录；恢复方法见第 7 节。本手册不迁移或清理旧记录。
+
+## 3. 第一步检查：配置与共享预算
+
+完成上述输入核对后，先执行以下命令，不提交作业：
+
+```bash
+"$EPW_BIN/epw_phonon" --check -c "$CFG" --json
+"$EPW_BIN/epw_phonon" --budget status --ledger "$LEDGER" --json
+```
+
+第一条检查配置、结构、赝势及程序路径；应返回 `operation_status: "ok"`、`workflow_status: "configured"` 和空 `diagnostics`，退出码为 0。`environment.runtime_version: "unverified"` 表示尚未验证运行环境，不是完整科学验收通过。
+
+第二条只读查看累计节点秒、未结算预留和存储基线。继续共用 `epic-0007` 的原账本与 8 节点小时／100 GiB 上限，不能另建账本重置消费。预算是否足以接受本次作业由提交时继续核验。
+
+本例当前配置为 `amd7513`、1 节点、24 MPI、每阶段最长 7200 秒；SCF／NSCF 为 4×4×2，粗 q 为 2×2×1。电子插值最大／RMS 门为 0.05／0.02 eV，声子门为 50／20 cm⁻¹；以实际配置为准，不为跑通而放宽。
+
+## 4. 生成并检查第一阶段脚本
+
+```bash
+"$EPW_BIN/epw_phonon" -c "$CFG"
+cat "$W/.epwflow/generated/qe-data.sh"
+"$EPW_BIN/epw_phonon" --status -w "$W" --json
+```
+
+不加 `-s`／`-r` 时，仅固定输入并生成脚本，不调用科学程序、不提交 Slurm、不预留预算。核对脚本中的分区、节点数、MPI 数、时限、环境加载、工作目录和程序路径。
+
+生成的 `input-init.toml`、`POS-init`、`KPATH-init` 和 `run-binding.json` 用于绑定输入及程序身份。准备后 `workflow_complete: false` 是正常状态；没有作业记录时的 `in_progress` 也不代表已有作业在运行。
+
+## 5. 按阶段提交与验收
+
+### 第一阶段：QE 声子与 EPW 所需数据
+
+确认脚本和预算后，在登录节点提交：
+
+```bash
+"$EPW_BIN/epw_phonon" -c "$CFG" -s
+squeue -u "$USER"
+"$EPW_BIN/epw_phonon" --status -w "$W" --refresh --json
+```
+
+`-s` 提交一个有界 Slurm 作业，执行共享 qeflow nosplit 的 SCF→PH→q2r→matdyn→声子图，并归档响应数据、准备完整均匀 NSCF。无需另行启动 qeflow。提交回执只证明调度器已接收作业。
+
+`--refresh` 查询调度记录并结算已知终态，可能更新运行记录和账本；不运行科学计算。继续下一阶段前须看到对应边界 `boundary_complete: true`、`workflow_status: "succeeded"`，并核对清单与产物。
+
+取得实际科学目录的方法如下；`workflow.json` 在首次登记执行后才存在：
+
+```bash
+cat "$W/.epwflow/workflow.json"
+```
+
+将其中 `calculation_dir` 的绝对路径赋给 `CALC`，不要照抄别次运行的尝试号：
+
+```bash
+CALC="此处替换为本次 calculation_dir 的绝对路径"
+"$EPW_BIN/epw_phonon" --check -w "$CALC" --json
+```
+
+此时应有 `qe-data/manifest.json` 且数据检查为 `valid`。`no_data`、`invalid` 或 `legacy_unverified` 均不作为通过。
+
+### 第二阶段：Wannier、粗网格和独立质量
+
+仅在第一阶段完成后执行：
+
+```bash
+"$EPW_BIN/epw_wannier" -c "$CFG"
+cat "$W/.epwflow/generated/interpolation.sh"
+"$EPW_BIN/epw_wannier" -c "$CFG" -s
+"$EPW_BIN/epw_wannier" --status -w "$W" --refresh --json
+```
+
+该阶段执行原生 Wannier／粗网格、同源独立参考和质量核验，并生成比较数据和诊断图；不执行细网格 EPC 或 α²F。检查固定窗与实际 `.wout` 四界、收敛、有限性和独立参考误差。失败时保留诊断，不能因图像存在或 Slurm 为 COMPLETED 就启动第三阶段。
+
+通过后应有本次科学目录下的 `wannier/manifest.json`，且工作流记录包含已完成的插值边界。前两阶段整体 `workflow_complete` 仍可为 false。目录取值以最新 `workflow.json` 为准；不要把通用 `--check` 的 `no_data` 当作第二阶段已完成。
+
+### 第三阶段：细网格 EPC 与超导
+
+仅在第二阶段完成且质量通过后执行：
+
+```bash
+"$EPW_BIN/epw_superconductivity" -c "$CFG"
+cat "$W/.epwflow/generated/all.sh"
+"$EPW_BIN/epw_superconductivity" -c "$CFG" -s
+"$EPW_BIN/epw_superconductivity" --status -w "$W" --refresh --json
+```
+
+`all.sh` 是第三阶段脚本的内部命名。此阶段核验粗网格清单，执行细网格 EPC、原生 α²F／λ、iso／aniso 求解及有界 Tc 搜索，再收集结果并出图。检查全部所需模式、收敛和结果包，`partial` 或未定位状态不算完整 Tc 通过。
+
+```bash
+"$EPW_BIN/epw_superconductivity" --results-check --results "$W/results" --json
+```
+
+只有完整工作流记录、科学检查和交付均通过，才能宣称本次全链完成。本例的真实 PBE 全链及完整 Tc 科学验收仍未完成；命令可调用不表示已经得到正确 Tc。
+
+## 6. 查看日志和图表
+
+```bash
+cat "$W/.epwflow/workflow.json"
+find "$W/.epwflow" -type f \( -name '*.out' -o -name '*.err' \)
+find "$W/calculations" -type f \( -name 'scf.out' -o -name 'ph.out' -o -name 'epw.out' \)
+find "$W/calculations" -path '*/results/figures/*' -type f
+```
+
+直接 `-s` 的提交尝试和日志位于 `.epwflow/slurm/`；手工提交生成脚本时，调度日志按脚本头部写到 `.epwflow/generated/`。原生科学输出位于 `calculations/<尝试号>/` 的阶段子目录，比较图和最终结果包的根目录不同。
+
+比较图包括电子能带／DOS、声子色散／DOS 四张图及总览，通常有 PNG／SVG／PDF。严格元素／轨道投影仍暂缓，缺失面板应明确标注。已有结果包可以独立重绘，以下命令不运行 QE／EPW：
+
+```bash
+"$EPW_BIN/epw_wannier" --plot --results "$CALC/results" --formats png,svg,pdf
+```
+
+先确认该次比较结果包确实存在；不要对空目录执行重绘来代替科学阶段。
+
+## 7. 失败恢复
+
+先查看日志、刷新状态并确认原作业已终止。然后只执行实际失败阶段对应的一条命令：
+
+```bash
+# 第一阶段失败时
+"$EPW_BIN/epw_phonon" --resume -w "$W" -s
+# 第二阶段失败时
+"$EPW_BIN/epw_wannier" --resume -w "$W" -s
+# 第三阶段失败时
+"$EPW_BIN/epw_superconductivity" --resume -w "$W" -s
+```
+
+恢复读取绑定目录内的固定快照，重验来源与成功产物，保留失败现场。活动或未知作业不重提，质量失败不能通过重试绕过。若恢复的是历史运行，先将 `W` 改成其 `run-binding.json` 所属目录，并核对该运行绑定的程序；不要把新 `work/` 与本目录旧绑定混用。
+
+配置、结构、赝势或科学程序改变须另建运行，不能编辑 `input-init.toml` 消除身份冲突。内部 `.epwflow/slurm/` 脚本不手工重提；登录节点也不直接使用 `-r` 运行科学阶段。
+
+## 8. 可选：一次生成三阶段依赖脚本
+
+初次手动测试建议按第 5 节逐阶段核查。需要依赖链时，使用同一组程序和配置：
+
+```bash
+# 仅生成三阶段与总提交脚本
+"$EPW_BIN/epw_phonon" --all -c "$CFG"
+cat "$W/.epwflow/generated/submit-all.sh"
+# 此命令会实际提交三阶段 afterok 依赖链
+bash "$W/.epwflow/generated/submit-all.sh"
+```
+
+这是另一种提交方式，不与逐阶段 `-s` 混用。总脚本在登录节点用 `bash` 执行；总回执位于 `.epwflow/generated/chain-submission.json`。部分或未知提交须先核查，不删除回执后重提。依赖链提交成功也不替代逐阶段科学验收。
+
+完整命令和当前边界见[模块手册](../../../../../epwflow/README.md)与[当前功能总览](../../../../../docs/overview/epwflow/README.md)。本 README 提供手动操作步骤，不记录作业完成状态；原生证据和工作流记录才是本次运行的核查依据。
