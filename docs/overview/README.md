@@ -57,3 +57,5 @@ DFTFlow 自有任务脚本生成器及跟踪的构建、安装、自测脚本不
 本轮依据当前源码和 [0006 验收](../specs/0006-qe-phonon-submit-chain/acceptance.md) 回写，覆盖后续 dyn0 工具拆分及全量重新编译的事实。[0004](../specs/0004-dftflow-rust/spec.md) 提供迁移背景；其他 Feature 由命令页链接。
 
 Overview 只维护当前功能事实，不承担 Issue/任务状态管理。CLI 总览重写阶段仅修改 docs/overview、未运行程序测试或提交；后续代码变更的验证与交付另见相应 Feature 验收记录。0006 的默认 outdir 统一为 ./tmp，显式配置优先，已有结果保留。实际机器配置、软件路径和原始运行证据仍保存在本地忽略目录；这里不复制它们。
+
+编号 QE／EPW 工作区的电子参考支持 PW、bands、DOS 各任务校验和失败局部恢复；并行启动及旧数据接入边界见 [EPW 总览](epwflow/README.md#编号工作区的电子后处理续算)。

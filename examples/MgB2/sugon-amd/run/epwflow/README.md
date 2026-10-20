@@ -20,3 +20,7 @@ epw_wannier --stage wannier -s
 旧命令的 `CALC` 是 `work/.epwflow/workflow.json` 中 `calculation_dir` 的绝对路径；读取 JSON 后赋给变量，是为了定位旧实际计算目录。新流程由程序定位数据，不需要 `CALC`、`CFG`、`W`、`EPW_BIN` 或 `LEDGER`。账本路径已在根配置内，由程序管理共享消费。
 
 共用结构为 `/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/POSCAR`，赝势为同级 `pp/`。已有 SCF、NSCF、PH 和声子后处理通过一次性核验后导入编号目录；目录改版不会要求重跑它们。第 3 步新电子能带参考与 DOS 按需补齐。当前粗网格 32 个 k 点只支持至多 32 pool；配置 64 pool 会在原生程序启动前停止。
+
+## 本次电子后处理失败后的恢复
+
+PW 能带已完成而 bands.x 报 FFT 空进程时，修复后的程序保留成功 PW 数据，从后处理继续。进入上一级 run 后执行 `epw_wannier --stage wannier --resume -s`，生成新的冻结尝试；不要重提手工修改过的旧 submit.sh。原生任务完成证据位于 run/.epwflow/electronic/，详细根因、校验范围及命令解释见 [run 说明](../README.md#本次短暂运行后失败的原因与恢复)。

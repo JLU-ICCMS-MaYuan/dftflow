@@ -21,3 +21,4 @@ pub mod workspace;
 pub mod workspace_science;
 pub mod workspace_import;
 pub mod workspace_plot;
+pub mod workspace_electronic;

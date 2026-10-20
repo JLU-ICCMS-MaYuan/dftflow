@@ -41,6 +41,12 @@ F4 已发布合法 partial 清单时，公开显式恢复会重验固定来源�
 
 最新 PBE 第二阶段已自动补齐六 k／五 q 独立参考，energy_only 态数检查通过并执行原生 Wannier／粗网格；局域化固定 500 次未收敛，epmatwp 全 NaN，生产检查正确拒绝发布 F3，尚无有效比较图／细网格／Tc。已确认实际 EPW 双 FFT 分支存在数组维度及响应转换顺序错误，隔离修复提案通过契约检查，但外部程序尚未修改，尚不能确认其为 NaN 唯一根因。外窗下界被 EPW 忽略的问题已修复传参，真实四界一致性仍待验证。已有 243 份参考、原请求和 F2 指纹保持，见[0015 PBE 记录](../../specs/0015-epwflow-mgb2-real-validation/public-pbe-validation.md)及[双网格核查](../../specs/0012-epwflow-interpolation/native-double-grid-audit.md)。
 
+## 编号工作区的电子后处理续算
+
+第 3 步分别为 PW 能带、`bands.x` 和 `dos.x` 保存原生输入、上游产物与输出哈希记录，位于 `.epwflow/electronic/`。相容请求的后处理失败后保留成功 PW 数据，仅重试未完成任务；损坏证据会阻断。`bands.x` 使用当前 MPI 数及自身的 `-pd .true.`，其他程序参数保持独立。
+
+已有 0018 PW 能带结果须经终态冻结来源、原生输入、零退出码、日志、XML、路径点和全部 portable 波函数校验后接入。更改过的冻结提交脚本仍被拒绝，使用公开命令生成新尝试。当前真实 MgB₂ 旧数据只读核验通过，尚未提交修复后的真实后处理或 Wannier 作业；协议与科学验收边界见 [0020](../../specs/0020-qe-electronic-postprocess-resume/acceptance.md)。
+
 ## 公开程序及选项
 
 外部配置默认 `inputepw.toml`，也可由 `-c/--config` 指定；与 qeflow 的 `input.toml` 字段不同，不能自动混用。完整流程图和命令见[模块手册](../../../epwflow/README.md)。

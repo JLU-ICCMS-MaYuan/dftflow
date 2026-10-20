@@ -26,3 +26,5 @@
 完整授权实施的方案原文见 [实施方案](approved-plan.md)。
 
 工程实现、回归、真实旧现场导入及安装证据统一见 [验收记录](acceptance.md)。本地任务按该记录收敛；线上状态和远程链接仍由用户维护，不代为关闭。
+
+后续缺陷：[0020](../0020-qe-electronic-postprocess-resume/issue-draft.md) 修复 bands.x 并行及电子原生任务局部恢复，保留本需求的配置与阶段接口。

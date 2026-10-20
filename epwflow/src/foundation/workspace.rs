@@ -176,6 +176,11 @@ fn freeze(cfg: &Config, target: Step) -> Result<(PathBuf, Attempt)> {
     {
         sources.push(Identity::capture(&p.path)?);
     }
+    if target.closure().contains(&Step::Electronic) {
+        for name in ["bands", "dos"] {
+            sources.push(Identity::capture(&super::workspace_science::post_program(&fixed, name)?.path)?);
+        }
+    }
     if let Some(p) = &fixed.programs.environment_script {
         sources.push(Identity::capture(p)?);
     }
@@ -401,6 +406,10 @@ fn persist(cfg: &Config, a: &Attempt) -> Result<()> {
     store::write(&active(&cfg.work_dir), a)
 }
 
+fn verify_script(id: &Identity) -> Result<()> {
+    id.verify().context("input_conflict: 提交脚本已改变；不要重提或修改旧尝试，请在 run/ 重新执行 epw_wannier --stage wannier --resume -s（其他阶段使用对应公开命令），生成当前配置的新尝试")
+}
+
 pub fn execute(path: &Path) -> Result<()> {
     let mut a: Attempt = store::read(path)?;
     ensure!(a.schema_version == 1, "unsupported_version: 提交快照版本");
@@ -410,7 +419,7 @@ pub fn execute(path: &Path) -> Result<()> {
         id.verify()?;
     }
     if let Some(id) = &a.script {
-        id.verify()?;
+        verify_script(id)?;
     }
     let cfg = Config::load(&a.config.path)?;
     let job = std::env::var("SLURM_JOB_ID")
@@ -534,10 +543,23 @@ fn archive_step(cfg: &Config, step: Step) -> Result<()> {
         .work_dir
         .join(".epwflow/requests")
         .join(format!("{}.json", step.name()));
-    if step >= Step::Coarse && !stages::receipt(&cfg.work_dir, step).exists() && request.is_file() {
-        let key: String = store::read(&request)?;
-        if key == stages::scientific_key(cfg, step)? {
-            return Ok(());
+    if request.is_file() && store::read::<String>(&request)? == stages::scientific_key(cfg, step)? {
+        let receipt = stages::receipt(&cfg.work_dir, step);
+        if step >= Step::Coarse && !receipt.exists() { return Ok(()); }
+        if step == Step::Electronic && super::workspace_electronic::compatible_partial(cfg)? {
+            let compatible = if receipt.exists() {
+                let c: Completion = store::read(&receipt)?;
+                c.verify()?;
+                c.scientific_key == stages::scientific_key(cfg, step)? && c.upstream == stages::upstream(cfg, step)?
+            } else { true };
+            if compatible {
+                if receipt.exists() {
+                    let history = cfg.work_dir.join(".epwflow/history").join(format!("electronic-completion-{}", store::token()));
+                    fs::create_dir_all(&history)?;
+                    fs::rename(receipt, history.join("completion.json"))?;
+                }
+                return Ok(());
+            }
         }
     }
     let history =
@@ -555,6 +577,7 @@ fn archive_step(cfg: &Config, step: Step) -> Result<()> {
         fs::rename(receipt, history.join("completion.json"))?;
     }
     super::workspace_science::invalidate(cfg, step, &history)?;
+    if step == Step::Electronic { super::workspace_electronic::archive(cfg, &history)?; }
     Ok(())
 }
 
@@ -636,10 +659,7 @@ pub fn execute_task(path: &Path) -> Result<()> {
     for id in &a.sources {
         id.verify()?;
     }
-    a.script
-        .as_ref()
-        .context("data_invalid: 子任务无脚本身份")?
-        .verify()?;
+    verify_script(a.script.as_ref().context("data_invalid: 子任务无脚本身份")?)?;
     let cfg = Config::load(&a.config.path)?;
     parallelism::preflight(&cfg, a.target, true)?;
     let job = std::env::var("SLURM_JOB_ID")

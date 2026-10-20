@@ -222,7 +222,11 @@ pub fn reusable(cfg: &Config, step: Step) -> Result<bool> {
         }
     }
     c.verify()?;
-    Ok(c.upstream == upstream(cfg, step)?)
+    if c.upstream != upstream(cfg, step)? { return Ok(false); }
+    if step == Step::Electronic {
+        return super::workspace_electronic::completed(cfg);
+    }
+    Ok(true)
 }
 
 #[cfg(test)]

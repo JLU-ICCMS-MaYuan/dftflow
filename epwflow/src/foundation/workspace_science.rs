@@ -34,7 +34,7 @@ fn states(cfg: &Config) -> Result<qe_data::manifest::ElectronicStates> {
     )?;
     Ok(s)
 }
-fn post_program(cfg: &Config, name: &str) -> Result<Program> {
+pub(super) fn post_program(cfg: &Config, name: &str) -> Result<Program> {
     Ok(Program {
         path: cfg
             .programs
@@ -43,10 +43,14 @@ fn post_program(cfg: &Config, name: &str) -> Result<Program> {
             .parent()
             .context("configuration: QE 缺程序目录")?
             .join(format!("{name}.x")),
-        args: vec![],
+        args: if name == "bands" {
+            vec!["-pd".into(), ".true.".into()]
+        } else {
+            vec![]
+        },
     })
 }
-fn qe_run(cfg: &Config, dir: &Path, program: &Program, input: &str, stem: &str) -> Result<()> {
+pub(super) fn qe_run(cfg: &Config, dir: &Path, program: &Program, input: &str, stem: &str) -> Result<()> {
     qe_data::execution::run(
         program,
         &dir.join(input),
@@ -58,97 +62,8 @@ fn qe_run(cfg: &Config, dir: &Path, program: &Program, input: &str, stem: &str) 
     )
 }
 
-fn electronic_inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
-    let root = Step::Electronic.directory(cfg);
-    let bands = root.join("qe_eband");
-    let dos = root.join("qe_eledos");
-    fs::create_dir_all(&bands)?;
-    fs::create_dir_all(&dos)?;
-    let path = cfg.kpath.as_ref().context("required: 需要 KPATH.in")?;
-    let segments =
-        qf_input::electronic::parse_kpath_segments(path.to_str().context("KPATH 非 UTF-8")?)?;
-    let intervals = cfg.comparison.clone().unwrap_or_default().points_per_edge;
-    let mut points = vec![];
-    for segment in segments {
-        for pair in segment.windows(2) {
-            for n in 0..intervals {
-                points.push(std::array::from_fn(|i| {
-                    pair[0].0[i]
-                        + (pair[1].0[i] - pair[0].0[i]) * f64::from(n) / f64::from(intervals)
-                }));
-            }
-        }
-        points.push(segment.last().unwrap().0);
-    }
-    let input = qe
-        .reference_input("./out", &points)?
-        .replace("'nscf'", "'bands'");
-    fs::write(bands.join("eband.in"), input)?;
-    fs::write(
-        bands.join("elebanddata.in"),
-        format!(
-            "&bands\n prefix='{}'\n outdir='./out'\n filband='{}_band'\n lsym=.false.\n/\n",
-            cfg.qe.prefix, cfg.qe.prefix
-        ),
-    )?;
-    dos_inputs(cfg)?;
-    store::write(&bands.join("path-points.json"), &points)?;
-    Ok(())
-}
-
-fn dos_inputs(cfg: &Config) -> Result<()> {
-    let dos = Step::Electronic.directory(cfg).join("qe_eledos");
-    fs::create_dir_all(&dos)?;
-    let shared: qf_config::Config = serde_json::from_value(
-        json!({"qe_eledos":{"CONTROL":{"outdir":"./out"},"eledos":{"emin":-100,"emax":100,"DeltaE":0.01}}}),
-    )?;
-    qf_input::electronic::write_eledos_inputs(dos.to_str().unwrap(), &shared, &cfg.qe.prefix)?;
-    let file = dos.join("eletdos.in");
-    let text = fs::read_to_string(&file)?;
-    let sigma = cfg
-        .comparison
-        .clone()
-        .unwrap_or_default()
-        .electronic_sigma_ev
-        / 13.605693122994;
-    fs::write(
-        file,
-        text.replacen("&dos", &format!("&dos\n ngauss=0, degauss={sigma:.15},"), 1),
-    )?;
-    Ok(())
-}
-
 pub fn run_electronic_leaf(cfg: &Config, name: &str) -> Result<()> {
-    let qe = QeSettings::from_config(cfg)?;
-    if name == "qe_eband" {
-        electronic_inputs(cfg, &qe)?;
-    } else {
-        dos_inputs(cfg)?;
-    }
-    let dir = Step::Electronic.directory(cfg).join(name);
-    match name {
-        "qe_eband" => {
-            save::stage_scf(&cfg.work_dir, &dir.join("out"), &cfg.qe.prefix)?;
-            qe_run(cfg, &dir, &cfg.programs.pw, "eband.in", "eband")?;
-            qe_run(
-                cfg,
-                &dir,
-                &post_program(cfg, "bands")?,
-                "elebanddata.in",
-                "bands",
-            )?;
-            save::nonempty(&dir.join(format!("{}_band", cfg.qe.prefix)))?;
-        }
-        "qe_eledos" => {
-            if !dir.join("out").exists() {
-                save::copy_tree(&layout::path(&cfg.work_dir, "nscf/out"), &dir.join("out"))?;
-            }
-            qe_run(cfg, &dir, &post_program(cfg, "dos")?, "eletdos.in", "dos")?;
-            save::nonempty(&dir.join(format!("{}.tdos", cfg.qe.prefix)))?;
-        }
-        _ => anyhow::bail!("configuration: 未知电子子阶段"),
-    }
-    Ok(())
+    super::workspace_electronic::run_leaf(cfg, name)
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -357,12 +272,15 @@ pub fn generate(cfg: &Config, target: Step) -> Result<()> {
         if request.is_file()
             && store::read::<String>(&request)? == stages::scientific_key(cfg, step)?
         {
+            if step == Step::Electronic {
+                super::workspace_electronic::inputs(cfg, &qe)?;
+            }
             continue;
         }
         match step {
             Step::Scf => fs::write(dir.join("scf.in"), qe.scf_input("./out")?)?,
             Step::Nscf => fs::write(dir.join("nscf.in"), qe.nscf_input("./out")?)?,
-            Step::Electronic => electronic_inputs(cfg, &qe)?,
+            Step::Electronic => super::workspace_electronic::inputs(cfg, &qe)?,
             Step::Phonon => {
                 if cfg.phonon.mode == PhMode::Nosplit {
                     fs::write(dir.join("ph.in"), qe.phonon_nosplit_input("./out"))?;

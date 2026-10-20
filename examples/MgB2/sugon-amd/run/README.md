@@ -12,7 +12,7 @@ epw_phonon --status --json
 # 按需修改 input.toml，然后检查第 5 步的配置与并行：
 epw_wannier --stage wannier --check --json
 # 确认参数后，由你提交独立 Wannier：
-epw_wannier --stage wannier -s
+epw_wannier --stage wannier --resume -s
 ```
 
 `source` 把仓库 `bin/` 下各模块目录加入当前终端的 PATH。以后可以直接写程序名；只加 `bin/` 父目录不会递归找到子目录的程序。可用 `command -v epw_phonon epw_wannier epw_superconductivity` 核对位置。新终端需要再次 `source`；如需自动加载，可自行将这条 `source` 写入 Shell 配置。
@@ -20,6 +20,16 @@ epw_wannier --stage wannier -s
 `cd` 进入唯一日常配置所在目录。`--status` 按当前科学参数和文件哈希打印各阶段的 `reuse/update`；它不启动计算。`--check` 检查配置、文件路径和本次并行设置。`-s` 才提交任务：程序读取本次 `input.toml`，自动补齐必要依赖、复用已有成功结果。
 
 旧数据导入后，SCF、NSCF、PH 及已有 q2r／matdyn 会复用。新第 3 步补充电子能带与总 DOS 参考，然后第 5 步拟合 Wannier；电子路径上的 `pw.x bands` 是新能带参考，不是重做原 SCF、均匀 NSCF 或 PH。相容的旧独立质量参考也有来源记录，供第 6 步复用。
+
+## 本次短暂运行后失败的原因与恢复
+
+2026-10-20 作业 1306688 已完成 `3.qe-electronic/qe_eband/eband.out` 中的 PW 能带计算（183 个 k 点、16 带），随后 `bands.err` 报 `there are processes with no planes`：32 MPI 的 slab FFT 分配出现空进程，尚未进入 Wannier。代码已为 `bands.x` 增加 `-pd .true.`，保留配置的 32 MPI；其他程序不会继承该参数。
+
+作业 1306749 因手工修改后的 `5.epw-wannier/submit.sh` 与冻结哈希不符而停止。删除脚本严格选项不能解决 FFT 错误；新版生成器已按 0019 移除自动严格选项，通过显式退出码处理关键失败。
+
+恢复时在本页开头的 `run/` 执行 `epw_wannier --stage wannier --resume -s`，程序生成新尝试，复用相容的 SCF、NSCF、PH 和已经成功的 PW 能带，从 `bands.x` 后处理继续，再完成 DOS、Wannier 及电子对比图。本轮已对旧 PW 的冻结配置、赝势、原生输入、XML、路径点和全部 portable 波函数做只读校验；不代表修复后的真实 bands.x 或 Wannier 已运行成功。
+
+`.epwflow/electronic/` 分别保存三个电子原生任务的完成证据。日志出现 `reuse: electronic/pw-bands` 表示旧 PW 已重验并复用；阶段状态仍为 `update` 可以只是后处理未完成。证据损坏或旧来源缺失会停止，不能仅凭 `JOB DONE` 跳过检查。不要重提修改过的旧脚本，也不要编辑内部哈希记录。
 
 ## 目录与结果
 

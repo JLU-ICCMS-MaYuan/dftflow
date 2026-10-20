@@ -990,3 +990,120 @@ fn numbered_failed_coarse_resume_changes_resources_and_preserves_qe_and_referenc
     success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(203),"coarse-recovered"));
     reference.verify().unwrap();assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),calls.lines().filter(|s|*s=="pw").count()+1,"只新增路径比较，已成功 QE 和独立参考保留");
 }
+
+
+// 0020：原生 bands 后处理失败与 PW 保存树的粒度恢复。
+impl Case {
+    fn fail_bands(&self) {
+        let p = self.root.join("bands.x");
+        let s = fs::read_to_string(&p).unwrap();
+        let probe = format!(r#"
+root=Path({root})
+with (root/'electronic-calls').open('a') as f: f.write(kind+' '+str(sys.argv[1:])+'\n')
+assert sys.argv[1:3]==['-pd','.true.'], 'bands 必须启用 pencil 分解'
+assert not any(a in sys.argv for a in ['-nk','-npool']), '不得继承 PW/EPW pool'
+if (root/'fail-bands').exists():
+    print('Error in routine fft_type_set (6): there are processes with no planes',file=sys.stderr)
+    sys.exit(6)
+"#, root=serde_json::to_string(self.root.to_str().unwrap()).unwrap());
+        self.script("bands.x", &s.replace("kind=\"bands\"", &format!("kind=\"bands\"\n{probe}")));
+        let p=self.root.join("dos.x");let s=fs::read_to_string(p).unwrap();
+        self.script("dos.x", &s.replace("kind=\"dos\"", "kind=\"dos\"\nassert '-pd' not in sys.argv and '-nk' not in sys.argv"));
+        self.put("fail-bands", "fail");
+    }
+    fn begin_failed_electronic(&self) {
+        self.accounting(Some(201));
+        let o=self.numbered_cli(1,&["--stage","wannier","-r"],Some(201),"failed-electronic");
+        assert!(!o.status.success());
+        assert!(String::from_utf8_lossy(&o.stderr).contains("QE bands 退出失败"),"{}",String::from_utf8_lossy(&o.stderr));
+        assert!(self.root.join("run/.epwflow/electronic/pw-bands.json").is_file());
+    }
+}
+
+#[test]
+fn numbered_electronic_retry_preserves_pw_with_32_mpi_and_then_changed_resources() {
+    let c=Case::numbered();c.fail_bands();
+    c.script("launcher", "#!/bin/sh\n[ \"$1\" = -np ] || exit 11\n[ \"$2\" = \"$SLURM_NTASKS\" ] || exit 12\nshift 2\nexec \"$@\"\n");
+    c.numbered_change(|cfg|{
+        cfg.qe.nscf.k_grid=[4,4,2]; cfg.resources.mpi=32;
+        cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"32".into()];
+        cfg.programs.epw.args[2]="32".into();
+    });
+    c.begin_failed_electronic();
+    let before=c.calls();assert_eq!(before.0.lines().filter(|l|*l=="pw").count(),3);
+    let save=c.root.join("run/3.qe-electronic/qe_eband/out");
+    let saved=epwflow::qe_data::save::files(&save).unwrap();
+    c.numbered_change(|cfg|{cfg.resources.mpi=16;cfg.programs.launcher[2]="16".into();cfg.programs.epw.args[2]="16".into();});
+    fs::remove_file(c.root.join("fail-bands")).unwrap();c.accounting(Some(202));
+    success(c.numbered_cli(1,&["--stage","wannier","--resume","-r"],Some(202),"electronic-recovered"));
+    assert_eq!(before.0,c.calls().0,"恢复不得重跑 SCF／NSCF／PW bands");
+    assert_eq!(saved,epwflow::qe_data::save::files(&save).unwrap());
+    assert_eq!(fs::read_to_string(c.root.join("electronic-calls")).unwrap().lines().count(),2);
+    let calls=c.calls();c.accounting(Some(203));
+    success(c.numbered_cli(1,&["--stage","wannier","--resume","-r"],Some(203),"electronic-idempotent"));
+    assert_eq!(calls,c.calls());
+    c.numbered_change(|cfg|cfg.comparison.as_mut().unwrap().electronic_sigma_ev=0.12);c.accounting(Some(204));
+    success(c.numbered_cli(1,&["--stage","wannier","--resume","-r"],Some(204),"electronic-dos-update"));
+    assert_eq!(calls,c.calls(),"仅 DOS 设置不得重算 PW 或 Wannier");
+    assert_eq!(fs::read_to_string(c.root.join("electronic-calls")).unwrap().lines().count(),2);
+}
+
+#[test]
+fn numbered_electronic_receipt_rejects_corrupted_save_and_adopts_verified_old_pw() {
+    let c=Case::numbered();c.fail_bands();c.begin_failed_electronic();
+    let calls=c.calls();
+    let prefix=config::Config::load(&c.root.join("input.toml")).unwrap().qe.prefix;
+    let wfc=c.root.join(format!("run/3.qe-electronic/qe_eband/out/{prefix}.save/wfc1.dat"));
+    let original=fs::read(&wfc).unwrap();fs::write(&wfc,"corrupted").unwrap();
+    c.accounting(Some(202));
+    let o=c.numbered_cli(1,&["--stage","wannier","--resume","-r"],Some(202),"corrupted-pw");
+    assert!(!o.status.success());assert!(String::from_utf8_lossy(&o.stderr).contains("文件或链接目标已改变"));
+    assert_eq!(calls,c.calls());fs::write(&wfc,original).unwrap();
+    // 模拟 0018：有零退出码和冻结尝试，没有新原生任务收据。
+    fs::remove_file(c.root.join("run/.epwflow/electronic/pw-bands.json")).unwrap();
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).unwrap();
+    let density=wfc.parent().unwrap().join("charge-density.dat");
+    let original_density=fs::read(&density).unwrap();fs::write(&density,b"wrong density").unwrap();
+    assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());
+    fs::write(density,original_density).unwrap();
+    fs::remove_file(&wfc).unwrap();
+    assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());
+    fs::write(&wfc,b"fixture-wfc").unwrap();
+    let active:Value=store::read(&c.root.join("run/.epwflow/active.json")).unwrap();
+    let frozen=PathBuf::from(active["config"]["path"].as_str().unwrap()).parent().unwrap().join("POSCAR");
+    let original_source=fs::read(&frozen).unwrap();fs::write(&frozen,"changed source").unwrap();
+    assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());fs::write(frozen,original_source).unwrap();
+    let exit=c.root.join("run/3.qe-electronic/qe_eband/eband.exitcode");
+    fs::write(&exit,"6").unwrap();assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());fs::write(exit,"0").unwrap();
+    let input=c.root.join("run/3.qe-electronic/qe_eband/eband.in");let original=fs::read(&input).unwrap();
+    fs::write(&input,"&CONTROL calculation='bands' /\n").unwrap();assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());fs::write(input,original).unwrap();
+    fs::remove_file(c.root.join("fail-bands")).unwrap();c.accounting(Some(203));
+    success(c.numbered_cli(1,&["--stage","wannier","--resume","-r"],Some(203),"legacy-pw-recovered"));
+    assert_eq!(calls.0,c.calls().0);
+}
+
+#[test]
+fn numbered_electronic_script_change_is_rejected_and_fresh_attempt_recovers() {
+    let c=Case::numbered();
+    success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"submit-before-edit"));
+    let script=c.root.join("run/5.epw-wannier/submit.sh");
+    let mut text=fs::read_to_string(&script).unwrap();text.push_str("\n# manually edited\n");fs::write(&script,text).unwrap();
+    c.accounting(Some(201));
+    let mut cmd=Command::new("/bin/bash");cmd.arg(&script).env("SLURM_NTASKS","1");
+    let o=c.output(cmd,Some(201),"edited-script");assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("生成当前配置的新尝试"));assert_eq!(c.calls(),("".into(),"".into(),"".into()));
+    c.accounting(Some(202));
+    success(c.numbered_cli(1,&["--stage","wannier","--resume","-r"],Some(202),"fresh-attempt"));
+}
+
+#[test]
+#[ignore = "需显式设置本机 MgB2 配置；只读验证，不提交或执行科学程序"]
+fn numbered_real_legacy_pw_is_read_only() {
+    let input=std::env::var_os("DFTFLOW_0020_REAL_CONFIG").expect("显式本机配置");
+    let cfg=config::Config::load(std::path::Path::new(&input)).unwrap();
+    let before=epwflow::qe_data::save::files(&cfg.work_dir.join("3.qe-electronic/qe_eband")).unwrap();
+    let record=epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).unwrap();
+    assert_eq!(before,epwflow::qe_data::save::files(&cfg.work_dir.join("3.qe-electronic/qe_eband")).unwrap());
+    println!("{}",serde_json::to_string_pretty(&record).unwrap());
+}
