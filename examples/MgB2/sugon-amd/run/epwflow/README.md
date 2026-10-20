@@ -24,3 +24,8 @@ epw_wannier --stage wannier -s
 ## 本次电子后处理失败后的恢复
 
 PW 能带已完成而 bands.x 报 FFT 空进程时，修复后的程序保留成功 PW 数据，从后处理继续。进入上一级 run 后执行 `epw_wannier --stage wannier --resume -s`，生成新的冻结尝试；不要重提手工修改过的旧 submit.sh。原生任务完成证据位于 run/.epwflow/electronic/，详细根因、校验范围及命令解释见 [run 说明](../README.md#本次短暂运行后失败的原因与恢复)。
+
+
+## DOS 再次失败的修复（0021）
+
+1307064 已完成 bands 后处理，但 DOS 因 32 MPI 的 FFT 空进程而失败；新版为 DOS 单独启用 pencil，保留资源和物理参数。1307068 是手工 `sbatch submit.sh` 重提旧尝试，因旧作业绑定而被拒绝。请进入上一级 `run/` 再执行 `epw_wannier --stage wannier -s`（也可加 `--resume`），生成新尝试、校验并复用成功 PW／bands，从 DOS 继续。不要重提旧脚本或编辑清单；完整命令和科学验收边界见 [run 说明](../README.md#本次短暂运行后失败的原因与恢复)。

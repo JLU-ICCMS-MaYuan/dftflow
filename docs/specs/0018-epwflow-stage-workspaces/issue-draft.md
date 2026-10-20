@@ -28,3 +28,6 @@
 工程实现、回归、真实旧现场导入及安装证据统一见 [验收记录](acceptance.md)。本地任务按该记录收敛；线上状态和远程链接仍由用户维护，不代为关闭。
 
 后续缺陷：[0020](../0020-qe-electronic-postprocess-resume/issue-draft.md) 修复 bands.x 并行及电子原生任务局部恢复，保留本需求的配置与阶段接口。
+
+
+关联后续缺陷：[0021 DOS FFT 与旧尝试恢复](../0021-qe-dos-pencil-resume/issue-draft.md)。1307064 的 bands 已完成，DOS 空进程及旧脚本重提问题单独验证，不改写本需求历史验收结论。

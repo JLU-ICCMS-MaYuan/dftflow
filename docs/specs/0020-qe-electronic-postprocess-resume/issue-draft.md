@@ -70,3 +70,6 @@ PLEASE IMPLEMENT THIS PLAN:
 更新 Issue／Spec、Overview、模块手册和算例 README；通过规范构建入口更新 `bin/epwflow`，区分源码验证与安装验证。
 
 0019 与本缺陷分别验证、分别提交，只纳入各自修改，不推送。修复后的恢复路径应为：复用 SCF、NSCF、PH 及已成功的 PW 能带数据，从 `bands.x` 后处理继续，再进入 Wannier。
+
+
+关联后续缺陷：[0021 DOS FFT 与旧尝试恢复](../0021-qe-dos-pencil-resume/issue-draft.md)。1307064 的 bands 已完成，DOS 空进程及旧脚本重提问题单独验证，不改写本需求历史验收结论。

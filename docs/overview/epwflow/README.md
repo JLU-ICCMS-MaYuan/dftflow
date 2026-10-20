@@ -43,9 +43,9 @@ F4 已发布合法 partial 清单时，公开显式恢复会重验固定来源�
 
 ## 编号工作区的电子后处理续算
 
-第 3 步分别为 PW 能带、`bands.x` 和 `dos.x` 保存原生输入、上游产物与输出哈希记录，位于 `.epwflow/electronic/`。相容请求的后处理失败后保留成功 PW 数据，仅重试未完成任务；损坏证据会阻断。`bands.x` 使用当前 MPI 数及自身的 `-pd .true.`，其他程序参数保持独立。
+第 3 步分别为 PW 能带、`bands.x` 和 `dos.x` 保存原生输入、上游产物与输出哈希记录，位于 `.epwflow/electronic/`。相容请求的后处理失败后保留成功 PW 数据，仅重试未完成任务；损坏证据会阻断。`bands.x` 和 `dos.x` 均使用当前 MPI 数及各自的 `-pd .true.`，避免读取保存数据时 FFT 空进程；不继承 PW／EPW pool，其他程序参数保持独立。
 
-已有 0018 PW 能带结果须经终态冻结来源、原生输入、零退出码、日志、XML、路径点和全部 portable 波函数校验后接入。更改过的冻结提交脚本仍被拒绝，使用公开命令生成新尝试。当前真实 MgB₂ 旧数据只读核验通过，尚未提交修复后的真实后处理或 Wannier 作业；协议与科学验收边界见 [0020](../../specs/0020-qe-electronic-postprocess-resume/acceptance.md)。
+已有 0018 PW 能带结果须经终态冻结来源、原生输入、零退出码、日志、XML、路径点和全部 portable 波函数校验后接入。更改过的冻结提交脚本仍被拒绝，使用公开命令生成新尝试。已绑定作业的旧脚本不能在新作业重用，冲突提示包含两个作业号和公开恢复命令；再次执行公开 `-s`（可加 `--resume`）生成独立冻结尝试并复用成功 PW／bands。真实 MgB₂ 的 bands 已在用户作业 1307064 完成，DOS 同类 FFT 错误后经 0021 修复；当前 PW／bands 收据只读核验通过，修复后的真实 DOS／Wannier 尚未代执行。协议与科学验收边界见 [0020](../../specs/0020-qe-electronic-postprocess-resume/acceptance.md)、[0021](../../specs/0021-qe-dos-pencil-resume/acceptance.md)。
 
 ## 公开程序及选项
 

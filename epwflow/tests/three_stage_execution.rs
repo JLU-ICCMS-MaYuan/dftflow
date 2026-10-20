@@ -1008,7 +1008,7 @@ if (root/'fail-bands').exists():
 "#, root=serde_json::to_string(self.root.to_str().unwrap()).unwrap());
         self.script("bands.x", &s.replace("kind=\"bands\"", &format!("kind=\"bands\"\n{probe}")));
         let p=self.root.join("dos.x");let s=fs::read_to_string(p).unwrap();
-        self.script("dos.x", &s.replace("kind=\"dos\"", "kind=\"dos\"\nassert '-pd' not in sys.argv and '-nk' not in sys.argv"));
+        self.script("dos.x", &s.replace("kind=\"dos\"", "kind=\"dos\"\nassert sys.argv[1:3]==['-pd','.true.'] and '-nk' not in sys.argv"));
         self.put("fail-bands", "fail");
     }
     fn begin_failed_electronic(&self) {
@@ -1106,4 +1106,92 @@ fn numbered_real_legacy_pw_is_read_only() {
     let record=epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).unwrap();
     assert_eq!(before,epwflow::qe_data::save::files(&cfg.work_dir.join("3.qe-electronic/qe_eband")).unwrap());
     println!("{}",serde_json::to_string_pretty(&record).unwrap());
+}
+
+
+// 0021：从公开提交及实际脚本覆盖 DOS 失败、旧作业拒绝和新尝试恢复。
+#[test]
+fn numbered_dos_failure_public_resubmit_preserves_pw_and_bands() {
+    let c = Case::numbered();
+    for kind in ["bands", "dos"] {
+        let name = format!("{kind}.x");
+        let text = fs::read_to_string(c.root.join(&name)).unwrap();
+        let probe = format!(r#"
+root=Path({root})
+with (root/'post-calls').open('a') as f: f.write(kind+'\n')
+assert sys.argv[1:3]==['-pd','.true.'], kind+' 缺 pencil 分解'
+assert not any(a in sys.argv for a in ['-nk','-npool','-ni'])
+if kind=='dos' and (root/'fail-dos').exists():
+    print('Error in routine fft_type_set (6): there are processes with no planes',file=sys.stderr)
+    sys.exit(6)
+"#, root=serde_json::to_string(c.root.to_str().unwrap()).unwrap());
+        c.script(&name, &text.replace(&format!("kind={kind:?}"), &format!("kind={kind:?}\n{probe}")));
+    }
+    c.put("fail-dos", "fail once");
+    c.script("launcher", r#"#!/bin/sh
+[ "$1" = -np ] || exit 11
+[ "$2" = 32 ] || exit 12
+[ "$2" = "$SLURM_NTASKS" ] || exit 13
+shift 2
+case "$1" in
+    */bands.x|*/dos.x) ;;
+    *) for arg in "$@"; do [ "$arg" != -pd ] || exit 14; done ;;
+esac
+exec "$@"
+"#);
+    c.numbered_change(|cfg| {
+        cfg.qe.nscf.k_grid=[4,4,2]; cfg.resources.mpi=32;
+        cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"32".into()];
+        cfg.programs.epw.args[2]="32".into();
+    });
+    success(c.numbered_cli(1, &["--stage","wannier","-s"], None, "dos-first-submit"));
+    let active_path=c.root.join("run/.epwflow/active.json");
+    let first:Value=store::read(&active_path).unwrap();
+    let script=c.root.join("run/5.epw-wannier/submit.sh");
+    let run = |job: u64, label: &str| {
+        let mut cmd=Command::new("/bin/bash");
+        cmd.arg(&script).env("SLURM_NTASKS","32");
+        c.output(cmd,Some(job),label)
+    };
+    c.accounting(Some(201));
+    let failed=run(201,"dos-failed");
+    assert!(!failed.status.success());
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("QE dos 退出失败：exit status: 6"),"{}",String::from_utf8_lossy(&failed.stderr));
+    let receipts=c.root.join("run/.epwflow/electronic");
+    let pw=fs::read(receipts.join("pw-bands.json")).unwrap();
+    let bands=fs::read(receipts.join("bands.json")).unwrap();
+    let calls=c.calls();
+    assert_eq!(fs::read_to_string(c.root.join("post-calls")).unwrap(),"bands\ndos\n");
+    c.accounting(Some(202));
+    let rejected=run(202,"dos-old-script");
+    assert!(!rejected.status.success());
+    let error=String::from_utf8_lossy(&rejected.stderr);
+    assert!(error.contains("201") && error.contains("202") && error.contains("epw_wannier --stage wannier -s"),"{error}");
+    assert_eq!(calls,c.calls());
+    let failed_active=fs::read(&active_path).unwrap();
+    assert_eq!(pw,fs::read(receipts.join("pw-bands.json")).unwrap());
+    fs::remove_file(c.root.join("fail-dos")).unwrap();
+
+    // 不加 --resume，同一公开 -s 也应读取当前配置并创建全新尝试。
+    success(c.numbered_cli(1, &["--stage","wannier","-s"], None, "dos-resubmit"));
+    let second:Value=store::read(&active_path).unwrap();
+    assert_ne!(first["id"],second["id"]);
+    assert_eq!(second["job"],202);
+    let frozen_first=PathBuf::from(first["config"]["path"].as_str().unwrap()).parent().unwrap().join("attempt.json");
+    let history:Value=store::read(&frozen_first).unwrap();
+    assert_eq!(history["job"],201);
+    assert_eq!(history["state"],"failed");
+    assert_eq!(failed_active,fs::read(&frozen_first).unwrap());
+    let queued=c.numbered_cli(1,&["--stage","wannier","-s"],None,"dos-duplicate-queued");
+    assert!(!queued.status.success());
+    assert!(String::from_utf8_lossy(&queued.stderr).contains("活动任务"));
+    success(run(202,"dos-recovered"));
+    assert_eq!(calls.0,c.calls().0,"不得重复 SCF／NSCF／PW bands 或额外运行 PH");
+    assert_eq!(c.calls().1.lines().filter(|line| line.starts_with("wannier ")).count(),1);
+    assert_eq!(pw,fs::read(receipts.join("pw-bands.json")).unwrap());
+    assert_eq!(bands,fs::read(receipts.join("bands.json")).unwrap());
+    assert_eq!(fs::read_to_string(c.root.join("post-calls")).unwrap(),"bands\ndos\ndos\n");
+    assert!(receipts.join("dos.json").is_file());
+    let finished:Value=store::read(&active_path).unwrap();
+    assert_eq!(finished["state"],"succeeded");
 }

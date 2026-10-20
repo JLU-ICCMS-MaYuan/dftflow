@@ -60,13 +60,13 @@ run/
 
 编号工作区分别记录 `pw.x bands`、`bands.x`、`dos.x` 的输入、真实上游与产物哈希，记录保存在 `.epwflow/electronic/`。后处理失败后，复用校验通过的 PW 保存树，只重试未完成的原生任务；MPI 数量变化不要求重跑成功的 PW。科学参数不相容时更新受影响步骤，证据损坏则停止并保留现场。
 
-`bands.x` 使用当前 MPI 启动数量及自身的 `-pd .true.`，避免 slab FFT 出现空进程；不会继承 PW／EPW 的 pool 参数。该调整不改变物理网格、能窗或截断能。DOS 使用自身参数，不跟随添加 pencil 参数。
+`bands.x` 和 `dos.x` 各自使用当前 MPI 启动数量及 `-pd .true.`，避免读取保存数据时 slab FFT 出现空进程；不会继承 PW／EPW 的 pool 参数。其他程序参数保持独立，不改变物理网格、能窗或截断能。
 
 ```bash
 epw_wannier --stage wannier --resume -s
 ```
 
-0018 旧现场的 PW 能带可在完整核验冻结来源、原生输入、零退出码、日志、XML 及全部 portable 波函数后接入；缺证据明确停止。失败日志移到 `.epwflow/history/`，成功结果保持原位。修改过的旧 `submit.sh` 仍会被哈希检查拒绝，重新执行上述公开命令生成新尝试，不修改旧清单。实现与验证边界见 [0020](../docs/specs/0020-qe-electronic-postprocess-resume/acceptance.md)。
+0018 旧现场的 PW 能带可在完整核验冻结来源、原生输入、零退出码、日志、XML 及全部 portable 波函数后接入；缺证据明确停止。失败日志移到 `.epwflow/history/`，成功结果保持原位。修改过的旧 `submit.sh` 仍会被哈希检查拒绝，重新执行上述公开命令生成新尝试，不修改旧清单。PW 粒度恢复见 [0020](../docs/specs/0020-qe-electronic-postprocess-resume/acceptance.md)，DOS 参数与新尝试恢复见 [0021](../docs/specs/0021-qe-dos-pencil-resume/acceptance.md)。已绑定作业的旧脚本不能用 `sbatch` 重提；重新执行公开 `-s`（可加 `--resume`）会创建独立尝试，复用成功的 PW 和 bands，从 DOS 等未完成任务继续。
 
 ## 命令
 

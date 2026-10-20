@@ -450,7 +450,9 @@ pub fn execute(path: &Path) -> Result<()> {
         }
         ensure!(
             a.job.is_none_or(|j| j == job),
-            "input_conflict: 尝试与 Slurm 作业不一致"
+            "input_conflict: 旧尝试 {} 已绑定作业 {}，当前作业 {job} 不能重用此脚本；请在 run/ 重新执行 epw_wannier --stage wannier -s（其他阶段使用对应公开命令）生成新尝试，不要 sbatch 已执行过的旧 submit.sh",
+            a.id,
+            a.job.unwrap_or(job)
         );
         if a.reservation.is_none() {
             a.reservation = Some(budget::with_ledger(

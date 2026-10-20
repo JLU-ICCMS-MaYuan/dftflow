@@ -43,7 +43,7 @@ pub(super) fn post_program(cfg: &Config, name: &str) -> Result<Program> {
             .parent()
             .context("configuration: QE 缺程序目录")?
             .join(format!("{name}.x")),
-        args: if name == "bands" {
+        args: if matches!(name, "bands" | "dos") {
             vec!["-pd".into(), ".true.".into()]
         } else {
             vec![]
@@ -811,4 +811,27 @@ pub fn invalidate(cfg: &Config, step: Step, history: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod post_program_tests {
+    use super::*;
+
+    #[test]
+    fn pencil_is_limited_to_bands_and_dos_without_inherited_pools() {
+        let mut cfg: Config = toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
+        cfg.programs.pw.path = PathBuf::from("/qe with spaces/bin/pw.x");
+        cfg.programs.pw.args = vec!["-nk".into(), "8".into()];
+        for name in ["bands", "dos", "q2r", "matdyn", "dynmat", "wannier90", "postw90"] {
+            let p = post_program(&cfg, name).unwrap();
+            assert_eq!(p.path, PathBuf::from(format!("/qe with spaces/bin/{name}.x")));
+            let expected = if matches!(name, "bands" | "dos") {
+                vec!["-pd".to_string(), ".true.".to_string()]
+            } else {
+                vec![]
+            };
+            assert_eq!(p.args, expected, "{name}");
+        }
+        assert_eq!(cfg.programs.pw.args, vec!["-nk", "8"]);
+    }
 }

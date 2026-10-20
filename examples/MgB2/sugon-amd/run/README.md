@@ -23,11 +23,19 @@ epw_wannier --stage wannier --resume -s
 
 ## 本次短暂运行后失败的原因与恢复
 
-2026-10-20 作业 1306688 已完成 `3.qe-electronic/qe_eband/eband.out` 中的 PW 能带计算（183 个 k 点、16 带），随后 `bands.err` 报 `there are processes with no planes`：32 MPI 的 slab FFT 分配出现空进程，尚未进入 Wannier。代码已为 `bands.x` 增加 `-pd .true.`，保留配置的 32 MPI；其他程序不会继承该参数。
+2026-10-20 作业 1306688 已完成 `3.qe-electronic/qe_eband/eband.out` 中的 PW 能带计算（183 个 k 点、16 带），随后 `bands.err` 报 `there are processes with no planes`：32 MPI 的 slab FFT 分配出现空进程，尚未进入 Wannier。首次修复为 `bands.x` 增加 `-pd .true.`，保留配置的 32 MPI。
 
 作业 1306749 因手工修改后的 `5.epw-wannier/submit.sh` 与冻结哈希不符而停止。删除脚本严格选项不能解决 FFT 错误；新版生成器已按 0019 移除自动严格选项，通过显式退出码处理关键失败。
 
-恢复时在本页开头的 `run/` 执行 `epw_wannier --stage wannier --resume -s`，程序生成新尝试，复用相容的 SCF、NSCF、PH 和已经成功的 PW 能带，从 `bands.x` 后处理继续，再完成 DOS、Wannier 及电子对比图。本轮已对旧 PW 的冻结配置、赝势、原生输入、XML、路径点和全部 portable 波函数做只读校验；不代表修复后的真实 bands.x 或 Wannier 已运行成功。
+后续作业 1307064 中 `bands.x` 已成功（零退出码和完整产物），但 `3.qe-electronic/qe_eledos/dos.err` 出现同一 FFT 空进程错误，DOS 退出 6；Wannier 仍未开始。0021 为 `dos.x` 同样补上 `-pd .true.`，保留当前 32 MPI。
+
+1307068 的 Slurm 提交记录是 `sbatch submit.sh`，它重用了已绑定 1307064 的旧尝试，故报作业身份不一致。该保护保留；不要编辑脚本或内部清单，也不要重提已经执行过的旧脚本。恢复请在本页开头的 `run/` 重新执行公开命令：
+
+```bash
+epw_wannier --stage wannier -s
+```
+
+可加 `--resume`，两种写法都读取当前 `input.toml`，生成新尝试。相容且校验通过的 SCF、NSCF、PH、PW 能带和 bands 后处理复用，从 DOS 继续，再进入 Wannier 及电子对比。现场 PW 和 bands 收据的来源及产物哈希已只读核验；本次不代提交真实作业，DOS 修复后的科学运行仍待验证。证据见 [0021 验收](../../../../docs/specs/0021-qe-dos-pencil-resume/acceptance.md)。
 
 `.epwflow/electronic/` 分别保存三个电子原生任务的完成证据。日志出现 `reuse: electronic/pw-bands` 表示旧 PW 已重验并复用；阶段状态仍为 `update` 可以只是后处理未完成。证据损坏或旧来源缺失会停止，不能仅凭 `JOB DONE` 跳过检查。不要重提修改过的旧脚本，也不要编辑内部哈希记录。
 
