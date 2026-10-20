@@ -8,20 +8,21 @@
 
 ```bash
 REPO="/data/home/mayuan/code/dftflow"
-EPW_DIR="$REPO/examples/MgB2/sugon-amd/run/epwflow"
+RUN_DIR="$REPO/examples/MgB2/sugon-amd/run"
+EPW_DIR="$RUN_DIR/epwflow"
 EPW_BIN="$REPO/test_auto/MgB2/local_run/010-public-pbe/bin-window-contract"
 CFG="$EPW_DIR/epwinput.toml"
 W="$EPW_DIR/work"
 LEDGER="$REPO/docs/local/epwflow-campaign.json"
 cd "$EPW_DIR"
 
-ls -l "$CFG" "$EPW_DIR/POS" "$EPW_DIR/pp"
+ls -l "$CFG" "$RUN_DIR/POSCAR" "$RUN_DIR/pp"
 "$EPW_BIN/epw_phonon" --help
 "$EPW_BIN/epw_wannier" --help
 "$EPW_BIN/epw_superconductivity" --help
 ```
 
-`POS` 是用户指定的结构文件名，内容应为 POSCAR 格式；`pp/` 是用户指定的赝势目录。`realpath` 输出路径不等于文件一定存在，先用 `ls` 确认实际文件可读。
+结构文件使用 `/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/POSCAR`，赝势目录使用 `/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/pp`。两者均位于本目录的上一级 `run/`，无需复制到 `epwflow/`。
 
 `EPW_BIN` 指向当前已有、供登录／计算节点使用的运行库兼容打包制品，并与本目录原有生成脚本的程序路径一致；它不是默认安装。若该目录已清理，先重新核对受测制品位置，不直接换成 PATH 中的旧程序。帮助输出只能确认入口可启动，不能证明 QE／EPW 在计算节点已通过运行检查。
 
@@ -34,15 +35,15 @@ ls -l "$CFG" "$EPW_DIR/POS" "$EPW_DIR/pp"
 ```toml
 work_dir = "./work"
 outdir = "./scratch"
-structure = "./POS"
+structure = "../POSCAR"
 kpath = "./KPATH.in"
 
 [pseudos]
-Mg = "./pp/mg_pbe_v1.4.uspp.F.UPF"
-B = "./pp/b_pbe_v1.4.uspp.F.UPF"
+Mg = "../pp/mg_pbe_v1.4.uspp.F.UPF"
+B = "../pp/b_pbe_v1.4.uspp.F.UPF"
 ```
 
-这里将运行状态放入 `epwflow/work/`，scratch 放入 `epwflow/scratch/`，输入和 README 留在本目录。工作目录必须由程序初始化；**不要预先 `mkdir work`**，也不要将包含 README 和输入的本目录直接作为新 `work_dir`。原来的 `work_dir="./epwflow"` 会在本目录下再建立一层同名目录，与上述 `W` 不一致。
+这里将运行状态放入 `epwflow/work/`，scratch 放入 `epwflow/scratch/`，配置和 README 留在本目录，结构和赝势复用上一级 `run/` 中的文件。工作目录必须由程序初始化；**不要预先 `mkdir work`**，也不要将包含 README 和输入的本目录直接作为新 `work_dir`。原来的 `work_dir="./epwflow"` 会在本目录下再建立一层同名目录，与上述 `W` 不一致。
 
 若 `pp/` 中实际文件名不同，按实际文件名填写元素映射；确认使用本例的 PBE 赝势，不能静默更换赝势而保留旧带号和科学结论。首次使用可从仓库已有路径文件复制 KPATH，仅在目标不存在时执行：
 
@@ -50,9 +51,9 @@ B = "./pp/b_pbe_v1.4.uspp.F.UPF"
 if [ ! -e "$EPW_DIR/KPATH.in" ]; then
     cp "$REPO/examples/MgB2/KPATH.in" "$EPW_DIR/KPATH.in"
 fi
-ls -l "$EPW_DIR/POS" "$EPW_DIR/KPATH.in" \
-    "$EPW_DIR/pp/mg_pbe_v1.4.uspp.F.UPF" \
-    "$EPW_DIR/pp/b_pbe_v1.4.uspp.F.UPF"
+ls -l "$RUN_DIR/POSCAR" "$EPW_DIR/KPATH.in" \
+    "$RUN_DIR/pp/mg_pbe_v1.4.uspp.F.UPF" \
+    "$RUN_DIR/pp/b_pbe_v1.4.uspp.F.UPF"
 ```
 
 这些配置说明针对新的 `work/` 运行。如果已有 `run-binding.json` 和固定快照，不修改快照、来源、受控脚本或已绑定的工作目录；恢复方法见第 7 节。本手册不迁移或清理旧记录。
@@ -82,7 +83,7 @@ cat "$W/.epwflow/generated/qe-data.sh"
 
 不加 `-s`／`-r` 时，仅固定输入并生成脚本，不调用科学程序、不提交 Slurm、不预留预算。核对脚本中的分区、节点数、MPI 数、时限、环境加载、工作目录和程序路径。
 
-生成的 `input-init.toml`、`POS-init`、`KPATH-init` 和 `run-binding.json` 用于绑定输入及程序身份。准备后 `workflow_complete: false` 是正常状态；没有作业记录时的 `in_progress` 也不代表已有作业在运行。
+生成的 `input-init.toml`、`POSCAR-init`、`KPATH-init` 和 `run-binding.json` 用于绑定输入及程序身份。准备后 `workflow_complete: false` 是正常状态；没有作业记录时的 `in_progress` 也不代表已有作业在运行。
 
 ## 5. 按阶段提交与验收
 
