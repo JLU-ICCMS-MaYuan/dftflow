@@ -36,8 +36,9 @@ struct Request {
 /// 显式恢复允许修复编排程序；配置和五项科学来源仍必须完全一致。
 fn resume_request(cfg: &Config, launcher: &[String], current: &[Identity], previous: &Request, retry: bool) -> Result<String> {
     ensure!(retry, "execution_failed: 独立参考已有现场，请显式 --resume");
+    let (cfg, launcher) = crate::foundation::parallelism::request_identity(cfg, launcher)?;
     ensure!(previous.schema_version == 1 && previous.sources.len() == 6 && current.len() == 6
-        && previous.digest == store::hash_bytes(&serde_json::to_vec(&(cfg, launcher, &previous.sources))?)
+        && previous.digest == store::hash_bytes(&serde_json::to_vec(&(&cfg, &launcher, &previous.sources))?)
         && serde_json::to_value(&previous.sources[..5])? == serde_json::to_value(&current[..5])?,
         "input_conflict: 独立参考请求的固定输入或科学程序变化");
     for id in &previous.sources { id.verify()?; }
@@ -139,7 +140,8 @@ pub(super) fn ensure_sources(
         f2.fingerprints.program_sha256.get("dynmat") == Some(&sources[4].sha256),
         "input_conflict: dynmat.x 未在初始运行中冻结；请使用新运行目录或显式独立参考"
     );
-    let mut digest = store::hash_bytes(&serde_json::to_vec(&(cfg, launcher, &sources))?);
+    let (identity_cfg, identity_launcher) = crate::foundation::parallelism::request_identity(cfg, launcher)?;
+    let mut digest = store::hash_bytes(&serde_json::to_vec(&(&identity_cfg, &identity_launcher, &sources))?);
     let root = work.join("quality-sources");
     let request_path = root.join("request.json");
     if request_path.exists() {

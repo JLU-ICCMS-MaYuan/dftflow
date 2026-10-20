@@ -10,6 +10,8 @@
 
 ## StageAttempt
 
+三程序工作流的实际尝试记录可选保存 `mpi_override: u32`，仅显式粗阶段恢复写入；原固定快照保持不变。后续尝试继承该字段，状态展示实际 `effective_mpi`。科学请求身份不因该受限执行参数变化而重建，任何其他固定字段或数据身份变化仍拒绝复用。
+
 字段：`stage_id,attempt_id,dependencies,input_digest,state,job_id,cluster,validator,artifacts,error`。
 
 约束与生命周期：ready→submission_pending→submitted→running→validating→succeeded；失败/unknown/blocked 不放行。缺失必需值拒绝，数值必须有限。

@@ -4,6 +4,7 @@ pub mod cli;
 pub mod config;
 pub mod environment;
 pub mod paths;
+pub mod parallelism;
 pub mod process;
 pub mod snapshot;
 pub mod slurm;

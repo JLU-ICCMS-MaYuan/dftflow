@@ -22,19 +22,18 @@ command -v epw_phonon epw_wannier epw_superconductivity
 
 ### 本次已经改成 32 MPI 后，接下来执行什么
 
-已核对本次配置为 `work_dir = "./work-mpi32"`、32 MPI／32 pool。旧 `work/` 保留原位；新的 `work-mpi32/` 由程序初始化，不提前手工创建。**本次新目录路线会重新执行 SCF→PH→q2r／matdyn→NSCF**，原因是当前程序尚不支持资源参数变更后复用旧阶段记录，不是旧 QE 结果因 MPI 数变化而失效。
+本次直接复用旧 `work/` 中已完成的 QE 数据，从失败的 Wannier／粗网格恢复为 32 MPI／32 pool。**不再重跑 QE 主链，也不新建 `work-mpi32/`。** 外部配置中此前修改的新工作目录不影响以下显式 `-w "work"` 恢复命令，无需再改文件。
 
 ```bash
 cd "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow"
-epw_phonon --check -c "epwinput.toml" --json
-epw_phonon -c "epwinput.toml"
-cat "work-mpi32/.epwflow/generated/qe-data.sh"
+epw_phonon --check -w "work" --json
+epw_wannier --status -w "work" --refresh --json
 ```
 
-以上只检查配置、固定输入和生成脚本。确认脚本为 `amd7513`、1 节点、32 任务并指向 `work-mpi32/` 后，再执行：
+以上检查已有 QE 数据并查询终态。QE 数据为 `valid`、原作业已结束且失败阶段为 Wannier 后，执行：
 
 ```bash
-epw_phonon -c "epwinput.toml" -s
+epw_wannier --resume -w "work" --mpi 32 -s
 ```
 
 等待、验收以及后两个阶段的直接命令见[第 7 节](#7-失败恢复)。任何命令报错先停止处理；不要一次提交所有阶段后跳过检查。程序名称可以在任意目录调用，但本例的相对输入与工作目录命令统一在上述 `epwflow/` 中执行。
@@ -167,7 +166,7 @@ ls -l "$CFG" "$RUN_DIR/POSCAR" "$RUN_DIR/pp"
 "$EPW_BIN/epw_superconductivity" --help
 ```
 
-**2026-10-20 的 64→32 MPI 重试使用 `work-mpi32/`，完整操作见第 7 节的专用步骤。** 执行该步骤后，同一终端中的 `W` 应保持为 `"$EPW_DIR/work-mpi32"`；本文其他章节以 `work/` 说明通用布局，不要重新赋值回旧运行。
+**2026-10-20 的 64→32 MPI 重试直接使用原 `work/`，完整操作见第 7 节。** 仅修改尝试级并行度，复用原 QE 数据；不用设置本节的变量，也不使用新工作目录重新计算。
 
 这些变量只是给路径起一个方便引用的名字。例如，后续写 `"$CFG"`，Shell 会将它替换为配置文件的完整路径；赋值本身不修改配置文件，也不启动计算。
 
@@ -334,7 +333,7 @@ ls -l "$RUN_DIR/POSCAR" "$EPW_DIR/KPATH.in" \
 
 当前配置共用同一个 MPI 启动器，因此 QE 和 EPW 都会使用 32 MPI；本次修复不再使用节点全部 64 核。避免空 pool 只解决这次原生错误，不保证后续 Wannier、插值质量或超导求解一定通过。
 
-资源参数同样属于固定配置。旧 `work/` 已执行过科学计算并绑定 64 MPI，不能修改其 `input-init.toml`、脚本或身份清单来套用新配置。64→32 的本次操作使用新的 `work-mpi32/`，具体步骤见第 7 节；第 0 节的旧目录截面保留为失败现场说明。
+原资源参数属于固定配置，旧 `work/` 的快照仍记录历史 64 MPI；不能编辑快照、脚本或身份清单来套用新配置。本次通过 `epw_wannier --resume -w "work" --mpi 32 -s` 为新尝试单独登记并行度并复用原 QE 数据，具体步骤见第 7 节；状态中的 `effective_mpi` 表示实际执行资源。
 
 ## 4. 生成并检查第一阶段脚本
 
@@ -348,7 +347,9 @@ cat "$W/.epwflow/generated/qe-data.sh"
 
 生成的 `input-init.toml`、`POSCAR-init`、`KPATH-init` 和 `run-binding.json` 用于绑定输入及程序身份。准备后 `workflow_complete: false` 是正常状态；没有作业记录时的 `in_progress` 也不代表已有作业在运行。
 
-## 5. 按阶段提交与验收
+## 5. 新运行的通用提交与验收参考
+
+本节解释全新运行的三个阶段及历史变量命令。当前已有 QE 数据的 64→32 MPI 恢复直接执行第 7 节，不从本节第一阶段重新提交。
 
 ### 第一阶段：QE 声子与 EPW 所需数据
 
@@ -457,122 +458,85 @@ find "$W/calculations" -path '*/results/figures/*' -type f
 
 ## 7. 失败恢复
 
-### 本次已经修改 32 MPI 后：完整操作顺序
+### 本次：保留全部 QE 数据，只恢复 Wannier／粗网格
 
-**不能直接对旧 `work/` 执行 `--resume`：它读取的是旧的 64 MPI 固定快照，原配置文件改为 32 不会改变旧绑定。** 当前 `--import` 只复制、校验 QE 数据，没有建立供三程序续算使用的前置完成记录；因此不能把“导入成功”当作可以直接接着运行 `epw_wannier`。现有公开入口可用的操作是保留旧目录，以新工作目录从第一阶段重跑；这会重复 SCF／PH／NSCF，不是复用旧 QE 结果。
+仅修改 MPI／pool 数不会使已经验证的 SCF、PH、q2r／matdyn 或完整均匀 NSCF 失效。现在使用原 `work/` 的完成记录续算，不再按先前建议新建 `work-mpi32/` 重跑第一阶段。外部 `epwinput.toml` 即使仍写 `work_dir = "./work-mpi32"`，也不需要为此改回；下面的恢复命令显式选择原 `work/`，读取其中固定的科学输入。
 
-#### 1. 核对配置，进入运行目录
-
-本次 `epwinput.toml` 的顶层字段已修改为：
-
-```toml
-work_dir = "./work-mpi32"
-```
-
-保留已经改好的 `resources.mpi = 32`、启动器 `-np 32` 和 EPW `-nk 32`，其他物理参数不变。旧 `work/` 保留原位，**不要提前创建 `work-mpi32/`**，由程序初始化。按文首设置 `PATH` 后，在登录节点执行：
+按文首设置 PATH 后，进入本目录，先检查旧 QE 数据和终态：
 
 ```bash
 cd "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow"
-rg -n '^(work_dir|launcher|args|mpi)\s*=' "epwinput.toml"
-epw_phonon --check -c "epwinput.toml" --json
-squeue -u "$USER"
+epw_phonon --check -w "work" --json
+epw_wannier --status -w "work" --refresh --json
 ```
 
-`rg` 用于核对刚才修改的字段；静态检查应返回 `ok`／`configured`。提交时会自动使用配置中的原预算账本，不需要额外设置变量。确认旧测试作业已结束；任何命令报错，先停在当前步骤处理。
-
-#### 2. 生成并核对新的第一阶段脚本
+QE 数据应为 `valid`，旧作业已结束，当前失败阶段应为 Wannier。确认后只提交第二阶段：
 
 ```bash
-epw_phonon -c "epwinput.toml"
-cat "work-mpi32/.epwflow/generated/qe-data.sh"
-bash -n "work-mpi32/.epwflow/generated/qe-data.sh"
-rg -n '^(launcher|args|mpi)\s*=' "work-mpi32/input-init.toml"
+epw_wannier --resume -w "work" --mpi 32 -s
 ```
 
-此时只固定输入、生成脚本，没有提交。确认脚本含 `--partition=amd7513`、`--nodes=1`、`--ntasks=32`，运行目录为 `work-mpi32/`，调用程序位于仓库 `bin/epwflow/`；固定快照中的 MPI、pool 和启动器也应为 32。若仍显示 64 或旧路径，不继续提交。
+这一条命令会：
 
-#### 3. 提交第一阶段，并等待验收通过
+1. 重验固定输入、科学程序和已完成 QE 数据，沿用原 `calculation_dir`。
+2. 保留原 `input-init.toml`、运行绑定和 QE 清单；为新尝试记录 `mpi_override = 32`，同步申请 32 个 Slurm 任务、启动 32 MPI 和 32 pool。
+3. 复用已成功且核验通过的独立参考，归档失败的粗阶段现场，再执行 Wannier／粗网格及后续质量检查和比较图。
+
+**不会重复已有 QE 主链。** 第二阶段中尚未完成的独立参考、比较路径 NSCF 或 q2r／matdyn 仍可能调用 QE；这是补齐未完成的质量／绘图数据，不是重跑已交付的第一阶段。若已成功的参考遭到篡改或来源不相容，程序拒绝复用，不静默重算掩盖问题。
+
+恢复仅支持原失败且尚未交付粗网格的单 image 运行；MPI／pool 数须不超过完整粗 k 点数。本例 4×4×2＝32 点，因此使用 32。活动作业、未知终态、已交付粗数据后的布局变更、固定科学输入变化均拒绝。`--mpi` 不作为改变能窗、网格、程序或阈值的通道。
+
+### 等待第二阶段完成
 
 ```bash
-epw_phonon -c "epwinput.toml" -s
-squeue -u "$USER"
-epw_phonon --status -w "work-mpi32" --refresh --json
+epw_wannier --status -w "work" --refresh --json
 ```
 
-只有第一条提交；后两条只查询。最后一条不会等待结束，可以隔一段时间重复执行。须同时看到 `workflow_status: "succeeded"`、`boundary_complete: true`，再检查第一阶段数据：
+此命令不等待结束，可隔一段时间重复。状态中的 `effective_mpi` 应为 32，`mpi_override` 应为 32；原固定快照仍显示历史 64 MPI，不能据此认为重试仍在使用 64。须看到 `workflow_status: "succeeded"`、`boundary_complete: true`，并发布 `work/wannier/manifest.json` 后才进入第三阶段。
 
 ```bash
-epw_phonon --check -w "work-mpi32" --json
+cat "work/wannier/manifest.json"
 ```
 
-这里读取 `work-mpi32/qe-data/manifest.json` 中的清单副本，并按其记录核验实际数据，因此无需手动设置 `CALC` 或填写尝试号。数据检查须为 `valid`，否则停止，不提交第二阶段。
+阶段内部仍必须通过 Wannier 收敛、有限性及独立质量检查：电子最大／RMS 不超过 0.05／0.02 eV，声子不超过 50／20 cm⁻¹。质量失败、非有限值、未收敛或只有图而没有有效完成记录时停止。
 
-#### 4. 提交第二阶段：Wannier、粗网格、独立质量
+### 第二阶段通过后再提交第三阶段
 
 ```bash
-epw_wannier -c "epwinput.toml"
-cat "work-mpi32/.epwflow/generated/interpolation.sh"
-bash -n "work-mpi32/.epwflow/generated/interpolation.sh"
-epw_wannier -c "epwinput.toml" -s
-epw_wannier --status -w "work-mpi32" --refresh --json
+epw_superconductivity --resume -w "work" -s
+epw_superconductivity --status -w "work" --refresh --json
 ```
 
-先核对脚本，再执行含 `-s` 的提交命令；重复最后一条等待阶段结束。第二阶段必须 `succeeded`、`boundary_complete: true`，并发布 `wannier/manifest.json`。需要查看其质量数值时，可读取运行根目录的清单副本：
+第三阶段继承已登记的 32 MPI／32 pool，不需要再修改配置或设置路径变量；执行细网格 EPC、α²F／λ、超导能隙和 Tc。完整结束后验收：
 
 ```bash
-cat "work-mpi32/wannier/manifest.json"
+epw_superconductivity --results-check --results "work/results" --json
+find "work/results/figures" -type f
 ```
 
-阶段内部必须通过 Wannier 收敛、有限性及独立质量检查后才发布完成记录；电子最大／RMS 不超过 0.05／0.02 eV，声子不超过 50／20 cm⁻¹。失败或清单缺失时停止，不能进入第三阶段。比较包位于实际科学目录的 `results/`；若需深入查看原生输出或独立检查质量，可按第 5 节读取 `calculation_dir`，这是诊断用的可选操作，不是每次提交前必须设置的变量。
+需要完整工作流成功、结果包有效及所需 iso／aniso 求解和 Tc 判据通过。`partial`、未收敛、温区内未定位 Tc、仅有图或调度器 COMPLETED，均不等于全链科学验收完成。
 
-#### 5. 仅在第二阶段通过后提交第三阶段
+### 若后续仍失败
 
 ```bash
-epw_superconductivity -c "epwinput.toml"
-cat "work-mpi32/.epwflow/generated/all.sh"
-bash -n "work-mpi32/.epwflow/generated/all.sh"
-epw_superconductivity -c "epwinput.toml" -s
-epw_superconductivity --status -w "work-mpi32" --refresh --json
+cat "work/.epwflow/workflow.json"
+find "work/.epwflow/slurm" -type f \( -name '*.out' -o -name '*.err' \)
 ```
 
-该阶段才计算细网格 EPC、α²F／λ、超导能隙及 Tc。等待查询显示完整阶段成功后，再验收结果包：
+先按 `current_stage`、`error` 和日志查明原因，确认原作业已结束。固定科学输入未变时，只执行实际失败阶段对应的一条命令，已登记的并行设置会继承：
 
 ```bash
-epw_superconductivity --results-check --results "work-mpi32/results" --json
-find "work-mpi32/results/figures" -type f
-```
-
-需要完整工作流成功、结果包有效及所需 iso／aniso 求解和 Tc 判据通过。`partial`、未收敛、温区内未定位 Tc、仅有图或调度器 COMPLETED，均不等于全链科学验收完成。不要把以上各阶段拼成一个不等待验收的批处理。
-
-#### 6. 若新的 32 MPI 运行中途失败
-
-```bash
-cat "work-mpi32/.epwflow/workflow.json"
-find "work-mpi32/.epwflow/slurm" -type f \( -name '*.out' -o -name '*.err' \)
-```
-
-先看记录中的 `current_stage`、`error`、作业日志和原生输出。查明原因、确认原作业结束且未改变固定配置后，才按下面的通用方法恢复 `work-mpi32/`。不要对新的 32 MPI 工作目录失败后又改回旧 `work/`，也不要编辑受控快照或删除历史计算。
-
-### 配置未改变时的通用恢复
-
-先查看日志、刷新状态并确认原作业已终止。然后只执行实际失败阶段对应的一条命令：
-
-```bash
-# 第一阶段失败时
-epw_phonon --resume -w "work-mpi32" -s
 # 第二阶段失败时
-epw_wannier --resume -w "work-mpi32" -s
+epw_wannier --resume -w "work" -s
 # 第三阶段失败时
-epw_superconductivity --resume -w "work-mpi32" -s
+epw_superconductivity --resume -w "work" -s
 ```
 
-恢复读取绑定目录内的固定快照，重验来源与成功产物，保留失败现场。活动或未知作业不重提，质量失败不能通过重试绕过。上例针对新的 32 MPI 运行；若恢复的是历史运行，应将 `-w` 后的目录改为该运行 `run-binding.json` 所属目录，并核对其固定程序和配置；不要将旧 `work/` 的 64 MPI 运行与本次 32 MPI 重试混用。
+活动或未知作业不重提；内部 Slurm 脚本不手工重提，不编辑快照或身份清单，不清理已有 QE 数据。新结构、赝势或科学参数应走新运行及相容性校验；本次仅支持执行并行度的受限例外，不扩大为任意科学配置续算。
 
-配置、结构、赝势或科学程序改变须另建运行，不能编辑 `input-init.toml` 消除身份冲突。内部 `.epwflow/slurm/` 脚本不手工重提；登录节点也不直接使用 `-r` 运行科学阶段。
+## 8. 可选：新运行一次生成三阶段依赖脚本
 
-## 8. 可选：一次生成三阶段依赖脚本
-
-初次手动测试建议按第 5 节逐阶段核查。需要依赖链时，使用同一组程序和配置：
+本节仅适用于全新运行；当前已有数据的恢复使用第 7 节。初次手动测试建议按第 5 节逐阶段核查。需要依赖链时，使用同一组程序和配置；下面路径对应外部配置中的新运行 `work-mpi32/`：
 
 ```bash
 # 仅生成三阶段与总提交脚本

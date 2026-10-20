@@ -4,11 +4,13 @@
 
 ## 当前结论
 
-EPW 仅构建 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个独立程序，旧 `epwflow` 可执行入口已移除。三个程序共用配置、固定快照、预算与状态。默认生成本阶段 Slurm 脚本，不启动科学程序或预留预算；`-s` 提交，`-r` 需要已登记分配，`--resume -w` 使用固定快照恢复。源码、构建和默认安装分别核对，本次未覆盖默认安装。
+EPW 仅构建 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个独立程序，旧 `epwflow` 可执行入口已移除。三个程序共用配置、固定快照、预算与状态。默认生成本阶段 Slurm 脚本，不启动科学程序或预留预算；`-s` 提交，`-r` 需要已登记分配，`--resume -w` 使用固定快照恢复。源码、构建和安装分别核对；2026-10-20 的 MPI 恢复版本已更新仓库 bin/epwflow 中的三个程序，历史冻结测试程序保持。
 
 epw_phonon 直接调用 qeflow 的 nosplit Rust 库（[说明](../qeflow/qe_phonon_nosplit.md)），执行 SCF→PH→q2r→matdyn 和声子图，启用 EPW 原始数据归档。SCF 完成、PH 之前保存独立快照，再由 EPW 准备完整均匀 NSCF 和严格数据清单。固定 KPATH、q2r／matdyn、显式原子质量及 SCF 网格位移均传递并校验；后处理失败恢复会重验请求、脚本和 SCF 检查点，复用已完成 SCF／PH。该恢复行为已由独立进程回归验证；新的真实链已有 SCF／PH／q2r 完成证据，第一阶段整体仍未验收。
 
 粗／细原生尝试在 native-attempts 保存固定请求、物化输入和成功输出指纹。显式恢复可重验归集完整输出，或将失败现场归档后按原参数重试；成功展宽不重复执行。质量失败仍阻断，来源或证据变化拒绝恢复。阶段清单已发布但工作流完成状态未登记时，可重验后补登记。恢复回归使用独立进程测试替身，不替代真实科学验收。
+
+失败且尚未交付 Wannier 的单 image 运行支持 `epw_wannier --resume -w WORK --mpi N -s`：同步调整 MPI、pool、Slurm 任务数和预算请求，pool 不超过完整粗 k 点数。并行设置保存在尝试记录，原固定输入、QE 数据和已完成独立参考保持；后续阶段恢复继承该设置，状态显示 `effective_mpi`／`mpi_override`。活动／未知作业、已交付粗网格后的布局变化及不相容科学输入拒绝。独立进程回归已验证失败粗阶段恢复和旧来源不变；第二阶段尚未完成的比较路径 NSCF 等仍会补算，不代表重复第一阶段。见 [0008 T051](../../specs/0008-epwflow-foundation/three-programs.md#仅修改-mpi-的失败粗阶段恢复t051)。
 
 粗网格阶段独立发布 `wannier/manifest.json`，没有细网格或谱；细网格在第三阶段重验前者后另行发布 `interpolation/manifest.json`，绑定原粗清单哈希，保持其不变。进程回归证明阶段顺序、原生格式角色和失败阻断；缺省独立参考已自动生成；四类比较图的自动生成已接入；真实 PBE 全链与两模式 Tc 交付尚未完成。首条主路径采用 nosplit，不要求三来源六组合完成才交付。
 

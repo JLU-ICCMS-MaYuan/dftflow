@@ -215,7 +215,8 @@ pub(super) fn run(
     )? {
         identities.push(Identity::capture(&p)?);
     }
-    let digest = store::hash_bytes(&serde_json::to_vec(&(cfg, launcher, &identities))?);
+    let (identity_cfg, identity_launcher) = crate::foundation::parallelism::request_identity(cfg, launcher)?;
+    let digest = store::hash_bytes(&serde_json::to_vec(&(&identity_cfg, &identity_launcher, &identities))?);
     let root = work.join("comparison-native");
     let request_path = root.join("request.json");
     if request_path.exists() {

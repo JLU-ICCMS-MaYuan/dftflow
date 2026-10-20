@@ -72,6 +72,8 @@ struct Record {
     calculation_dir: Option<PathBuf>,
     #[serde(default)]
     retry_failed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mpi_override: Option<u32>,
 }
 fn record_path(work: &Path) -> PathBuf {
     work.join(".epwflow/workflow.json")
@@ -90,7 +92,12 @@ fn save(work: &Path, r: &Record) -> Result<()> {
 fn fixed(work: &Path) -> Result<(Config, RunBinding)> {
     let b = RunBinding::load(work)?;
     b.verify()?;
-    let c = Config::load(&b.work_dir.join("input-init.toml"))?;
+    let mut c = Config::load(&b.work_dir.join("input-init.toml"))?;
+    if record_path(&b.work_dir).exists() {
+        if let Some(mpi) = load(&b.work_dir)?.mpi_override {
+            super::parallelism::apply(&mut c, mpi)?;
+        }
+    }
     Ok((c, b))
 }
 fn job_id() -> Result<u64> {
@@ -119,6 +126,7 @@ fn new_record(
         error: None,
         calculation_dir: None,
         retry_failed: false,
+        mpi_override: None,
     })
 }
 
@@ -213,8 +221,12 @@ pub fn start_phase(config: &Path, until: Boundary, submit: bool) -> Result<()> {
 }
 
 pub fn resume_phase(work: &Path, until: Boundary, submit: bool, resource: bool) -> Result<()> {
+    resume_phase_with_mpi(work, until, submit, resource, None)
+}
+
+pub fn resume_phase_with_mpi(work: &Path, until: Boundary, submit: bool, resource: bool, mpi: Option<u32>) -> Result<()> {
     require_phase(work, until, true)?;
-    resume(work, Some(until), submit, resource)
+    resume_with_mpi(work, Some(until), submit, resource, mpi)
 }
 
 pub fn execute_phase(work: &Path, attempt: &str, until: Boundary) -> Result<()> {
@@ -296,6 +308,10 @@ pub fn run_generated(work: &Path, until: Boundary) -> Result<()> {
     start_bound(&b.work_dir, until, false, extend)
 }
 pub fn resume(work: &Path, until: Option<Boundary>, submit: bool, resource: bool) -> Result<()> {
+    resume_with_mpi(work, until, submit, resource, None)
+}
+
+fn resume_with_mpi(work: &Path, until: Option<Boundary>, submit: bool, resource: bool, mpi: Option<u32>) -> Result<()> {
     ensure!(
         submit != resource,
         "required: resume 必须且只能选择 -s 或 -r"
@@ -329,14 +345,32 @@ pub fn resume(work: &Path, until: Option<Boundary>, submit: bool, resource: bool
             }
         }
     }
-    start_bound(&b.work_dir, boundary, submit, true)
+    start_bound_with_mpi(&b.work_dir, boundary, submit, true, mpi)
 }
 
 fn start_bound(work: &Path, until: Boundary, submit: bool, retry: bool) -> Result<()> {
-    let (cfg, b) = fixed(work)?;
+    start_bound_with_mpi(work, until, submit, retry, None)
+}
+
+fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool, mpi: Option<u32>) -> Result<()> {
+    let (mut cfg, b) = fixed(work)?;
+    if let Some(mpi) = mpi {
+        ensure!(retry && until == Boundary::Interpolation,
+            "input_conflict: --mpi 仅用于失败 Wannier/粗网格阶段的显式恢复");
+        let prior = load(work)?;
+        ensure!(prior.state == "failed" && !prior.completed.contains_key("wannier"),
+            "input_conflict: 活动或已交付粗网格的运行不能改变并行布局");
+        super::parallelism::apply(&mut cfg, mpi)?;
+    }
     let direct_job = if submit { None } else { Some(job_id()?) };
     let outcome = budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
         let _lock = store::Lock::acquire(&record_path(work))?;
+        let inherited_mpi = if record_path(work).exists() { load(work)?.mpi_override } else { None };
+        if mpi.is_some() {
+            let prior = load(work)?;
+            ensure!(prior.state == "failed" && !prior.completed.contains_key("wannier"),
+                "input_conflict: 运行已推进，不能改变并行布局");
+        }
         let calculation_dir = if retry && record_path(work).exists() {
             let previous = load(work)?;
             Some(
@@ -362,6 +396,7 @@ fn start_bound(work: &Path, until: Boundary, submit: bool, retry: bool) -> Resul
         r.calculation_dir =
             Some(calculation_dir.unwrap_or_else(|| work.join("calculations").join(&r.attempt_id)));
         r.retry_failed = retry;
+        r.mpi_override = mpi.or(inherited_mpi);
         save(work, &r)?;
         Ok((r, true))
     })?;
@@ -816,6 +851,6 @@ pub fn status(work: &Path, refresh: bool) -> Result<serde_json::Value> {
     }
     Ok(
         serde_json::json!({"schema_version":1,"workflow_status":r.state,"workflow_complete":r.state=="succeeded"&&r.until==Boundary::All,
-        "boundary_complete":r.state=="succeeded","until":r.until,"job_id":r.job_id,"attempt_id":r.attempt_id,"current_stage":r.current_stage,"error":r.error,"completed_stages":r.completed.keys().collect::<Vec<_>>() }),
+        "boundary_complete":r.state=="succeeded","until":r.until,"job_id":r.job_id,"attempt_id":r.attempt_id,"current_stage":r.current_stage,"error":r.error,"completed_stages":r.completed.keys().collect::<Vec<_>>(),"effective_mpi":cfg.resources.mpi,"mpi_override":r.mpi_override }),
     )
 }

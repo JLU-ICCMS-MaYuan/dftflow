@@ -61,6 +61,8 @@ impl Case {
 import pathlib,re,runpy,sys
 root=pathlib.Path({root})
 text=pathlib.Path(sys.argv[sys.argv.index('-inp')+1]).read_text()
+if (root/'fail-coarse').exists() and pathlib.Path(sys.argv[sys.argv.index('-inp')+1]).name == 'epw_coarse.in':
+    sys.exit(17)
 assert not any(re.search(r'\b'+name+r'\s*=',text) for name in ['dis_proj_min','dis_proj_max','dis_froz_proj'])
 name='epw_tc_io.py' if re.search(r'(?m)^\s*(?:liso|laniso)\s*=\s*\.true\.',text) else 'epw_native_io.py'
 runpy.run_path(str(root/name),run_name='__main__')
@@ -237,6 +239,178 @@ fn copy_results(source: &std::path::Path, target: &std::path::Path) {
             fs::copy(entry.path(), to).unwrap();
         }
     }
+}
+
+#[test]
+fn failed_coarse_can_change_mpi_without_repeating_qe_or_independent_references() {
+    let c = Case::new();
+    c.script(
+        "launcher",
+        &format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {}\nshift 2\nexec \"$@\"\n",
+            shell_quote(c.root.join("mpi-launches").to_str().unwrap())
+        ),
+    );
+    let input = c.root.join("inputepw.toml");
+    let mut cfg = config::Config::load(&input).unwrap();
+    cfg.resources.mpi = 16;
+    cfg.programs.launcher = vec![
+        c.root.join("launcher").to_string_lossy().into(),
+        "-np".into(),
+        "16".into(),
+    ];
+    cfg.programs.epw.args.extend(["-nk".into(), "16".into()]);
+    fs::write(&input, toml::to_string_pretty(&cfg).unwrap()).unwrap();
+    c.put("fail-coarse", "test failure");
+    c.accounting(Some(201));
+    success(c.cli(0, &["-s"], "mpi-phonon-submit"));
+    success(c.bash(
+        c.workflow()["script"]["path"].as_str().unwrap(),
+        Some(201),
+        "mpi-phonon",
+    ));
+    let calc = PathBuf::from(c.workflow()["calculation_dir"].as_str().unwrap());
+    let fixed = store::Identity::capture(&c.root.join("run/input-init.toml")).unwrap();
+    let binding = store::Identity::capture(&c.root.join("run/run-binding.json")).unwrap();
+    let original = config::Config::load(&fixed.path).unwrap();
+    let mut adjusted = original.clone();
+    epwflow::foundation::parallelism::apply(&mut adjusted, 8).unwrap();
+    let (identity, _) =
+        epwflow::foundation::parallelism::request_identity(&adjusted, &adjusted.programs.launcher)
+            .unwrap();
+    assert_eq!(
+        serde_json::to_value(&identity).unwrap(),
+        serde_json::to_value(&original).unwrap()
+    );
+    adjusted.qe.nscf.nbnd += 1;
+    assert!(epwflow::foundation::parallelism::request_identity(
+        &adjusted,
+        &adjusted.programs.launcher
+    )
+    .is_err());
+    c.accounting(Some(202));
+    success(c.cli(1, &["-s"], "mpi-wannier-submit"));
+    assert!(!c
+        .bash(
+            c.workflow()["script"]["path"].as_str().unwrap(),
+            Some(202),
+            "mpi-coarse-fail"
+        )
+        .status
+        .success());
+    assert_eq!(c.workflow()["current_stage"], "wannier");
+    assert_eq!(c.workflow()["state"], "failed");
+    let qe_completion = c.workflow()["completed"]["qe-data"].clone();
+    let references =
+        store::Identity::capture(&calc.join("quality-sources/reference.json")).unwrap();
+    let before = c.calls().0;
+    let submissions = fs::read_to_string(c.root.join("submissions")).unwrap();
+    for mpi in ["0", "9", "65"] {
+        assert!(!c
+            .cli(
+                1,
+                &["--resume", "-w", "run", "--mpi", mpi, "-s"],
+                "mpi-invalid"
+            )
+            .status
+            .success());
+    }
+    assert!(!c
+        .cli(
+            1,
+            &["--resume", "-w", "run", "--mpi", "8", "-s"],
+            "mpi-active-old-job"
+        )
+        .status
+        .success());
+    assert_eq!(
+        submissions,
+        fs::read_to_string(c.root.join("submissions")).unwrap()
+    );
+    c.accounting(Some(203));
+    fs::remove_file(c.root.join("fail-coarse")).unwrap();
+    success(c.cli(
+        1,
+        &["--resume", "-w", "run", "--mpi", "8", "-s"],
+        "mpi-resume-submit",
+    ));
+    assert_eq!(c.workflow()["mpi_override"], 8);
+    assert_eq!(c.workflow()["calculation_dir"], calc.to_str().unwrap());
+    assert!(fs::read_to_string(c.root.join("submissions"))
+        .unwrap()
+        .lines()
+        .last()
+        .unwrap()
+        .contains("--ntasks 8"));
+    let active_record = fs::read(c.root.join("run/.epwflow/workflow.json")).unwrap();
+    assert!(!c
+        .cli(
+            1,
+            &["--resume", "-w", "run", "--mpi", "4", "-s"],
+            "mpi-active-reject"
+        )
+        .status
+        .success());
+    assert_eq!(
+        active_record,
+        fs::read(c.root.join("run/.epwflow/workflow.json")).unwrap()
+    );
+    success(c.bash(
+        c.workflow()["script"]["path"].as_str().unwrap(),
+        Some(203),
+        "mpi-coarse-resume",
+    ));
+    assert_eq!(c.workflow()["state"], "succeeded");
+    assert_eq!(c.workflow()["completed"]["qe-data"], qe_completion);
+    fixed.verify().unwrap();
+    binding.verify().unwrap();
+    references.verify().unwrap();
+    for id in qe_completion["artifacts"].as_array().unwrap() {
+        serde_json::from_value::<store::Identity>(id.clone())
+            .unwrap()
+            .verify()
+            .unwrap();
+    }
+    let after = c.calls().0;
+    for role in ["ph", "dynmat"] {
+        assert_eq!(
+            before.lines().filter(|l| l.starts_with(role)).count(),
+            after.lines().filter(|l| l.starts_with(role)).count()
+        );
+    }
+    assert_eq!(
+        after.lines().filter(|l| *l == "pw").count(),
+        before.lines().filter(|l| *l == "pw").count() + 1,
+        "仅新增比较路径 NSCF；不得重做主链 SCF/NSCF 或独立电子参考"
+    );
+    assert!(fs::read_to_string(c.root.join("mpi-launches"))
+        .unwrap()
+        .lines()
+        .any(|l| l.starts_with("-np 8 ") && l.contains("-nk 8") && l.contains("epw_coarse.in")));
+    assert!(fs::read_dir(calc.join("native-attempts/history"))
+        .unwrap()
+        .any(|e| e
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("coarse-")));
+    c.accounting(Some(204));
+    success(c.cli(2, &["--resume", "-w", "run", "-s"], "mpi-third-inherits"));
+    assert_eq!(c.workflow()["mpi_override"], 8);
+    assert!(fs::read_to_string(c.root.join("submissions"))
+        .unwrap()
+        .lines()
+        .last()
+        .unwrap()
+        .contains("--ntasks 8"));
+    assert!(!c
+        .cli(
+            1,
+            &["--resume", "-w", "run", "--mpi", "4", "-s"],
+            "mpi-complete-coarse-reject"
+        )
+        .status
+        .success());
 }
 
 #[test]

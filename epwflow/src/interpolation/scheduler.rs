@@ -65,7 +65,8 @@ pub fn run_coarse_with_retry(
 }
 
 fn attempt_digest(cfg: &config::Config, launcher: &[String], sources: &[store::Identity], extra: &str) -> Result<String> {
-    Ok(store::hash_bytes(&serde_json::to_vec(&(cfg, launcher,
+    let (cfg, launcher) = crate::foundation::parallelism::request_identity(cfg, launcher)?;
+    Ok(store::hash_bytes(&serde_json::to_vec(&(&cfg, &launcher,
         store::Identity::capture(&cfg.programs.epw.path)?, sources, extra))?))
 }
 

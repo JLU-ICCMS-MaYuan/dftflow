@@ -93,6 +93,7 @@ struct Options {
     label: Option<String>,
     #[arg(long)]
     nodes: Option<u32>,
+    /// 预算预留或失败 Wannier 阶段恢复时的 MPI 数；恢复同步设置单 image pool 数。
     #[arg(long)]
     mpi: Option<u32>,
     #[arg(long)]
@@ -148,6 +149,8 @@ fn dispatch(phase: Phase, o: Options) -> Result<()> {
         "input_conflict: 只读、导入或准备操作不能同时执行/提交/恢复"
     );
     ensure!(!o.refresh || o.status, "required: --refresh 需要 --status");
+    ensure!(o.mpi.is_none() || o.budget.is_some() || (o.resume && phase == Phase::Wannier),
+        "input_conflict: --mpi 仅用于预算操作或 epw_wannier --resume");
     ensure!(
         !o.resume || o.submit || o.run,
         "required: --resume 需要 -s 或 -r"
@@ -283,7 +286,7 @@ fn dispatch(phase: Phase, o: Options) -> Result<()> {
         }
     } else {
         if o.resume {
-            return workflow::resume_phase(&work()?, phase.boundary(), o.submit, o.run);
+            return workflow::resume_phase_with_mpi(&work()?, phase.boundary(), o.submit, o.run, o.mpi);
         }
         if o.submit || o.run {
             return workflow::start_phase(&o.config, phase.boundary(), o.submit);
