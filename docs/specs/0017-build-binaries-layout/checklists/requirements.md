@@ -9,8 +9,8 @@
 - [x] CHK007 是否处理迁移测试程序可能被作业/脚本引用的风险？证据：`spec.md` FR-006，`research.md` 决策 3，Tasks T002/T009。
 - [x] CHK008 FR/SC 是否映射到实施任务？证据：`tasks.md`「需求覆盖」表逐项映射 FR/SC。
 - [x] CHK009 是否区分本地 Spec 与线上 Issue 状态？证据：`issue-draft.md`、`spec.md` 明确 Gitee Issue 未创建，未声称远程链接验证完成。
-- [ ] CHK010 是否有真实构建、测试、安装和 Linux 发布结果证明实现通过？[实施门槛，SC-001～005；当前仅 Spec 阶段，待实施后记录]
+- [ ] CHK010 是否有真实构建、测试、安装和 Linux 发布结果证明实现通过？[实施门槛，SC-001～005；US3 已实现，其余构建/迁移未完成]
 - [ ] CHK011 线上 Issue 是否已创建且远程 Issue→Spec 双向链接已验证？[外部协作缺口；当前环境没有 Gitee CLI/连接器，待可用时处理]
 - [x] CHK012 是否逐字保留追加 PATH 需求并覆盖家族目录、重复加载和持久生效？证据：`spec.md` 原话、US3、FR-009/010、SC-006/007；`research.md` 决策 4；`tasks.md` T016/T017。
 - [x] CHK013 是否提供明确的手动配置及作用边界？证据：`quickstart.md`「从任意目录使用命令」给出七家族配置、Bash/Zsh 启动文件、命令来源检查和批处理边界，不自动修改用户环境。
-- [x] CHK014 PATH 示例是否经过真实 shell 验证并说明证据边界？证据：`quickstart.md`「本轮验证记录」记录 Bash/Zsh 各 55 入口、重复加载、原路径保留、临时 HOME 与当前安装范围；持久化集成保留为未完成。
+- [x] CHK014 PATH 入口是否经过真实 shell 验证并说明证据边界？证据：`scripts/tests/env.sh` 与 `acceptance.md` 记录 Bash/Zsh 各 55 入口、重复加载、含空格的仓库位置、原路径保留、临时 HOME 新终端加载；没有修改真实启动文件。

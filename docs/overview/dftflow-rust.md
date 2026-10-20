@@ -70,6 +70,19 @@ bash scripts/install-bin.sh /path/to/built/bin "$PWD/bin" /path/to/qf-gen-dyn0
 
 本次分组安装不改 PATH 或 `~/.local/bin`。[install-current.sh](../../scripts/install-current.sh) 保留为显式兼容方式，其默认位置仍是 `~/.local/share/dftflow/current/bin`。历史程序、已生成脚本和 EPW 身份记录不会自动迁移；已有记录绑定程序的绝对路径、链接目标和哈希，不改写这些记录绕过校验。历史清理方法见 [清理指南](../specs/0011-build-history-cleanup/quickstart.md)。
 
+### 在任意目录调用程序
+
+在 Bash/Zsh 中加载 [scripts/env.sh](../../scripts/env.sh)，脚本从自身位置定位仓库 `bin/`，将七个公开家族目录加入并导出 `PATH`，保留原有路径，重复加载不重复添加：
+
+```bash
+source "/path/to/dftflow/scripts/env.sh"
+command -v epw_phonon qeflow qe_scf
+```
+
+把脚本路径替换为实际仓库位置即可；脚本路径含空格也受支持。`PATH` 不递归搜索子目录，不加入缓存和测试目录。需要新交互终端自动加载时，由用户将同一 `source` 行加入 Bash 的 `~/.bashrc` 或 Zsh 的 `~/.zshrc`；Bash 登录 shell 的配置仍需加载相应文件。加载脚本不会编辑这些启动文件。批处理作业应显式加载环境或使用绝对路径。
+
+环境加载回归覆盖 Bash/Zsh、仓库外 55 个真实入口、重复加载、原有路径保留、含空格的仓库位置、缺失 `bin` 时的失败保护以及临时 HOME 中新交互终端加载。详见 [0017 验收](../specs/0017-build-binaries-layout/acceptance.md)。
+
 登录节点与计算节点 glibc 不匹配时，项目提供 [package-native-runtime.sh](../../scripts/linux/package-native-runtime.sh)，打包一致的加载器与运行库并用 patchelf 修正制品。该方式依赖共享可读路径，不代表跨任意 Linux 的通用静态包；不通过修改系统库或全局 LD_LIBRARY_PATH 来切换。
 
 ## 已留档的重新编译事实

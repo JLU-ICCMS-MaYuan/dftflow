@@ -14,6 +14,8 @@
 
 > 而且对于 bin 目录，我建议export到环境变量里面，这样就可以方便任何位置使用了。
 
+> 继续
+
 ## 问题与目标
 
 仓库已有 `scripts/install-bin.sh`，能把扁平构建输入分组复制到仓库 `bin/`；但主要 workspace 构建仍通过 Cargo 配置输出到 `target/`，独立 `qf-gen-dyn0` 说明仍使用其独立 `target/release/`，测试目录中也存在 EPW 可执行副本。统一构建入口、可交付程序目录和测试脚本引用，避免以测试案例目录保存可交付 DFTFlow 二进制。
@@ -54,7 +56,7 @@
 - [ ] 更新 `docs/overview/dftflow-rust.md`、`docs/overview/tools/qf-gen-dyn0.md`、`tools/qf-gen-dyn0/README.md`、`docs/manual-testing.md`。
 - [x] 新增 `docs/specs/0017-build-binaries-layout/`（本地文档已创建，验收证据待实施补充）。
 - [ ] 更新根 `README.md` 构建和路径示例。
-- [ ] 在使用说明中提供 `PATH` 配置、Bash/Zsh 持久化方法及仓库外调用验证。
+- [x] 在使用说明中提供 `PATH` 配置、Bash/Zsh 持久化方法及仓库外调用验证（README、`scripts/env.sh`，见 [本批验收](acceptance.md)）。
 - [ ] 核对 `docs/overview/README.md` 是否需要入口变更；若仅更新已有构建页链接则记录不变理由。
 
 ## 草案确认
@@ -62,3 +64,5 @@
 用户答复“确认，按此草案继续”，确认本地 Issue 草案与 Spec 需求基线，包括“仅 DFTFlow 自身产物”的范围、根目录分家族组织、测试 harness 与 Cargo 中间产物的边界，以及不变更安装目的地。此确认授权完成文档 Spec，不授权构建实现、移动测试产物或修改安装状态。
 
 用户随后追加 `PATH` 要求，本轮据其原话同步需求、设计与验证指南。配置示例仅在隔离子 shell 验证，不修改用户实际环境或启动文件。
+
+用户再要求“继续”后，已交付可 source 的 `scripts/env.sh`、README 说明和 Bash/Zsh 真实入口回归。US3 已验收；本地 0017 的构建、打包、历史二进制迁移尚未完成，不关闭整体需求。

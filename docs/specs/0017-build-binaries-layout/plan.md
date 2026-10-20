@@ -12,7 +12,7 @@
 
 ## 技术上下文
 
-追加 `PATH` 使用设计：将七个产品家族的绝对路径加入命令搜索路径，提供保留原有路径、可重复加载的 Bash/Zsh 示例。使用说明覆盖当前会话、新交互终端、同名命令定位及批处理环境边界；不修改用户启动文件。
+追加 `PATH` 使用设计：`scripts/env.sh` 自动定位仓库，将七个产品家族的绝对路径加入命令搜索路径，保留原有路径并支持重复加载。使用说明覆盖当前会话、新交互终端、同名命令定位及批处理环境边界；不修改用户启动文件。
 
 - **语言与工具**：Rust 2021、Cargo workspace、Bash；Linux musl 构建使用 Docker。
 - **主要入口**：`scripts/build-native.sh`、`scripts/linux/build.sh`、独立工具 `tools/qf-gen-dyn0`。
@@ -31,13 +31,15 @@
 | 0011 当前安装约束 | 覆盖固定 `current/bin`，不累积历史版本 | 适配输入源，不改变安装目的地 | 待实现 |
 | `.gitignore` | 本机产物不进入 Git | 保留 `/bin/` 忽略并检查状态 | 待实现 |
 | 现有 grouped installer | 54 个兼容入口和家族映射稳定 | 复用已有映射和安装回归 | 待实现 |
-| 用户追加 PATH 要求 | 任意目录按命令名调用，重复加载不重复追加 | 七家族绝对路径配置、仓库外命令解析与帮助启动 | Bash/Zsh 示例已验证；README 集成待完成 |
+| 用户追加 PATH 要求 | 任意目录按命令名调用，重复加载不重复追加 | 七家族绝对路径配置、仓库外命令解析与帮助启动 | 已通过，见 `acceptance.md` |
 
 ## 源代码结构
 
 ```text
 scripts/build-native.sh                 # 统一根目录 target/cache 与归档
 scripts/install-bin.sh                  # 现有家族分组及核验
+scripts/env.sh                          # Bash/Zsh 环境加载入口
+scripts/tests/env.sh                    # 真实家族程序的环境回归
 scripts/install-current.sh              # 固定安装来源适配
 scripts/linux/build.sh                  # musl 构建与发行包来源
 tools/qf-gen-dyn0/README.md             # 独立工具构建示例
@@ -59,7 +61,7 @@ test_auto/MgB2/local_run/010-public-pbe # 现存 EPW 副本及引用，先核验
 | FR-004 / SC-004 | current 安装与 Linux packaging | 隔离安装测试、musl 包校验 |
 | FR-005/006 / SC-003 | EPW 测试脚本及运行目录迁移 | `rg` 引用扫描、ELF 文件清点、脚本回归 |
 | FR-007/008 / SC-005 | `.gitignore` 与稳定路径写入 | `git status`、二次构建前后路径/哈希 |
-| FR-009/010 / SC-006/007 | `quickstart.md` 配置示例与 README 使用说明 | 隔离 Bash/Zsh 重复加载、仓库外 `command -v` 和 `--help` |
+| FR-009/010 / SC-006/007 | `scripts/env.sh` 与 README/quickstart 使用说明 | `scripts/tests/env.sh`，隔离 Bash/Zsh 重复加载、仓库外调用与新终端加载 |
 
 ## 阶段与依赖
 

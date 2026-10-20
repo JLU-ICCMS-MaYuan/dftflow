@@ -1,6 +1,6 @@
 # 构建目录迁移验证指南
 
-本指南定义实施后的端到端检查流程。文档阶段不运行构建，也不移动现有二进制。
+本指南定义端到端检查流程。构建/迁移部分仍为待实施目标；PATH 环境脚本已实现，当前可按「从任意目录使用命令」加载。
 
 ## 前置条件
 
@@ -56,24 +56,15 @@ git status --short
 
 ## 从任意目录使用命令
 
-`PATH` 不递归搜索子目录，因此需要加入七个家族目录。以下配置适用于 Bash/Zsh；其他机器将第一行替换为本机仓库根目录下 `bin` 的绝对路径。
+`PATH` 不递归搜索子目录，因此需要加入七个家族目录。在 Bash/Zsh 中 source 环境脚本，脚本会从自身位置定位仓库；其他机器将脚本路径替换为实际位置。
 
 ```bash
-_dftflow_bin="/data/home/mayuan/code/dftflow/bin"
-for _dftflow_family in tools scflow wannierflow vaspflow substitutionflow qeflow epwflow; do
-    _dftflow_dir="$_dftflow_bin/$_dftflow_family"
-    case ":${PATH-}:" in
-        *":$_dftflow_dir:"*) ;;
-        *) PATH="$_dftflow_dir${PATH:+:$PATH}" ;;
-    esac
-done
-export PATH
-unset _dftflow_bin _dftflow_family _dftflow_dir
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
 ```
 
-首次加载时，新加入的家族目录优先于原有 `PATH`，后续重复加载不重复添加；不把 `.build` 或测试目录加入搜索范围。已存在于原 `PATH` 中的家族目录保留原位置。此配置可直接粘贴到当前终端执行。
+首次加载时，新加入的家族目录优先于原有 `PATH`，后续重复加载不重复添加；不把 `.build` 或测试目录加入搜索范围。已存在于原 `PATH` 中的家族目录保留原位置。此命令可直接粘贴到当前终端执行；直接使用 `bash scripts/env.sh` 会提示需要 source 并退出失败，因为子进程不能修改父 shell 的环境。
 
-如需新终端持久生效，将上述同一配置段手动放入所用 shell 的启动文件一次：Bash 通常为 `~/.bashrc`，Zsh 为 `~/.zshrc`。Bash 登录 shell 还需其实际使用的 `~/.bash_profile`、`~/.bash_login` 或 `~/.profile` 加载同一配置或 `~/.bashrc`。新开对应交互终端，或在当前 shell 加载刚编辑的文件：
+如需新终端持久生效，将上述同一 source 行手动放入所用 shell 的启动文件一次：Bash 通常为 `~/.bashrc`，Zsh 为 `~/.zshrc`。Bash 登录 shell 还需其实际使用的 `~/.bash_profile`、`~/.bash_login` 或 `~/.profile` 加载同一配置或 `~/.bashrc`。新开对应交互终端，或在当前 shell 加载刚编辑的文件：
 
 ```bash
 # Bash 用户加载自己编辑的配置文件
@@ -103,9 +94,17 @@ source "$HOME/.zshrc"
 
 ### 本轮验证记录（2026-10-20）
 
+以下为环境脚本交付前的配置示例验证记录。后续真实脚本与新终端回归见 [本批验收](acceptance.md)，历史记录不替代当前脚本验收。
+
 从本文提取 PATH 配置，在仓库外临时目录分别使用不加载用户配置的 Bash（`--noprofile --norc`）和 Zsh（`-f`）运行；初始环境仅提供 `/usr/bin:/bin` 作为命令搜索路径，并使用临时 HOME 隔离用户配置。
 
 - 两种 shell 各 55 个已安装产品及兼容入口全部通过 `command -v` 路径核验与 `--help`，均解析至对应家族目录。
 - 配置连续加载两次后 `PATH` 完全一致；七个家族目录各出现一次，原 `/usr/bin:/bin` 保留。
 - 本目录 7 篇文档的相对链接及 8 段 Bash/Zsh 示例语法检查通过。
 - 没有更改真实 shell 启动文件。README 集成、新终端持久生效验证和其余构建/迁移任务仍由 Tasks 跟踪，本记录仅证明配置示例及当前安装入口在隔离 shell 下可用。
+
+当前脚本回归命令：
+
+```bash
+bash "scripts/tests/env.sh"
+```

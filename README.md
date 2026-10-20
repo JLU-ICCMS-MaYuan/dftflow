@@ -44,13 +44,15 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 ### 在任意目录直接使用命令
 
-本机使用 Bash，将下面一行加入 `~/.bashrc`，并在当前终端执行一次；后续终端会自动加载：
+在 Bash 或 Zsh 的当前终端加载环境脚本，即可从任意目录使用命令：
 
 ```bash
-export PATH="$(printf '%s:' "/data/home/mayuan/code/dftflow/bin/"{epwflow,qeflow,scflow,substitutionflow,vaspflow,wannierflow,tools})$PATH"
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
 ```
 
-这一行将七个模块目录加入 `PATH`，放在旧入口前面。`PATH` 不会递归搜索子目录，因此只加入仓库 `bin/` 无法找到其中的程序。其他机器将前缀改成实际仓库的 `bin/` 路径；无需复制程序或修改科学计算配置。
+脚本从自身位置定位仓库，将七个模块目录加入并导出 `PATH`；重复加载不会重复添加，原有路径保留。`PATH` 不递归搜索子目录，因此需要分别加入家族目录。其他机器把上面的脚本位置改为实际路径即可；构建缓存和测试目录不加入 `PATH`。
+
+如需新终端自动生效，将同一行手动加入所用 shell 的 `~/.bashrc` 或 `~/.zshrc`。Bash 登录 shell 还需其登录配置加载 `~/.bashrc` 或同一配置行。脚本只影响当前 shell 及其后代，不自动修改启动文件。完整步骤见 [PATH 配置与验证](docs/specs/0017-build-binaries-layout/quickstart.md#从任意目录使用命令)。
 
 ```bash
 command -v epw_phonon epw_wannier epw_superconductivity qe_scf
