@@ -11,3 +11,6 @@
 - [x] CHK009 是否区分本地 Spec 与线上 Issue 状态？证据：`issue-draft.md`、`spec.md` 明确 Gitee Issue 未创建，未声称远程链接验证完成。
 - [ ] CHK010 是否有真实构建、测试、安装和 Linux 发布结果证明实现通过？[实施门槛，SC-001～005；当前仅 Spec 阶段，待实施后记录]
 - [ ] CHK011 线上 Issue 是否已创建且远程 Issue→Spec 双向链接已验证？[外部协作缺口；当前环境没有 Gitee CLI/连接器，待可用时处理]
+- [x] CHK012 是否逐字保留追加 PATH 需求并覆盖家族目录、重复加载和持久生效？证据：`spec.md` 原话、US3、FR-009/010、SC-006/007；`research.md` 决策 4；`tasks.md` T016/T017。
+- [x] CHK013 是否提供明确的手动配置及作用边界？证据：`quickstart.md`「从任意目录使用命令」给出七家族配置、Bash/Zsh 启动文件、命令来源检查和批处理边界，不自动修改用户环境。
+- [x] CHK014 PATH 示例是否经过真实 shell 验证并说明证据边界？证据：`quickstart.md`「本轮验证记录」记录 Bash/Zsh 各 55 入口、重复加载、原路径保留、临时 HOME 与当前安装范围；持久化集成保留为未完成。

@@ -12,6 +12,8 @@
 
 ## 技术上下文
 
+追加 `PATH` 使用设计：将七个产品家族的绝对路径加入命令搜索路径，提供保留原有路径、可重复加载的 Bash/Zsh 示例。使用说明覆盖当前会话、新交互终端、同名命令定位及批处理环境边界；不修改用户启动文件。
+
 - **语言与工具**：Rust 2021、Cargo workspace、Bash；Linux musl 构建使用 Docker。
 - **主要入口**：`scripts/build-native.sh`、`scripts/linux/build.sh`、独立工具 `tools/qf-gen-dyn0`。
 - **测试**：`cargo test --workspace`、EPW 契约回归、`scripts/tests/*.sh`、帮助启动、Linux 静态包离线验证。
@@ -29,6 +31,7 @@
 | 0011 当前安装约束 | 覆盖固定 `current/bin`，不累积历史版本 | 适配输入源，不改变安装目的地 | 待实现 |
 | `.gitignore` | 本机产物不进入 Git | 保留 `/bin/` 忽略并检查状态 | 待实现 |
 | 现有 grouped installer | 54 个兼容入口和家族映射稳定 | 复用已有映射和安装回归 | 待实现 |
+| 用户追加 PATH 要求 | 任意目录按命令名调用，重复加载不重复追加 | 七家族绝对路径配置、仓库外命令解析与帮助启动 | Bash/Zsh 示例已验证；README 集成待完成 |
 
 ## 源代码结构
 
@@ -56,13 +59,15 @@ test_auto/MgB2/local_run/010-public-pbe # 现存 EPW 副本及引用，先核验
 | FR-004 / SC-004 | current 安装与 Linux packaging | 隔离安装测试、musl 包校验 |
 | FR-005/006 / SC-003 | EPW 测试脚本及运行目录迁移 | `rg` 引用扫描、ELF 文件清点、脚本回归 |
 | FR-007/008 / SC-005 | `.gitignore` 与稳定路径写入 | `git status`、二次构建前后路径/哈希 |
+| FR-009/010 / SC-006/007 | `quickstart.md` 配置示例与 README 使用说明 | 隔离 Bash/Zsh 重复加载、仓库外 `command -v` 和 `--help` |
 
 ## 阶段与依赖
 
 1. 基础：验证所有构建入口和引用清单；定义唯一产品清单及 staging 契约。
 2. US1：实现 workspace/独立工具统一缓存根与产品归档，适配安装和 Linux 打包。
 3. US2：核验作业与引用，迁出测试目录程序，更新脚本与说明。
-4. Polish：空缓存双构建、完整测试、帮助启动、Linux 发布与文档检查。
+4. US3：提供手动 PATH 配置、持久化指引和仓库外命令验证。
+5. 完善：空缓存双构建、完整测试、帮助启动、Linux 发布与文档检查。
 
 ## 复杂度说明
 
