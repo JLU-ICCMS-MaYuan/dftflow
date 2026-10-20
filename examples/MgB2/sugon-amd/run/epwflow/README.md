@@ -22,6 +22,21 @@ ls -l "$CFG" "$RUN_DIR/POSCAR" "$RUN_DIR/pp"
 "$EPW_BIN/epw_superconductivity" --help
 ```
 
+这些变量只是给路径起一个方便引用的名字。例如，后续写 `"$CFG"`，Shell 会将它替换为配置文件的完整路径；赋值本身不修改配置文件，也不启动计算。
+
+| 变量或命令 | 含义 |
+| --- | --- |
+| `REPO` | DFTFlow 仓库根目录 |
+| `RUN_DIR` | 本例的 `run/` 目录，存放共用的 POSCAR 和赝势 |
+| `EPW_DIR` | 本例的 `epwflow/` 目录，存放 README 和配置 |
+| `EPW_BIN` | 存放三个受测 EPW 工作流程序的目录；后续用完整路径调用，避免误用其他版本 |
+| `CFG` | 本例配置文件 `epwinput.toml` 的完整路径；`-c "$CFG"` 指定读取它 |
+| `W` | 本次运行的 `epwflow/work/` 目录；这里的赋值供命令引用，实际工作目录仍由配置中的 `work_dir` 决定 |
+| `LEDGER` | 共享预算账本路径，供预算查询命令使用 |
+| `cd "$EPW_DIR"` | 将当前终端的工作目录切换到本例 `epwflow/` |
+| `ls -l ...` | 查看配置、结构和赝势路径是否存在及其文件信息 |
+| 三条 `--help` | 查看三个程序的用法，确认入口可以启动 |
+
 结构文件使用 `/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/POSCAR`，赝势目录使用 `/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/pp`。两者均位于本目录的上一级 `run/`，无需复制到 `epwflow/`。
 
 `EPW_BIN` 指向当前已有、供登录／计算节点使用的运行库兼容打包制品，并与本目录原有生成脚本的程序路径一致；它不是默认安装。若该目录已清理，先重新核对受测制品位置，不直接换成 PATH 中的旧程序。帮助输出只能确认入口可启动，不能证明 QE／EPW 在计算节点已通过运行检查。
@@ -199,16 +214,37 @@ squeue -u "$USER"
 
 `--refresh` 查询调度记录并结算已知终态，可能更新运行记录和账本；不运行科学计算。继续下一阶段前须看到对应边界 `boundary_complete: true`、`workflow_status: "succeeded"`，并核对清单与产物。
 
-取得实际科学目录的方法如下；`workflow.json` 在首次登记执行后才存在：
+### 第一阶段完成后：读取实际计算目录
+
+第一阶段完成后，若新开了终端或不确定变量是否还在，可以直接执行下面整段命令。它只切换终端目录、设置路径变量和读取运行记录，不创建目录、不移动数据、不重新计算，也不提交作业。`workflow.json` 在首次登记执行后才存在：
 
 ```bash
-cat "$W/.epwflow/workflow.json"
+cd "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow"
+
+EPW_BIN="/data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/010-public-pbe/bin-window-contract"
+CFG="$PWD/epwinput.toml"
+W="$PWD/work"
+
+CALC=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["calculation_dir"])' "$W/.epwflow/workflow.json")
+printf '%s\n' "$CALC"
 ```
 
-将其中 `calculation_dir` 的绝对路径赋给 `CALC`，不要照抄别次运行的尝试号：
+| 命令 | 具体作用 |
+| --- | --- |
+| `cd ".../run/epwflow"` | 进入本例目录；后面的 `$PWD` 才会指向这里 |
+| `EPW_BIN=".../bin-window-contract"` | 记住受测程序目录，后续通过 `"$EPW_BIN/epw_wannier"` 调用第二阶段程序 |
+| `CFG="$PWD/epwinput.toml"` | `$PWD` 是当前目录的绝对路径；拼接后得到本例配置文件的完整路径 |
+| `W="$PWD/work"` | 记住工作目录路径，后续从中读取状态和生成脚本；不会创建 `work/` |
+| `CALC=$(python ...)` | 从本次运行记录中读取 `calculation_dir`，把实际计算目录的绝对路径存入变量 `CALC` |
+| `printf '%s\n' "$CALC"` | 将读到的路径显示在终端，末尾换行；不写入文件 |
+
+Python 这一行中，`-c` 表示执行后面的短代码；`sys.argv[1]` 是传入的 `workflow.json` 文件路径；`json.load(...)` 读取该文件，`["calculation_dir"]` 取出实际计算目录。外层的 `$(...)` 将 Python 打印的路径交给 `CALC`。因此这里的 Python 只负责读 JSON，不运行科学计算。
+
+`W` 和 `CALC` 的区别是：`W` 指向整个 `work/`，`CALC` 指向其中某一次实际计算的目录，即 `work/calculations/<尝试号>/`。尝试号是程序自动生成的目录标识，无需手动填写；恢复运行时也可能沿用已有计算目录，所以直接读取 `calculation_dir`，不要用其他编号猜路径。变量是当前终端中的路径简称，新开终端后重新执行上述设置即可；它们不会写入 `.bashrc` 或改变全局程序安装。
+
+确认 `printf` 显示的是本例 `work/calculations/` 下已有的绝对路径；若 Python 报错或路径为空，先核对 `W` 和运行记录，不能继续把空的 `CALC` 用于检查。随后检查第一阶段交付数据：
 
 ```bash
-CALC="此处替换为本次 calculation_dir 的绝对路径"
 "$EPW_BIN/epw_phonon" --check -w "$CALC" --json
 ```
 
@@ -216,7 +252,7 @@ CALC="此处替换为本次 calculation_dir 的绝对路径"
 
 ### 第二阶段：Wannier、粗网格和独立质量
 
-仅在第一阶段完成后执行：
+仅在第一阶段完成且数据检查通过后执行；如果刚打开终端，先执行上面的变量设置段：
 
 ```bash
 "$EPW_BIN/epw_wannier" -c "$CFG"
@@ -224,6 +260,8 @@ cat "$W/.epwflow/generated/interpolation.sh"
 "$EPW_BIN/epw_wannier" -c "$CFG" -s
 "$EPW_BIN/epw_wannier" --status -w "$W" --refresh --json
 ```
+
+上面四条命令依次是：生成第二阶段脚本；显示脚本供核对；用 `-s` 实际提交第二阶段 Slurm 作业；查询并刷新阶段状态。最后一条不会等待作业结束，作业运行期间可再次执行以查看进度。
 
 该阶段执行原生 Wannier／粗网格、同源独立参考和质量核验，并生成比较数据和诊断图；不执行细网格 EPC 或 α²F。检查固定窗与实际 `.wout` 四界、收敛、有限性和独立参考误差。失败时保留诊断，不能因图像存在或 Slurm 为 COMPLETED 就启动第三阶段。
 
