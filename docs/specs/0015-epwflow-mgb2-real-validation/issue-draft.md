@@ -281,3 +281,14 @@ Documentation Impact：更新 0012 设计／契约／任务／验收、0008 验�
 20、30、40 K 的 iso/aniso 六点均已实际正常结束且收敛，无 NaN；作业 1318744／1318779、源数据保护和 28 节点秒结算见[固定温度点验收](temperature-points-validation.md)。本次验收满足，原完整 Tc 科学目标已移出本次范围，不声称 Tc 已定位。
 
 Documentation Impact：已更新对应 Spec、任务、验收和算例 README；本次只运行原生单点、未改产品功能，故不将任务结果写成 Overview 新能力。线上 Gitee 仍由用户管理，本轮未关闭线上 Issue 或推送。
+
+
+## 2026-10-21：算例操作说明与有条件清理
+
+用户原话：
+
+> 我希望你能简化/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow/README.md 里面的内容，只包含对所执行命令的说明和他的作用。其他内容都不要记录。还有目录结构的介绍。每次计算结束后都会得到什么内容。还有一些关于关键参数的提醒。
+
+> 如果你确保我可以按照 README.md内容跑下来全流程。那么你就把/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow 之前跑出来的目录文件都删了。我来亲自一个个跑一次。
+
+需求结论：README 只保留操作命令及作用、目录结构、阶段产物和关键参数提醒。清理以能够按 README 跑完目标流程为前提；当前公开第 8 步仍执行 Tc 搜索，已完成的六个温度单点未接入该入口，因此本轮不清理计算数据，不把原生单点完成记为公开全流程通过。沿用本项追踪，不新增线上 Issue。
