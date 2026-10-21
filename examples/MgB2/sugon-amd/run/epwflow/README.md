@@ -14,16 +14,71 @@ epw_phonon -c "epwinput.toml" --check --json
 
 **每次 `-s` 最多提交一个原生任务。等待作业结束，再重复同一条命令，直至该阶段核验完成，才执行下一步。** 一个阶段可能包含多次原生计算；只执行一次提交命令不会自动跑完该阶段。
 
-| 步骤 | 命令 | 作用 | 完成后的主要内容 |
-| --- | --- | --- | --- |
-| 1 | `epw_phonon -c "epwinput.toml" --stage scf -s` | 自洽计算 | `1.qe-scf/`：SCF 日志、电荷密度、QE 保存数据 |
-| 2 | `epw_phonon -c "epwinput.toml" --stage nscf -s` | 完整均匀 k 网格非自洽计算 | `2.qe-nscf/`：本征值、波函数及 NSCF 日志 |
-| 3 | `epw_phonon -c "epwinput.toml" --stage electronic -s` | QE 电子能带和总 DOS | `3.qe-electronic/`：能带、DOS 数据及后处理结果 |
-| 4 | `epw_phonon -c "epwinput.toml" --stage phonon -s` | PH、q2r、matdyn 声子计算及后处理 | `4.qe-phonon-nosplit/`：动力学矩阵、响应势、声子色散／DOS、供 EPW 使用的 `save/` |
-| 5 | `epw_wannier -c "epwinput.toml" --stage wannier -s` | Wannier 拟合及电子后处理 | `5.epw-wannier/`：Wannier 输入／日志／变换文件，电子能带和 DOS 图 |
-| 6 | `epw_wannier -c "epwinput.toml" --stage coarse -s` | 粗网格电子声子耦合及 QE／EPW 常规对比 | `6.epw-coarse/`：粗网格矩阵元、比较数据与图 |
-| 7 | `epw_superconductivity -c "epwinput.toml" --stage fine -s` | 细网格插值、α²F 和 λ | `7.epw-fine/`：细网格矩阵元、谱文件及交付清单 |
-| 8 | `epw_superconductivity -c "epwinput.toml" --stage superconductivity -s` | 按当前配置求解 iso／aniso 并搜索 Tc | `8.epw-superconductivity/`：逐模式／温度／初值的输入、日志和 Δ／Z；搜索完成后才有有效 Tc 区间与最终结果包 |
+### 第 1 步：自洽计算
+
+```bash
+epw_phonon -c "epwinput.toml" --stage scf -s
+```
+
+运行完成后，`1.qe-scf/` 保存 SCF 日志、电荷密度和 QE 保存数据。
+
+### 第 2 步：完整均匀 k 网格非自洽计算
+
+```bash
+epw_phonon -c "epwinput.toml" --stage nscf -s
+```
+
+运行完成后，`2.qe-nscf/` 保存本征值、波函数和 NSCF 日志。
+
+### 第 3 步：QE 电子能带和总 DOS
+
+```bash
+epw_phonon -c "epwinput.toml" --stage electronic -s
+```
+
+运行完成后，`3.qe-electronic/` 保存能带、DOS 数据及后处理结果。
+
+### 第 4 步：声子计算及后处理
+
+```bash
+epw_phonon -c "epwinput.toml" --stage phonon -s
+```
+
+执行 PH、q2r 和 matdyn。运行完成后，`4.qe-phonon-nosplit/` 保存动力学矩阵、响应势、声子色散和 DOS；其中 `save/` 保存供 EPW 使用的数据。
+
+### 第 5 步：Wannier 拟合及电子后处理
+
+```bash
+epw_wannier -c "epwinput.toml" --stage wannier -s
+```
+
+运行完成后，`5.epw-wannier/` 保存 Wannier 输入、日志、变换文件，以及电子能带和 DOS 图。
+
+### 第 6 步：粗网格电子声子耦合及常规对比
+
+```bash
+epw_wannier -c "epwinput.toml" --stage coarse -s
+```
+
+运行完成后，`6.epw-coarse/` 保存粗网格矩阵元、QE／EPW 比较数据与图。
+
+### 第 7 步：细网格插值、α²F 和 λ
+
+```bash
+epw_superconductivity -c "epwinput.toml" --stage fine -s
+```
+
+运行完成后，`7.epw-fine/` 保存细网格矩阵元、谱文件及交付清单。
+
+### 第 8 步：iso／aniso 求解及 Tc 搜索
+
+```bash
+epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
+```
+
+按当前配置求解 iso／aniso 并搜索 Tc。`8.epw-superconductivity/` 保存逐模式、温度和初值的输入、日志及 Δ／Z；搜索完成后才有有效 Tc 区间与最终结果包。
+
+### 查看作业与工作区状态
 
 查看提交命令给出的作业号及当前工作区状态：
 
