@@ -213,6 +213,11 @@ pub(crate) fn dispatch_command(command: EpwCommand) -> Result<()> {
         EpwCommand::Delivery { command } => crate::delivery::cli::run(command),
         EpwCommand::Collect { work, output } => {
             let result=crate::delivery::collect_results(&work,output.as_deref())?;
+            if result.join("comparison/manifest.json").is_file() {
+                if let Some(stats) = crate::delivery::comparison::load(&result.join("comparison"))?.differences {
+                    stats.print();
+                }
+            }
             println!("results: {}",result.display());
             Ok(())
         },
@@ -223,7 +228,10 @@ pub(crate) fn dispatch_command(command: EpwCommand) -> Result<()> {
         },
         EpwCommand::Results { command: ResultsCommand::Check { results, json } } => {
             let report=crate::delivery::check_results(&results)?;
-            if json {status::print_json(&report);} else {println!("comparison_complete: {}\nquality_status: {}\nworkflow_complete: {}\nfigures_verified: {}",report["comparison_complete"],report["quality_status"],report["workflow_complete"],report["figures_verified"]);}
+            if json {status::print_json(&report);} else {println!("comparison_complete: {}\nworkflow_complete: {}\nfigures_verified: {}",report["comparison_complete"],report["workflow_complete"],report["figures_verified"]);}
+            if let Some(stats) = report.get("differences").filter(|v| !v.is_null()) {
+                if !json { serde_json::from_value::<crate::interpolation::differences::Differences>(stats.clone())?.print(); }
+            }
             Ok(())
         },
     }

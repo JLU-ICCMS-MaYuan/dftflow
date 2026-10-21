@@ -48,7 +48,7 @@ impl Case {
             include_str!("fixtures/epw_native_io.py"),
         );
         c.put("epw_tc_io.py", include_str!("fixtures/epw_tc_io.py"));
-        for kind in ["pw", "ph", "q2r", "matdyn", "dynmat"] {
+        for kind in ["pw", "ph", "q2r", "matdyn"] {
             c.script(
                 &format!("{kind}.x"),
                 &format!(
@@ -118,19 +118,6 @@ runpy.run_path(str(root/name),run_name='__main__')
         cfg.interpolation.q_grid = [2; 3];
         cfg.interpolation.spectral_points = 4;
         cfg.interpolation.phonon_smearings_mev = vec![0.5];
-        cfg.interpolation.quality.k_points_crystal = vec![
-            [0.; 3],
-            [0.25, 0., 0.],
-            [0.5, 0., 0.],
-            [0.75, 0., 0.],
-            [0., 0.25, 0.],
-            [0., 0.5, 0.],
-        ];
-        cfg.interpolation.quality.q_points_crystal =
-            vec![[0.; 3], [0.25, 0., 0.], [0.5, 0., 0.], [0.75, 0., 0.]];
-        cfg.interpolation.quality.reference_manifest = None;
-        cfg.interpolation.quality.phonon_max_cm1 = 50.;
-        cfg.interpolation.quality.phonon_rms_cm1 = 20.;
         cfg.comparison = Some(config::Comparison {
             points_per_edge: 2,
             ..Default::default()
@@ -746,7 +733,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     let key=stages::scientific_key(&cfg,Step::Wannier).unwrap();
     c.accounting(Some(203));
     success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(203),"numbered-coarse"));
-    assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),qe_calls.lines().filter(|s|*s=="pw").count()+2); // 仅独立电子参考与路径参考。
+    assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),qe_calls.lines().filter(|s|*s=="pw").count()+1); // 仅常规 bands 路径，不再有抽样参考 NSCF。
     assert_eq!(wan_hash,store::hash_file(&c.root.join("run/5.epw-wannier/scf.ukk")).unwrap());
     for suffix in ["bvec", "mmn"] {
         let file = format!("scf.{suffix}");
@@ -820,34 +807,34 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
 }
 
 #[test]
-fn numbered_quality_warning_continues_to_native_fine_and_both_solvers_but_rejects_damage() {
+fn numbered_large_differences_continue_to_native_fine_and_both_solvers_but_reject_damage() {
     use epwflow::foundation::{layout, stages::{self, Step}};
     let c = Case::numbered();
-    c.put("epw-failure", "quality");
+    c.put("epw-failure", "large-difference");
     c.accounting(Some(201));
     let coarse = c.numbered_cli(1, &["--stage", "coarse", "-r"], Some(201), "warning-coarse");
-    assert!(String::from_utf8_lossy(&coarse.stderr).contains("quality_warning:"));
+    assert!(!String::from_utf8_lossy(&coarse.stderr).contains("quality_warning:"));
     success(coarse);
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
     let manifest = layout::path(&cfg.work_dir, "wannier/manifest.json");
     let value: Value = store::read(&manifest).unwrap();
-    assert_eq!(value["quality"]["status"], "warning");
+    assert!(value.get("quality").is_none());
     assert!(stages::reusable(&cfg, Step::Coarse).unwrap());
-    let report = layout::path(&cfg.work_dir, "quality-report.json");
-    let before = store::Identity::capture(&report).unwrap();
-    let quality: Value = store::read(&report).unwrap();
-    assert_eq!(quality["passed"], false);
-    assert_eq!(quality["electron"]["passed"], false);
-    assert_eq!(quality["phonon"]["passed"], false);
+    assert!(!Step::Coarse.directory(&cfg).join("quality-sources").exists());
+    assert!(!cfg.work_dir.join("quality-report.json").exists());
+    let comparison = epwflow::interpolation::comparison_data::load(
+        &layout::path(&cfg.work_dir, "interpolation/comparison"),
+    ).unwrap();
+    assert!(comparison.differences.unwrap().phonon_path.maximum.unwrap().absolute_difference > 50.);
     let calls = c.calls();
     c.accounting(Some(202));
     success(c.numbered_cli(2, &["--stage", "fine", "-r"], Some(202), "warning-fine"));
-    assert_eq!(calls.0, c.calls().0, "告警续算不能重算 QE／参考");
+    assert_eq!(calls.0, c.calls().0, "续算不能重算 QE");
     let value: Value = store::read(&layout::path(&cfg.work_dir, "interpolation/manifest.json")).unwrap();
-    assert_eq!(value["quality"]["status"], "warning");
+    assert!(value.get("quality").is_none());
     assert!(!value["spectra"].as_array().unwrap().is_empty());
-    // 数值告警不能使篡改原始质量数据变得可接受。
-    let band = Step::Coarse.directory(&cfg).join("band.eig");
+    // 大差值可续算，篡改原生数据仍须拒绝。
+    let band = Step::Coarse.directory(&cfg).join("epwdata.fmt");
     let saved = fs::read(&band).unwrap();
     fs::write(&band, "tampered").unwrap();
     let before_calls = c.calls();
@@ -857,7 +844,6 @@ fn numbered_quality_warning_continues_to_native_fine_and_both_solvers_but_reject
     fs::write(&band, saved).unwrap();
     c.accounting(Some(204));
     success(c.numbered_cli(2, &["--stage", "superconductivity", "--resume", "-r"], Some(204), "warning-both-solvers"));
-    before.verify().unwrap();
     assert_eq!(calls.0, c.calls().0);
     let modes: Value = store::read(&Step::Superconductivity.directory(&cfg).join("manifest.json")).unwrap();
     assert!(modes["native_modes"].get("iso").is_some());
@@ -866,10 +852,11 @@ fn numbered_quality_warning_continues_to_native_fine_and_both_solvers_but_reject
     let results = epwflow::delivery::check_results(
         &Step::Superconductivity.directory(&cfg).join("results"),
     ).unwrap();
-    assert_eq!(results["quality_status"], "failed");
-    assert_eq!(results["quality_warning"], true);
+    assert!(results.get("quality_status").is_none());
+    assert!(results.get("quality_warning").is_none());
+    assert!(results.get("differences").is_some());
     assert_eq!(results["workflow_complete"], true,
-        "执行完成与数值质量必须分开，告警不能令最终交付失败");
+        "差值大小不改变执行完成状态");
 }
 
 #[test]
@@ -1013,6 +1000,22 @@ fn numbered_import_verifies_legacy_source_and_materializes_without_qe() {
     success(c.cli(0,&["-c","inputepw.toml"],"legacy-source-generate"));
     success(c.bash(c.root.join("run/epw-state/generated/qe-data.sh"),Some(201),"legacy-source-qe"));
     c.accounting(None);
+    // 模拟真实历史契约：旧配置带质量小节，其字节指纹仍严格绑定。
+    let historical = c.root.join("run/input-init.toml");
+    let mut text = fs::read_to_string(&historical).unwrap();
+    text.push_str("\n[interpolation.quality]\nreference_manifest = 'removed-reference.json'\nelectron_max_ev = 0.05\n");
+    fs::write(&historical, text).unwrap();
+    assert!(config::Config::load(&historical).is_err(), "普通配置不接受已删除的小节");
+    let binding_path = c.root.join("run/run-binding.json");
+    let mut binding: Value = store::read(&binding_path).unwrap();
+    binding["config_sha256"] = store::hash_file(&historical).unwrap().into();
+    let removed_program=c.root.join("historical-dynmat.x");
+    fs::write(&removed_program,"historical program bytes").unwrap();
+    binding["programs"]["dynmat"]=serde_json::to_value(store::Identity::capture(&removed_program).unwrap()).unwrap();
+    fs::remove_file(&removed_program).unwrap();
+    store::write(&binding_path, &binding).unwrap();
+    fs::create_dir_all(c.root.join("run/quality-sources")).unwrap();
+    c.put("run/quality-sources/unused-reference", "historical bytes");
     let source=c.root.join("run");let before=epwflow::qe_data::save::files(&source).unwrap();let calls=c.calls();
     c.numbered_change(|cfg|cfg.work_dir=c.root.join("numbered"));
     success(c.numbered_cli(0,&["--import-work",source.to_str().unwrap()],None,"numbered-import"));
@@ -1020,23 +1023,25 @@ fn numbered_import_verifies_legacy_source_and_materializes_without_qe() {
     let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
     for step in [Step::Scf,Step::Nscf,Step::Phonon] {assert!(stages::reusable(&cfg,step).unwrap());}
     assert!(Step::Phonon.directory(&cfg).join("scf.phdos.dat").is_file());
+    assert!(!cfg.work_dir.join("quality-sources").exists());
+    assert!(!cfg.work_dir.join("6.epw-coarse/quality-sources").exists());
     success(c.numbered_cli(0,&["--import-work",source.to_str().unwrap()],None,"numbered-import-repeat"));
     assert_eq!(before,epwflow::qe_data::save::files(&source).unwrap());
 }
 
 #[test]
-fn numbered_failed_coarse_resume_changes_resources_and_preserves_qe_and_references() {
+fn numbered_failed_coarse_resume_changes_resources_and_preserves_qe() {
     let c=Case::numbered();c.accounting(Some(201));
     success(c.numbered_cli(1,&["--stage","wannier","-r"],Some(201),"fit"));
     c.put("fail-coarse","test");c.accounting(Some(202));
     assert!(!c.numbered_cli(1,&["--stage","coarse","-r"],Some(202),"failed-coarse").status.success());
     let calls=c.calls().0;
-    let reference=store::Identity::capture(&c.root.join("run/6.epw-coarse/quality-sources/reference.json")).unwrap();
+    let reference=store::Identity::capture(&c.root.join("run/epw-state/qe-data/manifest.json")).unwrap();
     c.script("launcher","#!/bin/sh\nshift 2\nexec \"$@\"\n");
     c.numbered_change(|cfg|{cfg.resources.mpi=2;cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"2".into()];cfg.programs.epw.args[2]="2".into();});
     fs::remove_file(c.root.join("fail-coarse")).unwrap();c.accounting(Some(203));
     success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(203),"coarse-recovered"));
-    reference.verify().unwrap();assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),calls.lines().filter(|s|*s=="pw").count()+1,"只新增路径比较，已成功 QE 和独立参考保留");
+    reference.verify().unwrap();assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),calls.lines().filter(|s|*s=="pw").count()+1,"只新增路径比较，已成功 QE 保留");
 }
 
 
@@ -1166,7 +1171,6 @@ fn numbered_dos_failure_public_resubmit_preserves_pw_and_bands() {
     direct_submit::dos_failure_preserves_verified_pw_and_bands();
 }
 
-// 0025：真实公开进程边界验证可见状态、删除重建与显式旧状态迁移。
 #[test]
 fn numbered_deleted_wannier_directory_rebuilds_without_repeating_upstream() {
     use epwflow::foundation::stages::{self, Step};
@@ -1337,9 +1341,6 @@ fn numbered_migration_rejects_activity_and_retains_a_deleted_stage_as_pending() 
     success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "migration-deleted-submit"));
 }
 
-#[path="support/direct_submit.rs"]
-mod direct_submit;
-
 #[test]
 fn numbered_old_wannier_receipt_rebuilds_unbound_velocity_files_and_rejects_tampering() {
     use epwflow::foundation::stages::{self, Completion, Step};
@@ -1372,7 +1373,7 @@ fn numbered_old_wannier_receipt_rebuilds_unbound_velocity_files_and_rejects_tamp
 }
 
 #[test]
-fn numbered_reference_retry_after_overwriting_the_driver_keeps_native_results() {
+fn numbered_coarse_retry_after_overwriting_the_driver_keeps_qe_results() {
     use std::io::Write;
     let c = Case::numbered();
     let driver = c.root.join("mutable-epw-wannier");
@@ -1388,15 +1389,13 @@ fn numbered_reference_retry_after_overwriting_the_driver_keeps_native_results() 
     let initial = run(201, "driver-before-upgrade");
     assert!(!initial.status.success());
     assert!(String::from_utf8_lossy(&initial.stderr).contains("EPW 退出状态 Some(17)"));
-    let refs = c.root.join("run/6.epw-coarse/quality-sources/reference.json");
-    let request = refs.with_file_name("request.json");
-    let before = (store::hash_file(&refs).unwrap(), store::hash_file(&request).unwrap(), c.calls().0);
+    let before = c.calls().0;
     fs::OpenOptions::new().append(true).open(&driver).unwrap().write_all(b"upgraded-driver-marker").unwrap();
     c.accounting(Some(202));
     let retry = run(202, "driver-after-upgrade");
     assert!(!retry.status.success());
     assert!(String::from_utf8_lossy(&retry.stderr).contains("EPW 退出状态 Some(17)"), "{}", String::from_utf8_lossy(&retry.stderr));
-    assert_eq!(before, (store::hash_file(&refs).unwrap(), store::hash_file(&request).unwrap(), c.calls().0));
+    assert_eq!(before, c.calls().0);
 }
 
 #[test]
@@ -1473,3 +1472,6 @@ fn numbered_native_retry_preserves_open_logs_and_ignores_legacy_log_inputs_only(
     assert!(String::from_utf8_lossy(&corrupt.stderr).contains("scf.dvscf_q2"));
     assert_eq!(before, c.calls().0);
 }
+
+#[path = "support/direct_submit.rs"]
+mod direct_submit;

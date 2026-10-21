@@ -9,11 +9,9 @@ use epwflow::foundation::store;
 use epwflow::interpolation::adapter;
 use epwflow::interpolation::cli::InterpolationCommand;
 use epwflow::interpolation::coarse;
-use epwflow::interpolation::compare;
 use epwflow::interpolation::epw_config::EpwConfig;
 use epwflow::interpolation::fine;
-use epwflow::interpolation::manifest::{InterpolationManifest, QualityReport, Validation};
-use epwflow::interpolation::quality;
+use epwflow::interpolation::manifest::{InterpolationManifest, Validation};
 use epwflow::interpolation::reuse;
 use epwflow::interpolation::scheduler;
 use epwflow::interpolation::spectral;
@@ -124,7 +122,6 @@ spectral_points = 4
 fsthick_ev = 1.0
 eps_acoustic_cm1 = 0.1
 fermi_source = "f2"
-quality = {{ k_points_crystal = [[0.0, 0.0, 0.0]], q_points_crystal = [[0.0, 0.0, 0.0]], energy_window_ev = [-2.0, 2.0], electron_max_ev = 0.01, electron_rms_ev = 0.001, phonon_max_cm1 = 10.0, phonon_rms_cm1 = 1.0 }}
 
 [superconductivity]
 mode = "iso"
@@ -284,7 +281,7 @@ fn epw_config_renders_and_requires_energy_reference() {
     let win = ec.wannier90_input().unwrap();
     assert!(win.contains("num_wann = 2") && !win.contains("energy_reference"));
     let coarse_in = ec.epw_coarse_input("out").unwrap();
-    assert!(coarse_in.contains("epwread = .false.") && coarse_in.contains("band_plot = .true."));
+    assert!(coarse_in.contains("epwread = .false.") && coarse_in.contains("band_plot = .false."));
     let fine_in = ec.epw_fine_input("out", 1.0).unwrap();
     assert!(fine_in.contains("epwread = .true."));
 }
@@ -337,24 +334,6 @@ fn wannier_convergence_parsing() {
     assert!(wannier::parse_wannier_log(&wout).is_err());
 }
 
-// ---------- FR-006/009：质量与容差 ----------
-
-#[test]
-fn quality_pass_and_fail() {
-    let ok = quality::evaluate(&[100.0, 200.0], &[101.0, 202.0], "QeZero").unwrap();
-    assert_eq!(ok.status, "valid");
-    assert_eq!(quality::evaluate(&[100.0, 200.0], &[180.0, 200.0], "QeZero").unwrap().status, "warning");
-    // 缺参考无效。
-    assert!(quality::evaluate(&[], &[], "QeZero").is_err());
-}
-
-#[test]
-fn compare_error_stats_tolerances() {
-    let (mx, rms) = compare::error_stats(&[100.0, 200.0], &[102.0, 198.0]);
-    assert!((mx - 2.0).abs() < 1e-9);
-    assert!(rms > 0.0 && rms <= 2.0001);
-}
-
 // ---------- FR-008：α²F / λ 与低频规则 ----------
 
 #[test]
@@ -375,14 +354,13 @@ fn interpolation_manifest_load_version() {
     let dir = std::env::temp_dir().join(format!("epwflow-im-{}", store::token()));
     std::fs::create_dir_all(&dir).unwrap();
     let m = InterpolationManifest {
-        schema_version: 1,
+        schema_version: 2,
         run_id: "f3".into(),
         f2_digest: "x".into(),
         wannier_digest: "y".into(),
         coarse: None,
         fine: None,
         spectra: vec![],
-        quality: None,
         mode_readiness: Default::default(),
         validation: Validation {
             status: "valid".into(),
@@ -408,7 +386,7 @@ fn interpolation_reuse_rejects_unvalidated_manifest() {
     let coarse_file = src.join("coarse.ephmat");
     std::fs::write(&coarse_file, "ephmat").unwrap();
     let m = InterpolationManifest {
-        schema_version: 1,
+        schema_version: 2,
         run_id: "src".into(),
         f2_digest: "x".into(),
         wannier_digest: "y".into(),
@@ -429,7 +407,6 @@ fn interpolation_reuse_rejects_unvalidated_manifest() {
         }),
         fine: None,
         spectra: vec![],
-        quality: None,
         mode_readiness: Default::default(),
         validation: Validation {
             status: "valid".into(),
@@ -450,7 +427,6 @@ fn interpolation_reuse_rejects_unvalidated_manifest() {
 
 // 避免未使用告警。
 #[allow(dead_code)]
-fn _use_quality(_q: QualityReport) {}
 #[allow(dead_code)]
 fn _use_coarse(_c: coarse::CoarseResult) {}
 #[allow(dead_code)]

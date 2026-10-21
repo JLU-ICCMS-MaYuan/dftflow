@@ -1,4 +1,4 @@
-//! F3 来源重验及数值告警后，在同一 F1 分配内执行原生两模式搜索。
+//! F3 来源重验后，在同一 F1 分配内执行原生两模式搜索。
 use super::{engine::Engine, manifest::SuperconductivityManifest, source};
 use crate::{
     foundation::{
@@ -32,10 +32,9 @@ pub fn run_with_retry(
     let path = crate::foundation::layout::path(&work, "interpolation/manifest.json");
     let f3 = InterpolationManifest::load(&path)?;
     ensure!(
-        f3.validation.all_passed() && f3.quality.as_ref().is_some_and(|q| q.usable()),
-        "data_invalid: 插值数据或质量证据无效，F4 不得放行"
+        f3.validation.all_passed(),
+        "data_invalid: 插值数据无效，F4 不得放行"
     );
-    crate::interpolation::quality_binding::check_for_execution(cfg, &work)?;
     let input = source::bind(&work, cfg, &f3)?;
     ensure!(
         backend == Backend::Local,
@@ -54,7 +53,6 @@ pub fn run_with_retry(
             store::hash_file(&path)? == input.interpolation_digest,
             "input_conflict: F3 清单改变"
         );
-        crate::interpolation::quality_binding::check_for_execution(cfg, &work)?;
         Ok(())
     };
     before()?;
@@ -96,7 +94,7 @@ pub fn run_with_retry(
     Ok(result)
 }
 
-/// 发布 F4 结构化交付；生产调用者必须先完成质量门和预算检查。
+/// 发布 F4 结构化交付；生产调用者必须先完成来源和预算检查。
 pub fn publish(
     root: &Path,
     run_id: String,

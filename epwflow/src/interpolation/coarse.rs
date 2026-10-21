@@ -121,40 +121,11 @@ pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
         &epw_cfg.window_selection()?,
     )?;
     epw_cfg.require_window_support()?;
-    epw_cfg.write_quality_points(&dir)?;
     fs::write(
         dir.join("epw_coarse.in"),
         if crate::foundation::layout::enabled(work) {epw_cfg.native_input(super::epw_config::NativeStage::ReuseWannier,"./out","./save",epw_cfg.cfg.interpolation.phonon_smearings_mev[0])?}else{epw_cfg.epw_coarse_input("./out")?},
     )?;
     Ok(())
-}
-
-/// 隔离重读已验证的原生粗网格；只生成质量点输出，保留原 Wannier 结果。
-/// 调用方仍须核对来源的物理参数和规范，不能据此替代 F2 导入绑定。
-pub fn reread_quality(
-    epw_cfg: &EpwConfig,
-    source: &Path,
-    source_out: &Path,
-    work: &Path,
-    launcher: &[String],
-    backend: Backend,
-) -> Result<CoarseResult> {
-    let cfg = epw_cfg.cfg;
-    let structure = crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
-    let wout = source.join(format!("{}.wout", cfg.qe.prefix));
-    super::wannier::check_native(&wout, cfg.wannier.num_wann as usize)?;
-    let original = store::Identity::capture(&wout)?;
-    let dir = crate::foundation::layout::path(&work, "coarse");
-    restart::stage(source, source_out, &cfg.qe.prefix,
-        cfg.wannier.num_wann as usize, structure.cell.positions.len() * 3, &dir)?;
-    fs::copy(&wout, dir.join(wout.file_name().unwrap()))?;
-    original.verify()?;
-    epw_cfg.write_quality_points(&dir)?;
-    fs::write(dir.join("epw_coarse.in"), epw_cfg.native_input(
-        super::epw_config::NativeStage::RestartQuality, "./out", "./save",
-        cfg.interpolation.phonon_smearings_mev[0])?)?;
-    run_epw(epw_cfg, &dir, "epw_coarse.in", launcher, backend)?;
-    collect_coarse(work, epw_cfg)
 }
 
 pub fn collect_coarse(work: &Path, epw_cfg: &EpwConfig) -> Result<CoarseResult> {
@@ -177,8 +148,6 @@ pub fn collect_coarse(work: &Path, epw_cfg: &EpwConfig) -> Result<CoarseResult> 
             "coarse_wannier".into(),
             dir.join(format!("{}.wout", cfg.qe.prefix)),
         ),
-        ("coarse_electron_quality".into(), dir.join("band.eig")),
-        ("coarse_phonon_quality".into(), dir.join("phband.freq")),
     ]);
     super::wannier::check_native(
         &dir.join(format!("{}.wout", cfg.qe.prefix)),

@@ -43,27 +43,7 @@ pub struct Spectrum {
     pub cutoff_ev: f64,
 }
 
-/// 插值质量报告：参考频率 vs 插值频率（FR-006/009）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct QualityReport {
-    pub points: usize,
-    pub energy_reference: String,
-    pub max_error: f64,
-    pub rms_error: f64,
-    pub coverage: f64,
-    pub thresholds: BTreeMap<String, f64>,
-    pub status: String,
-}
-
-impl QualityReport {
-    /// valid 表示达到理想目标；warning 表示可继续但未达到目标。
-    pub fn usable(&self) -> bool {
-        matches!(self.status.as_str(), "valid" | "warning")
-    }
-}
-
-/// F3 交付清单：f2_digest、wannier_digest、粗/细/谱/质量与模式就绪（FR-012）。
+/// F3 交付清单：f2_digest、wannier_digest、粗/细/谱与模式就绪（FR-012）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InterpolationManifest {
@@ -74,7 +54,6 @@ pub struct InterpolationManifest {
     pub coarse: Option<CoarseData>,
     pub fine: Option<FineData>,
     pub spectra: Vec<Spectrum>,
-    pub quality: Option<QualityReport>,
     pub mode_readiness: BTreeMap<String, bool>,
     pub validation: Validation,
 }
@@ -82,7 +61,7 @@ pub struct InterpolationManifest {
 impl InterpolationManifest {
     pub fn load(path: &Path) -> Result<Self> {
         let m: InterpolationManifest = store::read(path)?;
-        if m.schema_version != 1 {
+        if m.schema_version != 2 {
             bail!(
                 "data_invalid: 插值清单 schema_version={} 不支持",
                 m.schema_version

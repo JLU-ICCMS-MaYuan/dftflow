@@ -59,8 +59,7 @@ pub struct Wannier {
 data!(Convergence{max_iterations:u32,tolerance_angstrom2:f64,window_iterations:u32});
 data!(Comparison{points_per_edge:u32,electronic_sigma_ev:f64,phonon_sigma_cm1:f64});
 impl Default for Comparison {fn default()->Self{Self{points_per_edge:20,electronic_sigma_ev:0.1,phonon_sigma_cm1:10.0}}}
-data!(Interpolation{k_grid:[u32;3],q_grid:[u32;3],electron_smearing:Smearing,degaussw_ev:f64,phonon_smearings_mev:Vec<f64>,spectral_points:u32,fsthick_ev:f64,eps_acoustic_cm1:f64,fermi_source:FermiSource,quality:Quality});
-data!(Quality{k_points_crystal:Vec<[f64;3]>,q_points_crystal:Vec<[f64;3]>,energy_window_ev:[f64;2],electron_max_ev:f64,electron_rms_ev:f64,phonon_max_cm1:f64,phonon_rms_cm1:f64,reference_manifest:Option<PathBuf>});
+data!(Interpolation{k_grid:[u32;3],q_grid:[u32;3],electron_smearing:Smearing,degaussw_ev:f64,phonon_smearings_mev:Vec<f64>,spectral_points:u32,fsthick_ev:f64,eps_acoustic_cm1:f64,fermi_source:FermiSource});
 data!(Superconductivity{mode:Mode,mu_star:f64,frequency_cutoff_ev:f64,max_iterations:u32,convergence_relative:f64,mixing_beta:f64,mixing_history:u32,initial_gaps_mev:[f64;2],initial_shape:f64,gap_temperatures_k:Vec<f64>,spectrum_index:u32,iso:Option<Tc>,aniso:Option<Tc>});
 data!(Tc{min_k:f64,max_k:f64,precision_k:f64,max_solves:u32,eigen_margin:f64,normal_gap_mev:f64,super_gap_mev:f64});
 
@@ -92,10 +91,19 @@ impl Tc {fn validate(&self,f:&str)->Result<()>{
     ensure!(self.normal_gap_mev<self.super_gap_mev,"configuration: {f}: 能隙阈值必须分开");Ok(())
 }}
 impl Config {
-    pub fn load(path:&Path)->Result<Self>{
+    pub fn load(path:&Path)->Result<Self>{Self::load_impl(path,false)}
+    /// 仅历史主科学数据导入允许读取已废弃的小节；不恢复旧执行能力。
+    pub(crate) fn load_imported(path:&Path)->Result<Self>{Self::load_impl(path,true)}
+    fn load_impl(path:&Path,historical:bool)->Result<Self>{
         let path=paths::absolute(&std::env::current_dir()?,path)?;
         let raw=fs::read_to_string(&path).with_context(||format!("configuration: 无法读取 {}",path.display()))?;
-        let mut c:Self=toml::from_str(&raw).context("configuration: TOML 字段/类型错误")?;
+        let mut value:toml::Value=toml::from_str(&raw).context("configuration: TOML 字段/类型错误")?;
+        if historical {
+            if let Some(section)=value.get_mut("interpolation").and_then(toml::Value::as_table_mut) {
+                section.remove("quality");
+            }
+        }
+        let mut c:Self=value.try_into().context("configuration: TOML 字段/类型错误")?;
         c.validate()?;
         c.resolve(path.parent().context("configuration: 配置缺少父目录")?)?;
         let marker=c.work_dir.join("epw-state/layout.json");
@@ -152,14 +160,6 @@ impl Config {
         positive(i.degaussw_ev,"interpolation.degaussw_ev")?;positive(i.fsthick_ev,"interpolation.fsthick_ev")?;finite_nonnegative(i.eps_acoustic_cm1,"interpolation.eps_acoustic_cm1")?;
         ensure!(i.spectral_points>=2&&!i.phonon_smearings_mev.is_empty(),"configuration: interpolation.spectral_points/phonon_smearings_mev: 谱网格或展宽缺失");
         for (j,x) in i.phonon_smearings_mev.iter().enumerate(){positive(*x,"interpolation.phonon_smearings_mev")?;ensure!(!i.phonon_smearings_mev[..j].contains(x),"configuration: interpolation.phonon_smearings_mev: 重复");}
-        let quality=&i.quality;
-        interval(quality.energy_window_ev,"interpolation.quality.energy_window_ev")?;
-        ensure!(quality.energy_window_ev[0]<=-i.fsthick_ev&&quality.energy_window_ev[1]>=i.fsthick_ev,"configuration: interpolation.quality.energy_window_ev: 未覆盖 Fermi 窗口");
-        for (n,pts) in [("k_points_crystal",&quality.k_points_crystal),("q_points_crystal",&quality.q_points_crystal)] {
-            ensure!(!pts.is_empty()&&pts.iter().flatten().all(|v|v.is_finite()),"configuration: interpolation.quality.{n}: 验证点缺失或非有限");
-        }
-        for (n,x) in [("electron_max_ev",quality.electron_max_ev),("electron_rms_ev",quality.electron_rms_ev),("phonon_max_cm1",quality.phonon_max_cm1),("phonon_rms_cm1",quality.phonon_rms_cm1)]{positive(x,&format!("interpolation.quality.{n}"))?;}
-        ensure!(quality.electron_rms_ev<=quality.electron_max_ev&&quality.phonon_rms_cm1<=quality.phonon_max_cm1,"configuration: interpolation.quality: RMS 超出最大阈值");
         let s=&self.superconductivity;
         finite_nonnegative(s.mu_star,"superconductivity.mu_star")?;
         for (n,x) in [("frequency_cutoff_ev",s.frequency_cutoff_ev),("convergence_relative",s.convergence_relative),("mixing_beta",s.mixing_beta),("initial_shape",s.initial_shape)]{positive(x,&format!("superconductivity.{n}"))?;}
@@ -188,7 +188,6 @@ impl Config {
         }
         if let Some(p)=self.programs.launcher.first_mut(){*p=paths::command(base,p)?.to_string_lossy().into_owned();}
         if let Some(p)=&mut self.programs.environment_script {*p=paths::existing(base,p,"programs.environment_script",false)?;}
-        if let Some(p)=&mut self.interpolation.quality.reference_manifest {*p=paths::existing(base,p,"interpolation.quality.reference_manifest",false)?;}
         self.budget.ledger=paths::destination(&paths::absolute(base,&self.budget.ledger)?)?;
         // 输入不得在后续要由本运行拥有的工作树内；防止准备与复制相互覆盖。
         for p in std::iter::once(&self.structure).chain(self.pseudos.values()) {

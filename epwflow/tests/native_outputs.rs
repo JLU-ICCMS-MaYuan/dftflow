@@ -1,6 +1,6 @@
 //! 0015：原生 EPW 输出的格式、来源与完整覆盖检查。
 
-use epwflow::interpolation::native::{self, NativeBands, NativeSpectrum};
+use epwflow::interpolation::native::{self, NativeSpectrum};
 use std::{fs, process::Command};
 
 const TABLE: &str =
@@ -87,46 +87,6 @@ fn matdyn_path_ignores_only_unused_weight_and_checks_all_physical_records() {
     }
 }
 
-fn bands(values: Vec<f64>) -> NativeBands {
-    NativeBands {
-        points_cartesian: vec![[0.; 3]],
-        values: vec![values],
-    }
-}
-
-#[test]
-fn quality_does_not_hide_missing_band_or_reuse_one_state_twice() {
-    let r = bands(vec![8.0, 8.01]);
-    let good = bands(vec![1., 8.001, 8.011, 20.]);
-    let q = native::electronic_quality(&r, &good, [7., 11.], 0.05, 0.02).unwrap();
-    assert!(q.passed);
-    assert_eq!(q.reference_states, 2);
-    let missing = bands(vec![1., 8.001, 20.]);
-    let q = native::electronic_quality(&r, &missing, [7., 11.], 0.05, 0.02).unwrap();
-    assert!(!q.passed);
-    assert!(q.max_error_ev > 5.);
-    assert!(native::electronic_quality(&r, &bands(vec![8.]), [7., 11.], 0.05, 0.02).is_err());
-}
-
-#[test]
-fn quality_checks_coordinates_full_window_and_common_energy_zero() {
-    let r = bands(vec![8., 10.65]);
-    let mut fit = bands(vec![8., 19.]);
-    assert!(
-        !native::electronic_quality(&r, &fit, [7., 11.], 0.05, 0.02)
-            .unwrap()
-            .passed
-    );
-    fit.points_cartesian[0] = [0.1, 0., 0.];
-    assert!(native::electronic_quality(&r, &fit, [7., 11.], 0.05, 0.02).is_err());
-    assert!(
-        !native::electronic_quality(&r, &bands(vec![9., 11.65]), [7., 11.], 0.05, 0.02)
-            .unwrap()
-            .passed
-    );
-    assert!(native::electronic_quality(&r, &bands(vec![f64::NAN]), [7., 11.], 0.05, 0.02).is_err());
-}
-
 #[test]
 fn native_cli_checks_actual_files_and_reports_unverified_science() {
     let root = std::env::temp_dir().join(format!(
@@ -171,7 +131,6 @@ fn native_cli_checks_actual_files_and_reports_unverified_science() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["workflow_status"], "native_epc_only");
     assert_eq!(v["workflow_complete"], false);
-    assert_eq!(v["interpolation_quality"], "unverified");
     assert_eq!(v["eliashberg"], "unverified");
     assert_eq!(v["automatic_chain"], "unverified");
     assert_eq!(v["spectrum"], "mgb2.a2f");
@@ -256,7 +215,7 @@ fn mori_fsr_parameters_use_native_coarse_and_fine_grid_contracts() {
         .with_species(&["Mg".into(), "B".into()])
         .unwrap();
     let coarse = ec
-        .native_input(NativeStage::CoarseQuality, "./tmp", "../phonon/save", 0.5)
+        .native_input(NativeStage::Coarse, "./tmp", "../phonon/save", 0.5)
         .unwrap();
     assert_eq!(field(&coarse, "prefix"), "'mgb2'");
     assert_eq!(field(&coarse, "nk1"), "6");
@@ -272,7 +231,7 @@ fn mori_fsr_parameters_use_native_coarse_and_fine_grid_contracts() {
             && !coarse.contains("energy_reference")
             && !coarse.contains("seedname")
     );
-    assert_eq!(field(&coarse, "band_plot"), ".true.");
+    assert_eq!(field(&coarse, "band_plot"), ".false.");
     assert_eq!(field(&coarse, "ephwrite"), ".false.");
     let fine = ec.epw_fine_input("./tmp", 0.5).unwrap();
     for (n, v) in [
@@ -320,203 +279,24 @@ fn native_windows_require_bound_fermi_and_reject_fortran_truncation() {
     assert!((field(&input, "dis_froz_max").parse::<f64>().unwrap() - 10.0).abs() < 1e-12,
         "相对覆盖也必须受上游态数上限约束");
     assert!(ec
-        .native_input(NativeStage::CoarseQuality, "./tmp", &"a".repeat(100), 0.5)
+        .native_input(NativeStage::Coarse, "./tmp", &"a".repeat(100), 0.5)
         .is_err());
     assert!(ec
         .native_input(
-            NativeStage::CoarseQuality,
+            NativeStage::Coarse,
             "./tmp",
             "bad\n prefix = 'other'",
             0.5
         )
         .is_err());
     let input = ec
-        .native_input(NativeStage::CoarseQuality, "./tmp", "../a'b", 0.5)
+        .native_input(NativeStage::Coarse, "./tmp", "../a'b", 0.5)
         .unwrap();
     assert_eq!(field(&input, "dvscf_dir"), "'../a''b'");
     cfg.wannier.frozen_window_ev = Some([0., 8.8]);
     assert!(cfg.validate().is_err(), "两种冻结能窗不能同时指定");
 }
 
-#[test]
-fn diagnostic_points_include_all_fixed_q_without_changing_fermi_window() {
-    use epwflow::interpolation::epw_config::EpwConfig;
-    let root = std::env::temp_dir().join(format!(
-        "native-points-{}",
-        epwflow::foundation::store::token()
-    ));
-    fs::create_dir(&root).unwrap();
-    let mut cfg = mori_config();
-    cfg.interpolation.quality.q_points_crystal =
-        vec![[0.; 3], [1.0 / 12.0, 0., 0.], [1.0 / 6.0, 0., 1.0 / 6.0]];
-    let epw = EpwConfig::from_config(&cfg)
-        .unwrap()
-        .with_bands(&[vec![-4., 0., 1., 2., 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21.]])
-        .unwrap()
-        .with_species(&["Mg".into(), "B".into()])
-        .unwrap()
-        .with_fermi(7.5)
-        .unwrap();
-    epw.write_quality_points(&root).unwrap();
-    assert_eq!(
-        fs::read_to_string(root.join("selecq.fmt")).unwrap(),
-        "3\n3\n1 2 3\n"
-    );
-    let q = fs::read_to_string(root.join("qpoints.dat")).unwrap();
-    assert!(q.starts_with("3 crystal\n"));
-    let input = epw.epw_coarse_input("./tmp").unwrap();
-    assert_eq!(field(&input, "selecqread"), ".true.");
-    let fit = epw.native_input(
-        epwflow::interpolation::epw_config::NativeStage::WannierOnly,
-        "./out", "./save", 0.5,
-    ).unwrap();
-    assert_eq!(field(&fit, "elph"), ".false.");
-    assert_eq!(field(&fit, "band_plot"), ".false.");
-    assert!(!fit.contains("filkf") && !fit.contains("filqf") && !fit.contains("selecqread"),
-        "独立拟合不应声明未交付的插值点文件");
-    assert!((field(&input, "fsthick").parse::<f64>().unwrap() - 0.4).abs() < 1e-12);
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn phonon_quality_preserves_units_signs_and_all_modes() {
-    use epwflow::interpolation::native_quality::phonon_quality;
-    let reference = bands(vec![-0.1, 2.0, 3.0]);
-    let mut fit = bands(vec![
-        3.0 / 8.065543937,
-        -0.1 / 8.065543937,
-        2.0 / 8.065543937,
-    ]);
-    assert!(phonon_quality(&reference, &fit, 3).unwrap().passed);
-    fit.values[0][0] = 52.0 / 8.065543937;
-    let q = phonon_quality(&reference, &fit, 3).unwrap();
-    assert!(!q.passed);
-    assert!((q.max_error_cm1 - 49.0).abs() < 1e-12);
-    assert!(phonon_quality(&reference, &bands(vec![0., 1.]), 3).is_err());
-    assert!(
-        phonon_quality(
-            &bands(vec![-2., 2., 3.]),
-            &bands(vec![-2. / 8.065543937, 2. / 8.065543937, 3. / 8.065543937]),
-            3
-        )
-        .unwrap()
-        .passed
-            == false
-    );
-    assert!(phonon_quality(&reference, &bands(vec![f64::NAN, 1., 2.]), 3).is_err());
-}
-
-#[test]
-fn revised_phonon_maximum_keeps_rms_and_stability_gates() {
-    use epwflow::interpolation::{native_quality::phonon_quality, quality};
-    // 稀疏的大偏差使最大误差与 RMS 两条独立规则都实际参与判断。
-    let reference = bands(vec![100.0; 900]);
-    let check = |maximum: f64, background: f64| {
-        let mut values = vec![(100.0 + background) / 8.065543937; 900];
-        values[0] = (100.0 + maximum) / 8.065543937;
-        phonon_quality(&reference, &bands(values), 900).unwrap()
-    };
-    let measured = check(9.042613107, 0.0);
-    assert!(measured.passed);
-    assert_eq!(measured.max_error_limit_cm1, 50.0);
-    assert_eq!(measured.rms_error_limit_cm1, 20.0);
-    assert!(check(50.0, 0.0).passed);
-    assert!(check(20.0, 20.0).passed);
-    assert!(!check(20.001, 20.001).passed);
-    assert!(!check(50.01, 0.0).passed);
-    assert!(!check(9.04, 20.1).passed);
-    let reference_values = vec![100.0; 900];
-    let mut fit = reference_values.clone();
-    fit[0] += 9.04;
-    let legacy = quality::evaluate(&reference_values, &fit, "QeZero").unwrap();
-    assert_eq!(legacy.thresholds["frequency_max_error_cm1"], 50.0);
-    fit[0] = 150.01;
-    assert_eq!(quality::evaluate(&reference_values, &fit, "QeZero").unwrap().status, "warning");
-}
-
-#[test]
-fn readonly_quality_cli_warns_on_numeric_failure_and_rejects_changed_sources() {
-    use epwflow::{
-        foundation::store,
-        interpolation::native_quality::{QualitySources, SourceFile},
-    };
-    let root = std::env::temp_dir().join(format!("native-quality-{}", store::token()));
-    fs::create_dir(&root).unwrap();
-    let ks = "<ks_energies><k_point weight='1'>0 0 0</k_point><eigenvalues size='1'>0</eigenvalues></ks_energies>";
-    fs::write(root.join("reference.xml"),format!("<output><atomic_structure nat='1'/><band_structure><nbnd>1</nbnd><nks>6</nks><fermi_energy>0</fermi_energy>{}</band_structure></output>",ks.repeat(6))).unwrap();
-    fs::write(
-        root.join("band.eig"),
-        format!("&plot nbnd= 1, nks= 6 /\n{}", "0 0 0\n0\n".repeat(6)),
-    )
-    .unwrap();
-    fs::write(
-        root.join("reference.freq"),
-        format!("&plot nbnd= 3, nks= 4 /\n{}", "0 0 0\n1 2 3\n".repeat(4)),
-    )
-    .unwrap();
-    fs::write(
-        root.join("phband.freq"),
-        format!(
-            "&plot nbnd= 3, nks= 4 /\n{}",
-            "0 0 0\n0.123984198 0.247968397 10\n".repeat(4)
-        ),
-    )
-    .unwrap();
-    fs::write(root.join("frozen-plan.json"), "test-only-fixed-plan").unwrap();
-    let file = |name: &str| SourceFile {
-        path: name.into(),
-        sha256: store::hash_file(&root.join(name)).unwrap(),
-    };
-    let sources = QualitySources {
-        schema_version: 1,
-        asr: "epw_simple_gamma_onsite".into(),
-        window_ev: [-0.5, 0.5],
-        electron_reference: file("reference.xml"),
-        fermi_reference: file("reference.xml"),
-        electron_interpolated: file("band.eig"),
-        phonon_reference_cm1: file("reference.freq"),
-        phonon_interpolated_mev: file("phband.freq"),
-        provenance: vec![file("frozen-plan.json")],
-    };
-    fs::write(
-        root.join("quality-reference.json"),
-        serde_json::to_vec_pretty(&sources).unwrap(),
-    )
-    .unwrap();
-    let before = store::hash_file(&root.join("reference.xml")).unwrap();
-    let run = || {
-        Command::new(env!("CARGO_BIN_EXE_epw_wannier"))
-            .env("PATH", "")
-            .current_dir("/")
-            .args([
-                "--check",
-                "-w",
-                root.to_str().unwrap(),
-                "--json",
-            ])
-            .output()
-            .unwrap()
-    };
-    let out = run();
-    assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("quality_warning:"));
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["operation_status"], "ok");
-    assert_eq!(v["workflow_status"], "quality_warning");
-    assert_eq!(v["passed"], false);
-    assert_eq!(v["electron"]["passed"], true);
-    assert_eq!(v["phonon"]["passed"], false);
-    assert_eq!(v["workflow_complete"], false);
-    assert_eq!(
-        store::hash_file(&root.join("reference.xml")).unwrap(),
-        before
-    );
-    fs::write(root.join("band.eig"), "altered").unwrap();
-    let out = run();
-    assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("指纹"));
-    fs::remove_dir_all(root).unwrap();
-}
 #[test]
 fn native_velocity_dependencies_validate_grid_overlap_and_finite_records() {
     use epwflow::{foundation::store, interpolation::restart};

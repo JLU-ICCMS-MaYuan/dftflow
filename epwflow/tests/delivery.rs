@@ -24,11 +24,11 @@ fn collect_assembles_bundle_from_upstream_manifests() {
     write_json(
         &f3.join("manifest.json"),
         serde_json::json!({
-            "schema_version": 1, "run_id": "f3", "f2_digest": "x", "wannier_digest": "y",
+            "schema_version": 2, "run_id": "f3", "f2_digest": "x", "wannier_digest": "y",
             "coarse": null,
             "fine": {"kpoints": 8, "qpoints": 8, "energies": [1.0], "frequencies": [80.6, 161.2], "weights": [0.5,0.5], "kqmap": 2, "layout": "epw", "ephmat_shards": 1, "artifacts": []},
             "spectra": [{"smearing_id": "sm0001", "energy_mev": [10.0,20.0], "a2f": [0.1,0.1], "lambda_integral": 0.8, "lambda_sum": 0.8, "cutoff_ev": 0.2}],
-            "quality": null, "mode_readiness": {"iso": true},
+            "mode_readiness": {"iso": true},
             "validation": {"status": "valid", "checks": [{"name":"x","passed":true,"detail":"ok"}], "units": {}, "thresholds": {}, "evidence": []}
         }),
     );

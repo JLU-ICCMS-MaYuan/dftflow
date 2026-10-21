@@ -53,10 +53,10 @@ if coarse or reread:
     coarse_nk=len(kpoints)
     bg=[[float(x) for x in xml.find('output/basis_set/reciprocal_lattice/b'+str(i)).text.split()] for i in (1,2,3)]
     def cart(c):return [sum(c[i]*bg[i][j] for i in range(3)) for j in range(3)]
-    # band_plot 对首次粗网格与重读都消费 filkf；NSCF 点数只用于 ukk 布局。
-    kpoints=[cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]
-    qcr=[list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]
-    qpoints=list(map(cart,qcr))
+    if reread:
+        kpoints=[cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]
+        qcr=[list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]
+        qpoints=list(map(cart,qcr))
     modes=6
     Path('epwdata.fmt').write_text('0.2\n'+f'{n} 1 {modes} 1 1\n'+'0\n'*27+'(0,0)\n'*(n*n+modes*modes))
     Path('crystal.fmt').write_text('2\n6\nfixture-IO\n')
@@ -76,8 +76,8 @@ if coarse or reread:
     kept=list(range(8,17));nk=coarse_nk
     Path(prefix+'.ukk').write_text('9 7\n'+'\n'.join(map(str,kept))+'\n'+'(0,0)\n'*(9*n*nk)+'T\n'*(9*nk)+'T\n'*7+'F\n'*9+'0 0 0\n'*n)
     if mode=='coarse-ukk':Path(prefix+'.ukk').write_text('9 7\n8\n')
-    bands('band.eig',kpoints,[HA*.01*i+(0.1 if mode=='quality' else 0) for i in range(8,13)])
-    bands('phband.freq',qpoints,[100/8.065543937+(20 if mode=='quality' else 0)]*6)
+    if reread:bands('band.eig',kpoints,[HA*.01*i+(0.1 if mode=='large-difference' else 0) for i in range(8,13)])
+    if reread:bands('phband.freq',qpoints,[100/8.065543937+(20 if mode=='large-difference' else 0)]*6)
 else:
     assert value('nstemp')=='1' and float(value('temps'))==5., '未显式采用固定温度，EPW 会默认 300 K'
     assert Path(prefix+'.ukk').is_file(), 'epwread 仍须 loadbm 读取原 ukk'

@@ -105,7 +105,7 @@ impl<'a> QeSettings<'a> {
                 .insert("conv_thr".into(), json!(qe.nscf.conv_thr_ry));
             if let Some(points) = reference {
                 ensure!(!points.is_empty() && points.iter().flatten().all(|v| v.is_finite()),
-                    "data_invalid: 独立电子参考点为空或非有限");
+                    "data_invalid: 常规电子路径点为空或非有限");
                 let mut text = format!("K_POINTS crystal\n{}\n", points.len());
                 for p in points { text.push_str(&format!("{:.17e} {:.17e} {:.17e} {:.17e}\n",
                     p[0], p[1], p[2], 1.0 / points.len() as f64)); }
@@ -131,9 +131,9 @@ impl<'a> QeSettings<'a> {
         self.pw_input(outdir, true, None)
     }
 
-    /// 独立固定 k 点只用于质量参考，不交给 EPW 作为完整均匀 NSCF 保存树。
-    pub fn reference_input(&self, outdir: &str, points: &[[f64; 3]]) -> Result<String> {
-        self.pw_input(outdir, true, Some(points))
+    /// 常规电子能带路径；完整均匀 NSCF 保存树由 nscf_input 单独生成。
+    pub fn path_input(&self, outdir: &str, points: &[[f64; 3]]) -> Result<String> {
+        Ok(self.pw_input(outdir, true, Some(points))?.replace("'nscf'", "'bands'"))
     }
 
     fn ph_params(&self, init: bool) -> SectionMap {

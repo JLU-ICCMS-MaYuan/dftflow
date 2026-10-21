@@ -67,3 +67,5 @@ Overview 只维护当前功能事实，不承担 Issue/任务状态管理。CLI 
 EPW 运行记录使用可见的 `epw-state/` 和阶段本地 `completion.json`；删除阶段后可重建并使下游失效，旧编号状态显式迁移，预算绑定保留。目录及兼容边界见 [EPW 总览](epwflow/README.md#可见运行状态与阶段删除后的恢复)与 [0025 验收](../specs/0025-epw-visible-run-state/acceptance.md)。0025 当时未切换默认安装或迁移真实现场；0027 后续规范更新 bin/epwflow 并在用户指定子目录实测。
 
 编号声子后处理支持严格重验后的 PH 响应复用，避免 dyn0 自复制截断；阶段归档保留当前 Slurm 日志的持续写入入口。源码、安装及本轮指定 MgB₂ 工作区的真实边界见 [0027 验收](../specs/0027-mgb2-epwflow-example-debug/acceptance.md)。
+
+EPW 常规四类比较保留，独立抽样核验已取消；四项最大差值、配对规则和历史图包边界见 [EPW 对比说明](epwflow/README.md#常规对比与最大差值0043)。

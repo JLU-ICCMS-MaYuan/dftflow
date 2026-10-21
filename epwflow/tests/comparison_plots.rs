@@ -4,7 +4,7 @@ mod stage_cli;
 
 use epwflow::{
     delivery::comparison::{
-        self, Artifact, Manifest, Metadata, PhononErrorMarker, Tick, KINDS, TABLES,
+        self, Artifact, Manifest, Metadata, PhononErrorMarker, Tick, KINDS,
     },
     foundation::store,
     interpolation::comparison::gaussian_dos,
@@ -14,6 +14,8 @@ use std::{
     path::{Path, PathBuf},
     process::Output,
 };
+
+const TABLES: [&str; 5] = ["electronic_bands.csv", "phonon_bands.csv", "phonon_reference_points.csv", "electronic_dos.csv", "phonon_dos.csv"];
 
 fn fixture(root: &Path) -> PathBuf {
     let work = root.join("work");
@@ -147,7 +149,7 @@ fn fixture(root: &Path) -> PathBuf {
         run_id: "synthetic-style-test".into(),
         ph_mode: "index".into(),
         upstream_digest: "0".repeat(64),
-        quality_status: "unverified".into(),
+        quality_status: Some("unverified".into()),
         missing: vec!["SYNTHETIC TEST DATA - no scientific acceptance".into()],
         files: vec![],
     };
@@ -157,7 +159,8 @@ fn fixture(root: &Path) -> PathBuf {
 }
 fn rehash(dir: &Path) {
     let mut manifest: Manifest = store::read(&dir.join("manifest.json")).unwrap();
-    manifest.files = TABLES
+    let tables: &[&str] = if manifest.schema_version == 1 { &TABLES } else { &comparison::TABLES };
+    manifest.files = tables
         .iter()
         .chain(["metadata.json", "metrics.json"].iter())
         .map(|n| Artifact::capture(dir, n).unwrap())
@@ -675,10 +678,9 @@ fn gaussian_weights_units_and_frequency_sign_preserve_state_count() {
 }
 
 #[test]
-fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
+fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
     use epwflow::interpolation::{
-        comparison::{PathPoint, Sources},
-        native_quality::{QualitySources, SourceFile},
+        comparison::{PathPoint, Sources, SourceFile},
     };
     let root = temp();
     let xml = |points: &[[f64; 3]]| {
@@ -708,63 +710,13 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
             points.len()
         )
     };
-    let zeros = vec![[0.0; 3]; 6];
-    fs::write(root.join("quality.xml"), xml(&zeros)).unwrap();
-    fs::write(root.join("quality.eig"), bands(&zeros, &[0.0])).unwrap();
+    fs::write(root.join("fermi.xml"), xml(&[[0.; 3]])).unwrap();
     let frequencies: Vec<_> = (0..9).map(|i| 100.0 + i as f64 * 100.0).collect();
-    let quality_q = [
-        [0., 0., 0.],
-        [0.25, 0.125, 0.],
-        [1.0 / 12.0, 1.7 / 12.0, 0.9 / 12.0],
-        [0.2, 0.1, 0.3],
-    ];
-    fs::write(
-        root.join("quality-qe.freq"),
-        bands(&quality_q, &frequencies),
-    )
-    .unwrap();
-    let mut interpolated = "&plot nbnd= 9, nks= 4 /\n".to_string();
-    for (i, q) in quality_q.iter().enumerate() {
-        let values: Vec<_> = frequencies
-            .iter()
-            .enumerate()
-            .map(|(m, v)| {
-                (v + if i == 2 && m == 6 {
-                    51.448
-                } else if i == 1 && m == 7 {
-                    9.04
-                } else {
-                    0.0
-                }) / 8.065543937
-            })
-            .collect();
-        interpolated.push_str(
-            &bands(&[*q], &values)
-                .lines()
-                .skip(1)
-                .collect::<Vec<_>>()
-                .join("\n"),
-        );
-        interpolated.push('\n');
-    }
-    fs::write(root.join("quality-epw.freq"), interpolated).unwrap();
     fs::write(root.join("plan.txt"), "SYNTHETIC native adapter test").unwrap();
     let file = |name: &str| SourceFile {
         path: name.into(),
         sha256: store::hash_file(&root.join(name)).unwrap(),
     };
-    let quality = QualitySources {
-        schema_version: 1,
-        asr: "epw_simple_gamma_onsite".into(),
-        window_ev: [-0.5, 0.5],
-        fermi_reference: file("quality.xml"),
-        electron_reference: file("quality.xml"),
-        electron_interpolated: file("quality.eig"),
-        phonon_reference_cm1: file("quality-qe.freq"),
-        phonon_interpolated_mev: file("quality-epw.freq"),
-        provenance: vec![file("plan.txt")],
-    };
-    store::write(&root.join("quality-reference.json"), &quality).unwrap();
     let path = vec![[0., 0., 0.], [0.25, 0., 0.], [0.5, 0., 0.]];
     let mesh = vec![[0., 0., 0.], [0.5, 0., 0.]];
     let cart = |p: &[f64; 3]| [p[0], p[0] * 0.5, 0.0];
@@ -773,7 +725,7 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
     let all: Vec<_> = p_cart.iter().chain(&m_cart).copied().collect();
     fs::write(root.join("qe-path.xml"), xml(&p_cart)).unwrap();
     fs::write(root.join("qe-mesh.xml"), xml(&m_cart)).unwrap();
-    fs::write(root.join("epw-path.eig"), bands(&all, &[0.0])).unwrap();
+    fs::write(root.join("epw-path.eig"), bands(&all, &[0.1])).unwrap();
     let matdyn = bands(&all, &frequencies)
         .lines()
         .map(|line| {
@@ -791,7 +743,7 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
             &all,
             &frequencies
                 .iter()
-                .map(|v| v / 8.065543937)
+                .map(|v| (v + 60.) / 8.065543937)
                 .collect::<Vec<_>>(),
         ),
     )
@@ -802,11 +754,10 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
     )
     .unwrap();
     let mut sources = Sources {
-        schema_version: 1,
+        schema_version: 2,
         run_id: "native-fixture".into(),
         ph_mode: "index".into(),
-        quality_reference: file("quality-reference.json"),
-        fermi_reference: file("quality.xml"),
+        fermi_reference: file("fermi.xml"),
         qe_bands_xml: file("qe-path.xml"),
         qe_mesh_xml: file("qe-mesh.xml"),
         epw_bands: file("epw-path.eig"),
@@ -848,29 +799,29 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
         &root,
     ));
     let data = comparison::load(&output).unwrap();
-    assert_eq!(data.manifest.quality_status, "failed");
-    assert!(!data.manifest.missing.is_empty());
-    assert!(!data.direct.is_empty());
-    let markers = &data.metadata.phonon_error_markers;
-    assert_eq!(markers.len(), 2);
-    assert_eq!(markers[0].scope, "sampled_maximum");
-    assert_eq!(markers[0].mode_sorted, 7);
-    assert!((markers[0].error_cm1 - 51.448).abs() < 1e-8);
-    for v in markers[0].q_crystal {
-        assert!((v - 1.0 / 12.0).abs() < 1e-8);
+    assert!(data.manifest.quality_status.is_none());
+    assert!(data.direct.is_empty());
+    assert!(data.metadata.phonon_error_markers.is_empty());
+    let differences = data.differences.as_ref().unwrap();
+    for (stat, expected) in [
+        (&differences.electronic_path, 0.1),
+        (&differences.electronic_mesh, 0.1),
+        (&differences.phonon_path, 60.),
+        (&differences.phonon_mesh, 60.),
+    ] {
+        assert!((stat.maximum.as_ref().unwrap().absolute_difference - expected).abs() < 1e-8);
+        assert_eq!(stat.maximum.as_ref().unwrap().crystal, [0.; 3]);
     }
-    assert!(markers[0].path_distance.is_none());
-    assert!(markers[0].path_label.is_none());
-    assert_eq!(markers[1].mode_sorted, 8);
-    assert!((markers[1].path_distance.unwrap() - sources.path[1].distance).abs() < 1e-8);
-    assert!((markers[1].error_cm1 - 9.04).abs() < 1e-8);
-    // 即使重新登记哈希，互相矛盾的标注仍须由语义校验拒绝。
-    let mut bad_metadata = data.metadata.clone();
-    bad_metadata.phonon_error_markers[0].error_cm1 = 0.0;
-    store::write(&output.join("metadata.json"), &bad_metadata).unwrap();
+    assert_eq!(differences.electronic_path.paired_states, 3);
+    assert_eq!(differences.phonon_mesh.paired_states, 18);
+    // 重新登记哈希也不能让自相矛盾的最大差值通过语义校验。
+    let saved: serde_json::Value = store::read(&output.join("metrics.json")).unwrap();
+    let mut invalid = saved.clone();
+    invalid["differences"]["electronic_path"]["maximum"]["absolute_difference"] = 0.into();
+    store::write(&output.join("metrics.json"), &invalid).unwrap();
     rehash(&output);
     assert!(comparison::load(&output).is_err());
-    store::write(&output.join("metadata.json"), &data.metadata).unwrap();
+    store::write(&output.join("metrics.json"), &saved).unwrap();
     rehash(&output);
     let metrics: serde_json::Value = store::read(&output.join("metrics.json")).unwrap();
     assert!((metrics["phonon_dos"]["qe_integral"].as_f64().unwrap() - 9.0).abs() < 1e-8);
@@ -878,7 +829,7 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
         store::hash_file(&root.join("epw-path.eig")).unwrap(),
         sources.epw_bands.sha256
     );
-    // 实际默认外窗来自原生日志；显示窗变化不能改变科学质量判定。
+    // 实际默认外窗来自原生日志；显示窗内重新统计常规对比数据。
     fs::write(
         root.join("test.wout"),
         " | Outer: -2.0D+0 to 3.0D+0 (eV) |\n | Inner: -2.0D+0 to 2.0D+0 (eV) |\n",
@@ -970,6 +921,33 @@ fn native_export_preserves_failed_quality_and_checks_nonorthogonal_mesh() {
     )
     .status
     .success());
+    sources.mesh[1]=[0.5,0.,0.];
+    sources.window_ev=[2.,3.];
+    store::write(&config,&sources).unwrap();
+    let empty = root.join("empty-exported");
+    let out=cli(&["interpolation","export-comparison","--source",config.to_str().unwrap(),
+        "--output",empty.to_str().unwrap()],&root);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("无可配对数据"));
+    success(out);
+    let data=comparison::load(&empty).unwrap();
+    let stats=data.differences.as_ref().unwrap();
+    assert!(stats.electronic_path.maximum.is_none());
+    assert_eq!(stats.electronic_path.paired_states,0);
+    let results=root.join("portable-empty");
+    fs::create_dir_all(root.join("interpolation")).unwrap();
+    fs::rename(&empty,root.join("interpolation/comparison")).unwrap();
+    epwflow::delivery::comparison::collect(&root,None).unwrap();
+    fs::rename(root.join("results"),&results).unwrap();
+    success(cli(&["plot","--results",results.to_str().unwrap()],&root));
+    assert!(epwflow::delivery::comparison_plot::check_figure_formats(&results,&["png","svg","pdf"]).unwrap());
+    let svg=fs::read_to_string(results.join("figures/comparison_overview.svg")).unwrap();
+    assert!(svg.contains("no paired data"));
+    assert!(svg.contains("DOS mesh"));
+    assert!(!svg.contains("quality:"));
+    if let Ok(destination)=std::env::var("DFTFLOW_COMPARISON_VISUAL_ROOT") {
+        fs::write(Path::new(&destination),results.to_string_lossy().as_bytes()).unwrap();
+    }
+
 }
 
 #[test]

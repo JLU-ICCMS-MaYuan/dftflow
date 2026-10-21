@@ -6,10 +6,7 @@ use epwflow::{
         stage::Backend,
         store,
     },
-    interpolation::{
-        self,
-        native_quality::{QualitySources, SourceFile},
-    },
+    interpolation,
     qe_data::{self, qe_config::QeSettings},
 };
 use std::{
@@ -61,7 +58,7 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
         include_str!("fixtures/qe_native_io.py"),
     )
     .unwrap();
-    for name in ["pw", "ph", "dynmat", "q2r", "matdyn"] {
+    for name in ["pw", "ph", "q2r", "matdyn"] {
         let p = root.join(format!("{name}.x"));
         executable(
             &p,
@@ -114,10 +111,6 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
     cfg.interpolation.phonon_smearings_mev = vec![0.5, 1.];
     cfg.interpolation.spectral_points = 4;
     cfg.superconductivity.spectrum_index = 0;
-    cfg.interpolation.quality.energy_window_ev = [-0.5, 0.5];
-    cfg.interpolation.quality.reference_manifest = if automatic { None } else { Some(root.join("reference.json")) };
-    cfg.interpolation.quality.q_points_crystal =
-        vec![[0., 0., 0.], [0.25, 0., 0.], [0.5, 0., 0.], [0.75, 0., 0.]];
     if compare {
         let kpath = root.join("KPATH.in");
         fs::write(&kpath,"0 0 0 G\n0.5 0 0 X\n0 0.5 0 Y\n0.5 0.5 0 M\n").unwrap();
@@ -125,7 +118,7 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
         cfg.comparison = Some(config::Comparison { points_per_edge: 2, electronic_sigma_ev: 0.1, phonon_sigma_cm1: 10. });
     }
     let binding = snapshot::prepare(&cfg, &root.join("input.toml")).unwrap();
-    let f2 = qe_data::scheduler::run_registered(
+    qe_data::scheduler::run_registered(
         &binding,
         &cfg,
         &QeSettings::from_config(&cfg).unwrap(),
@@ -134,72 +127,6 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
         &cfg.work_dir,
     )
     .unwrap();
-    let xml = f2
-        .states
-        .unwrap()
-        .wavefunctions
-        .join("data-file-schema.xml");
-    let geometry = qe_data::xml::Geometry::read(&xml).unwrap();
-    cfg.interpolation.quality.k_points_crystal = qe_data::nscf::parse_xml(&xml)
-        .unwrap()
-        .kpoints
-        .iter()
-        .map(|p| geometry.crystal(*p))
-        .collect();
-    // 四个固定参考点来自单独文件；旧插值输出故意不存在，检验执行顺序。
-    let freq = root.join("reference.freq");
-    fs::write(
-        &freq,
-        format!(
-            "&plot nbnd= 6, nks= 4 /\n{}",
-            cfg.interpolation
-                .quality
-                .q_points_crystal
-                .iter()
-                .map(|p| {
-                    let cart: [f64; 3] = std::array::from_fn(|j| {
-                        (0..3).map(|i| p[i] * geometry.reciprocal[i][j]).sum()
-                    });
-                    format!(
-                        "{} {} {}\n100 100 100 100 100 100\n",
-                        cart[0], cart[1], cart[2]
-                    )
-                })
-                .collect::<String>()
-        ),
-    )
-    .unwrap();
-    let file = |p: &Path| SourceFile {
-        path: p.into(),
-        sha256: store::hash_file(p).unwrap(),
-    };
-    let missing = || SourceFile {
-        path: "no-old-interpolated-output".into(),
-        sha256: "0".repeat(64),
-    };
-    let fermi = qe_data::nscf::parse_xml(&xml).unwrap().fermi;
-    let sources = QualitySources {
-        schema_version: 1,
-        asr: "epw_simple_gamma_onsite".into(),
-        window_ev: [fermi - 0.5, fermi + 0.5],
-        fermi_reference: file(&xml),
-        electron_reference: file(&xml),
-        phonon_reference_cm1: file(&freq),
-        electron_interpolated: missing(),
-        phonon_interpolated_mev: missing(),
-        provenance: vec![file(&cfg.structure)],
-    };
-    if !automatic {
-    store::write(
-        cfg.interpolation
-            .quality
-            .reference_manifest
-            .as_ref()
-            .unwrap(),
-        &sources,
-    )
-    .unwrap();
-    }
     fs::write(root.join("epw-failure"), failure).unwrap();
     Case { root, cfg, preserve }
 }
@@ -234,11 +161,6 @@ fn native_pipeline_pairs_new_coarse_and_isolates_smearings() {
     identity.verify().unwrap();
     assert!(f3.validation.all_passed());
     assert_eq!(f3.spectra.len(), 2);
-    assert!(
-        interpolation::quality_binding::check(&c.cfg, work)
-            .unwrap()
-            .passed
-    );
     assert_ne!(f3.spectra[0].a2f, f3.spectra[1].a2f);
     assert!(f3
         .fine
@@ -263,8 +185,7 @@ fn native_pipeline_pairs_new_coarse_and_isolates_smearings() {
     // 在首个展宽有效时也不能复用未知的粗网格现场。
     assert!(run(&c).is_err());
     assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap(), calls);
-    fs::write(work.join("coarse/band.eig"), "tampered").unwrap();
-    assert!(interpolation::quality_binding::check(&c.cfg, work).is_err());
+    fs::write(work.join("coarse/epwdata.fmt"), "tampered").unwrap();
 }
 
 #[test]
@@ -314,7 +235,7 @@ fn fine_rechecks_actual_windows_in_hash_consistent_legacy_coarse_manifest() {
     let mut manifest = interpolation::scheduler::run_coarse_registered(
         &c.cfg, Backend::Local, &[], work, work,
     ).unwrap();
-    // 模拟旧发布者的错误窗口与自洽哈希；其余原生数据和独立质量结果保持。
+    // 模拟旧发布者的错误窗口与自洽哈希；其余原生数据保持。
     let wout = work.join("coarse/scf.wout");
     let text = fs::read_to_string(&wout).unwrap();
     let line = text.lines().find(|line| line.starts_with("| Outer:")).unwrap();
@@ -333,40 +254,6 @@ fn fine_rechecks_actual_windows_in_hash_consistent_legacy_coarse_manifest() {
     assert!(error.contains("原生 dis_win_min"), "{error}");
     assert!(!work.join("fine").exists());
     assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 1);
-}
-
-#[test]
-fn reference_changes_and_wrong_points_stop_before_native_calls() {
-    for kind in ["hash", "point"] {
-        let mut c = case("");
-        if kind == "hash" {
-            fs::write(c.root.join("reference.freq"), "changed").unwrap();
-        } else {
-            c.cfg.interpolation.quality.q_points_crystal[2][1] = 0.1;
-        }
-        assert!(run(&c).is_err());
-        assert!(!c.root.join("epw-calls").exists());
-        assert!(!c.cfg.work_dir.join("coarse").exists());
-    }
-}
-
-#[test]
-fn reread_quality_keeps_source_and_does_not_select_a_new_window() {
-    let c = case("");
-    run(&c).unwrap();
-    let source = c.cfg.work_dir.join("coarse");
-    let before = store::hash_file(&source.join("out/scf.epmatwp")).unwrap();
-    let target = c.root.join("reread");
-    let ep = interpolation::epw_config::EpwConfig::from_config(&c.cfg).unwrap()
-        .with_fermi(qe_data::nscf::parse_xml(&c.cfg.work_dir.join("nscf/out/scf.save/data-file-schema.xml")).unwrap().fermi).unwrap();
-    let r = interpolation::coarse::reread_quality(&ep, &source, &source.join("out"), &target, &[], Backend::Local).unwrap();
-    assert_eq!(r.artifacts.len(), 12);
-    assert!(interpolation::quality_binding::freeze(&c.cfg,
-        qe_data::nscf::parse_xml(&c.cfg.work_dir.join("nscf/out/scf.save/data-file-schema.xml")).unwrap().fermi).unwrap().pair(&target).unwrap().passed);
-    assert_eq!(store::hash_file(&source.join("out/scf.epmatwp")).unwrap(), before);
-    let input = fs::read_to_string(target.join("coarse/epw_coarse.in")).unwrap();
-    for keyword in ["dis_froz", "dis_proj", "proj(", "wdata("] { assert!(!input.contains(keyword)); }
-    assert!(interpolation::coarse::reread_quality(&ep, &source, &source.join("out"), &target, &[], Backend::Local).is_err());
 }
 
 #[test]
@@ -414,7 +301,7 @@ fn fine_stage_requires_immutable_coarse_handoff_before_any_native_call() {
     assert!(!c.root.join("epw-calls").exists());
     interpolation::scheduler::run_coarse_registered(&c.cfg, Backend::Local, &[], work, work).unwrap();
     let calls = fs::read_to_string(c.root.join("epw-calls")).unwrap();
-    fs::write(work.join("coarse/band.eig"), "tampered").unwrap();
+    fs::write(work.join("coarse/epwdata.fmt"), "tampered").unwrap();
     assert!(interpolation::scheduler::run_fine_registered(&c.cfg, Backend::Local, &[], work).is_err());
     assert_eq!(calls, fs::read_to_string(c.root.join("epw-calls")).unwrap());
     assert!(!work.join("fine").exists());
@@ -441,7 +328,7 @@ fn automatic_comparison_delivers_stage_two_figures_from_native_path_and_mesh() {
     interpolation::scheduler::verify_coarse(&c.cfg,work).unwrap();
     let dataset = interpolation::comparison_data::load(&work.join("interpolation/comparison")).unwrap();
     assert_eq!(dataset.metadata.elements,["Si"]);
-    assert_eq!(dataset.manifest.quality_status,"passed");
+    assert!(dataset.manifest.quality_status.is_none());
     assert!(!dataset.manifest.missing.is_empty()); // 暂缓投影不冒充完整结果。
     let figures: serde_json::Value = store::read(&work.join("results/figures/comparison-figures.json")).unwrap();
     assert_eq!(figures["files"].as_array().unwrap().len(),15);
@@ -459,6 +346,9 @@ fn automatic_comparison_delivers_stage_two_figures_from_native_path_and_mesh() {
     let qe_calls=fs::read_to_string(c.root.join("scientific-calls")).unwrap();
     assert_eq!(qe_calls.lines().filter(|l|*l=="q2r").count(),1);
     assert_eq!(qe_calls.lines().filter(|l|*l=="matdyn").count(),1);
+    let path_input=fs::read_to_string(work.join("comparison-native/electron/reference.in")).unwrap();
+    assert!(path_input.contains("'bands'"));
+    assert!(!path_input.contains("'nscf'"));
     f2.verify().unwrap();
     assert_eq!(before,f2.artifacts.iter().map(|a|a.sha256.clone()).collect::<Vec<_>>());
     // 发布成功标记前中断；已有仅 SVG 重绘不能替代自动交付的三格式。
@@ -509,19 +399,20 @@ fn automatic_comparison_resume_only_retries_failed_native_task_and_rejects_tampe
 }
 
 #[test]
-fn automatic_comparison_quality_warning_publishes_real_failure_and_allows_fine() {
-    let c=case_options("quality",true,true);
+fn automatic_comparison_large_differences_allow_fine_without_quality_decisions() {
+    let c=case_options("large-difference",true,true);
     let work=&c.cfg.work_dir;
     let coarse=interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).unwrap();
-    assert_eq!(coarse.quality.unwrap().status, "warning");
+    assert!(coarse.validation.all_passed());
     assert!(work.join("wannier/manifest.json").exists());
     assert!(!work.join("interpolation/manifest.json").exists());
     assert!(!work.join("fine").exists());
     let data=interpolation::comparison_data::load(&work.join("results/comparison")).unwrap();
-    assert_eq!(data.manifest.quality_status,"failed");
+    assert!(data.manifest.quality_status.is_none());
+    assert!(data.differences.as_ref().unwrap().phonon_path.maximum.as_ref().unwrap().absolute_difference > 50.);
     assert!(epwflow::delivery::comparison_plot::check_figures(&work.join("results")).unwrap());
     let fine=interpolation::scheduler::run_fine_registered(&c.cfg,Backend::Local,&[],work).unwrap();
-    assert_eq!(fine.quality.unwrap().status, "warning");
+    assert!(fine.validation.all_passed());
     assert!(!fine.spectra.is_empty());
     assert_eq!(calls(&c).lines().count(),4);
 }
@@ -549,27 +440,6 @@ fn failed_coarse_requires_explicit_retry_and_archives_evidence() {
 }
 
 #[test]
-fn quality_warning_reuses_native_output_without_rewriting_failed_report() {
-    let c = case("quality");
-    let manifest = run(&c).unwrap();
-    assert_eq!(manifest.quality.unwrap().status, "warning");
-    let log = calls(&c);
-    let before = store::Identity::capture(&c.cfg.work_dir.join("quality-report.json")).unwrap();
-    let report: serde_json::Value = store::read(&before.path).unwrap();
-    assert_eq!(report["passed"], false);
-    assert_eq!(report["electron"]["passed"], false);
-    assert_eq!(report["phonon"]["passed"], false);
-    // 续算依然消费原来的失败数值，不能重新求解以把报告改成通过。
-    fs::write(c.root.join("epw-failure"), "").unwrap();
-    let coarse = retry_coarse(&c).unwrap();
-    assert_eq!(coarse.quality.unwrap().status, "warning");
-    before.verify().unwrap();
-    assert_eq!(calls(&c), log);
-    assert!(!c.cfg.work_dir.join("native-attempts/history").exists());
-    assert!(c.cfg.work_dir.join("interpolation/manifest.json").exists());
-}
-
-#[test]
 fn second_smearing_retry_keeps_first_and_coarse_unchanged() {
     let c = case("fine-second-exit");
     assert!(run(&c).is_err());
@@ -593,10 +463,9 @@ fn completed_native_attempt_recovers_publication_interruption_without_execution(
     let c = case("");
     run(&c).unwrap();
     let log = calls(&c);
-    // 模拟已写完原生成功输出，但尚未写检查点与质量发布完成的崩溃窗口。
+    // 模拟已写完原生成功输出，但尚未写检查点与清单发布完成的崩溃窗口。
     fs::remove_file(c.cfg.work_dir.join("wannier/manifest.json")).unwrap();
     fs::remove_file(c.cfg.work_dir.join("interpolation/manifest.json")).unwrap();
-    fs::remove_file(c.cfg.work_dir.join("quality-binding.json")).unwrap();
     let path = c.cfg.work_dir.join("native-attempts/coarse.json");
     let mut checkpoint: serde_json::Value = store::read(&path).unwrap();
     checkpoint["state"] = "running".into(); checkpoint["outputs"] = serde_json::json!([]);
@@ -609,7 +478,7 @@ fn completed_native_attempt_recovers_publication_interruption_without_execution(
 
 #[test]
 fn retry_rejects_tampered_complete_or_running_inputs_and_unknown_directories() {
-    for kind in ["input", "output", "running-input", "request", "unknown", "quality", "quality-link", "empty-receipt"] {
+    for kind in ["input", "output", "running-input", "request", "unknown", "empty-receipt"] {
         let mut c = case(if kind == "running-input" { "coarse-truncated" } else { "" });
         if kind == "unknown" {
             fs::create_dir(c.cfg.work_dir.join("coarse")).unwrap();
@@ -623,14 +492,8 @@ fn retry_rejects_tampered_complete_or_running_inputs_and_unknown_directories() {
         let log = calls(&c);
         match kind {
             "input" | "running-input" => fs::write(c.cfg.work_dir.join("coarse/epw_coarse.in"), "changed").unwrap(),
-            "output" => fs::write(c.cfg.work_dir.join("coarse/band.eig"), "changed").unwrap(),
+            "output" => fs::write(c.cfg.work_dir.join("coarse/epwdata.fmt"), "changed").unwrap(),
             "request" => c.cfg.wannier.outer_window_ev = Some([1.4, 5.]),
-            "quality" => fs::write(c.cfg.work_dir.join("quality-report.json"), "changed").unwrap(),
-            "quality-link" => {
-                let path = c.cfg.work_dir.join("quality-report.json");
-                fs::rename(&path, c.root.join("report.json")).unwrap();
-                std::os::unix::fs::symlink(c.root.join("report.json"), path).unwrap();
-            },
             "empty-receipt" => {
                 let path = c.cfg.work_dir.join("native-attempts/coarse.json");
                 let mut receipt: serde_json::Value = store::read(&path).unwrap();
@@ -645,106 +508,21 @@ fn retry_rejects_tampered_complete_or_running_inputs_and_unknown_directories() {
     }
 }
 
-#[test]
-fn automatic_quality_sources_use_scf_copies_and_fixed_independent_points() {
-    let c = case_with_auto("", true);
-    let work = &c.cfg.work_dir;
-    let before = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
-    let original = store::Identity::capture(&work.join("nscf/out/scf.save/data-file-schema.xml")).unwrap();
-    let source = qe_data::save::files(&work.join("scf/snapshot")).unwrap();
-    // 合法清单不依赖响应数组顺序，必须按物理 q 编号关联。
-    let mut f2 = qe_data::manifest::QeManifest::load(&work.join("qe-data/manifest.json")).unwrap();
-    f2.phonon_files.reverse();
-    store::write(&work.join("qe-data/manifest.json"), &f2).unwrap();
-    let coarse = interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).unwrap();
-    assert!(coarse.validation.all_passed());
-    original.verify().unwrap();
-    assert_eq!(qe_data::save::files(&work.join("scf/snapshot")).unwrap(),source);
-    let calls = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
-    let added = calls.strip_prefix(&before).unwrap();
-    assert_eq!(added.lines().filter(|l| *l == "pw").count(),1);
-    assert_eq!(added.lines().filter(|l| *l == "ph").count(),2);
-    assert_eq!(added.lines().filter(|l| l.starts_with("dynmat ")).count(),4);
-    assert_eq!(calls.matches("q2r\n").count(), before.matches("q2r\n").count());
-    assert!(fs::read_to_string(work.join("quality-sources/electron/reference.in")).unwrap().contains("'nscf'"));
-    assert!(!work.join("fine").exists());
-    let sources: QualitySources = store::read(&work.join("quality-sources/reference.json")).unwrap();
-    assert!(sources.provenance.iter().any(|f| f.path.ends_with("corrected.xml")));
-    assert!(sources.provenance.iter().any(|f| f.path.ends_with("scf.dyn.xml")));
-    assert!(sources.provenance.iter().any(|f| f.path.ends_with("scf.dyn_q1.xml")));
-    assert!(interpolation::quality_binding::check(&c.cfg,work).unwrap().passed);
-    let mut resumed = c.cfg.clone();
-    // 固定清单变化不能悄悄补算其他参考点。
-    resumed.interpolation.quality.q_points_crystal[1][1] = 0.125;
-    assert!(interpolation::scheduler::run_coarse_with_retry(&resumed,Backend::Local,&[],work,work,true).is_err());
-    assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(),calls);
-    interpolation::scheduler::run_fine_registered(&c.cfg,Backend::Local,&[],work).unwrap();
-}
 
 #[test]
-fn failed_reference_resumes_only_failed_native_task_and_rejects_tampering() {
-    for tamper in [false,true] {
-        let c = case_with_auto("",true);
-        let work = &c.cfg.work_dir;
-        fs::write(c.root.join("reference-failure"),"dynmat-0002").unwrap();
-        assert!(interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).is_err());
-        assert!(!c.root.join("epw-calls").exists());
-        assert!(!work.join("quality-sources/reference.json").exists());
-        let log = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
-        assert!(interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).is_err());
-        assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(),log);
-        fs::remove_file(c.root.join("reference-failure")).unwrap();
-        let complete = store::Identity::capture(&work.join("quality-sources/dynmat-0001/modes.out")).unwrap();
-        if tamper { fs::write(&complete.path,"changed").unwrap(); }
-        let result = retry_coarse(&c);
-        if tamper {
-            assert!(result.is_err());
-            assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(),log);
-            assert!(!c.root.join("epw-calls").exists());
-        } else {
-            result.unwrap(); complete.verify().unwrap();
-            let calls = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
-            assert_eq!(calls.lines().filter(|l| *l == "pw").count(),2+1); // F2 SCF/NSCF + 独立 NSCF。
-            assert_eq!(calls.matches("dynmat dynmat-0001\n").count(),1);
-            assert_eq!(calls.matches("dynmat dynmat-0002\n").count(),2);
-            assert_eq!(calls.matches("dynmat dynmat-0003\n").count(),1);
-            let history = work.join("native-attempts/history");
-            assert!(fs::read_dir(history).unwrap().any(|e| e.unwrap().path().join("reference.exitcode").is_file()));
-        }
+fn no_sampling_computations_or_files_are_created() {
+    let c=case_with_auto("",true);
+    let before=fs::read_to_string(c.root.join("scientific-calls")).unwrap();
+    let manifest=run(&c).unwrap();
+    assert!(manifest.validation.all_passed());
+    assert_eq!(before,fs::read_to_string(c.root.join("scientific-calls")).unwrap());
+    for name in ["quality-sources","quality-reference.json","quality-binding.json","quality-report.json"] {
+        assert!(!c.cfg.work_dir.join(name).exists(),"{name}");
     }
-}
-
-#[test]
-fn auto_reference_preflight_and_native_validation_never_bypass_quality() {
-    for kind in ["program","unknown","wrong-q","duplicate-k","quality"] {
-        let c = case_with_auto(if kind == "quality" { "quality" } else { "" },true);
-        let work = &c.cfg.work_dir;
-        let before = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
-        match kind {
-            "program" => fs::write(c.root.join("dynmat.x"),"changed").unwrap(),
-            "unknown" => {
-                fs::create_dir(work.join("quality-sources")).unwrap();
-                fs::write(work.join("quality-sources/keep"),"unknown").unwrap();
-            },
-            "wrong-q" => fs::write(c.root.join("fixture-failure"),"wrong_q").unwrap(),
-            "duplicate-k" => fs::write(c.root.join("fixture-failure"),"duplicate_k").unwrap(),
-            _ => {},
-        }
-        let result=interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work);
-        assert_eq!(result.is_ok(), kind == "quality", "{kind}: {result:?}");
-        assert_eq!(work.join("wannier/manifest.json").exists(), kind == "quality");
-        assert!(!work.join("fine").exists());
-        if kind != "quality" { assert!(!c.root.join("epw-calls").exists()); }
-        if kind == "program" || kind == "unknown" {
-            assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(),before);
-        }
-        if kind == "quality" {
-            let scientific = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
-            let native = calls(&c);
-            assert!(!interpolation::quality_binding::check(&c.cfg,work).unwrap().passed);
-            assert_eq!(retry_coarse(&c).unwrap().quality.unwrap().status, "warning");
-            assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(),scientific);
-            assert_eq!(calls(&c),native);
-        }
+    for name in ["kpoints.dat","qpoints.dat","band.eig","phband.freq"] {
+        assert!(!c.cfg.work_dir.join("coarse").join(name).exists(),"{name}");
     }
+    let input=fs::read_to_string(c.cfg.work_dir.join("coarse/epw_coarse.in")).unwrap();
+    assert!(input.contains("band_plot = .false."));
+    assert!(!input.contains("filkf"));
 }

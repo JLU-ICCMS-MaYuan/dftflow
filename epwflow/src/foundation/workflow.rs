@@ -608,13 +608,11 @@ fn verify_stage(
             let m = crate::interpolation::manifest::InterpolationManifest::load(manifest)?;
             ensure!(
                 m.validation.all_passed()
-                    && m.quality.as_ref().is_some_and(|q| q.usable())
                     && !m.spectra.is_empty(),
-                "data_invalid: 插值质量/原生数据尚未通过"
+                "data_invalid: 插值原生数据尚未通过"
             );
             // 清单本身不足以证明可重读，沿用专门适配器的校验。
             let stage_work = manifest.parent().and_then(Path::parent).context("清单路径")?;
-            crate::interpolation::quality_binding::check_for_execution(cfg, stage_work)?;
             crate::superconductivity::source::bind(stage_work, cfg, &m)?;
             let coarse = m.coarse.context("data_invalid: 缺少粗网格数据")?;
             let fine = m.fine.context("data_invalid: 缺少细网格数据")?;

@@ -1,7 +1,7 @@
 use super::super::foundation::{budget, config, stage::Backend, store};
 use super::{
     adapter, coarse, epw_config, fine,
-    manifest::{InterpolationManifest, QualityReport, Validation},
+    manifest::{InterpolationManifest, Validation},
     native, reuse, wannier,
 };
 use anyhow::{bail, ensure, Context, Result};
@@ -85,9 +85,6 @@ fn run_coarse_stages(
 ) -> Result<InterpolationManifest> {
     let f2_manifest_path = crate::foundation::layout::path(&f2_work, "qe-data").join("manifest.json");
     let binding = adapter::bind_f2(&f2_manifest_path, cfg)?;
-    // 显式参考仍在任何科学执行前验证；自动参考须先通过程序与选窗预检。
-    let supplied = cfg.interpolation.quality.reference_manifest.as_ref()
-        .map(|path| super::quality_binding::freeze_at(cfg, binding.fermi_ev, path)).transpose()?;
     let structure = crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
     let epw_cfg = epw_config::EpwConfig::from_config(cfg)?
         .with_fermi(binding.fermi_ev)?
@@ -96,15 +93,10 @@ fn run_coarse_stages(
     epw_cfg.window_selection()?;
     epw_cfg.require_window_support()?;
     if charge { charge_budget(cfg, "f3")?; }
-    let frozen = if let Some(frozen) = supplied { frozen } else {
-        let path = super::references::ensure_sources(cfg, backend, launcher, work, f2_work, retry)?;
-        super::quality_binding::freeze_at(cfg, binding.fermi_ev, &path)?
-    };
-    let reference_digest = frozen.source.sha256.clone();
     // EPW 在一次粗网格执行中完成内置 Wannier 化，不另启动不完整的独立链。
     let f2 = crate::qe_data::manifest::QeManifest::load(&f2_manifest_path)?;
     let digest = attempt_digest(cfg, launcher, &[
-        store::Identity::capture(&f2_manifest_path)?, frozen.source.clone(),
+        store::Identity::capture(&f2_manifest_path)?,
     ], "coarse")?;
     let mut coarse_res = super::attempt::run(work, "coarse", &crate::foundation::layout::path(&work, "coarse"), digest, retry,
         || { coarse::stage_f2(&f2, work)?; coarse::prepare_coarse(&epw_cfg, work) },
@@ -116,40 +108,10 @@ fn run_coarse_stages(
         &crate::foundation::layout::path(&work, "coarse").join(format!("{}.wout", cfg.qe.prefix)),
         cfg.wannier.num_wann as usize,
     )?;
-    let checked_quality = frozen.pair(work)?;
-    // 诊断图保留真实数值结论；完整且可校验的数据允许带告警交付。
     super::automatic_comparison::run(cfg, &epw_cfg, backend, launcher, work, f2_work, retry)?;
-    checked_quality.warn_if_failed();
     if cfg.kpath.is_some() && !crate::foundation::layout::enabled(work) {
         coarse_res.artifacts.extend(super::automatic_comparison::artifacts(work)?);
     }
-    for (role, name) in [
-        ("coarse_quality_sources", "quality-reference.json"),
-        ("coarse_quality_binding", "quality-binding.json"),
-        ("coarse_quality_report", "quality-report.json"),
-    ] {
-        let path = crate::foundation::layout::path(&work,name);
-        coarse_res.artifacts.push(super::manifest::Artifact {
-            role: role.into(),
-            relative_path: crate::foundation::layout::path(work,name).strip_prefix(work)?.into(),
-            byte_size: std::fs::metadata(&path)?.len(),
-            sha256: store::hash_file(&path)?,
-            producer_stage: "quality".into(),
-            input_digest: reference_digest.clone(),
-            format_version: "1".into(),
-        });
-    }
-    let q = &checked_quality.phonon;
-    let quality_report = Some(QualityReport {
-        points: q.points * q.modes_per_point,
-        energy_reference: format!("{:?}", cfg.wannier.energy_reference),
-        max_error: q.max_error_cm1,
-        rms_error: q.rms_error_cm1,
-        coverage: 1.0,
-        thresholds: super::quality::thresholds(),
-        status: if checked_quality.passed { "valid" } else { "warning" }.into(),
-    });
-
     let coarse_data = coarse::into_coarse_data(&coarse_res);
 
     // 本地校验（FR-009/012）。
@@ -160,9 +122,6 @@ fn run_coarse_stages(
         thresholds: BTreeMap::new(),
         evidence: Vec::new(),
     };
-    validation
-        .units
-        .insert("frequency_error".to_string(), "cm-1".to_string());
     validation.check("f2_valid", true, "F2 来源已绑定且有效");
     validation.check(
         "wannier_converged",
@@ -174,27 +133,19 @@ fn run_coarse_stages(
         !coarse_data.artifacts.is_empty(),
         "粗网格角色完整",
     );
-    validation.check(
-        "quality_evidence_valid",
-        quality_report.as_ref().is_some_and(QualityReport::usable),
-        "独立质量来源已严格校验；数值超差保留 warning，不阻断执行",
-    );
-
     let mut mode_readiness = BTreeMap::new();
     mode_readiness.insert("wannier".to_string(), wan.converged);
     mode_readiness.insert("coarse".to_string(), !coarse_data.artifacts.is_empty());
     mode_readiness.insert("fine".to_string(), false);
-    mode_readiness.insert("quality".to_string(), quality_report.is_some());
 
     let manifest = InterpolationManifest {
-        schema_version: 1,
+        schema_version: 2,
         run_id: crate::qe_data::manifest::QeManifest::load(&f2_manifest_path)?.run_id,
         f2_digest: binding.f2_digest.clone(),
         wannier_digest: wan.wannier_digest.clone(),
         coarse: Some(coarse_data),
         fine: None,
         spectra: vec![],
-        quality: quality_report,
         mode_readiness,
         validation: validation.clone(),
     };
@@ -244,13 +195,12 @@ pub fn run_fine_with_retry(
     let mut fine_data = None;
     let mut other_smearings = vec![];
     for (index, smearing_mev) in cfg.interpolation.phonon_smearings_mev.iter().enumerate() {
-        super::quality_binding::check_for_execution(cfg, work)?;
         for artifact in &coarse.artifacts {
             let path = work.join(&artifact.relative_path);
             ensure!(
                 std::fs::metadata(&path)?.len() == artifact.byte_size
                     && store::hash_file(&path)? == artifact.sha256,
-                "input_conflict: 粗网格或质量来源在细网格执行前改变"
+                "input_conflict: 粗网格来源在细网格执行前改变"
             );
         }
         let dir = crate::foundation::layout::path(&work, "fine").join(format!("smearing-{:04}", index + 1));
@@ -292,7 +242,6 @@ pub fn run_fine_with_retry(
     if let Some(data) = &mut fine_data {
         data.artifacts.extend(other_smearings);
     }
-    super::quality_binding::check_for_execution(cfg, work)?;
 
 
     identity.verify()?;
@@ -315,13 +264,11 @@ pub fn run_fine_with_retry(
     Ok(manifest)
 }
 
-/// 清单、质量来源、每个粗网格文件均须仍然有效，且不得混入细网格结果。
+/// 清单与每个粗网格文件均须仍然有效，且不得混入细网格结果。
 pub fn verify_coarse(cfg: &config::Config, work: &Path) -> Result<InterpolationManifest> {
     let m = InterpolationManifest::load(&crate::foundation::layout::path(&work, "wannier/manifest.json"))?;
     ensure!(m.validation.all_passed()
-        && m.quality.as_ref().is_some_and(QualityReport::usable)
         && m.fine.is_none() && m.spectra.is_empty(), "data_invalid: 粗网格阶段清单无效");
-    super::quality_binding::check_for_execution(cfg, work)?;
     let coarse = m.coarse.as_ref().context("data_invalid: 缺粗网格")?;
     ensure!(!coarse.artifacts.is_empty(), "data_invalid: 粗网格证据为空");
     for artifact in &coarse.artifacts {

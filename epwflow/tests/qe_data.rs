@@ -138,7 +138,6 @@ spectral_points = 4
 fsthick_ev = 1.0
 eps_acoustic_cm1 = 0.1
 fermi_source = "f2"
-quality = {{ k_points_crystal = [[0.0, 0.0, 0.0]], q_points_crystal = [[0.0, 0.0, 0.0]], energy_window_ev = [-2.0, 2.0], electron_max_ev = 0.01, electron_rms_ev = 0.001, phonon_max_cm1 = 10.0, phonon_rms_cm1 = 1.0 }}
 
 [superconductivity]
 mode = "iso"
@@ -355,7 +354,8 @@ fn qe_config_renders_expected_namelists() {
     assert!(scf_in.contains("ATOMIC_POSITIONS"));
     let nscf_in = qe.nscf_input(out.to_str().unwrap()).unwrap();
     assert!(nscf_in.contains("calculation = 'nscf'") && nscf_in.contains("nbnd = 4"));
-    let reference_in = qe.reference_input(out.to_str().unwrap(), &[[0., 0., 0.]]).unwrap();
+    let reference_in = qe.path_input(out.to_str().unwrap(), &[[0., 0., 0.]]).unwrap();
+    assert!(reference_in.contains("calculation = 'bands'"));
     for deck in [&scf_in, &nscf_in, &reference_in] {
         for pseudo in cfg.pseudos.values() {
             assert!(deck.contains(&format!("'{}'", pseudo.parent().unwrap().display())));

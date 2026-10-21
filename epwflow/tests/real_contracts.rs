@@ -63,7 +63,7 @@ impl Case {
                     "energy_reference = \"qe_zero\"",
                 ),
         );
-        // 此替身通过选窗能力预检，但不提供 dynmat；自动参考须在新科学调用前拒绝。
+        // 此替身通过选窗能力预检，但不生成任何原生产物；来源完整性仍须拒绝。
         self.script(
             "epw.x",
             "#!/bin/sh\n# dis_proj_min dis_proj_max dis_froz_proj\nexit 0\n",
@@ -397,11 +397,11 @@ fn b07_qe_stages_use_bound_prefix() {
 }
 
 #[test]
-fn b02_rejects_interpolation_without_native_spectrum_or_quality_evidence() {
+fn b02_rejects_interpolation_without_native_spectrum() {
     use epwflow::foundation::config::Program;
     use epwflow::interpolation::scheduler;
 
-    if isolated_worker("b02_rejects_interpolation_without_native_spectrum_or_quality_evidence") {
+    if isolated_worker("b02_rejects_interpolation_without_native_spectrum") {
         return;
     }
     let c = Case::new();
@@ -482,15 +482,13 @@ fn b03_rejects_superconductivity_without_successful_native_solver() {
     let work = c.root.join("superconductivity-run");
     // 明确是用来检测错误放行的合成清单，没有原生求解或矩阵元来源。
     let f3 = json!({
-        "schema_version": 1, "run_id": "untrusted-fixture", "f2_digest": "x", "wannier_digest": "y",
+        "schema_version": 2, "run_id": "untrusted-fixture", "f2_digest": "x", "wannier_digest": "y",
         "coarse": null,
         "fine": {"kpoints": 8, "qpoints": 8, "energies": [1.0, 2.0, 3.0, 4.0],
             "frequencies": [40.3, 80.6, 120.9, 161.2], "weights": [0.25, 0.25, 0.25, 0.25],
             "kqmap": 4, "layout": "epw", "ephmat_shards": 1, "artifacts": []},
         "spectra": [{"smearing_id": "fixture", "energy_mev": [5.0, 10.0, 15.0, 20.0],
             "a2f": [0.192, 0.192, 0.192, 0.192], "lambda_integral": 0.8, "lambda_sum": 0.8, "cutoff_ev": 0.2}],
-        "quality": {"points":36,"energy_reference":"qe_zero","max_error":0.0,"rms_error":0.0,
-            "coverage":1.0,"thresholds":{},"status":"valid"}, "mode_readiness": {"iso": true},
         "validation": {"status": "valid", "checks": [{"name":"fixture_claim", "passed":true, "detail":"not scientific evidence"}], "units": {}, "thresholds": {}, "evidence": []}
     });
     store::write(&work.join("interpolation/manifest.json"), &f3).unwrap();

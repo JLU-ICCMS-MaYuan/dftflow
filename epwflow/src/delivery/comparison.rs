@@ -15,7 +15,7 @@ pub const KINDS: [&str; 5] = [
 ];
 
 pub fn summary(data: &Dataset) -> serde_json::Value {
-    serde_json::json!({"schema_version":1, "operation_status":"ok", "workflow_complete":false, "comparison_complete":data.manifest.missing.is_empty(), "quality_status":data.manifest.quality_status, "run_id":data.manifest.run_id, "missing":data.manifest.missing})
+    serde_json::json!({"schema_version":1, "operation_status":"ok", "workflow_complete":false, "comparison_complete":data.manifest.missing.is_empty(), "differences":data.differences, "run_id":data.manifest.run_id, "missing":data.manifest.missing})
 }
 
 pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {

@@ -70,10 +70,7 @@ pub fn path(root: &Path, relative: &str) -> PathBuf {
         "interpolation" => root.join("epw-state/interpolation"),
         "superconductivity" => root.join("8.epw-superconductivity"),
         "native-attempts" => root.join("epw-state/native-attempts"),
-        "quality-sources" | "comparison-native" => root.join("6.epw-coarse").join(head),
-        "quality-reference.json" | "quality-binding.json" | "quality-report.json" => {
-            root.join("6.epw-coarse").join(head)
-        }
+        "comparison-native" => root.join("6.epw-coarse").join(head),
         _ => root.join(head),
     };
     if tail.is_empty() {

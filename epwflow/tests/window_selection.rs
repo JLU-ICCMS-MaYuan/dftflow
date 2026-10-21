@@ -66,7 +66,7 @@ fn both_native_inputs_consume_same_upstream_selection() {
         .unwrap();
     let win = ec.wannier90_input().unwrap();
     let coarse = ec
-        .native_input(NativeStage::CoarseQuality, "./out", "./save", 0.5)
+        .native_input(NativeStage::Coarse, "./out", "./save", 0.5)
         .unwrap();
     assert!(win.contains("dis_proj_min = 0.01") && win.contains("dis_proj_max = 0.95"));
     assert!(win.contains("dis_froz_proj = true"));

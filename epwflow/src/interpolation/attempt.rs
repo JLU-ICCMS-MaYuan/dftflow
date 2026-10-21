@@ -46,7 +46,8 @@ fn inputs(dir: &Path, result: &mut Vec<Identity>) -> Result<()> {
             !meta.file_type().is_symlink(),
             "input_conflict: 物化输入不得包含链接"
         );
-        if meta.is_file() && (crate::foundation::native_jobs::is_log(&path) || crate::foundation::workspace::slurm_log(&path)) { continue; }
+        if meta.is_file() && crate::foundation::native_jobs::is_log(&path) { continue; }
+        if meta.is_file() && crate::foundation::workspace::slurm_log(&path) { continue; }
         if meta.is_dir() {
             inputs(&path, result)?;
         } else {
@@ -143,7 +144,6 @@ fn archive(receipt: &mut Receipt, target: &Path, root: &Path, label: &str) -> Re
             fs::create_dir_all(destination)?;
             for entry in fs::read_dir(&receipt.directory)? {
                 let entry=entry?;
-                if ["quality-sources","quality-reference.json","quality-binding.json","quality-report.json"].iter().any(|n|entry.file_name()==*n) {continue}
                 fs::rename(entry.path(),destination.join(entry.file_name()))?;
             }
             crate::foundation::workspace::preserve_active_logs(destination, &receipt.directory)?;

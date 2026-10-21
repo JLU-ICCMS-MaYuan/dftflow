@@ -68,14 +68,6 @@ spectral_points = 500
 fsthick_ev = 0.4
 eps_acoustic_cm1 = 1.0
 fermi_source = "f2"
-[interpolation.quality]
-k_points_crystal = [[0.1,0.2,0.3], [0.2,0.3,0.4], [0.1,0.3,0.2], [0.3,0.1,0.2]]
-q_points_crystal = [[0.1,0.2,0.3], [0.2,0.3,0.4]]
-energy_window_ev = [-0.5,0.5]
-electron_max_ev = 0.05
-electron_rms_ev = 0.02
-phonon_max_cm1 = 5.0
-phonon_rms_cm1 = 2.0
 [superconductivity]
 mode = "both"
 mu_star = 0.1

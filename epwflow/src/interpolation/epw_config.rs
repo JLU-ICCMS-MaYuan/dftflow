@@ -9,14 +9,14 @@ pub struct EpwConfig<'a> {
     bands: Option<Vec<Vec<f64>>>,
 }
 
-/// 在生成细网格矩阵元之前，先在固定验证点完成 Wannier/粗网格检查。
+/// 原生 Wannier、粗网格、常规对比重读与细网格输入。
 #[derive(Clone, Copy)]
 pub enum NativeStage {
     WannierOnly,
     ReuseWannier,
-    CoarseQuality,
-    /// 只重读既有 Wannier 规范，在全部独立点重新插值，不重新选窗。
-    RestartQuality,
+    Coarse,
+    /// 重读既有 Wannier 规范，在常规路径与 DOS 网格插值。
+    Comparison,
     FineMatrices,
 }
 
@@ -92,13 +92,12 @@ impl<'a> EpwConfig<'a> {
             &bounds, reference,
         )?;
         if w.selection_mode == qf_wannier::SelectionMode::EnergyOnly {
-            let q = &self.cfg.interpolation.quality;
             let fermi = selection.fermi_ev;
-            let lower = fermi + q.energy_window_ev[0].min(-self.cfg.interpolation.fsthick_ev);
-            let upper = fermi + q.energy_window_ev[1].max(self.cfg.interpolation.fsthick_ev);
+            let lower = fermi - self.cfg.interpolation.fsthick_ev;
+            let upper = fermi + self.cfg.interpolation.fsthick_ev;
             ensure!(selection.parameters["dis_froz_min"] <= lower
                 && upper <= selection.parameters["dis_froz_max"],
-                "data_invalid: 纯能量冻结窗未包含质量／EPC 目标窗 [{lower},{upper}] eV");
+                "data_invalid: 纯能量冻结窗未包含 EPC 目标窗 [{lower},{upper}] eV");
         }
         Ok(selection)
     }
@@ -201,7 +200,7 @@ impl<'a> EpwConfig<'a> {
 
     pub fn epw_coarse_input(&self, outdir: &str) -> Result<String> {
         self.native_input(
-            NativeStage::CoarseQuality,
+            NativeStage::Coarse,
             outdir,
             "./save",
             self.cfg.interpolation.phonon_smearings_mev[0],
@@ -264,14 +263,9 @@ impl<'a> EpwConfig<'a> {
             config::FermiSource::FineFixedElectrons => s.push_str(" efermi_read = .false.\n"),
         }
         match stage {
-            NativeStage::WannierOnly | NativeStage::CoarseQuality => {
+            NativeStage::WannierOnly | NativeStage::Coarse => {
                 s.push_str(" epwread = .false.\n epwwrite = .true.\n wannierize = .true.\n ephwrite = .false.\n eliashberg = .false.\n");
-                if wannier_only {
-                    // readin 会无条件打开非空 filkf/filqf；拟合不消费插值点。
-                    s.push_str(" band_plot = .false.\n");
-                } else {
-                    s.push_str(" band_plot = .true.\n selecqread = .true.\n filkf = 'kpoints.dat'\n filqf = 'qpoints.dat'\n");
-                }
+                s.push_str(" band_plot = .false.\n");
                 s.push_str(&format!(" num_iter = {}\n", w.localization.max_iterations));
                 for (j, p) in w.projections.iter().enumerate() {
                     s.push_str(&format!(" proj({}) = {}\n", j + 1, quoted(p)?));
@@ -324,9 +318,9 @@ impl<'a> EpwConfig<'a> {
                 }
             }
             NativeStage::ReuseWannier => {
-                s.push_str(" epwread = .false.\n epwwrite = .true.\n wannierize = .false.\n ephwrite = .false.\n eliashberg = .false.\n band_plot = .true.\n selecqread = .true.\n filkf = 'kpoints.dat'\n filqf = 'qpoints.dat'\n");
+                s.push_str(" epwread = .false.\n epwwrite = .true.\n wannierize = .false.\n ephwrite = .false.\n eliashberg = .false.\n band_plot = .false.\n");
             }
-            NativeStage::RestartQuality => {
+            NativeStage::Comparison => {
                 s.push_str(" epwread = .true.\n epwwrite = .false.\n epbread = .false.\n wannierize = .false.\n ephwrite = .false.\n eliashberg = .false.\n band_plot = .true.\n selecqread = .true.\n filkf = 'kpoints.dat'\n filqf = 'qpoints.dat'\n");
             }
             NativeStage::FineMatrices => {
@@ -344,12 +338,7 @@ impl<'a> EpwConfig<'a> {
         Ok(s)
     }
 
-    /// 独立验证点按原配置写出，显式选全 q，避免 Fermi 窗口筛选留下假零频。
-    pub fn write_quality_points(&self, dir: &std::path::Path) -> Result<()> {
-        let quality = &self.cfg.interpolation.quality;
-        Self::write_points(dir, &quality.k_points_crystal, &quality.q_points_crystal)
-    }
-
+    /// 常规比较路径及 DOS 网格；显式选全 q，避免 Fermi 筛选遗漏频率。
     pub(super) fn write_points(dir: &std::path::Path, k: &[[f64; 3]], q: &[[f64; 3]]) -> Result<()> {
         for (name, points) in [
             ("kpoints.dat", k),
@@ -357,7 +346,7 @@ impl<'a> EpwConfig<'a> {
         ] {
             ensure!(
                 !points.is_empty() && points.iter().flatten().all(|v| v.is_finite()),
-                "configuration: 独立质量验证点缺失或非有限"
+                "configuration: 常规比较点缺失或非有限"
             );
             let mut text = format!("{} crystal\n", points.len());
             for [x, y, z] in points {

@@ -9,7 +9,6 @@ use epwflow::{
     interpolation::{
         manifest::{FineData, Spectrum},
         native::NativeSpectrum,
-        quality_binding,
     },
     superconductivity::{
         aniso, attempt::SolveKind, engine::Engine, manifest::SuperconductivityManifest, scheduler,
@@ -161,15 +160,6 @@ fn actual(diagnostic: bool) -> Result<()> {
     for id in &historical {
         id.verify()?;
     }
-    let quality = quality_binding::check(&cfg, &c.fine_root)?;
-    ensure!(
-        quality.passed && quality.phonon.points == 5 && quality.phonon.modes_per_point == 9,
-        "五点质量门没有通过"
-    );
-    ensure!(
-        serde_json::to_value(&quality)? == report["quality"],
-        "质量报告与来源冲突"
-    );
     let fine: FineData = serde_json::from_value(report["fine"].clone())?;
     let spectrum: NativeSpectrum = serde_json::from_value(report["spectrum"].clone())?;
     let spectra = vec![Spectrum {
@@ -217,10 +207,6 @@ fn actual(diagnostic: bool) -> Result<()> {
         if let Some(parent) = &c.parent_manifest {
             parent.verify()?;
         }
-        ensure!(
-            quality_binding::check(&cfg, &c.fine_root)?.passed,
-            "质量来源改变"
-        );
         Ok(())
     };
     let mut modes = BTreeMap::new();
@@ -312,7 +298,7 @@ fn actual(diagnostic: bool) -> Result<()> {
     store::write(
         &cfg.work_dir.join("native-tc-validation.json"),
         &serde_json::json!({
-            "schema_version":1, "job_id":job, "case":case_id, "quality":quality,
+            "schema_version":1, "job_id":job, "case":case_id,
             "automatic_workflow_validated":false, "historical_sources_unchanged":true,
             "tc_computed":result.converged, "diagnostic_only":diagnostic,
             "previous_attempt_counts":previous_counts, "diagnostic_sides":diagnostic_sides,

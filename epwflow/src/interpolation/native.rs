@@ -3,7 +3,7 @@ use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
-/// 只读检查现有原生计算。冒烟产物不能自动取得插值质量或超导认证。
+/// 只读检查现有原生计算，不替代完整执行和求解收敛记录。
 pub fn inspect(work: &Path) -> Result<serde_json::Value> {
     let input = fs::read_to_string(work.join("epw.in"))?;
     let prefix_re = regex::Regex::new(r"(?im)^\s*prefix\s*=\s*'([A-Za-z0-9_-]+)'\s*,?\s*$")?;
@@ -55,7 +55,7 @@ pub fn inspect(work: &Path) -> Result<serde_json::Value> {
     );
     Ok(serde_json::json!({
         "schema_version": 1, "workflow_status": "native_epc_only", "workflow_complete": false,
-        "native_epc_smoke_passed": true, "interpolation_quality": "unverified",
+        "native_epc_smoke_passed": true,
         "eliashberg": "unverified", "automatic_chain": "unverified",
         "samples": samples, "spectrum": spectra[0].file_name().context("data_invalid: 谱文件名为空")?.to_string_lossy(),
         "spectrum_sha256": super::super::foundation::store::hash_file(&spectra[0])?,
@@ -287,111 +287,4 @@ fn parse_plot(text: &str, coordinate_columns: usize) -> Result<NativeBands> {
             .push(row[coordinate_columns..].iter().map(|s| number(s)).collect::<Result<_>>()?);
     }
     Ok(out)
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ElectronicQuality {
-    pub window_ev: [f64; 2],
-    pub points: usize,
-    pub reference_states: usize,
-    pub max_error_ev: f64,
-    pub rms_error_ev: f64,
-    pub passed: bool,
-}
-
-/// 同一能量零点下覆盖能窗内所有参考态。按能量有序地进行一一匹配，
-/// 不允许多个参考态共用同一 Wannier 态，也不拟合能量平移。
-pub fn electronic_quality(
-    reference: &NativeBands,
-    interpolated: &NativeBands,
-    window_ev: [f64; 2],
-    max_ev: f64,
-    rms_ev: f64,
-) -> Result<ElectronicQuality> {
-    ensure!(
-        window_ev.iter().all(|v| v.is_finite())
-            && window_ev[0] < window_ev[1]
-            && max_ev.is_finite()
-            && rms_ev.is_finite()
-            && max_ev > 0.0
-            && rms_ev > 0.0,
-        "configuration: 非法电子质量检查能窗或阈值"
-    );
-    ensure!(
-        !reference.values.is_empty()
-            && reference.values.len() == reference.points_cartesian.len()
-            && interpolated.values.len() == interpolated.points_cartesian.len()
-            && reference.values.len() == interpolated.values.len(),
-        "data_invalid: 电子质量检查点不完整"
-    );
-    let mut errors = Vec::new();
-    for i in 0..reference.values.len() {
-        ensure!(
-            reference.points_cartesian[i]
-                .iter()
-                .zip(interpolated.points_cartesian[i])
-                .all(|(a, b)| a.is_finite() && b.is_finite() && (a - b).abs() <= 1e-6),
-            "data_invalid: 第 {} 个质量检查点坐标不一致",
-            i + 1
-        );
-        ensure!(
-            !reference.values[i].is_empty()
-                && !interpolated.values[i].is_empty()
-                && reference.values[i]
-                    .iter()
-                    .chain(&interpolated.values[i])
-                    .all(|v| v.is_finite()),
-            "data_invalid: 第 {} 个点的能量数据无效",
-            i + 1
-        );
-        let mut r: Vec<f64> = reference.values[i]
-            .iter()
-            .copied()
-            .filter(|v| window_ev[0] <= *v && *v <= window_ev[1])
-            .collect();
-        let mut c = interpolated.values[i].clone();
-        r.sort_by(f64::total_cmp);
-        c.sort_by(f64::total_cmp);
-        ensure!(
-            r.len() <= c.len(),
-            "data_invalid: 第 {} 个点的 Wannier 态不足以覆盖验收能窗",
-            i + 1
-        );
-        // 最小平方误差的有序单射匹配；保存匹配，而非只比较平均能量。
-        let mut cost = vec![vec![f64::INFINITY; c.len() + 1]; r.len() + 1];
-        let mut take = vec![vec![false; c.len() + 1]; r.len() + 1];
-        cost[0].fill(0.0);
-        for a in 1..=r.len() {
-            for b in 1..=c.len() {
-                let matched = cost[a - 1][b - 1] + (r[a - 1] - c[b - 1]).powi(2);
-                if matched < cost[a][b - 1] {
-                    cost[a][b] = matched;
-                    take[a][b] = true;
-                } else {
-                    cost[a][b] = cost[a][b - 1];
-                }
-            }
-        }
-        let (mut a, mut b) = (r.len(), c.len());
-        while a > 0 {
-            ensure!(b > 0, "data_invalid: 电子态匹配不完整");
-            if take[a][b] {
-                errors.push((r[a - 1] - c[b - 1]).abs());
-                a -= 1;
-            }
-            b -= 1;
-        }
-    }
-    ensure!(!errors.is_empty(), "data_invalid: 验收能窗内没有电子参考态");
-    let max_error_ev = errors.iter().copied().fold(0.0, f64::max);
-    let rms_error_ev = (errors.iter().map(|e| e * e).sum::<f64>() / errors.len() as f64).sqrt();
-    ensure!(max_error_ev.is_finite() && rms_error_ev.is_finite(), "data_invalid: 电子误差计算溢出");
-    Ok(ElectronicQuality {
-        window_ev,
-        points: reference.values.len(),
-        reference_states: errors.len(),
-        max_error_ev,
-        rms_error_ev,
-        passed: max_error_ev <= max_ev && rms_error_ev <= rms_ev,
-    })
 }

@@ -123,6 +123,98 @@ where
     Ok(())
 }
 
+/// 每张常规图只展示自己已有数据的最大差值，不作质量判断。
+fn comparison_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    curves: &[Curve],
+    data: &Dataset,
+    kind: usize,
+    projection: &str,
+) -> Result<()>
+where
+    DB::ErrorType: 'static,
+{
+    if projection != "total" {
+        return chart(area, curves, data, kind, projection);
+    }
+    let Some(differences) = &data.differences else {
+        return if kind == 2 {
+            phonon_panel(area, data)
+        } else {
+            chart(area, curves, data, kind, projection)
+        };
+    };
+    let stats = match kind {
+        0 => &differences.electronic_path,
+        1 => &differences.electronic_mesh,
+        2 => &differences.phonon_path,
+        _ => &differences.phonon_mesh,
+    };
+    let (_, height) = area.dim_in_pixel();
+    let (main, footer) = area.split_vertically(height.saturating_sub(125));
+    chart(&main, curves, data, kind, projection)?;
+    let text = if let Some(m) = &stats.maximum {
+        let position = m
+            .crystal
+            .iter()
+            .map(|v| coordinate(*v))
+            .collect::<Vec<_>>()
+            .join(", ");
+        vec![
+            format!(
+                "{} max |QE - EPW| = {:.6} {}",
+                if kind == 0 || kind == 2 {
+                    "Path"
+                } else {
+                    "DOS mesh"
+                },
+                m.absolute_difference,
+                stats.unit
+            ),
+            format!(
+                "{}(crystal) = ({position}); QE[{}] = {:.6}; EPW[{}] = {:.6}",
+                if kind < 2 { "k" } else { "q" },
+                m.qe_index,
+                m.qe_value,
+                m.epw_index,
+                m.epw_value
+            ),
+            format!(
+                "Energy/frequency pairs: {}; unpaired QE: {}; EPW: {}",
+                stats.paired_states, stats.unmatched_qe_states, stats.unmatched_epw_states
+            ),
+            if kind < 2 {
+                "Ordered energy pairs; eigenstate identity is not established".into()
+            } else {
+                "QE q2r/matdyn; all 3N frequency-sorted modes".into()
+            },
+        ]
+    } else {
+        vec![
+            format!(
+                "{}: no paired data (无可配对数据)",
+                if kind == 0 || kind == 2 {
+                    "Path"
+                } else {
+                    "DOS mesh"
+                }
+            ),
+            format!(
+                "Pairs: 0; unpaired QE: {}; EPW: {}",
+                stats.unmatched_qe_states, stats.unmatched_epw_states
+            ),
+        ]
+    };
+    for (i, line) in text.into_iter().enumerate() {
+        footer.draw(&Text::new(
+            line,
+            (12, 18 + i as i32 * 25),
+            ("sans-serif", 14).into_font().color(&ERROR_PURPLE),
+        ))?;
+    }
+    Ok(())
+}
+
 /// 显式截取线段，窗外数据不贴着边界生成虚假的水平能带。
 fn clip(points: &[(f64, f64)], lo: f64, hi: f64) -> Vec<Vec<(f64, f64)>> {
     let mut paths: Vec<Vec<(f64, f64)>> = Vec::new();
@@ -421,6 +513,22 @@ where
             }
         }
     }
+    if kind == 0 || kind == 2 {
+        if let Some(d) = &data.differences {
+            let stats=if kind==0 {&d.electronic_path} else {&d.phonon_path};
+            if let Some(m)=&stats.maximum {
+                if let Some(x)=m.path_distance {
+                    ctx.draw_series(std::iter::once(PathElement::new(
+                        vec![(x,m.qe_value),(x,m.epw_value)],ERROR_PURPLE.stroke_width(3))))?;
+                    ctx.draw_series([m.qe_value,m.epw_value].into_iter()
+                        .filter(|y| *y >= ymin && *y <= ymax)
+                        .map(|y|Circle::new((x,y),6,ERROR_PURPLE.filled())))?
+                        .label("Purple: path maximum difference")
+                        .legend(|(x,y)|Circle::new((x+15,y),5,ERROR_PURPLE.filled()));
+                }
+            }
+        }
+    }
     if kind == 0 || kind == 1 {
         // 电子能量已经是 E−E_F；零点参考与四个物理窗口边界分别标识。
         let fermi_color = RGBColor(47, 125, 60);
@@ -520,10 +628,9 @@ where
 {
     area.fill(&WHITE)?;
     let banner = format!(
-        "{} | {} | quality: {} | {}",
+        "{} | {} | {}",
         data.metadata.title,
         data.manifest.ph_mode,
-        data.manifest.quality_status,
         if data.manifest.missing.is_empty() {
             "diagnostic"
         } else {
@@ -579,11 +686,7 @@ where
         .iter()
         .enumerate()
         {
-            if i == 2 {
-                phonon_panel(&panels[i], data)?;
-            } else {
-                chart(&panels[i], curves, data, i, "total")?;
-            }
+            comparison_panel(&panels[i], curves, data, i, "total")?;
         }
     } else if kind == 1 || kind == 3 {
         let mut projections = vec!["total".to_string()];
@@ -598,12 +701,12 @@ where
             &data.phonon_dos
         };
         for (panel, p) in panels.iter().zip(projections) {
-            chart(panel, curves, data, kind, &p)?;
+            comparison_panel(panel, curves, data, kind, &p)?;
         }
     } else if kind == 2 {
-        phonon_panel(&body, data)?;
+        comparison_panel(&body, &data.phonon, data, kind, "total")?;
     } else {
-        chart(
+        comparison_panel(
             &body,
             if kind == 0 {
                 &data.electronic

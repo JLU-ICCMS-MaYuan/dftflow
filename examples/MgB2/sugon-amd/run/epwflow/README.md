@@ -2,7 +2,13 @@
 
 当前工作目录是 `/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow`。日常输入只有本目录的 `epwinput.toml`；结构使用上一级 `run/POSCAR`，赝势使用上一级 `run/pp/`，路径使用本目录 `KPATH.in`。TOML 相对路径以 TOML 所在目录为基准，因此结构写 `../POSCAR`。
 
-## 本轮已经运行到哪里
+## 新版源码的常规对比（0043）
+
+独立抽样核验已取消：新增运行不生成 quality-sources 或专用报告，不启动参考 NSCF／直接 PH／dynmat；常规路径与 DOS 出图仍保留。四项最大差值、位置、两侧值和配对数量存于 comparison/metrics.json，并在终端与图中展示，没有数值阈值或告警。新配置需删除 `[interpolation.quality]`。已有主科学数据通过 `--import-work` 复用，抽样参考不再导入；旧工作区不自动迁移。
+
+本次只修改源码、测试与文档，没有覆盖默认安装或重跑本例。下方旧作业、旧报告及图像记录保持当时含义；不能将它们当成新版四项统计。设计与验收见 [0043](../../../../../docs/specs/0043-epw-comparison-max-differences/acceptance.md)。
+
+## 历史运行记录
 
 2026-10-21 已实际通过公开命令提交测试：第 1～4 步完成；第 5 步作业 1314551 完成，拟合与电子图已核验；原生粗 EPC 在 1314626 完成，作业 1314972 复用它完成了比较后处理。后者的最终退出原因是 **质量未通过**，不是此前的缺文件或路径解析错误。
 
@@ -43,10 +49,10 @@ epw_phonon -c epwinput.toml -s
 # 第 5 步：原生 Wannier 拟合、电子能带及总 DOS 对比。
 epw_wannier -c epwinput.toml --stage wannier -s
 
-# 第 6 步：复用 Wannier 变换，粗 EPC、独立质量检查与比较图。
+# 第 6 步：复用 Wannier 变换，粗 EPC、常规比较图与最大差值。
 epw_wannier -c epwinput.toml --stage coarse -s
 
-# 第 7 步：严格重验粗网格来源；数值超差告警后继续细网格 EPC、α²F 和 λ。
+# 第 7 步：重验粗网格来源，执行细网格 EPC、α²F 和 λ。
 epw_superconductivity -c epwinput.toml --stage fine -s
 
 # 第 8 步：按配置执行 iso／aniso 原生求解及 Tc 搜索。
@@ -76,11 +82,11 @@ epwflow/
 
 阶段完成记录是本阶段的 `completion.json`，电子子任务记录在第 3 步的 `receipts/`，后处理记录跟随本阶段。删除阶段目录或必要产物后，当前源码将该阶段判为需要更新，并保留相容上游；内容篡改、损坏记录、活动或未知作业仍单独报错。可见状态维护的源码与安装边界见 [0025 验收](../../../../../docs/specs/0025-epw-visible-run-state/acceptance.md)。
 
-第 5 步成功后可看 `electronic-bands.png`、`electronic-dos.png`，并保留 DOS CSV 和规范化说明；第 6 步的独立检查记录误差并在超差时告警，允许继续细网格。图像重叠不能代替数值校验，严格元素／轨道投影仍暂缓。
+第 5 步成功后可看 `electronic-bands.png`、`electronic-dos.png`，并保留 DOS CSV 和规范化说明；新版第 6 步只显示常规对比的最大差值，不据此判断是否继续细网格。图像重叠不能代替数值校验，严格元素／轨道投影仍暂缓。
 
 非磁标量 DOS 两侧原生程序都计入两重自旋，Wannier 曲线直接使用原生数值，倍率为 1；`electronic-dos-normalization.json` 保存每态电子数及原始 DOS／日志哈希。断开的能带路径分别绘制，同位置端点合并为 `A | L`、`M | H`。修复与实际重绘验收见 [0031](../../../../../docs/specs/0031-postw90-dos-spin-normalization/acceptance.md)、[0032](../../../../../docs/specs/0032-disconnected-electronic-band-paths/acceptance.md)。
 
-第 6 步需要第 5 步生成并绑定的 `.ukk`、`.bvec`、`.mmn` 和收敛日志。旧收据没有绑定速度矩阵配套文件时，第 5 步会重建一次；已有 QE／PH 保留，原拟合归档。后续独立绘图关闭 `write_bvec`，保护已绑定文件。细节见 [0033](../../../../../docs/specs/0033-wannier-velocity-handoff/acceptance.md)。自动独立参考的旧编排器身份用于追溯，升级 CLI 后仍严格核验科学参数、原请求及科学文件，见 [0034](../../../../../docs/specs/0034-reference-orchestrator-upgrade/acceptance.md)。
+第 6 步需要第 5 步生成并绑定的 `.ukk`、`.bvec`、`.mmn` 和收敛日志。旧收据没有绑定速度矩阵配套文件时，第 5 步会重建一次；已有 QE／PH 保留，原拟合归档。后续独立绘图关闭 `write_bvec`，保护已绑定文件。细节见 [0033](../../../../../docs/specs/0033-wannier-velocity-handoff/acceptance.md)。历史抽样参考与编排器设计保存在 [0034](../../../../../docs/specs/0034-reference-orchestrator-upgrade/acceptance.md)。
 
 ## 本例的局域化与声子恢复
 
@@ -101,9 +107,9 @@ Slurm 日志是执行输出，正常追加不能当成科学输入损坏；原�
 
 QE 显式路径的原生频率文件可能在未使用的第四列打印 `**********`。专用路径解析忽略该占位列，仍校验前三坐标和全部频率；保留原始文件，不需手工改它。程序升级后的比较恢复仍读取本次配置，复用原始科学数据及已完成的比较子任务。详见 [0037](../../../../../docs/specs/0037-matdyn-path-unused-weight/acceptance.md)、[0038](../../../../../docs/specs/0038-comparison-orchestrator-upgrade/acceptance.md)。
 
-## 数值超差后继续测试（0040）
+## 历史数值告警策略实测（0040，已由 0043 取代）
 
-不需要改理想阈值。保留本目录 epwinput.toml，按上面的第 6→7→8 步顺序提交；已有粗 EPC 和上游重验后复用。终端／作业 stderr 的 quality_warning 是数值告警，不是任务失败。原 quality-report.json 中 passed=false 以及误差保留；阶段清单 quality.status=warning。实际原生程序失败、数据损坏、并行错误或预算不足仍非零退出。
+当时不需要改理想阈值。保留本目录 epwinput.toml，按上面的第 6→7→8 步顺序提交；已有粗 EPC 和上游重验后复用。终端／作业 stderr 的 quality_warning 是数值告警，不是任务失败。原 quality-report.json 中 passed=false 以及误差保留；阶段清单 quality.status=warning。实际原生程序失败、数据损坏、并行错误或预算不足仍非零退出。
 
 完整交付时 workflow_complete=true 与 quality_warning=true 可以同时出现，前者表示执行链完成，后者提示数值尚不理想；不能据此认定 Tc 已科学收敛。需求与实测记录见 [0040](../../../../../docs/specs/0040-interpolation-quality-warnings/acceptance.md)。
 

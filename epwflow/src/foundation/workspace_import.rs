@@ -95,7 +95,6 @@ fn publish(cfg: &Config, t: &Transaction, report: &Path) -> Result<()> {
         t.source_files == save::files(&t.calculation_dir)?,
         "input_conflict: 原来源在发布期间改变"
     );
-    import_reference(cfg, &t.calculation_dir)?;
     store::write(
         report,
         &serde_json::json!({"schema_version":1,"source_sha256":t.source.sha256,"source_files":t.source_files,"calculation_dir":t.calculation_dir,"new_manifest":Identity::capture(&layout::path(&cfg.work_dir,"qe-data/manifest.json"))?}),
@@ -111,9 +110,11 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
         !cfg.work_dir.starts_with(&source) && !source.starts_with(&cfg.work_dir.join("epw-state")),
         "input_conflict: 导入来源与目标重叠"
     );
-    let binding = RunBinding::load(&source)?;
+    let mut binding = RunBinding::load(&source)?;
+    // 历史绑定原字节保留；已删除的抽样程序不再是主科学数据导入依赖。
+    binding.programs.remove("dynmat");
     binding.verify()?;
-    let original = Config::load(&source.join("input-init.toml"))?;
+    let original = Config::load_imported(&source.join("input-init.toml"))?;
     let state = if source.join("epw-state/workflow.json").is_file() { "epw-state" } else { ".epwflow" };
     let record: serde_json::Value = store::read(&source.join(state).join("workflow.json"))?;
     if let Some(job) = record.get("job_id").and_then(|v| v.as_u64()) {
@@ -315,84 +316,4 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     };
     store::write(&journal, &transaction)?;
     publish(&cfg, &transaction, &report)
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-struct ReferenceBinding {
-    key: String,
-    reference: Identity,
-}
-fn reference_key(cfg: &Config) -> Result<String> {
-    let q = &cfg.interpolation.quality;
-    Ok(store::hash_bytes(&serde_json::to_vec(&(
-        stages::scientific_key(cfg, Step::Nscf)?,
-        cfg.phonon.tr2_ph,
-        &cfg.atomic_masses,
-        &q.k_points_crystal,
-        &q.q_points_crystal,
-        q.energy_window_ev,
-    ))?))
-}
-pub fn reference(cfg: &Config) -> Result<Option<PathBuf>> {
-    if !layout::enabled(&cfg.work_dir) {
-        return Ok(None);
-    }
-    let p = cfg
-        .work_dir
-        .join("epw-state/imported-reference/binding.json");
-    if !p.exists() {
-        return Ok(None);
-    }
-    let b: ReferenceBinding = store::read(&p)?;
-    if b.key != reference_key(cfg)? {
-        return Ok(None);
-    }
-    b.reference.verify()?;
-    Ok(Some(b.reference.path))
-}
-fn import_reference(cfg: &Config, calc: &Path) -> Result<()> {
-    let old = calc.join("quality-sources/reference.json");
-    if !old.is_file() {
-        return Ok(());
-    }
-    let m = QeManifest::load(&layout::path(&cfg.work_dir, "qe-data/manifest.json"))?;
-    let frozen = crate::interpolation::quality_binding::freeze_at(
-        cfg,
-        m.states.as_ref().context("data_invalid: 无 NSCF")?.fermi,
-        &old,
-    )?;
-    frozen.verify()?;
-    let mut sources = frozen.sources;
-    let dir = cfg.work_dir.join("epw-state/imported-reference");
-    fs::create_dir_all(&dir)?;
-    for (name, file) in [
-        ("fermi.xml", &mut sources.fermi_reference),
-        ("electron.xml", &mut sources.electron_reference),
-        ("phonon.freq", &mut sources.phonon_reference_cm1),
-    ] {
-        let to = dir.join(name);
-        if !to.exists() {
-            fs::copy(&file.path, &to)?;
-        }
-        ensure!(
-            store::hash_file(&to)? == file.sha256,
-            "input_conflict: 导入独立参考改变"
-        );
-        file.path = to;
-    }
-    sources
-        .provenance
-        .push(crate::interpolation::native_quality::SourceFile {
-            path: old,
-            sha256: frozen.source.sha256,
-        });
-    let p = dir.join("reference.json");
-    store::write(&p, &sources)?;
-    store::write(
-        &dir.join("binding.json"),
-        &ReferenceBinding {
-            key: reference_key(cfg)?,
-            reference: Identity::capture(&p)?,
-        },
-    )
 }

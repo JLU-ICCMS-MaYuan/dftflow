@@ -114,11 +114,10 @@ pub fn parameters(cfg: &Config, step: Step) -> Result<Value> {
             json!({"phonon":cfg.phonon,"masses":cfg.atomic_masses,"ph":program(&cfg.programs.ph.path)?})
         }
         Step::Wannier => json!({"wannier":cfg.wannier,"epw":program(&cfg.programs.epw.path)?}),
-        Step::Coarse => json!({"quality":cfg.interpolation.quality,"masses":cfg.atomic_masses,
+        Step::Coarse => json!({"masses":cfg.atomic_masses,
             "epw":program(&cfg.programs.epw.path)?}),
         Step::Fine => {
-            let mut v = serde_json::to_value(&cfg.interpolation)?;
-            v.as_object_mut().unwrap().remove("quality");
+            let v = serde_json::to_value(&cfg.interpolation)?;
             json!({"interpolation":v,"epw":program(&cfg.programs.epw.path)?,"temperature":cfg.superconductivity.gap_temperatures_k[0]})
         }
         Step::Superconductivity => {

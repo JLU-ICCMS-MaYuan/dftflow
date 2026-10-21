@@ -40,21 +40,6 @@ pub fn run(cmd: InterpolationCommand) -> Result<()> {
 }
 
 fn check(work: &Path, json: bool) -> Result<()> {
-    let quality_path = crate::foundation::layout::path(&work, "quality-reference.json");
-    if quality_path.is_file() {
-        let report = super::native_quality::inspect(&quality_path)?;
-        if json {
-            status::print_json(&status::envelope("ok", if report.passed { "quality_passed" } else { "quality_warning" }, serde_json::to_value(&report)?));
-        } else {
-            println!("interpolation_quality: {}", if report.passed { "passed" } else { "failed" });
-            println!("electron_max_rms_ev: {} {}", report.electron.max_error_ev, report.electron.rms_error_ev);
-            println!("phonon_max_rms_cm1: {} {}", report.phonon.max_error_cm1, report.phonon.rms_error_cm1);
-            println!("phonon_limits_max_rms_cm1: {} {}", report.phonon.max_error_limit_cm1, report.phonon.rms_error_limit_cm1);
-            println!("workflow_complete: false");
-        }
-        report.warn_if_failed();
-        return Ok(());
-    }
     let path = crate::foundation::layout::path(&work, "interpolation").join("manifest.json");
     if !path.exists() {
         if work.join("epw.in").is_file() || work.join("epw.out").is_file() {
@@ -64,7 +49,6 @@ fn check(work: &Path, json: bool) -> Result<()> {
             } else {
                 println!("workflow_status: native_epc_only");
                 println!("workflow_complete: false");
-                println!("interpolation_quality: unverified");
                 println!("eliashberg: unverified");
                 println!("lambda_sum: {}", report["lambda_sum"]);
             }

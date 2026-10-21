@@ -477,7 +477,6 @@ fn collect_phonon(cfg: &Config, qe: &QeSettings) -> Result<qe_data::manifest::Qe
             ("epw", cfg.programs.epw.path.clone()),
             ("q2r", post_program(cfg, "q2r")?.path),
             ("matdyn", post_program(cfg, "matdyn")?.path),
-            ("dynmat", post_program(cfg, "dynmat")?.path),
         ] {
             programs.insert(name.into(), store::hash_file(&p)?);
         }
@@ -924,16 +923,8 @@ pub fn invalidate(cfg: &Config, step: Step, history: &Path) -> Result<()> {
         Step::Phonon => paths.push(layout::path(root, "qe-data")),
         Step::Coarse => {
             paths.push(layout::path(root, "wannier"));
-            // 新科学请求重新建立质量绑定；资源变更复用通过阶段缓存，不进入这里。
-            for p in [
-                "quality-reference.json",
-                "quality-binding.json",
-                "quality-report.json",
-                "quality-sources",
-                "comparison-native",
-            ] {
-                paths.push(root.join(p));
-            }
+            // 新科学请求重新建立常规比较来源；资源变更通过阶段缓存复用。
+            paths.push(root.join("comparison-native"));
             paths.push(crate::foundation::layout::path(&root, "native-attempts"));
         }
         Step::Fine => {
@@ -971,7 +962,7 @@ mod post_program_tests {
         let mut cfg: Config = toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
         cfg.programs.pw.path = PathBuf::from("/qe with spaces/bin/pw.x");
         cfg.programs.pw.args = vec!["-nk".into(), "8".into()];
-        for name in ["bands", "dos", "q2r", "matdyn", "dynmat", "wannier90", "postw90"] {
+        for name in ["bands", "dos", "q2r", "matdyn", "wannier90", "postw90"] {
             let p = post_program(&cfg, name).unwrap();
             assert_eq!(p.path, PathBuf::from(format!("/qe with spaces/bin/{name}.x")));
             let expected = if matches!(name, "bands" | "dos") {

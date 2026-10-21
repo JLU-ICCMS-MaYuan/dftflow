@@ -120,7 +120,6 @@ spectral_points = 4
 fsthick_ev = 1.0
 eps_acoustic_cm1 = 0.1
 fermi_source = "f2"
-quality = {{ k_points_crystal = [[0.0, 0.0, 0.0]], q_points_crystal = [[0.0, 0.0, 0.0]], energy_window_ev = [-2.0, 2.0], electron_max_ev = 0.01, electron_rms_ev = 0.001, phonon_max_cm1 = 10.0, phonon_rms_cm1 = 1.0 }}
 
 [superconductivity]
 mode = "iso"
@@ -576,7 +575,7 @@ fn missing_native_solver_cannot_publish_superconductivity() {
     let f3 = work.join("interpolation");
     std::fs::create_dir_all(&f3).unwrap();
     let manifest = serde_json::json!({
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": "f3",
         "f2_digest": "x",
         "wannier_digest": "y",
@@ -594,7 +593,6 @@ fn missing_native_solver_cannot_publish_superconductivity() {
             "a2f": [0.192, 0.192, 0.192, 0.192],
             "lambda_integral": 0.8, "lambda_sum": 0.8, "cutoff_ev": 0.2
         }],
-        "quality": null,
         "mode_readiness": {"iso": true},
         "validation": {
             "status": "valid",
@@ -751,9 +749,9 @@ fn native_engine_both_modes_use_process_results_and_keep_independent_intervals()
     cfg.superconductivity.aniso = cfg.superconductivity.iso.clone();
     let mut inputs = native_inputs(&root);
     let f3_path = root.join("interpolation/manifest.json");
-    store::write(&f3_path,&serde_json::json!({"schema_version":1,"run_id":"native-fixture","f2_digest":"fixture","wannier_digest":"fixture",
+    store::write(&f3_path,&serde_json::json!({"schema_version":2,"run_id":"native-fixture","f2_digest":"fixture","wannier_digest":"fixture",
         "coarse":null,"fine":null,"spectra":[{"smearing_id":"fixture","energy_mev":[0.0,10.0,20.0],"a2f":[0.0,0.2,0.1],
-            "lambda_integral":0.35,"lambda_sum":0.35,"cutoff_ev":0.03}],"quality":null,"mode_readiness":{},
+            "lambda_integral":0.35,"lambda_sum":0.35,"cutoff_ev":0.03}],"mode_readiness":{},
         "validation":{"status":"valid","checks":[{"name":"fixture","passed":true,"detail":"SYNTHETIC IO fixture"}],"units":{},"thresholds":{},"evidence":[]}})).unwrap();
     inputs.interpolation_digest = store::hash_file(&f3_path).unwrap();
     let mut native_modes = std::collections::BTreeMap::new();
@@ -1098,11 +1096,11 @@ fn native_fine_handoff_binds_binary_roles_band_offset_and_rejects_changes() {
     assert_eq!(fd.layout, source::FORMAT);
     let parsed = native::NativeSpectrum::parse(table, 3).unwrap();
     let manifest = serde_json::json!({
-        "schema_version":1,"run_id":"fixture-native","f2_digest":"fixture","wannier_digest":"fixture",
+        "schema_version":2,"run_id":"fixture-native","f2_digest":"fixture","wannier_digest":"fixture",
         "coarse":null,"fine":fd,
         "spectra":[{"smearing_id":"fixture","energy_mev":parsed.energy_mev,"a2f":parsed.a2f[0],
             "lambda_integral":6.0,"lambda_sum":6.0,"cutoff_ev":0.2}],
-        "quality":null,"mode_readiness":{},
+        "mode_readiness":{},
         "validation":{"status":"valid","checks":[{"name":"fixture","passed":true,"detail":"IO only"}],"units":{},"thresholds":{},"evidence":[]}
     });
     store::write(&root.join("interpolation/manifest.json"), &manifest).unwrap();

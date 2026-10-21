@@ -3,8 +3,8 @@ use super::{
     attempt, comparison, comparison_data,
     epw_config::{EpwConfig, NativeStage},
     native,
-    native_quality::SourceFile,
-    reference_asr, restart,
+    comparison::SourceFile,
+    comparison_asr, restart,
 };
 use crate::{
     foundation::{
@@ -33,7 +33,7 @@ fn resume_request(cfg: &Config, current: &[Identity], previous: &Request, digest
         for id in &previous.sources { id.verify()?; }
         return Ok(digest.into());
     }
-    ensure!(previous.sources.len() == current.len() && current.len() >= 9,
+    ensure!(previous.sources.len() == current.len() && current.len() >= 8,
         "input_conflict: 比较请求来源布局变化");
     ensure!(previous.digest == crate::foundation::stages::request_digest(
         cfg, crate::foundation::stages::Step::Coarse, &previous.sources, "comparison")?,
@@ -226,7 +226,6 @@ pub(crate) fn run(
         Identity::capture(&cfg.programs.pw.path)?,
         Identity::capture(&cfg.programs.epw.path)?,
         Identity::capture(&std::env::current_exe()?)?,
-        Identity::capture(&crate::foundation::layout::path(&work, "quality-reference.json"))?,
         Identity::capture(&coarse_dir.join(format!("{}.wout", cfg.qe.prefix)))?,
     ];
     for (_, p) in restart::files(
@@ -282,7 +281,7 @@ pub(crate) fn run(
             save::stage_scf(f2_work, &electron.join("out"), &cfg.qe.prefix)?;
             fs::write(
                 &electron_input,
-                qe.reference_input(
+                qe.path_input(
                     electron.join("out").to_str().context("路径不是 UTF-8")?,
                     &path_crystal,
                 )?,
@@ -351,7 +350,7 @@ pub(crate) fn run(
             for p in &f2.phonon_files {
                 fs::write(
                     phonon.join(format!("{}.dyn{}.xml", cfg.qe.prefix, p.q_id)),
-                    reference_asr::qe_xml_records(&reference_asr::corrected_stars(
+                    comparison_asr::qe_xml_records(&comparison_asr::corrected_stars(
                         &fs::read_to_string(&p.dyn_file)?,
                         &gamma_text,
                         geometry.atoms.len(),
@@ -432,7 +431,7 @@ pub(crate) fn run(
             fs::write(
                 epw_dir.join("epw.in"),
                 epw.native_input(
-                    NativeStage::RestartQuality,
+                    NativeStage::Comparison,
                     "./out",
                     "./save",
                     cfg.interpolation.phonon_smearings_mev[0],
@@ -474,10 +473,9 @@ pub(crate) fn run(
         );
     }
     let sources = comparison::Sources {
-        schema_version: 1,
+        schema_version: 2,
         run_id: f2.run_id,
         ph_mode: format!("{:?}", cfg.phonon.mode).to_lowercase(),
-        quality_reference: file(&crate::foundation::layout::path(&work, "quality-reference.json"))?,
         fermi_reference: file(&states.wavefunctions.join("data-file-schema.xml"))?,
         qe_bands_xml: file(&electron_xml)?,
         qe_mesh_xml: file(&states.wavefunctions.join("data-file-schema.xml"))?,
@@ -491,7 +489,8 @@ pub(crate) fn run(
         mesh,
         mesh_shape: states.k_grid.map(|v| v as usize),
         reciprocal: geometry.reciprocal,
-        window_ev: cfg.interpolation.quality.energy_window_ev,
+        window_ev: comparison::parse_outer_window(&fs::read_to_string(
+            coarse_dir.join(format!("{}.wout", cfg.qe.prefix)))?)?.map(|v|v-states.fermi),
         wannier_wout: Some(file(&coarse_dir.join(format!("{}.wout", cfg.qe.prefix)))?),
         electronic_sigma_ev: options.electronic_sigma_ev,
         phonon_sigma_cm1: options.phonon_sigma_cm1,

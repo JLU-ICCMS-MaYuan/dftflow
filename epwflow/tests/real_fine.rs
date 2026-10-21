@@ -46,9 +46,7 @@ fn actual() -> Result<()> {
             && cfg.phonon.q_grid == [6; 3]
             && cfg.interpolation.k_grid == [40; 3]
             && cfg.interpolation.q_grid == [20; 3]
-            && cfg.interpolation.phonon_smearings_mev == [0.5]
-            && cfg.interpolation.quality.k_points_crystal.len() == 6
-            && cfg.interpolation.quality.q_points_crystal.len() == 5,
+            && cfg.interpolation.phonon_smearings_mev == [0.5],
         "本次有界验收参数不符"
     );
     let job: u64 = std::env::var("SLURM_JOB_ID")?.parse()?;
@@ -95,34 +93,19 @@ fn actual() -> Result<()> {
         states.nbnd == cfg.qe.nscf.nbnd as usize && states.kpoints.len() == 216,
         "原始 NSCF 不符"
     );
-    let frozen = interpolation::quality_binding::freeze(&cfg, states.fermi)?;
     let structure = epwflow::qe_data::qe_config::QeSettings::from_config(&cfg)?;
     let ep = EpwConfig::from_config(&cfg)?
         .with_fermi(states.fermi)?
+        .with_bands(&states.eigenvalues)?
         .with_species(&structure.cell.elements)?;
     fs::create_dir_all(&cfg.work_dir)?;
-    let report = cfg.work_dir.join("native-fine-validation.json");
-    store::write(
-        &report,
-        &serde_json::json!({"schema_version":1,"stage":"quality_running","job_id":job,"case":case_id}),
-    )?;
-    let coarse = interpolation::coarse::reread_quality(
-        &ep,
-        &c.source,
-        &c.source_out,
-        &cfg.work_dir,
-        &cfg.programs.launcher,
-        Backend::Local,
-    )?;
-    let quality = frozen.pair(&cfg.work_dir)?;
-    store::write(
-        &report,
-        &serde_json::json!({"schema_version":1,"stage":"quality_checked","job_id":job,"quality":quality,"case":case_id}),
-    )?;
-    ensure!(
-        quality.passed && quality.phonon.points == 5 && quality.phonon.modes_per_point == 9,
-        "独立五点质量未通过"
-    );
+    let coarse_dir=cfg.work_dir.join("coarse");
+    interpolation::restart::stage(&c.source,&c.source_out,&cfg.qe.prefix,
+        cfg.wannier.num_wann as usize,structure.cell.positions.len()*3,&coarse_dir)?;
+    for name in [format!("{}.wout",cfg.qe.prefix),"epw_coarse.in".into(),"epw.out".into()] {
+        fs::copy(c.source.join(&name),coarse_dir.join(&name))?;
+    }
+    let coarse=interpolation::coarse::collect_coarse(&cfg.work_dir,&ep)?;
     for id in &c.source_identities {
         id.verify()?;
     }
@@ -147,15 +130,10 @@ fn publish(
     readback_only: bool,
 ) -> Result<()> {
     let report = cfg.work_dir.join("native-fine-validation.json");
-    let quality = interpolation::quality_binding::check(cfg, &cfg.work_dir)?;
     let spectrum = interpolation::native::NativeSpectrum::read(
         &cfg.work_dir.join("fine/smearing-0001/mgb2.a2f"),
         500,
     )?;
-    ensure!(
-        interpolation::quality_binding::check(&cfg, &cfg.work_dir)?.passed,
-        "执行中质量身份变化"
-    );
     case_id.verify()?;
     c.config.verify()?;
     for id in &c.source_identities {
@@ -164,7 +142,7 @@ fn publish(
     let fine_data = interpolation::fine::into_fine_data(&fine);
     store::write(
         &report,
-        &serde_json::json!({"schema_version":1,"stage":"fine_matrices_verified","job_id":job,"case":case_id,"quality":quality,"readback_only":readback_only,
+        &serde_json::json!({"schema_version":1,"stage":"fine_matrices_verified","job_id":job,"case":case_id,"readback_only":readback_only,
         "coarse":interpolation::coarse::into_coarse_data(&coarse),"fine":fine_data,
         "spectrum":{"energy_mev":spectrum.energy_mev,"a2f":spectrum.a2f,"lambda_integral":spectrum.lambda_integral,"lambda_sum":spectrum.lambda_sum},
         "historical_sources_unchanged":true,"automatic_workflow_validated":false,"tc_computed":false}),

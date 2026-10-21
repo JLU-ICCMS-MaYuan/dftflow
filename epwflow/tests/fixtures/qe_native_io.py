@@ -16,21 +16,6 @@ def matrix_records(source):
         lines=[line for line in node.text.splitlines() if line.strip()]
         assert len(lines)==9 and all(len(line.split())==2 for line in lines)
         assert all(math.isfinite(float(v)) for line in lines for v in line.split())
-if kind == 'dynmat':
-    with (ROOT/'scientific-calls').open('a') as f: f.write('dynmat '+Path.cwd().name+'\n')
-    assert value('asr') == 'no' and value('amass\\(1\\)') is not None
-    source=ET.parse(value('fildyn')).getroot()
-    matrix_records(source)
-    assert source.find('NUMBER_OF_Q').text.strip() == '1'
-    assert source.find('FREQUENCIES_THZ_CMM1') is None
-    q=' '.join('{:.4f}'.format(float(v)) for v in source.find('DYNAMICAL_MAT_.1/Q_POINT').text.split())
-    nat=int(source.find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)
-    if (ROOT/'reference-failure').exists() and (ROOT/'reference-failure').read_text().strip() == Path.cwd().name:
-        print('Error in routine reference fixture'); sys.exit(2)
-    # 仅用于进程协议；ASR 数学由独立矩阵单元测试验证。
-    Path(value('filout')).write_text('q = '+q+'\n'+''.join(
-        f'freq ({i}) = {100/33.3564095198152:.6f} [THz] = 100.000000 [cm-1]\n' for i in range(1,3*nat+1)))
-    print('JOB DONE.'); sys.exit(0)
 if kind in ('q2r', 'matdyn'):
     with (ROOT/'scientific-calls').open('a') as f: f.write(kind+'\n')
     if (ROOT/'comparison-failure').exists() and (ROOT/'comparison-failure').read_text().strip() == kind:
@@ -108,7 +93,7 @@ if kind=='pw':
     atoms=[]
     for line in at_block.group(1).splitlines():
         name,*xyz=line.split();xyz=list(map(float,xyz[:3])); atoms.append((name,[sum(xyz[i]*lattice[i][j] for i in range(3)) for j in range(3)]))
-    nscf=value('calculation')=='nscf'
+    nscf=value('calculation') in ('nscf','bands')
     points=[[0.,0.,0.,1.]];bands=2
     if nscf:
         assert (save/'charge-density.dat').read_bytes()==b'fixture-density', 'NSCF 未收到 SCF 电荷'

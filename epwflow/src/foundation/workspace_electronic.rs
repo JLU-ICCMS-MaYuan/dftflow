@@ -344,8 +344,7 @@ pub fn inspect_legacy(cfg: &Config) -> Result<NativeReceipt> {
             continue;
         }
         let expected = QeSettings::from_config(&old)?
-            .reference_input("./out", &points)?
-            .replace("'nscf'", "'bands'");
+            .path_input("./out", &points)?;
         if input != expected {
             continue;
         }
@@ -435,8 +434,7 @@ pub(super) fn inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
     fs::create_dir_all(&dos)?;
     let points = path_points(cfg)?;
     let input = qe
-        .reference_input("./out", &points)?
-        .replace("'nscf'", "'bands'");
+        .path_input("./out", &points)?;
     if !super::native_jobs::enabled() { prepare_pw(cfg)?; }
     if !receipt_path(cfg, "pw-bands").is_file() && !super::native_jobs::continuing(&bands, "eband")? {
         fs::write(bands.join("eband.in"), input)?;

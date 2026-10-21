@@ -1,5 +1,7 @@
 # epwflow
 
+自动生成的 `#SBATCH --output`／`--error` 只包含日志文件名，`#SBATCH --chdir` 负责将日志留在脚本所在目录，从其他目录提交也适用。已有冻结脚本保持原字节，不能手工删去长路径后重提；使用包含修复的程序生成新尝试才会采用新格式。源码、已有二进制和历史脚本的生效边界见 [0022 验收](../docs/specs/0022-slurm-log-filenames/acceptance.md)。
+
 ## 编号工作区逐任务提交（0026）
 
 对 `layout='numbered'` 的工作区，`-s` 核验上一任务并且最多提交一次新的原生调用。实际作业脚本直接执行当前配置中的 QE、Wannier90／postw90 或 EPW；准备输入、交接文件、校验产物及推进均由作业外公开命令负责。作业完成后重复同一个命令推进，无后台控制器。
@@ -19,8 +21,6 @@ epw_superconductivity -c input.toml -s
 可手工修改脚本并 `sbatch` 独立 debug，但它不产生正式完成记录；正式命令拒绝接管修改过的唯一脚本。旧封存脚本和默认安装不随源码修改自动更新。旧非编号布局的新 `-s` 拒绝继续提交包装脚本；使用新的编号工作目录并通过 `--import-work` 显式导入。`-r` 的既有分配执行路径保留。
 
 以下早期脚本／自动串联说明属于旧路径；编号工作区以本节为准。[0026 设计与验收](../docs/specs/0026-epw-direct-native-submit/plan.md)。
-
-自动生成的 `#SBATCH --output`／`--error` 只包含日志文件名，`#SBATCH --chdir` 负责将日志留在脚本所在目录，从其他目录提交也适用。已有冻结脚本保持原字节，不能手工删去长路径后重提；使用包含修复的程序生成新尝试才会采用新格式。源码、已有二进制和历史脚本的生效边界见 [0022 验收](../docs/specs/0022-slurm-log-filenames/acceptance.md)。
 
 三个公开程序管理 QE 到超导的八个阶段。编号工作区使用根目录 `input.toml`，每次生成、提交或 `--resume` 都读取当前配置，按阶段核验参数和上游文件哈希，复用相容结果。
 
@@ -59,7 +59,6 @@ run/
 │   └── save/
 ├── 5.epw-wannier/
 ├── 6.epw-coarse/
-│   ├── quality-sources/
 │   ├── comparison-native/
 │   ├── comparison/
 │   └── results/figures/
@@ -70,7 +69,7 @@ run/
 └── epw-state/
 ```
 
-每个实际计算目录包含原生输入、`submit.sh` 和日志。分 q、独立参考、细网格展宽及各温度尝试也在自己的目录生成提交脚本。依赖上游产物才能确定的输入和子任务在运行到该阶段时生成；未得到 NSCF 时不会伪造 EPW 选窗。脚本固定工作目录，能够从其他目录提交。根目录 `submit_all.sh` 将完整依赖交给一个有界 Slurm 分配顺序执行。
+每个实际计算目录包含原生输入、`submit.sh` 和日志。分 q、细网格展宽及各温度尝试也在自己的目录生成提交脚本。依赖上游产物才能确定的输入和子任务在运行到该阶段时生成；未得到 NSCF 时不会伪造 EPW 选窗。脚本固定工作目录，能够从其他目录提交。根目录 `submit_all.sh` 将完整依赖交给一个有界 Slurm 分配顺序执行。
 
 第 1～4 步复用 qeflow／共享输入、执行及后处理组件，SCF 只做一次并保留独立快照。NSCF 为 EPW 所需的完整均匀网格。`qe_eband` 使用 `pw.x bands` 和 `bands.x`，`qe_eledos` 使用 `dos.x`。PH 三种模式都严格校验 q 点、动力学矩阵、dvscf 和 phsave 后归集到第 4 步 `save/`。
 
@@ -78,15 +77,13 @@ run/
 
 独立拟合输入不声明粗网格插值使用的 `filkf/filqf`。后处理自动从校验后的同一 NSCF 提取晶格、原子、网格、原 k 点顺序及排除后的能带，补齐独立 W90 的 `.win/.eig`；无需用户维护另一份输入。原生 DOS 使用 `dos_smr_type = gauss`。除退出码外，还检查本次日志和 `.werr`，避免 Fortran 报错却零退出时错误放行。后处理失败保留拟合 `.wout/.chk/.ukk` 及收据，下次公开命令只重试缺失后处理；旧后处理日志和产物归档。依据见 [0023 验收](../docs/specs/0023-epw-wannier-native-start/acceptance.md)。
 
-`[wannier] guiding_centres = true` 可显式启用原生 W90 的中心相位引导；`false` 显式关闭。不设置时保留原生默认值和旧科学身份。程序同时核对原生日志中的实际采用值；修改此项只使 Wannier 及依赖它的阶段更新，完整相容的 QE／PH 继续复用。它用于局域化数值控制，不代替原生收敛和独立质量核验，也不保证任意材料收敛。依据见 [0030](../docs/specs/0030-wannier-guiding-centres/acceptance.md)。
+`[wannier] guiding_centres = true` 可显式启用原生 W90 的中心相位引导；`false` 显式关闭。不设置时保留原生默认值和旧科学身份。程序同时核对原生日志中的实际采用值；修改此项只使 Wannier 及依赖它的阶段更新，完整相容的 QE／PH 继续复用。它用于局域化数值控制，不代替原生收敛和数据完整性检查，也不保证任意材料收敛。依据见 [0030](../docs/specs/0030-wannier-guiding-centres/acceptance.md)。
 
 独立 Wannier 交付同时校验并绑定 `.bvec/.mmn` 的网格、排除后带空间及完整有限数记录；粗网格只复制同一收据绑定的变换与配套数据。独立绘图关闭 `write_bvec`，保护已绑定文件。旧收据未绑定配套数据时只将第 5 步及其下游判为需要更新，原现场归档，QE／PH 保留；已绑定文件损坏仍报错。见 [0033](../docs/specs/0033-wannier-velocity-handoff/acceptance.md)。
 
-自动独立参考允许编号模式原路径升级 CLI 后显式恢复：历史编排器身份仍保存在原请求／参考清单中，当前版本由本次冻结提交记录追溯；五项科学来源、原请求及原生子任务证据继续严格重验。只对精确绑定的本地自动参考识别历史编排器，不放宽外部参考校验。见 [0034](../docs/specs/0034-reference-orchestrator-upgrade/acceptance.md)。
-
 Slurm 日志属于运行输出；旧原生输入记录中的标准 `slurm-数字.out/err` 项不作为固定科学输入核验。两种阶段归档共用当前日志同 inode 入口维护，见 [0035](../docs/specs/0035-native-retry-slurm-logs/acceptance.md)。EPW 会改写粗网格自己的 `out/prefix.wfcN` 工作副本；只从已冻结且校验通过的原生输入识别前缀与 `./out`，保留初始身份用于追溯，失败后归档并从已校验来源重建。原始 NSCF、portable SAVE、响应及其余输入仍严格核验，见 [0036](../docs/specs/0036-epw-mutable-wavefunction-scratch/acceptance.md)。
 
-第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，生成电子、声子对比和独立质量报告。第 7 步生成细网格矩阵元、α²F、λ；第 8 步运行原生 iso／aniso 和有界 Tc 搜索。严格元素／轨道投影继续暂缓，图像不能替代独立数值核验。
+第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，生成电子、声子对比及四项常规数据最大差值。第 7 步生成细网格矩阵元、α²F、λ；第 8 步运行原生 iso／aniso 和有界 Tc 搜索。严格元素／轨道投影继续暂缓，图表和差值只展示事实，科学合理性由用户判断。
 
 ## 声子后处理与作业日志
 
@@ -110,11 +107,15 @@ epw_wannier --stage wannier --resume -s
 
 同一阶段的独立产物最多使用 8 路完整哈希核验，流式读取使用 1 MiB 堆缓冲；减少共享盘串行等待，不省略文件或跨调用缓存。缺失与损坏仍分别处理，见 [0041](../docs/specs/0041-stage-output-verification-io/spec.md)。
 
-## 插值数值告警（0040）
+## 常规对比最大差值（0043）
 
-电子最大／RMS 理想值仍为 0.05／0.02 eV，声子仍为 50／20 cm⁻¹；继续计算实际误差并保留原始 passed=false，超差打印 quality_warning 后继续粗网格发布、细网格和原生超导求解。阶段质量摘要用 warning 表示未达目标，比较结果仍显示 quality_status=failed。不需要修改 TOML 或增加跳过检查的参数。
+不再生成 `quality-sources`、独立参考 NSCF／直接 PH／dynmat、抽样点、质量报告或绑定清单；`[interpolation.quality]` 已删除，旧配置中的该节会被拒绝。粗 EPC 不再输出抽样 band_plot，常规绘图重读仍保留。
 
-质量检查命令的 operation_status=ok／退出 0 表示核验已执行，quality_warning 与 passed=false 表示数值不理想。完整原生交付可同时有 workflow_complete=true、quality_warning=true；前者只表示执行完成，不能当作科学验收通过。缺少参考、哈希变化、非有限数、格式／网格冲突、空 pool、原生失败及预算限制仍停止；求解收敛和 Tc 分类要求保持。详见 [0040](../docs/specs/0040-interpolation-quality-warnings/spec.md)。
+`comparison/metrics.json` 的 `differences` 分别保存电子路径、电子 DOS 网格、声子路径、声子 DOS 网格最大绝对差值。电子使用共同 Fermi 零点和实际 Outer 显示窗，较少一侧全部匹配较多一侧的有序子集，使平方差之和最小，记录配对与未配对态数；这种能量配对不代表同一本征态。声子以 q2r/matdyn 为 QE 对照，在相同 q 点比较全部 3N 个排序频率，统一 cm⁻¹ 并保留虚频符号。
+
+每项包括坐标、带／排序模式编号和两侧原值；路径最大值标紫，DOS 图注明最大值的网格坐标。无配对时最大值为 null，终端显示“无可配对数据”。差值没有阈值、RMS、评级或告警，也不影响退出码、发布和下游执行。文件、来源、单位、坐标、有限数、预算、原生执行和求解收敛检查继续有效。
+
+新比较包使用版本 2，四张独立图和总览仍可自包含移动重绘；版本 1 历史包可只读重绘，不补算四项差值。历史工作区、冻结记录和旧报告保持；已有 SCF／NSCF／PH 可通过 `--import-work` 导入新编号工作区，导入不复制抽样参考。默认安装不随源码更新。设计及验证见 [0043](../docs/specs/0043-epw-comparison-max-differences/acceptance.md)，取代 [0040](../docs/specs/0040-interpolation-quality-warnings/spec.md) 的独立核验要求。
 
 超导数值读取支持标准 E/D 指数和原生三位指数省略 E 的格式（如 1.7366215176-102）；仅接纳带小数点的明确尾数，星号、非有限及溢出仍拒绝。格式兼容不改变原生收敛、频率／状态映射和双初值判据，见 [0042](../docs/specs/0042-epw-fortran-exponent/acceptance.md)。
 
@@ -143,7 +144,7 @@ bash submit_all.sh               # 提交完整依赖
 sbatch 5.epw-wannier/submit.sh
 ```
 
-`operation_status=ok` 表示这次检查操作通过；`workflow_status=configured` 表示配置及脚本已准备。两者都不表示 QE／EPW 已运行、计算收敛、质量通过或 Tc 已得到。`--status` 的 `reuse` 同时要求科学键、上游产物键和本阶段输出哈希有效，`update` 表示当前请求需要执行。活动任务和终态未知任务会阻止再次生成或提交，以保护现场。
+`operation_status=ok` 表示这次检查操作通过；`workflow_status=configured` 表示配置及脚本已准备。两者都不表示 QE／EPW 已运行、计算收敛或 Tc 已得到。`--status` 的 `reuse` 同时要求科学键、上游产物键和本阶段输出哈希有效，`update` 表示当前请求需要执行。活动任务和终态未知任务会阻止再次生成或提交，以保护现场。
 
 ## 改参和复用
 
@@ -156,7 +157,7 @@ sbatch 5.epw-wannier/submit.sh
 | 结构、赝势、截断能 | 从最早受影响的上游开始 |
 | 比较展宽 | 原生 DOS 后处理及重绘，不重做拟合、PH 或 EPC |
 
-路径点数改变需要补齐相应路径参考；它不改变已有 Wannier 变换。失效现场移动到 `epw-state/history/`，不会混合新旧数据。已成功的原生子尝试重验后复用，失败子尝试归档后重试。文件损坏、来源冲突和不可解析数据仍明确停止；独立插值数值超差只告警，不凭完成标记跳过来源核验。
+路径点数改变需要补齐相应路径参考；它不改变已有 Wannier 变换。失效现场移动到 `epw-state/history/`，不会混合新旧数据。已成功的原生子尝试重验后复用，失败子尝试归档后重试。文件损坏、来源冲突和不可解析数据仍明确停止；差值大小不影响继续执行，不凭完成标记跳过来源核验。
 
 每次提交在 `epw-state/attempts/` 保存本次完整配置和输入副本；排队期间改根配置不会改变已提交任务。后续提交从新的根配置建立新尝试，不再受旧 64 进程快照限制。当前整工作区串行，活动或未知任务不会重复提交。共享预算路径在配置中保留，用户无需手动配置 `LEDGER` 变量；累计消费不重置。
 
@@ -189,7 +190,7 @@ bash scripts/build-native.sh test -p epwflow -p qeflow --locked
 
 `bin/` 已被 Git 忽略，按 `epwflow`、`qeflow`、`scflow`、`substitutionflow`、`vaspflow`、`wannierflow` 分组。`scripts/env.sh` 将模块路径加入当前终端 PATH，不要求在测试目录寻找可执行文件。
 
-公开进程及脚本测试使用隔离替身，证明调度、布局、复用和数据防护，不认证科学数值。真实 MgB₂ 全链和原生 iso／aniso Tc 仍需真实科学验收；本需求不代用户提交真实任务。质量、预算与来源保护保持原约束，见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
+公开进程及脚本测试使用隔离替身，证明调度、布局、复用和数据防护，不认证科学数值。真实 MgB₂ 全链和原生 iso／aniso Tc 仍需真实科学验收；本需求不代用户提交真实任务。预算、来源保护及原生收敛检查继续有效，历史科学证据见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
 
 
 ## 可见运行状态与删除阶段后重建（0025）

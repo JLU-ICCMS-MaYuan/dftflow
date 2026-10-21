@@ -1,4 +1,4 @@
-//! 同源 Γ onsite ASR；保持原始 XML，只生成供 QE dynmat 对角化的单 q 副本。
+//! 常规 QE q2r 对比所需的同源 Γ onsite 修正及 XML 格式转换。
 use crate::qe_data::xml;
 use anyhow::{ensure, Context, Result};
 use std::ops::Range;
@@ -28,21 +28,27 @@ fn matrix(root: roxmltree::Node<'_, '_>, a: usize, b: usize) -> Result<Vec<f64>>
 pub(super) fn qe_xml_records(raw: &str) -> Result<String> {
     let doc = roxmltree::Document::parse(raw)?;
     let mut edits = Vec::new();
-    for node in doc.descendants().filter(|n| n.is_element() && n.tag_name().name().starts_with("PHI.")) {
+    for node in doc
+        .descendants()
+        .filter(|n| n.is_element() && n.tag_name().name().starts_with("PHI."))
+    {
         let values = xml::numbers(node.text().context("data_invalid: PHI 缺数值")?)?;
         ensure!(values.len() == 18, "data_invalid: PHI 不是复数 3x3 矩阵");
-        let records = values.chunks_exact(2)
+        let records = values
+            .chunks_exact(2)
             .map(|pair| format!("  {:.17e} {:.17e}\n", pair[0], pair[1]))
             .collect::<String>();
         edits.push((value_range(node)?, format!("\n{records}    ")));
     }
     ensure!(!edits.is_empty(), "data_invalid: PH XML 缺矩阵");
     let mut output = raw.to_owned();
-    for (range, value) in edits.into_iter().rev() { output.replace_range(range, &value); }
+    for (range, value) in edits.into_iter().rev() {
+        output.replace_range(range, &value);
+    }
     Ok(output)
 }
 
-/// 全 q 星用于 q2r；与质量参考的 QE dyndiag 一样平均 onsite 上下三角。
+/// 全 q 星用于 q2r；按 QE dyndiag 约定平均 onsite 上下三角。
 pub(super) fn corrected_stars(raw: &str, gamma: &str, nat: usize) -> Result<String> {
     let doc = roxmltree::Document::parse(raw)?;
     let stars: Vec<_> = doc
@@ -70,7 +76,7 @@ pub(super) fn corrected_stars(raw: &str, gamma: &str, nat: usize) -> Result<Stri
             let replacement = raw[star.range()].replace(star.tag_name().name(), "DYNAMICAL_MAT_.1");
             input.replace_range(first.range(), &replacement);
         }
-        let corrected = corrected_xml(&input, gamma, nat)?;
+        let corrected = corrected_first_star(&input, gamma, nat)?;
         let corrected_doc = roxmltree::Document::parse(&corrected)?;
         let first = one(corrected_doc.root_element(), "DYNAMICAL_MAT_.1")?;
         for a in 1..=nat {
@@ -122,7 +128,7 @@ pub(super) fn corrected_stars(raw: &str, gamma: &str, nat: usize) -> Result<Stri
 
 /// PHI 为 Fortran 列主序；EPW 只对 jpol>=ipol 的 onsite 减去同源 Γ 行和。
 /// QE dyndiag 随后负责与 EPW 相同的 Hermitian 对称化和质量归一化。
-pub fn corrected_xml(raw: &str, gamma: &str, nat: usize) -> Result<String> {
+fn corrected_first_star(raw: &str, gamma: &str, nat: usize) -> Result<String> {
     ensure!(nat > 0, "data_invalid: ASR 原子数为零");
     let doc = roxmltree::Document::parse(raw)?;
     let gdoc = roxmltree::Document::parse(gamma)?;
@@ -221,52 +227,6 @@ pub fn corrected_xml(raw: &str, gamma: &str, nat: usize) -> Result<String> {
     }
     roxmltree::Document::parse(&output)?;
     Ok(output)
-}
-
-/// 只读 QE writemodes 的带符号 cm-1，模式序号、q 和全部 3N 模必须完整。
-pub fn frequencies(text: &str, expected_q: [f64; 3], modes: usize) -> Result<Vec<f64>> {
-    let qlines: Vec<_> = text
-        .lines()
-        .filter_map(|l| l.trim().strip_prefix("q ="))
-        .collect();
-    ensure!(qlines.len() == 1, "data_invalid: dynmat 缺少唯一 q");
-    let q = xml::vector(qlines[0])?;
-    // 已部署 QE 输出四位小数，本地 writemodes 为八位；物理 q 已在原 PH XML 核验。
-    let display = regex::Regex::new(r"^[+-]?\d+\.(\d{4}|\d{8})$")?;
-    let mut precision = Vec::new();
-    for token in qlines[0].split_whitespace() {
-        let digits = display.captures(token).context("data_invalid: dynmat q 显示格式未知")?[1].len();
-        precision.push(0.5 * 10f64.powi(-(digits as i32)) + 1e-12);
-    }
-    ensure!(
-        q.iter().zip(expected_q).zip(precision).all(|((a, b), tol)| (a - b).abs() <= tol),
-        "input_conflict: dynmat 输出 q 不同"
-    );
-    let pattern = regex::Regex::new(
-        r"^\s*freq\s*\(\s*(\d+)\s*\)\s*=\s*(\S+)\s*\[THz\]\s*=\s*(\S+)\s*\[cm-1\]\s*$",
-    )?;
-    let mut values = Vec::new();
-    for line in text.lines().filter(|l| l.trim_start().starts_with("freq")) {
-        let cap = pattern
-            .captures(line)
-            .context("data_invalid: dynmat 频率格式未知")?;
-        ensure!(
-            cap[1].parse::<usize>()? == values.len() + 1,
-            "data_invalid: dynmat 模式重复或缺失"
-        );
-        let thz = xml::numbers(&cap[2])?[0];
-        let cm = xml::numbers(&cap[3])?[0];
-        ensure!(
-            (cm - thz * 33.3564095198152).abs() < 0.0001,
-            "data_invalid: dynmat THz/cm-1 单位不一致"
-        );
-        values.push(cm);
-    }
-    ensure!(
-        modes > 0 && values.len() == modes,
-        "data_invalid: dynmat 模式截断"
-    );
-    Ok(values)
 }
 
 #[cfg(test)]
@@ -373,7 +333,7 @@ mod tests {
         let raw = sample([0.25, 0., 0.], 1000, 2);
         let gamma = sample([0.; 3], 0, 1);
         let before = raw.clone();
-        let corrected = corrected_xml(&raw, &gamma, 2).unwrap();
+        let corrected = corrected_first_star(&raw, &gamma, 2).unwrap();
         assert_eq!(raw, before);
         let original = roxmltree::Document::parse(&raw).unwrap();
         let gdoc = roxmltree::Document::parse(&gamma).unwrap();
@@ -411,18 +371,28 @@ mod tests {
 
     #[test]
     fn qe_matrix_records_keep_values_and_separate_fortran_read_from_tags() {
-        let raw = corrected_xml(&sample([0.25, 0., 0.], 1000, 1), &sample([0.; 3], 0, 1), 2).unwrap();
+        let raw = corrected_first_star(&sample([0.25, 0., 0.], 1000, 1), &sample([0.; 3], 0, 1), 2)
+            .unwrap();
         let native = qe_xml_records(&raw).unwrap();
         let old = roxmltree::Document::parse(&raw).unwrap();
         let new = roxmltree::Document::parse(&native).unwrap();
-        for a in 1..=2 { for b in 1..=2 {
-            let name = format!("PHI.{a}.{b}");
-            let node = one(new.root_element(), &name).unwrap();
-            let text = node.text().unwrap();
-            assert!(text.starts_with('\n') && text.trim_end().lines().skip(1).count() == 9);
-            assert!(text.lines().skip(1).take(9).all(|line| line.split_whitespace().count() == 2));
-            assert_eq!(xml::numbers(text).unwrap(), xml::numbers(one(old.root_element(), &name).unwrap().text().unwrap()).unwrap());
-        }}
+        for a in 1..=2 {
+            for b in 1..=2 {
+                let name = format!("PHI.{a}.{b}");
+                let node = one(new.root_element(), &name).unwrap();
+                let text = node.text().unwrap();
+                assert!(text.starts_with('\n') && text.trim_end().lines().skip(1).count() == 9);
+                assert!(text
+                    .lines()
+                    .skip(1)
+                    .take(9)
+                    .all(|line| line.split_whitespace().count() == 2));
+                assert_eq!(
+                    xml::numbers(text).unwrap(),
+                    xml::numbers(one(old.root_element(), &name).unwrap().text().unwrap()).unwrap()
+                );
+            }
+        }
         assert!(qe_xml_records(&raw.replace("1120 1121", "NaN 1121")).is_err());
     }
 
@@ -430,8 +400,8 @@ mod tests {
     fn invalid_asr_sources_are_rejected() {
         let raw = sample([0.25, 0., 0.], 1000, 2);
         let gamma = sample([0.; 3], 0, 1);
-        assert!(corrected_xml(&raw, &sample([0.01, 0., 0.], 0, 1), 2).is_err());
-        assert!(corrected_xml(&raw, &gamma, 1).is_err());
+        assert!(corrected_first_star(&raw, &sample([0.01, 0., 0.], 0, 1), 2).is_err());
+        assert!(corrected_first_star(&raw, &gamma, 1).is_err());
         for bad in [
             raw.replace("1110 1111", "NaN 1111"),
             raw.replace("1110 1111", "1111"),
@@ -439,33 +409,7 @@ mod tests {
             raw.replace("DYNAMICAL_MAT_.2", "DYNAMICAL_MAT_.3"),
             raw.replace("DYNAMICAL_MAT_.1", "DYNAMICAL_MAT_.2"),
         ] {
-            assert!(corrected_xml(&bad, &gamma, 2).is_err());
-        }
-    }
-
-    #[test]
-    fn dynmat_requires_signed_frequencies_units_q_and_complete_modes() {
-        let text = "q = 0.2500 0.0000 0.0000\nfreq (1) = -1.000000 [THz] = -33.356410 [cm-1]\nfreq (2) = 0.000000 [THz] = 0.000000 [cm-1]\nfreq (3) = 2.000000 [THz] = 66.712819 [cm-1]\n";
-        assert_eq!(
-            frequencies(text, [0.25, 0., 0.], 3).unwrap(),
-            [-33.356410, 0., 66.712819]
-        );
-        for bad in [
-            text.replace("-33.356410", "33.356410"),
-            text.replace("(2)", "(1)"),
-            text.replace("66.712819", "NaN"),
-            text.replace("q = 0.25", "q = 0.5"),
-            format!("{text}q = 0.25 0 0\n"),
-            text.lines().take(3).collect::<Vec<_>>().join("\n"),
-        ] {
-            assert!(frequencies(&bad, [0.25, 0., 0.], 3).is_err());
-        }
-        for (printed, expected) in [("0.0833", 1./12.), ("-0.0833", -1./12.), ("0.08333333", 1./12.)] {
-            let rounded = text.replace("0.2500", printed);
-            frequencies(&rounded, [expected, 0., 0.], 3).unwrap();
-        }
-        for printed in ["0.0834", "0.08333339", "0.08", "0.0833333", "NaN"] {
-            assert!(frequencies(&text.replace("0.2500", printed), [1./12., 0., 0.], 3).is_err());
+            assert!(corrected_first_star(&bad, &gamma, 2).is_err());
         }
     }
 }

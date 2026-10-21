@@ -1,20 +1,37 @@
 //! 原生诊断数据适配。仅解析已有结果及累积 DOS，不启动 QE/EPW。
-use super::{
-    native,
-    native_quality::{self, SourceFile},
-};
+use super::{differences::MEV_CM1, native};
 use crate::{
     foundation::store,
     interpolation::comparison_data::{
-        Artifact, Manifest, Metadata, PhononErrorMarker, Tick, TABLES,
+        Artifact, Manifest, Metadata, Tick, TABLES,
     },
     qe_data::nscf,
 };
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-const MEV_CM1: f64 = 8.065543937;
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceFile {
+    pub path: PathBuf,
+    pub sha256: String,
+}
+
+impl SourceFile {
+    pub(crate) fn checked_path(&self, base: &Path) -> Result<PathBuf> {
+        let path = base.join(&self.path);
+        ensure!(
+            self.sha256.len() == 64 && store::hash_file(&path)? == self.sha256,
+            "data_invalid: 比较来源指纹不符 {}",
+            path.display()
+        );
+        Ok(path)
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -31,7 +48,6 @@ pub struct Sources {
     pub schema_version: u32,
     pub run_id: String,
     pub ph_mode: String,
-    pub quality_reference: SourceFile,
     pub fermi_reference: SourceFile,
     pub qe_bands_xml: SourceFile,
     pub qe_mesh_xml: SourceFile,
@@ -134,77 +150,6 @@ fn same(a: &[f64; 3], b: &[f64; 3]) -> bool {
     a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-6)
 }
 
-fn phonon_error_markers(
-    reference: &native::NativeBands,
-    interpolated: &native::NativeBands,
-    source: &Sources,
-) -> Result<Vec<PhononErrorMarker>> {
-    // 用倒格矢的对偶基恢复晶体坐标，不能把 QE 笛卡尔坐标直接标成晶体坐标。
-    let cross = |a: [f64; 3], b: [f64; 3]| {
-        [
-            a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0],
-        ]
-    };
-    let dot = |a: [f64; 3], b: [f64; 3]| (0..3).map(|i| a[i] * b[i]).sum::<f64>();
-    let b = source.reciprocal;
-    let dual = [cross(b[1], b[2]), cross(b[2], b[0]), cross(b[0], b[1])];
-    let determinant = dot(b[0], dual[0]);
-    ensure!(
-        determinant.is_finite() && determinant.abs() > 1e-12,
-        "data_invalid: 倒格矢矩阵不可逆"
-    );
-    let mut samples = Vec::new();
-    for (i, q) in reference.points_cartesian.iter().enumerate() {
-        let path_point = source.path.iter().find(|p| same(q, &cart(p.crystal, &b)));
-        let path_label = path_point.map(|p| {
-            if let Some(t) = source
-                .ticks
-                .iter()
-                .find(|t| (t.distance - p.distance).abs() < 1e-8)
-            {
-                format!("{} (high-symmetry point)", t.label)
-            } else {
-                let left = source.ticks.iter().rev().find(|t| t.distance < p.distance);
-                let right = source.ticks.iter().find(|t| t.distance > p.distance);
-                match (left, right) {
-                    (Some(l), Some(r)) => format!("{} - {} (interior)", l.label, r.label),
-                    _ => "path interior".into(),
-                }
-            }
-        });
-        let mut qe = reference.values[i].clone();
-        let mut epw: Vec<_> = interpolated.values[i].iter().map(|v| v * MEV_CM1).collect();
-        qe.sort_by(f64::total_cmp);
-        epw.sort_by(f64::total_cmp);
-        for (mode, (qe, epw)) in qe.into_iter().zip(epw).enumerate() {
-            samples.push(PhononErrorMarker {
-                scope: "sampled_maximum".into(),
-                q_crystal: std::array::from_fn(|j| dot(*q, dual[j]) / determinant),
-                mode_sorted: mode + 1,
-                qe_cm1: qe,
-                epw_cm1: epw,
-                error_cm1: (qe - epw).abs(),
-                path_distance: path_point.map(|p| p.distance),
-                path_label: path_label.clone(),
-            });
-        }
-    }
-    let largest = |on_path: bool| {
-        samples
-            .iter()
-            .filter(|s| !on_path || s.path_distance.is_some())
-            .max_by(|a, b| a.error_cm1.total_cmp(&b.error_cm1))
-            .cloned()
-    };
-    let mut markers = vec![largest(false).context("data_invalid: 声子验证点为空")?];
-    if let Some(mut marker) = largest(true) {
-        marker.scope = "path_maximum".into();
-        markers.push(marker);
-    }
-    Ok(markers)
-}
 fn axis(lo: f64, hi: f64, n: usize) -> Vec<f64> {
     (0..n)
         .map(|i| lo + (hi - lo) * i as f64 / (n - 1) as f64)
@@ -220,7 +165,7 @@ fn integral(x: &[f64], y: &[f64]) -> f64 {
 pub fn export(source: &Path, output: &Path) -> Result<()> {
     let mut s: Sources = store::read(source)?;
     ensure!(
-        s.schema_version == 1 && matches!(s.ph_mode.as_str(), "nosplit" | "index" | "coords"),
+        s.schema_version == 2 && matches!(s.ph_mode.as_str(), "nosplit" | "index" | "coords"),
         "data_invalid: 来源版本或 PH 模式无效"
     );
     let base = source.parent().context("data_invalid: 来源目录缺失")?;
@@ -256,23 +201,6 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         .context("data_invalid: QE matdyn 频率文件")?;
     let eph = native::parse_bands(&fs::read_to_string(s.epw_phonon_bands.checked_path(base)?)?)?;
     native::checked_log(&fs::read_to_string(s.epw_log.checked_path(base)?)?, 0)?;
-    let quality_path = s.quality_reference.checked_path(base)?;
-    let quality = native_quality::inspect(&quality_path)?;
-    let quality_sources: native_quality::QualitySources = store::read(&quality_path)?;
-    let reference_base = quality_path
-        .parent()
-        .context("data_invalid: 质量来源缺目录")?;
-    let direct = native::parse_bands(&fs::read_to_string(
-        quality_sources
-            .phonon_reference_cm1
-            .checked_path(reference_base)?,
-    )?)?;
-    let quality_interpolated = native::parse_bands(&fs::read_to_string(
-        quality_sources
-            .phonon_interpolated_mev
-            .checked_path(reference_base)?,
-    )?)?;
-    let error_markers = phonon_error_markers(&direct, &quality_interpolated, &s)?;
     for p in &s.provenance {
         p.checked_path(base)?;
     }
@@ -383,31 +311,12 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         vec!["Mg:s".into(), "Mg:p".into(), "B:s".into(), "B:p".into()]
     } else { vec![] };
     ensure!(
-        s.window_ev.iter().all(|v| v.is_finite())
-            && s.window_ev[0] <= -0.5
-            && s.window_ev[1] >= 0.5,
+        s.window_ev.iter().all(|v| v.is_finite()) && s.window_ev[0] < s.window_ev[1],
         "data_invalid: 共同能窗不足"
     );
     let mut electronic = String::from("method,segment_id,point_id,distance,band,energy_ev\n");
     let mut phonon =
         String::from("method,reference_kind,segment_id,point_id,distance,mode,frequency_cm1\n");
-    let mut direct_csv = String::from("point_id,distance,mode,frequency_cm1,source\n");
-    for point in &s.path {
-        let expected = cart(point.crystal, &s.reciprocal);
-        for (q, values) in direct.points_cartesian.iter().zip(&direct.values) {
-            if same(&expected, q) {
-                for (m, f) in values.iter().enumerate() {
-                    direct_csv.push_str(&format!(
-                        "{},{},{},{},qe_ph_direct\n",
-                        point.point_id,
-                        point.distance,
-                        m + 1,
-                        f
-                    ));
-                }
-            }
-        }
-    }
     for i in 0..n {
         // 相邻段共享端点，但每条线分别保存，不连接断点。
         let segments = if i + 1 < n && s.path[i].segment_id != s.path[i + 1].segment_id {
@@ -506,40 +415,10 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
             p_csv.push_str(&format!("{method},{x},total,,{y}\n"));
         }
     }
-    let mut missing = vec![
+    let missing = vec![
         "electronic element/orbital PDOS: complex atomic projector adapter unavailable".into(),
         "phonon element DOS: EPW mass-weighted eigenvectors unavailable".into(),
     ];
-    let mut uncovered = 0;
-    for (q, e) in qe_mesh.iter().zip(&epw_mesh) {
-        let in_window: Vec<_> = q
-            .iter()
-            .filter(|v| {
-                **v >= s.window_ev[0] - 6.0 * s.electronic_sigma_ev
-                    && **v <= s.window_ev[1] + 6.0 * s.electronic_sigma_ev
-            })
-            .collect();
-        let mut used = std::collections::BTreeSet::new();
-        for v in in_window {
-            if let Some((j, _)) = e
-                .iter()
-                .enumerate()
-                .filter(|(j, _)| !used.contains(j))
-                .min_by(|a, b| (a.1 - v).abs().total_cmp(&(b.1 - v).abs()))
-            {
-                if (e[j] - v).abs() <= 0.05 {
-                    used.insert(j);
-                } else {
-                    uncovered += 1;
-                }
-            } else {
-                uncovered += 1;
-            }
-        }
-    }
-    if uncovered > 0 {
-        missing.push(format!("electronic DOS window/broadening coverage: {uncovered} unmatched reference states; Wannier subspace diagnostic only"));
-    }
     let delta: Vec<f64> = edos[0]
         .iter()
         .zip(&edos[1])
@@ -550,7 +429,21 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         .zip(&pdos[1])
         .map(|(a, b)| (a - b).abs())
         .collect();
-    let metrics = serde_json::json!({"schema_version":1,"quality":quality,"electronic_dos":{"qe_integral":integral(&ex,&edos[0]),"epw_integral":integral(&ex,&edos[1]),"absolute_l1":integral(&ex,&delta),"normalized_l1":(integral(&ex,&edos[0])>0.0).then(||integral(&ex,&delta)/integral(&ex,&edos[0])),"unmatched_window_states":uncovered},"phonon_dos":{"qe_integral":integral(&px,&pdos[0]),"epw_integral":integral(&px,&pdos[1]),"expected_integral":modes,"absolute_l1":integral(&px,&pdelta),"normalized_l1":(integral(&px,&pdos[0])>0.0).then(||integral(&px,&pdelta)/integral(&px,&pdos[0]))},"kernel":"exp[-(x/sigma)^2]/(sigma*sqrt(pi))","electronic_sigma_ev":s.electronic_sigma_ev,"phonon_sigma_cm1":s.phonon_sigma_cm1,"source_manifest_sha256":store::hash_file(source)?});
+    let distances: Vec<_> = s.path.iter().map(|p|p.distance).collect();
+    let path_coordinates: Vec<_> = s.path.iter().map(|p|p.crystal).collect();
+    let differences = super::differences::Differences {
+        electronic_path: super::differences::electronic(&path_coordinates, Some(&distances),
+            &qe.eigenvalues, &epw.values[..n], fermi, s.window_ev)?,
+        electronic_mesh: super::differences::electronic(&s.mesh, None,
+            &qe_mesh, &epw_mesh, 0.0, s.window_ev)?,
+        phonon_path: super::differences::phonon(&path_coordinates, Some(&distances),
+            &qph.values[..n], &eph.values[..n], modes)?,
+        phonon_mesh: super::differences::phonon(&s.mesh, None,
+            &qph.values[n..], &eph.values[n..], modes)?,
+    };
+    differences.validate()?;
+    differences.print();
+    let metrics = serde_json::json!({"schema_version":2,"differences":differences,"electronic_matching":"ordered_minimum_squared_energy_pairs","electronic_dos":{"qe_integral":integral(&ex,&edos[0]),"epw_integral":integral(&ex,&edos[1]),"absolute_l1":integral(&ex,&delta),"normalized_l1":(integral(&ex,&edos[0])>0.0).then(||integral(&ex,&delta)/integral(&ex,&edos[0]))},"phonon_dos":{"qe_integral":integral(&px,&pdos[0]),"epw_integral":integral(&px,&pdos[1]),"expected_integral":modes,"absolute_l1":integral(&px,&pdelta),"normalized_l1":(integral(&px,&pdos[0])>0.0).then(||integral(&px,&pdelta)/integral(&px,&pdos[0]))},"kernel":"exp[-(x/sigma)^2]/(sigma*sqrt(pi))","electronic_sigma_ev":s.electronic_sigma_ev,"phonon_sigma_cm1":s.phonon_sigma_cm1,"source_manifest_sha256":store::hash_file(source)?});
     let metadata = Metadata {
         title: format!("{} QE / EPW diagnostic", atoms.join(" ")),
         fermi_ev: fermi,
@@ -574,7 +467,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         orbitals,
         electronic_projection: "unavailable".into(),
         phonon_projection: "unavailable".into(),
-        phonon_error_markers: error_markers,
+        phonon_error_markers: vec![],
         notes: vec![
             format!(
                 "fixed {}x{}x{} DOS mesh; Gaussian sigma_e={} eV, sigma_ph={} cm-1",
@@ -584,7 +477,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
                 s.electronic_sigma_ev,
                 s.phonon_sigma_cm1
             ),
-            "QE: direct PW bands / q2r-matdyn phonons. Quality failed data remain diagnostic."
+            "QE: direct PW bands / q2r-matdyn phonons. Energy pairs do not establish eigenstate identity."
                 .into(),
         ],
     };
@@ -600,9 +493,8 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     for (name, text) in [
         (TABLES[0], electronic),
         (TABLES[1], phonon),
-        (TABLES[2], direct_csv),
-        (TABLES[3], e_csv),
-        (TABLES[4], p_csv),
+        (TABLES[2], e_csv),
+        (TABLES[3], p_csv),
     ] {
         store::atomic_bytes(&output.join(name), text.as_bytes())?;
     }
@@ -616,11 +508,11 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     store::write(
         &output.join("manifest.json"),
         &Manifest {
-            schema_version: 1,
+            schema_version: 2,
             run_id: s.run_id,
             ph_mode: s.ph_mode,
             upstream_digest: store::hash_file(source)?,
-            quality_status: if quality.passed { "passed" } else { "failed" }.into(),
+            quality_status: None,
             missing,
             files,
         },

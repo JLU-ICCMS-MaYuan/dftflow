@@ -8,10 +8,9 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-pub const TABLES: [&str; 5] = [
+pub const TABLES: [&str; 4] = [
     "electronic_bands.csv",
     "phonon_bands.csv",
-    "phonon_reference_points.csv",
     "electronic_dos.csv",
     "phonon_dos.csv",
 ];
@@ -62,7 +61,9 @@ pub struct Manifest {
     pub run_id: String,
     pub ph_mode: String,
     pub upstream_digest: String,
-    pub quality_status: String,
+    /// 仅用于历史 v1 包读取；新包不写入。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_status: Option<String>,
     pub missing: Vec<String>,
     pub files: Vec<Artifact>,
 }
@@ -74,7 +75,7 @@ pub struct Tick {
     pub label: String,
 }
 
-/// 直接 PH 与 EPW 的验证点误差；排序模式不等同于振动本征矢身份。
+/// 仅用于版本 1 历史图包重绘的直接 PH 标注；新包不生成此数据。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PhononErrorMarker {
@@ -110,7 +111,7 @@ pub struct Metadata {
     pub orbitals: Vec<String>,
     pub electronic_projection: String,
     pub phonon_projection: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub phonon_error_markers: Vec<PhononErrorMarker>,
     pub notes: Vec<String>,
 }
@@ -132,6 +133,7 @@ pub struct Dataset {
     pub electronic_dos: Vec<Curve>,
     pub phonon_dos: Vec<Curve>,
     pub direct: Vec<(f64, f64)>,
+    pub differences: Option<super::differences::Differences>,
 }
 
 // 该数值交换格式只接受无引号 CSV；复杂标签放 metadata，而不是静默拆错列。
@@ -219,7 +221,7 @@ fn dos(root: &Path, phonon: bool, metadata: &Metadata) -> Result<Vec<Curve>> {
     };
     let mut curves: BTreeMap<(String, String), Vec<(f64, f64)>> = BTreeMap::new();
     for row in table(
-        &root.join(if phonon { TABLES[4] } else { TABLES[3] }),
+        &root.join(if phonon { TABLES[3] } else { TABLES[2] }),
         header,
     )? {
         method(&row[0])?;
@@ -312,12 +314,8 @@ fn paired(curves: &[Curve], is_dos: bool) -> Result<()> {
 pub fn load(root: &Path) -> Result<Dataset> {
     let manifest: Manifest = store::read(&root.join("manifest.json"))?;
     ensure!(
-        manifest.schema_version == 1
+        matches!(manifest.schema_version, 1 | 2)
             && matches!(manifest.ph_mode.as_str(), "index" | "coords" | "nosplit")
-            && matches!(
-                manifest.quality_status.as_str(),
-                "passed" | "failed" | "unverified"
-            )
             && manifest.upstream_digest.len() == 64,
         "data_invalid: 比较清单版本或状态无效"
     );
@@ -326,11 +324,16 @@ pub fn load(root: &Path) -> Result<Dataset> {
         .iter()
         .map(|a| a.relative_path.clone())
         .collect();
-    let expected: BTreeSet<PathBuf> = TABLES
+    let mut expected: BTreeSet<PathBuf> = TABLES
         .iter()
         .chain(["metadata.json", "metrics.json"].iter())
         .map(PathBuf::from)
         .collect();
+    if manifest.schema_version == 1 {
+        expected.insert("phonon_reference_points.csv".into());
+    } else {
+        ensure!(manifest.quality_status.is_none(), "data_invalid: 新比较包不允许质量评级");
+    }
     ensure!(
         names == expected && names.len() == manifest.files.len(),
         "data_invalid: 比较包文件集合不完整"
@@ -338,8 +341,18 @@ pub fn load(root: &Path) -> Result<Dataset> {
     for f in &manifest.files {
         f.verify(root)?;
     }
-    let _: serde_json::Value = store::read(&root.join("metrics.json"))?;
+    let metrics: serde_json::Value = store::read(&root.join("metrics.json"))?;
+    let differences: Option<super::differences::Differences> = if manifest.schema_version == 2 {
+        ensure!(metrics["schema_version"] == 2 && metrics["electronic_matching"] == "ordered_minimum_squared_energy_pairs",
+            "data_invalid: 最大差值版本或配对定义不符");
+        let stats: super::differences::Differences = serde_json::from_value(metrics.get("differences")
+            .context("data_invalid: 缺少四项最大差值")?.clone())?;
+        stats.validate()?;
+        Some(stats)
+    } else { None };
     let metadata: Metadata = store::read(&root.join("metadata.json"))?;
+    ensure!(manifest.schema_version == 1 || metadata.phonon_error_markers.is_empty(),
+        "data_invalid: 新比较包不允许抽样标注");
     if let Some(window) = metadata.disentanglement_window_ev {
         ensure!(
             window.iter().all(|v| v.is_finite())
@@ -369,8 +382,7 @@ pub fn load(root: &Path) -> Result<Dataset> {
     ensure!(
         metadata.fermi_ev.is_finite()
             && metadata.window_ev.iter().all(|v| v.is_finite())
-            && metadata.window_ev[0] <= -0.5
-            && metadata.window_ev[1] >= 0.5
+            && metadata.window_ev[0] < metadata.window_ev[1]
             && metadata.electronic_energy_unit == "eV_relative_fermi"
             && metadata.phonon_frequency_unit == "cm-1"
             && metadata.electronic_density_unit == "states/(eV*cell)"
@@ -434,12 +446,14 @@ pub fn load(root: &Path) -> Result<Dataset> {
     }
     let phonon_dos = dos(root, true, &metadata)?;
     let mut direct = Vec::new();
+    if manifest.schema_version == 1 {
     for row in table(
-        &root.join(TABLES[2]),
+        &root.join("phonon_reference_points.csv"),
         "point_id,distance,mode,frequency_cm1,source",
     )? {
         ensure!(!row[4].is_empty(), "data_invalid: 直接 PH 来源缺失");
         direct.push((number(&row[1])?, number(&row[3])?));
+    }
     }
     let data = Dataset {
         manifest,
@@ -449,6 +463,7 @@ pub fn load(root: &Path) -> Result<Dataset> {
         electronic_dos,
         phonon_dos,
         direct,
+        differences,
     };
     // 缺项必须显式登记；一个“完整”标签不能代替两侧投影数据。
     if data.manifest.missing.is_empty() {
