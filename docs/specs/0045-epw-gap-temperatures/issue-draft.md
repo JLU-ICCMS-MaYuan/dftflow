@@ -30,15 +30,15 @@
 
 ## Documentation Impact
 
-- [ ] 更新本目录 Spec、设计、任务与真实验收。
-- [ ] 功能落地后更新 docs/overview/epwflow/ 当前能力。
-- [ ] 更新 epwflow/README.md 与 MgB₂ 算例 README、TOML；命令采用代码块，后接产物说明。
+- [x] 更新本目录 Spec、设计、任务与真实验收。
+- [x] 功能落地后更新 docs/overview/epwflow/ 当前能力。
+- [x] 更新 epwflow/README.md 与 MgB₂ 算例 README、TOML；命令采用代码块，后接产物说明。
 - 根 README 保留现有导航；不新增公共程序，无需增加第四个入口。
 - [ ] 用户发布后核验线上 Issue／Spec 双向链接及父子关系，再考虑线上关闭。
 
 ## 审查状态
 
-用户已确认本版并授权实施，源代码进入验证；安装和真实执行状态见 [验收记录](acceptance.md)。详细需求见 [Spec](spec.md)。
+本地实现与验收完成，当前 PBE 六点公开执行及结果包检查通过；线上发布／关闭仍由用户管理。安装和真实执行证据见 [验收记录](acceptance.md)。详细需求见 [Spec](spec.md)。
 
 
 用户已答复“认可。开始”，确认已展示的本版 Issue／Spec 并授权实施；线上仍由用户管理。

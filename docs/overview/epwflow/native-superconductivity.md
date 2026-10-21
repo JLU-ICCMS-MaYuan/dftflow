@@ -1,6 +1,8 @@
 # 原生超导执行适配
 
-当前原生 EPW 5.9 适配支持指定温度能隙（gap）和原有区间搜索（tc），两类任务分别验证和交付。当前算例目标为 PBE MgB₂ 的 iso／aniso 20／30／40 K 正常执行；真实公开流程进度见 [0045 验收](../../specs/0045-epw-gap-temperatures/acceptance.md)。下文注明日期的 LDA 结果仅为历史证据，不属于本次要求。
+2026-10-22 当前 PBE 公开八阶段实测已完成：iso／aniso 的 20／30／40 K 六点均为原生退出 0、明确收敛、完整结束且能隙数据有效；最终结果包 execution_complete、data_complete 和 workflow_complete 均为 true。原始证据与边界见 [0045 验收](../../specs/0045-epw-gap-temperatures/acceptance.md)。
+
+当前原生 EPW 5.9 适配支持指定温度能隙（gap）和原有区间搜索（tc），两类任务分别验证和交付。当前算例目标为 PBE MgB₂ 的 iso／aniso 20／30／40 K 正常执行；真实公开流程结果见 [0045 验收](../../specs/0045-epw-gap-temperatures/acceptance.md)。下文注明日期的 LDA 结果仅为历史证据，不属于本次要求。
 
 ## 已实现的执行边界
 

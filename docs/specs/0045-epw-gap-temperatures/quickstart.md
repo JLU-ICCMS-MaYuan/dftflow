@@ -32,3 +32,11 @@ epw_superconductivity -c "epwinput.toml" --stage superconductivity --resume -s
 ```
 
 保留成功点及旧失败尝试，只重试未完成点。活动或状态未知的任务不重复提交；更改来源或科学参数会触发身份检查，不能通过修改清单强行复用。
+
+完成后核验结果包：
+
+```bash
+epw_superconductivity --results-check --results "8.epw-superconductivity/results" --json
+```
+
+当前 PBE 示例已由公开八阶段实际跑通六点，正常结束、收敛和能隙数据均通过；可核对 workflow_complete、gap_run.execution_complete、gap_run.data_complete。原始作业及安装身份见验收记录，不把指定温度能隙解释成 Tc。

@@ -78,6 +78,14 @@ epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
 
 按 `task="gap"`、`mode="both"` 和温度列表依次执行六个单点。每个温度使用一个初始能隙，不搜索 Tc。`8.epw-superconductivity/` 的尝试子目录保存该点的 `epw.in`、`submit.sh`、`epw.out`、原生 Δ／Z 文件和 `attempt.json`。六点正常执行结束后，`results/` 保存 `points.csv` 逐点执行／收敛／数据状态、`gap_summary.csv` 能隙统计、`gap_states.csv` 状态明细及三格式图像；未收敛、NaN 或缺失能隙的数据会注明原因，不填零。
 
+六点完成后，检查结果包及其来源：
+
+```bash
+epw_superconductivity --results-check --results "8.epw-superconductivity/results" --json
+```
+
+返回 `workflow_complete: true`、`source_verification: "verified"`，表示逐点执行和结果包核验完成；`gap_run.data_complete` 另列能隙数据是否全部有效。
+
 ### 查看作业与工作区状态
 
 查看提交命令给出的作业号及当前工作区状态：
