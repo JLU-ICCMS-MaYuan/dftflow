@@ -118,3 +118,11 @@ QE 显式路径的原生频率文件可能在未使用的第四列打印 `******
 第 8 步作业 **1316539** 已进入原生 iso／aniso。iso 线性区间 75.89～76.16 K，但 10 K 非线性出现 NaN 且未收敛；aniso 原生 80 K 收敛后遇到能隙省略 E 指数的解析 Bug，见 [0042](../../../../../docs/specs/0042-epw-fortran-exponent/acceptance.md)。因此当前没有完整双模式 Tc 交付，失败不是插值数值告警导致。保留当前输入和失败现场，不重复提交同一配置来掩盖未收敛。
 
 0042 安装后已实际恢复为作业 **1316704**：前七阶段及十次有效 iso 线性求解复用，aniso 第一初值成功解析并保存 80 K／589 次收敛结果。当前停在 aniso 第二初值以及 iso 10 K 非线性未收敛，Slurm FAILED/1:0；这是原生求解结果，不是此前的格式错误，也不是插值误差超限。旧失败现场和新尝试均保留，尚无完整双模式 Tc。下一轮需要针对非线性求解参数单独诊断；直接重复同一配置预计仍会重试相同失败计算。
+
+## 已更新的原生提交脚本
+
+当前仓库三个 EPW 命令已更新。`1.qe-scf/submit.sh`、`2.qe-nscf/submit.sh` 直接执行 `pw.x`，`4.qe-phonon-nosplit/submit.sh` 执行 `ph.x`，`5.epw-wannier/submit.sh` 和 `6.epw-coarse/submit.sh` 执行 `epw.x`；细网格和超导脚本位于各自尝试子目录。
+
+`5.epw-wannier/submit-wannier90.sh`、`submit-postw90.sh` 分别直接执行独立后处理程序；PH 后处理使用 `submit-q2r.sh`、`submit-matdyn_phband.sh`、`submit-matdyn_phdos.sh`，电子能带后处理使用 `3.qe-electronic/qe_eband/submit-elebanddata.sh`。每份脚本只调用一次原生程序。
+
+这些由旧现场迁移的脚本用于独立调试，可能重写本目录原生产物，手工提交不自动更新正式完成状态。正式推进使用 `epw_phonon`、`epw_wannier` 或 `epw_superconductivity` 的 `-s`，作业结束后再次执行相同命令核验并推进。旧 `submit_all.sh` 以及多步骤阶段总入口已退役为 Markdown 说明，原文和映射保存在 `docs/local/0026-deployment/`。

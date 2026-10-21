@@ -273,3 +273,7 @@ EPW 的 `wannier.selection_mode = "energy_only"` 使用共享 Rust 纯能量选�
 显式声子路径使用专用 matdyn 解析：QE 7.4.1 的未使用第四列可未初始化，按固定宽度跳过该列，坐标、全部频率和点序仍严格核验；普通加权格式保持有限非负权重检查。编号自动比较的原 CLI 身份仅作历史追溯，升级后复用完整科学来源与成功原生子任务，冻结请求保持不变。依据见 [0037](../../specs/0037-matdyn-path-unused-weight/acceptance.md)、[0038](../../specs/0038-comparison-orchestrator-upgrade/acceptance.md)。
 
 共用比较渲染器将 G/GAMMA 显示为 Γ，在屏幕上分组合并拥挤的相邻端点文字；所有原竖线和科学曲线坐标保持。独立图与总览均使用该规则，显式 --plot 可离线重绘既有结果，见 [0039](../../specs/0039-comparison-path-labels/acceptance.md)。
+
+## 0026 安装与历史脚本迁移
+
+仓库 `bin/epwflow/` 三个安装入口现已更新到直接原生提交实现。当前 MgB₂ 示例的历史包装提交脚本已迁移为单次原生程序调用，多个后处理步骤各有独立脚本；已封存或包含总调度的旧入口已退役为说明并保存原文。迁移脚本供独立调试，正式 `-s` 仍生成独立原生任务并在作业外归集；安装版七项进程契约通过，没有新增科学作业。范围与证据见 [0026 部署记录](../../specs/0026-epw-direct-native-submit/deployment.md)。

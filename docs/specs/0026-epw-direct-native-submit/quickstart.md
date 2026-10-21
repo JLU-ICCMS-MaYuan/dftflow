@@ -14,3 +14,14 @@ bash scripts/build-native.sh test --locked -p epwflow --test three_stage_executi
 ```
 
 本机依赖离线来源和原生库按已有构建环境配置，不把机器路径写入共享配置。真实 QE／EPW 用例继续显式暂挂，不以这些替身测试声明真实科学结果通过。
+
+## 当前机器安装与旧脚本
+
+本次已覆盖仓库 `bin/epwflow/` 的三个入口。终端加载 `source scripts/env.sh` 后使用这些入口。按模块打包可使用：
+
+```bash
+bash scripts/linux/package-native-runtime.sh --module epwflow SOURCE_BIN PACKAGE_BIN NATIVE_PREFIX
+bash scripts/install-bin.sh --module epwflow PACKAGE_BIN
+```
+
+现有示例的 `5.epw-wannier/submit.sh` 直接运行 `epw.x`，同目录 `submit-wannier90.sh`、`submit-postw90.sh` 分别用于独立后处理调试。PH 的 q2r/matdyn 与 QE 的 bands 各有单调用脚本。手工提交这些脚本可能重写对应原生产物，不自动更新正式工作流状态；正式推进仍使用公开命令 `-s`，每次生成并绑定独立任务脚本。旧阶段总入口、封存现场和测试总入口已退役，详细映射及原文见 [部署记录](deployment.md)。
