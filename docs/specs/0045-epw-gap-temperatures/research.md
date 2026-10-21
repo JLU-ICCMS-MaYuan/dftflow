@@ -1,6 +1,6 @@
 # 0045 依据与取舍
 
-## 已核对的主路径
+## 实施前核对的主路径
 
 - 当前 EPW 源码 `EPW/src/supercond_iso.f90` 第 77 行和 `supercond_aniso.f90` 第 134 行均循环 itemp=1..nstemp，支持在配置温度求解。相应代码调用 mix_wrap 并传递 broyden_beta。
 - DFTFlow `superconductivity/attempt.rs::render` 已生成 nstemp=1、temps(1)、模式开关、非线性初值、混合等原生参数。当前不是缺少 EPW 方法，而是公开配置和调度强制 Tc。
@@ -18,4 +18,4 @@
 
 执行结束与有效能隙分开：遵守用户要求的正常结束验收，同时避免把退出 0 但 NaN／未收敛的输出发布为有效物理数据。Tc 仍使用原来的严格验证。指定温度任务无需构造虚假的 Tc 区间。
 
-实现和真实计算均尚未开始；本机无 Gitee CLI，线上用户管理，不创建伪线上编号。
+上述实施前问题已由 task 分派、点调度、独立完成验证及 F5 适配处理；源码回归和安装已验证，真实公开流程进度见 [验收记录](acceptance.md)。本机无 Gitee CLI，线上用户管理，不创建伪线上编号。

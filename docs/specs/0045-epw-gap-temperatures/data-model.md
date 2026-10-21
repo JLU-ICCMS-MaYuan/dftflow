@@ -1,8 +1,8 @@
-# 0045 数据与状态草案
+# 0045 数据与状态
 
 ## 运行计划
 
-计划包含 task、mode、温度列表（内部 0.01 K 整数）、单初值、μ*、截断、迭代／混合设置、EPW 和 F3 来源身份。规范化计划绑定运行，不能通过编辑记录改变实际来源。
+版本 3 的运行清单保存 task=gap、run_id、interpolation_digest、binding_digest、plan、attempts、execution_complete 和 data_complete。plan 保存展开后的单模式 Request：温度用 0.01 K 整数，kind=gap，包含单初值、μ*、截断及迭代／混合设置；绑定涵盖配置、EPW 和 F3 来源身份。不能通过编辑记录改变实际来源。
 
 ## 温度点与原生尝试
 
@@ -10,12 +10,13 @@
 
 ## 执行与数据状态
 
-- 执行状态：pending、running、completed、failed、unknown；completed 必须有零退出和完整原生结束证据。
-- 收敛状态：true／false／不可判断，来自原生日志，不能由退出码推导。
+- attempts[].status：running 为处理中，failed 为失败，valid 为正常结束且能隙有效，completed 为正常结束但无有效能隙。valid／completed 都必须有零退出和完整原生结束证据。
+- 计划中尚无尝试的点为待运行；活动／未知调度状态由原生作业回执判定，不伪造已完成尝试。
+- attempt.json 的 gap_status 保存 execution_complete、converged、data_status 和 reason；converged 为 true／false／null，来自原生日志，不能由退出码推导。
 - 能隙有效性：valid／not_converged／missing／invalid，包含有限数、频率、温度和实际状态身份检查；原因与原始文件保留。
 - execution_complete：计划中所有点正常结束；data_complete：所有点均有有效能隙。这两个字段不能互相代替。
 
-结果汇总逐点列出温度、模式、初值、执行状态、收敛状态、能隙有效性、日志和数据位置。可用 Δ 单位 meV，Z 无量纲，温度 K；保存完整正 Matsubara 频率数据，aniso 保留真实 k／band 及权重。零能隙可以有效，不要求归类为超导态。
+points.csv 列为 mode、temperature_k、initial_gap_mev、execution_status、execution_complete、converged、data_status、log_path、reason。汇总 JSON 的 gap_run 另保存尝试目录、计划完成和数据完整状态；可用 Δ 单位 meV，Z 无量纲，温度 K。F4 保存完整正 Matsubara 频率数据，F5 的 gap_summary.csv／gap_states.csv 使用最低正频率，aniso 保留真实 k／band 及权重。零能隙可以有效，不要求归类为超导态。
 
 ## 清单版本与 Tc 兼容
 

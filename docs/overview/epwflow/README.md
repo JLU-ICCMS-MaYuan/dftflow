@@ -12,6 +12,14 @@
 
 公开进程契约覆盖逐任务 QE／Wannier／粗细网格及两模式 Tc、环境失败、恢复、防重复和未知回执，不代表新增真实科学验收。设计与证据见 [0026](../../specs/0026-epw-direct-native-submit/plan.md)。以下历史自动串联说明不适用于新的编号工作区 `-s`。
 
+## 指定温度超导能隙（0045）
+
+`superconductivity.task="gap"` 将所选 `mode="iso"|"aniso"|"both"` 与 `gap_temperatures_k` 逐项组合，每点使用一个 `initial_gap_mev`（缺省 10 meV）直接执行原生非线性求解。温度可配置，20／30／40 K 是 MgB₂ 的当前示例。gap 无需 Tc 区间或双初值表，不运行 Tc 搜索；省略 task 仍保持旧 tc 行为及配置身份。
+
+第 8 步继续使用 `epw_superconductivity --stage superconductivity -s`，每次最多提交一个原生调用。正常零退出且有 EPW 完整结束计时的点记录执行完成；是否收敛、是否有有限且完整的 Δ／Z 另行记录。未收敛／NaN／缺能隙不发布有效数据，但可继续下一点；非零退出、缺结束或来源冲突停止，显式 `--resume` 保留成功点及失败证据后重试。`mixing_beta` 负值透传原生线性混合、正值为 Broyden，系数绝对值在 `(0,1]`，不会自动更改数值设置。
+
+新点清单版本为 3，结果包提供 `points.csv`、有效的能隙表及图，不填写 Tc。有效单初值 aniso 数据可进入最低正 Matsubara 分布，温度点之间不插值。配置、公开进程的六次精确调用、无效数据、失败恢复、防重、验源及移动重绘已有回归；安装来源和真实 PBE 全流程进度见 [0045 验收](../../specs/0045-epw-gap-temperatures/acceptance.md)，执行及数据边界见 [原生超导适配](native-superconductivity.md)。
+
 ## 常规对比与最大差值（0043）
 
 源码已取消独立抽样核验：不再生成 quality-sources、额外参考 NSCF／直接 PH／dynmat、专用点文件／质量报告／绑定清单，也不读取 interpolation.quality。常规 QE 电子路径／均匀网格、q2r/matdyn 声子及 EPW 重读保留，生成四张独立图和总览。
@@ -34,7 +42,7 @@ LDA 历史 40³/20³ EPC 已有 λ_integral=0.6853853、λ_sum=0.6853511，iso �
 
 新工作区设置 `layout="numbered"`，默认配置为根 `input.toml`，采用八个实际计算目录：SCF、NSCF、`qe_eband/qe_eledos`、三种 PH 模式之一、Wannier、粗 EPC、细 EPC、iso/aniso。实际计算的输入、`submit.sh` 与日志共目录；依赖上游数值的子任务在执行到该步时生成。各编号阶段的 `completion.json` 保存完成回执，第 3 步原生回执位于 `3.qe-electronic/receipts/`，第 5／6 步后处理回执为本阶段 `post-completion.json`；可见的 `epw-state/` 保存共享状态、尝试、交付清单和历史，不以链接伪装计算目录。
 
-三个公开程序保持，`epw_wannier --stage wannier|coarse` 和 `epw_superconductivity --stage fine|superconductivity` 分离科学边界；默认分别到第 6、8 步。`epw_phonon` 管理第 1～4 步，复用共享 qeflow/qf 输入、执行和后处理组件。PH 使用独立 SCF 快照，不额外做 SCF；nosplit、coords、index 均校验后交付 `save/`。
+三个公开程序保持，`epw_wannier --stage wannier|coarse` 和 `epw_superconductivity --stage fine|superconductivity` 分离科学边界；默认分别到第 6、8 步。`epw_phonon --stage scf|nscf|electronic|phonon` 管理第 1～4 步，默认到 phonon，复用共享 qeflow/qf 输入、执行和后处理组件。PH 使用独立 SCF 快照，不额外做 SCF；nosplit、coords、index 均校验后交付 `save/`。
 
 生成、提交和 `--resume` 都读取当前根配置，按本阶段参数、程序及上游产物指纹决定复用。资源变更不让科学结果失效；细网格只影响 7/8，能窗影响 5～8，粗 q 更新 PH 和 6～8，保留相容 SCF、NSCF、Wannier。对比展宽由独立后处理清单管理，不重做拟合/EPC；路径参考变化只补相应参考和粗网格重读。已提交任务使用独立参数快照，活动/终态未知的工作区禁止重提。
 

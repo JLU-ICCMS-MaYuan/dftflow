@@ -6,7 +6,7 @@
 
 新增 `superconductivity.task="gap"|"tc"`，缺省 tc，序列化旧缺省时不引入无意义指纹变化。gap 复用 `gap_temperatures_k`，单初值新增 `initial_gap_mev`（gap 缺省 10 meV）。gap 不要求旧 `initial_gaps_mev` 双初值或 iso/aniso Tc 表；tc 保持原验证。详见 [接口](contracts/config-cli.md)。
 
-混合延用原 `mixing_beta`，目标 EPW 负值表示线性混合，正值为 Broyden；允许 `0<abs(beta)<=1`，历史长度保留原 1～8 约束。当前例拟显式使用 -0.3，实际 iso／aniso 均由公开入口验证，不将历史只验证过 aniso 线性混合写成新 iso 已验证。
+混合延用原 `mixing_beta`，目标 EPW 负值表示线性混合，正值为 Broyden；允许 `0<abs(beta)<=1`，历史长度保留原 1～8 约束。当前例显式使用 -0.3，实际 iso／aniso 均由公开入口验证，不以历史手动结果代替本项公开运行。
 
 ## 原生执行与调度
 

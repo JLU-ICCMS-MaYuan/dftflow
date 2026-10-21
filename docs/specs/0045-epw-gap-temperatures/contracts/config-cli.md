@@ -1,4 +1,4 @@
-# 0045 配置与公开入口草案
+# 0045 配置与公开入口
 
 以下为已有 TOML 的超导段修改示例，其他既有物理和程序设置继续保留：
 
@@ -27,4 +27,4 @@ epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
 
 正常结束但未收敛的点记为执行完成，继续余下点，并明确标能隙不可作为有效数据。非零退出、未正常结束、数据来源损坏或预算不足阻止整体完成，保留已有成功点；身份冲突不能通过重试绕过。
 
-结果包含逐点状态汇总、epw.in／out／err、退出与结束证据、可用的完整 Δ／Z。Tc 未请求时不产生 Tc 数值或伪区间。归集／绘图／检查沿用现有公开选项，不新增公共程序。
+结果包含逐点状态汇总、epw.in／out／err、退出与结束证据、可用的完整 Δ／Z。编号目录为 `8.epw-superconductivity/`，版本 3 的 manifest.json 保存固定点计划；尝试目录名含模式、两位小数温度与全局尝试编号。`results/points.csv` 区分执行与数据状态，有效值进入 gap_summary.csv／gap_states.csv。Tc 未请求时不产生 tc.csv 或 Tc 区间图。归集／绘图／检查沿用现有公开选项，不新增公共程序，详见 [数据模型](../data-model.md)。
