@@ -114,9 +114,7 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
     ))?))
 }
 fn post_file(cfg: &Config, step: Step) -> PathBuf {
-    cfg.work_dir
-        .join(".epwflow/post")
-        .join(format!("{}.json", step.name()))
+    step.directory(cfg).join("post-completion.json")
 }
 
 pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
@@ -133,7 +131,7 @@ pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
             return Ok(true);
         }
         for id in r.outputs {
-            id.verify()?;
+            if !store::identity_available(&id)? { return Ok(true); }
         }
     }
     Ok(false)
@@ -150,10 +148,11 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
         if file.exists() {
             let r: PostReceipt = store::read(&file)?;
             if r.key == key {
+                let mut available = true;
                 for id in r.outputs {
-                    id.verify()?;
+                    if !store::identity_available(&id)? { available = false; }
                 }
-                continue;
+                if available { continue; }
             }
         }
         let outputs = if step == Step::Wannier {
@@ -177,11 +176,11 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                     .map(|p| store::hash_file(p))
                     .transpose()?,
             ))?);
-            let path_file = cfg.work_dir.join(".epwflow/post/coarse-path.json");
+            let path_file = cfg.work_dir.join("epw-state/post/coarse-path.json");
             if path_file.exists() && store::read::<String>(&path_file)? != path_key {
                 let history = cfg
                     .work_dir
-                    .join(".epwflow/history")
+                    .join("epw-state/history")
                     .join(format!("comparison-path-{}", store::token()));
                 fs::create_dir_all(&history)?;
                 for (name, relative) in [
@@ -225,13 +224,13 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
             let results = layout::path(&cfg.work_dir, "results");
             sources.electronic_sigma_ev = options.electronic_sigma_ev;
             sources.phonon_sigma_cm1 = options.phonon_sigma_cm1;
-            let source = cfg.work_dir.join(".epwflow/post/coarse-sources.json");
+            let source = cfg.work_dir.join("epw-state/post/coarse-sources.json");
             store::write(&source, &sources)?;
             let current = interpolation::comparison_data::load(&output)?;
             if current.manifest.upstream_digest != store::hash_file(&source)? {
                 let history = cfg
                     .work_dir
-                    .join(".epwflow/history")
+                    .join("epw-state/history")
                     .join(format!("plots-{}", store::token()));
                 fs::create_dir_all(&history)?;
                 for (name, p) in [("tables", &output), ("results", &results)] {
@@ -267,10 +266,11 @@ pub fn generate(cfg: &Config, target: Step) -> Result<()> {
         fs::create_dir_all(&dir)?;
         let request = cfg
             .work_dir
-            .join(".epwflow/requests")
+            .join("epw-state/requests")
             .join(format!("{}.json", step.name()));
         if request.is_file()
             && store::read::<String>(&request)? == stages::scientific_key(cfg, step)?
+            && dir.join(match step { Step::Scf => "scf.in", Step::Nscf => "nscf.in", Step::Wannier => "epw_wannier.in", _ => "submit.sh" }).is_file()
         {
             if step == Step::Electronic {
                 super::workspace_electronic::inputs(cfg, &qe)?;
@@ -745,7 +745,10 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
             {
                 return false;
             }
-            name != "submit.sh"
+            name != "completion.json"
+                && name != "post-completion.json"
+                && !rel.starts_with("receipts/")
+                && name != "submit.sh"
                 && !name.starts_with("slurm-")
                 && !name.starts_with(".epw-")
                 && !(step == Step::Phonon && name == "manifest.json")

@@ -32,7 +32,7 @@ impl Case {
     }
 
     fn workflow(&self) -> Value {
-        serde_json::from_slice(&fs::read(self.root.join("run/.epwflow/workflow.json")).unwrap())
+        serde_json::from_slice(&fs::read(self.root.join("run/epw-state/workflow.json")).unwrap())
             .unwrap()
     }
 
@@ -338,7 +338,7 @@ fn b01_boundary_executes_qe_once_and_blocks_missing_interpolation_evidence() {
         .remove("qe-data");
     interrupted["state"] = "failed".into();
     fs::write(
-        c.root.join("run/.epwflow/workflow.json"),
+        c.root.join("run/epw-state/workflow.json"),
         serde_json::to_vec_pretty(&interrupted).unwrap(),
     )
     .unwrap();

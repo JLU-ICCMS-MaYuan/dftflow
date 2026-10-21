@@ -21,6 +21,20 @@ impl Identity {
     pub fn capture(path:&Path)->Result<Self>{let target=fs::canonicalize(path).with_context(||format!("input_conflict: 无法定位 {}",path.display()))?;let bytes=fs::metadata(&target)?.len();let sha256=hash_file(path)?;Ok(Self{path:path.into(),target,sha256,bytes})}
     pub fn verify(&self)->Result<()>{let now=Self::capture(&self.path)?;ensure!(now.target==self.target && now.sha256==self.sha256&&now.bytes==self.bytes,"input_conflict: 文件或链接目标已改变 {}",self.path.display());Ok(())}
 }
+/// 仅文件确实不存在才返回不可用；权限、链接目标及内容冲突仍返回原错误。
+pub fn identity_available(id: &Identity) -> Result<bool> {
+    match fs::metadata(&id.path) {
+        Ok(_) => { id.verify()?; Ok(true) }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            match fs::symlink_metadata(&id.path) {
+                Ok(_) => { id.verify()?; Ok(false) }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+                Err(e) => Err(e.into()),
+            }
+        }
+        Err(e) => Err(e.into()),
+    }
+}
 #[derive(Serialize,Deserialize)] #[serde(deny_unknown_fields)]
 struct Owner {host:String,pid:u32,token:String,created_unix:u64,#[serde(default)]job_id:Option<u64>}
 pub struct Lock {path:PathBuf,token:String}
@@ -48,7 +62,7 @@ impl Lock {
         ensure!(entries.len() == 1 && entries[0].file_name() == "owner.json", "scheduler_unknown: 所属锁含未知现场，保留原锁");
         // Unix DirEntry 可持有目录句柄，移动和清理前先释放。
         drop(entries);
-        let retired = self.path.parent().context("锁缺少父目录")?.join(format!(".epw-released-{}", self.token));
+        let retired = self.path.parent().context("锁缺少父目录")?.join(format!("epw-released-{}", self.token));
         ensure!(!retired.try_exists()?, "scheduler_unknown: 锁退役路径已存在");
         fs::rename(&self.path, &retired)?;
         cleanup(&retired)
@@ -123,9 +137,9 @@ impl Drop for Lock {fn drop(&mut self){
 }}
 pub fn hostname()->String{let mut name=[0u8;256];#[cfg(unix)] unsafe{if libc::gethostname(name.as_mut_ptr().cast(),name.len())==0 {return String::from_utf8_lossy(&name[..name.iter().position(|b|*b==0).unwrap_or(name.len())]).into_owned();}}"unknown".into()}
 pub fn now()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()}
-/// 状态根：$XDG_STATE_HOME/epwflow；仓库本地用 EPWFLOW_LOCAL_STATE 覆盖（gitignored）。
+/// 预算注册表默认放在可见的 ~/epwflow-state；保留显式环境覆盖。
 pub fn state_root()->Result<PathBuf>{
     if let Ok(local)=std::env::var("EPWFLOW_LOCAL_STATE"){return Ok(PathBuf::from(local));}
-    let base=match std::env::var("XDG_STATE_HOME"){Ok(v) if !v.is_empty()=>PathBuf::from(v),_=>{let home=std::env::var("HOME").unwrap_or_else(|_|".".to_string());PathBuf::from(home).join(".local").join("state")}};
+    let base=match std::env::var("XDG_STATE_HOME"){Ok(v) if !v.is_empty()=>PathBuf::from(v),_=>{let home=std::env::var("HOME").unwrap_or_else(|_|".".to_string());return Ok(PathBuf::from(home).join("epwflow-state"))}};
     Ok(base.join("epwflow"))
 }

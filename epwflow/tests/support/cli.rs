@@ -11,7 +11,7 @@ pub fn command(args: &[&str], cwd: &Path) -> Command {
         }
     } else if args.first().is_some_and(|s| s == "__execute") {
         if let Some(i) = args.iter().position(|s| s == "-w") {
-            let p = cwd.join(&args[i + 1]).join(".epwflow/workflow.json");
+            let p = cwd.join(&args[i + 1]).join("epw-state/workflow.json");
             let record: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap();
             phase = record["until"].as_str().unwrap().to_string();

@@ -12,11 +12,11 @@ pub struct Layout {
 }
 
 pub fn enabled(root: &Path) -> bool {
-    root.join(".epwflow/layout.json").is_file()
+    root.join("epw-state/layout.json").is_file()
 }
 
 pub fn initialize(cfg: &Config) -> Result<()> {
-    let file = cfg.work_dir.join(".epwflow/layout.json");
+    let file = cfg.work_dir.join("epw-state/layout.json");
     if file.exists() {
         let old: Layout = super::store::read(&file)?;
         ensure!(
@@ -42,7 +42,7 @@ pub fn phonon_name(mode: PhMode) -> &'static str {
 }
 
 pub fn path(root: &Path, relative: &str) -> PathBuf {
-    let file = root.join(".epwflow/layout.json");
+    let file = root.join("epw-state/layout.json");
     if !file.is_file() {
         return root.join(relative);
     }
@@ -59,17 +59,17 @@ pub fn path(root: &Path, relative: &str) -> PathBuf {
         "coarse" => root.join("6.epw-coarse"),
         "results" => root.join("6.epw-coarse/results"),
         "fine" => root.join("7.epw-fine"),
-        "wannier" => root.join(".epwflow/coarse"),
+        "wannier" => root.join("epw-state/coarse"),
         "qe-data" if tail == "save" || tail.starts_with("save/") => {
             return root.join(ph).join(tail);
         }
-        "qe-data" => root.join(".epwflow/qe-data"),
+        "qe-data" => root.join("epw-state/qe-data"),
         "interpolation" if tail == "comparison" || tail.starts_with("comparison/") => {
             return root.join("6.epw-coarse").join(tail);
         }
-        "interpolation" => root.join(".epwflow/interpolation"),
+        "interpolation" => root.join("epw-state/interpolation"),
         "superconductivity" => root.join("8.epw-superconductivity"),
-        "native-attempts" => root.join(".epwflow/native-attempts"),
+        "native-attempts" => root.join("epw-state/native-attempts"),
         "quality-sources" | "comparison-native" => root.join("6.epw-coarse").join(head),
         "quality-reference.json" | "quality-binding.json" | "quality-report.json" => {
             root.join("6.epw-coarse").join(head)

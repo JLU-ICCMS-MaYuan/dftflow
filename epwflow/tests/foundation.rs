@@ -130,7 +130,7 @@ fn refuses_conflicts_and_no_science_success_on_failed_submission() {
     fail(c.run(&["prepare","-c","input.toml"]),"input_conflict"); assert_eq!(fs::read_to_string(c.root.join("run/important")).unwrap(),"keep");
     let c=Case::new();fail(c.run(&["submit","-c","input.toml"]),"scheduler_unknown");
     assert!(!c.root.join("run/calculations").exists(),"提交失败不能运行科学阶段");
-    let r:serde_json::Value=serde_json::from_slice(&fs::read(c.root.join("run/.epwflow/workflow.json")).unwrap()).unwrap();
+    let r:serde_json::Value=serde_json::from_slice(&fs::read(c.root.join("run/epw-state/workflow.json")).unwrap()).unwrap();
     assert_eq!(r["state"],"unknown");
 }
 #[test]
@@ -200,4 +200,26 @@ fn environment_evidence_rejects_missing_program() {
     // 未探测的运行版本标为未验证，缺失程序必须返回环境错误而非零退出。
     let r = environment::verify_program(std::path::Path::new("/no/such/program-xyz"));
     assert!(r.is_err(), "缺失程序必须 environment 错误");
+}
+
+#[test]
+fn visible_default_budget_registry_preserves_the_old_campaign_binding() {
+    let c = Case::new();
+    let home = c.root.join("isolated-home");
+    let old = home.join(".local/state/epwflow/campaigns.json");
+    fs::create_dir_all(old.parent().unwrap()).unwrap();
+    let ledger = c.root.join("existing-ledger.json");
+    let map = serde_json::json!({ledger.to_str().unwrap(): "epic-0007"});
+    fs::write(&old, serde_json::to_vec_pretty(&map).unwrap()).unwrap();
+    let original = fs::read(&old).unwrap();
+    let args = ["budget", "reserve", "--ledger", "different-ledger.json", "--label", "guard", "--nodes", "1", "--mpi", "1", "--wall-seconds", "1", "--storage-bytes", "1"];
+    let mut cmd = c.cmd(&args);
+    cmd.env_remove("EPWFLOW_LOCAL_STATE").env_remove("XDG_STATE_HOME").env("HOME", &home);
+    fail(cmd.output().unwrap(), "已登记在其它路径");
+    let mut cmd = c.cmd(&["budget", "reserve", "--ledger", "existing-ledger.json", "--label", "migrate", "--nodes", "1", "--mpi", "1", "--wall-seconds", "1", "--storage-bytes", "1"]);
+    cmd.env_remove("EPWFLOW_LOCAL_STATE").env_remove("XDG_STATE_HOME").env("HOME", &home);
+    let result = cmd.output().unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert_eq!(map, epwflow::foundation::store::read::<serde_json::Value>(&home.join("epwflow-state/campaigns.json")).unwrap());
+    assert_eq!(original, fs::read(old).unwrap());
 }

@@ -41,7 +41,7 @@ enum BudgetOperation {
 
 #[derive(Parser)]
 #[command(about = "生成、提交或恢复本阶段；默认读取当前 input.toml 并生成脚本")]
-#[command(group(ArgGroup::new("operation").args(["check", "prepare_only", "status", "probe", "import", "collect", "plot", "results_check", "export_comparison", "budget", "execute_attempt", "run_script", "all", "submit_chain"])))]
+#[command(group(ArgGroup::new("operation").args(["check", "prepare_only", "status", "probe", "import", "migrate_state", "collect", "plot", "results_check", "export_comparison", "budget", "execute_attempt", "run_script", "all", "submit_chain"])))]
 struct Options {
     #[arg(short = 'c', long, default_value = "input.toml")]
     config: PathBuf,
@@ -51,6 +51,9 @@ struct Options {
     /// 一次性校验并导入旧 epwflow/work，保留原来源。
     #[arg(long)]
     import_work: Option<PathBuf>,
+    /// 一次性迁移旧编号工作区的隐藏状态；保留历史与预算，不提交计算。
+    #[arg(long, conflicts_with_all = ["submit", "run", "status", "check", "import_work", "all", "resume"])]
+    migrate_state: bool,
     #[arg(long, hide = true)]
     workspace_attempt: Option<PathBuf>,
     #[arg(long, hide = true)]
@@ -140,6 +143,8 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
     if let Some(path)=&o.workspace_attempt { return super::workspace::execute(path); }
     if let Some(path)=&o.workspace_task { return super::workspace::execute_task(path); }
     if let Some(source)=&o.import_work { return super::workspace::import_legacy(&o.config,source); }
+    if o.migrate_state { return super::run_state::migrate(&super::config::Config::load(&o.config)?); }
+    if let Some(work) = &o.work { super::run_state::ready(work)?; }
     let numbered = if o.config.is_file() && o.work.as_ref().is_none_or(|w|super::layout::enabled(w)) {
         super::config::Config::load(&o.config)?.layout.as_deref()==Some("numbered")
     } else {false};
@@ -155,6 +160,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         };
         ensure!(o.mpi.is_none(),"configuration: 编号工作区请修改 input.toml 的资源及启动器/pool");
         let cfg=super::config::Config::load(&o.config)?;
+        super::run_state::ready(&cfg.work_dir)?;
         if o.status {if o.json{status::print_json(&super::workspace::report(&cfg)?);return Ok(())}return super::workspace::status(&cfg)}
         if o.check {for s in target.closure(){if s==target || !super::stages::reusable(&cfg,s)?{super::parallelism::preflight(&cfg,s,false)?;}} if o.json{status::print_json(&serde_json::json!({"operation_status":"ok","workflow_status":"configured","workflow_complete":false,"checks":["configuration","input_files","program_paths","mpi_pool_image"]}));}else{println!("operation_status: ok\nworkflow_status: configured");}return Ok(())}
         if o.submit || o.run {return super::workspace::start(&o.config,target,o.submit)}

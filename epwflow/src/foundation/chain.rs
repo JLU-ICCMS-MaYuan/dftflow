@@ -77,7 +77,7 @@ struct Response {
 }
 
 fn manifest(work: &Path) -> PathBuf {
-    work.join(".epwflow/generated/chain.json")
+    work.join("epw-state/generated/chain.json")
 }
 
 /// 默认只生成；三个程序必须来自同一构建目录。
@@ -138,7 +138,7 @@ pub fn submit(work: &Path) -> Result<()> {
     let work = b.work_dir.as_path();
     let chain: Chain = store::read(&manifest(work))?;
     chain.verify(work)?;
-    let target = work.join(".epwflow/generated/chain-submission.json");
+    let target = work.join("epw-state/generated/chain-submission.json");
     let _lock = store::Lock::acquire(&target)?;
     if target.exists() {
         let receipt: Receipt = store::read(&target)?;
@@ -152,7 +152,7 @@ pub fn submit(work: &Path) -> Result<()> {
         return Ok(());
     }
     ensure!(
-        !work.join(".epwflow/workflow.json").exists(),
+        !work.join("epw-state/workflow.json").exists(),
         "input_conflict: 已有阶段尝试，请使用对应程序恢复，禁止重新提交总链"
     );
     let mut receipt = Receipt {

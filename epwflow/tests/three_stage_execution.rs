@@ -212,7 +212,7 @@ runpy.run_path(str(root/name),run_name='__main__')
         self.output(cmd, job, label)
     }
     fn workflow(&self) -> Value {
-        store::read(&self.root.join("run/.epwflow/workflow.json")).unwrap()
+        store::read(&self.root.join("run/epw-state/workflow.json")).unwrap()
     }
     fn calls(&self) -> (String, String, String) {
         let read = |name| fs::read_to_string(self.root.join(name)).unwrap_or_default();
@@ -342,7 +342,7 @@ fn failed_coarse_can_change_mpi_without_repeating_qe_or_independent_references()
         .last()
         .unwrap()
         .contains("--ntasks 8"));
-    let active_record = fs::read(c.root.join("run/.epwflow/workflow.json")).unwrap();
+    let active_record = fs::read(c.root.join("run/epw-state/workflow.json")).unwrap();
     assert!(!c
         .cli(
             1,
@@ -353,7 +353,7 @@ fn failed_coarse_can_change_mpi_without_repeating_qe_or_independent_references()
         .success());
     assert_eq!(
         active_record,
-        fs::read(c.root.join("run/.epwflow/workflow.json")).unwrap()
+        fs::read(c.root.join("run/epw-state/workflow.json")).unwrap()
     );
     success(c.bash(
         c.workflow()["script"]["path"].as_str().unwrap(),
@@ -417,7 +417,7 @@ fn failed_coarse_can_change_mpi_without_repeating_qe_or_independent_references()
 fn public_chain_resumes_partial_solver_then_only_unfinished_delivery() {
     let c = Case::new();
     success(c.cli(0, &["--all"], "generate"));
-    let generated = c.root.join("run/.epwflow/generated");
+    let generated = c.root.join("run/epw-state/generated");
     success(c.bash(generated.join("submit-all.sh"), None, "submit-chain"));
     assert_eq!(
         fs::read_to_string(c.root.join("submissions"))
@@ -869,7 +869,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     assert!(stages::reusable(&config::Config::load(&c.root.join("input.toml")).unwrap(),Step::Fine).unwrap());
     c.numbered_change(|cfg|cfg.comparison.as_mut().unwrap().electronic_sigma_ev=0.1);c.accounting(Some(211));
     success(c.numbered_cli(1,&["--stage","coarse","-r"],Some(211),"numbered-post-revert"));assert_eq!(before,c.calls());
-    let post:Value=store::read(&c.root.join("run/.epwflow/post/coarse-sources.json")).unwrap();assert_eq!(post["electronic_sigma_ev"],0.1);
+    let post:Value=store::read(&c.root.join("run/epw-state/post/coarse-sources.json")).unwrap();assert_eq!(post["electronic_sigma_ev"],0.1);
     c.accounting(Some(207));
     c.put("tc-failure","test failure");
     let failed=c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(207),"numbered-superconductivity-partial");assert!(!failed.status.success());
@@ -902,7 +902,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     success(c.numbered_cli(2,&["--stage","fine","--check"],None,"fine-resources-exceed-cached-coarse-grid"));
     // 每个真正计算的叶目录可直接找到提交脚本。
     for entry in epwflow::qe_data::save::files(&cfg.work_dir).unwrap() {
-        if entry.relative_path.starts_with(".epwflow"){continue}
+        if entry.relative_path.starts_with("epw-state"){continue}
         let path=cfg.work_dir.join(&entry.relative_path);
         if path.extension().is_some_and(|e|e=="in") && path.file_name().unwrap()!="elepdos.in" {
             assert!(path.parent().unwrap().join("submit.sh").is_file(),"缺少脚本 {}",path.display());
@@ -929,7 +929,7 @@ fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
 fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
     let c=Case::numbered();c.accounting(Some(201));
     success(c.numbered_cli(0,&["-s"],None,"numbered-submit"));
-    let active:Value=store::read(&c.root.join("run/.epwflow/active.json")).unwrap();
+    let active:Value=store::read(&c.root.join("run/epw-state/active.json")).unwrap();
     let frozen=PathBuf::from(active["config"]["path"].as_str().unwrap());let before=fs::read(&frozen).unwrap();
     c.numbered_change(|cfg|cfg.resources.wall_seconds=300);
     let o=c.numbered_cli(0,&["-s","--resume"],None,"numbered-duplicate");assert!(!o.status.success());
@@ -939,7 +939,7 @@ fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
     c.put("input.toml","invalid pending edits must not affect submitted job");
     let mut cmd=Command::new("/bin/bash");cmd.arg(script);c.environment(&mut cmd,Some(201));cmd.current_dir("/").env("SLURM_NTASKS","1");
     success(cmd.output().unwrap());
-    let finished:Value=store::read(&c.root.join("run/.epwflow/active.json")).unwrap();assert_eq!(finished["state"],"succeeded");
+    let finished:Value=store::read(&c.root.join("run/epw-state/active.json")).unwrap();assert_eq!(finished["state"],"succeeded");
 }
 
 #[test]
@@ -1016,7 +1016,7 @@ if (root/'fail-bands').exists():
         let o=self.numbered_cli(1,&["--stage","wannier","-r"],Some(201),"failed-electronic");
         assert!(!o.status.success());
         assert!(String::from_utf8_lossy(&o.stderr).contains("QE bands 退出失败"),"{}",String::from_utf8_lossy(&o.stderr));
-        assert!(self.root.join("run/.epwflow/electronic/pw-bands.json").is_file());
+        assert!(self.root.join("run/3.qe-electronic/receipts/pw-bands.json").is_file());
     }
 }
 
@@ -1060,7 +1060,7 @@ fn numbered_electronic_receipt_rejects_corrupted_save_and_adopts_verified_old_pw
     assert!(!o.status.success());assert!(String::from_utf8_lossy(&o.stderr).contains("文件或链接目标已改变"));
     assert_eq!(calls,c.calls());fs::write(&wfc,original).unwrap();
     // 模拟 0018：有零退出码和冻结尝试，没有新原生任务收据。
-    fs::remove_file(c.root.join("run/.epwflow/electronic/pw-bands.json")).unwrap();
+    fs::remove_file(c.root.join("run/3.qe-electronic/receipts/pw-bands.json")).unwrap();
     let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
     epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).unwrap();
     let density=wfc.parent().unwrap().join("charge-density.dat");
@@ -1070,7 +1070,7 @@ fn numbered_electronic_receipt_rejects_corrupted_save_and_adopts_verified_old_pw
     fs::remove_file(&wfc).unwrap();
     assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());
     fs::write(&wfc,b"fixture-wfc").unwrap();
-    let active:Value=store::read(&c.root.join("run/.epwflow/active.json")).unwrap();
+    let active:Value=store::read(&c.root.join("run/epw-state/active.json")).unwrap();
     let frozen=PathBuf::from(active["config"]["path"].as_str().unwrap()).parent().unwrap().join("POSCAR");
     let original_source=fs::read(&frozen).unwrap();fs::write(&frozen,"changed source").unwrap();
     assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());fs::write(frozen,original_source).unwrap();
@@ -1145,7 +1145,7 @@ exec "$@"
         cfg.programs.epw.args[2]="32".into();
     });
     success(c.numbered_cli(1, &["--stage","wannier","-s"], None, "dos-first-submit"));
-    let active_path=c.root.join("run/.epwflow/active.json");
+    let active_path=c.root.join("run/epw-state/active.json");
     let first:Value=store::read(&active_path).unwrap();
     let script=c.root.join("run/5.epw-wannier/submit.sh");
     let run = |job: u64, label: &str| {
@@ -1157,7 +1157,7 @@ exec "$@"
     let failed=run(201,"dos-failed");
     assert!(!failed.status.success());
     assert!(String::from_utf8_lossy(&failed.stderr).contains("QE dos 退出失败：exit status: 6"),"{}",String::from_utf8_lossy(&failed.stderr));
-    let receipts=c.root.join("run/.epwflow/electronic");
+    let receipts=c.root.join("run/3.qe-electronic/receipts");
     let pw=fs::read(receipts.join("pw-bands.json")).unwrap();
     let bands=fs::read(receipts.join("bands.json")).unwrap();
     let calls=c.calls();
@@ -1194,4 +1194,178 @@ exec "$@"
     assert!(receipts.join("dos.json").is_file());
     let finished:Value=store::read(&active_path).unwrap();
     assert_eq!(finished["state"],"succeeded");
+}
+
+// 0025：真实公开进程边界验证可见状态、删除重建与显式旧状态迁移。
+#[test]
+fn numbered_deleted_wannier_directory_rebuilds_without_repeating_upstream() {
+    use epwflow::foundation::stages::{self, Step};
+    let c = Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(0, &["-r"], Some(201), "initial-phonon"));
+    c.accounting(Some(202));
+    success(c.numbered_cli(1, &["--stage", "wannier", "-r"], Some(202), "initial-fit"));
+    let before = c.calls();
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    for f in epwflow::qe_data::save::files(&cfg.work_dir).unwrap() {
+        assert!(!f.relative_path.parent().unwrap().components().any(|part| part.as_os_str().to_string_lossy().starts_with(".")), "不得创建隐藏运行目录: {:?}", f.relative_path);
+    }
+    let upstream = fs::read(stages::receipt(&cfg.work_dir, Step::Nscf)).unwrap();
+    // 构造已交付下游的真实 Completion 格式；依赖检查仍走生产实现。
+    for step in [Step::Coarse, Step::Fine, Step::Superconductivity] {
+        let dir = step.directory(&cfg);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("native-output"), step.name()).unwrap();
+        let r = stages::Completion {
+            schema_version: 1, step,
+            scientific_key: stages::scientific_key(&cfg, step).unwrap(),
+            upstream: stages::upstream(&cfg, step).unwrap(),
+            outputs: vec![store::Identity::capture(&dir.join("native-output")).unwrap()], provenance: None,
+        };
+        store::write(&stages::receipt(&cfg.work_dir, step), &r).unwrap();
+        assert!(stages::reusable(&cfg, step).unwrap(), "删除前的下游应可复用");
+    }
+    fs::remove_dir_all(c.root.join("run/5.epw-wannier")).unwrap();
+    c.accounting(None);
+    let files = epwflow::qe_data::save::files(&cfg.work_dir).unwrap();
+    success(c.numbered_cli(1, &["--status", "--json"], None, "deleted-status"));
+    assert_eq!(files, epwflow::qe_data::save::files(&cfg.work_dir).unwrap(), "状态查询必须只读");
+    for step in [Step::Wannier, Step::Coarse, Step::Fine, Step::Superconductivity] {
+        assert!(!stages::reusable(&cfg, step).unwrap());
+    }
+    c.script("sbatch", "#!/bin/sh\nprintf '203\\n'\n");
+    success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "deleted-submit"));
+    assert!(c.root.join("run/5.epw-wannier/epw_wannier.in").is_file());
+    assert_eq!(before, c.calls(), "提交不能提前执行科学程序");
+    c.accounting(Some(204));
+    success(c.numbered_cli(1, &["--stage", "wannier", "--resume", "-r"], Some(204), "deleted-rebuild"));
+    assert_eq!(before.0, c.calls().0, "完整上游 QE 不能重跑");
+    assert_eq!(upstream, fs::read(stages::receipt(&cfg.work_dir, Step::Nscf)).unwrap());
+    assert_eq!(c.calls().1.matches("wannier ").count(), before.1.matches("wannier ").count() + 1);
+    assert!(stages::reusable(&cfg, Step::Wannier).unwrap());
+    for step in [Step::Coarse, Step::Fine, Step::Superconductivity] {
+        assert!(!stages::receipt(&cfg.work_dir, step).exists(), "旧下游不能在重算后复活");
+    }
+}
+
+#[test]
+fn numbered_missing_checkpoint_rebuilds_but_modified_or_corrupt_evidence_is_rejected() {
+    let c = Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(1, &["--stage", "wannier", "-r"], Some(201), "fit-for-missing-file"));
+    c.accounting(None);
+    let chk = c.root.join("run/5.epw-wannier/scf.chk");
+    let original = fs::read(&chk).unwrap();
+    fs::write(&chk, "modified checkpoint").unwrap();
+    let bad = c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "modified-checkpoint");
+    assert!(!bad.status.success());
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("已改变"));
+    fs::write(&chk, original).unwrap();
+    let receipt = c.root.join("run/5.epw-wannier/completion.json");
+    let raw = fs::read(&receipt).unwrap();
+    fs::write(&receipt, "corrupt receipt").unwrap();
+    assert!(!c.numbered_cli(1, &["--status"], None, "corrupt-receipt").status.success());
+    fs::write(receipt, raw).unwrap();
+    fs::remove_file(chk).unwrap();
+    success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "missing-checkpoint-submit"));
+}
+
+#[test]
+fn numbered_deleted_stage_never_bypasses_queued_or_unknown_submission() {
+    let c = Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "queued-wannier"));
+    fs::remove_dir_all(c.root.join("run/5.epw-wannier")).unwrap();
+    let before = fs::read(c.root.join("run/epw-state/active.json")).unwrap();
+    let blocked = c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "queued-deleted-stage");
+    assert!(!blocked.status.success());
+    assert!(String::from_utf8_lossy(&blocked.stderr).contains("活动任务"));
+    c.put("accounting", "");
+    assert!(!c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "unknown-deleted-stage").status.success());
+    assert_eq!(before, fs::read(c.root.join("run/epw-state/active.json")).unwrap());
+    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 1);
+}
+
+impl Case {
+    fn hide_numbered_state(&self) {
+        use epwflow::foundation::stages::{self, Step};
+        let cfg = config::Config::load(&self.root.join("input.toml")).unwrap();
+        for step in Step::ALL {
+            let receipt = stages::receipt(&cfg.work_dir, step);
+            if receipt.is_file() {
+                let dest = cfg.work_dir.join("epw-state/steps").join(format!("{}.json", step.name()));
+                fs::create_dir_all(dest.parent().unwrap()).unwrap();
+                fs::rename(receipt, dest).unwrap();
+            }
+        }
+        let electronic = cfg.work_dir.join("3.qe-electronic/receipts");
+        if electronic.exists() { fs::rename(electronic, cfg.work_dir.join("epw-state/electronic")).unwrap(); }
+        fs::rename(cfg.work_dir.join("epw-state"), cfg.work_dir.join(".epwflow")).unwrap();
+    }
+}
+
+#[test]
+fn numbered_legacy_migration_preserves_history_budget_and_reuses_without_hidden_tree() {
+    use epwflow::foundation::stages::{self, Step};
+    let c = Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(0, &["-r"], Some(201), "migration-qe"));
+    c.accounting(Some(202));
+    success(c.numbered_cli(1, &["--stage", "wannier", "-r"], Some(202), "migration-fit"));
+    c.accounting(None);
+    c.hide_numbered_state();
+    let old = c.root.join("run/.epwflow");
+    let original = epwflow::qe_data::save::files(&old).unwrap();
+    let ledger = fs::read(c.root.join("fixture-ledger.json")).unwrap();
+    let blocked = c.numbered_cli(1, &["--status"], None, "migration-required");
+    assert!(!blocked.status.success());
+    assert!(String::from_utf8_lossy(&blocked.stderr).contains("--migrate-state"));
+    assert!(!c.root.join("run/epw-state").exists(), "只读查询不迁移");
+    success(c.numbered_cli(1, &["--migrate-state"], None, "migration"));
+    assert_eq!(original, epwflow::qe_data::save::files(&old).unwrap());
+    assert_eq!(ledger, fs::read(c.root.join("fixture-ledger.json")).unwrap());
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    for s in [Step::Scf, Step::Nscf, Step::Phonon, Step::Wannier] {
+        assert!(stages::reusable(&cfg, s).unwrap(), "迁移应复用 {}", s.name());
+    }
+    let report = c.root.join("run/epw-state/migration.json");
+    let mut interrupted: Value = store::read(&report).unwrap();
+    interrupted["complete"] = json!(false);
+    store::write(&report, &interrupted).unwrap();
+    assert!(!c.numbered_cli(1, &["--status"], None, "migration-incomplete-status").status.success());
+    success(c.numbered_cli(1, &["--migrate-state"], None, "migration-finish-interrupted-publish"));
+    assert_eq!(original, epwflow::qe_data::save::files(&old).unwrap());
+    assert_eq!(ledger, fs::read(c.root.join("fixture-ledger.json")).unwrap());
+    fs::rename(old, c.root.join("saved-legacy-state")).unwrap();
+    let before = c.calls();
+    success(c.numbered_cli(0, &["--status"], None, "migration-independent-status"));
+    success(c.numbered_cli(1, &["--stage", "wannier"], None, "migration-independent-generate"));
+    assert_eq!(before, c.calls());
+    assert!(!c.root.join("run/.epwflow").exists());
+    success(c.numbered_cli(1, &["--migrate-state"], None, "migration-idempotent"));
+}
+
+#[test]
+fn numbered_migration_rejects_activity_and_retains_a_deleted_stage_as_pending() {
+    let c = Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(1, &["--stage", "wannier", "-r"], Some(201), "migration-before-delete"));
+    c.hide_numbered_state();
+    let active_path = c.root.join("run/.epwflow/active.json");
+    let before = fs::read(&active_path).unwrap();
+    assert!(!c.numbered_cli(1, &["--migrate-state"], None, "migration-active").status.success());
+    assert_eq!(before, fs::read(&active_path).unwrap());
+    assert!(!c.root.join("run/epw-state").exists());
+    c.put("accounting", "");
+    assert!(!c.numbered_cli(1, &["--migrate-state"], None, "migration-unknown").status.success());
+    c.accounting(None);
+    let lock = store::Lock::acquire(&c.root.join("run/.epwflow/control")).unwrap();
+    assert!(!c.numbered_cli(1, &["--migrate-state"], None, "migration-locked").status.success());
+    assert!(c.root.join("run/.epwflow/control.lock/owner.json").is_file());
+    drop(lock);
+    fs::remove_dir_all(c.root.join("run/5.epw-wannier")).unwrap();
+    // 201 已被原分配登记；迁移后模拟调度器必须返回新的作业号。
+    c.script("sbatch", "#!/bin/sh\nprintf '202\\n'\n");
+    success(c.numbered_cli(1, &["--migrate-state"], None, "migration-after-delete"));
+    success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "migration-deleted-submit"));
 }

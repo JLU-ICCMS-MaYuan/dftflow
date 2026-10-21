@@ -67,7 +67,7 @@ impl StageAttempt {
         }
     }
     pub fn stage_dir(work: &Path) -> PathBuf {
-        work.join(".epwflow").join("stages")
+        work.join("epw-state").join("stages")
     }
     pub fn path(work: &Path, stage_id: &str) -> PathBuf {
         Self::stage_dir(work).join(format!("{stage_id}.json"))

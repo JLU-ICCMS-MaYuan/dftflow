@@ -196,11 +196,16 @@ fn campaigns_registry() -> Result<PathBuf> {
 fn register_campaign(ledger_path: &Path, campaign_id: &str) -> Result<()> {
     let reg_path = campaigns_registry()?;
     let _lock = store::Lock::acquire(&reg_path)?;
+    let legacy = std::env::var_os("HOME").map(PathBuf::from)
+        .map(|p| p.join(".local/state/epwflow/campaigns.json"));
     let mut map: BTreeMap<String, String> = if reg_path.exists() {
         store::read(&reg_path)?
-    } else {
-        BTreeMap::new()
-    };
+    } else if std::env::var_os("EPWFLOW_LOCAL_STATE").is_none()
+        && std::env::var_os("XDG_STATE_HOME").is_none_or(|v| v.is_empty())
+        && legacy.as_ref().is_some_and(|p| p.is_file()) {
+        // 默认位置首次迁移保留原 campaign 绑定，不能因目录可见化绕过预算。
+        store::read(legacy.as_ref().unwrap())?
+    } else { BTreeMap::new() };
     let key = ledger_path.to_string_lossy().into_owned();
     if let Some(existing_c) = map.get(&key) {
         ensure!(

@@ -48,7 +48,7 @@ pub fn command(base:&Path, value:&str)->Result<PathBuf>{
     bail!("environment: programs.launcher: PATH 中找不到 {value}")
 }
 pub fn state_root()->Result<PathBuf>{
-    let root=if let Some(v)=env::var_os("XDG_STATE_HOME"){PathBuf::from(v)}else{PathBuf::from(env::var_os("HOME").context("environment: HOME 未定义")?).join(".local/state")};
-    if !root.is_absolute(){bail!("configuration: XDG_STATE_HOME 必须是绝对路径");}
-    destination(&root.join("epwflow"))
+    let root=super::store::state_root()?;
+    if !root.is_absolute(){bail!("configuration: 状态根必须是绝对路径");}
+    destination(&root)
 }

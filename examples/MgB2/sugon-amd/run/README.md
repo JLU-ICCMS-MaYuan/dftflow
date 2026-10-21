@@ -37,7 +37,7 @@ epw_wannier --stage wannier -s
 
 可加 `--resume`，两种写法都读取当前 `input.toml`，生成新尝试。相容且校验通过的 SCF、NSCF、PH、PW 能带和 bands 后处理复用，从 DOS 继续，再进入 Wannier 及电子对比。现场 PW 和 bands 收据的来源及产物哈希已只读核验；本次不代提交真实作业，DOS 修复后的科学运行仍待验证。证据见 [0021 验收](../../../../docs/specs/0021-qe-dos-pencil-resume/acceptance.md)。
 
-`.epwflow/electronic/` 分别保存三个电子原生任务的完成证据。日志出现 `reuse: electronic/pw-bands` 表示旧 PW 已重验并复用；阶段状态仍为 `update` 可以只是后处理未完成。证据损坏或旧来源缺失会停止，不能仅凭 `JOB DONE` 跳过检查。不要重提修改过的旧脚本，也不要编辑内部哈希记录。
+`3.qe-electronic/receipts/` 分别保存三个电子原生任务的完成证据。日志出现 `reuse: electronic/pw-bands` 表示旧 PW 已重验并复用；阶段状态仍为 `update` 可以只是后处理未完成。证据损坏或旧来源缺失会停止，不能仅凭 `JOB DONE` 跳过检查。不要重提修改过的旧脚本，也不要编辑内部哈希记录。
 
 ## 目录与结果
 
@@ -61,7 +61,7 @@ run/
 ├── 8.epw-superconductivity/
 │   ├── iso/                       # 每次温度尝试包含 epw.in 和 submit.sh
 │   └── aniso/
-└── .epwflow/                      # 清单、提交快照、历史与迁移证据
+└── epw-state/                      # 清单、提交快照、历史与迁移证据
 ```
 
 原生输入和提交该计算的 `submit.sh` 在同一个实际目录，日志也在该目录。分 q、分展宽、分温度和独立参考遵守同样规则。依赖上游实际输出的输入在运行到对应步骤时生成，空目录不代表已计算。每个脚本会先进入自己的绝对工作目录，所以可以从其他目录 `sbatch /绝对路径/submit.sh`。
@@ -106,7 +106,7 @@ epw_superconductivity --stage superconductivity -s
 
 `epwflow/work/` 是旧布局的工作根：含运行绑定、`workflow.json`、`calculations/<尝试号>/` 和旧原生输出。`epwflow/scratch/` 是旧配置的临时数据基址，用于程序运行时的电荷、波函数、响应等大文件；存在与否不表示科学成功。EPW 原生输入中的 outdir 指向实际临时数据，不能只看目录名猜测。不要删除或手改旧数据来“修复”续算。
 
-新布局直接把计算数据放在编号目录：各阶段 `out/` 保存本阶段原生可重读数据，SCF 的不可变快照为其他阶段提供独立副本；`.epwflow/` 管理内部记录和历史。根配置的 `outdir` 保留兼容及预算基址语义，实际原生路径以生成输入为准。无需再手动创建 `epwflow/work` 或 `epwflow/scratch`，不会嵌套产生另一个 epwflow。
+新布局直接把计算数据放在编号目录：各阶段 `out/` 保存本阶段原生可重读数据，SCF 的不可变快照为其他阶段提供独立副本；`epw-state/` 管理内部记录和历史。根配置的 `outdir` 保留兼容及预算基址语义，实际原生路径以生成输入为准。无需再手动创建 `epwflow/work` 或 `epwflow/scratch`，不会嵌套产生另一个 epwflow。
 
 一次性迁移命令是：
 
@@ -114,7 +114,7 @@ epw_superconductivity --stage superconductivity -s
 epw_phonon --import-work epwflow/work
 ```
 
-程序只读核验旧绑定、参数、清单及哈希后复制到新布局，并发布 `.epwflow/legacy-import.json`。已有 QE 不会因迁移重算；旧现场保持原样。相同来源重复导入会重验后返回 `reused`。这不是日常提交前要反复执行的步骤。
+程序只读核验旧绑定、参数、清单及哈希后复制到新布局，并发布 `epw-state/legacy-import.json`。已有 QE 不会因迁移重算；旧现场保持原样。相同来源重复导入会重验后返回 `reused`。这不是日常提交前要反复执行的步骤。
 
 历史命令中的 `CALC` 仅表示旧 `workflow.json` 的 `calculation_dir` 字段，例如：
 
@@ -135,3 +135,34 @@ printf '%s\n' "$CALC"
 预算账本由根配置已有的 `budget.ledger` 指定，用于累计节点时间、并发预留和存储额度；不需要手工设置 `LEDGER` 变量，也不能另开账本重置旧消费。当前提交保存独立参数快照，排队后修改根配置不影响已提交任务；下一次提交再读新配置。旧工作区、历史绑定程序和来源记录保留，以便追溯。
 
 实现、测试证据和科学验收边界见 [0018 验收](../../../../docs/specs/0018-epwflow-stage-workspaces/acceptance.md)。
+
+
+## 可见运行状态与删除阶段后重建（0025）
+
+新版源码将每个编号阶段的完成回执放在本阶段 `completion.json`，第 3 步原生任务回执放在 `3.qe-electronic/receipts/`，第 5／6 步后处理回执为本阶段 `post-completion.json`。共享配置快照、提交尝试、活动任务、交付清单、锁和归档位于可见的 `epw-state/`；普通 `ls` 即可查看。默认全局预算注册表为 `~/epwflow-state/`，首次写入会保留旧默认注册表的 campaign 绑定；显式环境覆盖继续有效。预算账本位置仍由原配置指定，不清零累计消费。
+
+```text
+run/
+├── 1.qe-scf/completion.json
+├── 2.qe-nscf/completion.json
+├── 3.qe-electronic/{completion.json,receipts/}
+├── 4.qe-phonon-nosplit/completion.json
+├── 5.epw-wannier/{completion.json,post-completion.json}
+├── 6.epw-coarse/{completion.json,post-completion.json}
+├── 7.epw-fine/completion.json
+├── 8.epw-superconductivity/completion.json
+└── epw-state/{active.json,attempts/,requests/,history/}
+```
+
+这些完成文件只在对应工作完成后存在。删除阶段目录或缺少必要产物时，该阶段显示 `update`；下一次正常提交重建该阶段，保留相容上游，并撤下过期下游回执。内容被修改、记录损坏、活动或未知提交仍会停止。状态查询只读，不会因查询自动迁移或重建。
+
+已有 `.epwflow/` 的旧编号工作区需要先执行一次显式迁移：
+
+```bash
+epw_wannier --migrate-state
+epw_wannier --stage wannier -s
+```
+
+迁移核对原任务终态及锁，保留原隐藏目录和预算原文，完整历史复制到 `epw-state/history/legacy-state/`。迁移输出列出 `reuse` 和 `rebuild`：不依赖隐藏路径的完整相容上游可继续复用；绑定旧隐藏路径的粗／细交付和旧冻结脚本仅作历史保存，后续须由公开命令重建，不改写哈希冒充新交付。迁移不会提交作业。未完成事务阻止正常运行，可再次执行迁移接续；不自动覆盖未知暂存现场。
+
+旧非编号工作区继续使用 `--import-work` 导入新编号工作区。本项源码及隔离回归不代表已安装程序或现场数据已同步；安装与真实计算另行核对。验收依据见 [0025](../../../../docs/specs/0025-epw-visible-run-state/acceptance.md)。

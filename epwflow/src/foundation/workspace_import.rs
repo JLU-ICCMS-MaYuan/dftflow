@@ -108,13 +108,14 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     let cfg = Config::load(config)?;
     let source = source.canonicalize()?;
     ensure!(
-        !cfg.work_dir.starts_with(&source) && !source.starts_with(&cfg.work_dir.join(".epwflow")),
+        !cfg.work_dir.starts_with(&source) && !source.starts_with(&cfg.work_dir.join("epw-state")),
         "input_conflict: 导入来源与目标重叠"
     );
     let binding = RunBinding::load(&source)?;
     binding.verify()?;
     let original = Config::load(&source.join("input-init.toml"))?;
-    let record: serde_json::Value = store::read(&source.join(".epwflow/workflow.json"))?;
+    let state = if source.join("epw-state/workflow.json").is_file() { "epw-state" } else { ".epwflow" };
+    let record: serde_json::Value = store::read(&source.join(state).join("workflow.json"))?;
     if let Some(job) = record.get("job_id").and_then(|v| v.as_u64()) {
         ensure!(
             super::slurm::accounting(job)?.terminal,
@@ -133,12 +134,12 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     let old = QeManifest::load(&old_path)?;
     old.verify()?;
     let provenance = Identity::capture(&old_path)?;
-    let _guard = store::Lock::acquire(&cfg.work_dir.join(".epwflow/control"))?;
+    let _guard = store::Lock::acquire(&cfg.work_dir.join("epw-state/control"))?;
     ensure!(
-        !cfg.work_dir.join(".epwflow/active.json").exists(),
+        !cfg.work_dir.join("epw-state/active.json").exists(),
         "input_conflict: 先核对已有工作区尝试，再导入旧现场"
     );
-    let report = cfg.work_dir.join(".epwflow/legacy-import.json");
+    let report = cfg.work_dir.join("epw-state/legacy-import.json");
     if report.exists() {
         let prior: serde_json::Value = store::read(&report)?;
         ensure!(
@@ -160,7 +161,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
         );
     }
     layout::initialize(&cfg)?;
-    let journal = cfg.work_dir.join(".epwflow/importing.json");
+    let journal = cfg.work_dir.join("epw-state/importing.json");
     if journal.exists() {
         let t: Transaction = store::read(&journal)?;
         ensure!(
@@ -179,7 +180,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     let before = save::files(&calc)?;
     let partial = cfg
         .work_dir
-        .join(".epwflow")
+        .join("epw-state")
         .join(format!("import-{}", store::token()));
     fs::create_dir_all(&partial)?;
     let mut manifest = old.clone();
@@ -338,7 +339,7 @@ pub fn reference(cfg: &Config) -> Result<Option<PathBuf>> {
     }
     let p = cfg
         .work_dir
-        .join(".epwflow/imported-reference/binding.json");
+        .join("epw-state/imported-reference/binding.json");
     if !p.exists() {
         return Ok(None);
     }
@@ -362,7 +363,7 @@ fn import_reference(cfg: &Config, calc: &Path) -> Result<()> {
     )?;
     frozen.verify()?;
     let mut sources = frozen.sources;
-    let dir = cfg.work_dir.join(".epwflow/imported-reference");
+    let dir = cfg.work_dir.join("epw-state/imported-reference");
     fs::create_dir_all(&dir)?;
     for (name, file) in [
         ("fermi.xml", &mut sources.fermi_reference),

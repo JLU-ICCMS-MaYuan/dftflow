@@ -4,7 +4,7 @@
 
 采用一个编号工作区入口和集中目录映射；旧工作区读取保持有界兼容。阶段枚举描述真实 DAG：SCF→NSCF→Wannier；SCF→PH；NSCF→电子参考；PH+Wannier→粗网格；粗网格→细网格→超导。目录编号不强制错误的线性依赖。
 
-可见目录使用确认的 1.qe-scf、2.qe-nscf、3.qe-electronic/{qe_eband,qe_eledos}、4.qe-phonon-{mode}/save、5.epw-wannier、6.epw-coarse、7.epw-fine、8.epw-superconductivity/{iso,aniso}。内部状态及历史放 .epwflow；不使用隐藏计算目录加表面链接伪装新布局。
+可见目录使用确认的 1.qe-scf、2.qe-nscf、3.qe-electronic/{qe_eband,qe_eledos}、4.qe-phonon-{mode}/save、5.epw-wannier、6.epw-coarse、7.epw-fine、8.epw-superconductivity/{iso,aniso}。状态存放约定由 [0025](../0025-epw-visible-run-state/plan.md) 替代：完成回执归各阶段，共享状态及历史位于可见的 epw-state；不使用隐藏计算目录加表面链接伪装新布局。旧路径迁移与科学数据保留按 0025 验收。
 
 ## 身份与尝试
 

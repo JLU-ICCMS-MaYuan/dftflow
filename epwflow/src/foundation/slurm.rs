@@ -19,7 +19,7 @@ pub fn submit_via_sbatch(
     work: &Path,
     name: &str,
 ) -> Result<SubmittedJob> {
-    let dir = work.join(".epwflow").join("slurm");
+    let dir = work.join("epw-state").join("slurm");
     fs::create_dir_all(&dir)?;
     let script = dir.join(format!("submit-{name}.sh"));
     let mut body = String::from("#!/bin/bash\n");

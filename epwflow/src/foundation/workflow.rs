@@ -76,7 +76,7 @@ struct Record {
     mpi_override: Option<u32>,
 }
 fn record_path(work: &Path) -> PathBuf {
-    work.join(".epwflow/workflow.json")
+    work.join("epw-state/workflow.json")
 }
 fn load(work: &Path) -> Result<Record> {
     let r: Record = store::read(&record_path(work))?;
@@ -176,7 +176,7 @@ fn previous(
     }
     store::write(
         &work
-            .join(".epwflow/history")
+            .join("epw-state/history")
             .join(format!("{}.json", r.attempt_id)),
         &r,
     )?;
@@ -252,7 +252,7 @@ pub(super) fn source_environment(path: &Path) -> Result<String> {
 }
 
 fn generated_path(work: &Path, until: Boundary) -> PathBuf {
-    work.join(".epwflow/generated").join(format!("{}.json", until.name()))
+    work.join("epw-state/generated").join(format!("{}.json", until.name()))
 }
 
 /// 生成阶段脚本只固定输入，不查询调度器、不预留预算、不运行科学程序。
@@ -328,7 +328,7 @@ fn resume_with_mpi(work: &Path, until: Option<Boundary>, submit: bool, resource:
                 .calculation_dir
                 .unwrap_or_else(|| b.work_dir.join("calculations").join(prior.attempt_id));
             for target in [
-                b.work_dir.join(".epwflow/execution"),
+                b.work_dir.join("epw-state/execution"),
                 calculation.join("superconductivity/execution"),
                 calculation.join("interpolation/comparison"),
                 calculation.join("results/comparison"),
@@ -417,7 +417,7 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
     // 先持久化预留与尝试，再调用一次 sbatch；响应丢失不能退款或重提。
     let submitted = (|| -> Result<slurm::SubmittedJob> {
         let script = work
-            .join(".epwflow/slurm")
+            .join("epw-state/slurm")
             .join(format!("{}.sh", record.attempt_id));
         let quote = slurm::shell_quote;
         let mut body = String::from("#!/bin/bash\nexport OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\n");
@@ -465,11 +465,11 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
             .arg(format!("--comment=epwflow:{}", record.attempt_id))
             .arg(format!(
                 "--output={}",
-                work.join(".epwflow/slurm/%j.out").display()
+                work.join("epw-state/slurm/%j.out").display()
             ))
             .arg(format!(
                 "--error={}",
-                work.join(".epwflow/slurm/%j.err").display()
+                work.join("epw-state/slurm/%j.err").display()
             ))
             .arg(&script)
             .current_dir(work)
@@ -677,7 +677,7 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
     let (cfg, binding) = fixed(work)?;
     let work = binding.work_dir.as_path();
     let job = job_id()?;
-    let _execution = store::Lock::acquire(&work.join(".epwflow/execution"))?;
+    let _execution = store::Lock::acquire(&work.join("epw-state/execution"))?;
     let mut record = budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
         let _lock = store::Lock::acquire(&record_path(work))?;
         let mut r = load(work)?;

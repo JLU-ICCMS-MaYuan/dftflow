@@ -25,7 +25,7 @@ pub fn run(command: &[String], work: &Path) -> Result<ExecutionReport> {
 /// 保留失败进程的退出状态和日志，供科学尝试持久化；不把非零退出当成功。
 pub fn run_report(command: &[String], work: &Path) -> Result<ExecutionReport> {
     ensure!(!command.is_empty(), "execution_failed: 空命令");
-    let dir = work.join(".epwflow").join("logs");
+    let dir = work.join("epw-state").join("logs");
     fs::create_dir_all(&dir)?;
     let stdout_path = dir.join(format!("out-{}.log", store_token()));
     let stderr_path = dir.join(format!("err-{}.log", store_token()));

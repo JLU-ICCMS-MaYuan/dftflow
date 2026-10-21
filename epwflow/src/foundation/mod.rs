@@ -16,6 +16,7 @@ pub mod store;
 pub mod workflow;
 pub mod program;
 pub mod layout;
+pub mod run_state;
 pub mod stages;
 pub mod workspace;
 pub mod workspace_science;

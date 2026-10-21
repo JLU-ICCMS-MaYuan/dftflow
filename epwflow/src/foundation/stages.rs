@@ -45,15 +45,18 @@ impl Step {
         }
     }
     pub fn directory(self, cfg: &Config) -> PathBuf {
+        self.directory_in(&cfg.work_dir)
+    }
+    pub fn directory_in(self, root: &Path) -> PathBuf {
         match self {
-            Self::Scf => layout::path(&cfg.work_dir, "scf"),
-            Self::Nscf => layout::path(&cfg.work_dir, "nscf"),
-            Self::Electronic => cfg.work_dir.join("3.qe-electronic"),
-            Self::Phonon => layout::path(&cfg.work_dir, "qe-phonon"),
-            Self::Wannier => cfg.work_dir.join("5.epw-wannier"),
-            Self::Coarse => layout::path(&cfg.work_dir, "coarse"),
-            Self::Fine => layout::path(&cfg.work_dir, "fine"),
-            Self::Superconductivity => layout::path(&cfg.work_dir, "superconductivity"),
+            Self::Scf => layout::path(root, "scf"),
+            Self::Nscf => layout::path(root, "nscf"),
+            Self::Electronic => root.join("3.qe-electronic"),
+            Self::Phonon => layout::path(root, "qe-phonon"),
+            Self::Wannier => root.join("5.epw-wannier"),
+            Self::Coarse => layout::path(root, "coarse"),
+            Self::Fine => layout::path(root, "fine"),
+            Self::Superconductivity => layout::path(root, "superconductivity"),
         }
     }
     pub fn dependencies(self) -> &'static [Self] {
@@ -165,10 +168,18 @@ pub struct Completion {
     pub provenance: Option<store::Identity>,
 }
 pub fn receipt(root: &Path, step: Step) -> PathBuf {
-    root.join(".epwflow/steps")
-        .join(format!("{}.json", step.name()))
+    step.directory_in(root).join("completion.json")
 }
 impl Completion {
+    /// 缺失可以重建；已存在文件仍逐项严格检查，不掩盖篡改或读取错误。
+    pub fn available(&self) -> Result<bool> {
+        ensure!(self.schema_version == 1 && !self.outputs.is_empty(), "data_invalid: 阶段清单缺证据");
+        let mut available = true;
+        for id in &self.outputs {
+            if !store::identity_available(id)? { available = false; }
+        }
+        Ok(available)
+    }
     pub fn verify(&self) -> Result<()> {
         ensure!(
             self.schema_version == 1 && !self.outputs.is_empty(),
@@ -221,7 +232,7 @@ pub fn reusable(cfg: &Config, step: Step) -> Result<bool> {
             return Ok(false);
         }
     }
-    c.verify()?;
+    if !c.available()? { return Ok(false); }
     if c.upstream != upstream(cfg, step)? { return Ok(false); }
     if step == Step::Electronic {
         return super::workspace_electronic::completed(cfg);

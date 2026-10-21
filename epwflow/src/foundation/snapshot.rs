@@ -69,6 +69,7 @@ fn config_sha_of_init(work: &Path) -> Result<String> {
 /// 固定输入并准备独立运行；相同输入重复准备幂等，冲突/篡改/已存在不明文件拒绝覆盖。
 pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBinding> {
     let work = config.work_dir.clone();
+    super::run_state::ready(&work)?;
     let _lock = store::Lock::acquire(&work)?;
     let stem = config
         .structure
@@ -100,7 +101,7 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
         }
         return Ok(existing);
     }
-    let staging = work.with_file_name(format!(".epw-prepare-{}", store::token()));
+    let staging = work.with_file_name(format!("epw-prepare-{}", store::token()));
     fs::create_dir(&staging)?;
     let result = (|| -> Result<RunBinding> {
         fs::copy(&config.structure, staging.join(&init_name))?;

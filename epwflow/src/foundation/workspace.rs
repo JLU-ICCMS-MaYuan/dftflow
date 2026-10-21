@@ -31,15 +31,16 @@ struct Attempt {
     error: Option<String>,
 }
 fn active(root: &Path) -> PathBuf {
-    root.join(".epwflow/active.json")
+    root.join("epw-state/active.json")
 }
 fn attempt_path(root: &Path, id: &str) -> PathBuf {
-    root.join(".epwflow/attempts").join(id).join("attempt.json")
+    root.join("epw-state/attempts").join(id).join("attempt.json")
 }
 
 fn control(cfg: &Config) -> Result<store::Lock> {
-    let target = cfg.work_dir.join(".epwflow/control");
-    if cfg.work_dir.join(".epwflow/control.lock").exists() && active(&cfg.work_dir).is_file() {
+    super::run_state::ready(&cfg.work_dir)?;
+    let target = cfg.work_dir.join("epw-state/control");
+    if cfg.work_dir.join("epw-state/control.lock").exists() && active(&cfg.work_dir).is_file() {
         let old: Attempt = store::read(&active(&cfg.work_dir))?;
         if let Some(job) = old.job {
             store::recover_finished_lock(&target, job)?;
@@ -66,7 +67,7 @@ fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
             &cfg.budget.campaign_id,
             budget::reconcile,
         )?;
-        store::recover_finished_lock(&cfg.work_dir.join(".epwflow/execution"), job)?;
+        store::recover_finished_lock(&cfg.work_dir.join("epw-state/execution"), job)?;
         store::recover_finished_lock(
             &Step::Superconductivity.directory(cfg).join("execution"),
             job,
@@ -98,6 +99,7 @@ fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
 }
 
 pub fn report(cfg: &Config) -> Result<serde_json::Value> {
+    super::run_state::ready(&cfg.work_dir)?;
     let mut steps = serde_json::Map::new();
     for step in Step::ALL {
         steps.insert(
@@ -128,7 +130,7 @@ pub fn status(cfg: &Config) -> Result<()> {
 
 fn freeze(cfg: &Config, target: Step) -> Result<(PathBuf, Attempt)> {
     let id = store::token();
-    let dir = cfg.work_dir.join(".epwflow/attempts").join(&id);
+    let dir = cfg.work_dir.join("epw-state/attempts").join(&id);
     fs::create_dir_all(dir.join("pp"))?;
     let mut fixed = cfg.clone();
     fs::copy(&cfg.structure, dir.join("POSCAR"))?;
@@ -232,8 +234,15 @@ pub fn generate(config: &Path, target: Step) -> Result<PathBuf> {
 
 fn generate_locked(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf> {
     layout::initialize(cfg)?;
+    // 在重建上游之前撤下过期的下游回执，防止相同字节的新结果命中旧交付。
+    let stale = Step::ALL.into_iter()
+        .map(|s| Ok((s, stages::receipt(&cfg.work_dir, s).exists() && !stages::reusable(cfg, s)?)))
+        .collect::<Result<Vec<_>>>()?;
+    for (step, outdated) in stale {
+        if outdated { archive_step(cfg, step)?; }
+    }
     store::atomic_bytes(
-        &cfg.work_dir.join(".epwflow/current-config.toml"),
+        &cfg.work_dir.join("epw-state/current-config.toml"),
         toml::to_string_pretty(&cfg)?.as_bytes(),
     )?;
     for step in target.closure() {
@@ -248,7 +257,7 @@ fn generate_locked(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf>
         }
         let request = cfg
             .work_dir
-            .join(".epwflow/requests")
+            .join("epw-state/requests")
             .join(format!("{}.json", step.name()));
         if stages::receipt(&cfg.work_dir, step).exists()
             || (request.is_file()
@@ -341,7 +350,7 @@ pub fn start(config: &Path, target: Step, submit: bool) -> Result<()> {
     }
     let text = fs::read_to_string(&script_path)?;
     // 从生成脚本对应的尝试查找身份，绝不从旧 active 继承配置。
-    let mut candidates = fs::read_dir(cfg.work_dir.join(".epwflow/attempts"))?
+    let mut candidates = fs::read_dir(cfg.work_dir.join("epw-state/attempts"))?
         .map(|e| e.map(|x| x.path()))
         .collect::<std::io::Result<Vec<_>>>()?;
     candidates.sort();
@@ -465,9 +474,9 @@ pub fn execute(path: &Path) -> Result<()> {
         a.state = "running".into();
         persist(&cfg, &a)?;
     }
-    let _execution = store::Lock::acquire(&cfg.work_dir.join(".epwflow/execution"))?;
+    let _execution = store::Lock::acquire(&cfg.work_dir.join("epw-state/execution"))?;
     store::atomic_bytes(
-        &cfg.work_dir.join(".epwflow/current-config.toml"),
+        &cfg.work_dir.join("epw-state/current-config.toml"),
         toml::to_string_pretty(&cfg)?.as_bytes(),
     )?;
     let result = (|| -> Result<()> {
@@ -501,7 +510,7 @@ pub fn execute(path: &Path) -> Result<()> {
             archive_step(&cfg, step)?;
             store::write(
                 &cfg.work_dir
-                    .join(".epwflow/requests")
+                    .join("epw-state/requests")
                     .join(format!("{}.json", step.name())),
                 &key,
             )?;
@@ -543,7 +552,7 @@ pub fn execute(path: &Path) -> Result<()> {
 fn archive_step(cfg: &Config, step: Step) -> Result<()> {
     let request = cfg
         .work_dir
-        .join(".epwflow/requests")
+        .join("epw-state/requests")
         .join(format!("{}.json", step.name()));
     if request.is_file() && store::read::<String>(&request)? == stages::scientific_key(cfg, step)? {
         let receipt = stages::receipt(&cfg.work_dir, step);
@@ -551,12 +560,11 @@ fn archive_step(cfg: &Config, step: Step) -> Result<()> {
         if step == Step::Electronic && super::workspace_electronic::compatible_partial(cfg)? {
             let compatible = if receipt.exists() {
                 let c: Completion = store::read(&receipt)?;
-                c.verify()?;
-                c.scientific_key == stages::scientific_key(cfg, step)? && c.upstream == stages::upstream(cfg, step)?
+                c.available()? && c.scientific_key == stages::scientific_key(cfg, step)? && c.upstream == stages::upstream(cfg, step)?
             } else { true };
             if compatible {
                 if receipt.exists() {
-                    let history = cfg.work_dir.join(".epwflow/history").join(format!("electronic-completion-{}", store::token()));
+                    let history = cfg.work_dir.join("epw-state/history").join(format!("electronic-completion-{}", store::token()));
                     fs::create_dir_all(&history)?;
                     fs::rename(receipt, history.join("completion.json"))?;
                 }
@@ -566,7 +574,7 @@ fn archive_step(cfg: &Config, step: Step) -> Result<()> {
     }
     let history =
         cfg.work_dir
-            .join(".epwflow/history")
+            .join("epw-state/history")
             .join(format!("{}-{}", step.name(), store::token()));
     let dir = step.directory(cfg);
     if dir.exists() {
@@ -614,7 +622,7 @@ pub fn native_script(
     let Some(root) = dir.ancestors().find(|p| layout::enabled(p)) else {
         return Ok(());
     };
-    let cfg = Config::load(&root.join(".epwflow/current-config.toml"))?;
+    let cfg = Config::load(&root.join("epw-state/current-config.toml"))?;
     let step = Step::ALL
         .into_iter()
         .find(|s| dir.starts_with(s.directory(&cfg)))
@@ -689,7 +697,7 @@ pub fn execute_task(path: &Path) -> Result<()> {
     a.state = "running".into();
     store::write(&active(&cfg.work_dir), a)?;
     drop(_control);
-    let _guard = store::Lock::acquire(&cfg.work_dir.join(".epwflow/execution"))?;
+    let _guard = store::Lock::acquire(&cfg.work_dir.join("epw-state/execution"))?;
     let result = (|| -> Result<()> {
         if let Some(name) = &task.electronic_leaf {
             return super::workspace_science::run_electronic_leaf(&cfg, name);

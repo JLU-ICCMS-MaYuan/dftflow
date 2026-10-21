@@ -97,7 +97,7 @@ fn default_generation_is_idempotent_and_does_not_reserve_or_submit() {
     for i in 0..3 {
         success(c.run(i, &[]));
     }
-    let dir = c.root.join("run/.epwflow/generated");
+    let dir = c.root.join("run/epw-state/generated");
     for name in ["qe-data", "interpolation", "all"] {
         let file = dir.join(format!("{name}.sh"));
         let id = store::Identity::capture(&file).unwrap();
@@ -135,7 +135,7 @@ fn default_generation_is_idempotent_and_does_not_reserve_or_submit() {
 fn generated_script_is_authenticated_and_registers_one_allocation() {
     let c = Case::new();
     success(c.run(0, &[]));
-    let script = c.root.join("run/.epwflow/generated/qe-data.sh");
+    let script = c.root.join("run/epw-state/generated/qe-data.sh");
     let out = c
         .cmd(0)
         .args(["--run-script", "-w", "run"])
@@ -143,7 +143,7 @@ fn generated_script_is_authenticated_and_registers_one_allocation() {
         .output()
         .unwrap();
     assert!(!out.status.success(), "替身退出必须失败");
-    let r: serde_json::Value = store::read(&c.root.join("run/.epwflow/workflow.json")).unwrap();
+    let r: serde_json::Value = store::read(&c.root.join("run/epw-state/workflow.json")).unwrap();
     assert_eq!(r["state"], "failed");
     let l: serde_json::Value = store::read(&c.root.join("campaign/ledger.json")).unwrap();
     assert_eq!(l["allocations"].as_array().unwrap().len(), 1);
@@ -176,7 +176,7 @@ fn all_generation_submits_afterok_once_and_authenticates_every_stage() {
     success(c.run(0, &["--all"]));
     assert!(!c.root.join("calls").exists());
     assert!(!c.root.join("campaign/ledger.json").exists());
-    let dir = c.root.join("run/.epwflow/generated");
+    let dir = c.root.join("run/epw-state/generated");
     assert!(Command::new("bash")
         .arg("-n")
         .arg(dir.join("submit-all.sh"))
@@ -219,7 +219,7 @@ fn partial_chain_receipt_is_persistent_and_never_retried() {
         2
     );
     let receipt: serde_json::Value =
-        store::read(&c.root.join("run/.epwflow/generated/chain-submission.json")).unwrap();
+        store::read(&c.root.join("run/epw-state/generated/chain-submission.json")).unwrap();
     assert_eq!(receipt["jobs"].as_array().unwrap().len(), 1);
     assert_eq!(receipt["submitting_phase"], 2);
     assert_eq!(receipt["state"], "submitting");
@@ -247,10 +247,10 @@ fn environment_bootstrap_leaves_shell_options_unset_and_propagates_failure() {
     c.script("sbatch", "#!/bin/sh\nprintf '123\\n'\n");
     success(c.run(0, &["-s"]));
     let workflow: serde_json::Value =
-        store::read(&c.root.join("run/.epwflow/workflow.json")).unwrap();
+        store::read(&c.root.join("run/epw-state/workflow.json")).unwrap();
     let mut scripts: Vec<_> = ["qe-data", "interpolation", "all"]
         .iter()
-        .map(|name| c.root.join(format!("run/.epwflow/generated/{name}.sh")))
+        .map(|name| c.root.join(format!("run/epw-state/generated/{name}.sh")))
         .collect();
     scripts.push(PathBuf::from(workflow["script"]["path"].as_str().unwrap()));
     for path in scripts {

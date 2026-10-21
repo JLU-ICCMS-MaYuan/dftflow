@@ -67,7 +67,7 @@ impl NativeReceipt {
 
 fn receipt_path(cfg: &Config, task: &str) -> PathBuf {
     cfg.work_dir
-        .join(".epwflow/electronic")
+        .join("3.qe-electronic/receipts")
         .join(format!("{task}.json"))
 }
 fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
@@ -167,9 +167,16 @@ fn reusable(cfg: &Config, task: &str) -> Result<bool> {
     let Some(receipt) = read_receipt(cfg, task)? else {
         return Ok(false);
     };
+    if !receipt.input.path.try_exists()? { return Ok(false); }
     if receipt.key != key(cfg, task)? {
         return Ok(false);
     }
+    if !store::identity_available(&receipt.input)? { return Ok(false); }
+    let mut available = true;
+    for id in receipt.outputs.iter().chain(&receipt.provenance) {
+        if !store::identity_available(id)? { available = false; }
+    }
+    if !available { return Ok(false); }
     receipt.verify()?;
     Ok(true)
 }
@@ -188,13 +195,17 @@ pub(super) fn compatible_partial(cfg: &Config) -> Result<bool> {
         if receipt.key != key(cfg, "pw-bands")? {
             return Ok(false);
         }
+        if !store::identity_available(&receipt.input)? { return Ok(false); }
+        for id in &receipt.outputs {
+            if !store::identity_available(id)? { return Ok(false); }
+        }
         receipt.verify()?;
     }
     Ok(true)
 }
 
 pub(super) fn archive(cfg: &Config, history: &Path) -> Result<()> {
-    let path = cfg.work_dir.join(".epwflow/electronic");
+    let path = cfg.work_dir.join("3.qe-electronic/receipts");
     if path.exists() {
         fs::create_dir_all(history)?;
         fs::rename(path, history.join("native-receipts"))?;
@@ -242,7 +253,7 @@ fn logs(dir: &Path, stem: &str) -> Vec<PathBuf> {
 fn archive_task(cfg: &Config, task: &str, paths: &[PathBuf]) -> Result<()> {
     let history = cfg
         .work_dir
-        .join(".epwflow/history")
+        .join("epw-state/history")
         .join(format!("electronic-{task}-{}", store::token()));
     for path in paths
         .iter()
@@ -306,7 +317,7 @@ struct LegacyAttempt {
 
 /// 只读核验旧 PW 结果，供现场核验及正常入口的一次性接入共用。
 pub fn inspect_legacy(cfg: &Config) -> Result<NativeReceipt> {
-    let request: String = store::read(&cfg.work_dir.join(".epwflow/requests/electronic.json"))?;
+    let request: String = store::read(&cfg.work_dir.join("epw-state/requests/electronic.json"))?;
     ensure!(
         request == stages::scientific_key(cfg, Step::Electronic)?,
         "input_conflict: 旧电子请求与当前科学参数不相容"
@@ -316,7 +327,7 @@ pub fn inspect_legacy(cfg: &Config) -> Result<NativeReceipt> {
     let input = fs::read_to_string(dir.join("eband.in"))?;
     let points: Vec<[f64; 3]> = store::read(&dir.join("path-points.json"))?;
     let mut provenance = None;
-    for entry in fs::read_dir(cfg.work_dir.join(".epwflow/attempts"))? {
+    for entry in fs::read_dir(cfg.work_dir.join("epw-state/attempts"))? {
         let file = entry?.path().join("attempt.json");
         let Ok(attempt) = store::read::<LegacyAttempt>(&file) else {
             continue;

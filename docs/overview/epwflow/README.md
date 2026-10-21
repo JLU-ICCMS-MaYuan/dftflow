@@ -4,7 +4,7 @@
 
 ## 编号工作区与当前配置续算
 
-新工作区设置 `layout="numbered"`，默认配置为根 `input.toml`，采用八个实际计算目录：SCF、NSCF、`qe_eband/qe_eledos`、三种 PH 模式之一、Wannier、粗 EPC、细 EPC、iso/aniso。实际计算的输入、`submit.sh` 与日志共目录；依赖上游数值的子任务在执行到该步时生成。隐藏目录 `.epwflow` 保存状态、尝试和历史，不以链接伪装计算目录。
+新工作区设置 `layout="numbered"`，默认配置为根 `input.toml`，采用八个实际计算目录：SCF、NSCF、`qe_eband/qe_eledos`、三种 PH 模式之一、Wannier、粗 EPC、细 EPC、iso/aniso。实际计算的输入、`submit.sh` 与日志共目录；依赖上游数值的子任务在执行到该步时生成。各编号阶段的 `completion.json` 保存完成回执，第 3 步原生回执位于 `3.qe-electronic/receipts/`，第 5／6 步后处理回执为本阶段 `post-completion.json`；可见的 `epw-state/` 保存共享状态、尝试、交付清单和历史，不以链接伪装计算目录。
 
 三个公开程序保持，`epw_wannier --stage wannier|coarse` 和 `epw_superconductivity --stage fine|superconductivity` 分离科学边界；默认分别到第 6、8 步。`epw_phonon` 管理第 1～4 步，复用共享 qeflow/qf 输入、执行和后处理组件。PH 使用独立 SCF 快照，不额外做 SCF；nosplit、coords、index 均校验后交付 `save/`。
 
@@ -15,6 +15,16 @@
 并行预检覆盖生成、提交、脚本启动；手工 `sbatch` 同样校验实际 Slurm 分配。EPW 当前单 image、每 pool 一个 MPI；粗阶段读取实际 NSCF，细阶段按本次 nkf 检查空 pool。32 k 配 64 pool 明确报错退出，不更改用户物理网格。QE 保留自身整除规则。旧工作区提供 `--import-work`，核验后复制 SCF、NSCF、PH、后处理和相容独立参考，来源保持只读；中断物化有恢复记录。
 
 程序仍受原质量门、共享预算与来源保护约束，严格投影继续暂缓。上述布局、调度、复用及防护通过隔离公开进程/脚本验证；真实 MgB₂ 迁移只核验文件和哈希，不运行科学作业，也不将旧数值冒烟算作新链科学验收。使用见 [模块手册](../../../epwflow/README.md)、[MgB₂ 操作说明](../../../examples/MgB2/sugon-amd/run/README.md)，证据见 [0018 验收](../../specs/0018-epwflow-stage-workspaces/acceptance.md)。
+
+## 可见运行状态与阶段删除后的恢复
+
+当前源码的普通运行路径不再建立或读取 `.epwflow/`。阶段目录或必要产物缺失时，复用检查返回 `update`，正常生成／提交重建所需阶段并撤下过期下游回执，完整相容上游继续复用；内容被修改、损坏记录和活动／未知任务仍阻断。`--status` 保持只读，不迁移文件或提交任务。
+
+旧编号工作区提供显式 `epw_wannier --migrate-state`：核对原作业与锁，保留原隐藏目录及预算账本，复制完整历史至 `epw-state/history/legacy-state/`，接入不依赖隐藏路径的完整上游。绑定旧隐藏路径的粗／细交付、过期阶段及冻结脚本只作历史保存，输出明确列出 `reuse`／`rebuild`，后续由公开命令重建；不重新捕获哈希冒充原交付。未完成迁移会阻止正常运行，允许显式接续。旧非编号工作区使用 `--import-work` 导入新编号目录。
+
+全局预算注册表默认改为可见的 `~/epwflow-state/`，首次写入承接旧默认注册表的 campaign 绑定，显式环境覆盖继续有效。实际账本仍由原配置指定；消费及未结算预留不因迁移清零。迁移本身不提交作业、不结算或改写账本。
+
+本项未切换默认安装或迁移真实 MgB₂ 现场；源码与隔离进程回归的证据见 [0025 验收](../../specs/0025-epw-visible-run-state/acceptance.md)。这些目录与恢复检查不替代科学验收。
 
 ## 历史固定工作区与兼容行为
 
@@ -43,7 +53,7 @@ F4 已发布合法 partial 清单时，公开显式恢复会重验固定来源�
 
 ## 编号工作区的电子后处理续算
 
-第 3 步分别为 PW 能带、`bands.x` 和 `dos.x` 保存原生输入、上游产物与输出哈希记录，位于 `.epwflow/electronic/`。相容请求的后处理失败后保留成功 PW 数据，仅重试未完成任务；损坏证据会阻断。`bands.x` 和 `dos.x` 均使用当前 MPI 数及各自的 `-pd .true.`，避免读取保存数据时 FFT 空进程；不继承 PW／EPW pool，其他程序参数保持独立。
+第 3 步分别为 PW 能带、`bands.x` 和 `dos.x` 保存原生输入、上游产物与输出哈希记录，位于 `3.qe-electronic/receipts/`。相容请求的后处理失败后保留成功 PW 数据，仅重试未完成任务；损坏证据会阻断。`bands.x` 和 `dos.x` 均使用当前 MPI 数及各自的 `-pd .true.`，避免读取保存数据时 FFT 空进程；不继承 PW／EPW pool，其他程序参数保持独立。
 
 已有 0018 PW 能带结果须经终态冻结来源、原生输入、零退出码、日志、XML、路径点和全部 portable 波函数校验后接入。更改过的冻结提交脚本仍被拒绝，使用公开命令生成新尝试。已绑定作业的旧脚本不能在新作业重用，冲突提示包含两个作业号和公开恢复命令；再次执行公开 `-s`（可加 `--resume`）生成独立冻结尝试并复用成功 PW／bands。真实 MgB₂ 的 bands 已在用户作业 1307064 完成，DOS 同类 FFT 错误后经 0021 修复；当前 PW／bands 收据只读核验通过，修复后的真实 DOS／Wannier 尚未代执行。协议与科学验收边界见 [0020](../../specs/0020-qe-electronic-postprocess-resume/acceptance.md)、[0021](../../specs/0021-qe-dos-pencil-resume/acceptance.md)。
 
@@ -57,12 +67,13 @@ F4 已发布合法 partial 清单时，公开显式恢复会重验固定来源�
 | `epw_wannier` | 第二阶段边界：原生 Wannier／粗网格与质量检查；不执行细网格或 α²F |
 | `epw_superconductivity` | 第三阶段边界：细网格 EPC／谱、原生两模式求解与结果包；要求前两阶段完成证据 |
 | `epw_phonon --all` | 只生成三份阶段脚本及总提交脚本；运行后用 afterok 串联，持久化逐次回执，未知或部分提交不自动重试 |
-| 默认调用 | 固定输入，生成 `.epwflow/generated/` 下的阶段脚本；可手工 sbatch，运行时验证脚本及程序身份、前置和预算 |
+| 默认调用 | 固定输入，生成 `epw-state/generated/` 下的阶段脚本；可手工 sbatch，运行时验证脚本及程序身份、前置和预算 |
 | `--check [-w W] [--json]` | 无 -w 时检查配置／文件，运行版本为 unverified；有 -w 时核查本阶段数据或原生质量来源 |
 | `--prepare-only` | 只固定输入和身份，不执行或提交 |
 | `-s`／`-r` | 提交一个有界分配，或在已登记分配中同步执行；回执不能替代数值完成 |
 | `--status -w W [--refresh] [--json]` | 查询记录，refresh 读取 allocation 并结算；未知预算不退款 |
 | `--resume -w W -s/-r` | 固定快照恢复，重验完成证据；失败现场保留，活动或未知任务不重提；粗／细检查点重验完整输出、归档失败尝试并复用成功展宽 |
+| `--migrate-state` | 显式迁移旧编号隐藏状态，保留历史与预算，不提交作业 |
 | `--import M` | 核查、隔离并登记本阶段既有清单；不自动识别任意旧声子目录 |
 | `--export-comparison S --output D` | 仅 epw_wannier，从既有带哈希来源导出原生比较数据 |
 | `--collect -w W` | 后两程序收集已有比较／超导数据；不生成缺失科学输出 |
@@ -71,7 +82,7 @@ F4 已发布合法 partial 清单时，公开显式恢复会重验固定来源�
 | `--budget status/reserve/attach/reconcile` | 兼容原验收账本；只读不改写，成功写入保留完整历史、消费和存储基线，未结算或不一致拒绝。共用原账本与 8 节点小时／100 GiB 上限；不按阶段重置 |
 | `--probe -s/-r` | 仍明确报未接入／分配要求，不把帮助输出当作版本探测证据 |
 
-执行数据位于 `W/calculations/<尝试号>/`，恢复沿用原科学目录；共享工作流记录每个阶段的清单与产物哈希。内部 `.epwflow/slurm/` 脚本属于登记尝试，不能手工重提；可手工提交的是 `generated/` 下的用户脚本。安装与打包脚本已迁移到八个程序、54 个入口；默认安装未切换。
+执行数据位于 `W/calculations/<尝试号>/`，恢复沿用原科学目录；共享工作流记录每个阶段的清单与产物哈希。内部 `epw-state/slurm/` 脚本属于登记尝试，不能手工重提；可手工提交的是 `generated/` 下的用户脚本。安装与打包脚本已迁移到八个程序、54 个入口；默认安装未切换。
 
 下列早期科学和接口记录保留历史语境。当前质量门为最大／RMS 50／20 cm⁻¹，已实现行为以本节、[原生适配](native-superconductivity.md)及最新验收记录为准。
 
