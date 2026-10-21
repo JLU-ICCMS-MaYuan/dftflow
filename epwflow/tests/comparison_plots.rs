@@ -164,6 +164,45 @@ fn rehash(dir: &Path) {
         .collect();
     store::write(&dir.join("manifest.json"), &manifest).unwrap();
 }
+
+#[test]
+fn public_plot_groups_close_path_labels_without_moving_scientific_ticks() {
+    let root = temp();
+    let work = fixture(&root);
+    let source = work.join("interpolation/comparison");
+    let mut metadata: Metadata = store::read(&source.join("metadata.json")).unwrap();
+    for ticks in [&mut metadata.electronic_ticks, &mut metadata.phonon_ticks] {
+        ticks[0].label = "GAMMA".into();
+        ticks.insert(2, Tick { distance: 0.505, label: "L".into() });
+    }
+    store::write(&source.join("metadata.json"), &metadata).unwrap();
+    rehash(&source);
+    let before = fingerprints(&source);
+    success(cli(&["collect", "-w", work.to_str().unwrap()], &root));
+    let results = work.join("results");
+    success(cli(&["plot", "--results", results.to_str().unwrap()], &root));
+    for kind in ["electronic_bands_comparison", "phonon_dispersion_comparison", "comparison_overview"] {
+        let svg = fs::read_to_string(results.join(format!("figures/{kind}.svg"))).unwrap();
+        let doc = roxmltree::Document::parse(&svg).unwrap();
+        let panels = if kind == "comparison_overview" { 2 } else { 1 };
+        let labels: Vec<_> = doc.descendants().filter(|n| n.has_tag_name("text")).filter_map(|n| n.text()).map(str::trim).collect();
+        assert_eq!(labels.iter().filter(|s| **s == "Γ").count(), panels);
+        assert_eq!(labels.iter().filter(|s| **s == "M | L").count(), panels);
+        assert!(!labels.contains(&"GAMMA"));
+        let lines: Vec<_> = doc.descendants().filter(|n| n.has_tag_name("polyline") && n.attribute("stroke") == Some("#C8C8C8")).collect();
+        assert_eq!(lines.len(), panels * 4,
+            "显示分组不能删除或移动原高对称点竖线");
+        for panel in lines.chunks_exact(4) {
+            let xs: Vec<i32> = panel.iter().map(|n| n.attribute("points").unwrap().split(',').next().unwrap().trim().parse().unwrap()).collect();
+            for (index, distance) in [(1, 0.5), (2, 0.505)] {
+                assert!((xs[index] as f64 - xs[0] as f64 - (xs[3] - xs[0]) as f64 * distance).abs() <= 1.0,
+                    "高对称点竖线仍应标记原来的物理路径距离");
+            }
+        }
+    }
+    assert_eq!(before, fingerprints(&source), "绘图不能改科学表或元数据");
+    fs::remove_dir_all(root).unwrap();
+}
 fn temp() -> PathBuf {
     let p = std::env::temp_dir().join(format!("epw-comparison-{}", store::token()));
     fs::create_dir_all(&p).unwrap();

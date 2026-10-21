@@ -607,6 +607,7 @@ impl Case {
             .replace("qcr=[list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]", "qcr=[[0,0,0]] if wannier_only else [list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]")
             .replace("if coarse:\n        lower=window_min()", "if coarse and not reuse:\n        lower=window_min()")
             .replace("Path(prefix+'.wout').write_text(wout)","if not reuse:Path(prefix+'.wout').write_text(wout)\n    if wannier_only:\n        Path(prefix+'.win').write_text('num_wann = '+str(n)+'\\n')\n        Path(prefix+'.chk').write_text('fixture checkpoint')")
+            .replace("kept=list(range(8,17));nk=coarse_nk", "kept=list(range(8,17));nk=coarse_nk\n    if wannier_only:\n        Path(prefix+'.bvec').write_text('native bvec\\n'+str(nk)+' 1\\n'+'1 0 0 1\\n'*nk)\n        Path(prefix+'.mmn').write_text('(0,0)\\n'*(9*9*nk))\n    if reuse:\n        assert Path(prefix+'.bvec').read_text().splitlines()[1].split()==[str(nk),'1'], '粗网格缺同一拟合 bvec'\n        assert len(Path(prefix+'.mmn').read_text().splitlines())==9*9*nk, '粗网格缺同一拟合 mmn'")
             .replace("parent/'nscf/out'", "parent/'2.qe-nscf/out'")
             .replace("ROOT/'run/nscf/out'", "ROOT/'run/2.qe-nscf/out'");
         c.put("epw_native_io.py",&epw);
@@ -615,6 +616,24 @@ impl Case {
 from pathlib import Path
 import re,sys,xml.etree.ElementTree as ET
 kind={kind:?}
+if kind in ['wannier90','postw90']:
+    prefix=sys.argv[1]
+    win=Path(prefix+'.win').read_text()
+    mesh=re.search(r'(?m)^mp_grid\s*=\s*(\d+)\s+(\d+)\s+(\d+)',win)
+    assert mesh, '独立程序必须有 mp_grid'
+    for block in ['unit_cell_cart','atoms_cart','kpoints']:
+        assert 'begin '+block in win and 'end '+block in win, block+' 缺失'
+    points=re.search(r'begin kpoints\s*\n(.*?)end kpoints',win,re.S).group(1).strip().splitlines()
+    assert len(points)==int(mesh[1])*int(mesh[2])*int(mesh[3]), '独立 k 点数量不符'
+    assert re.search(r'(?m)^num_bands\s*=\s*9\s*$',win), '应使用排除后的 9 带'
+    assert 'dos_smr_index' not in win and 'dos_smr_type = gauss' in win, '应使用原生输入关键字，不能写内部变量'
+    eig=[line.split() for line in Path(prefix+'.eig').read_text().splitlines()]
+    assert len(eig)==len(points)*9 and all(int(row[0])==i%9+1 and int(row[1])==i//9+1 for i,row in enumerate(eig)), 'eig 必须绑定原 NSCF 点序和排除后带序'
+    if kind=='wannier90' and (Path(__file__).parent/'post-failure').exists():
+        Path(prefix+'.wout').write_text('overwritten failed plot log')
+        Path(prefix+'.werr').write_text('Error: standalone post failed despite STOP zero')
+        print('Error: standalone post failed despite STOP zero')
+        sys.exit(0)
 if kind in ['bands','dos']:
     text=Path(sys.argv[sys.argv.index('-inp')+1]).read_text()
     prefix=re.search(r"prefix\s*=\s*'([^']+)'",text).group(1)
@@ -629,10 +648,13 @@ if kind in ['bands','dos']:
 elif kind=='wannier90':
     prefix=sys.argv[1]
     assert 'restart = plot' in Path(prefix+'.win').read_text()
+    assert re.search(r'(?m)^write_bvec\s*=\s*\.false\.\s*$',win), '重绘不能重写已绑定的 bvec'
     Path(prefix+'_band.dat').write_text(''.join('0 '+str(i)+'\n1 '+str(i)+'\n\n' for i in range(5)))
     Path(prefix+'_band.labelinfo.dat').write_text('G 1 0\nX 2 1\n')
 else:
     prefix=sys.argv[1]
+    assert re.search(r'(?m)^num_elec_per_state\s*=\s*2\s*$',win), '非磁标量 DOS 应显式计入两重自旋'
+    Path(prefix+'.wpout').write_text('Number of electrons per state : 2 |\n')
     Path(prefix+'_dos.dat').write_text('\n'.join(str(i/10)+' 1' for i in range(-100,100)))
 "#));
         }
@@ -646,6 +668,35 @@ else:
     fn numbered_change(&self,change:impl FnOnce(&mut config::Config)) {
         let p=self.root.join("input.toml");let mut cfg=config::Config::load(&p).unwrap();change(&mut cfg);fs::write(p,toml::to_string_pretty(&cfg).unwrap()).unwrap();
     }
+}
+
+#[test]
+fn numbered_wannier_post_zero_exit_error_preserves_fit_and_resumes() {
+    let c = Case::numbered();
+    c.put("post-failure", "simulate serial Fortran STOP");
+    c.accounting(Some(201));
+    let failed = c.numbered_cli(1, &["--stage", "wannier", "-r"], Some(201), "post-zero-failed");
+    assert!(!failed.status.success());
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("standalone post failed"));
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    assert!(epwflow::foundation::stages::reusable(&cfg, epwflow::foundation::stages::Step::Wannier).unwrap());
+    let receipt = fs::read(c.root.join("run/5.epw-wannier/completion.json")).unwrap();
+    let wout = store::hash_file(&c.root.join("run/5.epw-wannier/scf.wout")).unwrap();
+    let before = c.calls();
+    fs::remove_file(c.root.join("post-failure")).unwrap();
+    c.accounting(Some(202));
+    success(c.numbered_cli(1, &["--stage", "wannier", "--resume", "-r"], Some(202), "post-zero-resume"));
+    assert_eq!(before, c.calls(), "后处理续算不能重跑 QE 或 EPW 拟合");
+    assert_eq!(receipt, fs::read(c.root.join("run/5.epw-wannier/completion.json")).unwrap());
+    assert_eq!(wout, store::hash_file(&c.root.join("run/5.epw-wannier/scf.wout")).unwrap());
+    assert!(!c.root.join("run/5.epw-wannier/scf.werr").exists());
+    assert!(c.root.join("run/5.epw-wannier/electronic-bands.png").is_file());
+    let norm: Value = store::read(&c.root.join("run/5.epw-wannier/electronic-dos-normalization.json")).unwrap();
+    assert_eq!(norm["postw90_multiplier"], 1);
+    assert_eq!(norm["postw90_num_elec_per_state"], 2);
+    let csv = fs::read_to_string(c.root.join("run/5.epw-wannier/electronic-dos.csv")).unwrap();
+    assert!(csv.lines().filter(|line| line.starts_with("Wannier,")).all(|line| line.rsplit(',').next().unwrap().parse::<f64>().unwrap() == 1.0),
+        "原生 DOS 已计入自旋，CSV 不能再次放大");
 }
 
 #[test]
@@ -697,6 +748,11 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(203),"numbered-coarse"));
     assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),qe_calls.lines().filter(|s|*s=="pw").count()+2); // 仅独立电子参考与路径参考。
     assert_eq!(wan_hash,store::hash_file(&c.root.join("run/5.epw-wannier/scf.ukk")).unwrap());
+    for suffix in ["bvec", "mmn"] {
+        let file = format!("scf.{suffix}");
+        assert_eq!(store::hash_file(&c.root.join("run/5.epw-wannier").join(&file)).unwrap(),
+            store::hash_file(&c.root.join("run/6.epw-coarse").join(&file)).unwrap());
+    }
     assert!(fs::read_to_string(c.root.join("run/6.epw-coarse/epw_coarse.in")).unwrap().contains("wannierize = .false."));
     assert_eq!(stages::scientific_key(&cfg,Step::Wannier).unwrap(),key);
     assert!(layout::path(&cfg.work_dir,"wannier/manifest.json").is_file());
@@ -764,6 +820,59 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
 }
 
 #[test]
+fn numbered_quality_warning_continues_to_native_fine_and_both_solvers_but_rejects_damage() {
+    use epwflow::foundation::{layout, stages::{self, Step}};
+    let c = Case::numbered();
+    c.put("epw-failure", "quality");
+    c.accounting(Some(201));
+    let coarse = c.numbered_cli(1, &["--stage", "coarse", "-r"], Some(201), "warning-coarse");
+    assert!(String::from_utf8_lossy(&coarse.stderr).contains("quality_warning:"));
+    success(coarse);
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let manifest = layout::path(&cfg.work_dir, "wannier/manifest.json");
+    let value: Value = store::read(&manifest).unwrap();
+    assert_eq!(value["quality"]["status"], "warning");
+    assert!(stages::reusable(&cfg, Step::Coarse).unwrap());
+    let report = layout::path(&cfg.work_dir, "quality-report.json");
+    let before = store::Identity::capture(&report).unwrap();
+    let quality: Value = store::read(&report).unwrap();
+    assert_eq!(quality["passed"], false);
+    assert_eq!(quality["electron"]["passed"], false);
+    assert_eq!(quality["phonon"]["passed"], false);
+    let calls = c.calls();
+    c.accounting(Some(202));
+    success(c.numbered_cli(2, &["--stage", "fine", "-r"], Some(202), "warning-fine"));
+    assert_eq!(calls.0, c.calls().0, "告警续算不能重算 QE／参考");
+    let value: Value = store::read(&layout::path(&cfg.work_dir, "interpolation/manifest.json")).unwrap();
+    assert_eq!(value["quality"]["status"], "warning");
+    assert!(!value["spectra"].as_array().unwrap().is_empty());
+    // 数值告警不能使篡改原始质量数据变得可接受。
+    let band = Step::Coarse.directory(&cfg).join("band.eig");
+    let saved = fs::read(&band).unwrap();
+    fs::write(&band, "tampered").unwrap();
+    let before_calls = c.calls();
+    c.accounting(Some(203));
+    assert!(!c.numbered_cli(2, &["--stage", "superconductivity", "-r"], Some(203), "warning-damaged").status.success());
+    assert_eq!(before_calls, c.calls());
+    fs::write(&band, saved).unwrap();
+    c.accounting(Some(204));
+    success(c.numbered_cli(2, &["--stage", "superconductivity", "--resume", "-r"], Some(204), "warning-both-solvers"));
+    before.verify().unwrap();
+    assert_eq!(calls.0, c.calls().0);
+    let modes: Value = store::read(&Step::Superconductivity.directory(&cfg).join("manifest.json")).unwrap();
+    assert!(modes["native_modes"].get("iso").is_some());
+    assert!(modes["native_modes"].get("aniso").is_some());
+    assert!(!c.calls().2.is_empty());
+    let results = epwflow::delivery::check_results(
+        &Step::Superconductivity.directory(&cfg).join("results"),
+    ).unwrap();
+    assert_eq!(results["quality_status"], "failed");
+    assert_eq!(results["quality_warning"], true);
+    assert_eq!(results["workflow_complete"], true,
+        "执行完成与数值质量必须分开，告警不能令最终交付失败");
+}
+
+#[test]
 fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
     let c = Case::numbered();
     c.script("launcher", "#!/bin/sh\nshift 2\nexec \"$@\"\n");
@@ -806,6 +915,77 @@ fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
     assert_eq!(c.direct_execute(),0);
     // 作业只执行 PW；正式完成状态必须等待公开 CLI 校验。
     assert_eq!(c.direct_task()["state"],"submitted");
+}
+
+#[test]
+fn numbered_guiding_centres_invalidates_only_the_wannier_branch() {
+    use epwflow::foundation::stages::{self, Step};
+    let c = Case::numbered();
+    let before = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let mut after = before.clone();
+    after.wannier.guiding_centres = Some(true);
+    for step in [Step::Scf, Step::Nscf, Step::Electronic, Step::Phonon] {
+        assert_eq!(stages::scientific_key(&before, step).unwrap(), stages::scientific_key(&after, step).unwrap());
+    }
+    for step in [Step::Wannier, Step::Coarse, Step::Fine, Step::Superconductivity] {
+        assert_ne!(stages::scientific_key(&before, step).unwrap(), stages::scientific_key(&after, step).unwrap());
+    }
+}
+
+#[test]
+fn numbered_phonon_post_retry_reuses_verified_responses_and_restores_dyn0() {
+    let c = Case::numbered();
+    c.put("post-failure", "q2r fails after PH collection");
+    c.accounting(Some(201));
+    let failed = c.numbered_cli(0, &["-r"], Some(201), "ph-post-failed");
+    assert!(!failed.status.success());
+    let ph = c.root.join("run/4.qe-phonon-nosplit");
+    let saved = fs::read(ph.join("save/scf.dyn0.xml")).unwrap();
+    assert!(!saved.is_empty());
+    let before = c.calls();
+    let manifest = fs::read(c.root.join("run/epw-state/qe-data/manifest.json")).unwrap();
+    // 复现旧版本的自复制截断；已校验的归集副本仍可恢复原生后处理。
+    fs::write(ph.join("scf.dyn0"), "").unwrap();
+    fs::remove_file(c.root.join("post-failure")).unwrap();
+    c.accounting(Some(202));
+    success(c.numbered_cli(0, &["--resume", "-r"], Some(202), "ph-post-resume"));
+    assert_eq!(saved, fs::read(ph.join("scf.dyn0")).unwrap());
+    assert_eq!(manifest, fs::read(c.root.join("run/epw-state/qe-data/manifest.json")).unwrap());
+    assert_eq!(before.0.lines().filter(|s| *s == "ph" || *s == "pw").collect::<Vec<_>>(),
+        c.calls().0.lines().filter(|s| *s == "ph" || *s == "pw").collect::<Vec<_>>(),
+        "后处理恢复不能重跑 PW/PH");
+    assert!(ph.join("completion.json").is_file());
+}
+
+#[test]
+fn numbered_phonon_partial_rejects_damaged_save_without_native_execution() {
+    let c = Case::numbered();
+    c.put("post-failure", "q2r failure");
+    c.accounting(Some(201));
+    assert!(!c.numbered_cli(0, &["-r"], Some(201), "ph-damage-initial").status.success());
+    fs::write(c.root.join("run/4.qe-phonon-nosplit/save/scf.dvscf_q2"), "damaged").unwrap();
+    let before = c.calls();
+    c.accounting(Some(202));
+    let out = c.numbered_cli(0, &["--resume", "-r"], Some(202), "ph-damage-resume");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("QE 产物变化"));
+    assert_eq!(before, c.calls());
+}
+
+#[test]
+fn numbered_stage_archive_preserves_the_open_slurm_log() {
+    use std::io::Write;
+    use std::os::unix::fs::MetadataExt;
+    let c = Case::numbered();
+    success(c.numbered_cli(0, &[], None, "log-prepare"));
+    let path = c.root.join("run/4.qe-phonon-nosplit/slurm-201.out");
+    let mut log = fs::File::create(&path).unwrap();
+    log.write_all(b"before archive\n").unwrap();
+    c.accounting(Some(201));
+    success(c.numbered_cli(0, &["-r"], Some(201), "log-run"));
+    log.write_all(b"after archive\n").unwrap();
+    assert_eq!(log.metadata().unwrap().ino(), fs::metadata(&path).unwrap().ino());
+    assert_eq!(fs::read_to_string(path).unwrap(), "before archive\nafter archive\n");
 }
 
 #[test]
@@ -1159,3 +1339,137 @@ fn numbered_migration_rejects_activity_and_retains_a_deleted_stage_as_pending() 
 
 #[path="support/direct_submit.rs"]
 mod direct_submit;
+
+#[test]
+fn numbered_old_wannier_receipt_rebuilds_unbound_velocity_files_and_rejects_tampering() {
+    use epwflow::foundation::stages::{self, Completion, Step};
+    let c = Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(1, &["--stage", "wannier", "-r"], Some(201), "velocity-initial"));
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let receipt = stages::receipt(&cfg.work_dir, Step::Wannier);
+    let mut original: Completion = store::read(&receipt).unwrap();
+    original.outputs.retain(|id| !matches!(id.path.extension().and_then(|x| x.to_str()), Some("bvec" | "mmn")));
+    store::write(&receipt, &original).unwrap();
+    assert!(!stages::reusable(&cfg, Step::Wannier).unwrap());
+    assert!(stages::reusable(&cfg, Step::Scf).unwrap());
+    assert!(stages::reusable(&cfg, Step::Nscf).unwrap());
+    let qe = c.calls().0;
+    c.accounting(Some(202));
+    success(c.numbered_cli(1, &["--stage", "wannier", "-r"], Some(202), "velocity-rebuild"));
+    assert_eq!(c.calls().0, qe, "旧拟合收据升级不能重算 QE");
+    assert_eq!(c.calls().1.matches("wannier ").count(), 2);
+    let current: Completion = store::read(&receipt).unwrap();
+    for suffix in ["bvec", "mmn"] {
+        assert!(current.outputs.iter().any(|id| id.path == Step::Wannier.directory(&cfg).join(format!("scf.{suffix}"))));
+    }
+    assert!(stages::reusable(&cfg, Step::Wannier).unwrap());
+    fs::write(Step::Wannier.directory(&cfg).join("scf.mmn"), "(9,9)\n").unwrap();
+    let calls = c.calls();
+    c.accounting(Some(203));
+    assert!(!c.numbered_cli(1, &["--stage", "coarse", "-r"], Some(203), "velocity-tampered").status.success());
+    assert_eq!(c.calls(), calls, "已绑定文件篡改必须在原生执行前拒绝");
+}
+
+#[test]
+fn numbered_reference_retry_after_overwriting_the_driver_keeps_native_results() {
+    use std::io::Write;
+    let c = Case::numbered();
+    let driver = c.root.join("mutable-epw-wannier");
+    fs::copy(BINS[1], &driver).unwrap();
+    let run = |job, label| {
+        let mut cmd = Command::new(&driver);
+        cmd.args(["-c", c.root.join("input.toml").to_str().unwrap(), "--stage", "coarse", "-r"])
+            .env("SLURM_NTASKS", "1");
+        c.output(cmd, Some(job), label)
+    };
+    c.put("fail-coarse", "intentional native failure");
+    c.accounting(Some(201));
+    let initial = run(201, "driver-before-upgrade");
+    assert!(!initial.status.success());
+    assert!(String::from_utf8_lossy(&initial.stderr).contains("EPW 退出状态 Some(17)"));
+    let refs = c.root.join("run/6.epw-coarse/quality-sources/reference.json");
+    let request = refs.with_file_name("request.json");
+    let before = (store::hash_file(&refs).unwrap(), store::hash_file(&request).unwrap(), c.calls().0);
+    fs::OpenOptions::new().append(true).open(&driver).unwrap().write_all(b"upgraded-driver-marker").unwrap();
+    c.accounting(Some(202));
+    let retry = run(202, "driver-after-upgrade");
+    assert!(!retry.status.success());
+    assert!(String::from_utf8_lossy(&retry.stderr).contains("EPW 退出状态 Some(17)"), "{}", String::from_utf8_lossy(&retry.stderr));
+    assert_eq!(before, (store::hash_file(&refs).unwrap(), store::hash_file(&request).unwrap(), c.calls().0));
+}
+
+#[test]
+fn numbered_comparison_upgrade_reuses_native_coarse_and_rejects_damaged_science() {
+    use std::io::Write;
+    let c = Case::numbered();
+    let driver = c.root.join("mutable-comparison-driver");
+    fs::copy(BINS[1], &driver).unwrap();
+    let run = |job, label| {
+        let mut cmd = Command::new(&driver);
+        cmd.args(["-c", c.root.join("input.toml").to_str().unwrap(), "--stage", "coarse", "-r"])
+            .env("SLURM_NTASKS", "1");
+        c.output(cmd, Some(job), label)
+    };
+    c.put("bad-path-frequencies", "intentional nonfinite frequency");
+    c.accounting(Some(201));
+    let first = run(201, "comparison-parse-failed");
+    assert!(!first.status.success());
+    assert!(String::from_utf8_lossy(&first.stderr).contains("非有限数"), "{}", String::from_utf8_lossy(&first.stderr));
+    let request = c.root.join("run/6.epw-coarse/comparison-native/request.json");
+    let coarse = c.root.join("run/epw-state/native-attempts/coarse.json");
+    let protected_calls = || c.calls().0.lines().filter(|l| !matches!(*l, "q2r" | "matdyn")).collect::<Vec<_>>().join("\n");
+    let before = (store::hash_file(&request).unwrap(), store::hash_file(&coarse).unwrap(), protected_calls());
+    let coarse_calls = c.calls().1.lines().filter(|l| l.starts_with("coarse ")).count();
+    fs::OpenOptions::new().append(true).open(&driver).unwrap().write_all(b"comparison-driver-upgrade").unwrap();
+    let matrix = c.root.join("run/6.epw-coarse/epwdata.fmt");
+    let raw = fs::read(&matrix).unwrap(); fs::write(&matrix, "damaged matrix").unwrap();
+    c.accounting(Some(202));
+    assert!(!run(202, "comparison-damaged-coarse").status.success());
+    assert_eq!(before.2, protected_calls());
+    fs::write(matrix, raw).unwrap();
+    fs::remove_file(c.root.join("bad-path-frequencies")).unwrap();
+    c.accounting(Some(203));
+    success(run(203, "comparison-upgraded-resume"));
+    assert_eq!(before, (store::hash_file(&request).unwrap(), store::hash_file(&coarse).unwrap(), protected_calls()));
+    assert_eq!(coarse_calls, c.calls().1.lines().filter(|l| l.starts_with("coarse ")).count(), "粗 EPC 不得重算");
+}
+
+#[test]
+fn numbered_native_retry_preserves_open_logs_and_ignores_legacy_log_inputs_only() {
+    use std::{io::Write, os::unix::fs::MetadataExt};
+    let c = Case::numbered();
+    c.put("fail-coarse", "intentional failure");
+    c.accounting(Some(201));
+    let initial = c.numbered_cli(1, &["--stage", "coarse", "-r"], Some(201), "log-input-initial");
+    assert!(String::from_utf8_lossy(&initial.stderr).contains("EPW 退出状态 Some(17)"));
+    let dir = c.root.join("run/6.epw-coarse");
+    let old_log = dir.join("slurm-201.err"); fs::write(&old_log, "before failure\n").unwrap();
+    let receipt = c.root.join("run/epw-state/native-attempts/coarse.json");
+    let mut legacy: Value = store::read(&receipt).unwrap();
+    legacy["inputs"].as_array_mut().unwrap().push(serde_json::to_value(store::Identity::capture(&old_log).unwrap()).unwrap());
+    let scratch = dir.join("out/scf.wfc1"); fs::write(&scratch, "before native").unwrap();
+    legacy["inputs"].as_array_mut().unwrap().push(serde_json::to_value(store::Identity::capture(&scratch).unwrap()).unwrap());
+    fs::write(&scratch, "native changed working wavefunction").unwrap();
+    store::write(&receipt, &legacy).unwrap();
+    fs::OpenOptions::new().append(true).open(&old_log).unwrap().write_all(b"normal failure appended\n").unwrap();
+    let log = dir.join("slurm-202.out");
+    let mut handle = fs::OpenOptions::new().create(true).append(true).open(&log).unwrap();
+    handle.write_all(b"before archive\n").unwrap();
+    let before = c.calls().0;
+    c.accounting(Some(202));
+    let retry = c.numbered_cli(1, &["--stage", "coarse", "-r"], Some(202), "log-input-retry");
+    assert!(String::from_utf8_lossy(&retry.stderr).contains("EPW 退出状态 Some(17)"), "{}", String::from_utf8_lossy(&retry.stderr));
+    assert_eq!(before, c.calls().0, "重试不能重复独立参考或上游 QE");
+    handle.write_all(b"after archive\n").unwrap();
+    assert_eq!(handle.metadata().unwrap().ino(), fs::metadata(&log).unwrap().ino());
+    assert_eq!(fs::read_to_string(&log).unwrap(), "before archive\nafter archive\n");
+    let current: Value = store::read(&receipt).unwrap();
+    assert!(current["inputs"].as_array().unwrap().iter().all(|x| !x["path"].as_str().unwrap().contains("/slurm-")));
+    fs::write(dir.join("save/scf.dvscf_q2"), "damaged scientific input").unwrap();
+    c.accounting(Some(203));
+    let corrupt = c.numbered_cli(1, &["--stage", "coarse", "-r"], Some(203), "log-input-corrupt-science");
+    assert!(!corrupt.status.success());
+    assert!(String::from_utf8_lossy(&corrupt.stderr).contains("scf.dvscf_q2"));
+    assert_eq!(before, c.calls().0);
+}

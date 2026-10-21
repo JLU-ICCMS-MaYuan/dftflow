@@ -1,6 +1,6 @@
 use super::compare;
 use super::manifest::QualityReport;
-use anyhow::{bail, ensure, Result};
+use anyhow::{ensure, Result};
 use std::collections::BTreeMap;
 
 /// 0012 FR-009：用户于 2026-10-19 将最大／RMS 误差改为 50／20 cm⁻¹。
@@ -57,12 +57,12 @@ pub fn evaluate(
         if max_err <= th["frequency_max_error_cm1"] && rms <= th["frequency_rms_error_cm1"] {
             "valid"
         } else {
-            "invalid"
+            "warning"
         }
         .to_string();
-    if report.status == "invalid" {
-        bail!(
-            "data_invalid: 插值质量超差：max={} cm⁻¹, rms={} cm⁻¹（阈值 {}/{}）",
+    if report.status == "warning" {
+        eprintln!(
+            "quality_warning: 插值质量超差，继续后续计算：max={} cm⁻¹, rms={} cm⁻¹（理想 {}/{}）",
             max_err,
             rms,
             FREQUENCY_MAX_ERROR_CM1,

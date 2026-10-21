@@ -170,24 +170,41 @@ pub struct Completion {
 pub fn receipt(root: &Path, step: Step) -> PathBuf {
     step.directory_in(root).join("completion.json")
 }
+
+/// 同一调用内并发读取独立产物；不跨调用缓存，仍逐份校验完整内容。
+fn verify_outputs(
+    outputs: &[store::Identity],
+    check: impl Fn(&store::Identity) -> Result<bool> + Sync,
+) -> Result<bool> {
+    std::thread::scope(|scope| {
+        let check = &check;
+        let workers: Vec<_> = outputs.chunks(outputs.len().div_ceil(8).max(1))
+            .map(|part| scope.spawn(move || part.iter().map(check).collect::<Result<Vec<_>>>()))
+            .collect();
+        // 先归集所有线程，再传播错误；缺失不能掩盖另一份产物损坏。
+        let results: Vec<_> = workers.into_iter().map(|worker| worker.join()).collect();
+        let mut available = true;
+        for result in results {
+            for valid in result.map_err(|_| anyhow::anyhow!("execution_failed: 产物核验线程失败"))?? {
+                available &= valid;
+            }
+        }
+        Ok(available)
+    })
+}
+
 impl Completion {
     /// 缺失可以重建；已存在文件仍逐项严格检查，不掩盖篡改或读取错误。
     pub fn available(&self) -> Result<bool> {
         ensure!(self.schema_version == 1 && !self.outputs.is_empty(), "data_invalid: 阶段清单缺证据");
-        let mut available = true;
-        for id in &self.outputs {
-            if !store::identity_available(id)? { available = false; }
-        }
-        Ok(available)
+        verify_outputs(&self.outputs, store::identity_available)
     }
     pub fn verify(&self) -> Result<()> {
         ensure!(
             self.schema_version == 1 && !self.outputs.is_empty(),
             "data_invalid: 阶段清单缺证据"
         );
-        for id in &self.outputs {
-            id.verify()?;
-        }
+        verify_outputs(&self.outputs, |id| id.verify().map(|_| true))?;
         // 来源保留追溯；复制后的数据不再依赖旧目录永久在线。
         Ok(())
     }
@@ -233,6 +250,13 @@ pub fn reusable(cfg: &Config, step: Step) -> Result<bool> {
         }
     }
     if !c.available()? { return Ok(false); }
+    if step == Step::Wannier && ["bvec", "mmn"].iter().any(|suffix| {
+        let path = step.directory(cfg).join(format!("{}.{suffix}", cfg.qe.prefix));
+        !c.outputs.iter().any(|id| id.path == path)
+    }) {
+        // 旧收据没有绑定速度矩阵依赖，不能事后把未绑定文件补认成原始产物。
+        return Ok(false);
+    }
     if c.upstream != upstream(cfg, step)? { return Ok(false); }
     if step == Step::Electronic {
         return super::workspace_electronic::completed(cfg);
@@ -259,6 +283,36 @@ mod tests {
         cfg.work_dir = root.clone();
         (cfg, root)
     }
+    #[test]
+    fn output_verification_never_hides_damage_behind_missing_files_or_previous_calls() {
+        let (cfg, root) = cfg();
+        let paths: Vec<_> = (0..17).map(|i| root.join(format!("artifact-{i}"))).collect();
+        for path in &paths { std::fs::write(path, "original").unwrap(); }
+        let completion = Completion {
+            schema_version: 1, step: Step::Scf,
+            scientific_key: scientific_key(&cfg, Step::Scf).unwrap(),
+            upstream: BTreeMap::new(),
+            outputs: paths.iter().map(|p| store::Identity::capture(p).unwrap()).collect(),
+            provenance: None,
+        };
+        assert!(completion.available().unwrap());
+        completion.verify().unwrap();
+        std::fs::remove_file(&paths[0]).unwrap();
+        std::fs::write(&paths[16], "damaged").unwrap();
+        assert!(completion.available().is_err(), "先发现缺失也必须拒绝另一产物损坏");
+        assert!(completion.verify().is_err());
+        std::fs::write(&paths[16], "original").unwrap();
+        assert!(!completion.available().unwrap());
+        assert!(completion.verify().is_err());
+        std::fs::write(&paths[0], "original").unwrap();
+        assert!(completion.available().unwrap());
+        // 前次通过不得成为持久缓存；下一次调用仍读取真实文件。
+        std::fs::write(&paths[8], "changed after verification").unwrap();
+        assert!(completion.available().is_err());
+        assert!(completion.verify().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn parameter_ownership_matches_the_dependency_matrix() {
         let (cfg, root) = cfg();

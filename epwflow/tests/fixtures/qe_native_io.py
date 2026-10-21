@@ -38,7 +38,10 @@ if kind in ('q2r', 'matdyn'):
     if kind == 'q2r' and (ROOT/'post-failure').exists():
         print('Error in routine fixture'); sys.exit(2)
     if kind == 'q2r':
-        assert Path(value('fildyn').replace('.dyn.xml', '.dyn0')).is_file()
+        grid_file = Path(value('fildyn').replace('.dyn.xml', '.dyn0'))
+        grid_lines = grid_file.read_text().splitlines()
+        assert len(grid_lines) >= 2 and len(grid_lines[0].split()) == 3, 'q2r 必须读取非空的原生 dyn0 网格'
+        assert len(grid_lines) >= int(grid_lines[1]) + 2, 'dyn0 必须包含完整 q 点列表'
         for path in Path.cwd().glob('*.dyn*.xml'): matrix_records(ET.parse(path).getroot())
         target = Path(value('flfrc'))
         if value('fildyn').endswith('.xml'): target=Path(str(target)+'.xml')
@@ -65,9 +68,15 @@ if kind in ('q2r', 'matdyn'):
                     n = int(a[3])
                     points.extend([[a[j]+(b[j]-a[j])*i/n for j in range(3)] for i in range(n)])
                 points.append(nodes[-1][:3])
-            Path(value('flfrq')).write_text('&plot nbnd='+str(3*nat)+', nks='+str(len(points))+' /\n'+''.join(
-                ' '.join(map(str,p))+(' '+str(1/len(points)) if value('q_in_band_form') == '.false.' else '')+'\n'
-                +' '.join(['100']*(3*nat))+'\n' for p in points))
+            explicit_path = value('q_in_band_form') == '.false.'
+            # QE 7.4.1 显式路径的 wq 未初始化；原生固定宽度会把星号紧接第三坐标。
+            records=[]
+            for p in points:
+                coords = ' '*10+''.join(f'{x:10.6f}' for x in p[:3])+'**********' if explicit_path else ' '.join(map(str,p))
+                freq=['100']*(3*nat)
+                if explicit_path and (ROOT/'bad-path-frequencies').exists(): freq[0]='NaN'
+                records.append(coords+'\n'+' '.join(freq)+'\n')
+            Path(value('flfrq')).write_text('&plot nbnd='+str(3*nat)+', nks='+str(len(points))+' /\n'+''.join(records))
     print('JOB DONE.'); sys.exit(0)
 prefix = value('prefix')
 out = Path(value('outdir'))

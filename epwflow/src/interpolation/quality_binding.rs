@@ -48,6 +48,7 @@ pub(crate) fn freeze_at(cfg: &Config, fermi: f64, path: &Path) -> Result<Frozen>
         s.schema_version == 1 && s.asr == "epw_simple_gamma_onsite" && !s.provenance.is_empty(),
         "data_invalid: 参考版本、ASR 或来源无效"
     );
+    super::references::historical_driver(cfg, path, &mut s.provenance)?;
     s.fermi_reference = resolve(&s.fermi_reference, base)?;
     s.electron_reference = resolve(&s.electron_reference, base)?;
     s.phonon_reference_cm1 = resolve(&s.phonon_reference_cm1, base)?;
@@ -206,4 +207,11 @@ pub fn check(cfg: &Config, work: &Path) -> Result<NativeQuality> {
         source.clone()
     };
     native_quality::check_current_coarse(&path, &crate::foundation::layout::path(&work, "coarse"))
+}
+
+/// 所有下游共用严格来源重验；理想误差超差不再作为执行失败。
+pub fn check_for_execution(cfg: &Config, work: &Path) -> Result<NativeQuality> {
+    let report = check(cfg, work)?;
+    report.warn_if_failed();
+    Ok(report)
 }

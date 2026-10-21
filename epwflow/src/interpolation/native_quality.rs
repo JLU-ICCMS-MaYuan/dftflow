@@ -104,7 +104,7 @@ pub fn phonon_quality(
     let max_error_cm1 = errors.iter().flatten().copied().fold(0.0, f64::max);
     let count = reference.values.len() * modes;
     let rms_error_cm1 = (errors.iter().flatten().map(|v| v * v).sum::<f64>() / count as f64).sqrt();
-    // 存在动力学不稳定时，即使误差小也不能进入首版常规超导交付。
+    // 动力学不稳定保留为质量未达标；执行入口告警后继续，不伪装稳定。
     let stable = reference.values.iter().flatten().all(|v| *v >= -1.0)
         && interpolated
             .values
@@ -134,6 +134,20 @@ pub struct NativeQuality {
     pub phonon: PhononQuality,
     pub passed: bool,
     pub source_manifest_sha256: String,
+}
+
+impl NativeQuality {
+    /// 数值目标只告警；来源、格式及完整性由读取／配对检查保证。
+    pub fn warn_if_failed(&self) {
+        if !self.passed {
+            eprintln!(
+                "quality_warning: 独立插值质量未达理想目标，继续后续计算；结果仅供诊断。电子 max/RMS={:.9}/{:.9} eV（理想 0.05/0.02）；声子 max/RMS={:.9}/{:.9} cm⁻¹（理想 {}/{}，含稳定性检查）。详细达标结论保留在质量报告中。",
+                self.electron.max_error_ev, self.electron.rms_error_ev,
+                self.phonon.max_error_cm1, self.phonon.rms_error_cm1,
+                self.phonon.max_error_limit_cm1, self.phonon.rms_error_limit_cm1,
+            );
+        }
+    }
 }
 
 /// 检查现有参考，不生成参考或调用科学程序。失败数值仍可用于诊断报告。

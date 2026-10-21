@@ -2,13 +2,22 @@ use super::super::interpolation::fine;
 use anyhow::{ensure, Context, Result};
 use std::path::Path;
 
-/// Fortran D 指数；拒绝 NaN/Inf 和溢出，保留原生物理量。
+/// Fortran D 指数及三位指数省略 E；拒绝非有限数，保留原生物理量。
 pub fn numbers(line: &str) -> Result<Vec<f64>> {
     line.split_whitespace()
         .map(|s| {
-            let v = s
-                .replace(['D', 'd'], "E")
-                .parse::<f64>()
+            let normalized = s.replace(['D', 'd'], "E");
+            let v = normalized.parse::<f64>().or_else(|error| {
+                // 原生 E 格式三位指数可能省略 E；仅接纳带小数点的明确尾数。
+                static OMITTED_E: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+                let pattern = OMITTED_E.get_or_init(|| regex::Regex::new(
+                    r"^([+-]?(?:[0-9]+\.[0-9]*|\.[0-9]+))([+-][0-9]{3})$"
+                ).expect("固定 Fortran 指数表达式有效"));
+                match pattern.captures(&normalized) {
+                    Some(parts) => format!("{}E{}", &parts[1], &parts[2]).parse::<f64>(),
+                    None => Err(error),
+                }
+            })
                 .with_context(|| format!("data_invalid: 原生数值无效 {s}"))?;
             ensure!(v.is_finite(), "data_invalid: 原生输出含非有限数");
             Ok(v)

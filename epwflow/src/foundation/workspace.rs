@@ -558,6 +558,10 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
     if request.is_file() && store::read::<String>(&request)? == stages::scientific_key(cfg, step)? {
         let receipt = stages::receipt(&cfg.work_dir, step);
         if step >= Step::Coarse && !receipt.exists() { return Ok(()); }
+        if step == Step::Phonon && !receipt.exists()
+            && super::workspace_science::partial_phonon(cfg)?.is_some() {
+            return Ok(());
+        }
         if step == Step::Electronic && super::workspace_electronic::compatible_partial(cfg)? {
             let compatible = if receipt.exists() {
                 let c: Completion = store::read(&receipt)?;
@@ -581,6 +585,7 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
     if dir.exists() {
         fs::create_dir_all(&history)?;
         fs::rename(&dir, history.join("calculation"))?;
+        preserve_active_logs(&history.join("calculation"), &dir)?;
     }
     let receipt = stages::receipt(&cfg.work_dir, step);
     if receipt.exists() {
@@ -589,6 +594,42 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
     }
     super::workspace_science::invalidate(cfg, step, &history)?;
     if step == Step::Electronic { super::workspace_electronic::archive(cfg, &history)?; }
+    Ok(())
+}
+
+pub(crate) fn slurm_log(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|s| s.to_str()) else { return false; };
+    let Some((job, suffix)) = name.strip_prefix("slurm-").and_then(|s| s.split_once('.')) else { return false; };
+    !job.is_empty() && job.bytes().all(|c| c.is_ascii_digit())
+        && matches!(suffix, "out" | "err")
+}
+
+/// Slurm 持有原 inode；归档后用硬链接保留当前目录的持续写入入口。
+pub(crate) fn preserve_active_logs(source: &Path, dir: &Path) -> Result<()> {
+    if let Ok(job) = std::env::var("SLURM_JOB_ID") {
+        if job.parse::<u64>().is_ok() {
+            for suffix in ["out", "err"] {
+                let name = format!("slurm-{job}.{suffix}");
+                let path = source.join(&name);
+                if path.is_file() && !fs::symlink_metadata(&path)?.file_type().is_symlink() {
+                    fs::create_dir_all(dir)?;
+                    let target = dir.join(name);
+                    if let Err(error) = fs::hard_link(&path, &target) {
+                        if error.kind() != std::io::ErrorKind::AlreadyExists { return Err(error.into()); }
+                        #[cfg(unix)] {
+                            use std::os::unix::fs::MetadataExt;
+                            let a = fs::metadata(&path)?;
+                            let b = fs::symlink_metadata(&target)?;
+                            ensure!(b.is_file() && a.dev() == b.dev() && a.ino() == b.ino(),
+                                "input_conflict: 当前 Slurm 日志入口不是原 inode");
+                        }
+                        #[cfg(not(unix))]
+                        anyhow::bail!("input_conflict: 当前平台无法核验已存在日志的 inode");
+                    }
+                }
+            }
+        }
+    }
     Ok(())
 }
 

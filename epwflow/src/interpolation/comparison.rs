@@ -252,7 +252,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     let qe = nscf::parse_xml(&s.qe_bands_xml.checked_path(base)?)?;
     let mesh = nscf::parse_xml(&s.qe_mesh_xml.checked_path(base)?)?;
     let epw = native::parse_bands(&fs::read_to_string(s.epw_bands.checked_path(base)?)?)?;
-    let qph = native::parse_matdyn(&fs::read_to_string(s.qe_phonon_bands.checked_path(base)?)?)
+    let qph = native::parse_matdyn_path(&fs::read_to_string(s.qe_phonon_bands.checked_path(base)?)?)
         .context("data_invalid: QE matdyn 频率文件")?;
     let eph = native::parse_bands(&fs::read_to_string(s.epw_phonon_bands.checked_path(base)?)?)?;
     native::checked_log(&fs::read_to_string(s.epw_log.checked_path(base)?)?, 0)?;

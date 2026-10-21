@@ -1,4 +1,4 @@
-//! F3 质量门之后，在同一 F1 分配内执行原生两模式搜索。
+//! F3 来源重验及数值告警后，在同一 F1 分配内执行原生两模式搜索。
 use super::{engine::Engine, manifest::SuperconductivityManifest, source};
 use crate::{
     foundation::{
@@ -32,14 +32,10 @@ pub fn run_with_retry(
     let path = crate::foundation::layout::path(&work, "interpolation/manifest.json");
     let f3 = InterpolationManifest::load(&path)?;
     ensure!(
-        f3.validation.all_passed() && f3.quality.as_ref().is_some_and(|q| q.status == "valid"),
-        "data_invalid: 插值质量尚未通过，F4 不得放行"
+        f3.validation.all_passed() && f3.quality.as_ref().is_some_and(|q| q.usable()),
+        "data_invalid: 插值数据或质量证据无效，F4 不得放行"
     );
-    let checked = crate::interpolation::quality_binding::check(cfg, &work)?;
-    ensure!(
-        checked.passed,
-        "data_invalid: 独立插值质量失败，禁止原生超导"
-    );
+    crate::interpolation::quality_binding::check_for_execution(cfg, &work)?;
     let input = source::bind(&work, cfg, &f3)?;
     ensure!(
         backend == Backend::Local,
@@ -58,10 +54,7 @@ pub fn run_with_retry(
             store::hash_file(&path)? == input.interpolation_digest,
             "input_conflict: F3 清单改变"
         );
-        ensure!(
-            crate::interpolation::quality_binding::check(cfg, &work)?.passed,
-            "data_invalid: F3 质量来源改变"
-        );
+        crate::interpolation::quality_binding::check_for_execution(cfg, &work)?;
         Ok(())
     };
     before()?;

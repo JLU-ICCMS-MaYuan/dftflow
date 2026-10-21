@@ -263,6 +263,23 @@ fn native_inputs(root: &PathBuf) -> attempt::NativeInputs {
 }
 
 #[test]
+fn fortran_omitted_e_exponents_preserve_values_and_reject_invalid_tokens() {
+    let actual = parse::numbers("1.7366215176-102 -2.5+100 +.25-100 1.0D-3 2e+1").unwrap();
+    assert_eq!(actual, vec![1.7366215176e-102, -2.5e100, 0.25e-100, 1e-3, 20.0]);
+    for bad in ["1-102", "1.2-10", "1.2--102", "1.2E-102-103", "1.2-102x", "1.0+999", "***", "NaN", "inf", "1.0E999"] {
+        assert!(parse::numbers(bad).is_err(), "必须拒绝 {bad}");
+    }
+    let r = request(config::Mode::Aniso, attempt::SolveKind::Nonlinear);
+    let text = raw_gap(&r, &states(), 1.7366215176e-99);
+    let omitted = text.replace("1.7366215176e-102", "1.7366215176-102");
+    assert_ne!(text, omitted, "必须覆盖完整能隙文件中的真实省略格式");
+    let gap = gap::parse_native(&omitted, 2000, r.nfreq().unwrap(), states()).unwrap();
+    assert!((gap.delta_mev[0] / 1.7366215176e-99 - 1.0).abs() < 1e-12);
+    let log = solve_log(&r).replace("2 1e-10", "2 1.7366215176-102");
+    assert_eq!(parse::solve_log(&log, &r).unwrap().relative_residual, Some(1.7366215176e-102));
+}
+
+#[test]
 fn full_native_gap_preserves_units_mapping_and_frequencies() {
     let r = request(config::Mode::Aniso, attempt::SolveKind::Nonlinear);
     let data = gap::parse_native(

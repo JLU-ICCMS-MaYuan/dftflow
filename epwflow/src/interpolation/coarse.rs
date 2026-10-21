@@ -41,13 +41,16 @@ pub fn stage_f2(f2: &QeManifest, work: &Path) -> Result<()> {
         let source=work.join("5.epw-wannier");
         let completion:crate::foundation::stages::Completion=store::read(&crate::foundation::stages::receipt(work,crate::foundation::stages::Step::Wannier))?;
         completion.verify()?;
-        // 固定实际前缀；不从目录名猜测科学身份。
-        let ukk=std::fs::read_dir(&source)?.filter_map(|e|e.ok()).map(|e|e.path()).find(|p|p.extension().is_some_and(|e|e=="ukk")).context("data_invalid: Wannier 变换缺失")?;
-        let prefix=ukk.file_stem().context("data_invalid: ukk 无前缀")?.to_string_lossy();
-        for suffix in ["ukk","wout","win"] {
+        let prefix=states.wavefunctions.file_stem().context("data_invalid: NSCF 无前缀")?.to_string_lossy();
+        for suffix in ["ukk","wout","bvec","mmn"] {
             let name=format!("{prefix}.{suffix}");
+            let identity=completion.outputs.iter().find(|id| id.path==source.join(&name))
+                .with_context(|| format!("input_conflict: Wannier 收据未绑定 {name}，须通过公开命令重建第 5 步"))?;
+            identity.verify()?;
             save::nonempty(&source.join(&name))?;
             fs::copy(source.join(&name),dir.join(&name))?;
+            ensure!(store::hash_file(&dir.join(&name))?==identity.sha256,
+                "data_invalid: Wannier 配套文件复制后身份不符：{name}");
         }
         store::write(&dir.join("wannier-source.json"),&completion)?;
     }

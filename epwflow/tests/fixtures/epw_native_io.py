@@ -18,6 +18,11 @@ def window_min():
     assert len(extra)<=1, '外窗下界重复'
     return extra[0] if extra else value('dis_win_min')
 prefix=value('prefix');out=Path(value('outdir'));n=int(value('nbndsub'))
+# EPW readin 在检查 band_plot/elph 之前也会打开所有声明的点文件。
+for name in ['filkf', 'filqf']:
+    match=re.search(r"(?m)^\s*"+name+r"\s*=\s*'([^']*)'",text)
+    if match and match.group(1).strip():
+        assert Path(match.group(1)).is_file(), 'readin: opening file '+match.group(1)
 mode=(ROOT/'epw-failure').read_text().strip() if (ROOT/'epw-failure').exists() else ''
 HA=27.211386245988;RY=13.605693122994
 coarse=value('epwread')=='.false.'
@@ -71,7 +76,7 @@ if coarse or reread:
     kept=list(range(8,17));nk=coarse_nk
     Path(prefix+'.ukk').write_text('9 7\n'+'\n'.join(map(str,kept))+'\n'+'(0,0)\n'*(9*n*nk)+'T\n'*(9*nk)+'T\n'*7+'F\n'*9+'0 0 0\n'*n)
     if mode=='coarse-ukk':Path(prefix+'.ukk').write_text('9 7\n8\n')
-    bands('band.eig',kpoints,[HA*.01*i for i in range(8,13)])
+    bands('band.eig',kpoints,[HA*.01*i+(0.1 if mode=='quality' else 0) for i in range(8,13)])
     bands('phband.freq',qpoints,[100/8.065543937+(20 if mode=='quality' else 0)]*6)
 else:
     assert value('nstemp')=='1' and float(value('temps'))==5., '未显式采用固定温度，EPW 会默认 300 K'

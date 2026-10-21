@@ -71,6 +71,22 @@ fn matdyn_fourth_coordinate_column_is_weight_not_frequency() {
     assert!(native::parse_matdyn(&text.replace("4 5 6", "4 5")).is_err());
 }
 
+#[test]
+fn matdyn_path_ignores_only_unused_weight_and_checks_all_physical_records() {
+    let point = format!("{:10}{:10.6}{:10.6}{:10.6}**********", "", 0.3, 0.519615, 0.0);
+    let text = format!(" &plot nbnd= 3, nks= 2 /\n{point}\n-1 2\n3\n.1 .2 .3 -999\n4 5 6\n");
+    let data = native::parse_matdyn_path(&text).unwrap();
+    assert_eq!(data.points_cartesian, vec![[0.3, 0.519615, 0.], [0.1, 0.2, 0.3]]);
+    assert_eq!(data.values, vec![vec![-1., 2., 3.], vec![4., 5., 6.]]);
+    assert!(native::parse_matdyn(&text).is_err(), "普通加权格式仍严格检查权重");
+    for bad in [text.replace("4 5 6", "4 NaN 6"), text.replace("4 5 6", "4 5"),
+        text.replace("4 5 6", "4 5 6 7"), text.replace(".1 .2 .3 -999", ".1 NaN .3 -999"),
+        text.replace("0.519615", "********"), format!("{text}0 0 0 1\n1 2 3\n"),
+        text.replace("nbnd= 3", &format!("nbnd= {}", usize::MAX))] {
+        assert!(native::parse_matdyn_path(&bad).is_err(), "应拒绝损坏的物理记录: {bad}");
+    }
+}
+
 fn bands(values: Vec<f64>) -> NativeBands {
     NativeBands {
         points_cartesian: vec![[0.; 3]],
@@ -350,6 +366,14 @@ fn diagnostic_points_include_all_fixed_q_without_changing_fermi_window() {
     assert!(q.starts_with("3 crystal\n"));
     let input = epw.epw_coarse_input("./tmp").unwrap();
     assert_eq!(field(&input, "selecqread"), ".true.");
+    let fit = epw.native_input(
+        epwflow::interpolation::epw_config::NativeStage::WannierOnly,
+        "./out", "./save", 0.5,
+    ).unwrap();
+    assert_eq!(field(&fit, "elph"), ".false.");
+    assert_eq!(field(&fit, "band_plot"), ".false.");
+    assert!(!fit.contains("filkf") && !fit.contains("filqf") && !fit.contains("selecqread"),
+        "独立拟合不应声明未交付的插值点文件");
     assert!((field(&input, "fsthick").parse::<f64>().unwrap() - 0.4).abs() < 1e-12);
     fs::remove_dir_all(root).unwrap();
 }
@@ -407,11 +431,11 @@ fn revised_phonon_maximum_keeps_rms_and_stability_gates() {
     let legacy = quality::evaluate(&reference_values, &fit, "QeZero").unwrap();
     assert_eq!(legacy.thresholds["frequency_max_error_cm1"], 50.0);
     fit[0] = 150.01;
-    assert!(quality::evaluate(&reference_values, &fit, "QeZero").is_err());
+    assert_eq!(quality::evaluate(&reference_values, &fit, "QeZero").unwrap().status, "warning");
 }
 
 #[test]
-fn readonly_quality_cli_reports_numeric_failure_and_rejects_changed_sources() {
+fn readonly_quality_cli_warns_on_numeric_failure_and_rejects_changed_sources() {
     use epwflow::{
         foundation::store,
         interpolation::native_quality::{QualitySources, SourceFile},
@@ -474,9 +498,12 @@ fn readonly_quality_cli_reports_numeric_failure_and_rejects_changed_sources() {
             .unwrap()
     };
     let out = run();
-    assert!(!out.status.success());
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("quality_warning:"));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["workflow_status"], "quality_failed");
+    assert_eq!(v["operation_status"], "ok");
+    assert_eq!(v["workflow_status"], "quality_warning");
+    assert_eq!(v["passed"], false);
     assert_eq!(v["electron"]["passed"], true);
     assert_eq!(v["phonon"]["passed"], false);
     assert_eq!(v["workflow_complete"], false);
@@ -489,4 +516,27 @@ fn readonly_quality_cli_reports_numeric_failure_and_rejects_changed_sources() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("指纹"));
     fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn native_velocity_dependencies_validate_grid_overlap_and_finite_records() {
+    use epwflow::{foundation::store, interpolation::restart};
+    let dir = std::env::temp_dir().join(format!("velocity-{}", store::token()));
+    fs::create_dir(&dir).unwrap();
+    let bvec = dir.join("seed.bvec");
+    let mmn = dir.join("seed.mmn");
+    fs::write(&bvec, "native header\n2 1\n1 0 0 1\n1 0 0 1\n").unwrap();
+    fs::write(&mmn, "(0,0)\n".repeat(8)).unwrap();
+    restart::velocity_files(&dir, "seed", 2, 2).unwrap();
+    assert!(restart::velocity_files(&dir, "seed", 3, 2).is_err());
+    assert!(restart::velocity_files(&dir, "seed", 2, 3).is_err());
+    fs::write(&mmn, "(0,0)\n".repeat(7)).unwrap();
+    assert!(restart::velocity_files(&dir, "seed", 2, 2).is_err());
+    fs::write(&mmn, "(0,0)\n".repeat(9)).unwrap();
+    assert!(restart::velocity_files(&dir, "seed", 2, 2).is_err());
+    fs::write(&mmn, "(NaN,0)\n".repeat(8)).unwrap();
+    assert!(restart::velocity_files(&dir, "seed", 2, 2).is_err());
+    fs::write(&mmn, "(0,0)\n".repeat(8)).unwrap();
+    fs::write(&bvec, "native header\n2 1\n1 0 0 1\n").unwrap();
+    assert!(restart::velocity_files(&dir, "seed", 2, 2).is_err());
+    fs::remove_dir_all(dir).unwrap();
 }

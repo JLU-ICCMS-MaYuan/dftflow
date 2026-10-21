@@ -269,7 +269,7 @@ fn native_pipeline_pairs_new_coarse_and_isolates_smearings() {
 
 #[test]
 fn native_pipeline_failure_preserves_evidence_and_blocks_downstream() {
-    for failure in ["quality", "coarse-truncated", "coarse-ukk", "fine-exit", "fine-truncated", "fine-selection"] {
+    for failure in ["coarse-truncated", "coarse-ukk", "fine-exit", "fine-truncated", "fine-selection"] {
         let c = case(failure);
         let err = run(&c).unwrap_err().to_string();
         assert!(
@@ -288,11 +288,6 @@ fn native_pipeline_failure_preserves_evidence_and_blocks_downstream() {
                     .unwrap()
                     .contains("fine failed evidence")
             );
-        }
-        if failure == "quality" {
-            let report: serde_json::Value =
-                store::read(&c.cfg.work_dir.join("quality-report.json")).unwrap();
-            assert_eq!(report["passed"], false);
         }
     }
 }
@@ -514,19 +509,21 @@ fn automatic_comparison_resume_only_retries_failed_native_task_and_rejects_tampe
 }
 
 #[test]
-fn automatic_comparison_quality_failure_only_publishes_diagnostics() {
+fn automatic_comparison_quality_warning_publishes_real_failure_and_allows_fine() {
     let c=case_options("quality",true,true);
     let work=&c.cfg.work_dir;
-    let error=interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).unwrap_err();
-    assert!(format!("{error:#}").contains("质量未通过"),"{error:#}");
-    assert!(!work.join("wannier/manifest.json").exists());
+    let coarse=interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).unwrap();
+    assert_eq!(coarse.quality.unwrap().status, "warning");
+    assert!(work.join("wannier/manifest.json").exists());
     assert!(!work.join("interpolation/manifest.json").exists());
     assert!(!work.join("fine").exists());
     let data=interpolation::comparison_data::load(&work.join("results/comparison")).unwrap();
     assert_eq!(data.manifest.quality_status,"failed");
     assert!(epwflow::delivery::comparison_plot::check_figures(&work.join("results")).unwrap());
-    assert!(interpolation::scheduler::run_fine_registered(&c.cfg,Backend::Local,&[],work).is_err());
-    assert_eq!(calls(&c).lines().count(),2);
+    let fine=interpolation::scheduler::run_fine_registered(&c.cfg,Backend::Local,&[],work).unwrap();
+    assert_eq!(fine.quality.unwrap().status, "warning");
+    assert!(!fine.spectra.is_empty());
+    assert_eq!(calls(&c).lines().count(),4);
 }
 
 #[test]
@@ -552,18 +549,24 @@ fn failed_coarse_requires_explicit_retry_and_archives_evidence() {
 }
 
 #[test]
-fn quality_failure_reuses_native_output_and_still_blocks_fine() {
+fn quality_warning_reuses_native_output_without_rewriting_failed_report() {
     let c = case("quality");
-    assert!(run(&c).is_err());
+    let manifest = run(&c).unwrap();
+    assert_eq!(manifest.quality.unwrap().status, "warning");
     let log = calls(&c);
     let before = store::Identity::capture(&c.cfg.work_dir.join("quality-report.json")).unwrap();
-    // 改变进程故障开关不能诱发重新求解以绕过质量门。
+    let report: serde_json::Value = store::read(&before.path).unwrap();
+    assert_eq!(report["passed"], false);
+    assert_eq!(report["electron"]["passed"], false);
+    assert_eq!(report["phonon"]["passed"], false);
+    // 续算依然消费原来的失败数值，不能重新求解以把报告改成通过。
     fs::write(c.root.join("epw-failure"), "").unwrap();
-    assert!(retry_coarse(&c).is_err());
+    let coarse = retry_coarse(&c).unwrap();
+    assert_eq!(coarse.quality.unwrap().status, "warning");
     before.verify().unwrap();
     assert_eq!(calls(&c), log);
     assert!(!c.cfg.work_dir.join("native-attempts/history").exists());
-    assert!(!c.cfg.work_dir.join("fine").exists());
+    assert!(c.cfg.work_dir.join("interpolation/manifest.json").exists());
 }
 
 #[test]
@@ -727,8 +730,9 @@ fn auto_reference_preflight_and_native_validation_never_bypass_quality() {
             "duplicate-k" => fs::write(c.root.join("fixture-failure"),"duplicate_k").unwrap(),
             _ => {},
         }
-        assert!(interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).is_err(),"{kind}");
-        assert!(!work.join("wannier/manifest.json").exists());
+        let result=interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work);
+        assert_eq!(result.is_ok(), kind == "quality", "{kind}: {result:?}");
+        assert_eq!(work.join("wannier/manifest.json").exists(), kind == "quality");
         assert!(!work.join("fine").exists());
         if kind != "quality" { assert!(!c.root.join("epw-calls").exists()); }
         if kind == "program" || kind == "unknown" {
@@ -738,7 +742,7 @@ fn auto_reference_preflight_and_native_validation_never_bypass_quality() {
             let scientific = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
             let native = calls(&c);
             assert!(!interpolation::quality_binding::check(&c.cfg,work).unwrap().passed);
-            assert!(retry_coarse(&c).is_err());
+            assert_eq!(retry_coarse(&c).unwrap().quality.unwrap().status, "warning");
             assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(),scientific);
             assert_eq!(calls(&c),native);
         }

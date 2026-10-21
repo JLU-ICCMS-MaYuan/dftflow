@@ -73,8 +73,8 @@ pub fn check_results(results: &std::path::Path) -> anyhow::Result<serde_json::Va
         report["comparison_complete"] = summary["comparison_complete"].clone();
         report["quality_status"] = summary["quality_status"].clone();
         report["figures_verified"] = comparison_plot::check_figures(results)?.into();
-        if report["figures_verified"] != true
-            || (report["quality_status"] != "passed" && report["quality_status"] != "valid") {
+        report["quality_warning"] = (report["quality_status"] == "failed").into();
+        if report["figures_verified"] != true || report["quality_status"] == "unverified" {
             report["workflow_complete"] = false.into();
         }
         found = true;

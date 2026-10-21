@@ -112,6 +112,13 @@ impl<'a> EpwConfig<'a> {
 
     /// 核对内嵌 W90 实际窗口，不能用生成过 namelist／wdata 代替原生采用证据。
     pub fn check_native_windows(&self, log: &str) -> Result<()> {
+        if let Some(expected) = self.cfg.wannier.guiding_centres {
+            let pattern = regex::Regex::new(r"Use guiding centre to control phases\s*:\s*([TF])\b")?;
+            let actual = pattern.captures_iter(log).last()
+                .context("data_invalid: 原生 Wannier 日志缺少 guiding_centres 采用证据")?;
+            ensure!((&actual[1] == "T") == expected,
+                "data_invalid: 原生 guiding_centres 与当前配置不一致");
+        }
         if self.cfg.wannier.selection_mode != qf_wannier::SelectionMode::EnergyOnly {
             return Ok(());
         }
@@ -147,6 +154,9 @@ impl<'a> EpwConfig<'a> {
             w.localization.tolerance_angstrom2,
             w.localization.window_iterations
         );
+        if let Some(enabled) = w.guiding_centres {
+            s.push_str(&format!("guiding_centres = {enabled}\n"));
+        }
         s.push_str("begin projections\n");
         for p in &w.projections {
             ensure!(
@@ -215,7 +225,9 @@ impl<'a> EpwConfig<'a> {
         ensure!(dvscf_dir.len() < 100, "configuration: EPW 5.9 dvscf_dir 长度必须小于 100 字节；请相对实际工作目录定位数据，避免 Fortran 静默截断");
         let i = &self.cfg.interpolation;
         let w = &self.cfg.wannier;
-        let mut s = format!("DFTFlow EPW 5.9 workflow input\n&inputepw\n prefix = {}\n outdir = {}\n dvscf_dir = {}\n ep_coupling = .true.\n elph = .true.\n etf_mem = 0\n nbndsub = {}\n iverbosity = 2\n", quoted(&self.cfg.qe.prefix)?, quoted(outdir)?, quoted(dvscf_dir)?, w.num_wann);
+        let wannier_only = matches!(stage, NativeStage::WannierOnly);
+        let elph = if wannier_only { ".false." } else { ".true." };
+        let mut s = format!("DFTFlow EPW 5.9 workflow input\n&inputepw\n prefix = {}\n outdir = {}\n dvscf_dir = {}\n ep_coupling = .true.\n elph = {elph}\n etf_mem = 0\n nbndsub = {}\n iverbosity = 2\n", quoted(&self.cfg.qe.prefix)?, quoted(outdir)?, quoted(dvscf_dir)?, w.num_wann);
         if !self.cfg.atomic_masses.is_empty() {
             let species = self
                 .species
@@ -253,7 +265,13 @@ impl<'a> EpwConfig<'a> {
         }
         match stage {
             NativeStage::WannierOnly | NativeStage::CoarseQuality => {
-                s.push_str(" epwread = .false.\n epwwrite = .true.\n wannierize = .true.\n ephwrite = .false.\n eliashberg = .false.\n band_plot = .true.\n selecqread = .true.\n filkf = 'kpoints.dat'\n filqf = 'qpoints.dat'\n");
+                s.push_str(" epwread = .false.\n epwwrite = .true.\n wannierize = .true.\n ephwrite = .false.\n eliashberg = .false.\n");
+                if wannier_only {
+                    // readin 会无条件打开非空 filkf/filqf；拟合不消费插值点。
+                    s.push_str(" band_plot = .false.\n");
+                } else {
+                    s.push_str(" band_plot = .true.\n selecqread = .true.\n filkf = 'kpoints.dat'\n filqf = 'qpoints.dat'\n");
+                }
                 s.push_str(&format!(" num_iter = {}\n", w.localization.max_iterations));
                 for (j, p) in w.projections.iter().enumerate() {
                     s.push_str(&format!(" proj({}) = {}\n", j + 1, quoted(p)?));
@@ -272,6 +290,9 @@ impl<'a> EpwConfig<'a> {
                     ));
                 }
                 let mut data = Vec::new();
+                if let Some(enabled) = w.guiding_centres {
+                    data.push(format!("guiding_centres = {enabled}"));
+                }
                 for (name, value) in self.windows()? {
                     if w.selection_mode == qf_wannier::SelectionMode::EnergyOnly && name == "dis_win_min" {
                         // 部署的 EPW 5.9 会清空 namelist 下界；由受控 wdata 传给内嵌 W90。
@@ -320,10 +341,6 @@ impl<'a> EpwConfig<'a> {
             }
         }
         s.push_str("/\n");
-        if matches!(stage, NativeStage::WannierOnly) {
-            s=s.replace(" elph = .true."," elph = .false.")
-                .replace(" band_plot = .true."," band_plot = .false.");
-        }
         Ok(s)
     }
 

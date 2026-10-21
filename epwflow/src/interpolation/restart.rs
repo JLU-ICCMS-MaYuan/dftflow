@@ -9,6 +9,35 @@ use std::{
 
 pub const FORMAT: &str = "epw5.9-coarse-le-c16";
 
+/// vmebloch2wan 无条件读取这组原生近邻与重叠矩阵；布局来自 EPW 5.9。
+pub fn velocity_files(dir: &Path, prefix: &str, points: usize, bands: usize) -> Result<()> {
+    let text = fs::read_to_string(dir.join(format!("{prefix}.bvec")))?;
+    let mut rows = text.lines();
+    ensure!(rows.next().is_some(), "data_invalid: bvec 缺头");
+    let dims = rows.next().context("data_invalid: bvec 缺尺寸")?
+        .split_whitespace().map(str::parse::<usize>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    ensure!(dims.len() == 2 && dims[0] == points && dims[1] > 0 && bands > 0,
+        "data_invalid: bvec k 点或近邻数与当前 NSCF 不相容");
+    let count = points.checked_mul(dims[1]).context("data_invalid: bvec 尺寸溢出")?;
+    for _ in 0..count {
+        ensure!(numbers(rows.next().context("data_invalid: bvec 向量截断")?)?.len() == 4,
+            "data_invalid: bvec 向量／权重维度错误");
+    }
+    ensure!(rows.all(|s| s.trim().is_empty()), "data_invalid: bvec 多余记录");
+    let count = count.checked_mul(bands).and_then(|n| n.checked_mul(bands))
+        .context("data_invalid: mmn 尺寸溢出")?;
+    let text = fs::read_to_string(dir.join(format!("{prefix}.mmn")))?;
+    let mut rows = text.lines();
+    for _ in 0..count {
+        let row = rows.next().context("data_invalid: EPW mmn 重叠矩阵截断")?.trim();
+        ensure!(row.starts_with('(') && row.ends_with(')') && numbers(row)?.len() == 2,
+            "data_invalid: EPW mmn 复数布局错误");
+    }
+    ensure!(rows.all(|s| s.trim().is_empty()), "data_invalid: EPW mmn 多余记录");
+    Ok(())
+}
+
 fn numbers(text: &str) -> Result<Vec<f64>> {
     text.replace(['(', ')', ','], " ")
         .split_whitespace()

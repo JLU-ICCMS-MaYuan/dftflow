@@ -12,7 +12,7 @@ DFTFlow 为第一性原理计算准备输入、组织外部求解器和调度任
 | [vaspflow](vaspflow/README.md) | VASP 输入、优化、电子/体积场/COHP 分析 | vaspflow；按需 VASP/VASPKIT/LOBSTER |
 | [wannierflow](wannierflow/README.md) | Wannier 初始化、能窗与结果分析 | 家族命令 wannier90；Wannier90 与 QE 接口 |
 | [scflow](scflow/README.md) | 已有 QE EPC 数据的超导后处理 | scflow；Rust 数值与绘图库 |
-| [epwflow](epwflow/README.md) | 八阶段编号目录、当前配置增量续算、并行预检、原生谱与质量检查 | Rust epwflow；原生两模式执行、续算及结果包已有回归，MgB₂ Tc 与完整链路尚未验收 |
+| [epwflow](epwflow/README.md) | 八阶段编号目录、当前配置增量续算、并行预检、原生谱与数值告警 | Rust epwflow；原生两模式执行、续算及结果包已有回归，MgB₂ Tc 与完整链路尚未验收 |
 | [substitutionflow](substitutionflow/README.md) | 元素替换、阶段组织、批量汇总 | substitution；调用其他 flow |
 | [mattersimflow](mattersimflow/README.md) | 机器学习势预优化 | Python mattersim_opt；MatterSim/ASE |
 | [独立工具](tools/README.md) | 独立 Rust dyn0 算法工具 | qf-gen-dyn0；单独 Cargo 工程 |
@@ -62,4 +62,8 @@ Overview 只维护当前功能事实，不承担 Issue/任务状态管理。CLI 
 
 编号 QE／EPW 工作区的电子参考支持 PW、bands、DOS 各任务校验和失败局部恢复；bands／DOS 各自启用 pencil 分解，重提旧作业脚本会提示公开命令生成新尝试；并行启动及旧数据接入边界见 [EPW 总览](epwflow/README.md#编号工作区的电子后处理续算)。
 
-EPW 运行记录使用可见的 `epw-state/` 和阶段本地 `completion.json`；删除阶段后可重建并使下游失效，旧编号状态显式迁移，预算绑定保留。目录及兼容边界见 [EPW 总览](epwflow/README.md#可见运行状态与阶段删除后的恢复)与 [0025 验收](../specs/0025-epw-visible-run-state/acceptance.md)。本项未切换默认安装或迁移真实现场。
+独立 Wannier 输入及独立 W90／postw90 数据衔接、零退出错误检查、后处理失败保留拟合证据和并发命令锁诊断见 [EPW 总览](epwflow/README.md#编号工作区的电子后处理续算)与 [0023 验收](../specs/0023-epw-wannier-native-start/acceptance.md)。
+
+EPW 运行记录使用可见的 `epw-state/` 和阶段本地 `completion.json`；删除阶段后可重建并使下游失效，旧编号状态显式迁移，预算绑定保留。目录及兼容边界见 [EPW 总览](epwflow/README.md#可见运行状态与阶段删除后的恢复)与 [0025 验收](../specs/0025-epw-visible-run-state/acceptance.md)。0025 当时未切换默认安装或迁移真实现场；0027 后续规范更新 bin/epwflow 并在用户指定子目录实测。
+
+编号声子后处理支持严格重验后的 PH 响应复用，避免 dyn0 自复制截断；阶段归档保留当前 Slurm 日志的持续写入入口。源码、安装及本轮指定 MgB₂ 工作区的真实边界见 [0027 验收](../specs/0027-mgb2-epwflow-example-debug/acceptance.md)。

@@ -26,6 +26,29 @@ struct Request {
     sources: Vec<Identity>,
 }
 
+fn resume_request(cfg: &Config, current: &[Identity], previous: &Request, digest: &str) -> Result<String> {
+    ensure!(previous.schema_version == 1, "data_invalid: 比较请求版本错误");
+    if !crate::foundation::layout::enabled(&cfg.work_dir) {
+        ensure!(previous.digest == digest, "input_conflict: 比较固定请求已变化");
+        for id in &previous.sources { id.verify()?; }
+        return Ok(digest.into());
+    }
+    ensure!(previous.sources.len() == current.len() && current.len() >= 9,
+        "input_conflict: 比较请求来源布局变化");
+    ensure!(previous.digest == crate::foundation::stages::request_digest(
+        cfg, crate::foundation::stages::Step::Coarse, &previous.sources, "comparison")?,
+        "input_conflict: 比较科学参数变化");
+    for (index, (old, new)) in previous.sources.iter().zip(current).enumerate() {
+        if index == 6 { continue; } // 原编排器由旧请求追溯，当前版本由本次冻结提交追溯。
+        // 每次提交会物化新的 KPATH 快照；相同角色允许路径变化，但字节身份必须一致。
+        ensure!(old.sha256 == new.sha256 && old.bytes == new.bytes,
+            "input_conflict: 比较科学来源变化：{}", old.path.display());
+        old.verify()?;
+        new.verify()?;
+    }
+    Ok(previous.digest.clone())
+}
+
 fn file(path: &Path) -> Result<SourceFile> {
     Ok(SourceFile {
         path: path.canonicalize()?,
@@ -216,21 +239,15 @@ pub(crate) fn run(
         identities.push(Identity::capture(&p)?);
     }
     let (identity_cfg, identity_launcher) = crate::foundation::parallelism::request_identity(cfg, launcher)?;
-    let digest = if crate::foundation::layout::enabled(work) {
+    let mut digest = if crate::foundation::layout::enabled(work) {
         crate::foundation::stages::request_digest(cfg,crate::foundation::stages::Step::Coarse,&identities,"comparison")?
     }else{store::hash_bytes(&serde_json::to_vec(&(&identity_cfg, &identity_launcher, &identities))?)};
     let root = crate::foundation::layout::path(&work, "comparison-native");
     let request_path = root.join("request.json");
     if request_path.exists() {
         let previous: Request = store::read(&request_path)?;
-        ensure!(
-            previous.schema_version == 1 && previous.digest == digest,
-            "input_conflict: 比较固定请求已变化"
-        );
-        for id in &previous.sources {
-            id.verify()?;
-        }
         ensure!(retry, "execution_failed: 比较已有现场，请显式 --resume");
+        digest = resume_request(cfg, &identities, &previous, &digest)?;
     } else {
         ensure!(
             fs::symlink_metadata(&root).is_err(),
@@ -386,7 +403,7 @@ pub(crate) fn run(
         },
         || {
             check_points(
-                &native::parse_matdyn(&fs::read_to_string(phonon.join("reference.freq"))?)?,
+                &native::parse_matdyn_path(&fs::read_to_string(phonon.join("reference.freq"))?)?,
                 &all,
                 &geometry,
                 modes,
@@ -443,7 +460,8 @@ pub(crate) fn run(
     )?;
     f2.verify()?;
     let request: Request = store::read(&request_path)?;
-    for id in &request.sources {
+    for (index, id) in request.sources.iter().enumerate() {
+        if index == 6 && crate::foundation::layout::enabled(work) { continue; }
         id.verify()?;
     }
     let mut provenance = vec![file(&request_path)?];

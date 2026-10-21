@@ -117,12 +117,9 @@ fn run_coarse_stages(
         cfg.wannier.num_wann as usize,
     )?;
     let checked_quality = frozen.pair(work)?;
-    // 诊断图仍保留真实失败状态；仅在质量门与图表均完成后发布阶段清单。
+    // 诊断图保留真实数值结论；完整且可校验的数据允许带告警交付。
     super::automatic_comparison::run(cfg, &epw_cfg, backend, launcher, work, f2_work, retry)?;
-    ensure!(
-        checked_quality.passed,
-        "data_invalid: 当前粗网格质量未通过，禁止细网格与超导"
-    );
+    checked_quality.warn_if_failed();
     if cfg.kpath.is_some() && !crate::foundation::layout::enabled(work) {
         coarse_res.artifacts.extend(super::automatic_comparison::artifacts(work)?);
     }
@@ -150,7 +147,7 @@ fn run_coarse_stages(
         rms_error: q.rms_error_cm1,
         coverage: 1.0,
         thresholds: super::quality::thresholds(),
-        status: "valid".into(),
+        status: if checked_quality.passed { "valid" } else { "warning" }.into(),
     });
 
     let coarse_data = coarse::into_coarse_data(&coarse_res);
@@ -178,9 +175,9 @@ fn run_coarse_stages(
         "粗网格角色完整",
     );
     validation.check(
-        "quality_valid",
-        quality_report.as_ref().is_some_and(|q| q.status == "valid"),
-        "必须具有通过检查的独立质量证据，缺失不能跳过",
+        "quality_evidence_valid",
+        quality_report.as_ref().is_some_and(QualityReport::usable),
+        "独立质量来源已严格校验；数值超差保留 warning，不阻断执行",
     );
 
     let mut mode_readiness = BTreeMap::new();
@@ -247,10 +244,7 @@ pub fn run_fine_with_retry(
     let mut fine_data = None;
     let mut other_smearings = vec![];
     for (index, smearing_mev) in cfg.interpolation.phonon_smearings_mev.iter().enumerate() {
-        ensure!(
-            super::quality_binding::check(cfg, work)?.passed,
-            "data_invalid: 粗网格质量来源变化"
-        );
+        super::quality_binding::check_for_execution(cfg, work)?;
         for artifact in &coarse.artifacts {
             let path = work.join(&artifact.relative_path);
             ensure!(
@@ -298,10 +292,7 @@ pub fn run_fine_with_retry(
     if let Some(data) = &mut fine_data {
         data.artifacts.extend(other_smearings);
     }
-    ensure!(
-        super::quality_binding::check(cfg, work)?.passed,
-        "data_invalid: 发布前质量来源改变"
-    );
+    super::quality_binding::check_for_execution(cfg, work)?;
 
 
     identity.verify()?;
@@ -328,9 +319,9 @@ pub fn run_fine_with_retry(
 pub fn verify_coarse(cfg: &config::Config, work: &Path) -> Result<InterpolationManifest> {
     let m = InterpolationManifest::load(&crate::foundation::layout::path(&work, "wannier/manifest.json"))?;
     ensure!(m.validation.all_passed()
-        && m.quality.as_ref().is_some_and(|q| q.status == "valid")
+        && m.quality.as_ref().is_some_and(QualityReport::usable)
         && m.fine.is_none() && m.spectra.is_empty(), "data_invalid: 粗网格阶段清单无效");
-    ensure!(super::quality_binding::check(cfg, work)?.passed, "data_invalid: 粗网格质量失败");
+    super::quality_binding::check_for_execution(cfg, work)?;
     let coarse = m.coarse.as_ref().context("data_invalid: 缺粗网格")?;
     ensure!(!coarse.artifacts.is_empty(), "data_invalid: 粗网格证据为空");
     for artifact in &coarse.artifacts {

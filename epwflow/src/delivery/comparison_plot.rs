@@ -16,6 +16,23 @@ use std::{
 
 const ERROR_PURPLE: RGBColor = RGBColor(138, 43, 226);
 
+/// 只合并屏幕上挤在一起的文字；原始高对称点竖线和曲线坐标保持。
+fn axis_labels<'a>(ticks: impl Iterator<Item = (i32, i32, &'a str)>) -> Vec<(i32, i32, String)> {
+    let mut groups: Vec<(i32, i32, i32, Vec<String>)> = vec![];
+    for (x, y, raw) in ticks {
+        let name = if matches!(raw, "G" | "GAMMA") { "Γ" } else { raw }.to_string();
+        if let Some((start, end, _, names)) = groups.last_mut() {
+            if x - *start <= 24 {
+                *end = x;
+                if !names.contains(&name) { names.push(name); }
+                continue;
+            }
+        }
+        groups.push((x, x, y, vec![name]));
+    }
+    groups.into_iter().map(|(a, b, y, names)| (a + (b - a) / 2, y, names.join(" | "))).collect()
+}
+
 fn coordinate(value: f64) -> String {
     if value.abs() < 1e-7 {
         return "0".into();
@@ -283,10 +300,15 @@ where
                 vec![(tick.distance, ymin), (tick.distance, ymax)],
                 RGBColor(200, 200, 200),
             )))?;
-            // 标签画在底部轴外；使用屏幕坐标避免被绘图区裁掉。
+        }
+        // 标签画在底部轴外；相邻断点文字分组，竖线仍处于各自的原位置。
+        let labels = axis_labels(ticks.iter().map(|tick| {
             let (x, y) = ctx.plotting_area().map_coordinate(&(tick.distance, ymin));
+            (x, y, tick.label.as_str())
+        }));
+        for (x, y, name) in labels {
             area.use_screen_coord().draw(&Text::new(
-                if tick.label == "G" { "Γ" } else { &tick.label },
+                name,
                 (x, y + 12),
                 ("sans-serif", 18)
                     .into_font()

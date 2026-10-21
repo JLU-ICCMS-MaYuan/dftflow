@@ -14,6 +14,29 @@ fn cfg() -> Config {
 }
 
 #[test]
+fn guiding_centres_is_optional_explicit_and_verified_in_the_native_log() {
+    let mut c = cfg();
+    let bands = [vec![-0.0002, 0.0002, 4., 6.]];
+    assert_eq!(c.wannier.guiding_centres, None);
+    assert!(serde_json::to_value(&c.wannier).unwrap().get("guiding_centres").is_none());
+    assert!(!EpwConfig::from_config(&c).unwrap().with_fermi(0.).unwrap().with_bands(&bands).unwrap().wannier90_input().unwrap().contains("guiding_centres"));
+    for enabled in [true, false] {
+        c.wannier.guiding_centres = Some(enabled);
+        let serialized = toml::to_string(&c).unwrap();
+        let roundtrip: Config = toml::from_str(&serialized).unwrap();
+        assert_eq!(roundtrip.wannier.guiding_centres, Some(enabled));
+        let epw = EpwConfig::from_config(&c).unwrap().with_fermi(0.).unwrap().with_bands(&bands).unwrap();
+        let parameter = format!("guiding_centres = {enabled}");
+        assert!(epw.wannier90_input().unwrap().contains(&parameter));
+        assert!(epw.native_input(NativeStage::WannierOnly, "out", "save", 0.5).unwrap().contains(&format!("'{parameter}'")));
+        assert!(!epw.native_input(NativeStage::FineMatrices, "out", "save", 0.5).unwrap().contains("guiding_centres"));
+        assert!(epw.check_native_windows("").is_err());
+        assert!(epw.check_native_windows(&format!("Use guiding centre to control phases : {} |", if enabled {"T"} else {"F"})).is_ok());
+        assert!(epw.check_native_windows(&format!("Use guiding centre to control phases : {} |", if enabled {"F"} else {"T"})).is_err());
+    }
+}
+
+#[test]
 fn comparison_defaults_preserve_legacy_binding_and_invalid_sampling_is_rejected() {
     let mut c: Config = toml::from_str(include_str!("fixtures/input.toml")).unwrap();
     assert!(c.comparison.is_none());

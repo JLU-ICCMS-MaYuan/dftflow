@@ -46,7 +46,7 @@ fn inputs(dir: &Path, result: &mut Vec<Identity>) -> Result<()> {
             !meta.file_type().is_symlink(),
             "input_conflict: 物化输入不得包含链接"
         );
-        if meta.is_file() && crate::foundation::native_jobs::is_log(&path) { continue; }
+        if meta.is_file() && (crate::foundation::native_jobs::is_log(&path) || crate::foundation::workspace::slurm_log(&path)) { continue; }
         if meta.is_dir() {
             inputs(&path, result)?;
         } else {
@@ -59,6 +59,28 @@ fn inputs(dir: &Path, result: &mut Vec<Identity>) -> Result<()> {
 fn verify(ids: &[Identity]) -> Result<()> {
     for id in ids {
         id.verify()?;
+    }
+    Ok(())
+}
+
+fn verify_inputs(ids: &[Identity], dir: &Path) -> Result<()> {
+    let mut prefix = None;
+    if let Some(input) = ids.iter().find(|id| id.path == dir.join("epw_coarse.in")) {
+        input.verify()?;
+        let text = fs::read_to_string(&input.path)?;
+        let out = regex::Regex::new(r"(?m)^\s*outdir\s*=\s*'\./out'\s*$")?;
+        let name = regex::Regex::new(r"(?m)^\s*prefix\s*=\s*'([A-Za-z0-9_-]+)'\s*$")?;
+        if out.is_match(&text) {
+            prefix = name.captures(&text).map(|v| format!("{}.wfc", &v[1]));
+        }
+    }
+    let out = dir.join("out");
+    for id in ids {
+        let scratch = id.path.parent() == Some(out.as_path()) && prefix.as_ref().is_some_and(|prefix| {
+            id.path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_prefix(prefix))
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()) && n.parse::<usize>().is_ok_and(|n| n > 0))
+        });
+        if !scratch && !crate::foundation::workspace::slurm_log(&id.path) { id.verify()?; }
     }
     Ok(())
 }
@@ -85,7 +107,7 @@ fn complete<T>(
     receipt
         .outputs
         .push(Identity::capture(&receipt.directory.join(&receipt.exit_code))?);
-    verify(&receipt.inputs)?;
+    verify_inputs(&receipt.inputs, &receipt.directory)?;
     verify(&receipt.outputs)?;
     receipt.state = State::Complete;
     store::write(target, receipt)
@@ -124,6 +146,7 @@ fn archive(receipt: &mut Receipt, target: &Path, root: &Path, label: &str) -> Re
                 if ["quality-sources","quality-reference.json","quality-binding.json","quality-report.json"].iter().any(|n|entry.file_name()==*n) {continue}
                 fs::rename(entry.path(),destination.join(entry.file_name()))?;
             }
+            crate::foundation::workspace::preserve_active_logs(destination, &receipt.directory)?;
         }else{
             ensure!(!exists(destination),"input_conflict: 原现场与归档同时存在，保留现场");
             fs::rename(&receipt.directory, destination)?;
@@ -210,12 +233,12 @@ pub(super) fn run_with_inputs<T>(
             );
         }
         if previous.state == State::Complete {
-            verify(&previous.inputs)?;
+            verify_inputs(&previous.inputs, &previous.directory)?;
             verify(&previous.outputs)?;
             return checked_collect(dir, exit_code, &collect);
         }
         if previous.state == State::Running {
-            verify(&previous.inputs)?;
+            verify_inputs(&previous.inputs, &previous.directory)?;
             if crate::foundation::native_jobs::enabled() && !crate::foundation::native_jobs::failed(dir)? {
                 // 一个科学检查点可能包含 q2r→matdyn；逐个返回已登记报告，
                 // 在下一个尚未执行的原生调用处暂停，不重新准备或归档现场。
@@ -270,6 +293,37 @@ pub(super) fn run_with_inputs<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn coarse_scratch_is_mutable_but_portable_sources_and_other_files_are_not() {
+        let dir = std::env::temp_dir().join(format!("coarse-scratch-{}", store::token()));
+        fs::create_dir_all(dir.join("out/seed.save")).unwrap();
+        fs::create_dir_all(dir.join("save")).unwrap();
+        let input = dir.join("epw_coarse.in");
+        let raw = dir.join("out/seed.wfc1");
+        let portable = dir.join("out/seed.save/wfc1.dat");
+        let ph = dir.join("save/seed.dvscf_q1");
+        fs::write(&input, "&inputepw\n prefix = 'seed'\n outdir = './out'\n/\n").unwrap();
+        for p in [&raw, &portable, &ph] { fs::write(p, "original science").unwrap(); }
+        let ids = [&input, &raw, &portable, &ph].into_iter().map(|p| Identity::capture(p).unwrap()).collect::<Vec<_>>();
+        fs::write(&raw, "native working copy changed").unwrap();
+        verify_inputs(&ids, &dir).unwrap();
+        fs::write(&portable, "portable corruption").unwrap();
+        assert!(verify_inputs(&ids, &dir).is_err());
+        fs::write(&portable, "original science").unwrap();
+        fs::write(&ph, "response corruption").unwrap();
+        assert!(verify_inputs(&ids, &dir).is_err());
+        fs::write(&ph, "original science").unwrap();
+        for path in [dir.join("out/other.wfc1"), dir.join("seed.wfc1")] {
+            fs::write(&path, "before").unwrap();
+            let extra = Identity::capture(&path).unwrap(); fs::write(&path, "changed").unwrap();
+            let mut added = ids.clone(); added.push(extra);
+            assert!(verify_inputs(&added, &dir).is_err());
+        }
+        fs::write(&input, "outdir = './other'\n prefix = 'seed'\n").unwrap();
+        assert!(verify_inputs(&ids, &dir).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn interrupted_archive_resumes_and_missing_evidence_is_rejected() {

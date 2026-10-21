@@ -34,11 +34,10 @@ pub fn dos(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
             .join(format!("{}.tdos", cfg.qe.prefix)),
         fermi,
     )?;
-    // 当前生产适配只支持非磁标量 QE；dos.x 含两重自旋，postw90 每 Wannier 态计一次。
-    let wan = table(wannier, fermi)?
-        .into_iter()
-        .map(|(e, d)| (e, d * 2.0))
-        .collect::<Vec<_>>();
+    // 非磁标量路径两侧均由原生程序计入两重自旋，不能再次乘二。
+    let wpout = dir.join(format!("{}.wpout", cfg.qe.prefix));
+    let electrons = native_dos_electrons(&fs::read_to_string(&wpout)?)?;
+    let wan = table(wannier, fermi)?;
     let mut csv = String::from("source,energy_minus_fermi_ev,states_per_ev_cell\n");
     for (name, rows) in [("QE", &qe), ("Wannier", &wan)] {
         for (e, d) in rows {
@@ -48,7 +47,7 @@ pub fn dos(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
     fs::write(dir.join("electronic-dos.csv"), csv)?;
     super::store::write(
         &dir.join("electronic-dos-normalization.json"),
-        &serde_json::json!({"qe_spin_degeneracy":2,"postw90_multiplier":2,"electronic_sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev,"raw_native_files_modified":false}),
+        &serde_json::json!({"qe_spin_degeneracy":2,"postw90_num_elec_per_state":electrons,"postw90_multiplier":1,"electronic_sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev,"raw_native_files_modified":false,"postw90_log":super::store::Identity::capture(&wpout)?,"native_dos":super::store::Identity::capture(wannier)?}),
     )?;
     let window = windows(cfg, dir, fermi)?;
     let lo = window[0].0.max(qe[0].0).max(wan[0].0);
@@ -149,15 +148,28 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
         .y_desc("E - E_F (eV)")
         .draw()?;
     for (x, y) in qe {
-        chart.draw_series(LineSeries::new(x.into_iter().zip(y), BLACK.stroke_width(2)))?;
+        for range in path_sections(&x) {
+            chart.draw_series(LineSeries::new(
+                x[range.clone()]
+                    .iter()
+                    .copied()
+                    .zip(y[range].iter().copied()),
+                BLACK.stroke_width(2),
+            ))?;
+        }
     }
     for (x, y) in wan {
-        chart.draw_series(DashedLineSeries::new(
-            x.into_iter().map(|v| v * scale).zip(y),
-            6,
-            4,
-            RED.stroke_width(2),
-        ))?;
+        for range in path_sections(&x) {
+            chart.draw_series(DashedLineSeries::new(
+                x[range.clone()]
+                    .iter()
+                    .map(|v| v * scale)
+                    .zip(y[range].iter().copied()),
+                6,
+                4,
+                RED.stroke_width(2),
+            ))?;
+        }
     }
     for (e, name, color) in window {
         chart
@@ -174,28 +186,107 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
         .background_style(WHITE)
         .draw()?;
     let label = fs::read_to_string(dir.join(format!("{}_band.labelinfo.dat", cfg.qe.prefix)))?;
-    for line in label.lines() {
-        let v: Vec<_> = line.split_whitespace().collect();
-        if v.len() < 3 {
-            continue;
-        }
-        if let Ok(x) = v[2].parse::<f64>() {
-            let name = if matches!(v[0], "G" | "GAMMA") {
-                "Γ"
-            } else {
-                v[0]
-            };
-            let (px, py) = chart.backend_coord(&(x * scale, lo));
-            area.draw(&Text::new(
-                name,
-                (px, py + 12),
-                TextStyle::from(("sans-serif", 18).into_font())
-                    .pos(Pos::new(HPos::Center, VPos::Top)),
-            ))?;
-        }
+    for (x, name) in path_labels(&label)? {
+        let (px, py) = chart.backend_coord(&(x * scale, lo));
+        area.draw(&Text::new(
+            name,
+            (px, py + 12),
+            TextStyle::from(("sans-serif", 18).into_font()).pos(Pos::new(HPos::Center, VPos::Top)),
+        ))?;
     }
     area.present()?;
     Ok(())
+}
+
+fn native_dos_electrons(log: &str) -> Result<u32> {
+    let re = regex::Regex::new(r"Number of electrons per state\s*:\s*(\d+)\b")?;
+    let found = re
+        .captures_iter(log)
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("data_invalid: postw90 缺少每态电子数的原生证据"))?;
+    let value: u32 = found[1].parse()?;
+    ensure!(
+        value == 2,
+        "data_invalid: 当前非磁标量 DOS 要求原生每态电子数为 2，实际 {value}"
+    );
+    Ok(value)
+}
+
+fn path_sections(x: &[f64]) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = vec![];
+    let mut start = 0;
+    for i in 1..x.len() {
+        if (x[i] - x[i - 1]).abs() <= 1e-9 {
+            if i - start > 1 {
+                ranges.push(start..i);
+            }
+            start = i;
+        }
+    }
+    if x.len() - start > 1 {
+        ranges.push(start..x.len());
+    }
+    ranges
+}
+
+fn path_labels(text: &str) -> Result<Vec<(f64, String)>> {
+    let mut groups: Vec<(f64, Vec<String>)> = vec![];
+    for line in text
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
+    {
+        let fields: Vec<_> = line.split_whitespace().collect();
+        ensure!(fields.len() >= 3, "data_invalid: 高对称点标签格式不完整");
+        let x: f64 = fields[2].parse()?;
+        ensure!(x.is_finite(), "data_invalid: 高对称点位置非有限");
+        let name = if matches!(fields[0], "G" | "GAMMA") {
+            "Γ"
+        } else {
+            fields[0]
+        }
+        .to_string();
+        if let Some((last, names)) = groups.last_mut() {
+            ensure!(x + 1e-9 >= *last, "data_invalid: 高对称点位置倒序");
+            if (x - *last).abs() <= 1e-9 {
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+                continue;
+            }
+        }
+        groups.push((x, vec![name]));
+    }
+    Ok(groups
+        .into_iter()
+        .map(|(x, names)| (x, names.join(" | ")))
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn native_dos_spin_evidence_rejects_missing_or_incompatible_values() {
+        assert_eq!(
+            native_dos_electrons("| Number of electrons per state : 2 |").unwrap(),
+            2
+        );
+        assert!(native_dos_electrons("").is_err());
+        assert!(native_dos_electrons("Number of electrons per state : 1").is_err());
+    }
+    #[test]
+    fn disconnected_paths_are_not_joined_and_shared_labels_are_combined() {
+        assert_eq!(
+            path_sections(&[0., 1., 1., 2., 3., 3., 4.]),
+            vec![0..2, 2..5, 5..7]
+        );
+        assert_eq!(
+            path_labels("GAMMA 1 0\nA 2 1\nL 3 1\nL 4 1\nM 5 2\nH 6 2\n").unwrap(),
+            vec![(0., "Γ".into()), (1., "A | L".into()), (2., "M | H".into())]
+        );
+        assert!(path_labels("G 1 NaN").is_err());
+        assert!(path_labels("G 1 2\nM 2 1").is_err());
+    }
 }
 
 fn windows(cfg: &Config, dir: &Path, fermi: f64) -> Result<Vec<(f64, &'static str, RGBColor)>> {

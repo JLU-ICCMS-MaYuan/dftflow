@@ -103,7 +103,7 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
         }
     }
     Ok(store::hash_bytes(&serde_json::to_vec(&(
-        1,
+        3,
         keys,
         programs,
         cfg.comparison.clone().unwrap_or_default(),
@@ -423,7 +423,19 @@ fn refresh_qe_manifest(cfg: &Config) -> Result<()> {
     store::write(&path, &m)
 }
 
-fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
+/// PH 归集已完成而后处理失败时，严格清单本身就是可重验的检查点。
+pub(super) fn partial_phonon(cfg: &Config) -> Result<Option<qe_data::manifest::QeManifest>> {
+    let path = layout::path(&cfg.work_dir, "qe-data/manifest.json");
+    if !path.is_file() { return Ok(None); }
+    let m: qe_data::manifest::QeManifest = store::read(&path)?;
+    if m.run_id != stages::scientific_key(cfg, Step::Phonon)? { return Ok(None); }
+    m.verify()?;
+    ensure!(m.artifact_root.as_ref() == Some(&cfg.work_dir.canonicalize()?),
+        "input_conflict: PH 检查点不属于当前工作区");
+    Ok(Some(m))
+}
+
+fn collect_phonon(cfg: &Config, qe: &QeSettings) -> Result<qe_data::manifest::QeManifest> {
     let root = &cfg.work_dir;
     let cached = layout::path(root, "qe-data/manifest.json");
     let manifest = if super::native_jobs::enabled() && cached.is_file() {
@@ -489,15 +501,23 @@ fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
             responses,
         )?
     };
+    Ok(manifest)
+}
+
+fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
+    let manifest = match partial_phonon(cfg)? {
+        Some(m) => { println!("reuse: PH 响应与 save 清单；继续 q2r/matdyn 后处理"); m }
+        None => collect_phonon(cfg, qe)?,
+    };
     let dir = Step::Phonon.directory(cfg);
     // q2r 消费严格归集的同一组 XML；coords 局部编号已在 save 中规范化。
     fs::create_dir_all(&dir)?;
-    // 手动推进会重新归集 PH；不得把原 dyn0 复制到自身而截断。
-    let dyn0_source = &manifest.qpoints[0].source_dyn0;
-    let dyn0_target = dir.join(format!("{}.dyn0", cfg.qe.prefix));
-    if !dyn0_target.exists() || dyn0_source.canonicalize()? != dyn0_target.canonicalize()? {
-        fs::copy(dyn0_source, &dyn0_target)?;
-    }
+    fs::copy(
+        manifest.artifact_root.as_ref().context("data_invalid: PH 缺根目录")?.join(
+            &manifest.artifacts.iter().find(|a| a.role == "dyn0")
+                .context("data_invalid: PH 缺归集 dyn0")?.relative_path),
+        dir.join(format!("{}.dyn0", cfg.qe.prefix)),
+    )?;
     for r in &manifest.phonon_files {
         fs::copy(
             &r.dyn_file,
@@ -568,6 +588,8 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
     )?;
     epw.check_native_windows(&fs::read_to_string(dir.join(format!("{prefix}.wout")))?)?;
     validate_ukk(&dir.join(format!("{prefix}.ukk")), cfg)?;
+    interpolation::restart::velocity_files(&dir, prefix, s.kpoints.len(),
+        cfg.qe.nscf.nbnd as usize - cfg.wannier.exclude_bands.len())?;
 
     Ok(())
 }
@@ -612,6 +634,72 @@ pub fn validate_ukk(path: &Path, cfg: &Config) -> Result<()> {
         raw.lines().count() > cfg.wannier.num_wann as usize,
         "data_invalid: ukk 数据不完整"
     );
+    Ok(())
+}
+
+/// EPW 库直接传入这些数据，独立 W90 则必须在 win 中读取；保留 NSCF 点序。
+fn standalone_inputs(cfg: &Config, original: &str) -> Result<(String, String)> {
+    let s = states(cfg)?;
+    let xml = s.wavefunctions.join("data-file-schema.xml");
+    let geometry = qe_data::xml::Geometry::read(&xml)?;
+    geometry.validate(&QeSettings::from_config(cfg)?)?;
+    let mut content = original.to_owned();
+    for block in ["unit_cell_cart", "atoms_cart", "atoms_frac", "kpoints"] {
+        content = regex::Regex::new(&format!(
+            r"(?ims)^\s*begin\s+{block}\s*$.*?^\s*end\s+{block}\s*$"
+        ))?.replace_all(&content, "").into_owned();
+    }
+    // 旧生成器误把 W90 内部变量作为输入关键字；恢复自己的旧 win 时清除。
+    content = regex::Regex::new(r"(?m)^\s*dos_smr_index\s*=[^\n]*\n?")?
+        .replace_all(&content, "").into_owned();
+    content = wannier90flow::post::update_win_content(&content, &[
+        ("num_bands".into(), json!(s.nbnd - cfg.wannier.exclude_bands.len())),
+        ("mp_grid".into(), json!(format!("{} {} {}", s.k_grid[0], s.k_grid[1], s.k_grid[2]))),
+    ]);
+    content.push_str("\nbegin unit_cell_cart\nAng\n");
+    for row in geometry.lattice {
+        let [x, y, z] = row.map(|v| v * qe_data::xml::BOHR_ANGSTROM);
+        content.push_str(&format!("{x:.16e} {y:.16e} {z:.16e}\n"));
+    }
+    content.push_str("end unit_cell_cart\n\nbegin atoms_cart\nAng\n");
+    for (name, position) in &geometry.atoms {
+        let [x, y, z] = position.map(|v| v * qe_data::xml::BOHR_ANGSTROM);
+        content.push_str(&format!("{name} {x:.16e} {y:.16e} {z:.16e}\n"));
+    }
+    content.push_str("end atoms_cart\n\nbegin kpoints\n");
+    for point in s.kpoints {
+        let [x, y, z] = geometry.crystal(point);
+        content.push_str(&format!("{x:.16e} {y:.16e} {z:.16e}\n"));
+    }
+    content.push_str("end kpoints\n");
+    // 独立程序读取排除后的紧凑带编号，能量沿用 NSCF 的绝对 eV。
+    let mut eigenvalues = String::new();
+    for (k, energies) in s.eigenvalues.iter().enumerate() {
+        let kept = energies.iter().enumerate()
+            .filter(|(b, _)| !cfg.wannier.exclude_bands.contains(&((*b + 1) as u32)));
+        for (b, (_, energy)) in kept.enumerate() {
+            eigenvalues.push_str(&format!("{} {} {energy:.16e}\n", b + 1, k + 1));
+        }
+    }
+    Ok((content, eigenvalues))
+}
+
+fn check_wannier_post(
+    report: &super::process::ExecutionReport, dir: &Path, prefix: &str, label: &str,
+) -> Result<()> {
+    let stdout = fs::read_to_string(&report.stdout_path)?;
+    let stderr = fs::read_to_string(&report.stderr_path)?;
+    let error_file = dir.join(format!("{prefix}.werr"));
+    let error = if error_file.exists() { fs::read_to_string(error_file)? } else { String::new() };
+    let text = format!("{error}\n{stdout}\n{stderr}");
+    let failed = regex::Regex::new(r"(?im)^\s*(?:error\b|exiting\.+)")?;
+    let detail = if error.trim().is_empty() {
+        text.lines().find(|line| failed.is_match(line)).unwrap_or("").trim()
+    } else {
+        error.trim()
+    };
+    ensure!(report.exit_status == Some(0) && error.is_empty() && detail.is_empty(),
+        "execution_failed: {label} 退出状态 {:?}；{detail}（检查 {prefix}.werr 和原生日志）", report.exit_status);
     Ok(())
 }
 
@@ -662,7 +750,7 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
         }
     }
     path.push_str("end kpoint_path\n");
-    let original = fs::read_to_string(&win)?;
+    let (original, eigenvalues) = standalone_inputs(cfg, &fs::read_to_string(&win)?)?;
     let original =
         regex::Regex::new(r"(?ims)^\s*begin\s+kpoint_path\s*$.*?^\s*end\s+kpoint_path\s*$")?
             .replace_all(&original, "")
@@ -675,9 +763,11 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
         &original,
         &[
             ("write_hr".into(), json!(false)),
+            ("write_bvec".into(), json!(false)),
             ("bands_plot".into(), json!(true)),
             ("bands_num_points".into(), json!(options.points_per_edge)),
             ("dos".into(), json!(true)),
+            ("num_elec_per_state".into(), json!(2)),
             ("dos_kmesh".into(), json!(cfg.qe.nscf.k_grid)),
             ("dos_energy_min".into(), json!(window[0])),
             ("dos_energy_max".into(), json!(window[1])),
@@ -687,7 +777,7 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
                 "dos_smr_fixed_en_width".into(),
                 json!(options.electronic_sigma_ev),
             ),
-            ("dos_smr_index".into(), json!(0)),
+            ("dos_smr_type".into(), json!("gauss")),
             ("fermi_energy".into(), json!(fermi)),
         ],
     );
@@ -696,7 +786,25 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
         &[("restart".into(), json!("plot"))],
     );
     if !super::native_jobs::continuing(dir, "wannier-plot")? {
-        fs::write(&win, updated)?;
+    fs::write(&win, updated)?;
+    fs::write(dir.join(format!("{prefix}.eig")), eigenvalues)?;
+    let previous = [
+        format!("{prefix}.werr"), format!("{prefix}.wpout"),
+        format!("{prefix}_band.dat"), format!("{prefix}_band.labelinfo.dat"),
+        format!("{prefix}_dos.dat"), format!("{prefix}-dos.dat"),
+        "wannier-plot.out".into(), "wannier-plot.err".into(),
+        "postw90.out".into(), "postw90.err".into(),
+    ];
+    if !super::native_jobs::enabled() && previous.iter().any(|name| dir.join(name).exists()) {
+        let history = cfg.work_dir.join("epw-state/history")
+            .join(format!("wannier-post-{}", store::token()));
+        fs::create_dir_all(&history)?;
+        for name in previous {
+            if dir.join(&name).exists() {
+                fs::rename(dir.join(&name), history.join(name))?;
+            }
+        }
+        }
     }
     // postw90 是原生计算；不以高斯拟合或总 DOS 伪装缺失投影。
     let original_wout = fs::read(dir.join(format!("{prefix}.wout")))?;
@@ -709,14 +817,13 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
     let mut argv = vec![wannier.path.to_string_lossy().into_owned()];
     argv.extend(wannier.args);
     argv.push(prefix.clone());
-    let report = super::process::run_report_named(&argv, dir, "wannier-plot")?;
-    fs::copy(report.stdout_path, dir.join("wannier-plot.out"))?;
-    fs::copy(report.stderr_path, dir.join("wannier-plot.err"))?;
-    ensure!(
-        report.exit_status == Some(0),
-        "execution_failed: Wannier90 restart=plot 未成功"
-    );
-    fs::write(dir.join(format!("{prefix}.wout")), original_wout)?;
+    let report = super::process::run_report_named(&argv, dir, "wannier-plot");
+    // 独立程序会重写 wout；失败也必须保留已发布拟合的收据身份。
+    fs::write(dir.join(format!("{prefix}.wout")), &original_wout)?;
+    let report = report?;
+    fs::copy(&report.stdout_path, dir.join("wannier-plot.out"))?;
+    fs::copy(&report.stderr_path, dir.join("wannier-plot.err"))?;
+    check_wannier_post(&report, dir, prefix, "Wannier90 restart=plot")?;
     let program = cfg
         .programs
         .postw90
@@ -727,12 +834,9 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
     argv.extend(program.args);
     argv.push(prefix.clone());
     let report = super::process::run_report_named(&argv, dir, "postw90")?;
-    fs::copy(report.stdout_path, dir.join("postw90.out"))?;
-    fs::copy(report.stderr_path, dir.join("postw90.err"))?;
-    ensure!(
-        report.exit_status == Some(0),
-        "execution_failed: postw90 未成功"
-    );
+    fs::copy(&report.stdout_path, dir.join("postw90.out"))?;
+    fs::copy(&report.stderr_path, dir.join("postw90.err"))?;
+    check_wannier_post(&report, dir, prefix, "postw90")?;
     let band = dir.join(format!("{prefix}_band.dat"));
     let labels = dir.join(format!("{prefix}_band.labelinfo.dat"));
     let dos = PathBuf::from(wannier90flow::post::resolve_dos_output(
@@ -759,6 +863,8 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
                 && !rel.starts_with("out/")
                 && ![
                     format!("{}.ukk", cfg.qe.prefix),
+                    format!("{}.bvec", cfg.qe.prefix),
+                    format!("{}.mmn", cfg.qe.prefix),
                     format!("{}.chk", cfg.qe.prefix),
                     format!("{}.wout", cfg.qe.prefix),
                     format!("{}_hr.dat", cfg.qe.prefix),

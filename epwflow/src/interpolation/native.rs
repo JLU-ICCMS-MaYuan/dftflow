@@ -226,7 +226,7 @@ pub fn parse_matdyn(text: &str) -> Result<NativeBands> {
     parse_plot(text, 4)
 }
 
-fn parse_plot(text: &str, coordinate_columns: usize) -> Result<NativeBands> {
+fn plot_header(text: &str) -> Result<(usize, usize, &str)> {
     let header = regex::Regex::new(r"(?s)^\s*&plot\s+nbnd=\s*(\d+)\s*,\s*nks=\s*(\d+)\s*/")?;
     let cap = header
         .captures(text)
@@ -234,9 +234,41 @@ fn parse_plot(text: &str, coordinate_columns: usize) -> Result<NativeBands> {
     let bands: usize = cap[1].parse()?;
     let points: usize = cap[2].parse()?;
     ensure!(bands > 0 && points > 0, "data_invalid: 原生能带为空");
-    let tokens: Vec<&str> = text[cap.get(0).unwrap().end()..]
-        .split_whitespace()
-        .collect();
+    Ok((bands, points, &text[cap.get(0).unwrap().end()..]))
+}
+
+/// 显式路径的 wq 未初始化（QE 7.4.1）；只读取坐标和频率，不把占位列用作 DOS 权重。
+pub fn parse_matdyn_path(text: &str) -> Result<NativeBands> {
+    let (bands, points, body) = plot_header(text)?;
+    let mut lines = body.lines().filter(|line| !line.trim().is_empty());
+    let mut out = NativeBands { points_cartesian: vec![], values: vec![] };
+    for _ in 0..points {
+        let line = lines.next().context("data_invalid: matdyn 路径坐标截断")?;
+        let coords = if line.is_ascii() && line.len() >= 50
+            && line[..10].trim().is_empty() && line[50..].trim().is_empty() {
+            // matdyn.f90: (10x,4f10.6)。第 4 栏可溢出为 **********，不要求空白分隔。
+            [number(line[10..20].trim())?, number(line[20..30].trim())?, number(line[30..40].trim())?]
+        } else {
+            let row: Vec<_> = line.split_whitespace().collect();
+            ensure!(row.len() == 4, "data_invalid: matdyn 路径坐标布局错误");
+            [number(row[0])?, number(row[1])?, number(row[2])?]
+        };
+        let mut values = Vec::new();
+        while values.len() < bands {
+            let line = lines.next().context("data_invalid: matdyn 路径频率截断")?;
+            values.extend(line.split_whitespace().map(number).collect::<Result<Vec<_>>>()?);
+            ensure!(values.len() <= bands, "data_invalid: matdyn 路径频率多余");
+        }
+        out.points_cartesian.push(coords);
+        out.values.push(values);
+    }
+    ensure!(lines.next().is_none(), "data_invalid: matdyn 路径多余记录");
+    Ok(out)
+}
+
+fn parse_plot(text: &str, coordinate_columns: usize) -> Result<NativeBands> {
+    let (bands, points, body) = plot_header(text)?;
+    let tokens: Vec<&str> = body.split_whitespace().collect();
     ensure!(
         bands.checked_add(coordinate_columns).and_then(|stride| points.checked_mul(stride)) == Some(tokens.len()),
         "data_invalid: 原生能带记录截断或多余"

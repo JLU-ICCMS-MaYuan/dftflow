@@ -41,7 +41,7 @@ fn resume_request(cfg: &Config, launcher: &[String], current: &[Identity], previ
             "input_conflict: 独立参考请求无效");
         let digest=crate::foundation::stages::request_digest(cfg,crate::foundation::stages::Step::Coarse,&previous.sources,"references")?;
         ensure!(digest==previous.digest && serde_json::to_value(&previous.sources[..5])?==serde_json::to_value(&current[..5])?,"input_conflict: 独立参考科学来源变化");
-        for id in &previous.sources{id.verify()?;}
+        for id in &previous.sources[..5]{id.verify()?;}
         return Ok(digest);
     }
     let (cfg, launcher) = crate::foundation::parallelism::request_identity(cfg, launcher)?;
@@ -56,6 +56,45 @@ fn resume_request(cfg: &Config, launcher: &[String], current: &[Identity], previ
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numbered_original_driver_can_be_overwritten_but_scientific_sources_remain_strict() {
+        let root = std::env::temp_dir().join(format!("numbered-reference-upgrade-{}", store::token()));
+        fs::create_dir(&root).unwrap();
+        let mut old = vec![];
+        for i in 0..6 {
+            let path = root.join(i.to_string());
+            fs::write(&path, i.to_string()).unwrap();
+            old.push(Identity::capture(&path).unwrap());
+        }
+        let mut cfg: Config = toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
+        cfg.work_dir = root.join("run"); cfg.layout = Some("numbered".into());
+        cfg.structure = old[0].path.clone(); cfg.pseudos = [("Si".into(), old[1].path.clone())].into();
+        cfg.programs.pw.path = old[2].path.clone(); cfg.programs.ph.path = old[3].path.clone();
+        cfg.programs.epw.path = old[4].path.clone();
+        crate::foundation::layout::initialize(&cfg).unwrap();
+        let digest = crate::foundation::stages::request_digest(
+            &cfg, crate::foundation::stages::Step::Coarse, &old, "references").unwrap();
+        let previous = Request {schema_version: 1, digest: digest.clone(), sources: old.clone()};
+        let dir = crate::foundation::layout::path(&cfg.work_dir, "quality-sources");
+        let request = dir.join("request.json"); store::write(&request, &previous).unwrap();
+        let id = Identity::capture(&request).unwrap();
+        let mut files: Vec<_> = old.iter().chain([&id]).map(|id| SourceFile {
+            path: id.path.clone(), sha256: id.sha256.clone(),
+        }).collect();
+        fs::write(&old[5].path, "upgraded at same path").unwrap();
+        let mut current = old.clone(); current[5] = Identity::capture(&old[5].path).unwrap();
+        assert_eq!(resume_request(&cfg, &[], &current, &previous, true).unwrap(), digest);
+        assert!(resume_request(&cfg, &[], &current, &previous, false).is_err());
+        historical_driver(&cfg, &dir.join("reference.json"), &mut files).unwrap();
+        assert_eq!(files.len(), 6); assert!(!files.iter().any(|f| f.path == old[5].path));
+        let mut invalid: Vec<_> = files.iter().map(|f| SourceFile {path: f.path.clone(), sha256: f.sha256.clone()}).collect();
+        invalid.push(SourceFile {path: old[5].path.clone(), sha256: current[5].sha256.clone()});
+        assert!(historical_driver(&cfg, &dir.join("reference.json"), &mut invalid).is_err());
+        fs::write(&old[0].path, "damaged science").unwrap();
+        assert!(resume_request(&cfg, &[], &current, &previous, true).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn orchestrator_upgrade_requires_explicit_resume_and_unchanged_scientific_identity() {
@@ -84,6 +123,37 @@ mod tests {
         assert!(resume_request(&cfg, &[], &current, &previous, true).is_err());
         fs::remove_dir_all(root).unwrap();
     }
+}
+
+/// 本地编号参考的原编排器仅用于追溯；其余科学来源仍是活动数据依赖。
+pub(super) fn historical_driver(
+    cfg: &Config, path: &Path, provenance: &mut Vec<SourceFile>,
+) -> Result<()> {
+    let root = crate::foundation::layout::path(&cfg.work_dir, "quality-sources");
+    if !crate::foundation::layout::enabled(&cfg.work_dir) || path != root.join("reference.json") {
+        return Ok(());
+    }
+    let request_path = root.join("request.json");
+    let request: Request = store::read(&request_path)?;
+    ensure!(request.schema_version == 1 && request.sources.len() == 6,
+        "data_invalid: 编号参考历史请求无效");
+    let id = Identity::capture(&request_path)?;
+    ensure!(provenance.iter().any(|f| f.path == id.path && f.sha256 == id.sha256),
+        "input_conflict: 独立参考未绑定原始请求");
+    ensure!(request.digest == crate::foundation::stages::request_digest(
+        cfg, crate::foundation::stages::Step::Coarse, &request.sources, "references")?,
+        "input_conflict: 独立参考科学参数变化");
+    for id in &request.sources[..5] {
+        id.verify()?;
+        ensure!(provenance.iter().any(|f| f.path == id.path && f.sha256 == id.sha256),
+            "input_conflict: 独立参考科学来源缺失");
+    }
+    let driver = &request.sources[5];
+    ensure!(provenance.iter().filter(|f| f.path == driver.path).count() == 1
+        && provenance.iter().any(|f| f.path == driver.path && f.sha256 == driver.sha256),
+        "input_conflict: 独立参考历史编排器身份不相容");
+    provenance.retain(|f| f.path != driver.path);
+    Ok(())
 }
 
 fn file(path: &Path) -> Result<SourceFile> {
@@ -158,8 +228,12 @@ pub(super) fn ensure_sources(
     if request_path.exists() {
         let previous: Request = store::read(&request_path)?;
         digest = resume_request(cfg, launcher, &sources, &previous, retry)?;
-        // 原请求保持不变；参考发布同时绑定原编排程序和当前执行程序。
-        sources.push(previous.sources[5].clone());
+        // 编号请求保留原编排器作为历史身份；当前版本由本次冻结提交记录追溯。
+        if crate::foundation::layout::enabled(work) {
+            sources[5] = previous.sources[5].clone();
+        } else {
+            sources.push(previous.sources[5].clone());
+        }
     } else {
         ensure!(
             fs::symlink_metadata(&root).is_err(),
@@ -425,7 +499,8 @@ pub(super) fn ensure_sources(
     }
     f2.verify()?;
     save::verify_snapshot(f2_work)?;
-    for source in &sources {
+    for (index, source) in sources.iter().enumerate() {
+        if index == 5 && crate::foundation::layout::enabled(work) { continue; }
         source.verify()?;
     }
     let phonon = root.join("reference.freq");

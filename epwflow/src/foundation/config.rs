@@ -49,6 +49,8 @@ pub struct Phonon {#[serde(default)] pub mode:PhMode,pub q_grid:[u32;3],pub tr2_
 pub struct Wannier {
     #[serde(default, skip_serializing_if="qf_wannier::SelectionMode::is_legacy")]
     pub selection_mode:qf_wannier::SelectionMode,
+    #[serde(default, skip_serializing_if="Option::is_none")]
+    pub guiding_centres:Option<bool>,
     pub num_wann:u32,pub projections:Vec<String>,pub exclude_bands:Vec<u32>,
     pub energy_reference:EnergyReference,pub outer_window_ev:Option<[f64;2]>,
     pub frozen_window_ev:Option<[f64;2]>,pub frozen_max_ev:Option<f64>,

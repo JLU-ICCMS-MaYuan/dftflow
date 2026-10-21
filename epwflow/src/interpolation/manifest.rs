@@ -56,6 +56,13 @@ pub struct QualityReport {
     pub status: String,
 }
 
+impl QualityReport {
+    /// valid 表示达到理想目标；warning 表示可继续但未达到目标。
+    pub fn usable(&self) -> bool {
+        matches!(self.status.as_str(), "valid" | "warning")
+    }
+}
+
 /// F3 交付清单：f2_digest、wannier_digest、粗/细/谱/质量与模式就绪（FR-012）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

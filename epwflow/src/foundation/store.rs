@@ -5,7 +5,7 @@ use std::{fs::{self,File,OpenOptions},io::{Read,Write},path::{Path,PathBuf},sync
 static SEQUENCE:AtomicU64=AtomicU64::new(0);
 pub fn token()->String {format!("{:x}-{:x}-{:x}",SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos(),std::process::id(),SEQUENCE.fetch_add(1,Ordering::Relaxed))}
 pub fn hash_bytes(bytes:&[u8])->String {format!("{:x}",Sha256::digest(bytes))}
-pub fn hash_file(path:&Path)->Result<String>{let mut f=File::open(path).with_context(||format!("data_invalid: 无法读取 {}",path.display()))?;let mut hash=Sha256::new();let mut buf=[0u8;65536];loop{let n=f.read(&mut buf)?;if n==0{break}hash.update(&buf[..n]);}Ok(format!("{:x}",hash.finalize()))}
+pub fn hash_file(path:&Path)->Result<String>{let mut f=File::open(path).with_context(||format!("data_invalid: 无法读取 {}",path.display()))?;let mut hash=Sha256::new();let mut buf=vec![0u8;1024*1024];loop{let n=f.read(&mut buf)?;if n==0{break}hash.update(&buf[..n]);}Ok(format!("{:x}",hash.finalize()))}
 pub fn read<T:DeserializeOwned>(path:&Path)->Result<T>{serde_json::from_slice(&fs::read(path).with_context(||format!("data_invalid: {} 缺失或不可读",path.display()))?).with_context(||format!("data_invalid: {} 损坏/不支持",path.display()))}
 pub fn atomic_bytes(path:&Path,bytes:&[u8])->Result<()>{
     let parent=path.parent().context("data_invalid: 文件没有父目录")?;fs::create_dir_all(parent)?;
@@ -80,7 +80,9 @@ fn recover_lock_with(target:&Path,job:u64,terminal:impl FnOnce()->Result<()>)->R
     ensure!(!fs::symlink_metadata(&path)?.file_type().is_symlink(),"scheduler_unknown: 锁目录是链接");
     let owner_path=path.join("owner.json");let identity=Identity::capture(&owner_path)?;
     let owner:Owner=read(&owner_path)?;
-    ensure!(owner.job_id==Some(job),"scheduler_unknown: 锁不属于原分配，不能清除未知锁");
+    ensure!(owner.job_id==Some(job),
+        "scheduler_unknown: 工作区锁 {} 的所有者 host={}、pid={}、Slurm job={:?}，与旧作业 {job} 不同；另一条提交或生成命令可能仍在执行，请等待其结束。未核实的锁不能自动删除",
+        path.display(),owner.host,owner.pid,owner.job_id);
     ensure!(fs::read_dir(&path)?.count()==1,"scheduler_unknown: 锁含未知现场");
     terminal()?;identity.verify()?;
     let recovered = Lock {path, token: owner.token};
@@ -142,4 +144,22 @@ pub fn state_root()->Result<PathBuf>{
     if let Ok(local)=std::env::var("EPWFLOW_LOCAL_STATE"){return Ok(PathBuf::from(local));}
     let base=match std::env::var("XDG_STATE_HOME"){Ok(v) if !v.is_empty()=>PathBuf::from(v),_=>{let home=std::env::var("HOME").unwrap_or_else(|_|".".to_string());return Ok(PathBuf::from(home).join("epwflow-state"))}};
     Ok(base.join("epwflow"))
+}
+
+#[cfg(test)]
+mod hash_tests {
+    use super::*;
+    #[test]
+    fn streaming_hash_keeps_full_content_and_non_aligned_tail_identity() {
+        let path = std::env::temp_dir().join(format!("epw-stream-hash-{}", token()));
+        let mut bytes: Vec<u8> = (0..3 * 1024 * 1024 + 17).map(|i| (i % 251) as u8).collect();
+        fs::write(&path, &bytes).unwrap();
+        assert_eq!(hash_file(&path).unwrap(), hash_bytes(&bytes));
+        let id = Identity::capture(&path).unwrap();
+        id.verify().unwrap();
+        *bytes.last_mut().unwrap() ^= 1;
+        fs::write(&path, &bytes).unwrap();
+        assert!(id.verify().is_err(), "最后一个非整块字节变化也必须拒绝");
+        fs::remove_file(path).unwrap();
+    }
 }
