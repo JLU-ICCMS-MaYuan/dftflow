@@ -1,5 +1,7 @@
 # 实施计划：MgB₂ 真实测试与 debug
 
+> **本次执行计划覆盖（2026-10-21）**：用户最新仅要求 PBE 的 20、30、40 K iso/aniso 原生执行完成，取消先做有界诊断、Tc 搜索、双初值和独立物理参考。原完整 Tc 计划保留历史设计语境，不驱动本次作业。执行与验收见 [固定温度点记录](temperature-points-validation.md)；本次不改变生产 Tc 检查器的语义。
+
 **日期**：2026-10-16；**Issue**：[0015](issue-draft.md)；**规格**：[Spec](spec.md)。
 
 > **当前范围更新（2026-10-21）**：本计划早期的 LDA 输入和 LDA 优先路线是历史方案，已由用户撤销。当前仅完成 `examples/MgB2/sugon-amd/run/epwflow/epwinput.toml` 的 PBE 双模式 Tc，执行顺序、现场和验收门见 [当前目录 PBE Tc 计划](current-directory-pbe-tc.md)。下文历史记录保留，不再驱动 LDA 新计算或其他来源组合。

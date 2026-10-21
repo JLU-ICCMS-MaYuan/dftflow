@@ -20,3 +20,9 @@
 - [x] 当前科学材料限定为示例目录 PBE；iso/aniso、原收敛标准和既有预算未被悄悄放宽。[issue-draft.md／spec.md]
 - [x] 当前 PBE 的已知失败不被部分线性区间或单个初值误标为 Tc 完成；T048 指向真实失败现场与可验收结果。[acceptance.md／tasks.md／0015 current-directory-pbe-tc.md]
 - [ ] 当前真实 PBE Tc、独立参考及公开入口验收仍未完成。[T048；见 0015 current-directory-pbe-tc.md]
+
+## 2026-10-21：固定温度点范围核对
+
+- [x] 最新原话已逐字追加，明确当前 PBE 六点执行、取消本次 Tc 搜索与独立参考；依据为本 Spec 最新用户原话及 FR-014。
+- [x] Spec、Plan 与 Tasks 使用相同范围；执行验收与收敛状态分别描述，未改写生产 Tc 的完成语义。
+- [x] 已核验六点实际输入、原生日志与正常退出，并保留三个首轮 aniso 失败记录；证据见[固定温度点验收](../../0015-epwflow-mgb2-real-validation/temperature-points-validation.md)。本次未运行额外诊断或搜索，也未将固定温度点发布为 Tc。

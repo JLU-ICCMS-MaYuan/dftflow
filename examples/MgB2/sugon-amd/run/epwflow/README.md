@@ -2,6 +2,29 @@
 
 当前工作目录是 `/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow`。日常输入只有本目录的 `epwinput.toml`；结构使用上一级 `run/POSCAR`，赝势使用上一级 `run/pp/`，路径使用本目录 `KPATH.in`。TOML 相对路径以 TOML 所在目录为基准，因此结构写 `../POSCAR`。
 
+## 20、30、40 K 的 iso／aniso 单点运行（已完成）
+
+按本次最新要求，复用当前 PBE 细网格分别运行六个固定温度点。六次最终 epw.x 都退出 0、完整结束并收敛，日志无 NaN；本次不搜索或验证 Tc。下文第 8 步的完整 Tc 搜索仍是原有工作流功能，本次固定温度结果单独保存。
+
+| 温度（K） | iso 日志与迭代次数 | aniso 日志与迭代次数 |
+| --- | --- | --- |
+| 20 | [epw.out](8.epw-superconductivity/temperature-points-001/iso/020K/epw.out)，12 | [epw.out](8.epw-superconductivity/temperature-points-002/aniso/020K/epw.out)，126 |
+| 30 | [epw.out](8.epw-superconductivity/temperature-points-001/iso/030K/epw.out)，12 | [epw.out](8.epw-superconductivity/temperature-points-002/aniso/030K/epw.out)，113 |
+| 40 | [epw.out](8.epw-superconductivity/temperature-points-001/iso/040K/epw.out)，13 | [epw.out](8.epw-superconductivity/temperature-points-002/aniso/040K/epw.out)，188 |
+
+iso 保留 Broyden 0.7／8；aniso 最终使用 EPW 原生线性混合 0.3（`broyden_beta=-0.3`）。均为 10 meV 初值、1000 次上限、10⁻⁸，μ*、截断与网格不变。原 `epwinput.toml` 未改；各点实际输入是同目录 `epw.in`。首轮 aniso 的 NaN 现场保留在 `temperature-points-001/aniso/`，最终正常结果在 `temperature-points-002/aniso/`。
+
+查看 20 K aniso 的正常结束：
+
+```bash
+cd "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow/8.epw-superconductivity/temperature-points-002/aniso/020K"
+cat "exit-code.txt"
+rg 'Convergence was reached|Total program execution|EPW +:' "epw.out"
+tail -50 "epw.out"
+```
+
+EPW 5.9 的本次日志以 `Total program execution` 和 `EPW : ... CPU ... WALL` 完整计时结束。作业 1318744／1318779 均 COMPLETED / 0:0，合计 28 节点秒。汇总是 `8.epw-superconductivity/temperature-points-001/final-results.csv` 和 `final-results.json`；详细验收见 [0015](../../../../../docs/specs/0015-epwflow-mgb2-real-validation/temperature-points-validation.md)。本地原生日志为忽略的计算数据，Git 保存说明与验收记录。
+
 ## 新版源码的常规对比（0043）
 
 独立抽样核验已取消：新增运行不生成 quality-sources 或专用报告，不启动参考 NSCF／直接 PH／dynmat；常规路径与 DOS 出图仍保留。四项最大差值、位置、两侧值和配对数量存于 comparison/metrics.json，并在终端与图中展示，没有数值阈值或告警。新配置需删除 `[interpolation.quality]`。已有主科学数据通过 `--import-work` 复用，抽样参考不再导入；旧工作区不自动迁移。

@@ -176,4 +176,8 @@ T001→T002 后按故事和前置任务顺序执行；同一共享文件串行�
 
 用户撤销 LDA 优先路线后，本 Feature 的真实材料目标限定为当前目录 PBE。历史 LDA 数据只保留验收记录，不再要求重算或通过 LDA 质量门。不得把当前 PBE 的部分线性搜索或单初值结果冒充完整 Tc。
 
-- [ ] T048 [US1/US2/US5] 只读诊断当前 PBE 清单中 iso 10 K 与 aniso 80 K 的原生失败，定位数值发散来源；在未确认根因前不重复提交相同输入，不擅改物理参数或收敛门。按确认的实现修复完成公开 CLI 原生重试，验证 iso/aniso 双模式搜索、必需能隙温度、完整 Δ/Z、≤0.5 K 有效区间及同参数独立 PBE 参考；更新 0015 验收与本 Spec。证据入口：[当前目录 PBE Tc 计划](../0015-epwflow-mgb2-real-validation/current-directory-pbe-tc.md)。
+已撤销本次完整 Tc 收敛要求；历史任务记录：T048 [US1/US2/US5] 只读诊断当前 PBE 清单中 iso 10 K 与 aniso 80 K 的原生失败，定位数值发散来源；在未确认根因前不重复提交相同输入，不擅改物理参数或收敛门。按确认的实现修复完成公开 CLI 原生重试，验证 iso/aniso 双模式搜索、必需能隙温度、完整 Δ/Z、≤0.5 K 有效区间及同参数独立 PBE 参考；更新 0015 验收与本 Spec。证据入口：[当前目录 PBE Tc 计划](../0015-epwflow-mgb2-real-validation/current-directory-pbe-tc.md)。
+
+## 2026-10-21：固定温度点执行
+
+- [x] T049 复用当前目录 PBE 细网格，在 20、30、40 K 分别执行 iso/aniso，核对退出码与原生结束计时，逐点记录收敛状态、来源和资源结算，完成运行说明。本次不搜索或验证 Tc；证据见 [固定温度点验收](../0015-epwflow-mgb2-real-validation/temperature-points-validation.md)。

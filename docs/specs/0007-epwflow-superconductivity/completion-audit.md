@@ -63,12 +63,12 @@ F4 `SuperconductivityManifest` 和 F5 `ResultsBundle` 当前主要保存单个�
 
 | 当前批次 | 范围 | 进入下一步条件 |
 | --- | --- | --- |
-| PBE 当前目录 | 0013／0015 的 `epwinput.toml`、已有 F3 产物及真实 iso/aniso 求解 | 原生求解收敛、双模式 Tc 区间和必需能隙温度均按 Spec 验收；独立参考、预算和公开入口证据齐全 |
+| PBE 当前目录 | 20、30、40 K 各运行 iso/aniso，共六点 | 实际 epw.x 退出码、完整结束日志与 Slurm 终态；另列收敛状态，不搜索 Tc 或运行独立参考 |
 | 后续 Epic 能力 | 其他 PH 来源组合与未完成 Feature | 本轮不要求；维持未完成状态，需后续单独排期与预算审查 |
 
 此前的 A～E 批次表和“先 LDA、后扩六组合”均已被 2026-10-21 用户决定替换，不再分配为当前工作或验收门。历史批次不再列为当前执行队列；已发生的 LDA 诊断与实验数值留在各验收记录中，不需重算。
 
-当前唯一活动的科学交付批次为 `examples/MgB2/sugon-amd/run/epwflow/epwinput.toml` 对应的 PBE 双模式 Tc，入口见 [0013 T048](../0013-epwflow-superconductivity-tc/tasks.md) 与 [0015 T033](../0015-epwflow-mgb2-real-validation/tasks.md)。iso/aniso 必须分别满足原有收敛、温度区间、完整 Δ/Z、独立参考和预算标准；本算例通过不关闭仍有其他未完成能力的 Epic。
+当前活动批次仅为指定目录 PBE 的固定温度点执行，关联 0013 T049、0015 T034。此前完整 Tc 收敛任务 T048/T033 已取消，不再是本次验收门。证据见 [固定温度点记录](../0015-epwflow-mgb2-real-validation/temperature-points-validation.md)；本算例执行通过不关闭仍有其他未完成能力的 Epic。
 
 ## 历史 LDA 插值诊断与实验记录
 
@@ -78,7 +78,7 @@ F4 `SuperconductivityManifest` 和 F5 `ResultsBundle` 当前主要保存单个�
 
 用原 QE XML 的 24 个旋转操作离线枚举，3³／6³ 分别复现已有 6／28 个不可约点，9³ 预测为 60 个。按已有 PH 928.49 秒做点数比例估算约 1990 秒；这不是运行保证。原始指纹、坐标、对角化和枚举记录只留 `docs/local/0015-single-source-convergence/`，本轮科学作业为零。
 
-## 两种 Tc 的交付定义
+## 历史完整 Tc 的交付定义（不作为本次温度点验收门）
 
 沿用 0013 已确认设计：
 

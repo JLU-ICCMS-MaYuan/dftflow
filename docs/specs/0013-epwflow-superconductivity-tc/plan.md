@@ -1,5 +1,7 @@
 # 实施计划：两种超导求解与受限 Tc 搜索
 
+> **本次执行计划覆盖（2026-10-21）**：用户最新仅要求 PBE 的 20、30、40 K iso/aniso 原生执行完成，取消先做有界诊断、Tc 搜索、双初值和独立物理参考。原完整 Tc 计划保留历史设计语境，不驱动本次作业。执行与验收见 [固定温度点记录](../0015-epwflow-mgb2-real-validation/temperature-points-validation.md)；本次不改变生产 Tc 检查器的语义。
+
 **Issue**：[本地 0013](issue-draft.md)；**日期**：2026-10-15；**Spec**：[spec.md](spec.md)。
 
 ## 摘要与技术上下文
