@@ -20,6 +20,18 @@ pub fn record(path: &Path) -> Result<AttemptResult> {
     for a in &r.artifacts {
         a.verify()?;
     }
+    if r.request.kind == SolveKind::Gap && matches!(r.status.as_str(), "valid" | "completed") {
+        let dir = path.parent().context("data_invalid: 尝试根目录")?;
+        let (status, evidence, gap) = super::attempt::inspect_gap(&r, dir)?;
+        ensure!(
+            r.gap_status.as_ref() == Some(&status)
+                && serde_json::to_value(&r.evidence)? == serde_json::to_value(evidence)?
+                && serde_json::to_value(&r.gap)? == serde_json::to_value(&gap)?
+                && (r.status == "valid") == gap.is_some(),
+            "data_invalid: 单点状态与原生证据冲突"
+        );
+        return Ok(r);
+    }
     if r.status == "valid" {
         ensure!(r.exit_status == Some(0), "data_invalid: 有效尝试退出失败");
         let root = path.parent().context("data_invalid: 尝试根目录")?;
@@ -198,6 +210,11 @@ pub fn mode(result: &ModeResult, interpolation_digest: &str) -> Result<()> {
 
 /// 统一阶段边界完成门：与固定配置和当前 F3 身份联合验证。
 pub fn complete(work: &Path, cfg: &Config, run_id: &str) -> Result<Vec<Identity>> {
+    if cfg.superconductivity.task == crate::foundation::config::SuperconductivityTask::Gap {
+        let r = super::points::published(work, cfg, run_id)?;
+        ensure!(r.execution_complete, "partial: 指定温度尚未执行完成");
+        return Ok(r.attempts.into_iter().filter_map(|a| a.record).collect());
+    }
     let (m, artifacts) = published(work, cfg, run_id)?;
     ensure!(
         m.converged && m.located && m.validation.all_passed(),
@@ -209,6 +226,9 @@ pub fn complete(work: &Path, cfg: &Config, run_id: &str) -> Result<Vec<Identity>
 /// 重验已发布证据；false 表示合法 partial，可交回原有 Engine 显式恢复。
 /// 损坏、来源或配置冲突仍返回错误，检查不创建缺失的搜索状态。
 pub fn published_complete(work: &Path, cfg: &Config, run_id: &str) -> Result<bool> {
+    if cfg.superconductivity.task == crate::foundation::config::SuperconductivityTask::Gap {
+        return Ok(super::points::published(work, cfg, run_id)?.execution_complete);
+    }
     let (m, _) = published(work, cfg, run_id)?;
     Ok(m.converged)
 }
@@ -229,7 +249,10 @@ fn published(
         "data_invalid: 原生超导完成状态与验证冲突"
     );
     ensure!(
-        store::hash_file(&crate::foundation::layout::path(&work, "interpolation/manifest.json"))? == m.interpolation_digest,
+        store::hash_file(&crate::foundation::layout::path(
+            &work,
+            "interpolation/manifest.json"
+        ))? == m.interpolation_digest,
         "input_conflict: 当前 F3 改变"
     );
     let expected = match cfg.superconductivity.mode {

@@ -42,12 +42,12 @@ pub fn run_with_retry(
     );
     let mut before = || -> Result<()> {
         if !crate::foundation::native_jobs::enabled() {
-        let job = std::env::var("SLURM_JOB_ID")
-            .context("allocation: 缺少当前 Slurm 分配")?
-            .parse::<u64>()?;
-        budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
-            ledger.require_allocation(job, &cfg.resources).map(|_| ())
-        })?;
+            let job = std::env::var("SLURM_JOB_ID")
+                .context("allocation: 缺少当前 Slurm 分配")?
+                .parse::<u64>()?;
+            budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
+                ledger.require_allocation(job, &cfg.resources).map(|_| ())
+            })?;
         }
         ensure!(
             store::hash_file(&path)? == input.interpolation_digest,
@@ -246,4 +246,19 @@ fn export_temperatures(
     store::atomic_bytes(&path, csv.as_bytes())?;
     artifacts.push(store::Identity::capture(&path)?);
     Ok(artifacts)
+}
+
+/// 按 TOML 任务选择指定温度能隙或既有 Tc 搜索。
+pub fn run_configured(
+    cfg: &config::Config,
+    work: &Path,
+    launcher: &[String],
+    backend: Backend,
+    retry: bool,
+) -> Result<()> {
+    if cfg.superconductivity.task == config::SuperconductivityTask::Gap {
+        super::points::run(cfg, work, launcher, backend, retry)
+    } else {
+        run_with_retry(cfg, work, launcher, backend, retry).map(|_| ())
+    }
 }

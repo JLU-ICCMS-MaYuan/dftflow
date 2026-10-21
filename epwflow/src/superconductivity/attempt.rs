@@ -20,6 +20,8 @@ use std::{
 pub enum SolveKind {
     Linear,
     Nonlinear,
+    /// 指定温度的单初值非线性能隙，执行与数值有效性分别记录。
+    Gap,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +67,22 @@ impl Request {
             mode != Mode::Both && (sc.mode == Mode::Both || sc.mode == mode),
             "configuration: 尝试模式与固定配置不符"
         );
+        if sc.task == crate::foundation::config::SuperconductivityTask::Gap {
+            ensure!(
+                kind == SolveKind::Gap
+                    && seed_mev == Some(sc.initial_gap())
+                    && sc
+                        .gap_temperatures_k
+                        .iter()
+                        .any(|t| (*t * 100.0).round() as i64 == temperature),
+                "configuration: 指定温度请求与固定计划不符"
+            );
+            return Ok(r);
+        }
+        ensure!(
+            kind != SolveKind::Gap,
+            "configuration: Tc 任务不能使用单点请求"
+        );
         let tc = match mode {
             Mode::Iso => sc.iso.as_ref(),
             _ => sc.aniso.as_ref(),
@@ -94,7 +112,7 @@ impl Request {
             "configuration: 仅 iso 支持线性求解，线性无非线性初值"
         );
         ensure!(
-            self.kind != SolveKind::Nonlinear
+            self.kind == SolveKind::Linear
                 || self.seed_mev.is_some_and(|s| s.is_finite() && s > 0.0),
             "configuration: 非线性必须固定非零初值"
         );
@@ -110,8 +128,8 @@ impl Request {
                 && self.convergence_relative.is_finite()
                 && self.convergence_relative > 0.0
                 && self.mixing_beta.is_finite()
-                && self.mixing_beta > 0.0
-                && self.mixing_beta <= 1.0
+                && self.mixing_beta.abs() > 0.0
+                && self.mixing_beta.abs() <= 1.0
                 && (1..=8).contains(&self.mixing_history),
             "configuration: 非线性迭代设置无效"
         );
@@ -250,6 +268,8 @@ pub struct AttemptResult {
     pub artifacts: Vec<Identity>,
     pub evidence: Option<SolveEvidence>,
     pub gap: Option<GapData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap_status: Option<GapStatus>,
 }
 
 /// 必须使用新目录。先落盘 running，再启动；已有目录一律不重提，失败现场也保留。
@@ -335,6 +355,7 @@ pub fn run_attempt(
         ],
         evidence: None,
         gap: None,
+        gap_status: None,
     };
     if request.mode == Mode::Aniso {
         record
@@ -366,6 +387,23 @@ fn collect(mut record: AttemptResult, dir: &Path) -> Result<AttemptResult> {
             report.exit_status
         );
         let log = fs::read_to_string(dir.join("epw.out"))?;
+        if request.kind == SolveKind::Gap {
+            crate::interpolation::native::checked_log(&log, 0)?;
+            let (status, evidence, data) = inspect_gap(&record, dir)?;
+            let path = gap_path(&record, dir);
+            if path.is_file() {
+                record.artifacts.push(Identity::capture(&path)?);
+            }
+            record.gap_status = Some(status);
+            record.evidence = evidence;
+            record.gap = data;
+            inputs.verify(request.mode)?;
+            record.executable.verify()?;
+            for a in &record.artifacts {
+                a.verify()?;
+            }
+            return Ok(());
+        }
         let evidence = parse::solve_log(&log, &request)?;
         if request.kind == SolveKind::Nonlinear {
             let filename = format!(
@@ -401,7 +439,14 @@ fn collect(mut record: AttemptResult, dir: &Path) -> Result<AttemptResult> {
         Ok(())
     })();
     match outcome {
-        Ok(()) => record.status = "valid".into(),
+        Ok(()) => {
+            record.status = if request.kind == SolveKind::Gap && record.gap.is_none() {
+                "completed"
+            } else {
+                "valid"
+            }
+            .into()
+        }
         Err(e) if crate::foundation::native_jobs::paused(&e) => return Err(e),
         Err(e) => {
             record.status = "failed".into();
@@ -410,4 +455,89 @@ fn collect(mut record: AttemptResult, dir: &Path) -> Result<AttemptResult> {
     }
     store::write(&dir.join("attempt.json"), &record)?;
     Ok(record)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct GapStatus {
+    pub execution_complete: bool,
+    pub converged: Option<bool>,
+    pub data_status: String,
+    pub reason: Option<String>,
+}
+
+pub fn gap_path(record: &AttemptResult, dir: &Path) -> PathBuf {
+    dir.join(format!(
+        "{}.imag_{}_{:06.2}",
+        record.source.prefix,
+        if record.request.mode == Mode::Iso {
+            "iso"
+        } else {
+            "aniso"
+        },
+        record.request.temperature_centikelvin as f64 / 100.0
+    ))
+}
+
+/// 只读重建正常结束与数值状态；不把退出 0 当成收敛，不伪造缺失能隙。
+pub fn inspect_gap(
+    record: &AttemptResult,
+    dir: &Path,
+) -> Result<(GapStatus, Option<SolveEvidence>, Option<GapData>)> {
+    ensure!(
+        record.request.kind == SolveKind::Gap,
+        "data_invalid: 非指定温度请求"
+    );
+    ensure!(
+        record.exit_status == Some(0),
+        "execution_failed: EPW 未零退出"
+    );
+    let log = fs::read_to_string(dir.join("epw.out"))?;
+    crate::interpolation::native::checked_log(&log, 0)?;
+    let reached = log.contains("Convergence was reached in nsiter =");
+    let not_reached = log.contains("Convergence was not reached");
+    let mut status = GapStatus {
+        execution_complete: true,
+        converged: match (reached, not_reached) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            _ => None,
+        },
+        data_status: "invalid".into(),
+        reason: None,
+    };
+    if status.converged != Some(true) {
+        status.data_status = "not_converged".into();
+        status.reason = Some("未获得明确的原生收敛证据".into());
+        return Ok((status, None, None));
+    }
+    let outcome = (|| -> Result<(SolveEvidence, GapData)> {
+        let evidence = parse::solve_log(&log, &record.request)?;
+        let path = gap_path(record, dir);
+        if !path.is_file() {
+            status.data_status = "missing".into();
+            anyhow::bail!("data_invalid: 缺少原生完整 Δ/Z");
+        }
+        let data = gap::parse_native(
+            &fs::read_to_string(path)?,
+            record.request.temperature_centikelvin,
+            evidence.nfreq,
+            if record.request.mode == Mode::Iso {
+                vec![]
+            } else {
+                record.source.states.clone()
+            },
+        )?;
+        Ok((evidence, data))
+    })();
+    match outcome {
+        Ok((e, g)) => {
+            status.data_status = "valid".into();
+            Ok((status, Some(e), Some(g)))
+        }
+        Err(e) => {
+            status.reason = Some(format!("{e:#}"));
+            Ok((status, None, None))
+        }
+    }
 }

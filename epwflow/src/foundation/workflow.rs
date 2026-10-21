@@ -772,7 +772,7 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
                     )?;
                 }
                 "superconductivity" => {
-                    crate::superconductivity::scheduler::run_with_retry(
+                    crate::superconductivity::scheduler::run_configured(
                         &cfg,
                         &calculation,
                         &cfg.programs.launcher,

@@ -70,13 +70,13 @@ epw_superconductivity -c "epwinput.toml" --stage fine -s
 
 运行完成后，`7.epw-fine/` 保存细网格矩阵元、谱文件及交付清单。
 
-### 第 8 步：iso／aniso 求解及 Tc 搜索
+### 第 8 步：20／30／40 K 的 iso／aniso 能隙
 
 ```bash
 epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
 ```
 
-按当前配置求解 iso／aniso 并搜索 Tc。`8.epw-superconductivity/` 保存逐模式、温度和初值的输入、日志及 Δ／Z；搜索完成后才有有效 Tc 区间与最终结果包。
+按 `task="gap"`、`mode="both"` 和温度列表依次执行六个单点。每个温度使用一个初始能隙，不搜索 Tc。`8.epw-superconductivity/` 的尝试子目录保存该点的 `epw.in`、`submit.sh`、`epw.out`、原生 Δ／Z 文件和 `attempt.json`。六点正常执行结束后，`results/` 保存 `points.csv` 逐点执行／收敛／数据状态、`gap_summary.csv` 能隙统计、`gap_states.csv` 状态明细及三格式图像；未收敛、NaN 或缺失能隙的数据会注明原因，不填零。
 
 ### 查看作业与工作区状态
 
@@ -111,8 +111,10 @@ run/
     ├── 6.epw-coarse/
     ├── 7.epw-fine/
     ├── 8.epw-superconductivity/
-    │   ├── iso/
-    │   └── aniso/
+    │   ├── iso-020.00K-attempt-0001/  # 每个模式和温度独立尝试
+    │   ├── aniso-020.00K-attempt-0004/
+    │   ├── manifest.json              # 六点计划、尝试及完成状态
+    │   └── results/                   # 表格、状态和 figures/
     └── epw-state/                 # 提交、预算绑定和阶段状态
 ```
 
@@ -124,5 +126,5 @@ run/
 - **并行**：当前 NSCF 为 `4×4×2`，共 32 个 k 点；`launcher` 的 `-np 32`、`resources.mpi=32` 和 EPW 的 `-nk 32` 应保持一致。当前 EPW 路径每 pool 一个 MPI，pool 数不能超过可用 k 点数。
 - **网格**：PH 粗 q 网格为 `2×2×1`，细 k／q 网格为 `8×8×4`／`4×4×2`。修改网格会影响相应阶段及下游复用。
 - **Wannier**：`num_wann=5`、`selection_mode="energy_only"`、`guiding_centres=true`；保留初始投影，`B:pz` 在两个 B 原子上分别生成投影。
-- **超导**：当前 `mode="both"`、`mu_star=0.05`、截断 `0.5 eV`、最多 1000 次迭代、相对收敛标准 `1e-8`、Broyden 混合 `0.7`。`gap_temperatures_k=[10,15,20]` 是 Tc 工作流的附加能隙温度，**不会将第 8 步改成只算 20／30／40 K 的单点模式**；当前搜索区间仍为 10～80 K。当前设置尚不能保证第 8 步正常完成。
+- **超导**：`task="gap"` 按 `gap_temperatures_k=[20,30,40]` 算能隙；`mode="both"` 同时计算 iso／aniso，也可选 `iso` 或 `aniso`。`initial_gap_mev=10` 为单初值，`mu_star=0.05`、截断 `0.5 eV`、最多 1000 次迭代、相对收敛标准 `1e-8`。`mixing_beta=-0.3` 使用原生线性混合，正值使用 Broyden，系数绝对值须在 `(0,1]`。温度须为正数、精确到 0.01 K、不重复且不超过 999.99 K；截断须包含首个 Matsubara 频率。省略 `task` 仍走旧 Tc 搜索，需要原 Tc 参数表。
 - **资源**：每次提交受 `resources` 和共享 `[budget]` 账本限制；重算不会清零已有消费。`--check` 通过只代表输入检查通过，不代表八步计算已经完成。

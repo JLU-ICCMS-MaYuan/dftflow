@@ -89,7 +89,7 @@ run/
 
 Slurm 日志属于运行输出；旧原生输入记录中的标准 `slurm-数字.out/err` 项不作为固定科学输入核验。两种阶段归档共用当前日志同 inode 入口维护，见 [0035](../docs/specs/0035-native-retry-slurm-logs/acceptance.md)。EPW 会改写粗网格自己的 `out/prefix.wfcN` 工作副本；只从已冻结且校验通过的原生输入识别前缀与 `./out`，保留初始身份用于追溯，失败后归档并从已校验来源重建。原始 NSCF、portable SAVE、响应及其余输入仍严格核验，见 [0036](../docs/specs/0036-epw-mutable-wavefunction-scratch/acceptance.md)。
 
-第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，生成电子、声子对比及四项常规数据最大差值。第 7 步生成细网格矩阵元、α²F、λ；第 8 步运行原生 iso／aniso 和有界 Tc 搜索。严格元素／轨道投影继续暂缓，图表和差值只展示事实，科学合理性由用户判断。
+第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，生成电子、声子对比及四项常规数据最大差值。第 7 步生成细网格矩阵元、α²F、λ；第 8 步根据 `superconductivity.task` 运行指定温度能隙或既有 Tc 搜索。严格元素／轨道投影继续暂缓，图表和差值只展示事实，科学合理性由用户判断。
 
 ## 声子后处理与作业日志
 
@@ -122,6 +122,21 @@ epw_wannier --stage wannier --resume -s
 每项包括坐标、带／排序模式编号和两侧原值；路径最大值标紫，DOS 图注明最大值的网格坐标。无配对时最大值为 null，终端显示“无可配对数据”。差值没有阈值、RMS、评级或告警，也不影响退出码、发布和下游执行。文件、来源、单位、坐标、有限数、预算、原生执行和求解收敛检查继续有效。
 
 新比较包使用版本 2，四张独立图和总览仍可自包含移动重绘；版本 1 历史包可只读重绘，不补算四项差值。历史工作区、冻结记录和旧报告保持；已有 SCF／NSCF／PH 可通过 `--import-work` 导入新编号工作区，导入不复制抽样参考。默认安装不随源码更新。设计及验证见 [0043](../docs/specs/0043-epw-comparison-max-differences/acceptance.md)，取代 [0040](../docs/specs/0040-interpolation-quality-warnings/spec.md) 的独立核验要求。
+
+指定温度能隙使用以下超导段设置，保留原 TOML 的其他物理和程序参数：
+
+```toml
+[superconductivity]
+task = "gap"
+mode = "both"
+gap_temperatures_k = [20.0, 30.0, 40.0]
+initial_gap_mev = 10.0
+mixing_beta = -0.3
+```
+
+仍执行 `epw_superconductivity -c input.toml --stage superconductivity -s`，作业结束后重复同一命令。每个模式和温度仅运行一次非线性 EPW，不做 Tc 搜索或双初值分类。`mode` 可选 `iso`、`aniso`、`both`；单初值缺省 10 meV。温度列表不得为空、重复或超出 0.01～999.99 K，温度精度为 0.01 K；频率截断须容纳首个 Matsubara 频率。负混合系数为原生线性混合、正值为 Broyden，绝对值须在 `(0,1]`。
+
+指定温度清单为 schema 3，独立记录 `execution_complete` 与 `data_complete`。正常结束但未收敛／能隙无效的点仍继续后续温度，有效点才进入能隙表和图，不补零或插补温度。第 8 步 `results/points.csv` 给出逐点执行、收敛与能隙有效性，`gap_summary.csv`／`gap_states.csv` 和 `figures/` 保存有效数据；不生成 Tc 表和区间图。失败须显式 `--resume`，成功点重验后复用，活动／未知任务拒绝重提。省略 `task` 仍为原 Tc 模式，继续要求双初值和所选模式的 Tc 参数表；旧清单及严格 Tc 验证保留。详见 [0045](../docs/specs/0045-epw-gap-temperatures/spec.md)。
 
 超导数值读取支持标准 E/D 指数和原生三位指数省略 E 的格式（如 1.7366215176-102）；仅接纳带小数点的明确尾数，星号、非有限及溢出仍拒绝。格式兼容不改变原生收敛、频率／状态映射和双初值判据，见 [0042](../docs/specs/0042-epw-fortran-exponent/acceptance.md)。
 

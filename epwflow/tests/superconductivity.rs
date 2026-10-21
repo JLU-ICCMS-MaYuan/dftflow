@@ -1228,3 +1228,39 @@ fn native_explicit_resume_preserves_failed_evidence_and_counts_unknown_attempts(
     assert_eq!(engine.result.attempts.len(), 3);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+
+#[test]
+fn gap_task_config_has_no_tc_or_dual_seed_requirement() {
+    let root = std::env::temp_dir().join(format!("gap-config-{}", store::token()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = make_config(&root);
+    let mut value: toml::Value = std::fs::read_to_string(&path).unwrap().parse().unwrap();
+    let sc = value["superconductivity"].as_table_mut().unwrap();
+    sc.insert("task".into(), "gap".into());
+    sc.insert("mode".into(), "both".into());
+    sc.insert("gap_temperatures_k".into(), toml::Value::Array(vec![20.into(),30.into(),40.into()]));
+    sc.insert("mixing_beta".into(), (-0.3).into());
+    for name in ["iso", "aniso", "initial_gaps_mev"] { sc.remove(name); }
+    std::fs::write(&path,toml::to_string(&value).unwrap()).unwrap();
+    let cfg=config::Config::load(&path).unwrap();
+    assert_eq!(cfg.superconductivity.task,config::SuperconductivityTask::Gap);
+    assert_eq!(cfg.superconductivity.initial_gap(),10.0);
+    for bad in [vec![],vec![0.0],vec![20.001],vec![20.0,20.0],vec![1000.0]] {
+        let mut bad_cfg=cfg.clone();bad_cfg.superconductivity.gap_temperatures_k=bad;
+        assert!(bad_cfg.validate().is_err());
+    }
+    let mut arbitrary=cfg.clone();
+    arbitrary.superconductivity.gap_temperatures_k=vec![12.34,26.5];
+    arbitrary.superconductivity.initial_gap_mev=Some(2.5);
+    arbitrary.validate().unwrap();
+    for beta in [0.0,1.01,-1.01,f64::NAN] {let mut bad=cfg.clone();bad.superconductivity.mixing_beta=beta;assert!(bad.validate().is_err());}
+    for seed in [0.0,-1.0,f64::NAN] {let mut bad=cfg.clone();bad.superconductivity.initial_gap_mev=Some(seed);assert!(bad.validate().is_err());}
+    let old: config::Config = toml::from_str(include_str!("fixtures/input.toml")).unwrap();
+    let serialized=serde_json::to_value(&old.superconductivity).unwrap();
+    assert!(serialized.get("task").is_none());
+    assert!(serialized.get("initial_gap_mev").is_none());
+    let mut bad=cfg;bad.superconductivity.frequency_cutoff_ev=1e-8;
+    assert!(bad.validate().is_err());
+    std::fs::remove_dir_all(root).unwrap();
+}

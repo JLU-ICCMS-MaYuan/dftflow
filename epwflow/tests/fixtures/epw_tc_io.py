@@ -21,7 +21,7 @@ boundary=32 if iso else 36
 with (pathlib.Path(__file__).resolve().parent/'tc-calls.jsonl').open('a') as f:
     f.write(json.dumps({'mode':'iso' if iso else 'aniso','temperature_k':t,'linear':linear,'work':str(pathlib.Path.cwd())})+'\n')
 # 测试自有标志模拟暂态进程失败，不改动冻结的程序与输入身份。
-if iso and (pathlib.Path(__file__).resolve().parent/'tc-failure').exists():
+if iso and ((pathlib.Path(__file__).resolve().parent/'tc-failure').exists() or (t==30 and (pathlib.Path(__file__).resolve().parent/'gap-fail30').exists())):
     print('fixture transient failure', file=sys.stderr)
     sys.exit(17)
 energies=[]
@@ -59,7 +59,9 @@ else:
     print('iter ethr znormi deltai [meV]')
     print(f'1 1e-2 1.5 {d}')
     print(f'2 1e-10 1.5 {d}')
-    print('Convergence was reached in nsiter = 2')
+    fault=(pathlib.Path(__file__).resolve().parent/'gap-fault')
+    fault=fault.read_text().strip() if fault.exists() else ''
+    print('Convergence was not reached' if fault=='unconverged' else 'Convergence was reached in nsiter = 2')
     name=prefix+'.imag_'+('iso' if iso else 'aniso')+f'_{t:06.2f}'
     with open(name,'w') as f:
         f.write('w [eV] znorm(w) delta(w) [eV]\n' if iso else '# w [eV] Enk-Ef [eV] znorm(w) delta(w) [eV]\n')
@@ -67,5 +69,9 @@ else:
             w=(2*n+1)*math.pi*kb*t
             for e in ([None] if iso else energies):
                 f.write(f'{w:.10e} '+('' if e is None else f'{e:.10e} ')+f'1.5 {d/1000:.10e}\n')
+if not linear:
+    if fault=='missing':pathlib.Path(name).unlink()
+    if fault=='nan':pathlib.Path(name).write_text(pathlib.Path(name).read_text().replace('1.5 ', 'NaN '))
+    if fault=='no-ending':sys.exit(0)
 print('Total program execution')
 print('EPW : 0.01s CPU 0.02s WALL')

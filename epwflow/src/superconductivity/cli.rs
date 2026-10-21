@@ -43,6 +43,30 @@ fn check(work: &Path, json: bool) -> Result<()> {
         }
         return Ok(());
     }
+    if crate::foundation::store::read::<serde_json::Value>(&path)?
+        .get("task")
+        .and_then(|v| v.as_str())
+        == Some("gap")
+    {
+        let r = super::points::Run::load(&path)?;
+        if json {
+            status::print_json(&status::envelope(
+                "ok",
+                if r.execution_complete {
+                    "completed"
+                } else {
+                    "partial"
+                },
+                serde_json::to_value(r)?,
+            ));
+        } else {
+            println!(
+                "task: gap\nexecution_complete: {}\ndata_complete: {}",
+                r.execution_complete, r.data_complete
+            );
+        }
+        return Ok(());
+    }
     let m = SuperconductivityManifest::load(&path)
         .with_context(|| format!("data_invalid: 无法加载 {}", path.display()))?;
     if json {
@@ -86,6 +110,19 @@ fn check(work: &Path, json: bool) -> Result<()> {
 }
 
 fn import(source: &Path) -> Result<()> {
+    if crate::foundation::store::read::<serde_json::Value>(source)?
+        .get("task")
+        .and_then(|v| v.as_str())
+        == Some("gap")
+    {
+        let r = super::points::Run::load(source)?;
+        anyhow::ensure!(r.execution_complete, "partial: 指定温度未执行完成");
+        println!(
+            "imported: run={} task=gap execution_complete={} data_complete={}",
+            r.run_id, r.execution_complete, r.data_complete
+        );
+        return Ok(());
+    }
     let m = SuperconductivityManifest::load(source)
         .with_context(|| format!("data_invalid: 无法加载 {}", source.display()))?;
     if !m.validation.all_passed() {

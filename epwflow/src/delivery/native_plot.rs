@@ -27,14 +27,21 @@ pub const GAP_BIN_MEV: f64 = 0.05;
 /// 不连接温度，不平滑能隙，不将带编号命名为未经投影验证的 sigma/pi。
 pub fn gap_distributions(data: &Data) -> Result<BTreeMap<i64, Vec<(f64, f64)>>> {
     use crate::superconductivity::search::Side;
-    let Some(mode) = data.modes.get("aniso") else {
-        return Ok(BTreeMap::new());
-    };
     let eligible = |t: i64| {
-        matches!(
-            mode.search.points.get(&t),
-            Some(Side::Superconducting | Side::Normal)
-        ) && !mode.failed_temperatures_centikelvin.contains(&t)
+        if let Some(run) = &data.gap_run {
+            run.points.iter().any(|p| {
+                p.mode == "aniso"
+                    && p.temperature_centikelvin == t
+                    && p.status.data_status == "valid"
+            })
+        } else {
+            data.modes.get("aniso").is_some_and(|mode| {
+                matches!(
+                    mode.search.points.get(&t),
+                    Some(Side::Superconducting | Side::Normal)
+                ) && !mode.failed_temperatures_centikelvin.contains(&t)
+            })
+        }
     };
     let seed = data
         .states
@@ -91,7 +98,7 @@ where
     let rows = gap_distributions(data)?;
     if rows.is_empty() {
         area.draw(&Text::new(
-            "Anisotropic gap distribution: no classified dual-seed data",
+            "Anisotropic gap distribution: no valid data",
             (20, 45),
             ("sans-serif", 16),
         ))?;
@@ -381,7 +388,7 @@ where
         .draw()?;
     for (n, (name, xs)) in curves.into_iter().enumerate() {
         let color = Palette99::pick(n).to_rgba();
-        if kind == 1 {
+        if kind == 1 && data.gap_run.is_none() {
             chart.draw_series(LineSeries::new(xs.clone(), color.stroke_width(2)))?;
         }
         chart
@@ -426,7 +433,13 @@ where
         &format!(
             "{} | {} | imaginary-axis FSR",
             data.run_id,
-            if data.complete {
+            if data.gap_run.is_some() {
+                if data.complete {
+                    "native execution complete"
+                } else {
+                    "PARTIAL EXECUTION"
+                }
+            } else if data.complete {
                 "selected modes complete"
             } else {
                 "PARTIAL RESULTS"
@@ -435,7 +448,12 @@ where
         ("sans-serif", 20),
     )?;
     if kind == 5 {
-        for (i, a) in area.split_evenly((3, 2)).iter().enumerate().take(5) {
+        let (grid, count) = if data.gap_run.is_some() {
+            ((2, 2), 4)
+        } else {
+            ((3, 2), 5)
+        };
+        for (i, a) in area.split_evenly(grid).iter().enumerate().take(count) {
             panel(a, data, i)?;
         }
     } else {
@@ -509,6 +527,9 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
     fs::create_dir(&stage)?;
     let mut files = vec![];
     for (i, name) in KINDS.iter().enumerate() {
+        if i == 4 && data.gap_run.is_some() {
+            continue;
+        }
         let size = if i == 5 { (1800, 1800) } else { (1300, 900) };
         if formats.iter().any(|f| f == "svg" || f == "pdf") {
             let svg = stage.join(format!("{name}.svg"));
@@ -567,13 +588,17 @@ pub fn check(results: &Path) -> Result<bool> {
     for a in &f.files {
         a.verify(&results.join("figures"))?;
     }
-    Ok(KINDS.iter().all(|name| {
-        ["png", "svg", "pdf"].iter().all(|ext| {
-            f.files
-                .iter()
-                .filter(|a| a.relative_path == PathBuf::from(format!("{name}.{ext}")))
-                .count()
-                == 1
-        })
-    }))
+    let (_, data) = native::load(results)?;
+    Ok(KINDS
+        .iter()
+        .filter(|name| data.gap_run.is_none() || **name != "tc_interval")
+        .all(|name| {
+            ["png", "svg", "pdf"].iter().all(|ext| {
+                f.files
+                    .iter()
+                    .filter(|a| a.relative_path == PathBuf::from(format!("{name}.{ext}")))
+                    .count()
+                    == 1
+            })
+        }))
 }

@@ -1476,3 +1476,41 @@ fn numbered_native_retry_preserves_open_logs_and_ignores_legacy_log_inputs_only(
 
 #[path = "support/direct_submit.rs"]
 mod direct_submit;
+
+#[test]
+fn gap_points_report_invalid_data_and_resume_failed_point_without_repeating_success() {
+    for (mode,fault,status) in [(config::Mode::Iso,"unconverged","not_converged"),(config::Mode::Aniso,"nan","invalid"),(config::Mode::Iso,"missing","missing")] {
+        let c=Case::numbered();
+        c.numbered_change(|cfg|{let s=&mut cfg.superconductivity;s.task=config::SuperconductivityTask::Gap;s.mode=mode;s.gap_temperatures_k=vec![20.,30.,40.];s.mixing_beta=-0.3;s.iso=None;s.aniso=None;});
+        c.put("gap-fault",fault);c.accounting(Some(201));
+        success(c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(201),"gap-invalid-data"));
+        let root=c.root.join("run/8.epw-superconductivity");
+        let r=epwflow::superconductivity::points::Run::load(&root.join("manifest.json")).unwrap();
+        assert!(r.execution_complete);assert!(!r.data_complete);assert_eq!(r.attempts.len(),3);
+        for a in r.attempts{let record=epwflow::superconductivity::verify::record(&a.record.unwrap().path).unwrap();assert!(record.gap.is_none());assert_eq!(record.gap_status.unwrap().data_status,status);}
+        let (_,data)=epwflow::delivery::native::load(&root.join("results")).unwrap();assert!(data.gaps.is_empty()&&data.states.is_empty());
+        assert_eq!(c.calls().2.lines().count(),3);
+    }
+    let c=Case::numbered();c.numbered_change(|cfg|{let s=&mut cfg.superconductivity;s.task=config::SuperconductivityTask::Gap;s.mode=config::Mode::Iso;s.gap_temperatures_k=vec![20.,30.,40.];s.iso=None;s.aniso=None;});
+    c.accounting(Some(201));c.put("gap-fault","no-ending");
+    assert!(!c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(201),"gap-no-ending").status.success());
+    fs::remove_file(c.root.join("gap-fault")).unwrap();c.accounting(Some(202));
+    success(c.numbered_cli(2,&["--stage","superconductivity","--resume","-r"],Some(202),"gap-failed-resume"));
+    let r=epwflow::superconductivity::points::Run::load(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();
+    assert!(r.execution_complete&&r.data_complete);assert_eq!(r.attempts.len(),4);assert_eq!(r.attempts[0].status,"failed");
+    assert_eq!(c.calls().2.lines().count(),4);
+}
+
+#[test]
+fn gap_resume_keeps_successful_temperature_and_preserves_failed_attempt() {
+    let c=Case::numbered();c.numbered_change(|cfg|{let s=&mut cfg.superconductivity;s.task=config::SuperconductivityTask::Gap;s.mode=config::Mode::Iso;s.gap_temperatures_k=vec![20.,30.,40.];s.iso=None;s.aniso=None;});
+    c.put("gap-fail30","failure");c.accounting(Some(201));
+    assert!(!c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(201),"gap-fail30").status.success());
+    let path=c.root.join("run/8.epw-superconductivity/manifest.json");
+    let first=epwflow::superconductivity::points::Run::load(&path).unwrap();assert_eq!(first.attempts.len(),2);assert_eq!(first.attempts[0].status,"valid");assert_eq!(first.attempts[1].status,"failed");
+    let id=first.attempts[0].record.clone().unwrap();
+    fs::remove_file(c.root.join("gap-fail30")).unwrap();c.accounting(Some(202));
+    success(c.numbered_cli(2,&["--stage","superconductivity","--resume","-r"],Some(202),"gap-resume30"));
+    let last=epwflow::superconductivity::points::Run::load(&path).unwrap();assert_eq!(last.attempts.len(),4);assert!(last.execution_complete&&last.data_complete);id.verify().unwrap();assert_eq!(last.attempts[0].record.as_ref().unwrap().sha256,id.sha256);
+    let calls:Vec<Value>=c.calls().2.lines().map(|l|serde_json::from_str(l).unwrap()).collect();assert_eq!(calls.iter().map(|v|v["temperature_k"].as_f64().unwrap()).collect::<Vec<_>>(),[20.,30.,30.,40.]);
+}

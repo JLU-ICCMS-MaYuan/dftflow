@@ -13,6 +13,10 @@ macro_rules! enumeration {($name:ident {$($v:ident),*})=>{
 enumeration!(PhMode{Nosplit,Index,Coords});
 impl Default for PhMode{fn default()->Self{Self::Index}}
 enumeration!(Mode{Iso,Aniso,Both});
+enumeration!(SuperconductivityTask{Tc,Gap});
+impl Default for SuperconductivityTask {fn default()->Self{Self::Tc}}
+impl SuperconductivityTask {pub fn is_tc(&self)->bool{*self==Self::Tc}}
+
 enumeration!(Occupations{Fixed,Smearing});
 enumeration!(Smearing{Gaussian,Mp,Mv,Fd});
 enumeration!(EnergyReference{QeZero,F2Fermi});
@@ -60,7 +64,19 @@ data!(Convergence{max_iterations:u32,tolerance_angstrom2:f64,window_iterations:u
 data!(Comparison{points_per_edge:u32,electronic_sigma_ev:f64,phonon_sigma_cm1:f64});
 impl Default for Comparison {fn default()->Self{Self{points_per_edge:20,electronic_sigma_ev:0.1,phonon_sigma_cm1:10.0}}}
 data!(Interpolation{k_grid:[u32;3],q_grid:[u32;3],electron_smearing:Smearing,degaussw_ev:f64,phonon_smearings_mev:Vec<f64>,spectral_points:u32,fsthick_ev:f64,eps_acoustic_cm1:f64,fermi_source:FermiSource});
-data!(Superconductivity{mode:Mode,mu_star:f64,frequency_cutoff_ev:f64,max_iterations:u32,convergence_relative:f64,mixing_beta:f64,mixing_history:u32,initial_gaps_mev:[f64;2],initial_shape:f64,gap_temperatures_k:Vec<f64>,spectrum_index:u32,iso:Option<Tc>,aniso:Option<Tc>});
+#[derive(Debug,Clone,Serialize,Deserialize)] #[serde(deny_unknown_fields)]
+pub struct Superconductivity {
+    #[serde(default,skip_serializing_if="SuperconductivityTask::is_tc")]
+    pub task:SuperconductivityTask,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub initial_gap_mev:Option<f64>,
+    pub mode:Mode,pub mu_star:f64,pub frequency_cutoff_ev:f64,pub max_iterations:u32,
+    pub convergence_relative:f64,pub mixing_beta:f64,pub mixing_history:u32,
+    #[serde(default)] pub initial_gaps_mev:[f64;2],
+    pub initial_shape:f64,pub gap_temperatures_k:Vec<f64>,pub spectrum_index:u32,
+    pub iso:Option<Tc>,pub aniso:Option<Tc>,
+}
+impl Superconductivity {pub fn initial_gap(&self)->f64{self.initial_gap_mev.unwrap_or(10.0)}}
 data!(Tc{min_k:f64,max_k:f64,precision_k:f64,max_solves:u32,eigen_margin:f64,normal_gap_mev:f64,super_gap_mev:f64});
 
 pub fn positive(x:f64,field:&str)->Result<()> {ensure!(x.is_finite()&&x>0.0,"configuration: {field}: 必须是有限正数");Ok(())}
@@ -162,16 +178,25 @@ impl Config {
         for (j,x) in i.phonon_smearings_mev.iter().enumerate(){positive(*x,"interpolation.phonon_smearings_mev")?;ensure!(!i.phonon_smearings_mev[..j].contains(x),"configuration: interpolation.phonon_smearings_mev: 重复");}
         let s=&self.superconductivity;
         finite_nonnegative(s.mu_star,"superconductivity.mu_star")?;
-        for (n,x) in [("frequency_cutoff_ev",s.frequency_cutoff_ev),("convergence_relative",s.convergence_relative),("mixing_beta",s.mixing_beta),("initial_shape",s.initial_shape)]{positive(x,&format!("superconductivity.{n}"))?;}
-        ensure!(s.mixing_beta<=1.0&&s.max_iterations>0&&(1..=8).contains(&s.mixing_history),"configuration: superconductivity: 迭代/混合参数越界（目标 EPW Broyden 历史长度须为 1..8）");
+        for (n,x) in [("frequency_cutoff_ev",s.frequency_cutoff_ev),("convergence_relative",s.convergence_relative),("initial_shape",s.initial_shape)]{positive(x,&format!("superconductivity.{n}"))?;}
+        ensure!(s.mixing_beta.is_finite()&&s.mixing_beta.abs()>0.0&&s.mixing_beta.abs()<=1.0&&s.max_iterations>0&&(1..=8).contains(&s.mixing_history),"configuration: superconductivity: 迭代/混合参数越界（目标 EPW Broyden 历史长度须为 1..8）");
         ensure!((s.spectrum_index as usize)<i.phonon_smearings_mev.len(),"configuration: superconductivity.spectrum_index: 谱不存在");
+        if s.task==SuperconductivityTask::Tc {
         for x in s.initial_gaps_mev {positive(x,"superconductivity.initial_gaps_mev")?;}
         ensure!(s.initial_gaps_mev[0]!=s.initial_gaps_mev[1],"configuration: superconductivity.initial_gaps_mev: 需要不同初值");
+        } else {positive(s.initial_gap(),"superconductivity.initial_gap_mev")?;}
         ensure!(!s.gap_temperatures_k.is_empty(),"configuration: superconductivity.gap_temperatures_k: 为空");
         let mut seen=BTreeSet::new();for t in &s.gap_temperatures_k {ensure!(seen.insert(temperature(*t,"superconductivity.gap_temperatures_k")?),"configuration: superconductivity.gap_temperatures_k: 重复温度");}
         for (name,tc,required) in [("iso",&s.iso,s.mode!=Mode::Aniso),("aniso",&s.aniso,s.mode!=Mode::Iso)]{
-            if required && tc.is_none(){bail!("configuration: superconductivity.{name}: 缺失");}
-            if let Some(t)=tc {t.validate(&format!("superconductivity.{name}"))?;if required {ensure!(s.gap_temperatures_k.iter().all(|x|*x>=t.min_k&&*x<=t.max_k),"configuration: superconductivity.{name}: 能隙温度超出范围");}}
+            if s.task==SuperconductivityTask::Tc && required && tc.is_none(){bail!("configuration: superconductivity.{name}: 缺失");}
+            if s.task==SuperconductivityTask::Tc {if let Some(t)=tc {t.validate(&format!("superconductivity.{name}"))?;if required {ensure!(s.gap_temperatures_k.iter().all(|x|*x>=t.min_k&&*x<=t.max_k),"configuration: superconductivity.{name}: 能隙温度超出范围");}}}
+        }
+        if s.task==SuperconductivityTask::Gap {
+            for &t in &s.gap_temperatures_k {
+                let temperature=temperature(t,"superconductivity.gap_temperatures_k")?;
+                let mode=if s.mode==Mode::Aniso {Mode::Aniso}else{Mode::Iso};
+                crate::superconductivity::attempt::Request::from_config(self,mode,crate::superconductivity::attempt::SolveKind::Gap,temperature,Some(s.initial_gap()))?;
+            }
         }
         Ok(())
     }

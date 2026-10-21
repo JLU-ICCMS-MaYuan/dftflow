@@ -32,6 +32,7 @@ fn fixture() -> Data {
         failed_temperatures_centikelvin: vec![],
     };
     let mut data = Data {
+        gap_run: None,
         schema_version: 1,
         run_id: "synthetic-plot-contract".into(),
         complete: false,

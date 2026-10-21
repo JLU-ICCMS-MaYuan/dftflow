@@ -79,7 +79,9 @@ if coarse or reread:
     if reread:bands('band.eig',kpoints,[HA*.01*i+(0.1 if mode=='large-difference' else 0) for i in range(8,13)])
     if reread:bands('phband.freq',qpoints,[100/8.065543937+(20 if mode=='large-difference' else 0)]*6)
 else:
-    assert value('nstemp')=='1' and float(value('temps'))==5., '未显式采用固定温度，EPW 会默认 300 K'
+    config=ROOT/'input.toml'
+    expected_temperature=float(re.search(r'(?m)^gap_temperatures_k\s*=\s*\[\s*([-+0-9.eE]+)',config.read_text()).group(1)) if config.is_file() else 5.
+    assert value('nstemp')=='1' and float(value('temps'))==expected_temperature, '未显式采用配置的首个温度，EPW 会默认 300 K'
     assert Path(prefix+'.ukk').is_file(), 'epwread 仍须 loadbm 读取原 ukk'
     assert Path('epwdata.fmt').exists() and (out/(prefix+'.epmatwp')).stat().st_size==16*n*n*6
     assert not Path('save').exists(), '细网格应重读粗网格，无需复制响应势'

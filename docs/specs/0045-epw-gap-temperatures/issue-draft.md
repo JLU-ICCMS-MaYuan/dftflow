@@ -26,7 +26,7 @@
 
 归属本地 [0007 Epic](../0007-epwflow-superconductivity/issue-draft.md)；复用 [0013](../0013-epwflow-superconductivity-tc/spec.md) 的原生求解及 [0026](../0026-epw-direct-native-submit/spec.md) 的原生提交；[0015](../0015-epwflow-mgb2-real-validation/temperature-points-validation.md) 是历史单点证据。本项依赖现有有效细网格交付，不要求完成 Tc 搜索。线上父子关系待用户发布。
 
-不引入第四个 EPW CLI，不保证 Tc 数值或独立科学精度，不做参数／网格扫描，不恢复 LDA 要求，不推送或改写历史证据。已有计算数据仅在先前约定的清理前提满足后处理，本轮草案不删除数据。
+不引入第四个 EPW CLI，不保证 Tc 数值或独立科学精度，不做参数／网格扫描，不恢复 LDA 要求，不推送或改写历史证据。已有计算数据仅在从干净输入验证全流程成功后，按用户授权清理。
 
 ## Documentation Impact
 
@@ -38,4 +38,7 @@
 
 ## 审查状态
 
-本地可审阅草案。尚未取得该版最终草案确认，未写产品实现、改安装或执行新的科学作业。详细需求见 [Spec](spec.md)。
+用户已确认本版并授权实施，源代码进入验证；安装和真实执行状态见 [验收记录](acceptance.md)。详细需求见 [Spec](spec.md)。
+
+
+用户已答复“认可。开始”，确认已展示的本版 Issue／Spec 并授权实施；线上仍由用户管理。

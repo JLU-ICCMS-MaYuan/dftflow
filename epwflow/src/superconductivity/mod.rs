@@ -8,6 +8,7 @@ pub mod gap;
 pub mod iso;
 pub mod manifest;
 pub mod parse;
+pub mod points;
 pub mod reuse;
 pub mod scheduler;
 pub mod search;

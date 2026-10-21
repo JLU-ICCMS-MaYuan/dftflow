@@ -79,7 +79,27 @@ pub struct GapState {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct GapPoint {
+    pub mode: String,
+    pub temperature_centikelvin: i64,
+    pub initial_gap_mev: f64,
+    pub execution_status: String,
+    pub attempt_directory: Option<PathBuf>,
+    pub status: superconductivity::attempt::GapStatus,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GapReport {
+    pub task: String,
+    pub execution_complete: bool,
+    pub data_complete: bool,
+    pub points: Vec<GapPoint>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Data {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap_run: Option<GapReport>,
     pub schema_version: u32,
     pub run_id: String,
     pub complete: bool,
@@ -106,13 +126,18 @@ pub fn load(root: &Path) -> Result<(Manifest, Data)> {
         m.schema_version == 1 && m.kind == "epwflow-native-results",
         "unsupported_version: 原生结果包格式"
     );
+    let d: Data = store::read(&root.join("summary.json"))?;
     let expected = [
         "summary.json",
         "a2f.csv",
         "coupling.csv",
         "gap_summary.csv",
         "gap_states.csv",
-        "tc.csv",
+        if d.gap_run.is_some() {
+            "points.csv"
+        } else {
+            "tc.csv"
+        },
         "report.md",
     ];
     ensure!(
@@ -128,24 +153,58 @@ pub fn load(root: &Path) -> Result<(Manifest, Data)> {
     for a in &m.files {
         a.verify(root)?;
     }
-    let d: Data = store::read(&root.join("summary.json"))?;
     ensure!(
         d.schema_version == 1
             && d.run_id == m.run_id
             && d.complete == m.complete
-            && !d.modes.is_empty(),
+            && (!d.modes.is_empty() || d.gap_run.is_some()),
         "data_invalid: 结果身份冲突"
     );
     ensure!(
-        d.complete == d.modes.values().all(|r| r.complete),
+        d.complete
+            == d.gap_run
+                .as_ref()
+                .map(|r| r.execution_complete)
+                .unwrap_or_else(|| d.modes.values().all(|r| r.complete)),
         "data_invalid: 结果整体状态冲突"
     );
+    if let Some(r) = &d.gap_run {
+        ensure!(
+            r.task == "gap"
+                && d.modes.is_empty()
+                && !r.points.is_empty()
+                && r.execution_complete == r.points.iter().all(|p| p.status.execution_complete)
+                && r.data_complete == r.points.iter().all(|p| p.status.data_status == "valid"),
+            "data_invalid: 单点结果状态冲突"
+        );
+        for (i, p) in r.points.iter().enumerate() {
+            ensure!(
+                matches!(p.mode.as_str(), "iso" | "aniso")
+                    && p.temperature_centikelvin > 0
+                    && !r.points[..i].iter().any(|q| q.mode == p.mode
+                        && q.temperature_centikelvin == p.temperature_centikelvin),
+                "data_invalid: 单点结果计划无效"
+            );
+        }
+    }
+    let contains_point = |mode: &str, t: i64| {
+        d.gap_run
+            .as_ref()
+            .map(|r| {
+                r.points.iter().any(|p| {
+                    p.mode == mode
+                        && p.temperature_centikelvin == t
+                        && p.status.data_status == "valid"
+                })
+            })
+            .unwrap_or_else(|| d.modes.contains_key(mode))
+    };
     for s in &d.spectra {
         validate_spectrum(s)?;
     }
     for g in &d.gaps {
         ensure!(
-            d.modes.contains_key(&g.mode)
+            contains_point(&g.mode, g.temperature_centikelvin)
                 && g.temperature_centikelvin > 0
                 && g.seed_mev > 0.0
                 && [
@@ -164,7 +223,7 @@ pub fn load(root: &Path) -> Result<(Manifest, Data)> {
     }
     for s in &d.states {
         ensure!(
-            d.modes.contains_key(&s.mode)
+            contains_point(&s.mode, s.temperature_centikelvin)
                 && s.temperature_centikelvin > 0
                 && s.band > 0
                 && s.kpoint > 0
@@ -218,6 +277,13 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
     let f3_path = crate::foundation::layout::path(&work, "interpolation/manifest.json");
     let f4_path = crate::foundation::layout::path(&work, "superconductivity/manifest.json");
     let f3 = InterpolationManifest::load(&f3_path)?;
+    if store::read::<serde_json::Value>(&f4_path)?
+        .get("task")
+        .and_then(|v| v.as_str())
+        == Some("gap")
+    {
+        return collect_gap(work, output, &f3_path, &f4_path, f3);
+    }
     let f4 = SuperconductivityManifest::load(&f4_path)?;
     ensure!(
         f4.schema_version == 2
@@ -230,6 +296,7 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
         validate_spectrum(s)?;
     }
     let mut data = Data {
+        gap_run: None,
         schema_version: 1,
         run_id: f4.run_id.clone(),
         complete: f4.converged && f4.validation.all_passed(),
@@ -289,6 +356,17 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
             }
         }
     }
+    publish(work, output, &f3_path, &f4_path, data, sources)
+}
+
+fn publish(
+    work: &Path,
+    output: Option<&Path>,
+    f3_path: &Path,
+    f4_path: &Path,
+    data: Data,
+    mut sources: Vec<Identity>,
+) -> Result<PathBuf> {
     sources.sort_by(|a, b| a.path.cmp(&b.path).then(a.sha256.cmp(&b.sha256)));
     sources.dedup_by(|a, b| a.path == b.path && a.sha256 == b.sha256);
     ensure!(
@@ -297,11 +375,11 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
     );
     // 上游主清单始终排在前两项，便于核对同一运行的部分结果更新。
     sources.retain(|s| s.path != f3_path && s.path != f4_path);
-    sources.insert(0, Identity::capture(&f4_path)?);
-    sources.insert(0, Identity::capture(&f3_path)?);
+    sources.insert(0, Identity::capture(f4_path)?);
+    sources.insert(0, Identity::capture(f3_path)?);
     let output = output
         .map(PathBuf::from)
-        .unwrap_or_else(|| crate::foundation::layout::path(work,"results"));
+        .unwrap_or_else(|| crate::foundation::layout::path(work, "results"));
     fs::create_dir_all(&output)?;
     let _lock = store::Lock::acquire(&output.join("native-results"))?;
     super::publication::recover(&output, "manifest.json")?;
@@ -327,7 +405,11 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
         "coupling.csv",
         "gap_summary.csv",
         "gap_states.csv",
-        "tc.csv",
+        if data.gap_run.is_some() {
+            "points.csv"
+        } else {
+            "tc.csv"
+        },
         "report.md",
     ];
     let owned = if existing.exists() {
@@ -426,16 +508,51 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
                 .unwrap_or(""))
         ));
     }
+    let point_csv = if let Some(r) = &data.gap_run {
+        let mut text="mode,temperature_k,initial_gap_mev,execution_status,execution_complete,converged,data_status,log_path,reason\n".to_string();
+        for p in &r.points {
+            text.push_str(&format!(
+                "{},{},{},{},{},{},{},{},{}\n",
+                p.mode,
+                p.temperature_centikelvin as f64 / 100.0,
+                p.initial_gap_mev,
+                p.execution_status,
+                p.status.execution_complete,
+                p.status
+                    .converged
+                    .map(|v| v.to_string())
+                    .unwrap_or_default(),
+                p.status.data_status,
+                csv(&p
+                    .attempt_directory
+                    .as_ref()
+                    .map(|d| d.join("epw.out").to_string_lossy().into_owned())
+                    .unwrap_or_default()),
+                csv(p.status.reason.as_deref().unwrap_or(""))
+            ));
+        }
+        Some(text)
+    } else {
+        None
+    };
     for (name, text) in [
         ("a2f.csv", a2f),
         ("coupling.csv", coupling),
         ("gap_summary.csv", gap),
         ("gap_states.csv", states),
-        ("tc.csv", tc),
+        if let Some(text) = point_csv {
+            ("points.csv", text)
+        } else {
+            ("tc.csv", tc)
+        },
     ] {
         fs::write(stage.join(name), text)?;
     }
-    fs::write(stage.join("report.md"),format!("# 原生超导结果\n\n运行：{}。所选模式数值完成：{}。独立科学参考及六组合验收需另行核验。\n\n能隙与 Z 均为最低正 Matsubara 频率数据；完整逐频率数组保留于 F4 原始交付，源身份见 manifest.json。不存在的数值保留为空，不填零。Tc 中点为有效区间估计。小网格结果不表示材料参数收敛。\n\n数据：[汇总](summary.json)、[谱](a2f.csv)、[耦合](coupling.csv)、[能隙统计](gap_summary.csv)、[状态](gap_states.csv)、[Tc](tc.csv)。图像位于 figures。\n",data.run_id,data.complete))?;
+    if let Some(gap) = &data.gap_run {
+        fs::write(stage.join("report.md"),format!("# 指定温度能隙结果\n\n运行：{}。原生执行完成：{}；能隙数据全部有效：{}。逐点状态见 summary.json。\n\n能隙与 Z 为最低正 Matsubara 频率数据。无效或缺失点不绘制、不补零，不对温度点插值。未进行 Tc 搜索。\n",data.run_id,gap.execution_complete,gap.data_complete))?;
+    } else {
+        fs::write(stage.join("report.md"),format!("# 原生超导结果\n\n运行：{}。所选模式数值完成：{}。独立科学参考及六组合验收需另行核验。\n\n能隙与 Z 均为最低正 Matsubara 频率数据；完整逐频率数组保留于 F4 原始交付，源身份见 manifest.json。不存在的数值保留为空，不填零。Tc 中点为有效区间估计。小网格结果不表示材料参数收敛。\n\n数据：[汇总](summary.json)、[谱](a2f.csv)、[耦合](coupling.csv)、[能隙统计](gap_summary.csv)、[状态](gap_states.csv)、[Tc](tc.csv)。图像位于 figures。\n",data.run_id,data.complete))?;
+    }
     let m = Manifest {
         schema_version: 1,
         kind: "epwflow-native-results".into(),
@@ -470,6 +587,121 @@ pub fn check(root: &Path) -> Result<serde_json::Value> {
     }
     Ok(
         serde_json::json!({"schema_version":1,"operation_status":"ok","native_complete":m.complete,
-        "workflow_complete":false,"source_verification":source_verification,"run_id":d.run_id,"modes":d.modes}),
+        "workflow_complete":false,"source_verification":source_verification,"run_id":d.run_id,"modes":d.modes,"gap_run":d.gap_run}),
     )
+}
+
+fn collect_gap(
+    work: &Path,
+    output: Option<&Path>,
+    f3_path: &Path,
+    f4_path: &Path,
+    f3: InterpolationManifest,
+) -> Result<PathBuf> {
+    let run = superconductivity::points::Run::load(f4_path)?;
+    ensure!(
+        run.run_id == f3.run_id
+            && run.interpolation_digest == store::hash_file(f3_path)?
+            && !f3.spectra.is_empty(),
+        "input_conflict: 单点结果 F3 来源不匹配"
+    );
+    let mut report = GapReport {
+        task: "gap".into(),
+        execution_complete: run.execution_complete,
+        data_complete: run.data_complete,
+        points: vec![],
+    };
+    let mut data = Data {
+        gap_run: None,
+        schema_version: 1,
+        run_id: run.run_id.clone(),
+        complete: run.execution_complete,
+        modes: BTreeMap::new(),
+        spectra: f3.spectra,
+        gaps: vec![],
+        states: vec![],
+        solve_parameters: BTreeMap::new(),
+    };
+    let mut sources = vec![];
+    // 保留所有尝试的来源身份；每个点只导出最后一次有效结果。
+    for a in &run.attempts {
+        if let Some(id) = &a.record {
+            sources.push(id.clone());
+            let r = superconductivity::verify::record(&id.path)?;
+            sources.push(r.executable);
+            sources.extend(r.artifacts);
+            sources.push(r.source.a2f);
+            sources.push(r.source.crystal);
+            sources.extend(r.source.selecq);
+            sources.extend(r.source.matrix_files);
+        }
+    }
+    for request in &run.plan {
+        let name = if request.mode == crate::foundation::config::Mode::Iso {
+            "iso"
+        } else {
+            "aniso"
+        }
+        .to_string();
+        let entry = run.latest(request);
+        let record = entry
+            .and_then(|a| a.record.as_ref())
+            .map(|id| superconductivity::verify::record(&id.path))
+            .transpose()?;
+        report.points.push(GapPoint {
+            mode: name.clone(),
+            temperature_centikelvin: request.temperature_centikelvin,
+            initial_gap_mev: request.seed_mev.unwrap(),
+            execution_status: entry
+                .map(|a| {
+                    if matches!(a.status.as_str(), "valid" | "completed") {
+                        "completed".into()
+                    } else {
+                        a.status.clone()
+                    }
+                })
+                .unwrap_or("pending".into()),
+            attempt_directory: entry.map(|a| a.directory.clone()),
+            status: record
+                .as_ref()
+                .and_then(|r| r.gap_status.clone())
+                .unwrap_or(superconductivity::attempt::GapStatus {
+                    execution_complete: false,
+                    converged: None,
+                    data_status: "unavailable".into(),
+                    reason: entry.and_then(|a| a.reason.clone()),
+                }),
+        });
+        data.solve_parameters
+            .entry(name.clone())
+            .or_insert_with(|| request.clone());
+        if let Some(g) = record.filter(|r| r.status == "valid").and_then(|r| r.gap) {
+            for (band, statistics) in g.band_statistics()? {
+                data.gaps.push(GapSummary {
+                    mode: name.clone(),
+                    temperature_centikelvin: g.temperature_centikelvin,
+                    seed_mev: request.seed_mev.unwrap(),
+                    band,
+                    statistics,
+                    classification: None,
+                });
+            }
+            for (i, state) in g.states.iter().enumerate() {
+                data.states.push(GapState {
+                    mode: name.clone(),
+                    temperature_centikelvin: g.temperature_centikelvin,
+                    seed_mev: request.seed_mev.unwrap(),
+                    kpoint: state.kpoint,
+                    band: state.band,
+                    k_crystal: state.k_crystal,
+                    weight: state.weight,
+                    energy_ev: state.energy_ev,
+                    delta_mev: g.delta_mev[i],
+                    z: g.z[i],
+                });
+            }
+        }
+    }
+    data.gap_run = Some(report);
+    publish(work, output, f3_path, f4_path, data, sources)
 }

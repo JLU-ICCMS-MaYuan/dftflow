@@ -381,3 +381,74 @@ fn edited_script_can_be_submitted_for_independent_debug_without_formal_adoption(
         .status
         .success());
 }
+
+#[test]
+fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
+    let c=Case::numbered();c.direct_setup();
+    c.numbered_change(|cfg|{let s=&mut cfg.superconductivity;s.task=config::SuperconductivityTask::Gap;s.mode=config::Mode::Both;s.gap_temperatures_k=vec![20.,30.,40.];s.mixing_beta=-0.3;s.iso=None;s.aniso=None;});
+    let mut bin=0;
+    let mut finished=false;
+    for n in 0..60 {
+        let args=if bin==2{vec!["--stage","superconductivity","-s"]}else{vec!["-s"]};
+        let before=fs::read_to_string(c.root.join("submissions")).unwrap_or_default().lines().count();
+        let out=c.direct_advance(bin,&args,&format!("gap-{n}"));
+        assert!(out.status.success(),"{}\n{}",String::from_utf8_lossy(&out.stdout),String::from_utf8_lossy(&out.stderr));
+        let after=fs::read_to_string(c.root.join("submissions")).unwrap_or_default().lines().count();
+        assert!(after==before || after==before+1);
+        if String::from_utf8_lossy(&out.stdout).contains("workflow_complete: true") {
+            if bin<2{bin+=1;continue;}finished=true;break;
+        }
+        assert_eq!(after,before+1);
+        assert!(!c.direct_advance(bin,&args,"gap-active-blocked").status.success());
+        assert_eq!(after,fs::read_to_string(c.root.join("submissions")).unwrap().lines().count());
+        assert_eq!(c.direct_execute(),0);
+    }
+    assert!(finished,"未完成公开入口指定温度流程");
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    let root=c.root.join("run/8.epw-superconductivity");
+    let run=epwflow::superconductivity::points::published(&cfg.work_dir,&cfg,&store::read::<Value>(&root.join("manifest.json")).unwrap()["run_id"].as_str().unwrap()).unwrap();
+    assert!(run.execution_complete&&run.data_complete);assert_eq!(run.attempts.len(),6);
+    let calls:Vec<Value>=c.calls().2.lines().map(|l|serde_json::from_str(l).unwrap()).collect();
+    assert_eq!(calls.len(),6);
+    for mode in ["iso","aniso"]{assert_eq!(calls.iter().filter(|v|v["mode"]==mode).map(|v|v["temperature_k"].as_f64().unwrap()).collect::<Vec<_>>(),[20.,30.,40.]);}
+    assert!(calls.iter().all(|v|v["linear"]==false));
+    let before=c.calls();success(c.direct_advance(2,&["--stage","superconductivity","-s"],"gap-reuse"));assert_eq!(before,c.calls());
+    let results=root.join("results");
+    assert!(results.join("points.csv").is_file());assert!(!results.join("tc.csv").exists());assert!(!results.join("figures/tc_interval.svg").exists());
+    assert_eq!(epwflow::delivery::check_results(&results).unwrap()["workflow_complete"],true);
+    // 有效单初值 aniso 数据须参与分布，结果包可脱离原工作区重绘。
+    let (_,data)=epwflow::delivery::native::load(&results).unwrap();
+    assert_eq!(epwflow::delivery::native_plot::gap_distributions(&data).unwrap().len(),3);
+    let moved=c.root.join("portable");fs::create_dir(&moved).unwrap();
+    for f in epwflow::delivery::native::load(&results).unwrap().0.files{fs::copy(results.join(&f.relative_path),moved.join(&f.relative_path)).unwrap();}
+    fs::copy(results.join("manifest.json"),moved.join("manifest.json")).unwrap();
+    let matrix=&run.attempts[0].record.as_ref().unwrap().path;
+    let record:epwflow::superconductivity::attempt::AttemptResult=store::read(matrix).unwrap();
+    let id=&record.source.matrix_files[0];let raw=fs::read(&id.path).unwrap();fs::write(&id.path,"damaged matrix").unwrap();
+    assert!(epwflow::superconductivity::points::Run::load(&root.join("manifest.json")).is_err());
+    epwflow::delivery::native_plot::plot(&moved,None,&["svg".into()]).unwrap();
+    fs::write(&id.path,raw).unwrap();
+}
+
+#[test]
+fn direct_gap_failure_needs_resume_and_freezes_failed_native_evidence() {
+    let c=Case::numbered();
+    c.numbered_change(|cfg|{let s=&mut cfg.superconductivity;s.task=config::SuperconductivityTask::Gap;s.mode=config::Mode::Iso;s.gap_temperatures_k=vec![20.,30.];s.iso=None;s.aniso=None;});
+    c.accounting(Some(201));success(c.numbered_cli(2,&["--stage","fine","-r"],Some(201),"gap-before-failure"));
+    c.direct_setup();c.put("job-201.state","COMPLETED");c.put("submissions","allocated preparation\n");
+    c.put("gap-fail30","transient failure");
+    let args=["--stage","superconductivity","-s"];
+    success(c.direct_advance(2,&args,"gap-20-submit"));assert_eq!(c.direct_execute(),0);
+    success(c.direct_advance(2,&args,"gap-30-submit"));assert_eq!(c.direct_execute(),17);
+    let count=fs::read_to_string(c.root.join("submissions")).unwrap().lines().count();
+    assert!(!c.direct_advance(2,&args,"gap-failed-without-resume").status.success());
+    assert_eq!(count,fs::read_to_string(c.root.join("submissions")).unwrap().lines().count());
+    fs::remove_file(c.root.join("gap-fail30")).unwrap();
+    success(c.direct_advance(2,&["--stage","superconductivity","--resume","-s"],"gap-30-resubmit"));assert_eq!(c.direct_execute(),0);
+    success(c.direct_advance(2,&args,"gap-30-collect"));
+    let run=epwflow::superconductivity::points::Run::load(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();
+    assert!(run.execution_complete&&run.data_complete);assert_eq!(run.attempts.len(),3);
+    let failed=epwflow::superconductivity::verify::record(&run.attempts[1].record.as_ref().unwrap().path).unwrap();
+    assert_eq!(failed.status,"failed");assert_eq!(failed.exit_status,Some(17));assert!(failed.gap.is_none());
+    let calls:Vec<Value>=c.calls().2.lines().map(|l|serde_json::from_str(l).unwrap()).collect();assert_eq!(calls.iter().map(|v|v["temperature_k"].as_f64().unwrap()).collect::<Vec<_>>(),[20.,30.,30.]);
+}

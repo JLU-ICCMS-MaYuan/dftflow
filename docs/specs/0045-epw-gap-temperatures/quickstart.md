@@ -1,12 +1,34 @@
-# 0045 拟实施后的快速验证
+# 0045 快速验证
 
-本文件是待实现接口，当前安装尚不支持 task=gap，不要把本节当作已可执行说明。
+构建、安装和真实运行的完成情况见 [验收记录](acceptance.md)。完整八步及目录结构见 [MgB₂ 运行说明](../../../examples/MgB2/sugon-amd/run/epwflow/README.md)。
 
-1. 按 [配置契约](contracts/config-cli.md) 将既有 TOML 切到 gap，选择模式和温度；保留其他科学与程序配置。
-2. 用实际安装程序 --check 确认新字段及上游，按既有身份规则完成所需前置阶段。
-3. 运行公开第 8 步命令，等待每次作业结束并重复该命令，直至列出的全部点正常结束。
-4. 查看逐点执行、收敛、能隙有效性及原生日志；无需提供 Tc 搜索区间或第二初值。
-5. 用 --collect／--plot／--results-check 核对指定温度结果；无有效能隙的点明确缺失，不从 Tc 或经验公式补值。
-6. 如中途失败，以 --resume 恢复，验证成功点没有重算。真实验证沿用原共享预算。
+在已有 TOML 中设置以下超导参数，并保留所需的物理参数、程序、预算和上游配置：
 
-实现后更新本文件和算例 README 为实际产物路径；本轮未修改原算例或删除已有数据。
+```toml
+[superconductivity]
+task = "gap"
+mode = "both"
+gap_temperatures_k = [20.0, 30.0, 40.0]
+initial_gap_mev = 10.0
+mixing_beta = -0.3
+```
+
+```bash
+epw_phonon -c "epwinput.toml" --check --json
+```
+
+检查字段、路径和并行配置。按身份检查完成前七阶段后执行：
+
+```bash
+epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
+```
+
+每次最多提交一个原生任务。等待终态，再重复同一命令，直至全部六点正常结束。`8.epw-superconductivity/manifest.json` 保存计划和尝试；各点子目录保存原生输入、日志、Δ／Z 和 `attempt.json`。`results/points.csv` 区分执行、收敛和数据状态，有效能隙进入 `gap_summary.csv`、`gap_states.csv` 及 `figures/`，不生成 Tc。
+
+失败后修复原因，并显式续算：
+
+```bash
+epw_superconductivity -c "epwinput.toml" --stage superconductivity --resume -s
+```
+
+保留成功点及旧失败尝试，只重试未完成点。活动或状态未知的任务不重复提交；更改来源或科学参数会触发身份检查，不能通过修改清单强行复用。
