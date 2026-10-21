@@ -24,10 +24,14 @@
 ## Documentation Impact
 
 - [x] 更新 docs/overview/README.md 的共享约束及受影响模块入口。
-- [ ] 完成 docs/specs/0044-mpi-submit-command/ 的实施与部署证据。
+- [x] 完成 docs/specs/0044-mpi-submit-command/ 的实施与部署证据。
 - [x] 更新适用配置示例和模块说明；根 README 仅需导航，无新增公共入口。
 - [ ] 线上 Issue／Spec 双向链接待用户发布后核验，不能以本地链接替代。
 
 ## 确认与授权
 
 用户完整引用最终计划并要求 `PLEASE IMPLEMENT THIS PLAN:`，明确授权本地 Issue／Spec、代码、测试、提交、安装与现用脚本迁移。按该版直接实施，不重复请求批准；不将未展示的文件全文声称为曾逐字审阅。
+
+## 本地交付状态
+
+源码与部署验收已完成，SC-001～004 通过，实施与安装证据见 acceptance.md、deployment.md。线上发布、双向链接与关闭状态由用户管理，本地完成不代表已关闭线上 Issue。

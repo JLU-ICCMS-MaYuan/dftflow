@@ -13,6 +13,12 @@
 - SC-001：QE、VASP、Wannier 实际生成脚本，以及 EPW 公开入口隔离提交测试；登录 PATH 无 MPI，脚本加载环境后找到替身 mpirun。
 - SC-002：裸名、旧绝对路径、含空格路径、参数、变量、引号和重定向；缺失 MPI、环境失败及科学程序退出 17；VASP 循环和 Wannier 多步失败停止后续执行。
 - SC-003：上述工作区测试通过。共享前缀处理满足 DRY，限定首词修改保持 KISS；无额外接口或未来扩展满足 YAGNI。
-- 文档：17 个 Markdown 文件中的 200 个本地链接校验通过；差异空白检查通过。
+- 文档：17 个 Markdown 文件中的 201 个本地链接校验通过；差异空白检查通过。
 
-原始日志只留本机忽略目录 docs/local/0044-mpi-submit-command/：clean-workspace.log、clean-retest.log、epw-direct.log。源码验证完成后显式路径提交；安装、迁移及 SC-004 见 [部署记录](deployment.md)，完成前不声称部署通过。
+原始日志只留本机忽略目录 docs/local/0044-mpi-submit-command/：clean-workspace.log、clean-retest.log、epw-direct.log。源码验证完成后显式路径提交；安装、迁移及 SC-004 见 [部署记录](deployment.md)，部署核验已完成，结果见下文。
+
+另有包含既有未提交修改的工作树测试运行记录 workspace.log，在三阶段套件得到 31 通过、5 失败、1 ignored，其中一项是上述旧 exec 定位断言。该运行不作为干净提交的验收；干净候选覆盖相同用例，旧断言修复后均已通过。原工作树科学实现保持原样，不以本维护任务修改或提交。
+
+## 部署验收完成
+
+SC-004 通过：从 3523c12 干净提交构建并更新两处安装，8 个程序哈希一致、54 个入口目标有效；安装版 QE／VASP／Wannier 6 组生成执行检查及 EPW 8 项公开入口回归全部通过。2 个配置、35 个未冻结脚本迁移完成，5094 文件快照中非目标文件、预算及绑定证据保持一致，详细覆盖与 SHA256 见 deployment.md。本任务未提交真实科学作业、未推送，未修改已有未提交科学实现。

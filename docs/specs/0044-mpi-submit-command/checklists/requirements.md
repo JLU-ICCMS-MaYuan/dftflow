@@ -5,4 +5,4 @@
 - [x] 无未确认的高影响决策，无新 CLI／配置／数据模型：与批准计划逐项核对。
 - [x] 本地 Issue／Spec 相互链接，唯一类型 maintenance；关联 0019／0026，不虚构线上编号。
 - [ ] 远程双向链接与线上状态：用户管理，本轮不创建、不推送。
-- [ ] 实施和部署验收：证据完成后回写 acceptance.md／deployment.md。
+- [x] 实施和部署验收：证据已回写 acceptance.md／deployment.md。
