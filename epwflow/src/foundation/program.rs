@@ -154,6 +154,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         ensure!(!o.resume || o.submit || o.run, "required: --resume 需要 -s 或 -r");
         let target=match (phase,o.stage) {
             (Phase::Phonon,None)=>Step::Phonon,
+            (Phase::Phonon,Some(s @ (Step::Scf|Step::Nscf|Step::Electronic|Step::Phonon)))=>s,
             (Phase::Wannier,None)=>Step::Coarse,
             (Phase::Wannier,Some(s @ (Step::Wannier|Step::Coarse)))=>s,
             (Phase::Superconductivity,None)=>Step::Superconductivity,

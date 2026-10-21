@@ -386,17 +386,19 @@ fn edited_script_can_be_submitted_for_independent_debug_without_formal_adoption(
 fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
     let c=Case::numbered();c.direct_setup();
     c.numbered_change(|cfg|{let s=&mut cfg.superconductivity;s.task=config::SuperconductivityTask::Gap;s.mode=config::Mode::Both;s.gap_temperatures_k=vec![20.,30.,40.];s.mixing_beta=-0.3;s.iso=None;s.aniso=None;});
-    let mut bin=0;
+    let stages=[(0,"scf"),(0,"nscf"),(0,"electronic"),(0,"phonon"),(1,"wannier"),(1,"coarse"),(2,"fine"),(2,"superconductivity")];
+    let mut step=0;
     let mut finished=false;
     for n in 0..60 {
-        let args=if bin==2{vec!["--stage","superconductivity","-s"]}else{vec!["-s"]};
+        let (bin,stage)=stages[step];
+        let args=vec!["--stage",stage,"-s"];
         let before=fs::read_to_string(c.root.join("submissions")).unwrap_or_default().lines().count();
         let out=c.direct_advance(bin,&args,&format!("gap-{n}"));
         assert!(out.status.success(),"{}\n{}",String::from_utf8_lossy(&out.stdout),String::from_utf8_lossy(&out.stderr));
         let after=fs::read_to_string(c.root.join("submissions")).unwrap_or_default().lines().count();
         assert!(after==before || after==before+1);
         if String::from_utf8_lossy(&out.stdout).contains("workflow_complete: true") {
-            if bin<2{bin+=1;continue;}finished=true;break;
+            if step+1<stages.len(){step+=1;continue;}finished=true;break;
         }
         assert_eq!(after,before+1);
         assert!(!c.direct_advance(bin,&args,"gap-active-blocked").status.success());
