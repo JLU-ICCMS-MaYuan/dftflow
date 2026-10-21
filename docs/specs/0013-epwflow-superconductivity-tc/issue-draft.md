@@ -10,7 +10,7 @@
 
 **类型**：`type:feature`。
 
-**状态**：原生两模式执行、持久搜索、显式重试与证据重验已有代码及进程契约回归；真实 MgB₂ Δ／Z、Tc 与独立参考尚未验收。
+**状态**：原生两模式执行、持久搜索、显式重试与证据重验已有代码及进程契约回归；当前 PBE 算例的真实 iso/aniso Tc 尚未完成，清单仍为 `converged=false`、`located=false`、`tc=null`。
 
 **父级**：[Epic 0007](../0007-epwflow-superconductivity/issue-draft.md) 的 F4；**前置**：[0012 Wannier 与 EPW 插值](../0012-epwflow-interpolation/issue-draft.md)，沿用 [0008 执行基础](../0008-epwflow-foundation/issue-draft.md)；**来源**：[总体规划](../../plan/epwflow-superconductivity.md)。0013 为本地需求编号，线上 Issue 仍由用户管理。
 
@@ -60,6 +60,12 @@
 后续实现授权：
 
 > 如果启动不了，就继续完善代码，继续把所有 epwflow的 issue 和 spec 完善好，然后完成测试。
+
+本次范围调整的原始要求：
+
+> 所以我现在能使用/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow里面的输入文件 epwinput.toml，并且按照 REAMD.md里面的内容，一条条执行命令，就最终算出来 MgB2的各向异性和各向同性超导转变温度了吗？使用 issue 和 spec 来帮我完成。
+
+> 完全放弃 LDA 的要求，并且删除那些要求。只完成当前目录的 PBE 的要求。
 
 ## 目标与用户价值
 
@@ -160,3 +166,7 @@
 > 科学侧声子 RMS 的 限制放宽到 20 cm-1. 然后修复代码侧的收尾。
 
 采用最新指令：声子最大／RMS 误差门为 50／20 cm⁻¹，保留全部五点参考。电子、虚频、覆盖、超导收敛与原共享资源标准不变；旧报告保留原门限与结论。优先收尾显式失败恢复、统一阶段验证和 F5 原生结果包；阈值调整不代表插值数值改善或 Tc 已通过真实验收。
+
+## 2026-10-21：当前算例限定为 PBE
+
+用户最新要求取消 LDA 作为本 Feature 的前置条件和当前验收对象，只完成 `examples/MgB2/sugon-amd/run/epwflow/epwinput.toml` 所绑定的 PBE 算例。原“先完成一套 LDA，再扩展三来源六组合”的历史要求继续留档，但不再驱动当前工作；本次不要求新建 LDA 数据或完成其他 PH 来源组合。现有双模式求解定义、数值收敛标准、预算和失败保护不变。当前 PBE 真实清单及失败证据以 0015 的 [当前目录 PBE Tc 计划](../0015-epwflow-mgb2-real-validation/current-directory-pbe-tc.md) 为准。

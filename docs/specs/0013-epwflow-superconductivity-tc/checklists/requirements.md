@@ -13,3 +13,10 @@
 - [x] CHK009 本地 Issue/Spec 双向链接可读；用户指定本地草稿，远程门不适用，不伪造远程访问。[issue-draft.md/spec.md]
 
 核查结果与具体依据汇总在 Epic 的 documentation-analysis.md；只有实际检查后更新勾选。
+
+## 2026-10-21：当前 PBE 范围变更复核
+
+- [x] 最新用户原话已逐字追加；旧 LDA 优先原话保留并明确标记为撤销。[spec.md 原始需求记录／当前范围结论]
+- [x] 当前科学材料限定为示例目录 PBE；iso/aniso、原收敛标准和既有预算未被悄悄放宽。[issue-draft.md／spec.md]
+- [x] 当前 PBE 的已知失败不被部分线性区间或单个初值误标为 Tc 完成；T048 指向真实失败现场与可验收结果。[acceptance.md／tasks.md／0015 current-directory-pbe-tc.md]
+- [ ] 当前真实 PBE Tc、独立参考及公开入口验收仍未完成。[T048；见 0015 current-directory-pbe-tc.md]

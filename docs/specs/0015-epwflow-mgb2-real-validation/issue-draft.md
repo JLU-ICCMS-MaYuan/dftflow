@@ -253,3 +253,13 @@ Documentation Impact：更新 0012 设计／契约／任务／验收、0008 验�
 ## 三程序 PBE 主路径验证
 
 用户已选现有 PBE 输入和纯能量模式，按 0008 T041／T042 在新的 local_run/010-public-pbe 逐阶段验证，固定参数与资源、证据及停止规则见[真实验证设计](public-pbe-validation.md)。Documentation Impact：本项计划／验收、0008 验收及测试手册按实际运行结果同步；整体真实科学门未通过前不关闭，不操作线上 Issue。
+
+## 2026-10-21：当前目录 PBE 超导验收目标
+
+用户最新要求原文：
+
+> 所以我现在能使用/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow里面的输入文件 epwinput.toml，并且按照 REAMD.md里面的内容，一条条执行命令，就最终算出来 MgB2的各向异性和各向同性超导转变温度了吗？使用 issue 和 spec 来帮我完成。
+
+> 完全放弃 LDA 的要求，并且删除那些要求。只完成当前目录的 PBE 的要求。
+
+据此，当前真实超导目标改为仅完成该目录 `epwinput.toml` 绑定的 PBE 输入，包含 iso 与 aniso 两种原生 Tc；取消 LDA 质量门、LDA Tc 及其作为前置的要求。此前 `test_auto/MgB2/local_run/010-public-pbe` 是另一轮历史验证，不得与本目录的工作区、产物或预算证据混用。其他三来源六组合暂不作为本次验收条件；并不表示这些历史需求或计算已完成。具体当前任务和失败证据见[当前目录 PBE Tc 计划](current-directory-pbe-tc.md)。

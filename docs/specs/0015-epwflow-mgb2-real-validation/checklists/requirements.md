@@ -10,6 +10,13 @@
 
 当前采用后续实现授权，继续完善原需求并测试。历史基线、原生冒烟和质量失败各有独立记录；每次真实试算仍需核对固定输入、共享预算和数据入口。
 
+## 2026-10-21：当前目录 PBE 范围变更复核
+
+- [x] 最新用户原话逐字保存于本地 Issue 与 Spec；LDA 优先路线在当前计划、任务和验收中标为撤销，不删除已发生结果。[issue-draft.md／spec.md]
+- [x] 当前对象绑定为 `examples/MgB2/sugon-amd/run/epwflow/epwinput.toml`；旧 `test_auto` PBE 与其他来源均未混作当前输入。[current-directory-pbe-tc.md]
+- [x] 当前 manifest、失败日志和阶段限制有可复核路径；没有将部分结果标记为双模式 Tc 完成。[current-directory-pbe-tc.md]
+- [ ] 生产实现修复、两模式真实 Tc、独立 PBE 参考和结果交付仍未完成。[T033；current-directory-pbe-tc.md]
+
 ## 2026-10-19：叠图需求检查
 
 下列只检查新增文档，不代表实现／真实验收；核查证据统一见 [共同分析](../../0007-epwflow-superconductivity/documentation-analysis.md)。

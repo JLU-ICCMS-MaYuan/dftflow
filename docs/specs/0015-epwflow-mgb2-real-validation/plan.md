@@ -2,6 +2,8 @@
 
 **日期**：2026-10-16；**Issue**：[0015](issue-draft.md)；**规格**：[Spec](spec.md)。
 
+> **当前范围更新（2026-10-21）**：本计划早期的 LDA 输入和 LDA 优先路线是历史方案，已由用户撤销。当前仅完成 `examples/MgB2/sugon-amd/run/epwflow/epwinput.toml` 的 PBE 双模式 Tc，执行顺序、现场和验收门见 [当前目录 PBE Tc 计划](current-directory-pbe-tc.md)。下文历史记录保留，不再驱动 LDA 新计算或其他来源组合。
+
 ## 摘要与技术上下文
 
 使用现有 Rust 2021 workspace、Cargo 集成测试、已有 QE 7.4.1 配套源码及 Slurm；程序版本仍需运行证据。先保存 62fda76 基线，以真实 CLI/文件格式揭露缺口，再对每个缺陷建立失败回归并修复。用户已确认分工：其他模型补齐生产实现，本助手负责测试/debug、失败复现和复测；具体批次与交付要求见 [交接清单](handoff.md)。

@@ -1,5 +1,7 @@
 # 研究与取舍
 
+> **当前范围更新（2026-10-21）**：下文有关讲义 LDA 的参数研究属于历史记录，不再是当前计算目标或输入要求。用户已指定只完成 `examples/MgB2/sugon-amd/run/epwflow/epwinput.toml` 的 PBE iso/aniso Tc；当前计划见 [当前目录 PBE Tc 计划](current-directory-pbe-tc.md)。
+
 ## 已核查事实
 
 - 真实 CLI submit/run 直接拒绝，--until 缺失；已保存实际退出码，不仅搜索字符串。

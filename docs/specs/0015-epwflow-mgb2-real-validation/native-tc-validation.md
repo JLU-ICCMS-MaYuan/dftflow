@@ -1,5 +1,7 @@
 # 原生 MgB₂ 两模式 Tc 验收
 
+> 本文保留此前 LDA 路线的历史结果；LDA 已不再是当前要求。当前只完成示例目录的 PBE 双模式 Tc，现场及后续验收见 [当前目录 PBE Tc 计划](current-directory-pbe-tc.md)。
+
 本文保留已发生的历史结果。用户已从 Issue／Spec 删除涉及的旧 LDA 专项测试及补跑验收，见 [0027 撤销范围](../0027-mgb2-epwflow-example-debug/spec.md#已移除的专项验收)；本文的旧执行计划不再产生这些专项的运行或补跑要求。
 
 本记录细化 [0013 T039～T045](../0013-epwflow-superconductivity-tc/tasks.md) 与本项真实验证任务，沿用已有本地 Issue，不新增线上操作。

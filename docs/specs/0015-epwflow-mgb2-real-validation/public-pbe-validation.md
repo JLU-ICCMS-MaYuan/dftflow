@@ -1,5 +1,7 @@
 # 三程序 PBE 主路径真实验证
 
+> 本文记录的是 `test_auto/MgB2/local_run/010-public-pbe` 中另一轮历史 PBE 验证，不能与示例目录 `examples/MgB2/sugon-amd/run/epwflow` 当前工作区、清单、失败现场或预算身份混用。当前目录目标与实测见 [当前目录 PBE Tc 计划](current-directory-pbe-tc.md)。
+
 本项沿用 0008 T041／T042、0015 FR-001/004～008 与 0016 FR-011～014，执行用户指定的现有 PBE 输入及纯能量模式，不替换旧 LDA 来源、不重试暂缓的固定诊断。新目录为 test_auto/MgB2/local_run/010-public-pbe；源代码基线 9202ab7，三个当前构建程序的身份单独记录，不切换默认安装。
 
 ## 固定输入与顺序
