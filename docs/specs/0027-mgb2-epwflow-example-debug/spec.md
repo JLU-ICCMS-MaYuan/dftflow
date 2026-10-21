@@ -11,6 +11,26 @@ Issue：[本地 0027](issue-draft.md)，type:bug。无附件，images: []。用�
 
 如果有 bug 就新建 issue 和 spec 进行 debug。
 
+用户随后调整测试范围：
+
+> 这7 项你不光不用测，你可以把这 7 项都从我的 spec 和issue 里面删除了。
+
+## 已移除的专项验收
+
+以下七项已按用户明确指令从 Issue／Spec 的测试、任务和验收范围删除，不要求执行、补跑、重建旧数据或取消其测试忽略标记；也不作为 Issue 收尾的阻塞项。本表仅定位被删除的范围，不是待办清单。
+
+| 已移除的测试标识 | 对应历史专项 |
+| --- | --- |
+| `actual_lda_native_layout` | 旧 LDA QE／PH 保存树专项核验 |
+| `actual_lda_coarse_restart_and_wannier` | 旧 LDA Wannier／粗网格重启专项核验 |
+| `actual_lda_fine_readback` | 旧 LDA 细网格结果专项重读 |
+| `numbered_real_legacy_pw_is_read_only` | 旧编号目录 PW 导入的本机只读专项 |
+| `actual_lda_fine_matrices` | 旧 LDA 40³／20³ 细网格专项计算 |
+| `actual_lda_native_tc` | 旧 LDA 原生两模式 Tc 专项计算 |
+| `actual_lda_native_nonlinear_diagnostic` | 旧 LDA 固定非线性诊断专项计算 |
+
+历史日志中的通过／失败／跳过计数和已取得的科学结果保持原记录。测试代码本次保留；后续默认回归即使仍列出这七项忽略，也不增加七项待验收任务。当前指定工作区的公开命令、原生执行错误、来源完整性和恢复行为仍按实际结果验证；删除历史专项不代表未收敛的 Tc 已通过科学验收。
+
 ## 用户故事
 
 US1：在指定 epwflow 目录使用 epwinput.toml 和上一级 POSCAR，通过三个公开程序生成、提交、续算并查看真实结果。US2：遇到失败能定位原生程序、配置、安装、调度或科学质量原因，修复有依据，不重复相容上游。

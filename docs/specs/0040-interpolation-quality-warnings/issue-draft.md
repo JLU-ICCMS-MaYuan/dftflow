@@ -1,5 +1,13 @@
 # 0040：独立插值质量阈值改为告警并继续后续实测
 
+## 本次验收范围调整
+
+用户最新要求：
+
+> 这7 项你不光不用测，你可以把这 7 项都从我的 spec 和issue 里面删除了。
+
+已从本项测试、补跑任务和验收条件中删除[七项历史专项](../0027-mgb2-epwflow-example-debug/spec.md#已移除的专项验收)，不再因它们未执行而保留待完成项或阻止本项验收。现有原生数据完整性、错误拒绝及公开命令续算的通用要求继续适用；历史测试计数与科学结果仅作已发生事实，不构成补跑要求。
+
 唯一类型：`type:feature`。本地编号已查重；沿用线上 Gitee 用户管理约定，本编号不是已发布线上号。关联 [0027](../0027-mgb2-epwflow-example-debug/issue-draft.md)、[0012](../0012-epwflow-interpolation/issue-draft.md)、[0013](../0013-epwflow-superconductivity-tc/issue-draft.md)。
 
 ## 原始需求记录
