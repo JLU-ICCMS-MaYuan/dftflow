@@ -277,9 +277,9 @@ pub(super) fn generate_phase_for(config: &Path, until: Boundary, executable_path
     ensure!(!path.exists(), "input_conflict: 已有未登记脚本，保留现场");
     let r = &cfg.resources;
     let quote = slurm::shell_quote;
-    let mut body = format!("#!/bin/bash\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}:{:02}:{:02}\n#SBATCH --output={}\n#SBATCH --error={}\nexport OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\ncd {} || exit $?\n",
+    let mut body = format!("#!/bin/bash\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}:{:02}:{:02}\n{}export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\ncd {} || exit $?\n",
         r.partition, r.nodes, r.mpi, r.wall_seconds / 3600, r.wall_seconds / 60 % 60, r.wall_seconds % 60,
-        quote(&path.with_extension("%j.out").to_string_lossy()), quote(&path.with_extension("%j.err").to_string_lossy()), quote(&b.work_dir.to_string_lossy()));
+        slurm::log_directives(path.parent().unwrap(), &format!("{}.%j.out", until.name()), &format!("{}.%j.err", until.name())), quote(&b.work_dir.to_string_lossy()));
     if let Some(env) = &cfg.programs.environment_script {
         body.push_str(&source_environment(env)?);
     }
@@ -420,7 +420,9 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
             .join("epw-state/slurm")
             .join(format!("{}.sh", record.attempt_id));
         let quote = slurm::shell_quote;
-        let mut body = String::from("#!/bin/bash\nexport OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\n");
+        let mut body = String::from("#!/bin/bash\n");
+        body.push_str(&slurm::log_directives(script.parent().unwrap(), "%j.out", "%j.err"));
+        body.push_str("export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\n");
         body.push_str(&format!(
             "cd {} || exit $?\n",
             quote(work.to_str().context("工作目录不是 UTF-8")?)
@@ -463,14 +465,6 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
             ])
             .arg(format!("--job-name=epw-{}", record.attempt_id))
             .arg(format!("--comment=epwflow:{}", record.attempt_id))
-            .arg(format!(
-                "--output={}",
-                work.join("epw-state/slurm/%j.out").display()
-            ))
-            .arg(format!(
-                "--error={}",
-                work.join("epw-state/slurm/%j.err").display()
-            ))
             .arg(&script)
             .current_dir(work)
             .output()

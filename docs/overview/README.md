@@ -52,6 +52,8 @@ DFTFlow 的流程包装不替代 QE、VASP 等求解器；选择某个家族不�
 
 DFTFlow 自有任务脚本生成器及跟踪的构建、安装、自测脚本不自动开启 `set -euo pipefail`，也不拆分开启这些严格选项；关键失败通过显式退出码判断处理。用户配置的 Slurm header 原样保留，已冻结的历史运行脚本不自动改写。范围与验证见 [0019 验收](../specs/0019-shell-script-options/acceptance.md)。
 
+自动生成的 Slurm 日志指令使用简短文件名，EPW 保留 `%j` 和阶段命名，Wannier90 保留原默认名字；通过 `#SBATCH --chdir` 将日志固定在对应脚本目录，支持从其他目录提交。正文另行保持实际科学工作目录。用户自定义 header 和已冻结的历史脚本不自动修改；源码修复不等于已有二进制已更新。范围与验证见 [0022 验收](../specs/0022-slurm-log-filenames/acceptance.md)。
+
 ## 文档维护与证据
 
 本轮依据当前源码和 [0006 验收](../specs/0006-qe-phonon-submit-chain/acceptance.md) 回写，覆盖后续 dyn0 工具拆分及全量重新编译的事实。[0004](../specs/0004-dftflow-rust/spec.md) 提供迁移背景；其他 Feature 由命令页链接。

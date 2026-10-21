@@ -12,6 +12,14 @@ pub struct SubmittedJob {
     pub cluster: Option<String>,
 }
 
+/// 日志使用文件名；Slurm 在执行正文前按脚本目录打开日志，不能依赖正文的 cd。
+pub(super) fn log_directives(directory: &Path, output: &str, error: &str) -> String {
+    format!(
+        "#SBATCH --chdir={}\n#SBATCH --output={output}\n#SBATCH --error={error}\n",
+        shell_quote(&directory.to_string_lossy())
+    )
+}
+
 /// 构造 sbatch 脚本并原生提交；核对退出码与唯一正整数作业号。
 pub fn submit_via_sbatch(
     launcher: &[String],
@@ -24,6 +32,8 @@ pub fn submit_via_sbatch(
     let script = dir.join(format!("submit-{name}.sh"));
     let mut body = String::from("#!/bin/bash\n");
     body.push_str(&format!("#SBATCH --job-name={name}\n"));
+    body.push_str(&log_directives(&dir, "slurm-%j.out", "slurm-%j.err"));
+    body.push_str(&format!("cd -- {} || exit $?\n", shell_quote(&work.to_string_lossy())));
     let line = {
         let mut v = launcher.to_vec();
         v.extend_from_slice(command);

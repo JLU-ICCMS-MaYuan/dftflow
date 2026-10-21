@@ -1,7 +1,7 @@
 //! wannier_post：postw90.x 流程（复刻 `wannier90flow/wannier_post.py`）。
 
 use crate::config::{apply_config_overrides, wannier_post_template};
-use crate::init::DEFAULT_SLURM_HEADER;
+use crate::init::slurm_header;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::path::Path;
@@ -190,14 +190,12 @@ pub fn create_run_script(work_dir: &str, prefix: &str, cfg: &Value) -> Result<()
     let post_exec_path = cfg["postw90"]["executable_path"]
         .as_str()
         .unwrap_or("postw90.x");
-    let slurm_header = cfg["slurm"]["header"]
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .unwrap_or(DEFAULT_SLURM_HEADER);
+    let directory = std::fs::canonicalize(work_dir)?;
+    let slurm_header = slurm_header(&directory, cfg);
     let script_path = format!("{work_dir}/run_postw90.sh");
     let content = format!(
-        "{}\n\ncd \"$(dirname \"$0\")\"\n\necho \"Run postw90 at $(date)\"\n{post_exec_path} \"{prefix}\" > POSTW90.log 2>&1\n",
-        slurm_header.trim()
+        "{}\n\ncd -- {} || exit $?\n\necho \"Run postw90 at $(date)\"\n{post_exec_path} \"{prefix}\" > POSTW90.log 2>&1\n",
+        slurm_header.trim(), qf_runner::shlex_quote(&directory.to_string_lossy())
     );
     std::fs::write(&script_path, content)?;
     #[cfg(unix)]

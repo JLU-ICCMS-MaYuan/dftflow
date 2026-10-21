@@ -9,6 +9,14 @@ use std::path::Path;
 /// Python `DEFAULT_SLURM_HEADER`。
 pub const DEFAULT_SLURM_HEADER: &str = "#!/bin/bash\n#SBATCH --job-name=wannier90\n#SBATCH --output=slurm.out\n#SBATCH --error=slurm.err\n";
 
+/// 默认日志留在脚本目录；用户提供的 header 原样保留。
+pub(crate) fn slurm_header(directory: &Path, cfg: &Value) -> String {
+    match cfg["slurm"]["header"].as_str().filter(|s| !s.is_empty()) {
+        Some(header) => header.to_string(),
+        None => format!("{DEFAULT_SLURM_HEADER}#SBATCH --chdir={}\n", qf_runner::shlex_quote(&directory.to_string_lossy())),
+    }
+}
+
 /// `generate_kpoints_from_grid`：Gamma-centered 均匀网格。
 pub fn generate_kpoints_from_grid(grid: &[i64]) -> Result<Vec<[f64; 3]>> {
     if grid.len() != 3 {
@@ -193,15 +201,13 @@ pub fn create_run_script(work_dir: &str, prefix: &str, cfg: &Value) -> Result<()
         .unwrap_or("pw2wannier90.x");
     let (pw2_input_path, pw2_input_name) = resolve_pw2_input_path(work_dir, prefix, cfg);
     ensure_pw2wan_input(&pw2_input_path, prefix, cfg)?;
-    let slurm_header = cfg["slurm"]["header"]
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .unwrap_or(DEFAULT_SLURM_HEADER);
+    let directory = std::fs::canonicalize(work_dir)?;
+    let slurm_header = slurm_header(&directory, cfg);
 
     let script_path = format!("{work_dir}/run_wannier90.sh");
     let content = format!(
-        "{}\n\ncd \"$(dirname \"$0\")\" || exit $?\n\necho \"Prep NNKP at $(date)\"\n{exec_path} -pp \"{prefix}\" || exit $?\n\necho \"Run pw2wannier90 at $(date)\"\nif [ ! -f \"{pw2_input_name}\" ]; then\n  echo \"缺少 pw2wannier90 输入文件: {pw2_input_name}\"\n  exit 1\nfi\n{pw2_exec_path} < \"{pw2_input_name}\" > PW2WAN.log 2>&1 || exit $?\n\necho \"Run Wannier90 (requires *.amn/*.mmn ready)\"\n{exec_path} \"{prefix}\" > WANNIER90.log 2>&1\n",
-        slurm_header.trim()
+        "{}\n\ncd -- {} || exit $?\n\necho \"Prep NNKP at $(date)\"\n{exec_path} -pp \"{prefix}\" || exit $?\n\necho \"Run pw2wannier90 at $(date)\"\nif [ ! -f \"{pw2_input_name}\" ]; then\n  echo \"缺少 pw2wannier90 输入文件: {pw2_input_name}\"\n  exit 1\nfi\n{pw2_exec_path} < \"{pw2_input_name}\" > PW2WAN.log 2>&1 || exit $?\n\necho \"Run Wannier90 (requires *.amn/*.mmn ready)\"\n{exec_path} \"{prefix}\" > WANNIER90.log 2>&1\n",
+        slurm_header.trim(), qf_runner::shlex_quote(&directory.to_string_lossy())
     );
     std::fs::write(&script_path, content)?;
     #[cfg(unix)]
