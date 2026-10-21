@@ -29,3 +29,11 @@
 主实现提交 b17bc0e，八步入口修复提交 de44461。仅覆盖仓库 bin/epwflow 三个程序，源码制品与安装文件 SHA-256 逐一相同，身份记录在 docs/local/0045-gap-temperatures/installation-identities.json。安装版对同字节 TOML 的 `--stage scf --check --json` 通过；没有修改其他模块安装、用户启动文件或线上仓库。
 
 当前真实执行已通过第 1～5 步，包括拟合及两个原生后处理；作业均为 COMPLETED／0:0，后续 EPC 与固定点继续由公开命令推进。完整命令、终态与输入身份留在本项 docs/local 证据目录，最终六点结论待实际结束后记录。
+
+## 真实粗网格缺少内部插值网格
+
+前五步在空工作区完成后，粗网格作业 1321529 退出 1，原始日志为 `Cannot load fine q points`。核对实际 EPW 5.9 的 epw.f90、use_wannier.f90 与 utilities/bzgrid.f90：写完粗矩阵后仍会加载内部 k／q 插值网格，原生成器同时省略点文件和网格尺寸。已让 Coarse／ReuseWannier 沿用 TOML 的 NSCF／PH 网格；FineMatrices 继续使用原细网格，未增加质量抽样或新参数。
+
+原生进程替身增加 elph 阶段必须携带同源网格的断言；纯 Wannier 阶段不要求该网格。真实失败记录保留，后续只通过公开 `--stage coarse --resume -s` 归档失败并重新生成输入，前五步的成功来源继续校验复用。
+
+修复后重新构建，原生插值 13 项通过、1 项本机专用暂挂（25.22 秒）；严格按八阶段执行的 gap 完整进程回归 1 项通过、40 项过滤（76.97 秒）。失败归档／恢复与成功点不重算均有回归覆盖。

@@ -327,10 +327,22 @@ impl<'a> EpwConfig<'a> {
                 s.push_str(" epwread = .true.\n epwwrite = .false.\n wannierize = .false.\n ephwrite = .true.\n eliashberg = .true.\n liso = .false.\n laniso = .false.\n mp_mesh_k = .true.\n");
                 // EPW 缺省使用 300 K；显式绑定首个固定能隙温度以便复核。
                 s.push_str(&format!(" nstemp = 1\n temps = {:.16e}\n", self.cfg.superconductivity.gap_temperatures_k[0]));
-                for (name, grid) in [("nkf", i.k_grid), ("nqf", i.q_grid)] {
-                    for (axis, n) in grid.iter().enumerate() {
-                        s.push_str(&format!(" {name}{} = {n}\n", axis + 1));
-                    }
+            }
+        }
+        // EPW 5.9 写完粗矩阵后仍进入 use_wannier，必须提供可加载的网格。
+        // 粗阶段沿用已有 NSCF/PH 网格，不生成独立抽样点文件。
+        let grids = match stage {
+            NativeStage::Coarse | NativeStage::ReuseWannier => Some([
+                ("nkf", self.cfg.qe.nscf.k_grid),
+                ("nqf", self.cfg.phonon.q_grid),
+            ]),
+            NativeStage::FineMatrices => Some([("nkf", i.k_grid), ("nqf", i.q_grid)]),
+            _ => None,
+        };
+        if let Some(grids) = grids {
+            for (name, grid) in grids {
+                for (axis, n) in grid.iter().enumerate() {
+                    s.push_str(&format!(" {name}{} = {n}\n", axis + 1));
                 }
             }
         }

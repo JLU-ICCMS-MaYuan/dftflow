@@ -34,6 +34,11 @@ def bands(name, points, vals):
     Path(name).write_text(f'&plot nbnd= {len(vals)}, nks= {len(points)} /\n'+''.join(' '.join(map(str,q))+'\n'+' '.join(map(str,vals))+'\n' for q in points))
 if coarse or reread:
     if coarse:
+        # 实际 EPW 在写完粗矩阵后仍加载插值网格，不能靠替身放过缺失网格。
+        if value('elph')=='.true.':
+            for axis in (1,2,3):
+                assert int(value('nkf'+str(axis)))==int(value('nk'+str(axis)))>0, '粗阶段缺少同源 NSCF k 网格'
+                assert int(value('nqf'+str(axis)))==int(value('nq'+str(axis)))>0, '粗阶段缺少同源 PH q 网格'
         assert (out/(prefix+'.save')/'charge-density.dat').read_bytes()==b'fixture-density'
         assert (Path(value('dvscf_dir'))/(prefix+'.dvscf_q2')).is_file(), 'PH 未交付'
     else:
