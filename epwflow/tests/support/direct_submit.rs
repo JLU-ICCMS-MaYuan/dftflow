@@ -33,7 +33,7 @@ else:
             assert!(!["epw_phonon", "epw_wannier", "epw_superconductivity"].contains(&name));
         }
         assert!(!body.contains("set -") && !body.contains("|| exit $?"));
-        assert_eq!(body.lines().filter(|l| l.starts_with("exec ")).count(), 1);
+        assert!(!body.lines().any(|l| l.starts_with("exec ")));
         let mut cmd = Command::new("/bin/bash");
         cmd.arg(&script);
         self.environment(&mut cmd, Some(job));
@@ -53,6 +53,35 @@ else:
     }
     pub(super) fn direct_advance(&self, bin: usize, args: &[&str], label: &str) -> Output {
         self.numbered_cli(bin, args, None, label)
+    }
+}
+
+#[test]
+fn direct_mpirun_comes_from_job_environment_and_keeps_exit_status() {
+    for configured in ["mpirun", "/obsolete MPI/bin/mpirun"] {
+        let c = Case::numbered();
+        c.direct_setup();
+        fs::create_dir(c.root.join("MPI runtime")).unwrap();
+        c.script("MPI runtime/mpirun", "#!/bin/bash\n[[ $1 == -np && $2 == 1 ]] || exit 91\nshift 2\n\"$@\"\n");
+        c.script("science with spaces.x", "#!/bin/bash\nprintf 'science\\n'\nexit 17\n");
+        let env = c.root.join("mpi environment.sh");
+        c.put("mpi environment.sh", &format!("export PATH={}:$PATH\n", shell_quote(c.root.join("MPI runtime").to_str().unwrap())));
+        c.numbered_change(|cfg| {
+            cfg.programs.launcher = vec![configured.into(), "-np".into(), "1".into()];
+            cfg.programs.pw.path = c.root.join("science with spaces.x");
+            cfg.programs.environment_script = Some(env);
+        });
+        // 配置读取发生在没有 MPI 的登录环境中；无旧绝对路径存在性要求。
+        let loaded = config::Config::load(&c.root.join("input.toml")).unwrap();
+        assert_eq!(loaded.programs.launcher[0], configured);
+        success(c.direct_advance(0, &["-s"], "mpi-environment-submit"));
+        let task = c.direct_task();
+        let body = fs::read_to_string(task["script"]["path"].as_str().unwrap()).unwrap();
+        assert!(body.lines().last().unwrap().starts_with("'mpirun' '-np' '1'"));
+        assert!(!body.contains("obsolete MPI"));
+        assert!(!task["sources"].as_array().unwrap().iter().any(|id| id["path"].as_str().unwrap().ends_with("/mpirun")));
+        assert_eq!(c.direct_execute(), 17);
+        assert!(!c.direct_advance(0, &["-s"], "mpi-science-failed").status.success());
     }
 }
 

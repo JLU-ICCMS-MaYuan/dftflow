@@ -8,13 +8,17 @@ use std::process::Command;
 
 use qf_state::{TaskState, WorkflowStatus};
 
+mod mpi;
+pub use mpi::{is_mpirun, plain_scientific_argv, plain_scientific_command};
+
 pub const PREFIX: &str = "[qeflow]";
 
 /// 由 `[qe].executable_path`（"启动命令 + QE bin 目录"，如 "mpirun -np 8 /qe/bin"）
 /// 解析出某个 QE 程序的完整调用串，例如 "mpirun -np 8 /qe/bin/pw.x"。
 /// 复刻现状 `resolve_qe_command`。
 pub fn resolve_qe_command(exec_path: &str, bin: &str) -> String {
-    let tokens = shell_words::split(exec_path).unwrap_or_else(|_| vec![exec_path.into()]);
+    let exec_path = plain_scientific_command(exec_path);
+    let tokens = shell_words::split(&exec_path).unwrap_or_else(|_| vec![exec_path]);
     if tokens.is_empty() {
         return bin.into();
     }
@@ -269,8 +273,8 @@ pub fn write_split_run_script(
     ph_cmd: &str,
 ) -> Result<PathBuf> {
     let commands = vec![
-        format!("{pw_cmd} < scf.in > scf.out"),
-        format!("{ph_cmd} < split_ph.in > split_ph.out"),
+        format!("if {} < scf.in > scf.out; then :; else status=$?; exit \"$status\"; fi", plain_scientific_command(pw_cmd)),
+        format!("{} < split_ph.in > split_ph.out", plain_scientific_command(ph_cmd)),
     ];
     write_job_script(q_dir, "run_split.sh", slurm_header, &commands)
 }

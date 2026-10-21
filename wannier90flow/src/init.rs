@@ -193,12 +193,12 @@ pub fn ensure_pw2wan_input(path: &str, prefix: &str, cfg: &Value) -> Result<()> 
 
 /// `create_run_script`：生成 run_wannier90.sh（-pp → pw2wannier90 → wannier90）。
 pub fn create_run_script(work_dir: &str, prefix: &str, cfg: &Value) -> Result<()> {
-    let exec_path = cfg["wannier90"]["executable_path"]
+    let exec_path = qf_runner::plain_scientific_command(cfg["wannier90"]["executable_path"]
         .as_str()
-        .unwrap_or("wannier90.x");
-    let pw2_exec_path = cfg["pw2wannier90"]["executable_path"]
+        .unwrap_or("wannier90.x"));
+    let pw2_exec_path = qf_runner::plain_scientific_command(cfg["pw2wannier90"]["executable_path"]
         .as_str()
-        .unwrap_or("pw2wannier90.x");
+        .unwrap_or("pw2wannier90.x"));
     let (pw2_input_path, pw2_input_name) = resolve_pw2_input_path(work_dir, prefix, cfg);
     ensure_pw2wan_input(&pw2_input_path, prefix, cfg)?;
     let directory = std::fs::canonicalize(work_dir)?;

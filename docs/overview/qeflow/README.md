@@ -74,3 +74,8 @@ flowchart LR
 先读 [三种声子模式与 dyn0](phonon-workflow.md)。 查找生成 dyn0 的输入和输出，见 [初始化文件问答](phonon-workflow.md#dyn0-初始化文件问答)。通用配置使用 [qf-config](../../../crates/qf-config/src/lib.rs)；QE 电子与声子配置段不同，不能仅改命令名就假定参数完全沿用。
 
 声子保存数据默认位于工作目录的 `tmp/`，显式 outdir 配置仍优先；详见 [配置与启动脚本](phonon-workflow.md#配置与启动脚本)。
+
+
+## MPI 提交命令
+
+新生成的科学调用使用普通命令，`mpirun` 从作业环境 PATH 查找，不写登录节点 MPI 绝对路径；原参数、科学程序路径和用户 header 保留。共享规则及历史边界见 [MPI 调用约束](../README.md#科学任务的-mpi-调用) 与 [0044](../../specs/0044-mpi-submit-command/spec.md)。

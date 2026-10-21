@@ -159,7 +159,7 @@ pub fn run_lobsterin(args: &LobsterinArgs) -> Result<String> {
     if args.lobster_execmd.trim().is_empty() {
         script.push_str("echo 'lobster_executable_path 未配置'\n");
     } else {
-        script.push_str(&format!("{}\n", args.lobster_execmd.trim()));
+        script.push_str(&format!("if {}; then :; else status=$?; exit \"$status\"; fi\n", qf_runner::plain_scientific_command(args.lobster_execmd.trim())));
     }
     script.push_str("echo 'Job finished at' `date`\n");
     std::fs::write(&path, script).context("write run_lobster.sh")?;

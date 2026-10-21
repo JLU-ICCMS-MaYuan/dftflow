@@ -69,3 +69,10 @@ EPW 运行记录使用可见的 `epw-state/` 和阶段本地 `completion.json`�
 编号声子后处理支持严格重验后的 PH 响应复用，避免 dyn0 自复制截断；阶段归档保留当前 Slurm 日志的持续写入入口。源码、安装及本轮指定 MgB₂ 工作区的真实边界见 [0027 验收](../specs/0027-mgb2-epwflow-example-debug/acceptance.md)。
 
 EPW 常规四类比较保留，独立抽样核验已取消；四项最大差值、配对规则和历史图包边界见 [EPW 对比说明](epwflow/README.md#常规对比与最大差值0043)。
+
+
+## 科学任务的 MPI 调用
+
+自有 QE、VASP、Wannier 和 EPW 科学任务脚本使用普通命令调用，科学执行前不增加 `exec`。配置中的裸 `mpirun` 或带目录的 `mpirun` 在新脚本中统一为 `mpirun`，由作业加载环境后的 PATH 查找；EPW 配置读取不再要求登录节点存在 MPI。并行参数与科学程序路径保留，自定义启动器、`mpiexec`／`srun` 和用户 Slurm header 原样遵循配置。
+
+单次调用以科学命令结束，多步骤保持显式失败处理；不启用严格 shell 选项。新 EPW 原生任务保存实际提交的命令，继续绑定科学程序与环境脚本，MPI 文件不再按登录节点路径冻结。历史唯一脚本及其回执不回写；安装和现用调试脚本的迁移边界见 [0044](../specs/0044-mpi-submit-command/spec.md)。

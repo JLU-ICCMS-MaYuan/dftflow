@@ -698,7 +698,8 @@ fn numbered_scripts_leave_shell_options_unset_and_stop_on_environment_failure() 
     for entry in epwflow::qe_data::save::files(&work).unwrap() {
         if !entry.relative_path.ends_with("submit.sh") { continue; }
         let script = fs::read_to_string(work.join(&entry.relative_path)).unwrap();
-        let (prefix, _) = script.rsplit_once("\nexec ").unwrap();
+        let (prefix, invocation) = script.trim_end().rsplit_once('\n').unwrap();
+        assert!(!invocation.starts_with("exec "));
         let run = |suffix: &str| Command::new("/bin/bash")
             .args(["-c", &format!("{prefix}\n{suffix}")])
             .env_remove("EPW_TEST_OPTIONAL")

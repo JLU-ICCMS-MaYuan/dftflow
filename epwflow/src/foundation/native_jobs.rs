@@ -493,6 +493,8 @@ fn prepare(
     work: &Path,
     stem: &str,
 ) -> Result<Task> {
+    // 历史任务键／argv 保持原样，仅新脚本使用运行环境中的启动器。
+    let invocation = qf_runner::plain_scientific_argv(command);
     let id = store::token();
     let q = slurm::shell_quote;
     let r = &cfg.resources;
@@ -522,8 +524,8 @@ fn prepare(
             q(&env.to_string_lossy())
         ));
     }
-    // 固定命令中显式程序文件的身份；启动器和科学程序均不能悄悄替换。
-    for arg in command {
+    // 固定显式科学程序和自定义启动器；mpirun 已改为作业环境 PATH 查找。
+    for arg in &invocation {
         if Path::new(arg).is_absolute()
             && Path::new(arg).is_file()
             && fs::metadata(arg)?.permissions().mode() & 0o111 != 0
@@ -551,8 +553,7 @@ fn prepare(
         }
     }
     ensure!(!inputs.is_empty(), "configuration: 原生调用缺少固定输入");
-    text.push_str("exec ");
-    text.push_str(&command.iter().map(|s| q(s)).collect::<Vec<_>>().join(" "));
+    text.push_str(&invocation.iter().map(|s| q(s)).collect::<Vec<_>>().join(" "));
     text.push('\n');
     let script = work.join(format!("submit-{stem}-{id}.sh"));
     store::atomic_bytes(&script, text.as_bytes())?;
@@ -566,7 +567,7 @@ fn prepare(
         key: key.into(),
         generation: generation.into(),
         directory: work.into(),
-        command: command.into(),
+        command: invocation,
         stem: stem.into(),
         script: Identity::capture(&script)?,
         inputs,

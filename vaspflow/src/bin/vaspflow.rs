@@ -387,7 +387,7 @@ fn run_setup(
     let vasp_exec = if cfg.vasp.executable_path().is_empty() {
         "vasp_std".to_string()
     } else {
-        cfg.vasp.executable_path().to_string()
+        qf_runner::plain_scientific_command(cfg.vasp.executable_path())
     };
     let steps = vec![(
         format!("运行 {name}"),
@@ -487,7 +487,7 @@ fn main() -> Result<()> {
             let vasp_exec = if cfg.vasp.executable_path().is_empty() {
                 "vasp_std".to_string()
             } else {
-                cfg.vasp.executable_path().to_string()
+                qf_runner::plain_scientific_command(cfg.vasp.executable_path())
             };
             let potcar_dir = cfg.vasp.potcar_dir().to_string();
             let slurm_header = cfg.slurm.header.as_deref().unwrap_or("").to_string();
@@ -533,7 +533,7 @@ fn main() -> Result<()> {
             let lobster_exec = if cfg.vasp.lobster_executable_path().is_empty() {
                 String::new()
             } else {
-                cfg.vasp.lobster_executable_path().to_string()
+                qf_runner::plain_scientific_command(cfg.vasp.lobster_executable_path())
             };
             let slurm_header = cfg.slurm.header.as_deref().unwrap_or("").to_string();
             let args = df_vasp::lobsterin::LobsterinArgs {

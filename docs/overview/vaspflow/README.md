@@ -72,3 +72,8 @@ flowchart LR
 ```
 
 当前公共 setup 的能带/fatband KPOINTS 仍走均匀网格；使用前须检查并提供所需路径。各命令页列出其他实现边界。
+
+
+## MPI 提交命令
+
+新生成的科学调用使用普通命令，`mpirun` 从作业环境 PATH 查找，不写登录节点 MPI 绝对路径；原参数、科学程序路径和用户 header 保留。共享规则及历史边界见 [MPI 调用约束](../README.md#科学任务的-mpi-调用) 与 [0044](../../specs/0044-mpi-submit-command/spec.md)。

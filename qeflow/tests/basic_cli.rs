@@ -93,6 +93,29 @@ fn scalar(a: &str, b: &str) {
     }
 }
 #[test]
+fn mpi_submit_script_uses_loaded_environment_instead_of_configured_directory() {
+    let w = setup();
+    let mpi = w.0.join("MPI runtime");
+    fs::create_dir(&mpi).unwrap();
+    script(&mpi.join("mpirun"), "#!/bin/bash\n[[ $1 == -np && $2 == 2 ]] || exit 91\nshift 2\n\"$@\"\n");
+    let path = w.0.join("input.toml");
+    let old = format!("'{}'", w.0.join("qe bin").display());
+    let cfg = fs::read_to_string(&path).unwrap()
+        .replace(&old, &format!("exec '/obsolete MPI/mpirun' -np 2 {old}"))
+        .replace("#SBATCH --job-name=test_qe", &format!("#SBATCH --job-name=test_qe\nexport PATH={}:$PATH", qf_runner::shlex_quote(mpi.to_str().unwrap())));
+    fs::write(&path, cfg).unwrap();
+    ok(cli(&w, &["qe-scf", "-i", "POSCAR"]));
+    let submit = w.0.join("qe_scf/run_qe.sh");
+    let body = fs::read_to_string(&submit).unwrap();
+    assert!(!body.contains("obsolete MPI") && !body.contains("exec "));
+    ok(Command::new("/bin/bash").arg(&submit).current_dir(w.0.join("qe_scf")).env("PATH", "/usr/bin:/bin").output().unwrap());
+    assert!(w.0.join("qe_scf/consumed.in").is_file());
+    script(&w.0.join("qe bin/pw.x"), "#!/bin/bash\nexit 17\n");
+    let failure = Command::new("/bin/bash").arg(&submit).current_dir(w.0.join("qe_scf")).output().unwrap();
+    assert_eq!(failure.status.code(), Some(17));
+}
+
+#[test]
 fn mgb2_scf_nscf_reference_run_and_save_copy() {
     let w = setup();
     ok(cli(&w, &["qe-scf", "--input", "POSCAR", "--run"]));

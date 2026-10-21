@@ -35,6 +35,41 @@ fn base_vopt() -> SectionMap {
     m.into_iter().collect()
 }
 
+#[test]
+fn vasp_four_step_script_uses_environment_mpi_and_preserves_failure() {
+    use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+    let root = std::env::temp_dir().join(format!("vasp-mpi-{}", std::process::id()));
+    fs::create_dir_all(root.join("MPI runtime")).unwrap();
+    write_temp_poscar(&root);
+    for (path, body) in [
+        (root.join("MPI runtime/mpirun"), "#!/bin/bash\n[[ $1 == -np && $2 == 2 ]] || exit 91\nshift 2\n\"$@\"\n"),
+        (root.join("science program"), "#!/bin/bash\necho called >> calls\nif [[ ${SCIENCE_EXIT:-0} != 0 ]]; then exit \"$SCIENCE_EXIT\"; fi\ncp POSCAR CONTCAR\necho output > OUTCAR\n"),
+    ] {
+        fs::write(&path, body).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let work = root.join("calculation");
+    let args = df_vasp::opt::VaspOptArgs {
+        work_dir: work.to_string_lossy().into_owned(),
+        struct_file: Some(root.join("POSCAR").to_string_lossy().into_owned()),
+        mode: "rv4".into(), pressure_gpa: None, potcar_dir: String::new(),
+        vasp_execmd: format!("exec '/obsolete MPI/mpirun' -np 2 {}", qf_runner::shlex_quote(root.join("science program").to_str().unwrap())),
+        slurm_header: format!("#!/bin/bash\nexport PATH={}:$PATH\n", qf_runner::shlex_quote(root.join("MPI runtime").to_str().unwrap())),
+    };
+    let name = df_vasp::opt::run_vasp_opt(&base_vopt(), &SectionMap::new(), &args).unwrap();
+    let script = work.join(name);
+    let body = fs::read_to_string(&script).unwrap();
+    assert!(!body.contains("exec ") && !body.contains("obsolete MPI"));
+    let run = |code| Command::new("/bin/bash").arg(&script).current_dir(&work)
+        .env("PATH", "/usr/bin:/bin").env("SCIENCE_EXIT", code).output().unwrap();
+    assert!(run("0").status.success());
+    assert_eq!(fs::read_to_string(work.join("calls")).unwrap().lines().count(), 4);
+    fs::remove_file(work.join("calls")).unwrap();
+    assert_eq!(run("17").status.code(), Some(17));
+    assert_eq!(fs::read_to_string(work.join("calls")).unwrap().lines().count(), 1);
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn run_rv4(dir: &std::path::Path, work_sub: &str, pressure: Option<f64>) -> PathBuf {
     let work_dir = dir.join(work_sub);
     let args = df_vasp::opt::VaspOptArgs {

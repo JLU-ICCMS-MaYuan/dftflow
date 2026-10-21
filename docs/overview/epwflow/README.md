@@ -277,3 +277,8 @@ EPW 的 `wannier.selection_mode = "energy_only"` 使用共享 Rust 纯能量选�
 ## 0026 安装与历史脚本迁移
 
 仓库 `bin/epwflow/` 三个安装入口现已更新到直接原生提交实现。当前 MgB₂ 示例的历史包装提交脚本已迁移为单次原生程序调用，多个后处理步骤各有独立脚本；已封存或包含总调度的旧入口已退役为说明并保存原文。迁移脚本供独立调试，正式 `-s` 仍生成独立原生任务并在作业外归集；安装版七项进程契约通过，没有新增科学作业。范围与证据见 [0026 部署记录](../../specs/0026-epw-direct-native-submit/deployment.md)。
+
+
+## MPI 提交命令
+
+新生成的科学调用使用普通命令，`mpirun` 从作业环境 PATH 查找，不写登录节点 MPI 绝对路径；原参数、科学程序路径和用户 header 保留。共享规则及历史边界见 [MPI 调用约束](../README.md#科学任务的-mpi-调用) 与 [0044](../../specs/0044-mpi-submit-command/spec.md)。

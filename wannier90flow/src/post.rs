@@ -187,9 +187,9 @@ pub fn resolve_dos_output(work_dir: &str, prefix: &str) -> String {
 
 /// `create_run_script`：run_postw90.sh。
 pub fn create_run_script(work_dir: &str, prefix: &str, cfg: &Value) -> Result<()> {
-    let post_exec_path = cfg["postw90"]["executable_path"]
+    let post_exec_path = qf_runner::plain_scientific_command(cfg["postw90"]["executable_path"]
         .as_str()
-        .unwrap_or("postw90.x");
+        .unwrap_or("postw90.x"));
     let directory = std::fs::canonicalize(work_dir)?;
     let slurm_header = slurm_header(&directory, cfg);
     let script_path = format!("{work_dir}/run_postw90.sh");

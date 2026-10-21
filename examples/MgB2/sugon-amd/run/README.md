@@ -25,3 +25,8 @@ epw_phonon -c epwinput.toml --status --json
 当前配置的粗 k 网格为 4×4×2，共 32 点，使用 32 MPI／32 pool。当前 EPW 路径每 pool 一个 MPI，不能只改成 64 pool。预算由 TOML 中已有 ledger 管理，累计消费和预留不会因目录变化清零。
 
 历史问题与证据保留在 [0018 目录与续算](../../../../docs/specs/0018-epwflow-stage-workspaces/acceptance.md)、[0020 能带后处理](../../../../docs/specs/0020-qe-electronic-postprocess-resume/acceptance.md)、[0021 DOS 后处理](../../../../docs/specs/0021-qe-dos-pencil-resume/acceptance.md)、[0023 Wannier 原生启动](../../../../docs/specs/0023-epw-wannier-native-start/acceptance.md) 和 [0025 可见状态](../../../../docs/specs/0025-epw-visible-run-state/acceptance.md)。本轮实际版本、作业结果、数据保护和科学边界见 [0027 验收](../../../../docs/specs/0027-mgb2-epwflow-example-debug/acceptance.md)。协议测试通过、安装成功和科学验收分别记录。
+
+
+## MPI 脚本写法
+
+活动配置中的 MPI 启动器使用 `launcher = ["mpirun", "-np", "32"]`；环境脚本负责提供 MPI PATH，新任务普通调用 `mpirun`，无 `exec` 或 MPI 绝对路径。科学程序路径和并行参数保留。旧唯一任务脚本和冻结快照不改写；现用脚本迁移及安装指纹见 [0044 部署记录](../../../../docs/specs/0044-mpi-submit-command/deployment.md)。

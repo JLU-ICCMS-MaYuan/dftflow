@@ -186,7 +186,10 @@ impl Config {
         for (n,p) in [("wannier90",&mut self.programs.wannier90),("pw2wannier90",&mut self.programs.pw2wannier90),("postw90",&mut self.programs.postw90)] {
             if let Some(pr)=p { pr.path=paths::existing(base,&pr.path,&format!("programs.{n}.path"),true)?; }
         }
-        if let Some(p)=self.programs.launcher.first_mut(){*p=paths::command(base,p)?.to_string_lossy().into_owned();}
+        // mpirun 在作业加载环境后定位；保留配置原文，避免重写历史请求身份。
+        if let Some(p)=self.programs.launcher.first_mut(){
+            if !qf_runner::is_mpirun(p) {*p=paths::command(base,p)?.to_string_lossy().into_owned();}
+        }
         if let Some(p)=&mut self.programs.environment_script {*p=paths::existing(base,p,"programs.environment_script",false)?;}
         self.budget.ledger=paths::destination(&paths::absolute(base,&self.budget.ledger)?)?;
         // 输入不得在后续要由本运行拥有的工作树内；防止准备与复制相互覆盖。

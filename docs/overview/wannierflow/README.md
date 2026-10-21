@@ -39,3 +39,8 @@ flowchart LR
     D --> E[wannier_post]
     D --> F[wannier_plot]
 ```
+
+
+## MPI 提交命令
+
+新生成的科学调用使用普通命令，`mpirun` 从作业环境 PATH 查找，不写登录节点 MPI 绝对路径；原参数、科学程序路径和用户 header 保留。共享规则及历史边界见 [MPI 调用约束](../README.md#科学任务的-mpi-调用) 与 [0044](../../specs/0044-mpi-submit-command/spec.md)。

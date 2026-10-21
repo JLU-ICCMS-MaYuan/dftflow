@@ -35,5 +35,6 @@ qf-config = { path = "../crates/qf-config" }
 qf-crystal = { path = "../crates/qf-crystal" }
 qf-input = { path = "../crates/qf-input" }
 qf-io = { path = "../crates/qf-io" }
+qf-runner = { path = "../crates/qf-runner" }
 plotters = { workspace = true }
 svg2pdf = { workspace = true }

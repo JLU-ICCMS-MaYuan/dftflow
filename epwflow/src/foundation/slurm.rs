@@ -37,7 +37,7 @@ pub fn submit_via_sbatch(
     let line = {
         let mut v = launcher.to_vec();
         v.extend_from_slice(command);
-        v.iter()
+        qf_runner::plain_scientific_argv(&v).iter()
             .map(|a| shell_quote(a))
             .collect::<Vec<_>>()
             .join(" ")

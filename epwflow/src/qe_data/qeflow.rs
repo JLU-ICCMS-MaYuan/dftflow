@@ -141,8 +141,8 @@ pub fn run(
             argv.push(program.to_string_lossy().into_owned());
             argv.extend_from_slice(args);
             let text = format!(
-                "#!/bin/bash\nexec {} \"$@\"\n",
-                argv.iter()
+                "#!/bin/bash\n{} \"$@\"\n",
+                qf_runner::plain_scientific_argv(&argv).iter()
                     .map(|s| shell_quote(s))
                     .collect::<Vec<_>>()
                     .join(" ")

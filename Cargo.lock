@@ -599,6 +599,7 @@ dependencies = [
  "qf-input",
  "qf-io",
  "qf-phonon",
+ "qf-runner",
  "qf-wannier",
  "regex",
  "roxmltree",

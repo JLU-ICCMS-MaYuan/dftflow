@@ -150,11 +150,12 @@ fn build_incar_final(params: &SectionMap, symprec: &Value, pstress: f64) -> Vec<
 }
 
 pub fn build_mode_commands(mode: &str, vasp_execmd: &str) -> Vec<String> {
+    let vasp_execmd = qf_runner::plain_scientific_command(vasp_execmd);
     match mode {
         "rv4" => vec![
             "for i in {1..4}; do".to_string(),
             "cp -f INCAR_$i INCAR".to_string(),
-            format!("{vasp_execmd} > vasp.log_$i 2>&1"),
+            format!("if {vasp_execmd} > vasp.log_$i 2>&1; then :; else status=$?; exit \"$status\"; fi"),
             "cp -f CONTCAR CONTCAR_$i".to_string(),
             "cp -f OUTCAR OUTCAR_$i".to_string(),
             "cp -f CONTCAR POSCAR".to_string(),
@@ -166,7 +167,7 @@ pub fn build_mode_commands(mode: &str, vasp_execmd: &str) -> Vec<String> {
             "while true;do".to_string(),
             "        let num+=1".to_string(),
             "        echo \"run fine vasp opt-$num\"".to_string(),
-            format!("        timeout 14400s {vasp_execmd}"),
+            format!("        if timeout 14400s {vasp_execmd}; then :; else status=$?; exit \"$status\"; fi"),
             "        cp -f CONTCAR CONTCAR-fine &&  cp -f CONTCAR POSCAR".to_string(),
             "        rows=`sed -n '/F\\=/p' OSZICAR | wc -l`".to_string(),
             "        echo \"rows-$rows\"".to_string(),
