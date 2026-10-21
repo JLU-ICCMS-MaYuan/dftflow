@@ -425,65 +425,79 @@ fn refresh_qe_manifest(cfg: &Config) -> Result<()> {
 
 fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
     let root = &cfg.work_dir;
-    let (points, responses) = if cfg.phonon.mode == PhMode::Nosplit {
-        qe_data::phonon::run_nosplit(qe, root, &cfg.programs.launcher, Backend::Local)?
+    let cached = layout::path(root, "qe-data/manifest.json");
+    let manifest = if super::native_jobs::enabled() && cached.is_file() {
+        // 后处理的每次原生调用返回后重验既有交付，避免重新归集或覆盖保存树。
+        let manifest: qe_data::manifest::QeManifest = store::read(&cached)?;
+        ensure!(manifest.run_id == stages::scientific_key(cfg, Step::Phonon)?,
+            "input_conflict: PH 检查点参数变化");
+        manifest.verify()?;
+        ensure!(manifest.artifact_root.as_ref() == Some(&cfg.work_dir.canonicalize()?),
+            "input_conflict: PH 检查点不属于当前工作区");
+        manifest
     } else {
-        let points = qe_data::phonon::run_init(qe, root, &cfg.programs.launcher, Backend::Local)?;
-        let responses = points
-            .iter()
-            .enumerate()
-            .map(|(i, q)| {
-                qe_data::phonon::run_q(qe, root, &cfg.programs.launcher, Backend::Local, q, i + 1)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        (points, responses)
-    };
-    let scf = qe_data::scf::ScfResult {
-        energy_ry: qe_data::scf::parse_scf_energy(&fs::read_to_string(layout::path(
+        let (points, responses) = if cfg.phonon.mode == PhMode::Nosplit {
+            qe_data::phonon::run_nosplit(qe, root, &cfg.programs.launcher, Backend::Local)?
+        } else {
+            let points = qe_data::phonon::run_init(qe, root, &cfg.programs.launcher, Backend::Local)?;
+            let responses = points
+                .iter()
+                .enumerate()
+                .map(|(i, q)| {
+                    qe_data::phonon::run_q(qe, root, &cfg.programs.launcher, Backend::Local, q, i + 1)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            (points, responses)
+        };
+        let scf = qe_data::scf::ScfResult {
+            energy_ry: qe_data::scf::parse_scf_energy(&fs::read_to_string(layout::path(
+                root,
+                "scf/scf.out",
+            ))?)?,
+            snapshot_dir: layout::path(root, "scf/snapshot"),
+            attempt_count: 1,
+            success_count: 1,
+        };
+        let mut programs = BTreeMap::new();
+        for (name, p) in [
+            ("pw", cfg.programs.pw.path.clone()),
+            ("ph", cfg.programs.ph.path.clone()),
+            ("epw", cfg.programs.epw.path.clone()),
+            ("q2r", post_program(cfg, "q2r")?.path),
+            ("matdyn", post_program(cfg, "matdyn")?.path),
+            ("dynmat", post_program(cfg, "dynmat")?.path),
+        ] {
+            programs.insert(name.into(), store::hash_file(&p)?);
+        }
+        let fingerprints = qe_data::manifest::Fingerprints {
+            structure_sha256: store::hash_file(&cfg.structure)?,
+            pseudo_sha256: cfg
+                .pseudos
+                .iter()
+                .map(|(e, p)| Ok((e.clone(), store::hash_file(p)?)))
+                .collect::<Result<_>>()?,
+            program_sha256: programs,
+        };
+        qe_data::scheduler::publish_data(
+            &stages::scientific_key(cfg, Step::Phonon)?,
+            fingerprints,
+            qe,
             root,
-            "scf/scf.out",
-        ))?)?,
-        snapshot_dir: layout::path(root, "scf/snapshot"),
-        attempt_count: 1,
-        success_count: 1,
+            scf,
+            states(cfg)?,
+            points,
+            responses,
+        )?
     };
-    let mut programs = BTreeMap::new();
-    for (name, p) in [
-        ("pw", cfg.programs.pw.path.clone()),
-        ("ph", cfg.programs.ph.path.clone()),
-        ("epw", cfg.programs.epw.path.clone()),
-        ("q2r", post_program(cfg, "q2r")?.path),
-        ("matdyn", post_program(cfg, "matdyn")?.path),
-        ("dynmat", post_program(cfg, "dynmat")?.path),
-    ] {
-        programs.insert(name.into(), store::hash_file(&p)?);
-    }
-    let fingerprints = qe_data::manifest::Fingerprints {
-        structure_sha256: store::hash_file(&cfg.structure)?,
-        pseudo_sha256: cfg
-            .pseudos
-            .iter()
-            .map(|(e, p)| Ok((e.clone(), store::hash_file(p)?)))
-            .collect::<Result<_>>()?,
-        program_sha256: programs,
-    };
-    let manifest = qe_data::scheduler::publish_data(
-        &stages::scientific_key(cfg, Step::Phonon)?,
-        fingerprints,
-        qe,
-        root,
-        scf,
-        states(cfg)?,
-        points,
-        responses,
-    )?;
     let dir = Step::Phonon.directory(cfg);
     // q2r 消费严格归集的同一组 XML；coords 局部编号已在 save 中规范化。
     fs::create_dir_all(&dir)?;
-    fs::copy(
-        &manifest.qpoints[0].source_dyn0,
-        dir.join(format!("{}.dyn0", cfg.qe.prefix)),
-    )?;
+    // 手动推进会重新归集 PH；不得把原 dyn0 复制到自身而截断。
+    let dyn0_source = &manifest.qpoints[0].source_dyn0;
+    let dyn0_target = dir.join(format!("{}.dyn0", cfg.qe.prefix));
+    if !dyn0_target.exists() || dyn0_source.canonicalize()? != dyn0_target.canonicalize()? {
+        fs::copy(dyn0_source, &dyn0_target)?;
+    }
     for r in &manifest.phonon_files {
         fs::copy(
             &r.dyn_file,
@@ -528,6 +542,7 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
         .with_fermi(s.fermi)?
         .with_bands(&s.eigenvalues)?
         .with_species(&qe.cell.elements)?;
+    if !super::native_jobs::continuing(&dir, "epw")? {
     save::copy_tree(&layout::path(&cfg.work_dir, "nscf/out"), &dir.join("out"))?;
     fs::write(
         dir.join("epw_wannier.in"),
@@ -538,6 +553,7 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
             cfg.interpolation.phonon_smearings_mev[0],
         )?,
     )?;
+    }
     interpolation::coarse::run_epw(
         &epw,
         &dir,
@@ -600,6 +616,26 @@ pub fn validate_ukk(path: &Path, cfg: &Config) -> Result<()> {
 }
 
 fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
+    if super::native_jobs::enabled() {
+        let post = dir.join("native-post");
+        if !post.exists() {
+            fs::create_dir_all(&post)?;
+            for ext in ["win", "wout", "chk", "mmn", "amn", "eig", "nnkp"] {
+                let name = format!("{}.{ext}", cfg.qe.prefix);
+                if dir.join(&name).exists() { fs::copy(dir.join(&name),post.join(name))?; }
+            }
+        }
+        fs::copy(dir.join(format!("{}.wout",cfg.qe.prefix)),post.join(format!("{}.wout",cfg.qe.prefix)))?;
+        electronic_comparison_inner(cfg,&post,fermi)?;
+        for name in ["electronic-bands.png","electronic-dos.png","electronic-dos.csv","electronic-dos-normalization.json"] {
+            fs::copy(post.join(name),dir.join(name))?;
+        }
+        return Ok(());
+    }
+    electronic_comparison_inner(cfg,dir,fermi)
+}
+
+fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     let prefix = &cfg.qe.prefix;
     let win = dir.join(format!("{prefix}.win"));
     let segments = qf_input::electronic::parse_kpath_segments(
@@ -659,7 +695,9 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         &(updated + &path),
         &[("restart".into(), json!("plot"))],
     );
-    fs::write(&win, updated)?;
+    if !super::native_jobs::continuing(dir, "wannier-plot")? {
+        fs::write(&win, updated)?;
+    }
     // postw90 是原生计算；不以高斯拟合或总 DOS 伪装缺失投影。
     let original_wout = fs::read(dir.join(format!("{prefix}.wout")))?;
     let wannier = cfg
@@ -671,7 +709,7 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     let mut argv = vec![wannier.path.to_string_lossy().into_owned()];
     argv.extend(wannier.args);
     argv.push(prefix.clone());
-    let report = super::process::run_report(&argv, dir)?;
+    let report = super::process::run_report_named(&argv, dir, "wannier-plot")?;
     fs::copy(report.stdout_path, dir.join("wannier-plot.out"))?;
     fs::copy(report.stderr_path, dir.join("wannier-plot.err"))?;
     ensure!(
@@ -688,7 +726,7 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     let mut argv = vec![program.path.to_string_lossy().into_owned()];
     argv.extend(program.args);
     argv.push(prefix.clone());
-    let report = super::process::run_report(&argv, dir)?;
+    let report = super::process::run_report_named(&argv, dir, "postw90")?;
     fs::copy(report.stdout_path, dir.join("postw90.out"))?;
     fs::copy(report.stderr_path, dir.join("postw90.err"))?;
     ensure!(
@@ -749,6 +787,8 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
                 && name != "post-completion.json"
                 && !rel.starts_with("receipts/")
                 && name != "submit.sh"
+                && !name.starts_with("submit-")
+                && !super::native_jobs::is_log(&f.relative_path)
                 && !name.starts_with("slurm-")
                 && !name.starts_with(".epw-")
                 && !(step == Step::Phonon && name == "manifest.json")

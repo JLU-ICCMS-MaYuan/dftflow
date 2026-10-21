@@ -73,14 +73,23 @@ impl<'a> Engine<'a> {
         .context("configuration: 缺少模式搜索配置")?;
         let id = Identity::capture(&cfg.programs.epw.path)?;
         let binding_digest = if crate::foundation::layout::enabled(&cfg.work_dir) {
-            store::hash_bytes(&serde_json::to_vec(&(crate::foundation::stages::scientific_key(cfg,crate::foundation::stages::Step::Superconductivity)?,source,&id))?)
-        } else {store::hash_bytes(&serde_json::to_vec(&(
-            source,
-            &cfg.superconductivity,
-            &cfg.programs.epw,
-            launcher,
-            &id,
-        ))?)};
+            store::hash_bytes(&serde_json::to_vec(&(
+                crate::foundation::stages::scientific_key(
+                    cfg,
+                    crate::foundation::stages::Step::Superconductivity,
+                )?,
+                source,
+                &id,
+            ))?)
+        } else {
+            store::hash_bytes(&serde_json::to_vec(&(
+                source,
+                &cfg.superconductivity,
+                &cfg.programs.epw,
+                launcher,
+                &id,
+            ))?)
+        };
         fs::create_dir_all(root)?;
         let file = root.join("search.json");
         let result: ModeResult = if file.exists() {
@@ -173,6 +182,24 @@ impl<'a> Engine<'a> {
             if entry.status != "running" {
                 continue;
             }
+            if crate::foundation::native_jobs::enabled() {
+                if crate::foundation::native_jobs::continuing(&entry.directory, "epw")? {
+                    let record = attempt::run_attempt(
+                        &entry.request,
+                        self.source,
+                        &self.cfg.programs.epw,
+                        self.launcher,
+                        &entry.directory,
+                    )?;
+                    entry.status = record.status;
+                    entry.reason = record.reason;
+                    entry.record = Some(Identity::capture(&entry.directory.join("attempt.json"))?);
+                } else {
+                    entry.status = "failed".into();
+                    entry.reason = Some("execution_failed: 原生任务已确认失败".into());
+                }
+                continue;
+            }
             let path = entry.directory.join("attempt.json");
             if path.exists() {
                 let record: AttemptResult = store::read(&path)?;
@@ -223,7 +250,8 @@ impl<'a> Engine<'a> {
             self.result.search = restored;
         }
         self.result.reason = None;
-        self.retry_failed = true;
+        self.retry_failed = !crate::foundation::native_jobs::enabled()
+            || crate::foundation::native_jobs::retry_enabled();
         self.save()
     }
 
@@ -319,6 +347,7 @@ impl<'a> Engine<'a> {
                 entry.reason = r.reason.clone();
                 entry.record = Some(Identity::capture(&dir.join("attempt.json"))?);
             }
+            Err(e) if crate::foundation::native_jobs::paused(e) => (),
             Err(e) => {
                 entry.status = "failed".into();
                 entry.reason = Some(format!("{e:#}"));
@@ -451,6 +480,10 @@ impl<'a> Engine<'a> {
             Ok(())
         })();
         if let Err(e) = outcome {
+            if crate::foundation::native_jobs::paused(&e) {
+                self.save()?;
+                return Err(e);
+            }
             let reason = format!("{e:#}");
             let state = if reason.contains("scheduler_unknown:") {
                 "scheduler_unknown"

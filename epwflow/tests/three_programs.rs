@@ -126,7 +126,7 @@ fn default_generation_is_idempotent_and_does_not_reserve_or_submit() {
     for i in [1, 2] {
         let out = c.run(i, &["-s"]);
         assert!(!out.status.success());
-        assert!(String::from_utf8_lossy(&out.stderr).contains("前一个程序"));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("migration_required"));
     }
     assert!(!c.root.join("calls").exists());
 }
@@ -244,15 +244,10 @@ fn environment_bootstrap_leaves_shell_options_unset_and_propagates_failure() {
     );
     fs::write(&config, toml::to_string_pretty(&cfg).unwrap()).unwrap();
     success(c.run(0, &["--all"]));
-    c.script("sbatch", "#!/bin/sh\nprintf '123\\n'\n");
-    success(c.run(0, &["-s"]));
-    let workflow: serde_json::Value =
-        store::read(&c.root.join("run/epw-state/workflow.json")).unwrap();
-    let mut scripts: Vec<_> = ["qe-data", "interpolation", "all"]
+    let scripts: Vec<_> = ["qe-data", "interpolation", "all"]
         .iter()
         .map(|name| c.root.join(format!("run/epw-state/generated/{name}.sh")))
         .collect();
-    scripts.push(PathBuf::from(workflow["script"]["path"].as_str().unwrap()));
     for path in scripts {
         let script = fs::read_to_string(path).unwrap();
         // 实际生成脚本的完整初始化段，替换的只有末尾调度／科学入口。

@@ -46,12 +46,14 @@ pub fn run_with_retry(
         "allocation: F4 只在 F1 已登记分配内顺序执行，不另行 sbatch"
     );
     let mut before = || -> Result<()> {
+        if !crate::foundation::native_jobs::enabled() {
         let job = std::env::var("SLURM_JOB_ID")
             .context("allocation: 缺少当前 Slurm 分配")?
             .parse::<u64>()?;
         budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
             ledger.require_allocation(job, &cfg.resources).map(|_| ())
         })?;
+        }
         ensure!(
             store::hash_file(&path)? == input.interpolation_digest,
             "input_conflict: F3 清单改变"

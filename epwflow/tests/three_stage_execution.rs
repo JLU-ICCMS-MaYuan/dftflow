@@ -206,6 +206,21 @@ runpy.run_path(str(root/name),run_name='__main__')
         cmd.args(args);
         self.output(cmd, None, label)
     }
+    fn allocated_cli(&self, i: usize, args: &[&str], job: u64, label: &str) -> Output {
+        // 历史 -r 只接受已登记分配；通过真实预算 CLI 登记本测试的手工分配。
+        let cfg=config::Config::load(&self.root.join("inputepw.toml")).unwrap();
+        let ledger=cfg.budget.ledger.to_string_lossy().into_owned();
+        let reserve=self.cli(0,&["--budget","reserve","--ledger",&ledger,"--label",label,
+            "--nodes",&cfg.resources.nodes.to_string(),"--mpi",&cfg.resources.mpi.to_string(),
+            "--wall-seconds",&cfg.resources.wall_seconds.to_string(),"--storage-bytes",&cfg.resources.storage_bytes.to_string()],"manual-allocation-reserve");
+        assert!(reserve.status.success(),"{}",String::from_utf8_lossy(&reserve.stderr));
+        let text=String::from_utf8(reserve.stdout).unwrap();
+        let token=text.trim().strip_prefix("reserved: token=").unwrap();
+        success(self.cli(0,&["--budget","attach","--ledger",&ledger,"--token",token,"--job",&job.to_string()],"manual-allocation-attach"));
+        let mut cmd = Command::new(BINS[i]);
+        cmd.args(args);
+        self.output(cmd, Some(job), label)
+    }
     fn bash(&self, path: impl AsRef<std::path::Path>, job: Option<u64>, label: &str) -> Output {
         let mut cmd = Command::new("/bin/bash");
         cmd.arg(path.as_ref());
@@ -242,175 +257,15 @@ fn copy_results(source: &std::path::Path, target: &std::path::Path) {
 }
 
 #[test]
-fn failed_coarse_can_change_mpi_without_repeating_qe_or_independent_references() {
+fn legacy_submit_requires_explicit_migration_without_submitting_a_wrapper() {
     let c = Case::new();
-    c.script(
-        "launcher",
-        &format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {}\nshift 2\nexec \"$@\"\n",
-            shell_quote(c.root.join("mpi-launches").to_str().unwrap())
-        ),
-    );
-    let input = c.root.join("inputepw.toml");
-    let mut cfg = config::Config::load(&input).unwrap();
-    cfg.resources.mpi = 16;
-    cfg.programs.launcher = vec![
-        c.root.join("launcher").to_string_lossy().into(),
-        "-np".into(),
-        "16".into(),
-    ];
-    cfg.programs.epw.args.extend(["-nk".into(), "16".into()]);
-    fs::write(&input, toml::to_string_pretty(&cfg).unwrap()).unwrap();
-    c.put("fail-coarse", "test failure");
-    c.accounting(Some(201));
-    success(c.cli(0, &["-s"], "mpi-phonon-submit"));
-    success(c.bash(
-        c.workflow()["script"]["path"].as_str().unwrap(),
-        Some(201),
-        "mpi-phonon",
-    ));
-    let calc = PathBuf::from(c.workflow()["calculation_dir"].as_str().unwrap());
-    let fixed = store::Identity::capture(&c.root.join("run/input-init.toml")).unwrap();
-    let binding = store::Identity::capture(&c.root.join("run/run-binding.json")).unwrap();
-    let original = config::Config::load(&fixed.path).unwrap();
-    let mut adjusted = original.clone();
-    epwflow::foundation::parallelism::apply(&mut adjusted, 8).unwrap();
-    let (identity, _) =
-        epwflow::foundation::parallelism::request_identity(&adjusted, &adjusted.programs.launcher)
-            .unwrap();
-    assert_eq!(
-        serde_json::to_value(&identity).unwrap(),
-        serde_json::to_value(&original).unwrap()
-    );
-    adjusted.qe.nscf.nbnd += 1;
-    assert!(epwflow::foundation::parallelism::request_identity(
-        &adjusted,
-        &adjusted.programs.launcher
-    )
-    .is_err());
-    c.accounting(Some(202));
-    success(c.cli(1, &["-s"], "mpi-wannier-submit"));
-    assert!(!c
-        .bash(
-            c.workflow()["script"]["path"].as_str().unwrap(),
-            Some(202),
-            "mpi-coarse-fail"
-        )
-        .status
-        .success());
-    assert_eq!(c.workflow()["current_stage"], "wannier");
-    assert_eq!(c.workflow()["state"], "failed");
-    let qe_completion = c.workflow()["completed"]["qe-data"].clone();
-    let references =
-        store::Identity::capture(&calc.join("quality-sources/reference.json")).unwrap();
-    let before = c.calls().0;
-    let submissions = fs::read_to_string(c.root.join("submissions")).unwrap();
-    for mpi in ["0", "9", "65"] {
-        assert!(!c
-            .cli(
-                1,
-                &["--resume", "-w", "run", "--mpi", mpi, "-s"],
-                "mpi-invalid"
-            )
-            .status
-            .success());
+    for bin in 0..3 {
+        let out = c.cli(bin, &["-s"], "legacy-native-migration");
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("migration_required"));
     }
-    assert!(!c
-        .cli(
-            1,
-            &["--resume", "-w", "run", "--mpi", "8", "-s"],
-            "mpi-active-old-job"
-        )
-        .status
-        .success());
-    assert_eq!(
-        submissions,
-        fs::read_to_string(c.root.join("submissions")).unwrap()
-    );
-    c.accounting(Some(203));
-    fs::remove_file(c.root.join("fail-coarse")).unwrap();
-    success(c.cli(
-        1,
-        &["--resume", "-w", "run", "--mpi", "8", "-s"],
-        "mpi-resume-submit",
-    ));
-    assert_eq!(c.workflow()["mpi_override"], 8);
-    assert_eq!(c.workflow()["calculation_dir"], calc.to_str().unwrap());
-    assert!(fs::read_to_string(c.root.join("submissions"))
-        .unwrap()
-        .lines()
-        .last()
-        .unwrap()
-        .contains("--ntasks 8"));
-    let active_record = fs::read(c.root.join("run/epw-state/workflow.json")).unwrap();
-    assert!(!c
-        .cli(
-            1,
-            &["--resume", "-w", "run", "--mpi", "4", "-s"],
-            "mpi-active-reject"
-        )
-        .status
-        .success());
-    assert_eq!(
-        active_record,
-        fs::read(c.root.join("run/epw-state/workflow.json")).unwrap()
-    );
-    success(c.bash(
-        c.workflow()["script"]["path"].as_str().unwrap(),
-        Some(203),
-        "mpi-coarse-resume",
-    ));
-    assert_eq!(c.workflow()["state"], "succeeded");
-    assert_eq!(c.workflow()["completed"]["qe-data"], qe_completion);
-    fixed.verify().unwrap();
-    binding.verify().unwrap();
-    references.verify().unwrap();
-    for id in qe_completion["artifacts"].as_array().unwrap() {
-        serde_json::from_value::<store::Identity>(id.clone())
-            .unwrap()
-            .verify()
-            .unwrap();
-    }
-    let after = c.calls().0;
-    for role in ["ph", "dynmat"] {
-        assert_eq!(
-            before.lines().filter(|l| l.starts_with(role)).count(),
-            after.lines().filter(|l| l.starts_with(role)).count()
-        );
-    }
-    assert_eq!(
-        after.lines().filter(|l| *l == "pw").count(),
-        before.lines().filter(|l| *l == "pw").count() + 1,
-        "仅新增比较路径 NSCF；不得重做主链 SCF/NSCF 或独立电子参考"
-    );
-    assert!(fs::read_to_string(c.root.join("mpi-launches"))
-        .unwrap()
-        .lines()
-        .any(|l| l.starts_with("-np 8 ") && l.contains("-nk 8") && l.contains("epw_coarse.in")));
-    assert!(fs::read_dir(calc.join("native-attempts/history"))
-        .unwrap()
-        .any(|e| e
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .starts_with("coarse-")));
-    c.accounting(Some(204));
-    success(c.cli(2, &["--resume", "-w", "run", "-s"], "mpi-third-inherits"));
-    assert_eq!(c.workflow()["mpi_override"], 8);
-    assert!(fs::read_to_string(c.root.join("submissions"))
-        .unwrap()
-        .lines()
-        .last()
-        .unwrap()
-        .contains("--ntasks 8"));
-    assert!(!c
-        .cli(
-            1,
-            &["--resume", "-w", "run", "--mpi", "4", "-s"],
-            "mpi-complete-coarse-reject"
-        )
-        .status
-        .success());
+    assert!(!c.root.join("submissions").exists());
+    assert_eq!(c.calls(), (String::new(), String::new(), String::new()));
 }
 
 #[test]
@@ -560,10 +415,8 @@ fn public_chain_resumes_partial_solver_then_only_unfinished_delivery() {
     let partial_calls = c.calls();
     fs::remove_file(c.root.join("tc-failure")).unwrap();
     c.accounting(None);
-    success(c.cli(2, &["--resume", "-w", "run", "-s"], "partial-resume-submit"));
-    let retry = PathBuf::from(c.workflow()["script"]["path"].as_str().unwrap());
     c.accounting(Some(204));
-    let o = c.bash(retry, Some(204), "superconductivity-conflict");
+    let o = c.allocated_cli(2, &["--resume", "-w", "run", "-r"], 204, "superconductivity-conflict");
     assert!(!o.status.success());
     let failed = c.workflow();
     assert_eq!(
@@ -637,10 +490,8 @@ fn public_chain_resumes_partial_solver_then_only_unfinished_delivery() {
         .unwrap();
     }
     c.accounting(None);
-    success(c.cli(2, &["--resume", "-w", "run", "-s"], "resume-submit"));
-    let script = PathBuf::from(c.workflow()["script"]["path"].as_str().unwrap());
     c.accounting(Some(205));
-    success(c.bash(script, Some(205), "resume-delivery"));
+    success(c.allocated_cli(2, &["--resume", "-w", "run", "-r"], 205, "resume-delivery"));
     for name in final_locks {
         assert!(!c.root.join("run/results").join(name).exists());
     }
@@ -684,7 +535,7 @@ fn public_chain_resumes_partial_solver_then_only_unfinished_delivery() {
             .unwrap()
             .lines()
             .count(),
-        5
+        3
     );
     // 复制到新位置后独立重绘；保留原包的工作流完成证据，篡改副本必须拒绝。
     let moved = c.root.join("moved-results");
@@ -739,6 +590,8 @@ fn public_chain_resumes_partial_solver_then_only_unfinished_delivery() {
 impl Case {
     fn numbered() -> Self {
         let c=Self::new();
+        // 日志归档用例预建目录；新默认生成只准备当前就绪任务。
+        fs::create_dir_all(c.root.join("run/4.qe-phonon-nosplit")).unwrap();
         let mut cfg=config::Config::load(&c.root.join("inputepw.toml")).unwrap();
         cfg.layout=Some("numbered".into());cfg.resources.mpi=1;
         cfg.programs.epw.args.extend(["-nk".into(),"1".into()]);
@@ -912,34 +765,47 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
 
 #[test]
 fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
-    let c=Case::numbered();
-    c.script("launcher","#!/bin/sh\nshift 2\nexec \"$@\"\n");
-    c.numbered_change(|cfg|{cfg.qe.nscf.k_grid=[4,4,2];cfg.resources.mpi=64;cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"64".into()];cfg.programs.epw.args=vec!["--io-contract".into(),"-nk".into(),"64".into()];});
-    let o=c.numbered_cli(1,&[],None,"numbered-empty-pool");assert!(!o.status.success());
-    let error=String::from_utf8_lossy(&o.stderr);assert!(error.contains("k 点数=32")&&error.contains("pool=64")&&error.contains("空 pool"),"{error}");
-    assert_eq!(c.calls().0,"");
-    c.numbered_change(|cfg|{cfg.resources.mpi=32;cfg.programs.launcher[2]="32".into();cfg.programs.epw.args[2]="32".into();});
+    let c = Case::numbered();
+    c.script("launcher", "#!/bin/sh\nshift 2\nexec \"$@\"\n");
+    c.numbered_change(|cfg| {
+        cfg.qe.nscf.k_grid=[4,4,2]; cfg.resources.mpi=64;
+        cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"64".into()];
+        cfg.programs.epw.args=vec!["--io-contract".into(),"-nk".into(),"64".into()];
+    });
+    let out=c.numbered_cli(1,&[],None,"numbered-empty-pool");
+    assert!(!out.status.success());
+    let error=String::from_utf8_lossy(&out.stderr);
+    assert!(error.contains("k 点数=32") && error.contains("pool=64") && error.contains("空 pool"),"{error}");
+    assert_eq!(c.calls().0, "");
+    c.numbered_change(|cfg| { cfg.resources.mpi=32; cfg.programs.launcher[2]="32".into(); cfg.programs.epw.args[2]="32".into(); });
     success(c.numbered_cli(1,&[],None,"numbered-legal-generation"));
-    c.accounting(Some(201));
-    let o=c.bash(c.root.join("run/5.epw-wannier/submit.sh"),Some(201),"manual-slurm-mismatch");
-    assert!(!o.status.success());assert_eq!(c.calls().0,"");
+    let active:Value=store::read(&c.root.join("run/epw-state/native-active.json")).unwrap();
+    let script=fs::read_to_string(active["script"]["path"].as_str().unwrap()).unwrap();
+    assert!(script.contains("#SBATCH --ntasks=32"));
+    assert!(script.contains("launcher") && script.contains("pw.x"));
+    assert_eq!(c.calls().0, "");
 }
 
 #[test]
 fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
-    let c=Case::numbered();c.accounting(Some(201));
+    let c=Case::numbered(); c.direct_setup();
     success(c.numbered_cli(0,&["-s"],None,"numbered-submit"));
-    let active:Value=store::read(&c.root.join("run/epw-state/active.json")).unwrap();
-    let frozen=PathBuf::from(active["config"]["path"].as_str().unwrap());let before=fs::read(&frozen).unwrap();
+    let active=c.direct_task();
+    let script=PathBuf::from(active["script"]["path"].as_str().unwrap());
+    let before=fs::read(&script).unwrap();
+    let control=store::Lock::acquire(&c.root.join("run/epw-state/control")).unwrap();
+    let blocked=c.numbered_cli(0,&["-s"],None,"numbered-control-busy");
+    assert!(!blocked.status.success());
+    assert!(c.root.join("run/epw-state/control.lock/owner.json").is_file());
+    drop(control);
     c.numbered_change(|cfg|cfg.resources.wall_seconds=300);
-    let o=c.numbered_cli(0,&["-s","--resume"],None,"numbered-duplicate");assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("活动任务"));assert_eq!(fs::read(frozen).unwrap(),before);
+    assert!(!c.numbered_cli(0,&["-s","--resume"],None,"numbered-duplicate").status.success());
+    assert_eq!(fs::read(&script).unwrap(),before);
     assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(),1);
-    let script=PathBuf::from(active["script" ]["path"].as_str().unwrap());
-    c.put("input.toml","invalid pending edits must not affect submitted job");
-    let mut cmd=Command::new("/bin/bash");cmd.arg(script);c.environment(&mut cmd,Some(201));cmd.current_dir("/").env("SLURM_NTASKS","1");
-    success(cmd.output().unwrap());
-    let finished:Value=store::read(&c.root.join("run/epw-state/active.json")).unwrap();assert_eq!(finished["state"],"succeeded");
+    c.put("input.toml","invalid pending edits must not affect submitted native job");
+    assert_eq!(c.direct_execute(),0);
+    // 作业只执行 PW；正式完成状态必须等待公开 CLI 校验。
+    assert_eq!(c.direct_task()["state"],"submitted");
 }
 
 #[test]
@@ -962,8 +828,10 @@ fn numbered_three_ph_modes_deliver_verified_save_and_local_scripts() {
 fn numbered_import_verifies_legacy_source_and_materializes_without_qe() {
     use epwflow::foundation::stages::{self,Step};
     let c=Case::numbered();c.accounting(Some(201));
-    success(c.cli(0,&["-c","inputepw.toml","-s"],"legacy-source-submit"));
-    success(c.bash(c.workflow()["script"]["path"].as_str().unwrap(),Some(201),"legacy-source-qe"));
+    // 清除夹具为日志测试预建的空目录，旧快照要求全新目标。
+    fs::remove_dir_all(c.root.join("run")).unwrap();
+    success(c.cli(0,&["-c","inputepw.toml"],"legacy-source-generate"));
+    success(c.bash(c.root.join("run/epw-state/generated/qe-data.sh"),Some(201),"legacy-source-qe"));
     c.accounting(None);
     let source=c.root.join("run");let before=epwflow::qe_data::save::files(&source).unwrap();let calls=c.calls();
     c.numbered_change(|cfg|cfg.work_dir=c.root.join("numbered"));
@@ -1085,16 +953,19 @@ fn numbered_electronic_receipt_rejects_corrupted_save_and_adopts_verified_old_pw
 
 #[test]
 fn numbered_electronic_script_change_is_rejected_and_fresh_attempt_recovers() {
-    let c=Case::numbered();
+    let c=Case::numbered(); c.direct_setup();
     success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"submit-before-edit"));
-    let script=c.root.join("run/5.epw-wannier/submit.sh");
-    let mut text=fs::read_to_string(&script).unwrap();text.push_str("\n# manually edited\n");fs::write(&script,text).unwrap();
-    c.accounting(Some(201));
-    let mut cmd=Command::new("/bin/bash");cmd.arg(&script).env("SLURM_NTASKS","1");
-    let o=c.output(cmd,Some(201),"edited-script");assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("生成当前配置的新尝试"));assert_eq!(c.calls(),("".into(),"".into(),"".into()));
-    c.accounting(Some(202));
-    success(c.numbered_cli(1,&["--stage","wannier","--resume","-r"],Some(202),"fresh-attempt"));
+    let task=c.direct_task();
+    let script=PathBuf::from(task["script"]["path"].as_str().unwrap());
+    let original=fs::read(&script).unwrap();
+    fs::write(&script,"#!/bin/bash\n# manually edited\nexit 0\n").unwrap();
+    let out=c.numbered_cli(1,&["--stage","wannier","-s"],None,"edited-script");
+    assert!(!out.status.success());
+    assert_eq!(c.calls(),(String::new(),String::new(),String::new()));
+    fs::write(&script,original).unwrap();
+    assert_eq!(c.direct_execute(),0);
+    success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"next-native-task"));
+    assert_ne!(c.direct_task()["id"],task["id"]);
 }
 
 #[test]
@@ -1112,88 +983,7 @@ fn numbered_real_legacy_pw_is_read_only() {
 // 0021：从公开提交及实际脚本覆盖 DOS 失败、旧作业拒绝和新尝试恢复。
 #[test]
 fn numbered_dos_failure_public_resubmit_preserves_pw_and_bands() {
-    let c = Case::numbered();
-    for kind in ["bands", "dos"] {
-        let name = format!("{kind}.x");
-        let text = fs::read_to_string(c.root.join(&name)).unwrap();
-        let probe = format!(r#"
-root=Path({root})
-with (root/'post-calls').open('a') as f: f.write(kind+'\n')
-assert sys.argv[1:3]==['-pd','.true.'], kind+' 缺 pencil 分解'
-assert not any(a in sys.argv for a in ['-nk','-npool','-ni'])
-if kind=='dos' and (root/'fail-dos').exists():
-    print('Error in routine fft_type_set (6): there are processes with no planes',file=sys.stderr)
-    sys.exit(6)
-"#, root=serde_json::to_string(c.root.to_str().unwrap()).unwrap());
-        c.script(&name, &text.replace(&format!("kind={kind:?}"), &format!("kind={kind:?}\n{probe}")));
-    }
-    c.put("fail-dos", "fail once");
-    c.script("launcher", r#"#!/bin/sh
-[ "$1" = -np ] || exit 11
-[ "$2" = 32 ] || exit 12
-[ "$2" = "$SLURM_NTASKS" ] || exit 13
-shift 2
-case "$1" in
-    */bands.x|*/dos.x) ;;
-    *) for arg in "$@"; do [ "$arg" != -pd ] || exit 14; done ;;
-esac
-exec "$@"
-"#);
-    c.numbered_change(|cfg| {
-        cfg.qe.nscf.k_grid=[4,4,2]; cfg.resources.mpi=32;
-        cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"32".into()];
-        cfg.programs.epw.args[2]="32".into();
-    });
-    success(c.numbered_cli(1, &["--stage","wannier","-s"], None, "dos-first-submit"));
-    let active_path=c.root.join("run/epw-state/active.json");
-    let first:Value=store::read(&active_path).unwrap();
-    let script=c.root.join("run/5.epw-wannier/submit.sh");
-    let run = |job: u64, label: &str| {
-        let mut cmd=Command::new("/bin/bash");
-        cmd.arg(&script).env("SLURM_NTASKS","32");
-        c.output(cmd,Some(job),label)
-    };
-    c.accounting(Some(201));
-    let failed=run(201,"dos-failed");
-    assert!(!failed.status.success());
-    assert!(String::from_utf8_lossy(&failed.stderr).contains("QE dos 退出失败：exit status: 6"),"{}",String::from_utf8_lossy(&failed.stderr));
-    let receipts=c.root.join("run/3.qe-electronic/receipts");
-    let pw=fs::read(receipts.join("pw-bands.json")).unwrap();
-    let bands=fs::read(receipts.join("bands.json")).unwrap();
-    let calls=c.calls();
-    assert_eq!(fs::read_to_string(c.root.join("post-calls")).unwrap(),"bands\ndos\n");
-    c.accounting(Some(202));
-    let rejected=run(202,"dos-old-script");
-    assert!(!rejected.status.success());
-    let error=String::from_utf8_lossy(&rejected.stderr);
-    assert!(error.contains("201") && error.contains("202") && error.contains("epw_wannier --stage wannier -s"),"{error}");
-    assert_eq!(calls,c.calls());
-    let failed_active=fs::read(&active_path).unwrap();
-    assert_eq!(pw,fs::read(receipts.join("pw-bands.json")).unwrap());
-    fs::remove_file(c.root.join("fail-dos")).unwrap();
-
-    // 不加 --resume，同一公开 -s 也应读取当前配置并创建全新尝试。
-    success(c.numbered_cli(1, &["--stage","wannier","-s"], None, "dos-resubmit"));
-    let second:Value=store::read(&active_path).unwrap();
-    assert_ne!(first["id"],second["id"]);
-    assert_eq!(second["job"],202);
-    let frozen_first=PathBuf::from(first["config"]["path"].as_str().unwrap()).parent().unwrap().join("attempt.json");
-    let history:Value=store::read(&frozen_first).unwrap();
-    assert_eq!(history["job"],201);
-    assert_eq!(history["state"],"failed");
-    assert_eq!(failed_active,fs::read(&frozen_first).unwrap());
-    let queued=c.numbered_cli(1,&["--stage","wannier","-s"],None,"dos-duplicate-queued");
-    assert!(!queued.status.success());
-    assert!(String::from_utf8_lossy(&queued.stderr).contains("活动任务"));
-    success(run(202,"dos-recovered"));
-    assert_eq!(calls.0,c.calls().0,"不得重复 SCF／NSCF／PW bands 或额外运行 PH");
-    assert_eq!(c.calls().1.lines().filter(|line| line.starts_with("wannier ")).count(),1);
-    assert_eq!(pw,fs::read(receipts.join("pw-bands.json")).unwrap());
-    assert_eq!(bands,fs::read(receipts.join("bands.json")).unwrap());
-    assert_eq!(fs::read_to_string(c.root.join("post-calls")).unwrap(),"bands\ndos\ndos\n");
-    assert!(receipts.join("dos.json").is_file());
-    let finished:Value=store::read(&active_path).unwrap();
-    assert_eq!(finished["state"],"succeeded");
+    direct_submit::dos_failure_preserves_verified_pw_and_bands();
 }
 
 // 0025：真实公开进程边界验证可见状态、删除重建与显式旧状态迁移。
@@ -1272,18 +1062,15 @@ fn numbered_missing_checkpoint_rebuilds_but_modified_or_corrupt_evidence_is_reje
 
 #[test]
 fn numbered_deleted_stage_never_bypasses_queued_or_unknown_submission() {
-    let c = Case::numbered();
-    c.accounting(Some(201));
-    success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "queued-wannier"));
-    fs::remove_dir_all(c.root.join("run/5.epw-wannier")).unwrap();
-    let before = fs::read(c.root.join("run/epw-state/active.json")).unwrap();
-    let blocked = c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "queued-deleted-stage");
-    assert!(!blocked.status.success());
-    assert!(String::from_utf8_lossy(&blocked.stderr).contains("活动任务"));
-    c.put("accounting", "");
-    assert!(!c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "unknown-deleted-stage").status.success());
-    assert_eq!(before, fs::read(c.root.join("run/epw-state/active.json")).unwrap());
-    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 1);
+    let c=Case::numbered(); c.direct_setup();
+    success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"queued-wannier"));
+    let active=c.root.join("run/epw-state/native-active.json");
+    let before=fs::read(&active).unwrap();
+    let task=c.direct_task();
+    fs::remove_dir_all(task["directory"].as_str().unwrap()).unwrap();
+    assert!(!c.numbered_cli(1,&["--stage","wannier","-s"],None,"queued-deleted-stage").status.success());
+    assert_eq!(before,fs::read(active).unwrap());
+    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(),1);
 }
 
 impl Case {
@@ -1369,3 +1156,6 @@ fn numbered_migration_rejects_activity_and_retains_a_deleted_stage_as_pending() 
     success(c.numbered_cli(1, &["--migrate-state"], None, "migration-after-delete"));
     success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "migration-deleted-submit"));
 }
+
+#[path="support/direct_submit.rs"]
+mod direct_submit;

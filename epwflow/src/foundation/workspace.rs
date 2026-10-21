@@ -37,7 +37,7 @@ fn attempt_path(root: &Path, id: &str) -> PathBuf {
     root.join("epw-state/attempts").join(id).join("attempt.json")
 }
 
-fn control(cfg: &Config) -> Result<store::Lock> {
+pub(super) fn control(cfg: &Config) -> Result<store::Lock> {
     super::run_state::ready(&cfg.work_dir)?;
     let target = cfg.work_dir.join("epw-state/control");
     if cfg.work_dir.join("epw-state/control.lock").exists() && active(&cfg.work_dir).is_file() {
@@ -49,7 +49,7 @@ fn control(cfg: &Config) -> Result<store::Lock> {
     store::Lock::acquire(&target)
 }
 
-fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
+pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
     if !active(&cfg.work_dir).exists() {
         return Ok(());
     }
@@ -117,11 +117,12 @@ pub fn report(cfg: &Config) -> Result<serde_json::Value> {
         None
     };
     Ok(
-        serde_json::json!({"operation_status":"ok","workflow_complete":steps.values().all(|v|v=="reuse"),"steps":steps,"attempt":task}),
+        serde_json::json!({"operation_status":"ok","workflow_complete":steps.values().all(|v|v=="reuse"),"steps":steps,"attempt":task,"native_task":super::native_jobs::status(cfg)?}),
     )
 }
 pub fn status(cfg: &Config) -> Result<()> {
     let value = report(cfg)?;
+    if !value["native_task"].is_null() { println!("native_task: {}",value["native_task"]); }
     for (name, state) in value["steps"].as_object().unwrap() {
         println!("{name}: {}", state.as_str().unwrap());
     }
@@ -549,7 +550,7 @@ pub fn execute(path: &Path) -> Result<()> {
 }
 
 /// 只移动本阶段；成功的相容上游目录不受影响。未知文件保留在历史。
-fn archive_step(cfg: &Config, step: Step) -> Result<()> {
+pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
     let request = cfg
         .work_dir
         .join("epw-state/requests")
@@ -619,6 +620,7 @@ pub fn native_script(
     qe: bool,
     scf: bool,
 ) -> Result<()> {
+    if super::native_jobs::enabled() { return Ok(()); }
     let Some(root) = dir.ancestors().find(|p| layout::enabled(p)) else {
         return Ok(());
     };

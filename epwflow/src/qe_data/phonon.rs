@@ -27,9 +27,11 @@ fn execute(
     backend: Backend,
 ) -> Result<()> {
     std::fs::create_dir_all(dir)?;
-    save::stage_scf(work, &dir.join("out"), &qe.config.qe.prefix)?;
     let file = dir.join(format!("{name}.in"));
-    std::fs::write(&file, input)?;
+    if !crate::foundation::native_jobs::continuing(dir, name)? {
+        save::stage_scf(work, &dir.join("out"), &qe.config.qe.prefix)?;
+        std::fs::write(&file, input)?;
+    }
     super::execution::run(
         &qe.config.programs.ph,
         &file,

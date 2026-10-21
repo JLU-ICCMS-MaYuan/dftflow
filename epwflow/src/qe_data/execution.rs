@@ -12,10 +12,32 @@ pub fn run(
     stem: &str,
     scf: bool,
 ) -> Result<()> {
-    crate::foundation::workspace::native_script(program,input,dir,launcher,stem,true,scf)?;
+    if crate::foundation::native_jobs::enabled() {
+        let mut argv = launcher.to_vec();
+        argv.push(program.path.to_string_lossy().into_owned());
+        argv.extend(program.args.clone());
+        argv.extend(["-inp".into(), input.to_string_lossy().into_owned()]);
+        let report = crate::foundation::process::run_report_named(&argv, dir, stem)?;
+        ensure!(
+            report.exit_status == Some(0),
+            "execution_failed: QE 原生退出 {:?}",
+            report.exit_status
+        );
+        return qf_io::qe_completion::checked_log(&dir.join(format!("{stem}.out")), scf)
+            .map(|_| ());
+    }
+    crate::foundation::workspace::native_script(program, input, dir, launcher, stem, true, scf)?;
     ensure!(
         matches!(backend, Backend::Local),
         "allocation: QE 阶段须在 F1 已登记分配内同步执行，不能异步提交后读取产物"
     );
-    qeflow::native::run_input(&program.path,&program.args,launcher,input,dir,stem,scf)
+    qeflow::native::run_input(
+        &program.path,
+        &program.args,
+        launcher,
+        input,
+        dir,
+        stem,
+        scf,
+    )
 }

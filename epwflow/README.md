@@ -1,5 +1,25 @@
 # epwflow
 
+## 编号工作区逐任务提交（0026）
+
+对 `layout='numbered'` 的工作区，`-s` 核验上一任务并且最多提交一次新的原生调用。实际作业脚本直接执行当前配置中的 QE、Wannier90／postw90 或 EPW；准备输入、交接文件、校验产物及推进均由作业外公开命令负责。作业完成后重复同一个命令推进，无后台控制器。
+
+```bash
+epw_phonon -c input.toml -s
+epw_wannier -c input.toml -s
+epw_superconductivity -c input.toml -s
+```
+
+每条命令分别推进其目标；在当前目标显示 `workflow_complete: true` 后切换下一条。原生失败后修复配置，再用对应命令 `--resume -s`；排队、运行中或回执未知时拒绝重提。Tc 的单模式、单温度、单初值分别提交，保留原搜索规则及次数上限。
+
+输出给出实际提交的唯一 `submit-<任务>-<任务号>.sh`、作业号与工作目录；同目录 `submit.sh` 是便于阅读的当前副本。Slurm 日志使用同目录文件名 `native-<任务号>-<作业号>.out/.err`，脚本固定工作目录，支持从其他目录提交。输入及命令身份记录在可见的 `epw-state/native-jobs/`；独立 W90 后处理使用 `5.epw-wannier/native-post/`，不重写拟合来源。
+
+`epw_phonon --all` 只准备下一就绪脚本与 `native-plan.json` 待完成清单，零提交，不生成自动全流程总脚本。`--status [--json]` 只读区分运行中、已结束待核验、失败及已核验。
+
+可手工修改脚本并 `sbatch` 独立 debug，但它不产生正式完成记录；正式命令拒绝接管修改过的唯一脚本。旧封存脚本和默认安装不随源码修改自动更新。旧非编号布局的新 `-s` 拒绝继续提交包装脚本；使用新的编号工作目录并通过 `--import-work` 显式导入。`-r` 的既有分配执行路径保留。
+
+以下早期脚本／自动串联说明属于旧路径；编号工作区以本节为准。[0026 设计与验收](../docs/specs/0026-epw-direct-native-submit/plan.md)。
+
 自动生成的 `#SBATCH --output`／`--error` 只包含日志文件名，`#SBATCH --chdir` 负责将日志留在脚本所在目录，从其他目录提交也适用。已有冻结脚本保持原字节，不能手工删去长路径后重提；使用包含修复的程序生成新尝试才会采用新格式。源码、已有二进制和历史脚本的生效边界见 [0022 验收](../docs/specs/0022-slurm-log-filenames/acceptance.md)。
 
 三个公开程序管理 QE 到超导的八个阶段。编号工作区使用根目录 `input.toml`，每次生成、提交或 `--resume` 都读取当前配置，按阶段核验参数和上游文件哈希，复用相容结果。

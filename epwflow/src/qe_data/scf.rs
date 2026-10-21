@@ -34,9 +34,11 @@ pub fn run_scf(
     let dir = crate::foundation::layout::path(&work, "scf");
     std::fs::create_dir_all(&dir)?;
     let outdir = dir.join("out");
-    std::fs::create_dir_all(&outdir)?;
-    let input = qe.scf_input(outdir.to_str().unwrap())?;
-    std::fs::write(dir.join("scf.in"), &input)?;
+    if !crate::foundation::native_jobs::continuing(&dir, "scf")? {
+        std::fs::create_dir_all(&outdir)?;
+        let input = qe.scf_input(outdir.to_str().unwrap())?;
+        std::fs::write(dir.join("scf.in"), &input)?;
+    }
     super::execution::run(
         &qe.config.programs.pw,
         &dir.join("scf.in"),
@@ -63,6 +65,9 @@ pub fn run_scf(
 pub fn reuse_scf(source_save: &Path, work: &Path) -> Result<std::path::PathBuf> {
     let snapshot = crate::foundation::layout::path(&work, "scf").join("snapshot");
     let entries = super::save::copy_tree(source_save, &snapshot)?;
-    super::super::foundation::store::write(&crate::foundation::layout::path(&work, "scf/snapshot-files.json"), &entries)?;
+    super::super::foundation::store::write(
+        &crate::foundation::layout::path(&work, "scf/snapshot-files.json"),
+        &entries,
+    )?;
     Ok(snapshot)
 }

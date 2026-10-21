@@ -269,6 +269,15 @@ pub fn run_attempt(
             .any(|a| matches!(a.as_str(), "-in" | "-inp" | "-input")),
         "configuration: programs.epw.args 不得覆盖单温度输入"
     );
+    if crate::foundation::native_jobs::continuing(dir, "epw")? {
+        let record: AttemptResult = store::read(&dir.join("attempt.json"))?;
+        ensure!(
+            serde_json::to_vec(&record.request)? == serde_json::to_vec(request)?
+                && serde_json::to_vec(&record.source)? == serde_json::to_vec(inputs)?,
+            "input_conflict: 原生尝试固定来源变化"
+        );
+        return collect(record, dir);
+    }
     let executable = Identity::capture(&program.path)?;
     ensure!(dir.is_absolute(), "configuration: 尝试目录须为绝对路径");
     let text = render(request, inputs)?;
@@ -280,7 +289,15 @@ pub fn run_attempt(
     })?;
     let input_path = dir.join("epw.in");
     store::atomic_bytes(&input_path, text.as_bytes())?;
-    crate::foundation::workspace::native_script(program,&input_path,dir,launcher,"epw",false,false)?;
+    crate::foundation::workspace::native_script(
+        program,
+        &input_path,
+        dir,
+        launcher,
+        "epw",
+        false,
+        false,
+    )?;
     fs::copy(&inputs.crystal.path, dir.join("crystal.fmt"))?;
     fs::copy(&inputs.a2f.path, dir.join("source.a2f"))?;
     ensure!(
@@ -325,6 +342,13 @@ pub fn run_attempt(
             .push(Identity::capture(&dir.join("selecq.fmt"))?);
     }
     store::write(&dir.join("attempt.json"), &record)?;
+    collect(record, dir)
+}
+
+fn collect(mut record: AttemptResult, dir: &Path) -> Result<AttemptResult> {
+    let request = record.request.clone();
+    let inputs = record.source.clone();
+    let command = record.command.clone();
     let outcome = (|| -> Result<()> {
         let report = process::run_report(&command, dir)?;
         record.exit_status = report.exit_status;
@@ -342,7 +366,7 @@ pub fn run_attempt(
             report.exit_status
         );
         let log = fs::read_to_string(dir.join("epw.out"))?;
-        let evidence = parse::solve_log(&log, request)?;
+        let evidence = parse::solve_log(&log, &request)?;
         if request.kind == SolveKind::Nonlinear {
             let filename = format!(
                 "{}.imag_{}_{:06.2}",
@@ -378,6 +402,7 @@ pub fn run_attempt(
     })();
     match outcome {
         Ok(()) => record.status = "valid".into(),
+        Err(e) if crate::foundation::native_jobs::paused(&e) => return Err(e),
         Err(e) => {
             record.status = "failed".into();
             record.reason = Some(format!("{e:#}"));

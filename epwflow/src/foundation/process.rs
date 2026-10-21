@@ -24,6 +24,13 @@ pub fn run(command: &[String], work: &Path) -> Result<ExecutionReport> {
 
 /// 保留失败进程的退出状态和日志，供科学尝试持久化；不把非零退出当成功。
 pub fn run_report(command: &[String], work: &Path) -> Result<ExecutionReport> {
+    run_report_named(command, work, "epw")
+}
+
+pub fn run_report_named(command: &[String], work: &Path, stem: &str) -> Result<ExecutionReport> {
+    if super::native_jobs::enabled() {
+        return super::native_jobs::execute(command, work, stem);
+    }
     ensure!(!command.is_empty(), "execution_failed: 空命令");
     let dir = work.join("epw-state").join("logs");
     fs::create_dir_all(&dir)?;

@@ -437,8 +437,8 @@ pub(super) fn inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
     let input = qe
         .reference_input("./out", &points)?
         .replace("'nscf'", "'bands'");
-    prepare_pw(cfg)?;
-    if !receipt_path(cfg, "pw-bands").is_file() {
+    if !super::native_jobs::enabled() { prepare_pw(cfg)?; }
+    if !receipt_path(cfg, "pw-bands").is_file() && !super::native_jobs::continuing(&bands, "eband")? {
         fs::write(bands.join("eband.in"), input)?;
         store::write(&bands.join("path-points.json"), &points)?;
     }
@@ -485,8 +485,10 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             } else {
                 let mut old = logs(&dir, "eband");
                 old.push(dir.join("out"));
-                archive_task(cfg, "pw-bands", &old)?;
-                save::stage_scf(&cfg.work_dir, &dir.join("out"), &cfg.qe.prefix)?;
+                if !super::native_jobs::continuing(&dir, "eband")? {
+                    archive_task(cfg, "pw-bands", &old)?;
+                    save::stage_scf(&cfg.work_dir, &dir.join("out"), &cfg.qe.prefix)?;
+                }
                 qe_run(cfg, &dir, &cfg.programs.pw, "eband.in", "eband")?;
                 validate_pw(cfg)?;
                 let mut paths = logs(&dir, "eband");
@@ -509,7 +511,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                     dir.join(format!("{}_band", cfg.qe.prefix)),
                     dir.join(format!("{}_band.gnu", cfg.qe.prefix)),
                 ]);
-                archive_task(cfg, "bands", &paths)?;
+                if !super::native_jobs::continuing(&dir, "bands")? { archive_task(cfg, "bands", &paths)?; }
                 qe_run(
                     cfg,
                     &dir,
@@ -545,7 +547,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             }
             let mut paths = logs(&dir, "dos");
             paths.push(dir.join(format!("{}.tdos", cfg.qe.prefix)));
-            archive_task(cfg, "dos", &paths)?;
+            if !super::native_jobs::continuing(&dir, "dos")? { archive_task(cfg, "dos", &paths)?; }
             let source = super::layout::path(&cfg.work_dir, "nscf/out");
             let out = dir.join("out");
             if !out.exists() {

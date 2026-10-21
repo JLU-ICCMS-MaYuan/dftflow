@@ -60,7 +60,7 @@ struct Options {
     workspace_task: Option<PathBuf>,
     #[arg(short = 'w', long)]
     work: Option<PathBuf>,
-    /// 提交本阶段的有界 Slurm 作业。
+    /// 核验上一任务并提交下一次原生调用，作业结束后再次执行 -s 推进。
     #[arg(short = 's', long, conflicts_with = "run")]
     submit: bool,
     /// 在已经登记的 Slurm 分配内运行本阶段。
@@ -121,7 +121,7 @@ struct Options {
     execute_attempt: Option<String>,
     #[arg(long, hide = true)]
     run_script: bool,
-    /// 仅 epw_phonon：生成三个阶段脚本和总提交脚本，不提交。
+    /// 仅 epw_phonon：准备当前就绪的原生脚本与待办清单，不提交。
     #[arg(long, conflicts_with_all = ["submit", "run", "resume"])]
     all: bool,
     #[arg(long, hide = true, conflicts_with_all = ["submit", "run", "resume"])]
@@ -150,6 +150,8 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
     } else {false};
     if numbered && !o.probe && o.budget.is_none() && o.import.is_none() && !o.collect && !o.plot && !o.results_check && o.export_comparison.is_none() {
         use super::stages::Step;
+        ensure!(!o.all || phase == Phase::Phonon, "input_conflict: --all 仅由 epw_phonon 管理");
+        ensure!(!o.resume || o.submit || o.run, "required: --resume 需要 -s 或 -r");
         let target=match (phase,o.stage) {
             (Phase::Phonon,None)=>Step::Phonon,
             (Phase::Wannier,None)=>Step::Coarse,
@@ -163,12 +165,17 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         super::run_state::ready(&cfg.work_dir)?;
         if o.status {if o.json{status::print_json(&super::workspace::report(&cfg)?);return Ok(())}return super::workspace::status(&cfg)}
         if o.check {for s in target.closure(){if s==target || !super::stages::reusable(&cfg,s)?{super::parallelism::preflight(&cfg,s,false)?;}} if o.json{status::print_json(&serde_json::json!({"operation_status":"ok","workflow_status":"configured","workflow_complete":false,"checks":["configuration","input_files","program_paths","mpi_pool_image"]}));}else{println!("operation_status: ok\nworkflow_status: configured");}return Ok(())}
-        if o.submit || o.run {return super::workspace::start(&o.config,target,o.submit)}
-        let path=super::workspace::generate(&o.config,if o.all {Step::Superconductivity}else{target})?;
-        println!("script: {}\nworkflow_status: configured\nworkflow_complete: false",path.display());
+        if o.submit {return super::native_workspace::advance(&o.config,target,true,o.resume)}
+        if o.run {return super::workspace::start(&o.config,target,false)}
+        super::native_workspace::advance(&o.config,if o.all {Step::Superconductivity}else{target},false,false)?;
         return Ok(())
     }
     ensure!(o.stage.is_none(),"input_conflict: --stage 需要 layout='numbered' 的当前配置");
+    if o.submit && !o.probe && o.budget.is_none() && o.work.is_none() {
+        super::config::Config::load(&o.config)?;
+    }
+    ensure!(!o.submit || o.probe || o.budget.is_some(),
+        "migration_required: 新原生提交使用 layout='numbered'；旧工作区请设置新的 work_dir 并使用 --import-work 显式导入，禁止继续提交内部执行器包装脚本");
     let work = || o.work.clone().context("required: 此操作需要 -w/--work");
     let results = || o.results.clone().context("required: 此操作需要 --results");
     if o.all || o.submit_chain {

@@ -224,68 +224,7 @@ fn b01_until_is_a_recognized_execution_boundary() {
     );
 }
 
-#[test]
-fn b01_submission_is_persistent_and_idempotent() {
-    let c = Case::new();
-    c.scheduled();
-    for _ in 0..2 {
-        let o = c.cli(&["submit", "-c", "input.toml", "--until", "qe-data"]);
-        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-        assert!(String::from_utf8_lossy(&o.stdout).contains("false"));
-    }
-    assert_eq!(
-        fs::read_to_string(c.root.join("submissions"))
-            .unwrap()
-            .lines()
-            .count(),
-        1
-    );
-    let record = c.workflow();
-    assert_eq!(record["job_id"], 123);
-    assert_eq!(record["cluster"], "test-cluster");
-    assert_eq!(record["until"], "qe-data");
-    let script = fs::read_to_string(record["script"]["path"].as_str().unwrap()).unwrap();
-    assert!(script.contains("--execute-attempt"));
-    assert!(!script.contains("mpirun"));
-    assert!(!c.root.join("scientific-calls").exists());
-    assert!(!c
-        .cli(&["submit", "-c", "input.toml", "--until", "interpolation"])
-        .status
-        .success());
-}
 
-#[test]
-fn b01_unknown_submission_retains_budget_and_is_not_retried() {
-    let c = Case::new();
-    c.scheduled();
-    c.script(
-        "sbatch",
-        &format!(
-            "#!/bin/sh\nprintf 'submit\\n' >> '{}'\nprintf 'warning\\n123\\n'\n",
-            c.root.join("submissions").display()
-        ),
-    );
-    for _ in 0..2 {
-        assert!(!c.cli(&["submit", "-c", "input.toml"]).status.success());
-    }
-    assert_eq!(c.workflow()["state"], "unknown");
-    assert_eq!(
-        fs::read_to_string(c.root.join("submissions"))
-            .unwrap()
-            .lines()
-            .count(),
-        1
-    );
-    let o = c.cli(&[
-        "budget",
-        "status",
-        "--ledger",
-        "campaign/ledger.json",
-        "--json",
-    ]);
-    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
-    assert_eq!(v["reserved_node_seconds"], 60);
-}
 
 #[test]
 fn b01_resource_run_requires_registered_allocation() {
@@ -300,154 +239,7 @@ fn b01_resource_run_requires_registered_allocation() {
     assert!(!c.root.join("scientific-calls").exists());
 }
 
-#[test]
-fn b01_boundary_executes_qe_once_and_blocks_missing_interpolation_evidence() {
-    let c = Case::new();
-    c.scheduled();
-    c.qe_fixture();
-    let o = c.cli(&["submit", "-c", "input.toml", "--until", "qe-data"]);
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    let attempt = c.workflow()["attempt_id"].as_str().unwrap().to_owned();
-    let o = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 123);
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    assert_eq!(c.workflow()["state"], "succeeded");
-    let calculation_dir = c.workflow()["calculation_dir"].clone();
-    assert!(calculation_dir.is_string());
-    let before = fs::read_to_string(c.root.join("scientific-calls")).unwrap();
-    assert_eq!(
-        before.lines().filter(|&s| s == "pw").count(),
-        2,
-        "一次 SCF 和一次 NSCF"
-    );
-    assert_eq!(
-        before.lines().filter(|&s| s == "ph").count(),
-        1,
-        "复用 qeflow 一次完整 nosplit PH"
-    );
-    let o = c.execution(&["run", "-c", "input.toml", "--until", "qe-data"], 123);
-    assert!(o.status.success());
-    assert_eq!(
-        before,
-        fs::read_to_string(c.root.join("scientific-calls")).unwrap()
-    );
-    // 模拟 QE 清单已发布、F1 尚未登记完成时进程中断；显式恢复应重验清单。
-    let mut interrupted = c.workflow();
-    interrupted["completed"]
-        .as_object_mut()
-        .unwrap()
-        .remove("qe-data");
-    interrupted["state"] = "failed".into();
-    fs::write(
-        c.root.join("run/epw-state/workflow.json"),
-        serde_json::to_vec_pretty(&interrupted).unwrap(),
-    )
-    .unwrap();
-    fs::remove_file(c.root.join("run/qe-data/manifest.json")).unwrap();
-    c.script(
-        "sacct",
-        "#!/bin/sh\nprintf '123|COMPLETED|3|1|\\n124|RUNNING|0|1|\\n'\n",
-    );
-    c.script("sbatch", "#!/bin/sh\nprintf '124\\n'\n");
-    let recovered = c.cli(&["resume", "-w", "run", "-s", "--until", "qe-data"]);
-    assert!(
-        recovered.status.success(),
-        "{}",
-        String::from_utf8_lossy(&recovered.stderr)
-    );
-    let attempt = c.workflow()["attempt_id"].as_str().unwrap().to_owned();
-    let recovered = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 124);
-    assert!(
-        recovered.status.success(),
-        "{}",
-        String::from_utf8_lossy(&recovered.stderr)
-    );
-    assert!(c.workflow()["completed"].get("qe-data").is_some());
-    assert!(c.root.join("run/qe-data/manifest.json").is_file());
-    assert_eq!(
-        before,
-        fs::read_to_string(c.root.join("scientific-calls")).unwrap()
-    );
-    c.script(
-        "sacct",
-        "#!/bin/sh\nprintf '123|COMPLETED|3|1|\\n124|COMPLETED|1|1|\\n125|RUNNING|0|1|\\n'\n",
-    );
-    c.script("sbatch", "#!/bin/sh\nprintf '125\\n'\n");
-    assert!(c
-        .cli(&["resume", "-w", "run", "-s", "--until", "interpolation"])
-        .status
-        .success());
-    let attempt = c.workflow()["attempt_id"].as_str().unwrap().to_owned();
-    let o = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 125);
-    assert_eq!(
-        c.workflow()["calculation_dir"],
-        calculation_dir,
-        "续算应复用原计算根目录"
-    );
-    assert!(!o.status.success());
-    assert!(
-        String::from_utf8_lossy(&o.stderr).contains("dynmat.x"),
-        "{}",
-        String::from_utf8_lossy(&o.stderr)
-    );
-    assert_eq!(c.workflow()["state"], "failed");
-    assert_eq!(c.workflow()["current_stage"], "wannier");
-    assert!(c.workflow()["completed"].get("qe-data").is_some());
-    assert!(c.root.join("run/qe-data/manifest.json").is_file());
-    assert_eq!(
-        before,
-        fs::read_to_string(c.root.join("scientific-calls")).unwrap(),
-        "续算不得重复 SCF/PH"
-    );
-    assert!(!c.root.join("run/superconductivity/manifest.json").exists());
-    let o = c.cli(&["status", "-w", "run", "--json"]);
-    assert!(o.status.success());
-    let s: Value = serde_json::from_slice(&o.stdout).unwrap();
-    assert_eq!(s["workflow_complete"], false);
-}
 
-#[test]
-fn b01_worker_failure_is_recorded_and_does_not_release_unknown_budget() {
-    let c = Case::new();
-    c.scheduled();
-    assert!(c
-        .cli(&["submit", "-c", "input.toml", "--until", "qe-data"])
-        .status
-        .success());
-    let attempt = c.workflow()["attempt_id"].as_str().unwrap().to_owned();
-    let o = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 123);
-    assert!(!o.status.success());
-    assert_eq!(c.workflow()["state"], "failed");
-    assert_eq!(c.workflow()["current_stage"], "qe-data");
-    assert!(!c.root.join("run/interpolation/manifest.json").exists());
-    assert!(
-        !c.cli(&["resume", "-w", "run", "-s"]).status.success(),
-        "旧分配仍活动不可重提"
-    );
-    let o = c.cli(&[
-        "budget",
-        "status",
-        "--ledger",
-        "campaign/ledger.json",
-        "--json",
-    ]);
-    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
-    assert_eq!(v["reserved_node_seconds"], 60);
-    c.script("sacct", "#!/bin/sh\nprintf '123|FAILED|7|1|\\n'\n");
-    assert!(c
-        .cli(&["status", "-w", "run", "--refresh", "--json"])
-        .status
-        .success());
-    let o = c.cli(&[
-        "budget",
-        "status",
-        "--ledger",
-        "campaign/ledger.json",
-        "--json",
-    ]);
-    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
-    assert_eq!(v["spent_node_seconds"], 7);
-    assert_eq!(v["reserved_node_seconds"], 0);
-}
 
 #[test]
 fn b01_until_enum_rejects_invalid_boundary_without_mutation() {
@@ -458,59 +250,7 @@ fn b01_until_enum_rejects_invalid_boundary_without_mutation() {
     assert!(!c.root.join("state").exists());
 }
 
-#[test]
-fn b01_concurrent_entry_submits_at_most_one_job() {
-    let c = Case::new();
-    c.scheduled();
-    c.script(
-        "sbatch",
-        &format!(
-            "#!/bin/sh\nprintf 'submit\\n' >> '{}'\n/bin/sleep 0.2\nprintf '123\\n'\n",
-            c.root.join("submissions").display()
-        ),
-    );
-    let outputs = std::thread::scope(|s| {
-        let a = s.spawn(|| c.cli(&["submit", "-c", "input.toml", "--until", "qe-data"]));
-        let b = s.spawn(|| c.cli(&["submit", "-c", "input.toml", "--until", "qe-data"]));
-        [a.join().unwrap(), b.join().unwrap()]
-    });
-    assert!(outputs.iter().any(|o| o.status.success()));
-    assert_eq!(
-        fs::read_to_string(c.root.join("submissions"))
-            .unwrap()
-            .lines()
-            .count(),
-        1
-    );
-    assert_eq!(c.workflow()["job_id"], 123);
-}
 
-#[test]
-fn b01_early_worker_failure_is_not_overwritten_by_submission_receipt() {
-    let c = Case::new();
-    c.scheduled();
-    c.qe_fixture();
-    c.script("pw.x", "#!/bin/sh\nexit 91\n");
-    c.script(
-        "sbatch",
-        &format!(
-            r#"#!/bin/sh
-for script do :; done
-SLURM_JOB_ID=123 PATH='{root}:/usr/bin:/bin' /bin/bash "$script" > '{root}/worker.log' 2>&1 || :
-printf '123\n'
-"#,
-            root = c.root.display()
-        ),
-    );
-    let o = c.cli(&["submit", "-c", "input.toml", "--until", "qe-data"]);
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    assert_eq!(c.workflow()["state"], "failed");
-    assert_eq!(c.workflow()["job_id"], 123);
-    assert!(c.workflow()["error"]
-        .as_str()
-        .unwrap()
-        .contains("execution_failed"));
-}
 
 #[test]
 fn b09_reads_qe_schema_text_coordinates_and_sibling_eigenvalues() {
@@ -1020,50 +760,20 @@ fn prepare_rejects_changed_bound_configuration_without_rewriting() {
     assert!(!out.status.success());
     assert_eq!(fs::read(&snap).unwrap(), original);
     fs::write(&snap, b"tampered configuration").unwrap();
-    let out = c.cli(&["resume", "-w", "run", "-s"]);
+    let out = c.cli(&["resume", "-w", "run", "-r"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("input_conflict"));
 }
 
+
+// 0026：旧提交器专属生命周期用例由 three_stage_execution/support/direct_submit
+// 的原生提交、防重、未知预算、失败恢复及逐步全链契约取代；-r 与科学解析回归保留。
 #[test]
-fn startup_uses_controller_while_delayed_accounting_still_blocks_settlement() {
-    let c = Case::new();
-    c.scheduled();
-    assert!(c
-        .cli(&["submit", "-c", "input.toml", "--until", "qe-data"])
-        .status
-        .success());
-    let attempt = c.workflow()["attempt_id"].as_str().unwrap().to_owned();
-    c.script(
-        "scontrol",
-        "#!/bin/sh\nprintf 'JobId=123 JobState=RUNNING NumNodes=2\\n'\n",
-    );
-    let rejected = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 123);
-    assert!(!rejected.status.success());
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("节点数"));
-    assert_eq!(c.workflow()["state"], "submitted");
-    assert!(c.workflow()["current_stage"].is_null());
-    c.script(
-        "scontrol",
-        "#!/bin/sh\nprintf 'JobId=123 JobState=RUNNING NumNodes=1\\n'\n",
-    );
-    c.script("sacct", "#!/bin/sh\nprintf '123|PENDING|1|0|\\n'\n");
-    let o = c.execution(&["__execute", "-w", "run", "--attempt", &attempt], 123);
-    assert!(!o.status.success()); // 原故障夹具在科学前置门失败，不是假造科学成功。
-    assert_eq!(c.workflow()["current_stage"], "qe-data");
-    let ledger = c.root.join("campaign/ledger.json");
-    let old = fs::read(&ledger).unwrap();
-    assert!(!c
-        .cli(&["status", "-w", "run", "--refresh", "--json"])
-        .status
-        .success());
-    assert_eq!(old, fs::read(&ledger).unwrap(), "未决账表不能释放预留");
-    c.script("sacct", "#!/bin/sh\nprintf '123|FAILED|7|1|\\n'\n");
-    assert!(c
-        .cli(&["status", "-w", "run", "--refresh", "--json"])
-        .status
-        .success());
-    let settled: Value = store::read(&ledger).unwrap();
-    assert_eq!(settled["spent_node_seconds"], 7);
-    assert!(settled["allocations"].as_array().unwrap().is_empty());
+fn legacy_submit_is_rejected_before_submission_or_scientific_execution() {
+    let c=Case::new(); c.scheduled();
+    let out=c.cli(&["submit","-c","input.toml"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("migration_required"));
+    assert!(!c.root.join("submissions").exists());
+    assert!(!c.root.join("scientific-calls").exists());
 }

@@ -46,6 +46,7 @@ fn inputs(dir: &Path, result: &mut Vec<Identity>) -> Result<()> {
             !meta.file_type().is_symlink(),
             "input_conflict: 物化输入不得包含链接"
         );
+        if meta.is_file() && crate::foundation::native_jobs::is_log(&path) { continue; }
         if meta.is_dir() {
             inputs(&path, result)?;
         } else {
@@ -215,12 +216,25 @@ pub(super) fn run_with_inputs<T>(
         }
         if previous.state == State::Running {
             verify(&previous.inputs)?;
-            if let Ok(result) = checked_collect(dir, exit_code, &collect) {
-                complete(&mut previous, &target, &result, &evidence)?;
+            if crate::foundation::native_jobs::enabled() && !crate::foundation::native_jobs::failed(dir)? {
+                // 一个科学检查点可能包含 q2r→matdyn；逐个返回已登记报告，
+                // 在下一个尚未执行的原生调用处暂停，不重新准备或归档现场。
+                execute()?;
+                let result=checked_collect(dir,exit_code,&collect)?;
+                complete(&mut previous,&target,&result,&evidence)?;
                 return Ok(result);
+            }
+            match checked_collect(dir, exit_code, &collect) {
+                Ok(result) => {
+                    complete(&mut previous, &target, &result, &evidence)?;
+                    return Ok(result);
+                }
+                Err(e) if crate::foundation::native_jobs::enabled() && !crate::foundation::native_jobs::retry_enabled() => return Err(e),
+                Err(_) => (),
             }
         }
         archive(&mut previous, &target, &root, label)?;
+        if crate::foundation::native_jobs::enabled() { crate::foundation::native_jobs::retire(dir)?; }
     } else {
         ensure!(
             !exists(dir) || (crate::foundation::layout::enabled(work) && label=="coarse" && !dir.join("epw.out").exists() && !dir.join("out").exists()),
