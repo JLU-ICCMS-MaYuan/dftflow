@@ -1,150 +1,66 @@
-# MgB₂ EPW 运行说明
+# MgB₂ EPW 手动测试
 
-## 进入目录并检查输入
+0046～0051 的合并版本已重新编译并完成联合验收。独立测试现场从 SCF 走通八阶段，iso／aniso 各一次 EPW 执行 20、30、40 K；结果与限制见 [联合验收记录](../../../../../docs/specs/0050-epw-stage-results/real-chain-validation.md)。本目录已清理历史运行文件，保留输入与说明，可从第 1 步开始手动测试。
+
+## 开始前检查
 
 ```bash
 source "/data/home/mayuan/code/dftflow/scripts/env.sh"
 cd "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow"
+command -v epw_phonon epw_wannier epw_superconductivity
 epw_phonon -c "epwinput.toml" --check --json
 ```
 
-`source` 将仓库程序加入当前终端 PATH；`--check` 检查配置、输入文件和并行设置，不提交计算。以下命令统一读取本目录的 `epwinput.toml`。
+`--check` 只检查配置、文件和并行设置，不提交作业。所有命令读取当前 `epwinput.toml`，结构为 `../POSCAR`，赝势位于上级 `pp/`。当前为 PBE 小网格功能测试，图与数值供人工检查，不代表网格或选窗已经收敛。
 
-## 按顺序计算
+## 八阶段操作
 
-**第 4 步声子目标只需提交一次，作业会自动完成全部声子计算、save 整理、出图和核验。** 其他目标每次 `-s` 最多提交一个原生任务，等待结束后重复同一条命令，直至目标完成再执行下一步。
+按下表逐步运行；确认上一阶段完成后再执行下一阶段。公开命令不会自动提交下一阶段。
 
-### 第 1 步：自洽计算
+| 步骤 | 提交命令 | 完成后查看 |
+| --- | --- | --- |
+| 1 SCF | `epw_phonon -c "epwinput.toml" --stage scf -s` | `1.qe-scf/` |
+| 2 NSCF | `epw_phonon -c "epwinput.toml" --stage nscf -s` | `2.qe-nscf/` |
+| 3 QE 电子 | `epw_phonon -c "epwinput.toml" --stage electronic -s` | `results/3.qe-electronic/` 单独能带与 DOS |
+| 4 QE 声子 | `epw_phonon -c "epwinput.toml" --stage phonon -s` | `results/4.qe-phonon-nosplit/` 声子谱、TDOS、Mg／B 元素 DOS |
+| 5 Wannier | `epw_wannier -c "epwinput.toml" --stage wannier -s` | `results/5.epw-wannier/` QE／EPW 电子能带及 DOS 对比 |
+| 6 coarse | `epw_wannier -c "epwinput.toml" --stage coarse -s` | `results/6.epw-coarse/` 声子对比、四面板总览及 `decay/` 衰减图 |
+| 7 fine | `epw_superconductivity -c "epwinput.toml" --stage fine -s` | `7.epw-fine/` 原生 α²F／λ 与清单 |
+| 8 gap | `epw_superconductivity -c "epwinput.toml" --stage superconductivity -s` | `results/8.epw-superconductivity/` 能隙、Z、温度曲线与数据 |
 
-```bash
-epw_phonon -c "epwinput.toml" --stage scf -s
-```
+**第 1／2 步**作业完成后，再执行相同命令核验完成记录；已完成的科学计算不会重跑。
 
-运行完成后，`1.qe-scf/` 保存 SCF 日志、电荷密度和 QE 保存数据。
+**第 3～7 步**各提交一次即可，阶段脚本在作业内完成必要后处理、核验、绘图及发布。第 3 步能带和 DOS 各自完成即可出图；第 7 步没有另加独立最终图，已有谱在第 8 步结果包展示。无需再次调用公开命令触发绘图。
 
-### 第 2 步：完整均匀 k 网格非自洽计算
+**第 8 步**当前 `task="gap"`、`mode="both"`、`mu_star=0.05`、温度 `[20,30,40]` K；执行一次命令提交两个独立方法作业，每个方法一次 EPW 处理全部温度。输出目录为 `iso-mu0.05-20-40/` 与 `aniso-mu0.05-20-40/`，全部有效温度齐备后在作业内发布最终结果。当前任务计算指定温度的能隙，不搜索 Tc。
 
-```bash
-epw_phonon -c "epwinput.toml" --stage nscf -s
-```
+为了尽早检查选窗，也可按 **1 → 2 → 3 → 5 → 4 → 6 → 7 → 8** 执行。第 5 步不依赖声子；能带由 EPW 内嵌 Wannier90 的 wdata 输出，只有电子 DOS 调用 postw90。图中四个窗口边界取实际拟合日志。第 6 步复用第 5 步电子数据，只新增必要的声子求值；声子比较只画 TDOS，元素 DOS 在第 4 步单独交付。
 
-运行完成后，`2.qe-nscf/` 保存本征值、波函数和 NSCF 日志。
-
-### 第 3 步：QE 电子能带和总 DOS
-
-```bash
-epw_phonon -c "epwinput.toml" --stage electronic -s
-```
-
-运行完成后，`3.qe-electronic/` 保存能带、DOS 数据及后处理结果。
-
-### 第 4 步：声子计算及后处理
-
-```bash
-epw_phonon -c "epwinput.toml" --stage phonon -s
-```
-
-这条命令只执行一次。一个 Slurm 分配自动完成 PH → EPW save 归集及核验 → q2r → matdyn 声子谱 → matdyn DOS → 绘图 → 完成登记。相容上游和已完成子任务自动复用，不会接着运行 Wannier／coarse。
-
-`4.qe-phonon-nosplit/save/` 保存供 EPW 使用的数据；`plots/phband/phonon_band.png` 为声子谱，`plots/phdos/phonon_dos.png` 包含 TDOS 与 Mg／B 元素 PDOS。`phonon.sh` 和 `slurm-phonon.log` 位于本声子目录。通俗流程图见 [0048 快速说明](../../../../../docs/specs/0048-epw-phonon-stage-chain/quickstart.md)。
-
-### 第 5 步：Wannier 拟合及电子后处理
-
-```bash
-epw_wannier -c "epwinput.toml" --stage wannier -s
-```
-
-运行完成后，`5.epw-wannier/` 保存 Wannier 输入、日志、变换文件，以及电子能带和 DOS 图。
-
-### 第 6 步：粗网格电子声子耦合及常规对比
-
-```bash
-epw_wannier -c "epwinput.toml" --stage coarse -s
-```
-
-运行完成后，`6.epw-coarse/` 保存粗网格矩阵元、QE／EPW 比较数据与图。
-
-### 第 7 步：细网格插值、α²F 和 λ
-
-```bash
-epw_superconductivity -c "epwinput.toml" --stage fine -s
-```
-
-运行完成后，`7.epw-fine/` 保存细网格矩阵元、谱文件及交付清单。
-
-### 第 8 步：20／30／40 K 的 iso／aniso 能隙
-
-```bash
-epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
-```
-
-按 `task="gap"`、`mode="both"` 和温度列表依次执行六个单点。每个温度使用一个初始能隙，不搜索 Tc。`8.epw-superconductivity/` 的尝试子目录保存该点的 `epw.in`、`submit.sh`、`epw.out`、原生 Δ／Z 文件和 `attempt.json`。六点正常执行结束后，`results/` 保存 `points.csv` 逐点执行／收敛／数据状态、`gap_summary.csv` 能隙统计、`gap_states.csv` 状态明细及三格式图像；未收敛、NaN 或缺失能隙的数据会注明原因，不填零。
-
-六点完成后，检查结果包及其来源：
-
-```bash
-epw_superconductivity --results-check --results "8.epw-superconductivity/results" --json
-```
-
-返回 `workflow_complete: true`、`source_verification: "verified"`，表示逐点执行和结果包核验完成；`gap_run.data_complete` 另列能隙数据是否全部有效。
-
-### 查看作业与工作区状态
-
-查看提交命令给出的作业号及当前工作区状态：
+## 查看状态与处理失败
 
 ```bash
 sacct -j 作业号 --format=JobID,State,ExitCode,Elapsed
 epw_phonon -c "epwinput.toml" --status --json
+epw_superconductivity --results-check --results "results" --json
 ```
 
-`sacct` 查看作业终态和退出码；`--status` 查询工作区状态，不提交作业。声子目标在作业内自动核验，以 `workflow_complete: true` 及完整交付为准；其余目标在 `COMPLETED` 后重复原命令核验并推进。失败后修复原因，在原命令增加 `--resume`；声子恢复只需提交一次，自动完成余项。活动或终态未知的任务不能重复提交。
+`COMPLETED` 和退出码用于核对调度状态；还应检查阶段科学完成记录、根结果包及第 8 步各温度有效性。当前父脚本和合并日志位于对应阶段，如 `4.qe-phonon-nosplit/phonon.sh` 与 `slurm-phonon.log`；原生程序日志保留在实际任务目录。`results/index.json` 只导航已发布图片与数据，不代替科学完成记录。
 
-去掉 `-s` 只准备当前可执行任务的输入和脚本；正式推进使用上述公开命令。
+失败后先看日志，修正原因，再对同一目标加 `--resume -s`。成功科学检查点与相容后处理会复用；缺图或发布失败只补派生结果。活动或终态未知的作业拒绝重复提交，不手删状态规避核验。必要计算原因在比较目录的 `reuse-decision.json`／`dos-decision.json` 中。
 
-## 目录结构
+完整 `results/` 可移动到其他目录独立重绘：
 
-```text
-run/
-├── POSCAR                         # 晶体结构
-├── pp/                            # PBE 赝势
-└── epwflow/
-    ├── README.md                  # 本说明
-    ├── epwinput.toml              # 统一输入
-    ├── KPATH.in                   # 能带／声子路径
-    ├── 1.qe-scf/
-    ├── 2.qe-nscf/
-    ├── 3.qe-electronic/
-    │   ├── qe_eband/
-    │   └── qe_eledos/
-    ├── 4.qe-phonon-nosplit/save/
-    ├── 5.epw-wannier/
-    ├── 6.epw-coarse/
-    ├── 7.epw-fine/
-    ├── 8.epw-superconductivity/
-    │   ├── iso-020.00K-attempt-0001/  # 每个模式和温度独立尝试
-    │   ├── aniso-020.00K-attempt-0004/
-    │   ├── manifest.json              # 六点计划、尝试及完成状态
-    │   └── results/                   # 表格、状态和 figures/
-    └── epw-state/                 # 提交、预算绑定和阶段状态
+```bash
+epw_superconductivity --plot --results "results"
+epw_superconductivity --results-check --results "results" --json
 ```
 
-编号目录随计算生成。原生输入、提交脚本和日志位于实际计算目录；细网格、后处理及超导任务可能位于其下的尝试子目录。`out/` 等原生重读数据与清单需要保留，后续阶段和续算会使用。
+## 输入与目录
 
-## 关键参数提醒
+当前 SCF／NSCF 为 4×4×2、NSCF 16 带，PH 为 2×2×1，细 k／q 为 8×8×4／4×4×2，5 个 Wannier 函数；`mpirun -np 32`、MPI=32、EPW `-nk 32` 保持一致。超导迭代使用输入中的实际混合设置 `mixing_beta=-0.3`、历史长度 8，最多 1000 次、相对标准 1e-8；不自动调窗、扫描网格或修改温度。
 
-- **路径**：`work_dir="."`、`layout="numbered"` 将阶段目录直接建在本目录；相对路径以 TOML 所在目录为基准，结构为 `../POSCAR`。赝势和外部程序目前使用绝对路径。
-- **并行**：当前 NSCF 为 `4×4×2`，共 32 个 k 点；`launcher` 的 `-np 32`、`resources.mpi=32` 和 EPW 的 `-nk 32` 应保持一致。当前 EPW 路径每 pool 一个 MPI，pool 数不能超过可用 k 点数。
-- **网格**：PH 粗 q 网格为 `2×2×1`，细 k／q 网格为 `8×8×4`／`4×4×2`。修改网格会影响相应阶段及下游复用。
-- **Wannier**：`num_wann=5`、`selection_mode="energy_only"`、`guiding_centres=true`；保留初始投影，`B:pz` 在两个 B 原子上分别生成投影。
-- **超导**：`task="gap"` 按 `gap_temperatures_k=[20,30,40]` 算能隙；`mode="both"` 同时计算 iso／aniso，也可选 `iso` 或 `aniso`。`initial_gap_mev=10` 为单初值，`mu_star=0.05`、截断 `0.5 eV`、最多 1000 次迭代、相对收敛标准 `1e-8`。`mixing_beta=-0.3` 使用原生线性混合，正值使用 Broyden，系数绝对值须在 `(0,1]`。温度须为正数、精确到 0.01 K、不重复且不超过 999.99 K；截断须包含首个 Matsubara 频率。省略 `task` 仍走旧 Tc 搜索，需要原 Tc 参数表。
-- **资源**：每次提交受 `resources` 和共享 `[budget]` 账本限制；重算不会清零已有消费。`--check` 通过只代表输入检查通过，不代表八步计算已经完成。
+阶段数据在本目录按 `1.qe-scf/` 至 `8.epw-superconductivity/` 生成，阶段状态在 `epw-state/`，最终图片与对应数据按阶段发布到同级 `results/`。原生科学文件继续保留在各阶段，续算时不要删除。
 
-## 0049：指定温度的双方法批次提交
+共享预算沿用 `docs/local/epwflow-campaign.json`，累计上限 28800 节点秒／100 GiB，同时最多两个作业。新建现场不会清零历史消费；预留不足时由程序明确拒绝。旧 examples 现场已归档到 `test_auto/MgB2/local_run/012-stage-results/example-before-manual/`，不作为本目录当前完成证据。
 
-本节更新第 8 步 gap 目标的执行规则与目录布局，以本节为准；gap 不进行 Tc 搜索。
-
-使用 `task="gap"`、`mode="both"` 和 `gap_temperatures_k=[20,30,40]`，执行第 8 步命令一次即可提交两个独立 Slurm 作业，每种方法一次 EPW 执行全部温度。省略 `mu_star` 默认 0.13；已有显式值优先，如需本算例使用 0.13，请在当前配置显式设置 `mu_star=0.13`，不会自动改写既有输入。
-
-结果位于 `8.epw-superconductivity/iso-mu0.13-20-40/` 与 `aniso-mu0.13-20-40/`；各方法全部温度共目录。作业结束后再次执行同命令归集，`--status --json` 的 `native_methods` 显示两个作业。原生提前停止后，修正原因并加 `--resume -s` 仅补未完成点；不自动调整数值参数或覆盖旧证据。
-
-上述说明针对 0049 新源码；旧默认安装不自动更新。当前配置中的实际 `task`、温度和显式 μ* 是执行依据。完整配置与边界见 [模块手册](../../../../../epwflow/README.md)及 [0049 Spec](../../../../../docs/specs/0049-epw-multitemperature-submit/spec.md)。
+[图片与数据说明](RESULTS.md) · [测试脚本与复现](../../../../../test_auto/MgB2/epwflow/README.md) · [EPW 手册](../../../../../epwflow/README.md)

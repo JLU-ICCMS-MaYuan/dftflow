@@ -157,3 +157,12 @@ AI 理解：原话 `ntrol.lock` 指本轮持续反馈的 `control.lock`；MPI �
 ## 最终草案确认
 
 用户先明确收窄 0046，随后要求“开始落实”，据此补齐 [Plan](plan.md)、[技术取舍](research.md)、[数据模型](data-model.md)、[提交契约](contracts/submit.md)、[任务](tasks.md) 与 [验证步骤](quickstart.md)，实施当前范围。原话、FR／SC、设计与任务的覆盖关系见 Plan；线上发布和链接核验继续由用户管理。检查见[需求检查表](checklists/requirements.md)。
+
+
+## 2026-10-22 联合真实验收补充
+
+用户要求重新编译并在指定 test_auto／local_run 完成 0046～0050 全链，原文与授权边界见 [0050 补充需求](../0050-epw-stage-results/spec.md#真实全链验证补充授权)。本次是既有 Feature 的修复与验收，不另建同范围 Issue；线上 Gitee 仍由用户管理。
+
+固定功能脚本与同目录 Slurm 日志、普通 mpirun、直接原生输出及终态重复命令复用；修复初始归档吞掉当前父脚本和固定日志的问题。
+
+实际作业、制品、失败修复、完整回归、安装及示例清理状态统一见 [联合验收记录](../0050-epw-stage-results/real-chain-validation.md)。当前真实链已完成；部署及文档收尾以该记录的最终状态为准，不把旧替身证据改写成科学验证。

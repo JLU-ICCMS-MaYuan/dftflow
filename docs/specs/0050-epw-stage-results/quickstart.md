@@ -1,6 +1,6 @@
 # 阶段交付与快速验证
 
-本文对应本轮源码实现；自动回归与真实科学程序的证据分开，详见 [验收记录](acceptance.md)。默认安装和已有冻结脚本未更新。完整条件见 [Spec](spec.md)。
+本文对应本轮源码实现；自动回归与真实科学程序的证据分开，详见 [验收记录](acceptance.md)。后续真实链与默认安装状态见 [联合验收](real-chain-validation.md)，历史冻结脚本保留原绑定。完整条件见 [Spec](spec.md)。
 
 ## 准备
 
@@ -22,7 +22,7 @@ CARGO_PROFILE_TEST_DEBUG=0 bash "scripts/build-native.sh" test -p epwflow --no-f
 epw_wannier -c "epwinput.toml" --stage wannier -s
 ```
 
-以上为安装新版后、在已有计算授权范围内的正常使用方式。本轮没有提交真实作业。只需一次提交，等待生成的作业脚本自行结束，之后直接读取 `results/5.epw-wannier/` 与 `results/index.json`，不再次调用公开命令触发绘图或登记。
+以上为安装新版后、在已有计算授权范围内的正常使用方式。本操作已在独立 MgB₂ 现场通过真实作业验证，详见联合验收。只需一次提交，等待生成的作业脚本自行结束，之后直接读取 `results/5.epw-wannier/` 与 `results/index.json`，不再次调用公开命令触发绘图或登记。
 
 核对电子两图、QE 与插值曲线、实际四窗口、最大差和未配对态说明，以及配套表、图参和来源。检查 `5.epw-wannier/comparison-native/electron/`；记录无 PH／粗网格依赖。调用账目证明能带由 epw.x 内嵌 W90 输出、没有外部 wannier90.x 绘图，postw90 只做 DOS。
 

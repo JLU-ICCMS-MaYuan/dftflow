@@ -120,6 +120,25 @@ fn cart(point: [f64; 3], reciprocal: &[[f64; 3]; 3]) -> [f64; 3] {
     std::array::from_fn(|j| (0..3).map(|i| point[i] * reciprocal[i][j]).sum())
 }
 
+fn same_sampling(
+    sampling: &super::electronic_sampling::Sampling,
+    path: &[comparison::PathPoint],
+    mesh: &[[f64; 3]],
+    reciprocal: &[[f64; 3]; 3],
+) -> bool {
+    // SCF 与 NSCF XML 的倒格矢末位可能不同，不能要求派生距离的 JSON 完全相等。
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-10;
+    sampling.path.len() == path.len()
+        && sampling.mesh.len() == mesh.len()
+        && sampling.reciprocal.iter().flatten().zip(reciprocal.iter().flatten()).all(|(a, b)| close(*a, *b))
+        && sampling.path.iter().zip(path).all(|(a, b)| {
+            a.segment_id == b.segment_id && a.point_id == b.point_id
+                && close(a.distance, b.distance)
+                && a.crystal.iter().zip(b.crystal).all(|(a, b)| close(*a, b))
+        })
+        && sampling.mesh.iter().zip(mesh).all(|(a, b)| a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-7))
+}
+
 pub(crate) fn path_points(
     path: &Path,
     reciprocal: &[[f64; 3]; 3],
@@ -326,7 +345,7 @@ pub(crate) fn run(
     ];
     if numbered {
         let sampling = super::electronic_sampling::plan(cfg)?;
-        ensure!(serde_json::to_value(&sampling.path)? == serde_json::to_value(&path)? && sampling.mesh.iter().zip(&mesh).all(|(a,b)|a.iter().zip(b).all(|(a,b)|(a-b).abs()<1e-7)), "input_conflict: 第 5/6 步采样坐标不同");
+        ensure!(same_sampling(&sampling, &path, &mesh, &geometry.reciprocal), "input_conflict: 第 5/6 步采样坐标不同");
         crate::foundation::workspace_science::verify_electronic_comparison(cfg)?;
     } else {
     attempt::run_with_inputs(
@@ -664,6 +683,33 @@ pub(super) fn artifacts(work: &Path) -> Result<Vec<super::manifest::Artifact>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sampling_accepts_xml_roundoff_but_rejects_changed_coordinates_order_and_count() {
+        let point = |id, x| comparison::PathPoint {
+            segment_id: 0, point_id: id, distance: x, crystal: [x, 0., 0.],
+        };
+        let reciprocal = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
+        let mesh = [[0., 0., 0.], [0.5, 0., 0.]];
+        let sampling = super::super::electronic_sampling::Sampling {
+            path: vec![point(0, 0.), point(1, 0.5)], ticks: vec![],
+            mesh: mesh.to_vec(), reciprocal,
+        };
+        let mut path = vec![point(0, 0.), point(1, 0.5)];
+        path[1].distance += 1e-15;
+        let mut rounded = reciprocal;
+        rounded[0][0] += 1e-15;
+        assert!(same_sampling(&sampling, &path, &mesh, &rounded));
+        assert!(!same_sampling(&sampling, &path[..1], &mesh, &rounded));
+        assert!(!same_sampling(&sampling, &path, &mesh[..1], &rounded));
+        path[1].crystal[0] += 1e-4;
+        assert!(!same_sampling(&sampling, &path, &mesh, &rounded));
+        path[1] = point(1, 0.5);
+        path[1].segment_id = 1;
+        assert!(!same_sampling(&sampling, &path, &mesh, &rounded));
+        path[1] = point(1, 0.5);
+        path.swap(0, 1);
+        assert!(!same_sampling(&sampling, &path, &mesh, &rounded));
+    }
     #[test]
     fn nonorthogonal_path_keeps_disconnected_segments_and_metric() {
         let dir = std::env::temp_dir().join(format!("epw-path-{}", store::token()));

@@ -165,7 +165,7 @@ mixing_beta = -0.3
 
 目录使用实际 μ* 和配置列表首尾温度，去掉数值冗余零，不按温度建立子目录。新点清单为 schema 4，旧 schema 3 继续核验；结果包保留 `points.csv`、有效的 `gap_summary.csv`／`gap_states.csv` 与图，不生成 Tc 表。执行完成、收敛和数据有效性分别记录，缺失或 NaN 不补零。
 
-EPW 原生多温度循环可能因不收敛提前停止，另一方法独立运行。保留已完成前缀，明确记录未执行温度；修正原因后用同命令加 `--resume -s`，只把剩余点交给新的原生批次。旧输入、日志和逐点证据保存在同方法目录的编号文件中，不覆盖失败证据。活动或未知回执不重提；第二个提交失败也保留第一个作业号。省略 `task` 仍为原 Tc 模式，继续使用已有搜索和双初值规则。设计及源码验证见 [0049](../docs/specs/0049-epw-multitemperature-submit/spec.md)，历史安装及六单点真实运行见 [0045](../docs/specs/0045-epw-gap-temperatures/acceptance.md)；0049 未自动部署或新增真实科学运行。
+EPW 原生多温度循环可能因不收敛提前停止，另一方法独立运行。保留已完成前缀，明确记录未执行温度；修正原因后用同命令加 `--resume -s`，只把剩余点交给新的原生批次。旧输入、日志和逐点证据保存在同方法目录的编号文件中，不覆盖失败证据。活动或未知回执不重提；第二个提交失败也保留第一个作业号。省略 `task` 仍为原 Tc 模式，继续使用已有搜索和双初值规则。设计及源码验证见 [0049](../docs/specs/0049-epw-multitemperature-submit/spec.md)，历史安装及六单点真实运行见 [0045](../docs/specs/0045-epw-gap-temperatures/acceptance.md)；初次 0049 未自动部署；后续真实双批次六点均有效，见 [联合验收](../docs/specs/0050-epw-stage-results/real-chain-validation.md)。
 
 超导数值读取支持标准 E/D 指数和原生三位指数省略 E 的格式（如 1.7366215176-102）；仅接纳带小数点的明确尾数，星号、非有限及溢出仍拒绝。格式兼容不改变原生收敛、频率／状态映射和双初值判据，见 [0042](../docs/specs/0042-epw-fortran-exponent/acceptance.md)。
 
@@ -240,7 +240,7 @@ bash scripts/build-native.sh test -p epwflow -p qeflow --locked
 
 `bin/` 已被 Git 忽略，按 `epwflow`、`qeflow`、`scflow`、`substitutionflow`、`vaspflow`、`wannierflow` 分组。`scripts/env.sh` 将模块路径加入当前终端 PATH，不要求在测试目录寻找可执行文件。
 
-公开进程及脚本测试使用隔离替身，证明调度、布局、复用和数据防护，不认证科学数值。真实 MgB₂ 全链和原生 iso／aniso Tc 仍需真实科学验收；本需求不代用户提交真实任务。预算、来源保护及原生收敛检查继续有效，历史科学证据见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
+公开进程及脚本测试使用隔离替身，证明调度、布局、复用和数据防护，不认证科学数值。后续授权的真实 MgB₂ PBE 八阶段及 iso／aniso 三温度 gap 已完成，见 [联合验收](../docs/specs/0050-epw-stage-results/real-chain-validation.md)；原生 Tc 搜索不在该轮验收范围。预算、来源保护及原生收敛检查继续有效，历史科学证据见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
 
 
 ## 可见运行状态与删除阶段后重建（0025）
@@ -286,9 +286,9 @@ epw_wannier --stage wannier -s
 
 第 5 步继续生成 QE／Wannier 电子能带和总 DOS 叠图。第 6 步声子谱继续比较 QE／EPW，声子 DOS 的独立图与总览仅比较 TDOS，不展示元素曲线或元素投影缺失占位。第 3／4 步的单独图保留。电子元素／轨道投影及插值侧元素声子投影仍未恢复。
 
-`-r` 在该子任务结束时绘图；声子目标 `-s` 在同一分配内自动绘图并登记完成，其他目标在作业结束后下一次公开命令核验时绘图。重执行原命令可补缺图，失败恢复沿用 `--resume`。`plots/completion.json` 管理派生图，科学完成身份排除图片；声子数值后处理另存 `qe-post-completion.json`，绘图失败恢复不重复成功的 PH／q2r／matdyn。只读状态命令不补图。
+`-r` 在该子任务结束时绘图；按较新的 0050，`-s` 在目标阶段的作业内自动完成后处理、绘图和发布，不等待再次公开调用。重执行原命令可补缺图，失败恢复沿用 `--resume`。`plots/completion.json` 管理派生图，科学完成身份排除图片；声子数值后处理另存 `qe-post-completion.json`，绘图失败恢复不重复成功的 PH／q2r／matdyn。只读状态命令不补图。
 
-实现与隔离进程／真实数据只读出图证据见 [0047 验收](../docs/specs/0047-qe-stage-plots/acceptance.md)。本次源码交付没有切换默认安装、覆盖冻结脚本或新增科学作业。
+实现与隔离进程／真实数据只读出图证据见 [0047 验收](../docs/specs/0047-qe-stage-plots/acceptance.md)。初次源码交付未部署或新增科学作业；后续 0046～0051 的实际全链与安装边界见 [联合验收](../docs/specs/0050-epw-stage-results/real-chain-validation.md)。
 
 ## 逐阶段结果与独立重绘
 
@@ -307,4 +307,4 @@ epw_superconductivity --plot --results "results"
 
 查看 `results/6.epw-coarse/decay/decay-overview.png`，独立图主体为 `decay-H`、`decay-dynmat`、`decay-epmate`、`decay-epmatp`，全部提供 PNG／SVG／PDF。横轴为实空间距离 Å，纵轴按原生文件为 Ry，使用紫色散点和十进制对数。重复距离逐行保留，零值保留在数据并注明未绘制，坏数和来源冲突拒绝。
 
-阶段内派生目录为 `6.epw-coarse/decay/`；发布包附原始副本、逐行绘图数据、参数及来源。完整 `results/` 移动后可用上面的 `--plot --results` 独立重绘。图像失败后原目标加 `--resume -s` 仅补派生结果，缺原生 decay 文件则列缺项，不自动重跑 EPW。图仅供人工判断，不提供阈值、评级或放行门。使用与验收见 [0051 快速说明](../docs/specs/0051-epw-real-space-decay/quickstart.md)和[验收记录](../docs/specs/0051-epw-real-space-decay/acceptance.md)；本项未部署默认安装。
+阶段内派生目录为 `6.epw-coarse/decay/`；发布包附原始副本、逐行绘图数据、参数及来源。完整 `results/` 移动后可用上面的 `--plot --results` 独立重绘。图像失败后原目标加 `--resume -s` 仅补派生结果，缺原生 decay 文件则列缺项，不自动重跑 EPW。图仅供人工判断，不提供阈值、评级或放行门。使用与验收见 [0051 快速说明](../docs/specs/0051-epw-real-space-decay/quickstart.md)和[验收记录](../docs/specs/0051-epw-real-space-decay/acceptance.md)；后续合并版已完成真实联合验收并部署默认安装，详见 [联合交付记录](../docs/specs/0050-epw-stage-results/real-chain-validation.md)。

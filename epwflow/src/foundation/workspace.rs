@@ -711,15 +711,16 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
             .join(format!("{}-{}", step.name(), store::token()));
     let dir = step.directory(cfg);
     if dir.exists() {
-        let chain_script = if step == Step::Phonon && dir.join("phonon.sh").is_file() {
-            Some(fs::read(dir.join("phonon.sh"))?)
+        let chain_name = format!("{}.sh", step.name());
+        let chain_script = if dir.join(&chain_name).is_file() {
+            Some(fs::read(dir.join(&chain_name))?)
         } else { None };
         fs::create_dir_all(&history)?;
         fs::rename(&dir, history.join("calculation"))?;
         preserve_active_logs(&history.join("calculation"), &dir)?;
         if let Some(body) = chain_script {
-            store::atomic_bytes(&dir.join("phonon.sh"), &body)?;
-            fs::set_permissions(dir.join("phonon.sh"), fs::Permissions::from_mode(0o755))?;
+            store::atomic_bytes(&dir.join(&chain_name), &body)?;
+            fs::set_permissions(dir.join(&chain_name), fs::Permissions::from_mode(0o755))?;
         }
     }
     let receipt = stages::receipt(&cfg.work_dir, step);
@@ -734,6 +735,9 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
 
 pub(crate) fn slurm_log(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|s| s.to_str()) else { return false; };
+    if let Some(stem) = name.strip_prefix("slurm-").and_then(|s| s.strip_suffix(".log")) {
+        return !stem.is_empty() && stem.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'));
+    }
     let Some((job, suffix)) = name.strip_prefix("slurm-").and_then(|s| s.split_once('.')) else { return false; };
     !job.is_empty() && job.bytes().all(|c| c.is_ascii_digit())
         && matches!(suffix, "out" | "err")
@@ -743,8 +747,14 @@ pub(crate) fn slurm_log(path: &Path) -> bool {
 pub(crate) fn preserve_active_logs(source: &Path, dir: &Path) -> Result<()> {
     if let Ok(job) = std::env::var("SLURM_JOB_ID") {
         if job.parse::<u64>().is_ok() {
-            for suffix in ["out", "err"] {
-                let name = format!("slurm-{job}.{suffix}");
+            let mut names = vec![format!("slurm-{job}.out"), format!("slurm-{job}.err")];
+            for entry in fs::read_dir(source)? {
+                let entry = entry?;
+                if entry.file_name().to_string_lossy().ends_with(".log") && slurm_log(&entry.path()) {
+                    names.push(entry.file_name().to_string_lossy().into_owned());
+                }
+            }
+            for name in names {
                 let path = source.join(&name);
                 if path.is_file() && !fs::symlink_metadata(&path)?.file_type().is_symlink() {
                     fs::create_dir_all(dir)?;

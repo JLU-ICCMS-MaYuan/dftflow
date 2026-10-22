@@ -1,100 +1,68 @@
-# MgB₂ 三程序测试入口
+# MgB₂ EPW 测试
 
-公开 EPW 程序只有 `epw_phonon`、`epw_wannier`、`epw_superconductivity`。完整流程图、命令及限制见 [epwflow 手册](../../../epwflow/README.md)，需求与阶段契约见 [0008](../../../docs/specs/0008-epwflow-foundation/three-programs.md)。本目录只放测试脚本；数据统一在用户指定的 `../local_run/`，使用编号加目的命名，历史结果只读。
+本目录保存测试脚本和讲义；运行数据统一保存在 `../local_run/`。当前公开程序为 `epw_phonon`、`epw_wannier`、`epw_superconductivity`。人工操作见 [examples 说明](../../../examples/MgB2/sugon-amd/run/epwflow/README.md)，详细证据见 [0046～0051 全链验收](../../../docs/specs/0050-epw-stage-results/real-chain-validation.md)。
 
-| 目录 | 本轮验证范围 |
-| --- | --- |
-| `001-epw-validation` | 历史科学尝试、原始日志与图表；按来源与原清单读取 |
-| `002-three-stage-cli` | PBE 输入、qeflow 保留数据输入与三阶段脚本准备 |
-| `003-shared-phonon` | 接入 qeflow 后，固定 KPATH／后处理程序身份的实际三脚本生成 |
-| `004-three-stage-chain` | 三个私有运行库程序副本、总提交脚本生成与原预算只读核查 |
-| `005-three-stage-recovery` | 粗／细检查点、失败归档、成功展宽复用与发布中断进程回归；使用测试替身 |
-| `006-auto-quality-reference` | 显式纯能量选窗、独立参考与现有 EPW 输入兼容；使用测试替身 |
-| `007-auto-comparison` | 自动比较／三格式图进程回归，以及 PBE 四脚本的生成检查 |
-| `008-public-chain` | 三个公开程序连续执行、最终交付恢复与部分格式归属回归；使用测试替身 |
+## 当前真实验收
 
-本轮没有提交新科学任务或切换默认安装。PBE 配置不能使用旧 LDA 质量参考；独立参考和第二阶段四类比较图的自动生成已接入；当前选择显式 `energy_only`，使用现有 EPW，不发送其不支持的组合选窗关键字。真实 PBE 全链仍须验收。隔离进程回归和生成脚本不代表真实 Tc 通过。
+`012-stage-results/` 使用 examples 当前 PBE 小网格配置，从 SCF 开始完成八阶段，含 iso／aniso 的 20、30、40 K 六点；未搜索 Tc、调整选窗或扫描网格。为了验证电子交付不依赖声子，测试顺序为 1 → 2 → 3 → 5 → 4 → 6 → 7 → 8。第 6 步后处理舍入误判修复后，显式恢复复用了成功粗网格检查点，旧制品原样保留。0051 合并版本随后补交付 15 张衰减图，源文件哈希及科学调用数保持不变；仓库与默认安装现已更新到同一受测制品。
 
-## 构建与使用
+`011-stage-results/` 保留首轮路径行截断和日志归档问题的诊断证据，不作为最终通过现场。`001`～`010` 是历史科学尝试或替身进程验证，按各自清单只读追溯；历史阈值、脚本和安装说明不代表当前执行规则。[0015 历史记录](../../../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)继续保留。
 
-日常受测程序统一安装到仓库 `bin/epwflow/`，构建缓存仍由 Cargo 放入 `target/`。从已完成兼容打包的八程序目录运行 `bash scripts/install-bin.sh /path/to/compatible/bin`；`submit.sh` 默认读取仓库 `bin/epwflow/`，仍可通过 `EPW_BIN_DIR` 显式指定历史绑定程序。以下 004 的旧路径只用于其历史现场复现，不作为新运行的安装目录；不覆盖旧脚本绑定或原生科学结果。
+## 重新执行真实测试
+
+先按[构建说明](../../../scripts/build-native.sh)编译并完成兼容打包。测试应传入已经在计算节点可启动的制品；在运行期间不能覆盖绑定程序。以下命令从仓库根执行，使用已有 Python 3.11+，不安装 Python 依赖。
 
 ```bash
-bash scripts/build-native.sh build -p epwflow --bins --locked --offline
-# 以下 004 只复现历史脚本；新功能须按主手册准备新目录和当前程序。
-# 复现 004 时使用其已打包的旧程序副本，不覆盖绑定。
-EPW_BIN_DIR="$PWD/test_auto/MgB2/local_run/004-three-stage-chain/bin"
-CONFIG="$PWD/test_auto/MgB2/local_run/004-three-stage-chain/inputepw.toml"
-WORK="$PWD/test_auto/MgB2/local_run/004-three-stage-chain/epwflow"
+EPW_TEST_PYTHON="/data/home/mayuan/anaconda3/bin/python3"
+EPW_TEST_CASE="$PWD/test_auto/MgB2/local_run/014-stage-results"
+EPW_TEST_BIN="$PWD/bin/epwflow"
 
-"$EPW_BIN_DIR/epw_phonon" --check -c "$CONFIG" --json
-# 新运行目录使用同一套程序生成；已固定目录须保持原程序身份。
-"$EPW_BIN_DIR/epw_phonon" --all -c "$CONFIG"
-# 真正需要提交时，才执行生成的总脚本。
-bash "$WORK/.epwflow/generated/submit-all.sh"
-
-# 也可逐阶段提交；后两阶段要求前置阶段已有有效完成证据。
-"$EPW_BIN_DIR/epw_phonon" -c "$CONFIG" -s
-"$EPW_BIN_DIR/epw_wannier" -c "$CONFIG" -s
-"$EPW_BIN_DIR/epw_superconductivity" -c "$CONFIG" -s
-"$EPW_BIN_DIR/epw_phonon" --status -w "$WORK" --refresh --json
+"$EPW_TEST_PYTHON" "test_auto/MgB2/epwflow/real_chain.py" prepare \
+  --case "$EPW_TEST_CASE" --bin "$EPW_TEST_BIN"
+"$EPW_TEST_PYTHON" "test_auto/MgB2/epwflow/real_chain.py" run --case "$EPW_TEST_CASE"
+"$EPW_TEST_PYTHON" "test_auto/MgB2/epwflow/real_chain.py" audit --case "$EPW_TEST_CASE"
+"$EPW_TEST_PYTHON" "test_auto/MgB2/epwflow/real_chain.py" portable --case "$EPW_TEST_CASE"
 ```
 
-以上总提交与逐阶段提交是两种入口用法，不要对同一尝试重复提交。默认安装未更新时，应明确使用受测程序路径。004 中已生成的脚本绑定该目录的 `bin/` 副本；新的构建请创建新的工作目录，不能覆盖旧绑定。
+`prepare` 拒绝覆盖已有目录，仅隔离结构和工作目录路径，保留科学参数、外部程序、资源和共享预算；冻结配置、程序及其 SHA-256。`run` 真正调用公开 `-s` 并等待 Slurm，因此会消费原共享预算。每次提交仍受累计 28800 节点秒／100 GiB、最多两个作业的约束，不按测试目录重置。
 
-`submit.sh` 是调用上述三个程序的测试辅助脚本，例如 `EPW_BIN_DIR=... bash test_auto/MgB2/epwflow/submit.sh phonon "$CONFIG"`。失败后使用对应阶段的 `--resume -w "$WORK" -s`，活动或未知状态不自动重提。
+每阶段先核验作业内完成及即时发布，再重复公开命令检查没有新增科学任务。第 1／2 步按公开协议在作业结束后再次核验。第 8 步只提交两个方法作业，每种方法一次 EPW 执行完整温度列表。失败时立即停止，日志、回执和科学检查点保留，不自动取消、重复提交或更改参数。
 
-## 只读检查和重绘
-
-`CALC` 取工作流记录的实际 calculation_dir。独立重绘只消费已有原生数据，不调用 QE／EPW／Slurm。
+只恢复一个已修复的失败阶段：
 
 ```bash
-"$EPW_BIN_DIR/epw_wannier" --check -w "$CALC" --json
-EPW_WANNIER_BIN="$EPW_BIN_DIR/epw_wannier" \
-  bash test_auto/MgB2/epwflow/replot_window.sh "$CALC"
+"$EPW_TEST_PYTHON" "test_auto/MgB2/epwflow/real_chain.py" run \
+  --case "$EPW_TEST_CASE" --stage coarse --resume
 ```
 
-`replot_window.sh` 在缺比较清单时从 calculation_dir/comparison-sources.json 导出；已有清单时只收集和重绘。`replot.sh` 只消费已有比较清单。两者使用 `epw_wannier` 的选项，不再调用旧 epwflow 多层子命令。图中 QE 实线先绘、EPW 虚线后绘，四张独立图加总览支持 PNG／SVG／PDF；实际外窗和冻结窗边界保留。元素／轨道投影继续暂缓，缺项明确标注。
+如果确实需要换修复后的编排器，先确认本现场作业已终态，再执行 `upgrade --case "$EPW_TEST_CASE" --bin /修复制品目录 --reason "具体缺陷及修复原因"`。脚本保留全部旧程序和科学文件，把新程序放在新的修订目录；不会覆盖已提交脚本绑定。它不能绕过生产程序的输入和来源核验。
 
-当前声子门为最大／RMS 50／20 cm⁻¹；旧报告保留当时阈值，不能把旧的 2 cm⁻¹ 门写成当前事实。真实数值、原生求解问题及完整验收缺口见 [0015 验收](../../../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md) 与 [原生源码诊断](../../../docs/specs/0015-epwflow-mgb2-real-validation/native-solver-source-audit.md)。原共享预算仍为 8 节点小时／100 GiB，不按目录或阶段重置。
+## 核验内容与现场位置
 
+| 位置 | 内容 |
+|---|---|
+| `baseline.json`、`bin/` | 初始配置、外部程序和冻结编排器身份 |
+| `active-programs.json`、`bin-revision-*` | 如有修复，保存原因与新旧程序身份 |
+| `evidence/` | 每条公开命令、退出码、Slurm 终态和逐阶段复用检查 |
+| `run/` | 八阶段原生科学输入、输出、固定脚本和日志 |
+| `run/results/` | 第 3／4／5／6／8 步图片、数值表、绘图参数和来源；第 7 步原生谱供第 8 步图包使用 |
+| `audit.json` | 科学任务数量、Mg／B 加和误差、六点有效性及程序路线 |
+| `portable-results/`、`portable-results-0051/` | 首批和合并完整 results 的移动副本，空 PATH 重绘与核验 |
+| `ledger-before.json`、`ledger-final.json` | 实际执行前后共享账本快照 |
 
-## 粗／细恢复回归
+`audit` 针对本固定 MgB₂ 验收：PW 三次（SCF、NSCF、路径 bands），PH 一次，postw90 一次且只承担电子 DOS，没有独立 `wannier90.x`。第 6 步因为 ASR 口径及所需 q 点不同，首次补一次 q2r 和 matdyn；其事前原因保存在比较目录，不能称为直接复用不相容数据。
 
-005 保存测试替身回归日志；失败现场、成功展宽和来源身份由测试实际核验。持久日志在 local_run，临时 fixture 使用系统临时目录并串行运行；成功后按用例清理。它没有新的真实 PBE 参考或 Tc。可复现命令：
+0051 追加验收复用该现场已有 coarse，检查 15 张衰减图、原生逐点数据及科学调用不增加；未重做成功科学阶段。
+
+`portable` 复制整个结果目录，在 PATH 不含科学程序的环境中执行公开重绘与结果检查，确认数值表哈希不变；已有副本会拒绝覆盖；用 `--portable-name portable-results-0051` 可另存新的验证副本。当前图和差值用于人工判断，不自动评级或判断粗网格收敛。
+
+## 回归与证据边界
+
+Rust 进程回归使用替身 QE／EPW／Slurm，检查失败恢复、未知作业、来源损坏、图像发布和幂等；真实链单独验证科学程序实际执行，二者不能互相替代。主工作区存在并行开发时，应从明确提交和本任务补丁建立源码快照，使用独立 Cargo target，避免编译中替换测试进程。
 
 ```bash
-env -u TMPDIR bash scripts/build-native.sh test -p epwflow --lib \
-  --test native_interpolation --test real_contracts --locked --offline \
-  -- --test-threads=1 > "test_auto/MgB2/local_run/005-three-stage-recovery/recovery-check.log" 2>&1
+CARGO_PROFILE_RELEASE_DEBUG=0 bash "scripts/build-native.sh" test --locked --release \
+  -p epwflow -p qeflow --no-fail-fast -- --test-threads=1
 ```
 
-共享声子链和原生尝试均使用固定输入；质量失败不会通过重试重新选窗，未知目录、变化来源或篡改证据拒绝恢复。旧的无原生检查点历史目录不自动收编，历史导入与新科学链仍另行验收。
-
-## 三个公开程序连续执行与部分超导／最终交付恢复
-
-008／009 使用隔离 QE／EPW／Slurm 进程替身，从三个公开程序及实际生成脚本执行到结果包；验证最终图目录冲突保留、终态所属锁回收、科学调用和原清单不变、复制后部分格式重绘与篡改拒绝。全部样本数值是 IO 契约数据，不是 MgB₂ Tc。原预算账本和历史科学来源不写入。
-
-```bash
-env -u TMPDIR \
-  DFTFLOW_THREE_STAGE_TEST_ROOT="$PWD/test_auto/MgB2/local_run/009-partial-resume/cases-user" \
-  bash "scripts/build-native.sh" test -p epwflow --test three_stage_execution \
-  --locked --offline -- --test-threads=1 --nocapture
-```
-
-测试会生成独立命名案例并保留逐步日志；失败后的原始证据不算通过。已结算分配从活动数组移除，累计消耗必须保留；只读状态检查在显式 refresh 时结算。源代码、当前构建和默认安装分别核验。009 进一步验证 F4 已发布 partial 时的公开续算，保留成功模式和失败计数，拒绝变化来源、配置、模式、篡改产物和缺搜索文件；合法零尝试清单可核验。0008 T047 的定向回归 55 项通过，全部仍为进程替身证据，不是实际科学验收。
-
-## PBE 三程序真实主路径
-
-010-public-pbe 使用示例目录现有 PBE 输入和 energy_only，保留固定网格／五个声子参考／原共享预算。输入、程序和脚本已冻结；实际科学结果以[0015 记录](../../../docs/specs/0015-epwflow-mgb2-real-validation/public-pbe-validation.md)为准，进程替身不替代它。1295834 在科学程序前因 oneAPI 可选变量与 nounset 冲突失败，已经结算；修复的 41 个不同用例最终通过，真实 oneAPI 初始化段加载成功。后续只从同一工作流显式恢复，未知作业不重提，不自动扫描物理参数。
-
-原生 Rust 构建若带 native libc 的 RUNPATH，在旧计算节点须依照仓库既有制品打包规则使用同目录加载器；本案仅变换测试副本的 ELF interpreter，原程序、库、系统和默认安装不变。随后发现启动账表零节点与控制器分配不同步，0008 T049 改为 scontrol 核对启动、sacct 终态结算，44 个不同回归用例最终通过，未决账表保留预留。上述三个失败作业累计只增加 5 节点秒，尚无新 QE 科学输出。
-
-保留 EPW 数据时，q2r 的 XML 力常数输出为 `.fc.xml`，两类 matdyn 与自动比较均显式消费该路径；普通文本模式继续用 `.fc`。该衔接修复定向回归分批 47 个不同用例最终通过、1 项真实环境暂挂。PBE 已有 SCF／PH／q2r 原生完成证据，后处理及其余阶段仍按实际清单核验。
-
-显式赝势绝对路径现在作为带引号的 QE 卡片字段输出；XML q2r 的成功状态可在后处理失败恢复时复用。定向验证分批 92 个不同用例最终通过、2 项真实环境暂挂。真实 PBE 已有共享声子后处理／出图／save 证据，完整 NSCF 与后续阶段仍须各自验收。
-
-随后真实 readpp 暴露 QE atom_pfile 的 80 字节限制，输入改为共同 pseudo_dir 与带引号短相对名，不改变赝势身份。所属锁释放改为先核验并原子退役、再清理，保留原空锁失败现场。最终 short-pseudo-verified.log 一次 95 项通过、2 项真实环境暂挂，包含三程序完整连续执行与恢复；实际 PBE／Tc 继续以 0015 原生记录为准。
-当前 010 原生结果：第一阶段 valid，独立参考六 k／五 q 完整，energy_only 逐点态数通过；粗 EPC 全 NaN，Wannier 局域化 500 次未收敛，正确阻断后续。累计 3140 节点秒、预留零。窗口传参及实际四界发布／续算检查的两批回归共覆盖 94 个不同通过用例、2 个不同真实环境暂挂用例，记录在 window-contract-validation.json；不作为真实 PBE 科学验收。
-
-当前冻结程序和示例脚本身份分别以 010-public-pbe 的 window-contract-programs.json 与 example-generation-current.json 为准。旧程序和纯生成现场保留在 010，不覆盖科学结果或切换安装；科学根因和原生有效窗口一致性继续在 0012／0016 追踪。双 FFT 外部修复提案尚未应用，隔离构建及固定原生对照等待授权。
+本轮冻结源码、构建日志、制品哈希、预算和作业列表见全链验收。线上 Gitee 仍由用户管理；本地通过不代替线上 Issue 关闭。

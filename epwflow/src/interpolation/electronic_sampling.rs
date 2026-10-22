@@ -130,12 +130,20 @@ pub fn wdata(s: &Sampling) -> Result<Vec<String>> {
         "begin kpoint_path".into(),
     ];
     for (i, (a, b)) in rows.iter().enumerate() {
+        // 实测部署程序生成的 win 每行只有 80 字节（含首空格），与源码容量不同。
+        // 紧凑十位小数远高于 kpt 六位精度；不截掉必要坐标或改科学路径。
+        let point = |p: &[f64; 3]| p.iter().map(|v| {
+            let value = format!("{v:.10}");
+            let value = value.trim_end_matches('0').trim_end_matches('.');
+            if value == "-0" { "0".into() } else { value.to_owned() }
+        }).collect::<Vec<String>>().join(" ");
         data.push(format!(
-            "P{i} {:.15} {:.15} {:.15} Q{i} {:.15} {:.15} {:.15}",
-            a[0], a[1], a[2], b[0], b[1], b[2]
+            "P{i} {} Q{i} {}", point(a), point(b)
         ));
     }
     data.push("end kpoint_path".into());
+    ensure!(data.iter().all(|line| line.len() <= 79),
+        "configuration: 部署 EPW 的路径行超过 79 字节，不能截断坐标");
     Ok(data)
 }
 fn same(a: &[f64; 3], b: &[f64; 3]) -> bool {
@@ -322,7 +330,7 @@ mod tests {
         };
         let data = wdata(&s).unwrap();
         assert_eq!(data.len(), 7); // 校准、合并路径、网格三段以及四个设置行。
-        assert!(data.iter().all(|l| l.len() < 256));
+        assert!(data.iter().all(|l| l.len() <= 79));
     }
 
     #[test]

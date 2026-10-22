@@ -9,8 +9,13 @@ impl Case {
         );
     }
     pub(super) fn stage_execute(&self) -> Output {
+        use std::{io::Write, os::unix::fs::MetadataExt};
         let a: Value = store::read(&self.root.join("run/epw-state/active.json")).unwrap();
         let script = PathBuf::from(a["script"]["path"].as_str().unwrap());
+        let script_body = fs::read(&script).unwrap();
+        let log_path = script.with_file_name(format!("slurm-{}.log", script.file_stem().unwrap().to_str().unwrap()));
+        let mut open_log = fs::File::create(&log_path).unwrap();
+        open_log.write_all(b"before stage initialization\n").unwrap();
         let receipt: Value = store::read(
             &PathBuf::from(a["config"]["path"].as_str().unwrap())
                 .parent()
@@ -22,6 +27,10 @@ impl Case {
         let mut cmd = self.scheduled_command(&script, script.parent().unwrap(), job);
         cmd.env("SLURM_NTASKS", "1");
         let out = cmd.output().unwrap();
+        open_log.write_all(b"after stage initialization\n").unwrap();
+        assert_eq!(fs::read(&script).unwrap(), script_body, "当前阶段脚本不能随科学目录归档后消失");
+        assert_eq!(open_log.metadata().unwrap().ino(), fs::metadata(&log_path).unwrap().ino(), "日志入口必须仍指向 Slurm 持有的 inode");
+        assert_eq!(fs::read_to_string(log_path).unwrap(), "before stage initialization\nafter stage initialization\n");
         self.put("stage-worker.stdout", &String::from_utf8_lossy(&out.stdout));
         self.put("stage-worker.stderr", &String::from_utf8_lossy(&out.stderr));
         self.put(
