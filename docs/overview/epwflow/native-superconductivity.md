@@ -7,8 +7,8 @@
 ## 已实现的执行边界
 
 - F4 先核对 F3 清单及当前粗细网格身份，再绑定原生细网格角色。旧简化 fine 文本不能冒充原生二进制；常规比较差值沿用 0043 的记录语义，不以历史抽样数值门阻断。
-- 编号工作区的公开 `-s` 每次最多提交一次原生调用，作业结束后重复命令核验并推进；既有 `-r` 保留已登记分配内的执行语义。每次新调用检查来源和原共享预算，不另建资源账本。
-- 一次尝试只含一个模式、一个 centikelvin 温度和一个固定初值；使用独立编号目录，固定 nstemp=1、temps(1)、imag_read=false、μ*、截断、混合与低频规则。
+- 编号工作区的 gap 目标按方法批次提交，both 一次提交两个独立原生多温度作业；tc 目标每次最多提交一次原生调用，作业结束后重复命令核验并推进；既有 `-r` 保留已登记分配内的执行语义。每次新调用检查来源和原共享预算，不另建资源账本。
+- tc 的一次尝试只含一个模式、一个 centikelvin 温度和一个固定初值，独立编号目录固定 nstemp=1；gap 按方法共目录，原生 nstemp／temps(i) 覆盖本批温度。两者保持 imag_read=false、μ*、截断、混合与低频规则。
 - 显式重启开关跳过 PWSCF 初始化；两模式均把已有 α²F 复制为带哈希的本地 `source.a2f`，避免目标版本 80 字符字段截断或隐式重算谱。
 - tc 任务的 iso 使用原生 LAPACK 最大本征值分类，另做必需温度和区间超导侧端点的非线性双初值；aniso 使用非线性双初值逐元素分类。Allen–Dynes、BCS 和归一化形状不作为正式求解路径。
 - stdout、stderr、退出状态、执行时间、输入、程序及来源身份随尝试持久化。未收敛、非有限残差、错温度、缺频率、模式冲突或来源变化均不能分类。
@@ -16,17 +16,17 @@
 
 ## 指定温度能隙任务
 
-在 TOML 的 `[superconductivity]` 设置 `task="gap"`，由 mode 与 gap_temperatures_k 构成固定计划。每个点仅一个 initial_gap_mev，缺省为 10 meV；不要求 Tc 区间、精度或 initial_gaps_mev 双初值。每次均设置 nstemp=1、目标 temps(1)、tc_linear=false，完整保存请求和来源。省略 task 时保留旧 tc 验证、清单读取和序列化身份。
+在 TOML 的 `[superconductivity]` 设置 `task="gap"`，由 mode 与 gap_temperatures_k 构成固定计划。每方法批次配置一个 initial_gap_mev，缺省为 10 meV；后续温度按原生 EPW 机制续接前温度能隙，不逐点重启；不要求 Tc 区间、精度或 initial_gaps_mev 双初值。同一方法一次设置完整 nstemp／temps(i)、tc_linear=false，完整保存各点请求和来源。省略 mu_star 使用 0.13，显式值优先。省略 task 时保留旧 tc 验证、清单读取和序列化身份。
 
-温度必须有限、为正、不重复、精确到 0.01 K 且不大于 999.99 K，频率截断须包含首个 Matsubara 频率。mixing_beta 负值采用原生线性混合，正值为 Broyden，绝对值在 `(0,1]`；混合历史仍限制为 1～8。当前 PBE 示例显式设置 -0.3，不暗中改变混合、初值或收敛标准。
+温度列表包含 1～50 点，温度必须有限、为正、不重复、精确到 0.01 K 且不大于 999.99 K，频率截断须包含首个 Matsubara 频率。mixing_beta 负值采用原生线性混合，正值为 Broyden，绝对值在 `(0,1]`；混合历史仍限制为 1～8。当前 PBE 示例显式设置 -0.3，不暗中改变混合、初值或收敛标准。
 
-正常结束需要原生退出 0、EPW 5.9 标识、完整结束计时且没有原生错误。清单分别记录 execution_complete 与 data_complete；每点 gap_status 区分明确收敛、未收敛／证据不明确、有效、无效或缺能隙。正常结束但数据无效的点保存原因并继续，不能填零冒充有效数据；真实零能隙允许作为有效结果。非零退出、缺正常结束、预算或来源失败停止，显式 --resume 以新尝试补未完成点。成功点、失败日志及退出码保留，活动或未知任务不能重提。
+完整批次正常结束需要原生退出 0、EPW 5.9 标识、完整结束计时且没有原生错误；后续温度失败时，已明确收敛的前缀可单独保留，末温度仍须核对整体正常结束。清单分别记录 execution_complete 与 data_complete；每点 gap_status 区分明确收敛、未收敛／证据不明确、有效、无效或缺能隙。正常结束但数据无效的点保存原因，不能填零冒充有效数据；原生未收敛可能停止后续温度，缺点须显式恢复；真实零能隙允许作为有效结果。非零退出、缺正常结束、预算或来源失败停止，显式 --resume 以新尝试补未完成点。成功点、失败日志及退出码保留，活动或未知任务不能重提。
 
-编号布局在 `8.epw-superconductivity/` 保存版本 3 的 manifest.json、固定计划及模式／温度尝试目录，每点有 epw.in、submit.sh、epw.out、attempt.json 及可用的原生 Δ／Z。完成检查重新解析原生证据并核对程序、配置、F3 和文件身份。第 7 步仍使用温度列表首项生成输入；首项变更时须按身份重算细网格，不能修改旧哈希强行复用。
+编号布局在 `8.epw-superconductivity/` 保存版本 4 的 manifest.json，继续读取版本 3。固定计划按方法批次执行，目录为 `iso-mu<实际值>-<首温度>-<末温度>`／`aniso-mu<实际值>-<首温度>-<末温度>`，同方法各温度共目录。目录包含 epw.in、epw.sh、epw.out、逐点记录及可用的原生 Δ／Z，并保留输入／输出和温度数据快照。批次点记录版本 2，旧版本 1 继续核验。完成检查重新解析原生证据并核对程序、配置、F3 和文件身份。第 7 步仍使用温度列表首项生成输入；首项变更时须按身份重算细网格，不能修改旧哈希强行复用。
 
 结果包输出 points.csv 逐点执行／收敛／数据状态，以及有效的 gap_summary.csv、gap_states.csv。有效单初值 aniso 可进入分布；不要求双初值 Tc 分类、不插值温度，不生成 tc.csv 或 Tc 区间图。完整正 Matsubara 频率仍在 F4，统计和逐态表使用最低正频率，Δ 单位为 meV、Z 无量纲。执行全部结束即可完成本次任务，数据有效性另列，不表示已经确定 Tc 或通过独立科学精度验收。
 
-源码依据：superconductivity/points.rs、attempt.rs、verify.rs、foundation/program.rs、workspace_science.rs、delivery/native.rs 和 native_plot.rs；公开八步、三模式、无效数据、恢复及移动重绘证据见 [0045](../../specs/0045-epw-gap-temperatures/acceptance.md)。
+批次提交及恢复的受控公开进程验证见 [0049 验收](../../specs/0049-epw-multitemperature-submit/acceptance.md)，0049 未更新默认安装或执行真实科学任务。源码依据：superconductivity/batch.rs、points.rs、attempt.rs、verify.rs、foundation/native_jobs.rs、native_workspace.rs、delivery/native.rs 和 native_plot.rs；公开八步、三模式、无效数据、恢复及移动重绘证据见 [0045](../../specs/0045-epw-gap-temperatures/acceptance.md)。
 
 ## 原生数据含义
 

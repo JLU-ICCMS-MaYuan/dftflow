@@ -10,7 +10,7 @@
 
 编号工作区的 `epw_phonon --stage phonon -s`（包括默认声子目标）一次提交一个有界 Slurm 分配，内部自动补齐必要依赖、运行 PH、归集并核验 EPW save、q2r、两类 matdyn、QE 声子谱及 TDOS／元素 PDOS 图，最后登记完成。用户无需再次运行命令推进，亦不会自动执行 Wannier／coarse／fine／超导；`--status [--json]` 只读反映本次声子目标及父尝试状态。设计和公开进程验证见 [0048](../../specs/0048-epw-phonon-stage-chain/acceptance.md)。
 
-其他目标的 `-s` 由作业外命令核验上一任务，再最多提交一次原生程序调用并立即返回。其实际 Slurm 脚本直接包含 QE、Wannier90／postw90 或 EPW 命令；用户在作业结束后重复公开命令推进，Tc 每次求解仍按温度与初值分别进行。
+指定温度 gap 目标按下文 0049 一次提交所选方法的全部批次。其余目标的 `-s` 由作业外命令核验上一任务，再最多提交一次原生程序调用并立即返回。其实际 Slurm 脚本直接包含 QE、Wannier90／postw90 或 EPW 命令；用户在作业结束后重复公开命令推进，Tc 每次求解仍按温度与初值分别进行。
 
 原生脚本位于实际科学目录，不再创建仅供阅读的 submit.sh 副本。QE／EPW 命令通过 `< 输入.in > 输出.out 2> 错误.err` 直接读写，Wannier 种子参数接口保持。环境脚本直接 `source "路径" --force`，没有 if 包装、失败后缀或自动严格选项；普通安全参数直接显示，特殊参数使用必要双引号和转义。科学命令为脚本最后命令，非零退出仍传播。
 
@@ -24,13 +24,15 @@
 
 公开进程契约覆盖逐任务 QE／Wannier／粗细网格、两模式 Tc 与指定温度能隙，以及声子单分配自动完成、恢复、顺序防重复和未知回执，不代表新增真实科学验收。逐任务设计见 [0026](../../specs/0026-epw-direct-native-submit/plan.md)，声子目标按 [0048 快速说明](../../specs/0048-epw-phonon-stage-chain/quickstart.md)执行。以下历史自动串联说明不适用于新的编号工作区 `-s`。
 
-## 指定温度超导能隙（0045）
+## 指定温度超导能隙（0049）
 
-`superconductivity.task="gap"` 将所选 `mode="iso"|"aniso"|"both"` 与 `gap_temperatures_k` 逐项组合，每点使用一个 `initial_gap_mev`（缺省 10 meV）直接执行原生非线性求解。温度可配置，20／30／40 K 是 MgB₂ 的当前示例。gap 无需 Tc 区间或双初值表，不运行 Tc 搜索；省略 task 仍保持旧 tc 行为及配置身份。
+`superconductivity.task="gap"` 按 `mode="iso"|"aniso"|"both"` 分组，每种方法一次原生 EPW 多温度执行，`nstemp` 与 `temps(i)` 覆盖配置中的全部温度，支持 1～50 点及非等距列表。每方法批次配置一个 `initial_gap_mev`（缺省 10 meV），后续温度遵循原生 EPW 的能隙续接；不运行 Tc 搜索。省略 `mu_star` 使用 0.13，显式值优先；省略 task 仍保持旧 tc 行为及配置身份。
 
-第 8 步继续使用 `epw_superconductivity --stage superconductivity -s`，每次最多提交一个原生调用。正常零退出且有 EPW 完整结束计时的点记录执行完成；是否收敛、是否有有限且完整的 Δ／Z 另行记录。未收敛／NaN／缺能隙不发布有效数据，但可继续下一点；非零退出、缺结束或来源冲突停止，显式 `--resume` 保留成功点及失败证据后重试。`mixing_beta` 负值透传原生线性混合、正值为 Broyden，系数绝对值在 `(0,1]`，不会自动更改数值设置。
+第 8 步的 `epw_superconductivity --stage superconductivity -s` 一次提交所选方法：both 为两个独立 Slurm 作业，无方法间依赖。每个方法共用 `8.epw-superconductivity/iso-mu<实际值>-<起始温度>-<终止温度>/` 或 `aniso-mu<实际值>-<起始温度>-<终止温度>/`，首尾按配置列表顺序命名，不建温度子目录。每个目录保留原生输入、脚本、日志、各温度 Δ／Z 和不可变尝试快照。
 
-新点清单版本为 3，结果包提供 `points.csv`、有效的能隙表及图，不填写 Tc。有效单初值 aniso 数据可进入最低正 Matsubara 分布，温度点之间不插值。配置、公开进程的六次精确调用、无效数据、失败恢复、防重、验源及移动重绘已有回归；安装来源和真实 PBE 全流程结果见 [0045 验收](../../specs/0045-epw-gap-temperatures/acceptance.md)，执行及数据边界见 [原生超导适配](native-superconductivity.md)。
+作业结束后再次执行同一命令归集、核验逐温度结果；`--status --json` 的 `native_methods` 分别显示两方法状态。原生未收敛可能提前停止后续温度；保留已经执行完成的点和失败现场，显式 `--resume -s` 仅补未执行完成点，不改科学参数。执行完成、收敛与数据有效分别记录；缺结束、错温度、非零退出或来源冲突不能冒充完整。活动或回执未知的方法禁止重提，另一方法的有效结果仍保留。`mixing_beta` 负值透传线性混合、正值为 Broyden，绝对值仍在 `(0,1]`。
+
+新点清单为版本 4，继续读取版本 3；批次点证据为版本 2，旧单点版本 1 继续核验。结果包沿用 `points.csv`、有效能隙表及图，不填写 Tc。有效单初值 aniso 可进入最低正 Matsubara 分布，不在温度间插值。本轮通过受控原生 IO／Slurm 公开进程验证；未更新默认安装、提交真实科学任务或迁移活动旧单点作业。设计、回归及具体边界见 [0049 验收](../../specs/0049-epw-multitemperature-submit/acceptance.md)。以下 0045 实测属于此前逐点执行版本。
 
 2026-10-22 已用当前 PBE MgB₂ 同字节输入从干净工作区完成 README 八阶段和六次原生能隙求解；六点均正常退出、明确收敛且 Δ／Z 有效，安装版结果包核验通过。仓库 bin/epwflow 三程序对应已验证源码 b7269c9；新增 131 节点秒，原共享累计 4176／28800，最终无活动分配或预留。源码回归合计 206 项通过、7 项本机专用暂挂；已按用户授权清理原算例旧产物，仅保留 README／TOML／KPATH，供从头重跑；本次全流程证据保存在独立验收工作区。真实计算及修复／恢复证据见 [0045 验收](../../specs/0045-epw-gap-temperatures/acceptance.md)。这些结果不用于确定 Tc，也不代表独立精度验收。
 

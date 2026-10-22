@@ -1,6 +1,7 @@
 //! F4 超导求解模块族（spec 0013，FR-001~FR-013）。
 pub mod aniso;
 pub mod attempt;
+pub mod batch;
 pub mod cli;
 pub mod compare;
 pub mod engine;

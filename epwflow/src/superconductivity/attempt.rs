@@ -257,6 +257,8 @@ pub fn render(request: &Request, input: &NativeInputs) -> Result<String> {
 #[serde(deny_unknown_fields)]
 pub struct AttemptResult {
     pub schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch: Option<super::batch::Evidence>,
     pub request: Request,
     pub source: NativeInputs,
     pub executable: Identity,
@@ -340,6 +342,7 @@ pub fn run_attempt(
     command.extend(["-inp".into(), input_path.to_string_lossy().into_owned()]);
     let mut record = AttemptResult {
         schema_version: 1,
+        batch: None,
         request: request.clone(),
         source: inputs.clone(),
         executable,

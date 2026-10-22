@@ -38,8 +38,13 @@ pub struct SolveEvidence {
 
 /// 单次日志必须只有一份相符的温度/模式求解，不接受拼接或多温度日志。
 pub fn solve_log(log: &str, request: &super::attempt::Request) -> Result<SolveEvidence> {
-    use super::attempt::SolveKind;
     crate::interpolation::native::checked_log(log, 0)?;
+    solve_segment(log, request)
+}
+
+/// 已按原生日志温度边界核对的单个求解段；正常结束由批次调用者核验。
+pub(crate) fn solve_segment(log: &str, request: &super::attempt::Request) -> Result<SolveEvidence> {
+    use super::attempt::SolveKind;
     let linear = request.kind == SolveKind::Linear;
     let mode = if request.mode == crate::foundation::config::Mode::Iso {
         "isotropic"

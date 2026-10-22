@@ -8,11 +8,11 @@
 
 历史提交脚本、固定配置和回执保持原字节；新原生任务不再生成 submit.sh 阅读副本。[0044 规格与部署](../docs/specs/0044-mpi-submit-command/spec.md)。
 
-## 编号工作区提交：声子自动完成，其他目标逐任务推进
+## 编号工作区提交：声子自动完成，指定温度按方法批量提交
 
 对 `layout='numbered'` 的工作区，`epw_phonon --stage phonon -s`（默认目标也是 phonon）只需执行一次：申请一个 Slurm 分配，在分配内自动完成依赖补齐、PH、EPW save 归集、q2r、两次 matdyn、QE 声子谱与 TDOS／元素 PDOS 图和最终核验。提交返回后无需再次运行命令推进；`--status --json` 可选，只查看。流程图见 [0048 快速说明](../docs/specs/0048-epw-phonon-stage-chain/quickstart.md)。
 
-其他目标的 `-s` 仍核验上一任务并且最多提交一次新的原生调用，作业结束后重复同一个命令推进。其实际脚本直接执行 QE、Wannier90／postw90 或 EPW；准备输入、交接与核验由公开命令负责。
+指定温度 `task="gap"` 的超导目标按下文一次提交所有方法；其他目标的 `-s` 仍核验上一任务并且最多提交一次新的原生调用，作业结束后重复同一个命令推进。其实际脚本直接执行 QE、Wannier90／postw90 或 EPW；准备输入、交接与核验由公开命令负责。
 
 ```bash
 epw_phonon -c input.toml -s
@@ -20,7 +20,7 @@ epw_wannier -c input.toml -s
 epw_superconductivity -c input.toml -s
 ```
 
-声子目标由作业自动登记 `workflow_complete: true` 后切换下一条；其余目标按上面的逐任务方式推进。失败后修复原因，用对应命令 `--resume -s`；声子恢复一次自动跑完余项，已验证的 PH／q2r／matdyn 保留复用。排队、运行中或回执未知时拒绝重提。Tc 的单模式、单温度、单初值分别提交，保留原搜索规则及次数上限。
+声子目标由作业自动登记 `workflow_complete: true` 后切换下一条；gap 目标一次提交所选方法批次，作业结束后按下文归集；其余目标按上面的逐任务方式推进。失败后修复原因，用对应命令 `--resume -s`；声子恢复一次自动跑完余项，已验证的 PH／q2r／matdyn 保留复用。排队、运行中或回执未知时拒绝重提。Tc 的单模式、单温度、单初值分别提交，保留原搜索规则及次数上限。
 
 输出给出实际提交的功能脚本、作业号与工作目录。QE／EPW 科学输出直接写指定 `.out`，错误写 `.err`，计算运行时即可查看，不等待复制 Slurm 日志；Wannier／postw90 保留种子参数接口。新脚本的命令类似：
 
@@ -139,14 +139,27 @@ epw_wannier --stage wannier --resume -s
 [superconductivity]
 task = "gap"
 mode = "both"
+mu_star = 0.13
 gap_temperatures_k = [20.0, 30.0, 40.0]
 initial_gap_mev = 10.0
 mixing_beta = -0.3
 ```
 
-仍执行 `epw_superconductivity -c input.toml --stage superconductivity -s`，作业结束后重复同一命令。每个模式和温度仅运行一次非线性 EPW，不做 Tc 搜索或双初值分类。`mode` 可选 `iso`、`aniso`、`both`；单初值缺省 10 meV。温度列表不得为空、重复或超出 0.01～999.99 K，温度精度为 0.01 K；频率截断须容纳首个 Matsubara 频率。负混合系数为原生线性混合、正值为 Broyden，绝对值须在 `(0,1]`。
+执行 `epw_superconductivity -c "input.toml" --stage superconductivity -s`，在前置数据可复用时一次提交 iso／aniso 两个独立 Slurm 作业，无方法间依赖。每种方法只调用一次 EPW，`nstemp` 和完整 `temps` 列表包含全部配置温度，无需逐温度重复命令。作业结束后再次执行同命令归集结果，不重算已完成点。`--status --json` 的 `native_methods` 分别显示两个作业；实际启动时间由调度器决定，每个作业使用配置资源并单独登记共享预算。
 
-指定温度清单为 schema 3，独立记录 `execution_complete` 与 `data_complete`。正常结束但未收敛／能隙无效的点仍继续后续温度，有效点才进入能隙表和图，不补零或插补温度。第 8 步 `results/points.csv` 给出逐点执行、收敛与能隙有效性，`gap_summary.csv`／`gap_states.csv` 和 `figures/` 保存有效数据；不生成 Tc 表和区间图。失败须显式 `--resume`，成功点重验后复用，活动／未知任务拒绝重提。省略 `task` 仍为原 Tc 模式，继续要求双初值和所选模式的 Tc 参数表；旧清单及严格 Tc 验证保留。详见 [0045](../docs/specs/0045-epw-gap-temperatures/spec.md)。
+`mu_star` 省略时默认 0.13，显式其他值优先；已有显式 0.05 不会被默认值覆盖。`mode` 可选 `iso`、`aniso`、`both`，每方法批次初值缺省 10 meV，后续温度遵循原生 EPW 能隙续接。温度列表为 1～50 个互不重复的 0.01～999.99 K 值，按配置顺序传递；频率截断须容纳首个 Matsubara 频率。负混合系数为原生线性混合、正值为 Broyden，绝对值须在 `(0,1]`。
+
+```text
+8.epw-superconductivity/
+├── iso-mu0.13-20-40/     # epw.in、epw.sh、epw.out/err 与所有温度原生输出
+├── aniso-mu0.13-20-40/
+├── manifest.json
+└── results/
+```
+
+目录使用实际 μ* 和配置列表首尾温度，去掉数值冗余零，不按温度建立子目录。新点清单为 schema 4，旧 schema 3 继续核验；结果包保留 `points.csv`、有效的 `gap_summary.csv`／`gap_states.csv` 与图，不生成 Tc 表。执行完成、收敛和数据有效性分别记录，缺失或 NaN 不补零。
+
+EPW 原生多温度循环可能因不收敛提前停止，另一方法独立运行。保留已完成前缀，明确记录未执行温度；修正原因后用同命令加 `--resume -s`，只把剩余点交给新的原生批次。旧输入、日志和逐点证据保存在同方法目录的编号文件中，不覆盖失败证据。活动或未知回执不重提；第二个提交失败也保留第一个作业号。省略 `task` 仍为原 Tc 模式，继续使用已有搜索和双初值规则。设计及源码验证见 [0049](../docs/specs/0049-epw-multitemperature-submit/spec.md)，历史安装及六单点真实运行见 [0045](../docs/specs/0045-epw-gap-temperatures/acceptance.md)；0049 未自动部署或新增真实科学运行。
 
 超导数值读取支持标准 E/D 指数和原生三位指数省略 E 的格式（如 1.7366215176-102）；仅接纳带小数点的明确尾数，星号、非有限及溢出仍拒绝。格式兼容不改变原生收敛、频率／状态映射和双初值判据，见 [0042](../docs/specs/0042-epw-fortran-exponent/acceptance.md)。
 

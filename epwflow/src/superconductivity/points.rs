@@ -21,6 +21,8 @@ pub struct Run {
     pub binding_digest: String,
     pub plan: Vec<Request>,
     pub attempts: Vec<Entry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub batches: Vec<super::batch::Batch>,
     pub execution_complete: bool,
     pub data_complete: bool,
 }
@@ -60,7 +62,7 @@ impl Run {
                 && a.request.temperature_centikelvin == request.temperature_centikelvin
         })
     }
-    fn refresh(&mut self) {
+    pub(crate) fn refresh(&mut self) {
         self.execution_complete = self.plan.iter().all(|r| {
             self.latest(r)
                 .is_some_and(|a| matches!(a.status.as_str(), "valid" | "completed"))
@@ -73,7 +75,7 @@ impl Run {
     pub fn load(path: &Path) -> Result<Self> {
         let r: Self = store::read(path)?;
         ensure!(
-            r.schema_version == 3 && r.task == "gap" && !r.plan.is_empty(),
+            matches!(r.schema_version, 3 | 4) && r.task == "gap" && !r.plan.is_empty(),
             "data_invalid: 指定温度清单版本或计划无效"
         );
         for (i, q) in r.plan.iter().enumerate() {
@@ -84,6 +86,20 @@ impl Run {
                         && p.temperature_centikelvin == q.temperature_centikelvin),
                 "data_invalid: 指定温度计划重复或类型错误"
             );
+        }
+        ensure!(r.schema_version == 4 || r.batches.is_empty(), "data_invalid: 旧点清单含新批次");
+        for (i, b) in r.batches.iter().enumerate() {
+            ensure!(!b.requests.is_empty() && b.requests.len()<=50 && b.mode!=Mode::Both
+                && b.task.group.as_deref()==Some(if b.mode==Mode::Iso {"iso"}else{"aniso"})
+                && b.task.directory.parent()==path.parent()
+                && !r.batches[..i].iter().any(|old|old.task.id==b.task.id),
+                "data_invalid: 方法批次身份或目录冲突");
+            b.executable.verify()?;
+            for (j,q) in b.requests.iter().enumerate() {
+                ensure!(q.mode==b.mode && r.plan.iter().any(|p|same(p,q).unwrap_or(false))
+                    && !b.requests[..j].iter().any(|p|p.temperature_centikelvin==q.temperature_centikelvin),
+                    "data_invalid: 批次请求不属于固定计划或重复");
+            }
         }
         for a in &r.attempts {
             ensure!(
@@ -104,10 +120,21 @@ impl Run {
             if let Some(id) = &a.record {
                 id.verify()?;
                 ensure!(
-                    id.path == a.directory.join("attempt.json"),
+                    id.path.parent() == Some(a.directory.as_path())
+                        && (id.path == a.directory.join("attempt.json")
+                            || (r.schema_version == 4 && id.path.file_name().is_some_and(|n| n.to_string_lossy().starts_with("point-")))),
                     "data_invalid: 尝试记录路径冲突"
                 );
                 let record = super::verify::record(&id.path)?;
+                if let Some(evidence) = &record.batch {
+                    ensure!(evidence.log.path.parent()==Some(a.directory.as_path())
+                        && evidence.gap_file.as_ref().is_none_or(|f|f.path.parent()==Some(a.directory.as_path()))
+                        && r.batches.iter().any(|b|b.task.directory==a.directory
+                            && b.requests.iter().any(|q|same(q,&a.request).unwrap_or(false))
+                            && b.requests.iter().map(|q|q.temperature_centikelvin).collect::<Vec<_>>()==evidence.temperatures
+                            && b.executable.sha256==record.executable.sha256),
+                        "input_conflict: 点与方法批次证据不符");
+                }
                 ensure!(
                     same(&record.request, &a.request)?
                         && record.status == a.status
@@ -131,7 +158,7 @@ impl Run {
         Ok(r)
     }
 }
-fn binding(cfg: &Config, input: &NativeInputs, launcher: &[String]) -> Result<String> {
+pub(crate) fn binding(cfg: &Config, input: &NativeInputs, launcher: &[String]) -> Result<String> {
     Ok(store::hash_bytes(&serde_json::to_vec(&(
         crate::foundation::stages::scientific_key(
             cfg,
@@ -188,6 +215,7 @@ pub fn run(
             binding_digest: binding(cfg, &source, launcher)?,
             plan: plan(cfg)?,
             attempts: vec![],
+            batches: vec![],
             execution_complete: false,
             data_complete: false,
         }

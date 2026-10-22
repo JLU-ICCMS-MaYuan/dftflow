@@ -13,7 +13,9 @@ use std::path::Path;
 
 pub fn record(path: &Path) -> Result<AttemptResult> {
     let r: AttemptResult = store::read(path)?;
-    ensure!(r.schema_version == 1, "unsupported_version: 尝试版本");
+    ensure!(matches!(r.schema_version, 1 | 2), "unsupported_version: 尝试版本");
+    ensure!((r.schema_version == 2) == r.batch.is_some()
+        && (r.batch.is_none() || r.request.kind == SolveKind::Gap), "data_invalid: 批次证据版本冲突");
     r.request.validate()?;
     r.executable.verify()?;
     r.source.verify(r.request.mode)?;
@@ -22,7 +24,11 @@ pub fn record(path: &Path) -> Result<AttemptResult> {
     }
     if r.request.kind == SolveKind::Gap && matches!(r.status.as_str(), "valid" | "completed") {
         let dir = path.parent().context("data_invalid: 尝试根目录")?;
-        let (status, evidence, gap) = super::attempt::inspect_gap(&r, dir)?;
+        let (status, evidence, gap) = if r.batch.is_some() {
+            super::batch::inspect(&r)?
+        } else {
+            super::attempt::inspect_gap(&r, dir)?
+        };
         ensure!(
             r.gap_status.as_ref() == Some(&status)
                 && serde_json::to_value(&r.evidence)? == serde_json::to_value(evidence)?

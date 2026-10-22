@@ -134,7 +134,7 @@ pub fn report(cfg: &Config) -> Result<serde_json::Value> {
             && task.as_ref().is_some_and(|a| a.state == "succeeded")
     } else { steps.values().all(|v|v=="reuse") };
     Ok(
-        serde_json::json!({"operation_status":"ok","workflow_complete":complete,"workflow_status":task.as_ref().map(|a| &a.state),"steps":steps,"attempt":task,"native_task":super::native_jobs::status(cfg)?}),
+        serde_json::json!({"operation_status":"ok","workflow_complete":complete,"workflow_status":task.as_ref().map(|a| &a.state),"steps":steps,"attempt":task,"native_task":super::native_jobs::status(cfg)?,"native_methods":super::native_jobs::groups_status(cfg)?}),
     )
 }
 pub fn status(cfg: &Config) -> Result<()> {
@@ -143,6 +143,7 @@ pub fn status(cfg: &Config) -> Result<()> {
         println!("workflow_status: {}\nworkflow_complete: {}", value["workflow_status"].as_str().unwrap_or("unknown"), value["workflow_complete"]);
     }
     if !value["native_task"].is_null() { println!("native_task: {}",value["native_task"]); }
+    if value["native_methods"].as_object().is_some_and(|m| !m.is_empty()) { println!("native_methods: {}", value["native_methods"]); }
     for (name, state) in value["steps"].as_object().unwrap() {
         println!("{name}: {}", state.as_str().unwrap());
     }
@@ -361,6 +362,7 @@ pub fn start_phonon(config: &Path, resume: bool) -> Result<()> {
     let cfg = Config::load(config)?;
     super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, None)?;
+    super::native_jobs::check_groups(&cfg)?;
     super::native_jobs::reconcile(&cfg, resume)?;
     let mut unfinished_attempt = false;
     if active(&cfg.work_dir).is_file() {
@@ -436,6 +438,7 @@ pub fn start(config: &Path, target: Step, submit: bool) -> Result<()> {
     let cfg = Config::load(config)?;
     super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, None)?;
+    super::native_jobs::check_groups(&cfg)?;
     let script_path = generate_current(config, target, &cfg)?;
     status(&cfg)?;
     let pending = target

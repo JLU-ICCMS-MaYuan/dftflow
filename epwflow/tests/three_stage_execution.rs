@@ -1521,3 +1521,6 @@ fn gap_resume_keeps_successful_temperature_and_preserves_failed_attempt() {
     let last=epwflow::superconductivity::points::Run::load(&path).unwrap();assert_eq!(last.attempts.len(),4);assert!(last.execution_complete&&last.data_complete);id.verify().unwrap();assert_eq!(last.attempts[0].record.as_ref().unwrap().sha256,id.sha256);
     let calls:Vec<Value>=c.calls().2.lines().map(|l|serde_json::from_str(l).unwrap()).collect();assert_eq!(calls.iter().map(|v|v["temperature_k"].as_f64().unwrap()).collect::<Vec<_>>(),[20.,30.,30.,40.]);
 }
+
+#[path = "support/multitemperature.rs"]
+mod multitemperature;

@@ -31,7 +31,12 @@ else:
         cmd
     }
     pub(super) fn direct_execute(&self) -> i32 {
-        let task = self.direct_task();
+        self.execute_record(self.direct_task())
+    }
+    pub(super) fn method_task(&self, mode: &str) -> Value {
+        store::read(&self.root.join(format!("run/epw-state/native-active-{mode}.json"))).unwrap()
+    }
+    pub(super) fn execute_record(&self, task: Value) -> i32 {
         let job = task["job"].as_u64().unwrap();
         let script = PathBuf::from(task["script"]["path"].as_str().unwrap());
         let body = fs::read_to_string(&script).unwrap();
@@ -402,34 +407,28 @@ fn edited_script_can_be_submitted_for_independent_debug_without_formal_adoption(
 
 #[test]
 fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
-    let c=Case::numbered();c.direct_setup();
+    let c=Case::numbered();
     for relative in ["epw-state/control.lock", "epw-state/execution.lock", "8.epw-superconductivity/execution.lock"] {
         let lock = c.root.join("run").join(relative);
         fs::create_dir_all(&lock).unwrap();
         fs::write(lock.join("owner.json"), "stale owner").unwrap();
     }
     c.numbered_change(|cfg|{let s=&mut cfg.superconductivity;s.task=config::SuperconductivityTask::Gap;s.mode=config::Mode::Both;s.gap_temperatures_k=vec![20.,30.,40.];s.mixing_beta=-0.3;s.iso=None;s.aniso=None;});
-    // 这里只推进逐任务目标；coarse 补齐 PH，phonon 自动目标由 0048 独立覆盖。
-    let stages=[(0,"scf"),(0,"nscf"),(0,"electronic"),(1,"wannier"),(1,"coarse"),(2,"fine"),(2,"superconductivity")];
-    let mut step=0;
-    let mut finished=false;
-    for n in 0..60 {
-        let (bin,stage)=stages[step];
-        let args=vec!["--stage",stage,"-s"];
-        let before=fs::read_to_string(c.root.join("submissions")).unwrap_or_default().lines().count();
-        let out=c.direct_advance(bin,&args,&format!("gap-{n}"));
-        assert!(out.status.success(),"{}\n{}",String::from_utf8_lossy(&out.stdout),String::from_utf8_lossy(&out.stderr));
-        let after=fs::read_to_string(c.root.join("submissions")).unwrap_or_default().lines().count();
-        assert!(after==before || after==before+1);
-        if String::from_utf8_lossy(&out.stdout).contains("workflow_complete: true") {
-            if step+1<stages.len(){step+=1;continue;}finished=true;break;
-        }
-        assert_eq!(after,before+1);
-        assert!(!c.direct_advance(bin,&args,"gap-active-blocked").status.success());
-        assert_eq!(after,fs::read_to_string(c.root.join("submissions")).unwrap().lines().count());
-        assert_eq!(c.direct_execute(),0);
-    }
-    assert!(finished,"未完成公开入口指定温度流程");
+    c.accounting(Some(201));
+    success(c.numbered_cli(2,&["--stage","fine","-r"],Some(201),"gap-upstream"));
+    c.direct_setup();c.put("job-201.state","COMPLETED");c.put("submissions","allocated preparation\n");
+    let args=["--stage","superconductivity","-s"];
+    success(c.direct_advance(2,&args,"gap-both-submit"));
+    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(),3);
+    success(c.direct_advance(2,&args,"gap-active-no-duplicate"));
+    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(),3);
+    let iso=c.method_task("iso");let aniso=c.method_task("aniso");
+    assert_ne!(iso["job"],aniso["job"]);
+    assert_eq!(c.execute_record(aniso),0);assert_eq!(c.execute_record(iso),0);
+    success(c.direct_advance(2,&args,"gap-both-collect"));
+    let launches:Vec<Value>=fs::read_to_string(c.root.join("epw-invocations.jsonl")).unwrap().lines().map(|l|serde_json::from_str(l).unwrap()).collect();
+    assert_eq!(launches.len(),2);
+    for call in launches{assert_eq!(call["temperatures"],json!([20.,30.,40.]));}
     let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
     let root=c.root.join("run/8.epw-superconductivity");
     let run=epwflow::superconductivity::points::published(&cfg.work_dir,&cfg,&store::read::<Value>(&root.join("manifest.json")).unwrap()["run_id"].as_str().unwrap()).unwrap();
@@ -464,13 +463,12 @@ fn direct_gap_failure_needs_resume_and_freezes_failed_native_evidence() {
     c.direct_setup();c.put("job-201.state","COMPLETED");c.put("submissions","allocated preparation\n");
     c.put("gap-fail30","transient failure");
     let args=["--stage","superconductivity","-s"];
-    success(c.direct_advance(2,&args,"gap-20-submit"));assert_eq!(c.direct_execute(),0);
-    success(c.direct_advance(2,&args,"gap-30-submit"));assert_eq!(c.direct_execute(),17);
+    success(c.direct_advance(2,&args,"gap-batch-submit"));assert_eq!(c.execute_record(c.method_task("iso")),17);
     let count=fs::read_to_string(c.root.join("submissions")).unwrap().lines().count();
     assert!(!c.direct_advance(2,&args,"gap-failed-without-resume").status.success());
     assert_eq!(count,fs::read_to_string(c.root.join("submissions")).unwrap().lines().count());
     fs::remove_file(c.root.join("gap-fail30")).unwrap();
-    success(c.direct_advance(2,&["--stage","superconductivity","--resume","-s"],"gap-30-resubmit"));assert_eq!(c.direct_execute(),0);
+    success(c.direct_advance(2,&["--stage","superconductivity","--resume","-s"],"gap-30-resubmit"));assert_eq!(c.execute_record(c.method_task("iso")),0);
     success(c.direct_advance(2,&args,"gap-30-collect"));
     let run=epwflow::superconductivity::points::Run::load(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();
     assert!(run.execution_complete&&run.data_complete);assert_eq!(run.attempts.len(),3);

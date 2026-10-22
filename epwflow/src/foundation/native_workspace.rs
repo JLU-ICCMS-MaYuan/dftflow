@@ -32,6 +32,10 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
     if own.is_none() {
         native_jobs::reconcile(&cfg, resume)?;
     }
+    // 先阻止其他阶段改写并行方法仍在读取的上游。
+    if target != Step::Superconductivity || cfg.superconductivity.task != super::config::SuperconductivityTask::Gap {
+        native_jobs::check_groups(&cfg)?;
+    }
     layout::initialize(&cfg)?;
     store::atomic_bytes(
         &cfg.work_dir.join("epw-state/current-config.toml"),
@@ -49,6 +53,9 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
             continue;
         }
         parallelism::preflight(&cfg, step, false)?;
+        if step != Step::Superconductivity {
+            native_jobs::check_groups(&cfg)?;
+        }
         let key = stages::scientific_key(&cfg, step)?;
         let path = cfg
             .work_dir
@@ -84,6 +91,7 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
                 }
             }
             _ => {
+                native_jobs::check_groups(&cfg)?;
                 workspace::archive_step(&cfg, step)?;
                 Progress {
                     key: key.clone(),
@@ -92,6 +100,10 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
                 }
             }
         };
+        if resume && step == Step::Superconductivity
+            && cfg.superconductivity.task == super::config::SuperconductivityTask::Gap {
+            p.state = "running".into();
+        }
         store::write(
             &cfg.work_dir
                 .join("epw-state/requests")
@@ -100,7 +112,10 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
         )?;
         store::write(&path, &p)?;
         let upstream = stages::upstream(&cfg, step)?;
-        let run = if own.is_some() {
+        let run = if step == Step::Superconductivity
+            && cfg.superconductivity.task == super::config::SuperconductivityTask::Gap {
+            crate::superconductivity::batch::run(&cfg, &p.generation, submit, resume)
+        } else if own.is_some() {
             native_jobs::scoped_allocated(&cfg, &p.generation, resume, || workspace_science::run(&cfg, step))
         } else {
             native_jobs::scoped(&cfg, &p.generation, submit, resume, || workspace_science::run(&cfg, step))
@@ -168,7 +183,7 @@ fn pending(cfg: &Config, target: Step, allocated: bool) -> Result<()> {
     let path = cfg.work_dir.join("native-plan.json");
     store::write(
         &path,
-        &serde_json::json!({"schema_version":1,"target":target,"task":native_jobs::status(cfg)?,"steps":steps,"advance":if allocated {"本声子阶段在分配内自动完成，可用 --status 查看"} else {"作业结束后再次执行相同公开命令 -s"}}),
+        &serde_json::json!({"schema_version":1,"target":target,"task":native_jobs::status(cfg)?,"methods":native_jobs::groups_status(cfg)?,"steps":steps,"advance":if allocated {"本声子阶段在分配内自动完成，可用 --status 查看"} else {"作业结束后再次执行相同公开命令 -s"}}),
     )?;
     println!("plan: {}", path.display());
     // 不再产生 submit_all.sh；已有历史文件不修改，清单明确取代它。

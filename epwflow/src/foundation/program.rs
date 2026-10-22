@@ -60,7 +60,7 @@ struct Options {
     workspace_task: Option<PathBuf>,
     #[arg(short = 'w', long)]
     work: Option<PathBuf>,
-    /// phonon 一次提交自动完成整阶段；其他目标核验上一任务并提交下一次原生调用。
+    /// phonon 自动完成整阶段；gap 按方法提交完整温度批次；其余目标逐原生调用推进。
     #[arg(short = 's', long, conflicts_with = "run")]
     submit: bool,
     /// 在已经登记的 Slurm 分配内运行本阶段。

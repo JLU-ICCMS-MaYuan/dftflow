@@ -70,12 +70,16 @@ pub struct Superconductivity {
     pub task:SuperconductivityTask,
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub initial_gap_mev:Option<f64>,
-    pub mode:Mode,pub mu_star:f64,pub frequency_cutoff_ev:f64,pub max_iterations:u32,
+    pub mode:Mode,
+    #[serde(default="default_mu_star")]
+    pub mu_star:f64,
+    pub frequency_cutoff_ev:f64,pub max_iterations:u32,
     pub convergence_relative:f64,pub mixing_beta:f64,pub mixing_history:u32,
     #[serde(default)] pub initial_gaps_mev:[f64;2],
     pub initial_shape:f64,pub gap_temperatures_k:Vec<f64>,pub spectrum_index:u32,
     pub iso:Option<Tc>,pub aniso:Option<Tc>,
 }
+fn default_mu_star()->f64{0.13}
 impl Superconductivity {pub fn initial_gap(&self)->f64{self.initial_gap_mev.unwrap_or(10.0)}}
 data!(Tc{min_k:f64,max_k:f64,precision_k:f64,max_solves:u32,eigen_margin:f64,normal_gap_mev:f64,super_gap_mev:f64});
 
@@ -186,6 +190,7 @@ impl Config {
         ensure!(s.initial_gaps_mev[0]!=s.initial_gaps_mev[1],"configuration: superconductivity.initial_gaps_mev: 需要不同初值");
         } else {positive(s.initial_gap(),"superconductivity.initial_gap_mev")?;}
         ensure!(!s.gap_temperatures_k.is_empty(),"configuration: superconductivity.gap_temperatures_k: 为空");
+        ensure!(s.task!=SuperconductivityTask::Gap || s.gap_temperatures_k.len()<=50,"configuration: 原生多温度求解最多支持 50 点");
         let mut seen=BTreeSet::new();for t in &s.gap_temperatures_k {ensure!(seen.insert(temperature(*t,"superconductivity.gap_temperatures_k")?),"configuration: superconductivity.gap_temperatures_k: 重复温度");}
         for (name,tc,required) in [("iso",&s.iso,s.mode!=Mode::Aniso),("aniso",&s.aniso,s.mode!=Mode::Iso)]{
             if s.task==SuperconductivityTask::Tc && required && tc.is_none(){bail!("configuration: superconductivity.{name}: 缺失");}

@@ -138,3 +138,13 @@ run/
 - **Wannier**：`num_wann=5`、`selection_mode="energy_only"`、`guiding_centres=true`；保留初始投影，`B:pz` 在两个 B 原子上分别生成投影。
 - **超导**：`task="gap"` 按 `gap_temperatures_k=[20,30,40]` 算能隙；`mode="both"` 同时计算 iso／aniso，也可选 `iso` 或 `aniso`。`initial_gap_mev=10` 为单初值，`mu_star=0.05`、截断 `0.5 eV`、最多 1000 次迭代、相对收敛标准 `1e-8`。`mixing_beta=-0.3` 使用原生线性混合，正值使用 Broyden，系数绝对值须在 `(0,1]`。温度须为正数、精确到 0.01 K、不重复且不超过 999.99 K；截断须包含首个 Matsubara 频率。省略 `task` 仍走旧 Tc 搜索，需要原 Tc 参数表。
 - **资源**：每次提交受 `resources` 和共享 `[budget]` 账本限制；重算不会清零已有消费。`--check` 通过只代表输入检查通过，不代表八步计算已经完成。
+
+## 0049：指定温度的双方法批次提交
+
+本节更新第 8 步 gap 目标的执行规则与目录布局，以本节为准；gap 不进行 Tc 搜索。
+
+使用 `task="gap"`、`mode="both"` 和 `gap_temperatures_k=[20,30,40]`，执行第 8 步命令一次即可提交两个独立 Slurm 作业，每种方法一次 EPW 执行全部温度。省略 `mu_star` 默认 0.13；已有显式值优先，如需本算例使用 0.13，请在当前配置显式设置 `mu_star=0.13`，不会自动改写既有输入。
+
+结果位于 `8.epw-superconductivity/iso-mu0.13-20-40/` 与 `aniso-mu0.13-20-40/`；各方法全部温度共目录。作业结束后再次执行同命令归集，`--status --json` 的 `native_methods` 显示两个作业。原生提前停止后，修正原因并加 `--resume -s` 仅补未完成点；不自动调整数值参数或覆盖旧证据。
+
+上述说明针对 0049 新源码；旧默认安装不自动更新。当前配置中的实际 `task`、温度和显式 μ* 是执行依据。完整配置与边界见 [模块手册](../../../../../epwflow/README.md)及 [0049 Spec](../../../../../docs/specs/0049-epw-multitemperature-submit/spec.md)。

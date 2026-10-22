@@ -51,6 +51,8 @@ pub(crate) fn is_log(path: &Path) -> bool {
 #[serde(deny_unknown_fields)]
 pub struct Task {
     pub schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     pub id: String,
     pub key: String,
     pub generation: String,
@@ -140,7 +142,40 @@ fn persist(cfg: &Config, task: &Task) -> Result<()> {
             .join(format!("{}.json", task.id)),
         task,
     )?;
-    store::write(&active(cfg), task)
+    store::write(&group_path(cfg, task.group.as_deref()), task)
+}
+fn group_path(cfg: &Config, group: Option<&str>) -> PathBuf {
+    match group {
+        Some(name) => cfg.work_dir.join(format!("epw-state/native-active-{name}.json")),
+        None => active(cfg),
+    }
+}
+pub fn group_task(cfg: &Config, group: &str) -> Result<Option<Task>> {
+    ensure!(matches!(group, "iso" | "aniso"), "configuration: 无效原生方法分组");
+    let path = group_path(cfg, Some(group));
+    if path.is_file() { Ok(Some(store::read(&path)?)) } else { Ok(None) }
+}
+/// 其他科学阶段不能改写两方法仍在使用的上游数据。
+pub fn check_groups(cfg: &Config) -> Result<()> {
+    for group in ["iso", "aniso"] {
+        if let Some(task) = group_task(cfg, group)? {
+            let state = task_status(&task)?;
+            ensure!(
+                !matches!(state["state"].as_str(), Some("running" | "unknown")),
+                "scheduler_unknown: {group} 原生作业仍活动或提交未知"
+            );
+        }
+    }
+    Ok(())
+}
+pub fn groups_status(cfg: &Config) -> Result<serde_json::Value> {
+    let mut result = serde_json::Map::new();
+    for group in ["iso", "aniso"] {
+        if let Some(task) = group_task(cfg, group)? {
+            result.insert(group.into(), task_status(&task)?);
+        }
+    }
+    Ok(result.into())
 }
 pub fn active_task(cfg: &Config) -> Result<Option<Task>> {
     if active(cfg).exists() {
@@ -172,6 +207,7 @@ fn verify(task: &Task) -> Result<()> {
         matches!(task.schema_version, 1 | 2),
         "unsupported_version: 原生任务记录"
     );
+    ensure!(task.group.as_deref().is_none_or(|name| matches!(name, "iso" | "aniso")), "data_invalid: 原生方法分组无效");
     // 新格式的终态只依赖科学证据，固定名称脚本可供下一次计算覆盖。
     if task.schema_version == 1
         || matches!(
@@ -194,6 +230,9 @@ pub fn status(cfg: &Config) -> Result<Option<serde_json::Value>> {
     let Some(task) = active_task(cfg)? else {
         return Ok(None);
     };
+    Ok(Some(task_status(&task)?))
+}
+pub fn task_status(task: &Task) -> Result<serde_json::Value> {
     let state = if matches!(
         task.state.as_str(),
         "submitted" | "submission_pending" | "unknown"
@@ -216,9 +255,7 @@ pub fn status(cfg: &Config) -> Result<Option<serde_json::Value>> {
     } else {
         &task.state
     };
-    Ok(Some(
-        serde_json::json!({"state":state,"job":task.job,"script":task.script.path,"directory":task.directory}),
-    ))
+    Ok(serde_json::json!({"state":state,"job":task.job,"script":task.script.path,"directory":task.directory}))
 }
 
 /// 只在登录端采纳自己提交的终态。手工 sbatch 没有登记回执，不能进入此处。
@@ -226,8 +263,11 @@ pub fn reconcile(cfg: &Config, resume: bool) -> Result<()> {
     let Some(mut task) = active_task(cfg)? else {
         return Ok(());
     };
+    reconcile_task(cfg, resume, &mut task)
+}
+pub fn reconcile_task(cfg: &Config, resume: bool, task: &mut Task) -> Result<()> {
     if task.state != "validated" {
-        verify(&task)?;
+        verify(task)?;
     }
     if matches!(task.state.as_str(), "unknown" | "submission_pending") {
         anyhow::bail!("scheduler_unknown: 提交回执未知，保留预算预留，禁止重提");
@@ -245,7 +285,7 @@ pub fn reconcile(cfg: &Config, resume: bool) -> Result<()> {
                 )
             })?;
             task.attached = true;
-            persist(cfg, &task)?;
+            persist(cfg, task)?;
         }
         let a = slurm::accounting(job)?;
         ensure!(
@@ -310,6 +350,12 @@ pub fn reconcile(cfg: &Config, resume: bool) -> Result<()> {
                 task.directory.join(format!("{}.err", task.stem)),
             )
         };
+        // 方法作业可能在打开输出前被取消；保留空日志证明该批没有完成点。
+        if task.group.is_some() && task.state == "failed" {
+            for path in [&stdout, &stderr] {
+                if !path.exists() { store::atomic_bytes(path, b"")?; }
+            }
+        }
         task.stdout = Some(Identity::capture(&stdout).context("data_invalid: 缺少原生 stdout")?);
         task.stderr = Some(Identity::capture(&stderr).context("data_invalid: 缺少原生 stderr")?);
         if task.schema_version == 1 {
@@ -324,13 +370,13 @@ pub fn reconcile(cfg: &Config, resume: bool) -> Result<()> {
             &task.directory.join(format!("{}.exitcode", task.stem)),
             task.exit_status.unwrap().to_string().as_bytes(),
         )?;
-        persist(cfg, &task)?;
+        persist(cfg, task)?;
     }
     if task.state == "running" && task.job.is_none() {
         // 父分配已由入口确认终态；进程可能在写失败回执前被超时／取消终止。
         ensure!(resume, "execution_failed: 声子分配中断；确认终态后显式 --resume -s");
         task.state = "failed".into();
-        persist(cfg, &task)?;
+        persist(cfg, task)?;
     }
     ensure!(
         task.state != "failed" || resume,
@@ -502,46 +548,7 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
         });
     }
     if submit {
-        task.reservation = Some(budget::with_ledger(
-            &cfg.budget.ledger,
-            &cfg.budget.campaign_id,
-            |l| budget::reserve_workflow(l, &format!("0026:{}", task.id), &cfg.resources),
-        )?);
-        task.state = "submission_pending".into();
-        persist(&cfg, &task)?;
-        let out = Command::new("sbatch")
-            .arg("--parsable")
-            .arg(&task.script.path)
-            .current_dir(work)
-            .output();
-        let receipt = out
-            .context("scheduler_unknown: 无法调用 sbatch")
-            .and_then(|o| {
-                ensure!(
-                    o.status.success(),
-                    "scheduler_unknown: sbatch 失败：{}",
-                    String::from_utf8_lossy(&o.stderr)
-                );
-                slurm::parse_job_id(String::from_utf8_lossy(&o.stdout).trim())
-            });
-        match receipt {
-            Ok(job) => {
-                task.job = Some(job.job_id);
-                task.state = "submitted".into();
-                persist(&cfg, &task)?;
-                budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
-                    budget::attach_once(l, task.reservation.as_ref().unwrap(), job.job_id)
-                })?;
-                task.attached = true;
-                persist(&cfg, &task)?;
-                println!("job_id: {}", job.job_id);
-            }
-            Err(e) => {
-                task.state = "unknown".into();
-                persist(&cfg, &task)?;
-                return Err(e);
-            }
-        }
+        submit_task(&cfg, &mut task)?;
     }
     println!(
         "script: {}\ndirectory: {}\nworkflow_status: {}\nnext: 作业结束后再次执行同一公开命令 -s",
@@ -550,6 +557,64 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
         task.state
     );
     Err(Paused.into())
+}
+
+/// 两个独立方法与旧逐任务入口共用同一提交／预算边界。
+pub fn submit_task(cfg: &Config, task: &mut Task) -> Result<()> {
+    ensure!(task.state == "prepared", "scheduler_unknown: 任务已提交或提交状态未知");
+    verify(task)?;
+    task.reservation = Some(budget::with_ledger(
+        &cfg.budget.ledger,
+        &cfg.budget.campaign_id,
+        |l| budget::reserve_workflow(l, &format!("0026:{}", task.id), &cfg.resources),
+    )?);
+    task.state = "submission_pending".into();
+    persist(cfg, task)?;
+    let out = Command::new("sbatch")
+        .arg("--parsable")
+        .arg(&task.script.path)
+        .current_dir(&task.directory)
+        .output();
+    let receipt = out
+        .context("scheduler_unknown: 无法调用 sbatch")
+        .and_then(|o| {
+            ensure!(
+                o.status.success(),
+                "scheduler_unknown: sbatch 失败：{}",
+                String::from_utf8_lossy(&o.stderr)
+            );
+            slurm::parse_job_id(String::from_utf8_lossy(&o.stdout).trim())
+        });
+    match receipt {
+        Ok(job) => {
+            task.job = Some(job.job_id);
+            task.state = "submitted".into();
+            persist(cfg, task)?;
+            budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
+                budget::attach_once(l, task.reservation.as_ref().unwrap(), job.job_id)
+            })?;
+            task.attached = true;
+            persist(cfg, task)?;
+            println!("job_id: {}", job.job_id);
+        }
+        Err(e) => {
+            task.state = "unknown".into();
+            persist(cfg, task)?;
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+
+pub fn finish_group(cfg: &Config, task: &mut Task, complete: bool) -> Result<()> {
+    task.state = if complete { "validated" } else { "failed" }.into();
+    persist(cfg, task)
+}
+
+pub fn prepare_group(cfg: &Config, generation: &str, group: &str, command: &[String], work: &Path) -> Result<Task> {
+    ensure!(matches!(group, "iso" | "aniso"), "configuration: 无效方法分组");
+    let key = task_key(generation, work, command, "epw")?;
+    prepare_mode(cfg, generation, &key, command, work, "epw", Some(group))
 }
 
 pub(super) fn double_quote(value: &str) -> String {
@@ -583,6 +648,12 @@ fn prepare(
     command: &[String],
     work: &Path,
     stem: &str,
+) -> Result<Task> {
+    prepare_mode(cfg, generation, key, command, work, stem, None)
+}
+fn prepare_mode(
+    cfg: &Config, generation: &str, key: &str, command: &[String], work: &Path,
+    stem: &str, group: Option<&str>,
 ) -> Result<Task> {
     // 历史任务键／argv 保持原样，仅新脚本使用运行环境中的启动器。
     let invocation = qf_runner::plain_scientific_argv(command);
@@ -686,6 +757,7 @@ fn prepare(
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
     let task = Task {
         schema_version: 2,
+        group: group.map(str::to_owned),
         id,
         key: key.into(),
         generation: generation.into(),
