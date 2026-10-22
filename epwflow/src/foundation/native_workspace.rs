@@ -1,4 +1,4 @@
-//! 公开命令手动推进编号工作区；作业内只有科学程序。
+//! 编号工作区阶段循环：普通目标手动推进，声子目标在已有分配内连续运行。
 use super::{
     config::Config,
     layout, native_jobs, parallelism,
@@ -17,10 +17,21 @@ struct Progress {
 }
 
 pub fn advance(config: &Path, target: Step, submit: bool, resume: bool) -> Result<()> {
+    advance_mode(config, target, submit, resume, None)
+}
+
+/// 唯一声子分配内自动运行既有阶段循环；父尝试已核对资源和提交身份。
+pub(super) fn allocated(config: &Path, resume: bool, attempt: &str) -> Result<()> {
+    advance_mode(config, Step::Phonon, false, resume, Some(attempt))
+}
+
+fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Option<&str>) -> Result<()> {
     let cfg = Config::load(config)?;
     super::run_state::ready(&cfg.work_dir)?;
-    workspace::check_active(&cfg, None)?; // 旧包装作业活动时也不能新提交。
-    native_jobs::reconcile(&cfg, resume)?;
+    workspace::check_active(&cfg, own)?;
+    if own.is_none() {
+        native_jobs::reconcile(&cfg, resume)?;
+    }
     layout::initialize(&cfg)?;
     store::atomic_bytes(
         &cfg.work_dir.join("epw-state/current-config.toml"),
@@ -59,7 +70,8 @@ pub fn advance(config: &Path, target: Step, submit: bool, resume: bool) -> Resul
                     .is_some_and(|a| a.generation == p.generation && a.state == "failed");
                 if resume
                     && (p.state == "failed" || native_failed)
-                    && matches!(step, Step::Scf | Step::Nscf | Step::Wannier)
+                    && (matches!(step, Step::Scf | Step::Nscf | Step::Wannier)
+                        || (step == Step::Phonon && workspace_science::partial_phonon(&cfg)?.is_none()))
                 {
                     workspace::archive_step(&cfg, step)?;
                     Progress {
@@ -88,12 +100,14 @@ pub fn advance(config: &Path, target: Step, submit: bool, resume: bool) -> Resul
         )?;
         store::write(&path, &p)?;
         let upstream = stages::upstream(&cfg, step)?;
-        let run = native_jobs::scoped(&cfg, &p.generation, submit, resume, || {
-            workspace_science::run(&cfg, step)
-        });
+        let run = if own.is_some() {
+            native_jobs::scoped_allocated(&cfg, &p.generation, resume, || workspace_science::run(&cfg, step))
+        } else {
+            native_jobs::scoped(&cfg, &p.generation, submit, resume, || workspace_science::run(&cfg, step))
+        };
         match run {
             Err(e) if native_jobs::paused(&e) => {
-                pending(&cfg, target)?;
+                pending(&cfg, target, own.is_some())?;
                 return Ok(());
             }
             Err(e) => {
@@ -134,7 +148,7 @@ pub fn advance(config: &Path, target: Step, submit: bool, resume: bool) -> Resul
         workspace_science::refresh_post(&cfg, target)
     }) {
         Err(e) if native_jobs::paused(&e) => {
-            pending(&cfg, target)?;
+            pending(&cfg, target, own.is_some())?;
             Ok(())
         }
         Err(e) => {
@@ -142,19 +156,19 @@ pub fn advance(config: &Path, target: Step, submit: bool, resume: bool) -> Resul
             Err(e)
         }
         Ok(()) => {
-            pending(&cfg, target)?;
+            pending(&cfg, target, own.is_some())?;
             println!("workflow_status: complete\nworkflow_complete: true");
             Ok(())
         }
     }
 }
 
-fn pending(cfg: &Config, target: Step) -> Result<()> {
+fn pending(cfg: &Config, target: Step, allocated: bool) -> Result<()> {
     let steps = target.closure().into_iter().map(|s| Ok(serde_json::json!({"step":s,"state":if stages::reusable(cfg,s)? {"validated"}else{"pending"}}))).collect::<Result<Vec<_>>>()?;
     let path = cfg.work_dir.join("native-plan.json");
     store::write(
         &path,
-        &serde_json::json!({"schema_version":1,"target":target,"task":native_jobs::status(cfg)?,"steps":steps,"advance":"作业结束后再次执行相同公开命令 -s"}),
+        &serde_json::json!({"schema_version":1,"target":target,"task":native_jobs::status(cfg)?,"steps":steps,"advance":if allocated {"本声子阶段在分配内自动完成，可用 --status 查看"} else {"作业结束后再次执行相同公开命令 -s"}}),
     )?;
     println!("plan: {}", path.display());
     // 不再产生 submit_all.sh；已有历史文件不修改，清单明确取代它。

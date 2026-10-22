@@ -60,7 +60,7 @@ struct Options {
     workspace_task: Option<PathBuf>,
     #[arg(short = 'w', long)]
     work: Option<PathBuf>,
-    /// 核验上一任务并提交下一次原生调用，作业结束后再次执行 -s 推进。
+    /// phonon 一次提交自动完成整阶段；其他目标核验上一任务并提交下一次原生调用。
     #[arg(short = 's', long, conflicts_with = "run")]
     submit: bool,
     /// 在已经登记的 Slurm 分配内运行本阶段。
@@ -166,7 +166,10 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         super::run_state::ready(&cfg.work_dir)?;
         if o.status {if o.json{status::print_json(&super::workspace::report(&cfg)?);return Ok(())}return super::workspace::status(&cfg)}
         if o.check {for s in target.closure(){if s==target || !super::stages::reusable(&cfg,s)?{super::parallelism::preflight(&cfg,s,false)?;}} if o.json{status::print_json(&serde_json::json!({"operation_status":"ok","workflow_status":"configured","workflow_complete":false,"checks":["configuration","input_files","program_paths","mpi_pool_image"]}));}else{println!("operation_status: ok\nworkflow_status: configured");}return Ok(())}
-        if o.submit {return super::native_workspace::advance(&o.config,target,true,o.resume)}
+        if o.submit {
+            if target == Step::Phonon { return super::workspace::start_phonon(&o.config, o.resume); }
+            return super::native_workspace::advance(&o.config,target,true,o.resume)
+        }
         if o.run {return super::workspace::start(&o.config,target,false)}
         super::native_workspace::advance(&o.config,if o.all {Step::Superconductivity}else{target},false,false)?;
         return Ok(())

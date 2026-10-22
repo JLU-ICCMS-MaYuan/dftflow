@@ -887,17 +887,17 @@ fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
 #[test]
 fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
     let c=Case::numbered(); c.direct_setup();
-    success(c.numbered_cli(0,&["-s"],None,"numbered-submit"));
+    success(c.numbered_cli(0,&["--stage","electronic","-s"],None,"numbered-submit"));
     let active=c.direct_task();
     let script=PathBuf::from(active["script"]["path"].as_str().unwrap());
     let before=fs::read(&script).unwrap();
     let control=store::Lock::acquire(&c.root.join("run/epw-state/control")).unwrap();
-    let blocked=c.numbered_cli(0,&["-s"],None,"numbered-control-busy");
+    let blocked=c.numbered_cli(0,&["--stage","electronic","-s"],None,"numbered-control-busy");
     assert!(!blocked.status.success());
     assert!(c.root.join("run/epw-state/control.lock/owner.json").is_file());
     drop(control);
     c.numbered_change(|cfg|cfg.resources.wall_seconds=300);
-    assert!(!c.numbered_cli(0,&["-s","--resume"],None,"numbered-duplicate").status.success());
+    assert!(!c.numbered_cli(0,&["--stage","electronic","-s","--resume"],None,"numbered-duplicate").status.success());
     assert_eq!(fs::read(&script).unwrap(),before);
     assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(),1);
     c.put("input.toml","invalid pending edits must not affect submitted native job");
@@ -1477,6 +1477,9 @@ fn numbered_native_retry_preserves_open_logs_and_ignores_legacy_log_inputs_only(
 
 #[path = "support/direct_submit.rs"]
 mod direct_submit;
+
+#[path = "support/phonon_chain.rs"]
+mod phonon_chain;
 
 #[path = "support/qe_stage_plots.rs"]
 mod qe_stage_plots;

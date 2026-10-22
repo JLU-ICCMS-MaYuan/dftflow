@@ -29,6 +29,10 @@ struct Attempt {
     job: Option<u64>,
     reservation: Option<String>,
     error: Option<String>,
+    #[serde(default)]
+    phonon_chain: bool,
+    #[serde(default)]
+    retry_failed: bool,
 }
 fn active(root: &Path) -> PathBuf {
     root.join("epw-state/active.json")
@@ -37,11 +41,26 @@ fn attempt_path(root: &Path, id: &str) -> PathBuf {
     root.join("epw-state/attempts").join(id).join("attempt.json")
 }
 
+// 提交端只写独立回执，避免快速启动的 worker 与登录端互相覆盖状态。
+fn read_attempt(path: &Path) -> Result<Attempt> {
+    let mut a: Attempt = store::read(path)?;
+    let receipt = a.config.path.with_file_name("submission.json");
+    if a.phonon_chain && a.job.is_none() && receipt.is_file() {
+        let value: serde_json::Value = store::read(&receipt)?;
+        a.job = value["job"].as_u64();
+        if a.state == "submission_pending" {
+            a.state = if a.job.is_some() { "submitted" } else { "unknown" }.into();
+            a.error = value["error"].as_str().map(str::to_owned);
+        }
+    }
+    Ok(a)
+}
+
 pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
     if !active(&cfg.work_dir).exists() {
         return Ok(());
     }
-    let old: Attempt = store::read(&active(&cfg.work_dir))?;
+    let old = read_attempt(&active(&cfg.work_dir))?;
     if own == Some(old.id.as_str()) {
         return Ok(());
     }
@@ -94,17 +113,35 @@ pub fn report(cfg: &Config) -> Result<serde_json::Value> {
             }),
         );
     }
-    let task = if active(&cfg.work_dir).is_file() {
-        Some(store::read::<Attempt>(&active(&cfg.work_dir))?)
+    let mut task = if active(&cfg.work_dir).is_file() {
+        Some(read_attempt(&active(&cfg.work_dir))?)
     } else {
         None
     };
+    if let Some(a) = task.as_mut().filter(|a| a.phonon_chain && !matches!(a.state.as_str(), "succeeded" | "failed")) {
+        if let Some(job) = a.job {
+            a.state = match slurm::accounting(job) {
+                Ok(s) if s.terminal => "failed",
+                Ok(s) if s.state == "RUNNING" => "running",
+                Ok(_) => "submitted",
+                Err(_) => "unknown",
+            }.into();
+        }
+    }
+    let complete = if task.as_ref().is_some_and(|a| a.phonon_chain) {
+        Step::Phonon.closure().iter().all(|s| steps[s.name()] == "reuse")
+            && !super::workspace_qe_plot::pending(cfg, Step::Phonon)?
+            && task.as_ref().is_some_and(|a| a.state == "succeeded")
+    } else { steps.values().all(|v|v=="reuse") };
     Ok(
-        serde_json::json!({"operation_status":"ok","workflow_complete":steps.values().all(|v|v=="reuse"),"steps":steps,"attempt":task,"native_task":super::native_jobs::status(cfg)?}),
+        serde_json::json!({"operation_status":"ok","workflow_complete":complete,"workflow_status":task.as_ref().map(|a| &a.state),"steps":steps,"attempt":task,"native_task":super::native_jobs::status(cfg)?}),
     )
 }
 pub fn status(cfg: &Config) -> Result<()> {
     let value = report(cfg)?;
+    if value["attempt"]["phonon_chain"] == true {
+        println!("workflow_status: {}\nworkflow_complete: {}", value["workflow_status"].as_str().unwrap_or("unknown"), value["workflow_complete"]);
+    }
     if !value["native_task"].is_null() { println!("native_task: {}",value["native_task"]); }
     for (name, state) in value["steps"].as_object().unwrap() {
         println!("{name}: {}", state.as_str().unwrap());
@@ -167,6 +204,11 @@ fn freeze(cfg: &Config, target: Step) -> Result<(PathBuf, Attempt)> {
             sources.push(Identity::capture(&super::workspace_science::post_program(&fixed, name)?.path)?);
         }
     }
+    if target == Step::Phonon {
+        for name in ["q2r", "matdyn"] {
+            sources.push(Identity::capture(&super::workspace_science::post_program(&fixed, name)?.path)?);
+        }
+    }
     if let Some(p) = &fixed.programs.environment_script {
         sources.push(Identity::capture(p)?);
     }
@@ -182,6 +224,8 @@ fn freeze(cfg: &Config, target: Step) -> Result<(PathBuf, Attempt)> {
         job: None,
         reservation: None,
         error: None,
+        phonon_chain: false,
+        retry_failed: false,
     };
     store::write(&dir.join("attempt.json"), &a)?;
     Ok((dir, a))
@@ -312,6 +356,80 @@ fn generate_current(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf
     last.context("data_invalid: 阶段集合为空")
 }
 
+/// 一份已登记分配内自动完成声子阶段；原生子任务继续使用既有回执。
+pub fn start_phonon(config: &Path, resume: bool) -> Result<()> {
+    let cfg = Config::load(config)?;
+    super::run_state::ready(&cfg.work_dir)?;
+    check_active(&cfg, None)?;
+    super::native_jobs::reconcile(&cfg, resume)?;
+    if active(&cfg.work_dir).is_file() {
+        let old = read_attempt(&active(&cfg.work_dir))?;
+        if old.phonon_chain && old.state != "succeeded" {
+            let previous = Config::load(&old.config.path)?;
+            ensure!(resume || stages::scientific_key(&previous, Step::Phonon)? != stages::scientific_key(&cfg, Step::Phonon)?,
+                "execution_failed: 声子分配未完整成功；修复后显式 --resume -s");
+        }
+    }
+    layout::initialize(&cfg)?;
+    let mut pending = false;
+    for step in Step::Phonon.closure() {
+        if !stages::reusable(&cfg, step)? {
+            parallelism::preflight(&cfg, step, false)?;
+            pending = true;
+        }
+    }
+    if !pending && !super::workspace_qe_plot::pending(&cfg, Step::Phonon)? {
+        println!("workflow_status: complete\nworkflow_complete: true");
+        return Ok(());
+    }
+    let (_, mut a) = freeze(&cfg, Step::Phonon)?;
+    a.phonon_chain = true;
+    a.retry_failed = resume;
+    let dir = Step::Phonon.directory(&cfg);
+    fs::create_dir_all(&dir)?;
+    let q = super::native_jobs::double_quote;
+    let r = &cfg.resources;
+    ensure!(!r.partition.contains(['\n', '\r']) && !dir.to_string_lossy().contains(['\n', '\r']), "configuration: Slurm 参数含换行");
+    let mut body = format!("#!/bin/bash\n#SBATCH --job-name=epw-phonon\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n#SBATCH --output=slurm-phonon.log\n#SBATCH --error=slurm-phonon.log\n#SBATCH --open-mode=truncate\nif ! cd -- {}; then exit 1; fi\n", r.partition, r.nodes, r.mpi, r.wall_seconds.div_ceil(60), q(&dir.to_string_lossy()));
+    if let Some(env) = &cfg.programs.environment_script {
+        body.push_str(&format!("source {} --force\n", q(&env.to_string_lossy())));
+    }
+    body.push_str(&format!("exec {} --workspace-attempt {}\n", q(&a.executable.path.to_string_lossy()), q(&attempt_path(&cfg.work_dir, &a.id).to_string_lossy())));
+    let script = dir.join("phonon.sh");
+    store::atomic_bytes(&script, body.as_bytes())?;
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
+    a.script = Some(Identity::capture(&script)?);
+    a.reservation = Some(budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
+        budget::reconcile(l)?;
+        budget::reserve_workflow(l, &format!("0048:{}", a.id), &cfg.resources)
+    })?);
+    a.state = "submission_pending".into();
+    persist(&cfg, &a)?;
+    let result = Command::new("sbatch").arg("--parsable").arg(&script).current_dir(&dir).output()
+        .context("scheduler_unknown: 无法调用 sbatch").and_then(|out| {
+            ensure!(out.status.success(), "scheduler_unknown: sbatch 失败: {}", String::from_utf8_lossy(&out.stderr));
+            slurm::parse_job_id(String::from_utf8_lossy(&out.stdout).trim())
+        });
+    match result {
+        Ok(job) => {
+            let current = read_attempt(&attempt_path(&cfg.work_dir, &a.id))?;
+            ensure!(current.job.is_none_or(|j| j == job.job_id), "scheduler_unknown: 声子作业身份不符");
+            store::write(&attempt_path(&cfg.work_dir, &a.id).with_file_name("submission.json"),
+                &serde_json::json!({"job": job.job_id, "error": null}))?;
+            budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
+                budget::attach_once(l, a.reservation.as_ref().unwrap(), job.job_id)
+            })?;
+            println!("job_id: {}\nscript: {}\ndirectory: {}\nworkflow_status: {}\nnext: 本声子阶段在分配内自动完成，可用 --status 查看", job.job_id, script.display(), dir.display(), read_attempt(&attempt_path(&cfg.work_dir, &a.id))?.state);
+            Ok(())
+        }
+        Err(e) => {
+            store::write(&attempt_path(&cfg.work_dir, &a.id).with_file_name("submission.json"),
+                &serde_json::json!({"job": null, "error": format!("{e:#}")}))?;
+            Err(e)
+        }
+    }
+}
+
 pub fn start(config: &Path, target: Step, submit: bool) -> Result<()> {
     let cfg = Config::load(config)?;
     super::run_state::ready(&cfg.work_dir)?;
@@ -403,7 +521,7 @@ fn verify_script(id: &Identity) -> Result<()> {
 }
 
 pub fn execute(path: &Path) -> Result<()> {
-    let mut a: Attempt = store::read(path)?;
+    let mut a = read_attempt(path)?;
     ensure!(a.schema_version == 1, "unsupported_version: 提交快照版本");
     a.config.verify()?;
     a.executable.verify()?;
@@ -431,7 +549,7 @@ pub fn execute(path: &Path) -> Result<()> {
         super::run_state::ready(&cfg.work_dir)?;
         check_active(&cfg, Some(&a.id))?;
         if active(&cfg.work_dir).exists() {
-            let old: Attempt = store::read(&active(&cfg.work_dir))?;
+            let old = read_attempt(&active(&cfg.work_dir))?;
             if old.id == a.id {
                 ensure!(
                     old.state != "running",
@@ -453,6 +571,11 @@ pub fn execute(path: &Path) -> Result<()> {
                 |l| budget::register_generated(l, job, &cfg.resources),
             )?);
         }
+        if a.phonon_chain {
+            budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
+                budget::attach_once(l, a.reservation.as_ref().unwrap(), job)
+            })?;
+        }
         a.job = Some(job);
         a.state = "running".into();
         persist(&cfg, &a)?;
@@ -462,6 +585,9 @@ pub fn execute(path: &Path) -> Result<()> {
         toml::to_string_pretty(&cfg)?.as_bytes(),
     )?;
     let result = (|| -> Result<()> {
+        if a.phonon_chain {
+            return super::native_workspace::allocated(&a.config.path, a.retry_failed, &a.id);
+        }
         for step in a.target.closure() {
             if stages::reusable(&cfg, step)? {
                 println!("reuse: {}", step.name());
@@ -528,6 +654,9 @@ pub fn execute(path: &Path) -> Result<()> {
     .into();
     a.error = result.as_ref().err().map(|e| format!("{e:#}"));
     persist(&cfg, &a)?;
+    if a.phonon_chain {
+        println!("workflow_status: {}\nworkflow_complete: {}", a.state, result.is_ok());
+    }
     result
 }
 
@@ -565,9 +694,16 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
             .join(format!("{}-{}", step.name(), store::token()));
     let dir = step.directory(cfg);
     if dir.exists() {
+        let chain_script = if step == Step::Phonon && dir.join("phonon.sh").is_file() {
+            Some(fs::read(dir.join("phonon.sh"))?)
+        } else { None };
         fs::create_dir_all(&history)?;
         fs::rename(&dir, history.join("calculation"))?;
         preserve_active_logs(&history.join("calculation"), &dir)?;
+        if let Some(body) = chain_script {
+            store::atomic_bytes(&dir.join("phonon.sh"), &body)?;
+            fs::set_permissions(dir.join("phonon.sh"), fs::Permissions::from_mode(0o755))?;
+        }
     }
     let receipt = stages::receipt(&cfg.work_dir, step);
     if receipt.exists() {

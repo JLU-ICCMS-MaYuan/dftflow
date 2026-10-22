@@ -33,7 +33,9 @@ impl Request {
             .iter()
             .map(|p| Identity::capture(p))
             .collect::<Result<Vec<_>>>()?;
-        let key = store::hash_bytes(&serde_json::to_vec(&(1, identities, parameters))?);
+        // 固定快照会复制结构／路径文件；相同内容不因副本路径变化要求重绘。
+        let contents: Vec<_> = identities.iter().map(|i| (&i.sha256, i.bytes)).collect();
+        let key = store::hash_bytes(&serde_json::to_vec(&(2, contents, parameters))?);
         let outputs = files.iter().map(|p| dir.join(p)).collect();
         Ok(Self { dir, key, outputs })
     }

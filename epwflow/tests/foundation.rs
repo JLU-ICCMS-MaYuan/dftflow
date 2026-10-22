@@ -129,7 +129,7 @@ fn refuses_conflicts_and_no_science_success_on_failed_submission() {
     let c=Case::new(); fs::create_dir(c.root.join("run")).unwrap();c.put("run/important", "keep");
     fail(c.run(&["prepare","-c","input.toml"]),"input_conflict"); assert_eq!(fs::read_to_string(c.root.join("run/important")).unwrap(),"keep");
     let c=Case::new();c.edit("schema_version = 1","schema_version = 1\nlayout = 'numbered'");
-    fail(c.run(&["submit","-c","input.toml"]),"scheduler_unknown");
+    fail(c.run(&["submit","-c","input.toml","--stage","scf"]),"scheduler_unknown");
     assert!(!c.root.join("run/calculations").exists(),"提交失败不能运行科学阶段");
     let r:serde_json::Value=serde_json::from_slice(&fs::read(c.root.join("run/epw-state/native-active.json")).unwrap()).unwrap();
     assert_eq!(r["state"],"unknown");

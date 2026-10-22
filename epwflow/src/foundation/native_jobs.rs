@@ -77,6 +77,7 @@ struct Session {
     submit: bool,
     resume: bool,
     consumed: Vec<PathBuf>,
+    allocated: bool,
 }
 thread_local! { static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) }; }
 pub fn enabled() -> bool {
@@ -92,6 +93,15 @@ pub fn scoped<T>(
     resume: bool,
     run: impl FnOnce() -> Result<T>,
 ) -> Result<T> {
+    scoped_mode(cfg, generation, submit, resume, false, run)
+}
+
+/// 声子整阶段已登记一个分配，子调用不再提交或预留资源。
+pub fn scoped_allocated<T>(cfg: &Config, generation: &str, resume: bool, run: impl FnOnce() -> Result<T>) -> Result<T> {
+    scoped_mode(cfg, generation, false, resume, true, run)
+}
+
+fn scoped_mode<T>(cfg: &Config, generation: &str, submit: bool, resume: bool, allocated: bool, run: impl FnOnce() -> Result<T>) -> Result<T> {
     ensure!(!enabled(), "input_conflict: 原生执行上下文不能嵌套");
     struct Guard;
     impl Drop for Guard {
@@ -106,6 +116,7 @@ pub fn scoped<T>(
             submit,
             resume,
             consumed: vec![],
+            allocated,
         })
     });
     let _guard = Guard;
@@ -315,6 +326,12 @@ pub fn reconcile(cfg: &Config, resume: bool) -> Result<()> {
         )?;
         persist(cfg, &task)?;
     }
+    if task.state == "running" && task.job.is_none() {
+        // 父分配已由入口确认终态；进程可能在写失败回执前被超时／取消终止。
+        ensure!(resume, "execution_failed: 声子分配中断；确认终态后显式 --resume -s");
+        task.state = "failed".into();
+        persist(cfg, &task)?;
+    }
     ensure!(
         task.state != "failed" || resume,
         "execution_failed: 上一原生任务失败；修复后显式 --resume -s，保留旧证据"
@@ -413,10 +430,10 @@ fn validate_consumed() -> Result<()> {
 
 pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionReport> {
     ensure!(!command.is_empty(), "configuration: 空原生命令");
-    let (cfg, generation, submit) = SESSION.with(|s| {
+    let (cfg, generation, submit, allocated) = SESSION.with(|s| {
         let s = s.borrow();
         let s = s.as_ref().expect("原生上下文必须存在");
-        (s.cfg.clone(), s.generation.clone(), s.submit)
+        (s.cfg.clone(), s.generation.clone(), s.submit, s.allocated)
     });
     let key = task_key(&generation, work, command, stem)?;
     let file = directory(&cfg).join(format!("{key}.json"));
@@ -459,6 +476,31 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
         Some(task) => task,
         None => prepare(&cfg, &generation, &key, command, work, stem)?,
     };
+    if allocated {
+        // 运行相同的可读科学脚本；父尝试负责唯一分配和预算。
+        task.state = "running".into();
+        persist(&cfg, &task)?;
+        let start = std::time::Instant::now();
+        let status = Command::new("/bin/bash")
+            .arg(&task.script.path)
+            .current_dir(work)
+            .status()
+            .context("execution_failed: 无法执行声子子任务脚本")?;
+        task.duration_secs = start.elapsed().as_secs_f64();
+        task.exit_status = status.code();
+        task.stdout = Some(Identity::capture(&work.join(format!("{stem}.out")))?);
+        task.stderr = Some(Identity::capture(&work.join(format!("{stem}.err")))?);
+        store::atomic_bytes(&work.join(format!("{stem}.exitcode")), task.exit_status.unwrap_or(128).to_string().as_bytes())?;
+        task.state = if status.success() { "awaiting_validation" } else { "failed" }.into();
+        persist(&cfg, &task)?;
+        SESSION.with(|s| s.borrow_mut().as_mut().unwrap().consumed.push(file));
+        return Ok(ExecutionReport {
+            exit_status: task.exit_status,
+            stdout_path: task.stdout.unwrap().path,
+            stderr_path: task.stderr.unwrap().path,
+            duration_secs: task.duration_secs,
+        });
+    }
     if submit {
         task.reservation = Some(budget::with_ledger(
             &cfg.budget.ledger,
@@ -510,7 +552,7 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
     Err(Paused.into())
 }
 
-fn double_quote(value: &str) -> String {
+pub(super) fn double_quote(value: &str) -> String {
     let mut out = String::from("\"");
     for c in value.chars() {
         if matches!(c, '\\' | '"' | '$' | '`') {

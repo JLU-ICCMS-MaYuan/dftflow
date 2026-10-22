@@ -64,7 +64,12 @@ else:
         exit
     }
     pub(super) fn direct_advance(&self, bin: usize, args: &[&str], label: &str) -> Output {
-        self.numbered_cli(bin, args, None, label)
+        // 0048：手动原生调用契约使用显式 electronic；默认 phonon 另测单分配自动链。
+        let mut args = args.to_vec();
+        if bin == 0 && !args.contains(&"--stage") && !args.contains(&"--all") {
+            args.extend(["--stage", "electronic"]);
+        }
+        self.numbered_cli(bin, &args, None, label)
     }
 }
 
@@ -398,7 +403,8 @@ fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
         fs::write(lock.join("owner.json"), "stale owner").unwrap();
     }
     c.numbered_change(|cfg|{let s=&mut cfg.superconductivity;s.task=config::SuperconductivityTask::Gap;s.mode=config::Mode::Both;s.gap_temperatures_k=vec![20.,30.,40.];s.mixing_beta=-0.3;s.iso=None;s.aniso=None;});
-    let stages=[(0,"scf"),(0,"nscf"),(0,"electronic"),(0,"phonon"),(1,"wannier"),(1,"coarse"),(2,"fine"),(2,"superconductivity")];
+    // 这里只推进逐任务目标；coarse 补齐 PH，phonon 自动目标由 0048 独立覆盖。
+    let stages=[(0,"scf"),(0,"nscf"),(0,"electronic"),(1,"wannier"),(1,"coarse"),(2,"fine"),(2,"superconductivity")];
     let mut step=0;
     let mut finished=false;
     for n in 0..60 {
@@ -510,14 +516,14 @@ fn interrupted_public_submit_reenters_receipt_checks_without_workspace_lock() {
         shell_quote(c.root.join("inside-sbatch").to_str().unwrap()),
         shell_quote(c.root.join("release-sbatch").to_str().unwrap())));
     let mut cmd = Command::new(BINS[0]);
-    cmd.args(["-c", "input.toml", "--stage", "phonon", "-s"]);
+    cmd.args(["-c", "input.toml", "--stage", "electronic", "-s"]);
     c.environment(&mut cmd, None);
     let mut child = cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().unwrap();
     wait_for_file(&c.root.join("inside-sbatch"));
     child.kill().unwrap();
     child.wait().unwrap();
     c.put("release-sbatch", "release orphan fixture");
-    let again = c.direct_advance(0, &["--stage", "phonon", "-s"], "interrupted-repeat");
+    let again = c.direct_advance(0, &["--stage", "electronic", "-s"], "interrupted-repeat");
     assert!(!again.status.success());
     let error = String::from_utf8_lossy(&again.stderr);
     assert!(error.contains("提交回执未知"), "{error}");

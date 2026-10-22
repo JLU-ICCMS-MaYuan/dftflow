@@ -207,7 +207,7 @@ fn public_submission_uses_short_names_and_refuses_duplicate_queued_jobs() {
     let c = Case::new(true);
     success(
         c.command(PHONON)
-            .args(["-c", c.config().to_str().unwrap(), "-s"])
+            .args(["-c", c.config().to_str().unwrap(), "--stage", "electronic", "-s"])
             .current_dir("/")
             .output()
             .unwrap(),
@@ -225,7 +225,7 @@ fn public_submission_uses_short_names_and_refuses_duplicate_queued_jobs() {
         store::Identity::capture(Path::new(rows[0]["script"].as_str().unwrap())).unwrap();
     let _ = c
         .command(PHONON)
-        .args(["-c", c.config().to_str().unwrap(), "-s"])
+        .args(["-c", c.config().to_str().unwrap(), "--stage", "electronic", "-s"])
         .output()
         .unwrap();
     assert_eq!(c.rows().len(), 1, "排队中的任务不能重复提交");

@@ -12,7 +12,7 @@ epw_phonon -c "epwinput.toml" --check --json
 
 ## 按顺序计算
 
-**每次 `-s` 最多提交一个原生任务。等待作业结束，再重复同一条命令，看到 `workflow_complete: true` 后才执行下一步。** 一个阶段可能包含多次原生计算；只执行一次提交命令不会自动跑完该阶段。
+**第 4 步声子目标只需提交一次，作业会自动完成全部声子计算、save 整理、出图和核验。** 其他目标每次 `-s` 最多提交一个原生任务，等待结束后重复同一条命令，直至目标完成再执行下一步。
 
 ### 第 1 步：自洽计算
 
@@ -44,7 +44,9 @@ epw_phonon -c "epwinput.toml" --stage electronic -s
 epw_phonon -c "epwinput.toml" --stage phonon -s
 ```
 
-执行 PH、q2r 和 matdyn。运行完成后，`4.qe-phonon-nosplit/` 保存动力学矩阵、响应势、声子色散和 DOS；其中 `save/` 保存供 EPW 使用的数据。
+这条命令只执行一次。一个 Slurm 分配自动完成 PH → EPW save 归集及核验 → q2r → matdyn 声子谱 → matdyn DOS → 绘图 → 完成登记。相容上游和已完成子任务自动复用，不会接着运行 Wannier／coarse。
+
+`4.qe-phonon-nosplit/save/` 保存供 EPW 使用的数据；`plots/phband/phonon_band.png` 为声子谱，`plots/phdos/phonon_dos.png` 包含 TDOS 与 Mg／B 元素 PDOS。`phonon.sh` 和 `slurm-phonon.log` 位于本声子目录。通俗流程图见 [0048 快速说明](../../../../../docs/specs/0048-epw-phonon-stage-chain/quickstart.md)。
 
 ### 第 5 步：Wannier 拟合及电子后处理
 
@@ -95,7 +97,7 @@ sacct -j 作业号 --format=JobID,State,ExitCode,Elapsed
 epw_phonon -c "epwinput.toml" --status --json
 ```
 
-`sacct` 查看作业终态和退出码；`--status` 查询工作区状态，不提交作业。`COMPLETED` 后仍需重复原阶段命令核验科学输出。失败后查阅该任务日志；需要重试时，在原阶段命令中增加 `--resume`。活动或终态未知的任务不能重复提交。
+`sacct` 查看作业终态和退出码；`--status` 查询工作区状态，不提交作业。声子目标在作业内自动核验，以 `workflow_complete: true` 及完整交付为准；其余目标在 `COMPLETED` 后重复原命令核验并推进。失败后修复原因，在原命令增加 `--resume`；声子恢复只需提交一次，自动完成余项。活动或终态未知的任务不能重复提交。
 
 去掉 `-s` 只准备当前可执行任务的输入和脚本；正式推进使用上述公开命令。
 

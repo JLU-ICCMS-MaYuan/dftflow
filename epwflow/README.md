@@ -8,9 +8,11 @@
 
 历史提交脚本、固定配置和回执保持原字节；新原生任务不再生成 submit.sh 阅读副本。[0044 规格与部署](../docs/specs/0044-mpi-submit-command/spec.md)。
 
-## 编号工作区逐任务提交（0026）
+## 编号工作区提交：声子自动完成，其他目标逐任务推进
 
-对 `layout='numbered'` 的工作区，`-s` 核验上一任务并且最多提交一次新的原生调用。实际作业脚本直接执行当前配置中的 QE、Wannier90／postw90 或 EPW；准备输入、交接文件、校验产物及推进均由作业外公开命令负责。作业完成后重复同一个命令推进，无后台控制器。
+对 `layout='numbered'` 的工作区，`epw_phonon --stage phonon -s`（默认目标也是 phonon）只需执行一次：申请一个 Slurm 分配，在分配内自动完成依赖补齐、PH、EPW save 归集、q2r、两次 matdyn、QE 声子谱与 TDOS／元素 PDOS 图和最终核验。提交返回后无需再次运行命令推进；`--status --json` 可选，只查看。流程图见 [0048 快速说明](../docs/specs/0048-epw-phonon-stage-chain/quickstart.md)。
+
+其他目标的 `-s` 仍核验上一任务并且最多提交一次新的原生调用，作业结束后重复同一个命令推进。其实际脚本直接执行 QE、Wannier90／postw90 或 EPW；准备输入、交接与核验由公开命令负责。
 
 ```bash
 epw_phonon -c input.toml -s
@@ -18,7 +20,7 @@ epw_wannier -c input.toml -s
 epw_superconductivity -c input.toml -s
 ```
 
-每条命令分别推进其目标；在当前目标显示 `workflow_complete: true` 后切换下一条。原生失败后修复配置，再用对应命令 `--resume -s`；排队、运行中或回执未知时拒绝重提。Tc 的单模式、单温度、单初值分别提交，保留原搜索规则及次数上限。
+声子目标由作业自动登记 `workflow_complete: true` 后切换下一条；其余目标按上面的逐任务方式推进。失败后修复原因，用对应命令 `--resume -s`；声子恢复一次自动跑完余项，已验证的 PH／q2r／matdyn 保留复用。排队、运行中或回执未知时拒绝重提。Tc 的单模式、单温度、单初值分别提交，保留原搜索规则及次数上限。
 
 输出给出实际提交的功能脚本、作业号与工作目录。QE／EPW 科学输出直接写指定 `.out`，错误写 `.err`，计算运行时即可查看，不等待复制 Slurm 日志；Wannier／postw90 保留种子参数接口。新脚本的命令类似：
 
@@ -101,7 +103,7 @@ Slurm 日志属于运行输出；旧原生输入记录中的标准 `slurm-数字
 
 ## 声子后处理与作业日志
 
-编号声子目录的 q2r／matdyn 失败后，重新执行 `epw_phonon -c INPUT -s`（或依赖声子的后续阶段公开命令），程序先重验已发布的 QE 数据清单；科学身份相容且 save 完整时复用 PH，只继续后处理。q2r 从清单绑定的 save 副本恢复 dyn0，不把原文件复制到自身。缺少交付检查点时不能仅凭 PH 日志中的 JOB DONE 复用，损坏清单或文件明确停止。见 [0028](../docs/specs/0028-phonon-postprocess-checkpoint/acceptance.md)。
+编号声子目录的 q2r／matdyn 失败后，修复原因并执行一次 `epw_phonon -c INPUT --stage phonon --resume -s`，程序重验已发布 QE 数据清单，自动继续全部余项。科学身份相容且 save 完整时复用 PH；q2r 从清单绑定的 save 副本恢复 dyn0。缺少交付检查点时不能仅凭 JOB DONE 复用，损坏清单或文件明确停止。见 [0028](../docs/specs/0028-phonon-postprocess-checkpoint/acceptance.md)及 [0048](../docs/specs/0048-epw-phonon-stage-chain/quickstart.md)。
 
 阶段归档保留当前作业 Slurm 日志的硬链接，Slurm 已打开的句柄继续写入同一文件，阶段目录中可持续查看日志；历史文件不删除。见 [0029](../docs/specs/0029-active-slurm-log-archive/acceptance.md)。
 
