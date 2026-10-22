@@ -58,9 +58,13 @@ struct Options {
     workspace_attempt: Option<PathBuf>,
     #[arg(long, hide = true)]
     workspace_task: Option<PathBuf>,
+    #[arg(long,hide=true)]
+    batch_finish: Option<String>,
+    #[arg(long,hide=true)]
+    batch_exit: Option<i32>,
     #[arg(short = 'w', long)]
     work: Option<PathBuf>,
-    /// phonon 自动完成整阶段；gap 按方法提交完整温度批次；其余目标逐原生调用推进。
+    /// electronic 到 fine 作业内完成计算、绘图及发布；gap 按方法提交完整温度批次。
     #[arg(short = 's', long, conflicts_with = "run")]
     submit: bool,
     /// 在已经登记的 Slurm 分配内运行本阶段。
@@ -140,6 +144,7 @@ pub fn run(phase: Phase) {
 
 fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
     if o.config==PathBuf::from("input.toml") && !o.config.exists() && PathBuf::from("inputepw.toml").is_file(){o.config=PathBuf::from("inputepw.toml");}
+    if let Some(group)=&o.batch_finish {return crate::superconductivity::batch::allocated_finish(&o.config,group,o.batch_exit.context("required: 方法原生退出码")?);}
     if let Some(path)=&o.workspace_attempt { return super::workspace::execute(path); }
     if let Some(path)=&o.workspace_task { return super::workspace::execute_task(path); }
     if let Some(source)=&o.import_work { return super::workspace::import_legacy(&o.config,source); }
@@ -167,7 +172,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         if o.status {if o.json{status::print_json(&super::workspace::report(&cfg)?);return Ok(())}return super::workspace::status(&cfg)}
         if o.check {for s in target.closure(){if s==target || !super::stages::reusable(&cfg,s)?{super::parallelism::preflight(&cfg,s,false)?;}} if o.json{status::print_json(&serde_json::json!({"operation_status":"ok","workflow_status":"configured","workflow_complete":false,"checks":["configuration","input_files","program_paths","mpi_pool_image"]}));}else{println!("operation_status: ok\nworkflow_status: configured");}return Ok(())}
         if o.submit {
-            if target == Step::Phonon { return super::workspace::start_phonon(&o.config, o.resume); }
+            if matches!(target,Step::Electronic|Step::Phonon|Step::Wannier|Step::Coarse|Step::Fine) || (target==Step::Superconductivity && cfg.superconductivity.task==super::config::SuperconductivityTask::Tc) { return super::workspace::start_stage(&o.config, target, o.resume); }
             return super::native_workspace::advance(&o.config,target,true,o.resume)
         }
         if o.run {return super::workspace::start(&o.config,target,false)}

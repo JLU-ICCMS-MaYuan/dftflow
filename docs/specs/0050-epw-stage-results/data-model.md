@@ -1,6 +1,6 @@
 # 数据模型与完整性约束
 
-本文件是待审阅设计，尚未定义生产中的新文件格式。需求见 [Spec](spec.md)，执行边界见 [契约](contracts/cli.md)。
+本文件记录本轮实现的数据格式和完整性约束。需求见 [Spec](spec.md)，执行边界见 [契约](contracts/cli.md)，适用验证见 [验收说明](acceptance.md)。
 
 ## 来源与复用判定
 
@@ -20,7 +20,7 @@
 
 ## 必要计算说明
 
-在比较派生目录保存可复查的决策记录，粒度按一次必要原生调用；实施时复用现有任务／发布记录承载，不另建全局状态管理器。
+在比较派生目录保存可复查的决策记录，粒度按一次必要原生调用；复用现有任务／发布记录承载，不另建全局状态管理器。下表说明信息语义，具体 JSON 键由对应后处理定义：q2r／matdyn 使用 `required_programs_if_no_verified_cache`、`cache_key`、`reason` 及来源字段，DOS 使用 `dos-decision.json`；尝试与输出另由既有回执关联，不要求所有程序重复保存一份同构记录。
 
 | 字段 | 语义 |
 |---|---|
@@ -34,6 +34,8 @@
 | attempt | 关联现有作业与尝试回执，恢复时避免重复成功调用 |
 
 直接复用、拷贝和单位转换不能伪报为新科学计算。来源损坏或未知身份应拒绝；缺目标采样但模型完整时才可能进入必要求值。
+
+`epw-state/post/phonon-cache/<程序>-<输入键>/manifest.json` 保存已核验后处理副本的 `schema_version`、`input_key`、相对输出 `Artifact` 和原始输出 `Identity`。输入键包含所选声子来源、ASR 版本、质量、程序及相应点位；不包含电子拟合窗口。副本随第 6 步归档仍可读取，原始位置仅作审计。复用目标另写 `reuse-outcome.json`，记录 `verified_copy`、缓存清单身份及空 `executed_programs`，不能冒充新 q2r／matdyn 调用；坏副本不触发静默重算。
 
 ## 比较表及绘图参数
 
@@ -49,17 +51,17 @@
 
 ## 根 results 与阶段包
 
-拟定根索引 `results/index.json` 采用版本化格式，其最小含义如下；具体序列化应在实施时兼容已有交付协议：
+根索引 `results/index.json` 的版本化格式由 `foundation/stage_results.rs` 定义：
 
 | 字段 | 约束 |
 |---|---|
 | schema_version | 新阶段索引版本，从 1 开始；不能冒充已有结果包版本 |
-| workspace_identity | 标识同一计算工作区／请求来源 |
 | entries | 已完整发布的阶段结果单元数组 |
 | entries[].stage | 编号阶段与真实所选声子模式 |
 | entries[].unit | 子任务／图组标识；第 3 步能带与 DOS 分开 |
-| entries[].manifest | 包内相对清单路径，拒绝越出 results 的路径 |
-| entries[].manifest_hash | 关联完整、已核验阶段清单的内容哈希 |
+| entries[].manifest | Artifact：`relative_path`、`byte_size`、`sha256`，拒绝越出 results 的路径 |
+
+阶段清单为 `stage-manifest.json`，字段是 `schema_version`、`stage`、`unit`、`request_key`、`parameters`、`sources` 和 `files`。科学请求身份保存在每个单元的 `request_key`；`sources` 保留审计 Identity，`files` 使用包内相对 Artifact。图片、图参及数值一并核验。发布沿用文件 journal；`.index-update.json` 只承担清单已发布但根导航未更新时的事务恢复，不是独立科学状态。
 
 根索引是派生导航，可由完整阶段包重建；不能拿它代替 epw-state 的工作流状态，也不能靠手改索引“登记”科学完成。
 

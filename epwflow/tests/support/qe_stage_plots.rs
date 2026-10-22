@@ -70,47 +70,16 @@ fn electronic_leaf_plot_survives_other_leaf_failure_without_phonons() {
 }
 
 #[test]
-fn direct_electronic_verification_draws_before_next_scientific_job() {
-    let c = Case::numbered();
-    c.direct_setup();
-    let mut stems = Vec::new();
-    for n in 0..12 {
-        let o = c.direct_advance(
-            0,
-            &["--stage", "electronic", "-s"],
-            &format!("qe-plot-direct-{n}"),
-        );
-        let complete = String::from_utf8_lossy(&o.stdout).contains("workflow_complete: true");
-        success(o);
-        if complete {
-            break;
-        }
-        let task = c.direct_task();
-        let stem = task["stem"].as_str().unwrap();
-        stems.push(stem.to_string());
-        if stem == "dos" {
-            png(
-                &c,
-                "run/3.qe-electronic/qe_eband/plots/electronic-bands.png",
-            );
-            assert!(!c
-                .root
-                .join("run/3.qe-electronic/qe_eledos/plots/electronic-dos.png")
-                .exists());
-        }
-        assert_eq!(c.direct_execute(), 0);
-    }
-    assert_eq!(stems, ["scf", "nscf", "eband", "bands", "dos"]);
-    png(&c, "run/3.qe-electronic/qe_eledos/plots/electronic-dos.png");
-    let before = fs::read(c.root.join("submissions")).unwrap();
-    fs::remove_file(
-        c.root
-            .join("run/3.qe-electronic/qe_eledos/plots/electronic-dos.png"),
-    )
-    .unwrap();
-    success(c.direct_advance(0, &["--stage", "electronic", "-s"], "qe-plot-direct-repair"));
-    png(&c, "run/3.qe-electronic/qe_eledos/plots/electronic-dos.png");
-    assert_eq!(before, fs::read(c.root.join("submissions")).unwrap());
+fn electronic_allocation_publishes_both_leaves_and_repairs_without_science() {
+    let c=Case::numbered();c.stage_setup();
+    success(c.stage_submit("electronic",false));success(c.stage_execute());
+    png(&c,"run/results/3.qe-electronic/qe_eband/electronic-bands.png");
+    png(&c,"run/results/3.qe-electronic/qe_eledos/electronic-dos.png");
+    let calls=c.calls();
+    fs::remove_file(c.root.join("run/3.qe-electronic/qe_eledos/plots/electronic-dos.png")).unwrap();
+    success(c.stage_submit("electronic",false));success(c.stage_execute());
+    assert_eq!(calls,c.calls());
+    png(&c,"run/results/3.qe-electronic/qe_eledos/electronic-dos.png");
 }
 
 #[test]

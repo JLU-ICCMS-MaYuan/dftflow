@@ -75,10 +75,10 @@ else:
         exit
     }
     pub(super) fn direct_advance(&self, bin: usize, args: &[&str], label: &str) -> Output {
-        // 0048：手动原生调用契约使用显式 electronic；默认 phonon 另测单分配自动链。
+        // 0050：底层单任务契约固定到 SCF；电子及以后阶段另测单分配自动交付。
         let mut args = args.to_vec();
         if bin == 0 && !args.contains(&"--stage") && !args.contains(&"--all") {
-            args.extend(["--stage", "electronic"]);
+            args.extend(["--stage", "scf"]);
         }
         self.numbered_cli(bin, &args, None, label)
     }
@@ -114,90 +114,21 @@ fn direct_mpirun_comes_from_job_environment_and_keeps_exit_status() {
 }
 
 #[test]
-fn direct_native_chain_advances_one_job_per_call_and_completes_both_solvers() {
-    let c = Case::numbered();
-    c.direct_setup();
-    success(c.direct_advance(0, &["--all"], "direct-prepare"));
-    assert!(!c.root.join("submissions").exists());
-    assert!(c.root.join("run/native-plan.json").exists());
-    assert!(!c.root.join("run/submit_all.sh").exists());
-    let mut counts = std::collections::BTreeMap::new();
-    let mut bin = 0;
-    for n in 0..180 {
-        let before = fs::read_to_string(c.root.join("submissions"))
-            .unwrap_or_default()
-            .lines()
-            .count();
-        let output = c.direct_advance(bin, &["-s"], &format!("direct-{n}"));
-        assert!(
-            output.status.success(),
-            "第 {n} 次：{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let after = fs::read_to_string(c.root.join("submissions"))
-            .unwrap_or_default()
-            .lines()
-            .count();
-        assert!(after == before || after == before + 1);
-        if String::from_utf8_lossy(&output.stdout).contains("workflow_complete: true") {
-            assert_eq!(before, after);
-            if bin < 2 {
-                bin += 1;
-                continue;
-            }
-            let result: Value =
-                store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();
-            assert_eq!(result["converged"], true);
-            for mode in ["iso", "aniso"] {
-                assert_eq!(result["native_modes"][mode]["complete"], true);
-                assert!(
-                    result["native_modes"][mode]["attempts"]
-                        .as_array()
-                        .unwrap()
-                        .len()
-                        > 2
-                );
-            }
-            for name in ["scf", "nscf", "eband", "bands", "dos", "ph"] {
-                assert_eq!(counts.get(name), Some(&1usize), "上游不应重复 {name}");
-            }
-            for name in [
-                "scf",
-                "nscf",
-                "eband",
-                "bands",
-                "dos",
-                "ph",
-                "q2r",
-                "matdyn_phband",
-                "matdyn_phdos",
-                "epw",
-                "wannier-plot",
-                "postw90",
-            ] {
-                assert!(counts.contains_key(name), "缺少 {name} 执行证据");
-            }
-            return;
-        }
-        let task = c.direct_task();
-        let stem = task["stem"].as_str().unwrap().to_owned();
-        *counts.entry(stem).or_insert(0usize) += 1;
-        let blocked = c.direct_advance(bin, &["-s"], "direct-queued");
-        assert!(!blocked.status.success());
-        assert_eq!(
-            after,
-            fs::read_to_string(c.root.join("submissions"))
-                .unwrap()
-                .lines()
-                .count()
-        );
-        assert_eq!(c.direct_execute(), 0, "任务失败：{}", task);
+fn stage_allocations_complete_upstream_once_then_both_native_solvers() {
+    let c=Case::numbered();c.stage_setup();
+    for (bin,stage) in [(0,"electronic"),(1,"coarse"),(2,"fine")] {
+        success(c.numbered_cli(bin,&["--stage",stage,"-s"],None,"stage-chain-submit"));
+        success(c.stage_execute());
     }
-    panic!(
-        "没有在有界原生调用次数内完成，证据目录 {}",
-        c.root.display()
-    );
+    success(c.direct_advance(2,&["--stage","superconductivity","-s"],"solver-stage"));
+    success(c.stage_execute());
+    let result:Value=store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();
+    for mode in ["iso","aniso"] {assert_eq!(result["native_modes"][mode]["complete"],true);}
+    assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),3);
+    assert_eq!(c.calls().0.lines().filter(|s|*s=="ph").count(),1);
+    assert_eq!(c.post_calls(),"postw90\n");
+    assert!(c.root.join("run/results/8.epw-superconductivity/stage-manifest.json").is_file());
+
 }
 
 #[test]
@@ -297,35 +228,22 @@ pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
         ),
     );
     c.put("fail-dos", "controlled failure");
-    for n in 0..20 {
-        success(c.direct_advance(1, &["--stage", "wannier", "-s"], &format!("dos-next-{n}")));
-        let task = c.direct_task();
-        let is_dos = task["stem"] == "dos";
-        assert_eq!(c.direct_execute(), if is_dos { 17 } else { 0 });
-        if !is_dos {
-            continue;
-        }
-        let receipts = c.root.join("run/3.qe-electronic/receipts");
-        let pw = fs::read(receipts.join("pw-bands.json")).unwrap();
-        let bands = fs::read(receipts.join("bands.json")).unwrap();
-        let calls = c.calls();
-        assert!(!c
-            .direct_advance(1, &["--stage", "wannier", "-s"], "dos-no-resume")
-            .status
-            .success());
-        fs::remove_file(c.root.join("fail-dos")).unwrap();
-        success(c.direct_advance(1, &["--stage", "wannier", "--resume", "-s"], "dos-retry"));
-        assert_eq!(c.direct_task()["stem"], "dos");
-        assert_eq!(calls, c.calls());
-        assert_eq!(pw, fs::read(receipts.join("pw-bands.json")).unwrap());
-        assert_eq!(bands, fs::read(receipts.join("bands.json")).unwrap());
-        assert_eq!(c.direct_execute(), 0);
-        success(c.direct_advance(1, &["--stage", "wannier", "-s"], "dos-validated"));
-        assert!(receipts.join("dos.json").is_file());
-        assert_eq!(calls.0, c.calls().0);
-        return;
-    }
-    panic!("DOS task was not reached");
+    c.stage_setup();
+    success(c.stage_submit("wannier",false));
+    assert!(!c.stage_execute().status.success());
+    let receipts=c.root.join("run/3.qe-electronic/receipts");
+    let pw=fs::read(receipts.join("pw-bands.json")).unwrap();
+    let bands=fs::read(receipts.join("bands.json")).unwrap();
+    let calls=c.calls();
+    assert!(c.root.join("run/results/3.qe-electronic/qe_eband/electronic-bands.png").is_file());
+    assert!(!c.stage_submit("wannier",false).status.success());
+    fs::remove_file(c.root.join("fail-dos")).unwrap();
+    success(c.stage_submit("wannier",true));success(c.stage_execute());
+    assert_eq!(pw,fs::read(receipts.join("pw-bands.json")).unwrap());
+    assert_eq!(bands,fs::read(receipts.join("bands.json")).unwrap());
+    assert_eq!(calls.0,c.calls().0,"成功 PW 和 PH 不重跑");
+    assert!(receipts.join("dos.json").is_file());
+
 }
 
 #[test]
@@ -424,7 +342,12 @@ fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
     assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(),3);
     let iso=c.method_task("iso");let aniso=c.method_task("aniso");
     assert_ne!(iso["job"],aniso["job"]);
-    assert_eq!(c.execute_record(aniso),0);assert_eq!(c.execute_record(iso),0);
+    assert_eq!(c.execute_record(aniso),0);
+    assert!(!c.root.join("run/results/8.epw-superconductivity/points.csv").exists());
+    assert_eq!(c.execute_record(iso),0);
+    // 第二个原生作业返回前已经完成发布，不靠后续公开命令触发。
+    assert!(c.root.join("run/results/8.epw-superconductivity/points.csv").is_file());
+    epwflow::foundation::stage_results::check(&c.root.join("run/results")).unwrap();
     success(c.direct_advance(2,&args,"gap-both-collect"));
     let launches:Vec<Value>=fs::read_to_string(c.root.join("epw-invocations.jsonl")).unwrap().lines().map(|l|serde_json::from_str(l).unwrap()).collect();
     assert_eq!(launches.len(),2);
@@ -520,14 +443,14 @@ fn interrupted_public_submit_reenters_receipt_checks_without_workspace_lock() {
         shell_quote(c.root.join("inside-sbatch").to_str().unwrap()),
         shell_quote(c.root.join("release-sbatch").to_str().unwrap())));
     let mut cmd = Command::new(BINS[0]);
-    cmd.args(["-c", "input.toml", "--stage", "electronic", "-s"]);
+    cmd.args(["-c", "input.toml", "--stage", "scf", "-s"]);
     c.environment(&mut cmd, None);
     let mut child = cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().unwrap();
     wait_for_file(&c.root.join("inside-sbatch"));
     child.kill().unwrap();
     child.wait().unwrap();
     c.put("release-sbatch", "release orphan fixture");
-    let again = c.direct_advance(0, &["--stage", "electronic", "-s"], "interrupted-repeat");
+    let again = c.direct_advance(0, &["--stage", "scf", "-s"], "interrupted-repeat");
     assert!(!again.status.success());
     let error = String::from_utf8_lossy(&again.stderr);
     assert!(error.contains("提交回执未知"), "{error}");
@@ -605,7 +528,7 @@ fn legacy_task_logs_are_adopted_before_new_format_next_task() {
     assert_eq!(c.direct_execute(), 0);
     let raw = script.parent().unwrap().join(format!("native-{}-201.out", task["id"].as_str().unwrap()));
     let expected = fs::read(&raw).unwrap();
-    success(c.direct_advance(0, &["-s"], "legacy-adopt"));
+    success(c.direct_advance(0, &["--stage","nscf","-s"], "legacy-adopt"));
     assert_eq!(fs::read(script.parent().unwrap().join("scf.out")).unwrap(), expected);
     assert_eq!(c.direct_task()["schema_version"], 2);
     assert_eq!(c.direct_task()["stem"], "nscf");

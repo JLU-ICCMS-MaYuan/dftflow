@@ -32,6 +32,26 @@ def integer(v):return struct.pack('<'+'i'*len(v),*v)
 def real(v):return struct.pack('<'+'d'*len(v),*v)
 def bands(name, points, vals):
     Path(name).write_text(f'&plot nbnd= {len(vals)}, nks= {len(points)} /\n'+''.join(' '.join(map(str,q))+'\n'+' '.join(map(str,vals))+'\n' for q in points))
+def embedded_bands(bg):
+    """模拟 W90 按倒格度量及首段间隔取点，供坐标映射契约核验。"""
+    data=re.findall(r"(?m)^\s*wdata\(\d+\)\s*=\s*'([^']*)'",text)
+    if 'bands_plot = true' not in data:return
+    rows=data[data.index('begin kpoint_path')+1:data.index('end kpoint_path')]
+    def length(a,b):return math.sqrt(sum(sum((b[i]-a[i])*bg[i][j] for i in range(3))**2 for j in range(3)))
+    coords=[];axis=[];reference=None;distance=0.
+    for row in rows:
+        v=row.split();a=list(map(float,v[1:4]));b=list(map(float,v[5:8]))
+        size=length(a,b)
+        if reference is None:reference=size
+        count=int(math.floor(size/reference+0.5))
+        assert count>0,'W90 路径分段取成零点'
+        for i in range(count+1):
+            coords.append([a[j]+(b[j]-a[j])*i/count for j in range(3)])
+            axis.append(distance+size*i/count)
+        distance+=size
+    Path(prefix+'_band.kpt').write_text(str(len(coords))+'\n'+''.join(' '.join(f'{x:.6f}' for x in p)+' 1.0\n' for p in coords))
+    Path(prefix+'_band.dat').write_text(''.join(''.join(f'{x:.12f} {HA*.01*b:.12f}\n' for x in axis)+'\n' for b in range(8,8+n)))
+    Path(prefix+'_band.labelinfo.dat').write_text('P0 1 0\nQ0 2 1\n')
 if coarse or reread:
     if coarse:
         # 实际 EPW 在写完粗矩阵后仍加载插值网格，不能靠替身放过缺失网格。
@@ -57,6 +77,7 @@ if coarse or reread:
     kpoints=[[float(x) for x in node.text.split()] for node in xml.findall('output/band_structure/ks_energies/k_point')]
     coarse_nk=len(kpoints)
     bg=[[float(x) for x in xml.find('output/basis_set/reciprocal_lattice/b'+str(i)).text.split()] for i in (1,2,3)]
+    if coarse and 'elph = .false.' in text:embedded_bands(bg)
     def cart(c):return [sum(c[i]*bg[i][j] for i in range(3)) for j in range(3)]
     if reread:
         kpoints=[cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]

@@ -1,165 +1,137 @@
 # EPW 完整流程与续算
 
-`--stage fine` 表示“把工作区推进到细网格阶段”。程序先检查前置结果，复用完整且相容的部分，再补齐未完成部分。因此，命令里的目标和本次实际提交的任务可能不同。
+电子比较在第 5 步完成，声子比较在第 6 步完成。每个阶段作业自己完成必要后处理、出图和发布；根目录的 `results/` 随阶段更新。源码行为、已安装程序和历史冻结脚本分别核对，旧脚本不会因源码更新自动变化。
 
 ## 完整流程图
 
-图中的分叉表示数据来源。编号工作区仍按阶段顺序检查，不表示这些任务会同时提交。一个框代表完整阶段，可能包含多个原生程序和后处理任务。
+实线表示数据来源，虚线明确约束两侧使用同一份真实位置清单。它们不表示同时提交，也不把 q2r 的力常数与 Wannier 模型直接作数值对比。
 
 ```mermaid
 flowchart TD
-    A[结构与统一配置] --> S[1 自洽 SCF：得到电荷密度]
-    S --> N[2 均匀网格 NSCF：得到电子态]
-    N --> E[3 QE 电子能带与总 DOS]
-    N --> W[5 Wannier 拟合：建立插值基础]
-    S --> P[4 声子：PH、save、q2r、matdyn 与 QE 图]
-    P --> C[6a 粗网格电子声子耦合]
+    S[1 SCF：得到电荷密度] --> N[2 NSCF：得到均匀网格电子态]
+    N --> E[3 QE 电子能带与 DOS：各子任务完成就发布单侧图]
+    N --> W[5 EPW 内嵌 Wannier90：拟合电子模型]
+    K[电子清单：实际路径 k 点和均匀网格 k 点] -. 相同位置 .-> E
+    K -. wdata 路径输出及网格采样 .-> W
+    W --> B[读取内嵌能带；postw90 只算已有模型的电子 DOS]
+    E --> EC[5 QE 与 EPW 电子能带、总 DOS 叠图]
+    B --> EC
+    EC --> R5[立即发布 results/5.epw-wannier：先检查四个能窗]
+    S --> P[4 当前所选声子模式：PH、save、q2r、matdyn]
+    P --> R4[立即发布 QE 声子谱、TDOS 和元素 DOS]
+    P --> C[6 粗网格电子声子耦合]
     W --> C
-    C --> D[6b 常规比较：准备 QE 与 EPW 数据并叠图]
-    E --> D
-    D --> F[7 细网格插值：矩阵元、α²F 与 λ]
-    F --> G[8 超导求解：指定温度能隙或 Tc 搜索]
-    G --> R[收集数据、出图并核验结果包]
+    P --> Q[复用相容频率或力常数；缺项才做最少 q2r、matdyn]
+    C --> I[EPW 读取粗网格模型，补缺少的声子频率]
+    QL[声子清单：路径 q 点和均匀网格 q 点；修正规则一致] -. 相同位置 .-> Q
+    QL -. 相同位置 .-> I
+    Q --> PC[6 QE 与 EPW 声子谱、声子 TDOS 叠图]
+    I --> PC
+    PC --> R6[立即发布 results/6.epw-coarse]
+    R5 --> O[复用第 5 步电子数据，生成原有四面板总览]
+    R6 --> O
+    C --> F[7 细网格：矩阵元、α²F 和 λ]
+    F --> G[8 原生能隙或 Tc 求解：完成后发布已有图与数据]
 ```
 
-第 6 步拆成 **6a 主计算**和 **6b 比较交付**，两者仍属于同一个 `coarse` 阶段。当前配置含 `KPATH.in`，常规比较会执行；没有配置路径的内部调用会跳过这条比较链。
+第 5 步的依赖是电子 SCF／NSCF／QE 电子结果，不需要第 4 步声子或第 6 步粗网格产物。第 6 步仍包含粗网格主计算和声子比较交付，但不再新增电子参考 PW 计算。
 
-| 用户选择的目标 | 命令 | 完整交付的核心内容 |
+| 用户目标 | 命令 | 作业内交付 |
 | --- | --- | --- |
-| 第 1～4 步 | `epw_phonon --stage scf\|nscf\|electronic\|phonon` | 电荷、均匀电子态、QE 电子结果、声子与 EPW save |
-| 第 5 步 | `epw_wannier --stage wannier` | Wannier 拟合及电子后处理 |
-| 第 6 步 | `epw_wannier --stage coarse` | 粗网格耦合数据及常规比较图 |
-| 第 7 步 | `epw_superconductivity --stage fine` | 细网格矩阵元、α²F 和 λ |
-| 第 8 步 | `epw_superconductivity --stage superconductivity` | 按配置计算能隙或搜索 Tc，再整理结果包 |
+| 第 1～4 步 | `epw_phonon --stage scf\|nscf\|electronic\|phonon` | 电荷、电子态、QE 单侧图或当前模式的声子与 save |
+| 第 5 步 | `epw_wannier --stage wannier` | 拟合、电子两张对比图、对应数据和窗口 |
+| 第 6 步 | `epw_wannier --stage coarse` | 粗网格耦合、声子两张对比图与四面板总览 |
+| 第 7 步 | `epw_superconductivity --stage fine` | 细矩阵元、α²F 和 λ；没有既有图时不额外新增绘图 |
+| 第 8 步 | `epw_superconductivity --stage superconductivity` | 指定温度能隙或 Tc 搜索与既有结果图 |
 
-表中每条命令均可加 `-c "epwinput.toml" -s`。竖线列出可选的单个阶段值。未指定 `--stage` 时，三个程序分别默认以第 4、6、8 步为目标；`fine` 不继续执行第 8 步。图表和其他后处理也会检查是否齐全，不能只凭主程序结束就切换下一阶段。
+各命令可加 `-c "epwinput.toml" -s`。默认目标分别为第 4、6、8 步；不会因完成一个目标而自动提交下一物理阶段。`electronic` 到 `fine` 及 Tc 目标使用一个有界阶段分配；指定温度的 gap 目标仍按 iso／aniso 分成独立原生多温度作业，最后完成的方法发布完整结果。
 
-## 第 6 步为什么还会出现 phonon 和 EPW
-
-`comparison-native` 是“生成比较数据时，实际运行科学程序的目录”。这些计算为 QE 实线和 EPW 虚线准备共同路径、共同采样网格上的数据。
-
-```mermaid
-flowchart TD
-    C[6a 粗网格主计算完成] --> E[比较用 QE 电子路径计算]
-    E --> Q[比较用 q2r：已有动力学矩阵转为力常数]
-    Q --> M[比较用 matdyn：计算共同采样点的声子频率]
-    M --> P[比较用 EPW：读取粗网格结果并插值到共同采样点]
-    P --> T[生成电子能带、电子 DOS、声子谱、声子 DOS 对比及总览]
-    T --> V[核验并登记第 6 步完成]
-    V --> F[可以进入第 7 步细网格计算]
-```
-
-对应目录如下：
+## 比较用的数据从哪里来
 
 ```text
-6.epw-coarse/
-├── epw_coarse.in、epw.out      # 6a：粗网格主计算
-├── comparison-native/
-│   ├── electron/              # 比较用 QE 电子路径数据
-│   ├── phonon/                # 比较用 q2r、matdyn
-│   └── epw/                   # 读取粗网格数据，生成比较用插值结果
-├── comparison/                # 整理后的共同坐标数据和差值
-└── results/                   # 比较结果包及图
-7.epw-fine/                    # 真正的细网格矩阵元和 α²F 计算
+计算工作区/
+├── 3.qe-electronic/{qe_eband,qe_eledos}/
+├── 4.qe-phonon-<当前模式>/
+├── 5.epw-wannier/
+│   ├── <prefix>_band.dat、<prefix>_band.kpt
+│   └── comparison-native/electron/   # 第 5 步电子数据、postw90 与来源
+├── 6.epw-coarse/
+│   ├── epw_coarse.in、epw.out
+│   ├── comparison-native/
+│   │   ├── phonon/force-constants/  # 必要时的比较力常数，独立检查点
+│   │   ├── phonon/frequencies/      # 必要时的 matdyn，独立检查点
+│   │   └── epw/                     # 读取已有模型补声子频率
+│   └── comparison/                  # 整理表格与数值差
+└── results/
+    ├── index.json
+    ├── 3.qe-electronic/{qe_eband,qe_eledos}/
+    ├── 4.qe-phonon-<当前模式>/
+    ├── 5.epw-wannier/
+    ├── 6.epw-coarse/{comparison,figures}/
+    └── 8.epw-superconductivity/
 ```
 
-这里的 `phonon/` 复用第 4 步已有的动力学矩阵，**没有重新运行 `ph.x` 求声子响应**。第 4 步生成自身的 QE 声子结果；这里另按比较用的坐标集合和声学和规则准备 QE 对照，所以仍调用 q2r、matdyn。两处程序同名，输入与交付用途不同。
+`results` 与编号目录同级。子目录保存图片、数值表、绘图参数、来源和 `stage-manifest.json`；根 `index.json` 是导航，不代替科学回执。原始科学文件仍留在阶段目录。第 7 步当前没有独立最终图片，不创建空结果包或新增科学任务。
 
-这里的 `epw/` 也执行插值，但用途是生成比较用电子能带和声子谱。输入为 `epwread=true`、`wannierize=false`、`band_plot=true`、`a2f=false`：读取已有粗网格数据，不重新拟合 Wannier，也不承担第 7 步细矩阵元和 α²F 的交付。
+电子 QE 路径值读取第 3 步，均匀网格值读取第 2 步。EPW 内嵌 Wannier90 的路径取点规则与 QE 不同，因此 wdata 使用经过拆分和校准的路径段，随后按 `*_band.kpt` 的真实坐标提取所需点；不能仅按横轴比例叠合。超过 wdata 容量、缺坐标或无法覆盖目标点时明确报告缺项，保留科学模型。拟合后修改路径密度，如果原输出不含新增点位，也不能通过重新拟合或独立 W90 绘图补齐。电子 DOS 的 QE／插值两侧使用同一均匀网格、Gaussian 核宽、共同费米能及非磁标量每态两电子计数；只有 DOS 调用 postw90，不重新拟合，也不调用独立 `wannier90.x` 绘图。
 
-这套常规比较当前会生成图和最大差值；差值大小不阻断下游。原生执行、来源完整性、有限数及收敛等相应检查仍有效。
+声子参考只读取当前配置选定的第 4 步模式，不能混用 nosplit、index、coords。现有第 4 步使用 simple ASR，而常规插值比较采用 Γ onsite 加 Hermitian 修正，再令 q2r／matdyn 不施加 ASR；这类力常数不能直接声称相容复用。必要后处理在执行前写入 `reuse-decision.json`，说明差异、已有来源和最少程序；成功力常数与频率分别复用，matdyn 失败不会使成功 q2r 重跑。不会为比较重做 SCF／PH。
 
-## 路径与均匀网格的两层比较
+已核验的后处理副本保存在可见的 `epw-state/post/phonon-cache/`，按所选声子来源、修正规则、质量、程序和实际 q 点区分。更换电子窗口导致第 6 步归档时，相容 q2r／matdyn 仍可直接拷贝；`reuse-outcome.json` 明确记录复用来源和零程序调用，缓存损坏会拒绝读取。
 
-比较的目的是检查：沿高对称路径，QE 与 EPW 的电子能带、声子谱是否一致；在覆盖整个倒空间的均匀网格上，两侧总 DOS 的谱形是否一致。两层结合，用来观察插值结果与 QE 对照的吻合程度；这里不判断粗网格是否收敛，也不自动给出拟合合格评级。
+第 6 步 EPW 的 `band_plot` 原生接口同时要求 k 表和 q 表；这里只给一个必要占位 k 点，附带电子输出不再用于比较。电子对比始终读取第 5 步数据。声子比较只画 TDOS；元素声子 DOS 仅在第 4 步的 QE 单侧图出现。
+
+## 路径与均匀网格为什么都要比
 
 ```mermaid
-flowchart TD
-    A[统一比较位置与计算口径]
-
-    A --> P[第一层：高对称路径点]
-    A --> M[第二层：覆盖整个倒空间的均匀网格点]
-
-    P --> PQ[QE：这些位置的电子能量、声子频率]
-    P --> PE[EPW：相同位置的电子能量、声子频率]
-
-    PQ --> PC[比较能带和声子谱：叠图与逐点数值差]
-    PE --> PC
-
-    M --> MQ[QE：网格上的电子能量、声子频率]
-    M --> ME[EPW：相同网格上的电子能量、声子频率]
-
-    MQ --> DC[使用相同权重和展宽：分别生成并叠加两侧电子总 DOS、声子总 DOS]
-    ME --> DC
-
-    PC --> R[结合两层结果：观察 QE 与 EPW 的插值结果是否一致]
-    DC --> R
+flowchart LR
+    A[共同真实点位和计算口径] --> P[高对称路径]
+    A --> M[覆盖倒空间的均匀网格]
+    P --> Q[QE 与 EPW 在相同位置的能量或频率]
+    Q --> C[叠加能带或声子谱，记录逐点最大差]
+    M --> D[两侧相同网格、权重、展宽及自旋计数]
+    D --> T[叠加两侧总 DOS，观察谱形重合程度]
+    C --> R[供用户共同判断插值是否合适]
+    T --> R
 ```
 
-图中的箭头表示比较输入与结果的关系，不表示作业提交顺序。以 2026-10-22 核对的 MgB₂ 比较数据为例，第一层有 **183 个路径点**，第二层使用 **4×4×2、共 32 个均匀网格点**；这些数量随实际路径、每边区间数和 NSCF 网格变化，并非程序固定值。
+路径比较看沿线是否吻合；均匀网格 DOS 比较补充观察全倒空间分布是否吻合。路径点不参与 DOS 积分。两层比较共同服务人工判断，不增加自动评级、误差阈值门或粗网格收敛判断。电子图保留实际 `dis_win_min/max`、`dis_froz_min/max`，并说明最大差和未配对态；能量配对不证明波函数身份相同。
 
-共同位置清单约束的是后面的求值：QE 电子路径计算与 EPW 使用相同 k 点，QE matdyn 与 EPW 使用相同 q 点，坐标表示转换后仍须对应同一个物理位置。q2r 负责准备力常数，已有 Wannier／粗网格数据提供 EPW 插值基础；清单告诉两侧“到哪些位置计算”，不参与两套基础数据本身的直接比较。
+2026-10-22 的历史 MgB₂ 快照中有 183 个路径点及 4×4×2＝32 个均匀网格点。它们是那次输入的数量，随路径和 NSCF 网格变化；共同位置清单约束两侧后续求值，不直接比较两套模型文件。
 
-两侧数据分别来自：
+## “登记”与失败恢复
 
-- **QE 电子**：路径能量由比较用 `pw.x` 计算，均匀网格能量读取已核验 NSCF。
-- **QE 声子**：已有 PH 数据经 `q2r → matdyn`，得到共同路径和网格上的频率。
-- **EPW 电子与声子**：读取已有粗网格结果，在共同路径和网格上插值，分别输出 `band.eig`、`phband.freq`。
+科学完成登记保存阶段 `completion.json`，记录科学参数、上游身份及产物校验值。第 5／6 步的 `post-completion.json` 单独记录派生交付；`results` 的发布清单核验图与数据。科学检查点先保存，完整阶段成功晚于发布，因此图失败可以保留计算结果，恢复时只补必要后处理、绘图或发布。
 
-路径点用于比较曲线及逐点差值，不参与总 DOS 累计。均匀网格既记录逐点差值，也用来生成两侧总 DOS：电子使用共同 Fermi 零点、实际外窗、相同权重和展宽；声子统一为 cm⁻¹，并使用相同权重和展宽。上述 MgB₂ 数据的电子展宽为 0.1 eV、声子展宽为 10 cm⁻¹。DOS 比较关注两侧谱形和重叠程度，报告同时记录积分与两条曲线的绝对差积分；它汇总了不同位置的信息，因此还需结合逐点差值阅读。声子 DOS 对比只画 TDOS，QE 单侧元素声子 DOS 仍在第 4 步单独绘制。
+执行新版生成的阶段脚本后，无须再次运行公开命令触发正常收尾。活动作业或终态未知时禁止重提；失败修复后使用相同目标加 `--resume -s`。`--status --json` 只读查询，`native-plan.json` 是准备／推进记录，都不能单独证明科学正确或图片已经交付。
 
-## 这次三个作业分别做了什么
-
-以下是 2026-10-22 对 MgB₂ 算例的只读核对记录，用于解释这次输出，不代替后续实时状态。
-
-| 作业 | 实际任务 | 在完整流程中的位置 |
-| --- | --- | --- |
-| `1329820` | `6.epw-coarse/epw_coarse.in` | 此前已经执行的 6a 粗网格主计算 |
-| `1330436` | `comparison-native/phonon/q2r.in` | 6b：准备比较用力常数 |
-| `1330742` | `comparison-native/phonon/matdyn.in` | 6b：生成比较用 QE 声子频率 |
-| `1330804` | `comparison-native/epw/epw.in` | 6b：生成比较用 EPW 电子和声子插值数据 |
-
-当时四个作业的 `sacct` 记录均为 `COMPLETED`、`0:0`。第三次比较任务已生成 `band.eig` 和 `phband.freq`，日志包含完整 EPW 结束计时。它在读取已有粗网格结果；**该快照中粗网格主计算更早已经执行，细网格计算尚未提交**。
-
-当时现场 `native-plan.json` 保存的目标是 `fine`，前五步为 `validated`，`coarse` 与 `fine` 为 `pending`。其中任务状态仍是上次命令写入的 `running`；这不代表当时查询的 Slurm 作业仍在运行。该文件是推进记录，作业结束后需要公开命令核验产物，再更新阶段完成状态。以上只描述三个比较作业刚结束时的快照，后续继续推进会改变这些状态。
-
-## 反复执行同一条命令，怎样向前推进
-
-除声子自动链的专项入口外，逐任务提交路径每次 `-s` 的核心动作是：
-
-1. 核验上一次作业及其实际产物，再检查目标所需的前置交付；打印 `reuse` 表示这一项已通过复用检查。
-2. 找到第一个未完成任务，准备输入，最多提交一次新的原生程序调用，然后返回。
-3. 作业结束后，再次执行同一命令，复用已完成任务并继续下一项；全部所需交付核验完毕才报告 `workflow_complete: true`。
-
-因此，这次是在第 6 步内部依次补齐 `q2r → matdyn → EPW 比较`，不是每次从声子主计算重新开始。`reuse: phonon` 与后面提交 `comparison-native/phonon` 可以同时成立：前者指第 4 步，后者指第 6 步的比较子任务。
-
-这三个比较作业结束后，继续执行原命令：
+例如：
 
 ```bash
-epw_superconductivity -c "epwinput.toml" --stage fine -s
+epw_wannier -c "epwinput.toml" --stage wannier -s
+# 作业完成后直接查看 results/5.epw-wannier/
+epw_superconductivity --plot --results "results"
+epw_superconductivity --results-check --results "results" --json
 ```
 
-“第 6 步登记”是核验完成后保存 `6.epw-coarse/completion.json`：记录计算参数身份、上游结果身份，以及产物路径、大小和校验值。下次命令重验后输出 `reuse: coarse`，表示这些结果可以复用。登记本身不增加一次科学计算，也不表示两侧插值差值已经达到某个精度标准。
+完整 `results` 目录可移动后独立重绘，不要求原工作区、QE／EPW 或调度器可用。来源绝对路径保留作审计；包内哈希核验成功不等于原始来源仍可访问。旧工作区只从已登记且相容的旧比较来源整理派生结果；缺少可核验点位或模型来源时明确阻断该项交付，不为更名重做拟合。
 
-程序会核验比较数据、补齐相应阶段记录，再继续目标范围内尚未完成的计算或后处理。科学阶段记录与派生图的 `post-completion.json` 分开管理，所以即使出现 `reuse: coarse`，仍可能提交 `5.epw-wannier/native-post/` 中的 Wannier90／postw90 绘图后处理。目标为 `fine` 不代表每次提交的都是细网格 EPW 任务；以输出的实际 `directory` 和 `script` 判断本次任务，细网格任务位于 `7.epw-fine/` 的相应展宽子目录。命令显示 `submitted` 只表示已提交，不表示该目标已经完成。
+## 历史作业解释
 
-活动作业或终态未知时不重复提交；失败后先定位原因，再用原命令加 `--resume -s` 恢复。完整相容结果继续复用；改参或缺失产物可能需要补算，损坏或来源冲突会阻断。
+以下仅保留旧版工作区在 2026-10-22 的任务角色，不代表新版仍会逐项提交这些作业。
 
-## 与本地 0048 的关系
+| 旧作业 | 旧任务 | 含义 |
+| --- | --- | --- |
+| `1329820` | `6.epw-coarse/epw_coarse.in` | 已有粗网格主计算 |
+| `1330436` | `comparison-native/phonon/q2r.in` | 比较口径的力常数 |
+| `1330742` | `comparison-native/phonon/matdyn.in` | 比较点位上的 QE 声子频率 |
+| `1330804` | `comparison-native/epw/epw.in` | 旧版一起输出电子与声子插值值 |
 
-[0048 的需求](../../specs/0048-epw-phonon-stage-chain/spec.md)针对第 4 步：一次 `epw_phonon --stage phonon -s` 自动完成 `PH → save → q2r → 两次 matdyn → QE 声子图 → 最终登记`，从而减少下游目标代办第 4 步收尾的情况。
+当时的 `5.epw-wannier/native-post/submit-wannier-plot-*.sh` 属于旧版独立 W90 后处理，不是“第 6 步登记”本身。新版以第 5 步内嵌输出和 postw90 DOS 取代该路径；已经冻结的旧脚本与历史记录保留。
 
-**第 4 步自动完成，不等于第 6 步的比较子任务消失。** 0048 明确不把 Wannier、coarse、fine、超导等其他目标改为自动整链。这次三项都在 `6.epw-coarse/comparison-native/`，属于该范围以外的比较任务，仍按逐任务规则推进。
+## 依据与导航
 
-当前工作树已有 0048 实施中的源码和文档改动；本页不据此认定现用安装已更新或自动链已验收。现场冻结脚本反映的是实际提交时的安装行为，源码、已安装程序和既有作业分别核对。
-
-## 代码依据与导航
-
-- [阶段依赖](../../../epwflow/src/foundation/stages.rs)：目标所需前置阶段与复用身份。
-- [逐任务推进](../../../epwflow/src/foundation/native_workspace.rs)：复用、提交、核验、完成登记和后处理。
-- [粗细网格调度](../../../epwflow/src/interpolation/scheduler.rs)：粗主计算后运行常规比较，完成后发布粗阶段交付，再供细网格读取。
-- [比较任务](../../../epwflow/src/interpolation/automatic_comparison.rs)：电子路径、q2r、matdyn、EPW 重读及比较图生成。
-- [比较数据与 DOS](../../../epwflow/src/interpolation/comparison.rs)：共同坐标、单位、总 DOS 累计和差值报告。
-- [派生图后处理](../../../epwflow/src/foundation/workspace_science.rs)：独立 Wannier90／postw90 后处理及图表完成记录。
-- [公开入口](../../../epwflow/src/foundation/program.rs)：三个程序的默认目标和声子专项提交范围。
+- [0050 设计与验收](../../specs/0050-epw-stage-results/acceptance.md)：源码交付、隔离验证与真实科学验收边界。
+- [阶段依赖](../../../epwflow/src/foundation/stages.rs)、[分配内推进](../../../epwflow/src/foundation/native_workspace.rs)、[电子采样](../../../epwflow/src/interpolation/electronic_sampling.rs)。
+- [声子比较](../../../epwflow/src/interpolation/automatic_comparison.rs)、[阶段发布](../../../epwflow/src/foundation/stage_results.rs)、[派生图](../../../epwflow/src/foundation/workspace_science.rs)。
 - [返回 EPW 总览](README.md)；[模块手册](../../../epwflow/README.md)。

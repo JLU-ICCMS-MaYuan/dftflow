@@ -13,6 +13,7 @@ pub mod scheduler;
 pub mod spectral;
 pub mod wannier;
 pub mod comparison;
+pub mod electronic_sampling;
 
 pub mod comparison_data;
 

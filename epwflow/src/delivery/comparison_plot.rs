@@ -750,7 +750,12 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
         ensure!(old.comparison_digest == comparison_digest,
             "input_conflict: 图像绑定其他比较来源，请使用新的输出目录");
         for f in &old.files {
-            f.verify(&output)?;
+            if output.join(&f.relative_path).exists() {
+                f.verify(&output)?;
+            } else {
+                ensure!(f.relative_path.extension().and_then(|e|e.to_str()).is_some_and(|ext|formats.iter().any(|v|v==ext)),
+                    "data_invalid: 缺失图像须包含在本次重绘格式中");
+            }
         }
         old.files
     } else {

@@ -1,4 +1,4 @@
-//! 读取两侧原生总 DOS，沿用共享绘图库，不生成替代科学数据。
+//! 从已核验的电子采样绘制比较图；此模块不执行科学程序。
 use super::config::Config;
 use anyhow::{ensure, Context, Result};
 use plotters::{
@@ -28,18 +28,18 @@ fn table(path: &Path, fermi: f64) -> Result<Vec<(f64, f64)>> {
     Ok(rows)
 }
 pub fn dos(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
-    let qe = table(
-        &cfg.work_dir
-            .join("3.qe-electronic/qe_eledos")
-            .join(format!("{}.tdos", cfg.qe.prefix)),
-        fermi,
-    )?;
+    let mesh = crate::qe_data::nscf::parse_xml(&crate::interpolation::electronic_sampling::xml(cfg))?;
+    let wan = table(wannier,fermi)?;
+    let axis=wan.iter().map(|(e,_)|*e).collect::<Vec<_>>();
+    let states=mesh.eigenvalues.iter().map(|r|r.iter().map(|e|e-fermi).collect::<Vec<_>>()).collect::<Vec<_>>();
+    let sigma=cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev;
+    let qe=axis.iter().copied().zip(crate::interpolation::comparison::gaussian_dos(
+        &axis,&states,&vec![2.0/mesh.kpoints.len() as f64;mesh.kpoints.len()],sigma)?).collect::<Vec<_>>();
     // 非磁标量路径两侧均由原生程序计入两重自旋，不能再次乘二。
     let wpout = dir.join(format!("{}.wpout", cfg.qe.prefix));
     let electrons = native_dos_electrons(&fs::read_to_string(&wpout)?)?;
-    let wan = table(wannier, fermi)?;
     let mut csv = String::from("source,energy_minus_fermi_ev,states_per_ev_cell\n");
-    for (name, rows) in [("QE", &qe), ("Wannier", &wan)] {
+    for (name, rows) in [("QE", &qe), ("EPW", &wan)] {
         for (e, d) in rows {
             csv.push_str(&format!("{name},{e:.12},{d:.12}\n"));
         }
@@ -54,6 +54,7 @@ pub fn dos(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
         &qe,
         Some(&wan),
         &windows(cfg, dir, fermi)?,
+        &metrics_note(dir,"electronic_mesh")?,
     )
 }
 
@@ -62,7 +63,9 @@ fn dos_figure(
     qe: &[(f64, f64)],
     wan: Option<&[(f64, f64)]>,
     window: &[(f64, &str, RGBColor)],
+    note: &str,
 ) -> Result<()> {
+    super::store::write(&plot_file(file), &PlotData::Dos {qe:qe.to_vec(),wan:wan.map(|w|w.to_vec()),window:stored_window(window),note:note.into()})?;
     let lo = window
         .first()
         .map_or(qe[0].0, |w| w.0)
@@ -87,7 +90,7 @@ fn dos_figure(
     let mut chart = ChartBuilder::on(&area)
         .caption(
             if wan.is_some() {
-                "QE / Wannier electronic DOS"
+                "QE / EPW electronic DOS"
             } else {
                 "QE electronic DOS"
             },
@@ -114,7 +117,7 @@ fn dos_figure(
                 4,
                 RED.stroke_width(2),
             ))?
-            .label("Wannier")
+            .label("EPW")
             .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED));
     }
     for (e, name, color) in window.iter().copied() {
@@ -125,56 +128,69 @@ fn dos_figure(
                 4,
                 color.stroke_width(1),
             ))?
-            .label(name);
+            .label(format!("{name}: {e:.3} eV"))
+            .legend(move |(x,y)|PathElement::new([(x,y),(x+24,y)],color.stroke_width(1)));
     }
     chart
         .configure_series_labels()
         .background_style(WHITE)
         .draw()?;
+    if !note.is_empty() {area.draw(&Text::new(note.to_owned(),(75,685),("sans-serif",13).into_font()))?;}
     area.present()?;
     Ok(())
 }
 
 pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
-    let qe = wannier90flow::plot::parse_segment_file(
-        &cfg.work_dir
-            .join("3.qe-electronic/qe_eband")
-            .join(format!("{}_band.gnu", cfg.qe.prefix)),
-        fermi,
-    )?;
-    let wan = wannier90flow::plot::parse_segment_file(wannier, fermi)?;
-    ensure!(
-        !qe.is_empty() && !wan.is_empty(),
-        "data_invalid: 能带对比数据缺失"
-    );
-    let xmax = qe
-        .iter()
-        .flat_map(|(x, _)| x.iter().copied())
-        .fold(0.0, f64::max);
-    let window = windows(cfg, dir, fermi)?;
-    let lo = window[0].0;
-    let hi = window[1].0;
-    let wx = wan
-        .iter()
-        .flat_map(|(x, _)| x.iter().copied())
-        .fold(0.0, f64::max);
-    ensure!(wx > 0.0, "data_invalid: Wannier 路径长度无效");
-    let scale = xmax / wx;
-    ensure!(xmax > 0.0 && lo < hi, "data_invalid: 能带范围为空");
-    let label = fs::read_to_string(dir.join(format!("{}_band.labelinfo.dat", cfg.qe.prefix)))?;
-    let labels = path_labels(&label)?
-        .into_iter()
-        .map(|(x, name)| (x * scale, name))
-        .collect::<Vec<_>>();
-    bands_figure(
-        &dir.join("electronic-bands.png"),
-        &qe,
-        Some(&wan),
-        scale,
-        [lo, hi],
-        &window,
-        &labels,
-    )
+    let sampling=crate::interpolation::electronic_sampling::plan(cfg)?;
+    let qe_xml=cfg.work_dir.join("3.qe-electronic/qe_eband/out")
+        .join(format!("{}.save/data-file-schema.xml",cfg.qe.prefix));
+    let states=crate::qe_data::nscf::parse_xml(&qe_xml)?;
+    let geometry=crate::qe_data::xml::Geometry::read(&qe_xml)?;
+    geometry.validate(&crate::qe_data::qe_config::QeSettings::from_config(cfg)?)?;
+    let native=crate::interpolation::native::parse_bands(&fs::read_to_string(wannier)?)?;
+    let n=sampling.path.len();
+    ensure!(states.kpoints.len()==n && native.values.len()==n+sampling.mesh.len(),
+        "data_invalid: 电子比较路径或网格点数不符");
+    let x:Vec<_>=sampling.path.iter().map(|p|p.distance).collect();
+    for (i,p) in sampling.path.iter().enumerate() {
+        let cart=crate::interpolation::electronic_sampling::cart(p.crystal,&sampling.reciprocal);
+        ensure!(cart.iter().zip(&states.kpoints[i]).all(|(a,b)|(a-b).abs()<1e-7)
+            && cart.iter().zip(&native.points_cartesian[i]).all(|(a,b)|(a-b).abs()<1e-7),
+            "input_conflict: 两侧电子真实坐标不符，点 {i}");
+    }
+    let to_bands=|rows:&[Vec<f64>]|->Result<Vec<Band>> {
+        ensure!(!rows.is_empty() && rows.iter().all(|r|r.len()==rows[0].len()),"data_invalid: 电子带数变化");
+        let mut curves=vec![];
+        for segment in sampling.path.iter().map(|p|p.segment_id).collect::<std::collections::BTreeSet<_>>() {
+            let indices=sampling.path.iter().enumerate().filter(|(_,p)|p.segment_id==segment).map(|(i,_)|i).collect::<Vec<_>>();
+            for b in 0..rows[0].len() {
+                curves.push((indices.iter().map(|&i|x[i]).collect(),indices.iter().map(|&i|rows[i][b]-fermi).collect()));
+            }
+        }
+        Ok(curves)
+    };
+    let qe=to_bands(&states.eigenvalues)?;
+    let wan=to_bands(&native.values[..n])?;
+    let window=windows(cfg,dir,fermi)?;
+    let bounds=[window[0].0,window[1].0];
+    let labels=path_labels(&sampling.ticks.iter().enumerate().map(|(i,t)|
+        format!("{} {i} {:.17}",t.label,t.distance)).collect::<Vec<_>>().join("\n"))?;
+    let mut csv=String::from("method,segment_id,point_id,distance,band,energy_ev\n");
+    for (method,rows) in [("qe",&states.eigenvalues[..]),("epw",&native.values[..n])] {
+        for (p,row) in sampling.path.iter().zip(rows) {
+            for (b,e) in row.iter().enumerate() {csv.push_str(&format!("{method},{},{},{:.15},{},{:.15}\n",p.segment_id,p.point_id,p.distance,b+1,e-fermi));}
+        }
+    }
+    fs::write(dir.join("electronic-bands.csv"),csv)?;
+    let coords=sampling.path.iter().map(|p|p.crystal).collect::<Vec<_>>();
+    let path=crate::interpolation::differences::electronic(&coords,Some(&x),&states.eigenvalues,&native.values[..n],fermi,bounds)?;
+    let mesh=crate::qe_data::nscf::parse_xml(&crate::interpolation::electronic_sampling::xml(cfg))?;
+    let mesh_stats=crate::interpolation::differences::electronic(&sampling.mesh,None,
+        &mesh.eigenvalues,&native.values[n..],fermi,bounds)?;
+    super::store::write(&dir.join("metrics.json"),&serde_json::json!({"schema_version":2,
+        "electronic_path":path,"electronic_mesh":mesh_stats,"matching":"ordered_minimum_squared_energy_pairs",
+        "note":"Energy pairs do not establish eigenstate identity"}))?;
+    bands_figure(&dir.join("electronic-bands.png"),&qe,Some(&wan),bounds,&window,&labels,&metrics_note(dir,"electronic_path")?)
 }
 
 type Band = (Vec<f64>, Vec<f64>);
@@ -182,11 +198,12 @@ fn bands_figure(
     file: &Path,
     qe: &[Band],
     wan: Option<&[Band]>,
-    scale: f64,
     [lo, hi]: [f64; 2],
     window: &[(f64, &str, RGBColor)],
     labels: &[(f64, String)],
+    note: &str,
 ) -> Result<()> {
+    super::store::write(&plot_file(file), &PlotData::Bands {qe:qe.to_vec(),wan:wan.map(|w|w.to_vec()),bounds:[lo,hi],window:stored_window(window),labels:labels.to_vec(),note:note.into()})?;
     let xmax = qe
         .iter()
         .flat_map(|(x, _)| x.iter().copied())
@@ -196,7 +213,7 @@ fn bands_figure(
     let mut chart = ChartBuilder::on(&area)
         .caption(
             if wan.is_some() {
-                "QE / Wannier electronic bands"
+                "QE / EPW electronic bands"
             } else {
                 "QE electronic bands"
             },
@@ -211,29 +228,33 @@ fn bands_figure(
         .x_labels(0)
         .y_desc("E - E_F (eV)")
         .draw()?;
+    let mut qe_labelled=false;
     for (x, y) in qe {
         for range in path_sections(&x) {
-            chart.draw_series(LineSeries::new(
+            let series=chart.draw_series(LineSeries::new(
                 x[range.clone()]
                     .iter()
                     .copied()
                     .zip(y[range].iter().copied()),
                 BLACK.stroke_width(2),
             ))?;
+            if !qe_labelled {series.label("QE").legend(|(x,y)|PathElement::new([(x,y),(x+24,y)],BLACK.stroke_width(2)));qe_labelled=true;}
         }
     }
     if let Some(wan) = wan {
+        let mut epw_labelled=false;
         for (x, y) in wan {
             for range in path_sections(&x) {
-                chart.draw_series(DashedLineSeries::new(
+                let series=chart.draw_series(DashedLineSeries::new(
                     x[range.clone()]
                         .iter()
-                        .map(|v| v * scale)
+                        .copied()
                         .zip(y[range].iter().copied()),
                     6,
                     4,
                     RED.stroke_width(2),
                 ))?;
+                if !epw_labelled {series.label("EPW").legend(|(x,y)|PathElement::new([(x,y),(x+24,y)],RED.stroke_width(2)));epw_labelled=true;}
             }
         }
     }
@@ -245,7 +266,8 @@ fn bands_figure(
                 4,
                 color.stroke_width(1),
             ))?
-            .label(name);
+            .label(format!("{name}: {e:.3} eV"))
+            .legend(move |(x,y)|PathElement::new([(x,y),(x+24,y)],color.stroke_width(1)));
     }
     chart
         .configure_series_labels()
@@ -259,6 +281,7 @@ fn bands_figure(
             TextStyle::from(("sans-serif", 18).into_font()).pos(Pos::new(HPos::Center, VPos::Top)),
         ))?;
     }
+    if !note.is_empty() {area.draw(&Text::new(note.to_owned(),(75,685),("sans-serif",13).into_font()))?;}
     area.present()?;
     Ok(())
 }
@@ -290,7 +313,7 @@ pub fn qe_dos(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         csv.push_str(&format!("{e:.12},{d:.12}\n"));
     }
     fs::write(dir.join("electronic-dos.csv"), csv)?;
-    dos_figure(&dir.join("electronic-dos.png"), &rows, None, &[])
+    dos_figure(&dir.join("electronic-dos.png"), &rows, None, &[], "")
 }
 
 pub fn qe_bands(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
@@ -400,10 +423,10 @@ pub fn qe_bands(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         &dir.join("electronic-bands.png"),
         &bands,
         None,
-        1.0,
         [lo - padding, hi + padding],
         &[],
         &path_labels(&label_text)?,
+        "",
     )
 }
 
@@ -498,4 +521,33 @@ fn windows(cfg: &Config, dir: &Path, fermi: f64) -> Result<Vec<(f64, &'static st
         ]);
     }
     Ok(values)
+}
+
+#[derive(serde::Serialize,serde::Deserialize)]
+#[serde(tag="kind")]
+enum PlotData {
+    Bands { qe:Vec<Band>, wan:Option<Vec<Band>>, bounds:[f64;2], window:Vec<(f64,String,[u8;3])>, labels:Vec<(f64,String)>, #[serde(default)] note:String },
+    Dos { qe:Vec<(f64,f64)>, wan:Option<Vec<(f64,f64)>>, window:Vec<(f64,String,[u8;3])>, #[serde(default)] note:String },
+}
+fn stored_window(window:&[(f64,&str,RGBColor)])->Vec<(f64,String,[u8;3])> {
+    window.iter().map(|(e,n,c)|(*e,n.to_string(),[c.0,c.1,c.2])).collect()
+}
+fn plot_file(file:&Path)->std::path::PathBuf {file.with_extension("plot.json")}
+pub fn redraw(file:&Path)->Result<()> {
+    let data:PlotData=super::store::read(file)?;
+    let target=file.with_file_name(file.file_name().unwrap().to_string_lossy().replace(".plot.json",".png"));
+    let window_values=match &data {PlotData::Bands{window,..}|PlotData::Dos{window,..}=>window};
+    let window=window_values.iter().map(|(e,n,c)|(*e,n.as_str(),RGBColor(c[0],c[1],c[2]))).collect::<Vec<_>>();
+    match &data {
+        PlotData::Bands{qe,wan,bounds,labels,note,..}=>bands_figure(&target,qe,wan.as_deref(),*bounds,&window,labels,note),
+        PlotData::Dos{qe,wan,note,..}=>dos_figure(&target,qe,wan.as_deref(),&window,note),
+    }
+}
+
+fn metrics_note(dir:&Path,kind:&str)->Result<String> {
+    let data:serde_json::Value=super::store::read(&dir.join("metrics.json"))?;
+    let stats:crate::interpolation::differences::Statistics=serde_json::from_value(data[kind].clone())?;
+    Ok(format!("{}; paired {}; unmatched QE {}, EPW {}. Energy pairing only.",
+        stats.maximum.map_or_else(||"No paired states".into(),|m|format!("Max |dE| = {:.6} eV",m.absolute_difference)),
+        stats.paired_states,stats.unmatched_qe_states,stats.unmatched_epw_states))
 }

@@ -509,7 +509,12 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             "input_conflict: 数据来源改变，须重绘全部已有格式或使用新输出目录"
         );
         for f in old.files {
-            f.verify(&output)?;
+            if output.join(&f.relative_path).exists() {
+                f.verify(&output)?;
+            } else {
+                ensure!(f.relative_path.extension().and_then(|e|e.to_str()).is_some_and(|ext|formats.iter().any(|v|v==ext)),
+                    "data_invalid: 缺失图像须包含在本次重绘格式中");
+            }
             owned.insert(f.relative_path);
         }
     }

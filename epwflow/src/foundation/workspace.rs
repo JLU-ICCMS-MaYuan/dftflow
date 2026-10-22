@@ -129,8 +129,8 @@ pub fn report(cfg: &Config) -> Result<serde_json::Value> {
         }
     }
     let complete = if task.as_ref().is_some_and(|a| a.phonon_chain) {
-        Step::Phonon.closure().iter().all(|s| steps[s.name()] == "reuse")
-            && !super::workspace_qe_plot::pending(cfg, Step::Phonon)?
+        task.as_ref().unwrap().target.closure().iter().all(|s| steps[s.name()] == "reuse")
+            && !super::workspace_science::post_pending(cfg, task.as_ref().unwrap().target)?
             && task.as_ref().is_some_and(|a| a.state == "succeeded")
     } else { steps.values().all(|v|v=="reuse") };
     Ok(
@@ -261,8 +261,7 @@ pub fn generate(config: &Path, target: Step) -> Result<PathBuf> {
     generate_current(config, target, &cfg)
 }
 
-fn generate_current(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf> {
-    layout::initialize(cfg)?;
+fn archive_stale(cfg:&Config)->Result<()> {
     // 在重建上游之前撤下过期的下游回执，防止相同字节的新结果命中旧交付。
     let stale = Step::ALL.into_iter()
         .map(|s| Ok((s, stages::receipt(&cfg.work_dir, s).exists() && !stages::reusable(cfg, s)?)))
@@ -270,6 +269,12 @@ fn generate_current(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf
     for (step, outdated) in stale {
         if outdated { archive_step(cfg, step)?; }
     }
+    Ok(())
+}
+
+fn generate_current(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf> {
+    layout::initialize(cfg)?;
+    archive_stale(cfg)?;
     store::atomic_bytes(
         &cfg.work_dir.join("epw-state/current-config.toml"),
         toml::to_string_pretty(&cfg)?.as_bytes(),
@@ -357,8 +362,12 @@ fn generate_current(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf
     last.context("data_invalid: 阶段集合为空")
 }
 
-/// 一份已登记分配内自动完成声子阶段；原生子任务继续使用既有回执。
+/// 在已登记分配内自动完成声子阶段；原生子任务继续使用既有回执。
 pub fn start_phonon(config: &Path, resume: bool) -> Result<()> {
+    start_stage(config,Step::Phonon,resume)
+}
+
+pub fn start_stage(config: &Path, target: Step, resume: bool) -> Result<()> {
     let cfg = Config::load(config)?;
     super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, None)?;
@@ -370,42 +379,43 @@ pub fn start_phonon(config: &Path, resume: bool) -> Result<()> {
         if old.phonon_chain && old.state != "succeeded" {
             unfinished_attempt = true;
             let previous = Config::load(&old.config.path)?;
-            ensure!(resume || stages::scientific_key(&previous, Step::Phonon)? != stages::scientific_key(&cfg, Step::Phonon)?,
-                "execution_failed: 声子分配未完整成功；修复后显式 --resume -s");
+            ensure!(resume || stages::scientific_key(&previous, target)? != stages::scientific_key(&cfg, target)?,
+                "execution_failed: 阶段分配未完整成功；修复后显式 --resume -s");
         }
     }
     layout::initialize(&cfg)?;
+    archive_stale(&cfg)?;
     let mut pending = false;
-    for step in Step::Phonon.closure() {
+    for step in target.closure() {
         if !stages::reusable(&cfg, step)? {
             parallelism::preflight(&cfg, step, false)?;
             pending = true;
         }
     }
-    if !pending && !super::workspace_qe_plot::pending(&cfg, Step::Phonon)? && !unfinished_attempt {
+    if !pending && !super::workspace_science::post_pending(&cfg, target)? && !unfinished_attempt {
         println!("workflow_status: complete\nworkflow_complete: true");
         return Ok(());
     }
-    let (_, mut a) = freeze(&cfg, Step::Phonon)?;
+    let (_, mut a) = freeze(&cfg, target)?;
     a.phonon_chain = true;
     a.retry_failed = resume;
-    let dir = Step::Phonon.directory(&cfg);
+    let dir = target.directory(&cfg);
     fs::create_dir_all(&dir)?;
     let q = super::native_jobs::double_quote;
     let r = &cfg.resources;
     ensure!(!r.partition.contains(['\n', '\r']) && !dir.to_string_lossy().contains(['\n', '\r']), "configuration: Slurm 参数含换行");
-    let mut body = format!("#!/bin/bash\n#SBATCH --job-name=epw-phonon\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n{}#SBATCH --open-mode=truncate\n", r.partition, r.nodes, r.mpi, r.wall_seconds.div_ceil(60), slurm::log_directives(&dir, "slurm-phonon.log", "slurm-phonon.log"));
+    let mut body = format!("#!/bin/bash\n#SBATCH --job-name=epw-{}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n{}#SBATCH --open-mode=truncate\n", target.name(), r.partition, r.nodes, r.mpi, r.wall_seconds.div_ceil(60), slurm::log_directives(&dir, &format!("slurm-{}.log",target.name()), &format!("slurm-{}.log",target.name())));
     if let Some(env) = &cfg.programs.environment_script {
         body.push_str(&format!("source {} --force\n", q(&env.to_string_lossy())));
     }
     body.push_str(&format!("exec {} --workspace-attempt {}\n", q(&a.executable.path.to_string_lossy()), q(&attempt_path(&cfg.work_dir, &a.id).to_string_lossy())));
-    let script = dir.join("phonon.sh");
+    let script = dir.join(format!("{}.sh",target.name()));
     store::atomic_bytes(&script, body.as_bytes())?;
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
     a.script = Some(Identity::capture(&script)?);
     a.reservation = Some(budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
         budget::reconcile(l)?;
-        budget::reserve_workflow(l, &format!("0048:{}", a.id), &cfg.resources)
+        budget::reserve_workflow(l, &format!("stage:{}", a.id), &cfg.resources)
     })?);
     a.state = "submission_pending".into();
     persist(&cfg, &a)?;
@@ -417,13 +427,13 @@ pub fn start_phonon(config: &Path, resume: bool) -> Result<()> {
     match result {
         Ok(job) => {
             let current = read_attempt(&attempt_path(&cfg.work_dir, &a.id))?;
-            ensure!(current.job.is_none_or(|j| j == job.job_id), "scheduler_unknown: 声子作业身份不符");
+            ensure!(current.job.is_none_or(|j| j == job.job_id), "scheduler_unknown: 阶段作业身份不符");
             store::write(&attempt_path(&cfg.work_dir, &a.id).with_file_name("submission.json"),
                 &serde_json::json!({"job": job.job_id, "error": null}))?;
             budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
                 budget::attach_once(l, a.reservation.as_ref().unwrap(), job.job_id)
             })?;
-            println!("job_id: {}\nscript: {}\ndirectory: {}\nworkflow_status: {}\nnext: 本声子阶段在分配内自动完成，可用 --status 查看", job.job_id, script.display(), dir.display(), read_attempt(&attempt_path(&cfg.work_dir, &a.id))?.state);
+            println!("job_id: {}\nscript: {}\ndirectory: {}\nworkflow_status: {}\nnext: 本目标阶段在分配内自动完成，可用 --status 查看", job.job_id, script.display(), dir.display(), read_attempt(&attempt_path(&cfg.work_dir, &a.id))?.state);
             Ok(())
         }
         Err(e) => {
@@ -591,12 +601,12 @@ pub fn execute(path: &Path) -> Result<()> {
     )?;
     let result = (|| -> Result<()> {
         if a.phonon_chain {
-            return super::native_workspace::allocated(&a.config.path, a.retry_failed, &a.id);
+            return super::native_workspace::allocated(&a.config.path, a.target, a.retry_failed, &a.id);
         }
         for step in a.target.closure() {
             if stages::reusable(&cfg, step)? {
                 println!("reuse: {}", step.name());
-                super::workspace_qe_plot::refresh(&cfg, step)?;
+                super::workspace_science::refresh_post(&cfg, step)?;
                 continue;
             }
             parallelism::preflight(&cfg, step, true)?;
@@ -647,6 +657,7 @@ pub fn execute(path: &Path) -> Result<()> {
             };
             c.verify()?;
             store::write(&stages::receipt(&cfg.work_dir, step), &c)?;
+            super::workspace_science::refresh_post(&cfg, step)?;
         }
         super::workspace_science::refresh_post(&cfg, a.target)?;
         Ok(())

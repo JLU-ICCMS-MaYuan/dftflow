@@ -585,7 +585,7 @@ impl Case {
         cfg.programs.epw.args.extend(["-nk".into(),"1".into()]);
         c.put("input.toml",&toml::to_string_pretty(&cfg).unwrap());
         let qe=include_str!("fixtures/qe_native_io.py").replace("nscf=value('calculation')=='nscf'","nscf=value('calculation') in ('nscf','bands')")
-            .replace("nat = len(ET.parse(Path('out')/(prefix+'.save')/'data-file-schema.xml').getroot().findall('output/atomic_structure/atomic_positions/atom'))", "nat = int(ET.parse(next(Path.cwd().glob('*.dyn*.xml'))).getroot().find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)");
+            .replace("nat = len(ET.parse(Path('out')/(prefix+'.save')/'data-file-schema.xml').getroot().findall('output/atomic_structure/atomic_positions/atom'))", "nat = int(ET.parse(next(iter(list(Path.cwd().glob('*.dyn*.xml'))+list(Path.cwd().parent.glob('force-constants/*.dyn*.xml'))))).getroot().find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)");
         c.put("qe_native_io.py",&qe);
         let epw=include_str!("fixtures/epw_native_io.py")
             .replace("coarse=value('epwread')=='.false.'","coarse=value('epwread')=='.false.'\nwannier_only='elph = .false.' in text\nreuse=coarse and 'wannierize = .false.' in text")
@@ -606,6 +606,7 @@ import re,sys,xml.etree.ElementTree as ET
 kind={kind:?}
 if kind in ['wannier90','postw90']:
     prefix=sys.argv[1]
+    with Path(__file__).with_name('post-calls').open('a') as f:f.write(kind+'\n')
     win=Path(prefix+'.win').read_text()
     mesh=re.search(r'(?m)^mp_grid\s*=\s*(\d+)\s+(\d+)\s+(\d+)',win)
     assert mesh, '独立程序必须有 mp_grid'
@@ -617,7 +618,7 @@ if kind in ['wannier90','postw90']:
     assert 'dos_smr_index' not in win and 'dos_smr_type = gauss' in win, '应使用原生输入关键字，不能写内部变量'
     eig=[line.split() for line in Path(prefix+'.eig').read_text().splitlines()]
     assert len(eig)==len(points)*9 and all(int(row[0])==i%9+1 and int(row[1])==i//9+1 for i,row in enumerate(eig)), 'eig 必须绑定原 NSCF 点序和排除后带序'
-    if kind=='wannier90' and (Path(__file__).parent/'post-failure').exists():
+    if kind=='postw90' and (Path(__file__).parent/'post-failure').exists():
         Path(prefix+'.wout').write_text('overwritten failed plot log')
         Path(prefix+'.werr').write_text('Error: standalone post failed despite STOP zero')
         print('Error: standalone post failed despite STOP zero')
@@ -683,7 +684,7 @@ fn numbered_wannier_post_zero_exit_error_preserves_fit_and_resumes() {
     assert_eq!(norm["postw90_multiplier"], 1);
     assert_eq!(norm["postw90_num_elec_per_state"], 2);
     let csv = fs::read_to_string(c.root.join("run/5.epw-wannier/electronic-dos.csv")).unwrap();
-    assert!(csv.lines().filter(|line| line.starts_with("Wannier,")).all(|line| line.rsplit(',').next().unwrap().parse::<f64>().unwrap() == 1.0),
+    assert!(csv.lines().filter(|line| line.starts_with("EPW,")).all(|line| line.rsplit(',').next().unwrap().parse::<f64>().unwrap() == 1.0),
         "原生 DOS 已计入自旋，CSV 不能再次放大");
 }
 
@@ -735,7 +736,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     let key=stages::scientific_key(&cfg,Step::Wannier).unwrap();
     c.accounting(Some(203));
     success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(203),"numbered-coarse"));
-    assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),qe_calls.lines().filter(|s|*s=="pw").count()+1); // 仅常规 bands 路径，不再有抽样参考 NSCF。
+    assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),qe_calls.lines().filter(|s|*s=="pw").count()); // 常规路径直接复用第 3 步，不新增 PW。
     assert_eq!(wan_hash,store::hash_file(&c.root.join("run/5.epw-wannier/scf.ukk")).unwrap());
     for suffix in ["bvec", "mmn"] {
         let file = format!("scf.{suffix}");
@@ -779,10 +780,15 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     let completed:Value=store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();assert_eq!(partial["native_modes"]["aniso"],completed["native_modes"]["aniso"]);
     let coarse_calls=c.calls().1.matches("coarse ").count();
     c.numbered_change(|cfg|cfg.comparison.as_mut().unwrap().points_per_edge=3);c.accounting(Some(212));
-    success(c.numbered_cli(1,&["--stage","coarse","-r"],Some(212),"numbered-path-density"));
+    let changed_path=c.numbered_cli(1,&["--stage","coarse","-r"],Some(212),"numbered-path-density");
+    assert!(!changed_path.status.success());
+    assert!(String::from_utf8_lossy(&changed_path.stderr).contains("未输出 QE 目标点"));
     assert_eq!(coarse_calls,c.calls().1.matches("coarse ").count(),"路径后处理不能重算 EPC");
     assert_eq!(c.calls().1.matches("wannier ").count(),1);
     assert!(stages::reusable(&config::Config::load(&c.root.join("input.toml")).unwrap(),Step::Fine).unwrap());
+    // 内嵌库没有独立 restart=plot 路线；恢复原采样不能偷偷重拟合。
+    c.numbered_change(|cfg|cfg.comparison.as_mut().unwrap().points_per_edge=2);c.accounting(Some(213));
+    success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(213),"numbered-path-restore"));
     let before=c.calls();
     c.numbered_change(|cfg|cfg.wannier.outer_window_ev.as_mut().unwrap()[0]=1.4);
     c.accounting(Some(208));
@@ -803,6 +809,8 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
         if entry.relative_path.starts_with("epw-state"){continue}
         let path=cfg.work_dir.join(&entry.relative_path);
         if path.extension().is_some_and(|e|e=="in") && path.file_name().unwrap()!="elepdos.in" {
+            let reuse=path.parent().unwrap().join("reuse-outcome.json");
+            if reuse.is_file() && store::read::<Value>(&reuse).unwrap()["decision"]=="verified_copy" {continue;}
             assert!(path.parent().unwrap().join("submit.sh").is_file(),"缺少脚本 {}",path.display());
         }
     }
@@ -856,7 +864,8 @@ fn numbered_large_differences_continue_to_native_fine_and_both_solvers_but_rejec
     ).unwrap();
     assert!(results.get("quality_status").is_none());
     assert!(results.get("quality_warning").is_none());
-    assert!(results.get("differences").is_some());
+    let comparison_results=epwflow::delivery::check_results(&cfg.work_dir.join("results/6.epw-coarse")).unwrap();
+    assert!(comparison_results.get("differences").is_some());
     assert_eq!(results["workflow_complete"], true,
         "差值大小不改变执行完成状态");
 }
@@ -886,9 +895,9 @@ fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
 
 #[test]
 fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
-    let c=Case::numbered(); c.direct_setup();
+    let c=Case::numbered(); c.stage_setup();
     success(c.numbered_cli(0,&["--stage","electronic","-s"],None,"numbered-submit"));
-    let active=c.direct_task();
+    let active:Value=store::read(&c.root.join("run/epw-state/active.json")).unwrap();
     let script=PathBuf::from(active["script"]["path"].as_str().unwrap());
     let before=fs::read(&script).unwrap();
     let control=store::Lock::acquire(&c.root.join("run/epw-state/control")).unwrap();
@@ -901,9 +910,10 @@ fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
     assert_eq!(fs::read(&script).unwrap(),before);
     assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(),1);
     c.put("input.toml","invalid pending edits must not affect submitted native job");
-    assert_eq!(c.direct_execute(),0);
-    // 作业只执行 PW；正式完成状态必须等待公开 CLI 校验。
-    assert_eq!(c.direct_task()["state"],"submitted");
+    success(c.stage_execute());
+    let completed:Value=store::read(&c.root.join("run/epw-state/active.json")).unwrap();
+    assert_eq!(completed["state"],"succeeded");
+    assert!(c.root.join("run/results/3.qe-electronic/qe_eband/electronic-bands.png").is_file());
 }
 
 #[test]
@@ -1043,7 +1053,7 @@ fn numbered_failed_coarse_resume_changes_resources_and_preserves_qe() {
     c.numbered_change(|cfg|{cfg.resources.mpi=2;cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"2".into()];cfg.programs.epw.args[2]="2".into();});
     fs::remove_file(c.root.join("fail-coarse")).unwrap();c.accounting(Some(203));
     success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(203),"coarse-recovered"));
-    reference.verify().unwrap();assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),calls.lines().filter(|s|*s=="pw").count()+1,"只新增路径比较，已成功 QE 保留");
+    reference.verify().unwrap();assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),calls.lines().filter(|s|*s=="pw").count(),"电子参考复用第 3 步，已成功 QE 保留");
 }
 
 
@@ -1140,9 +1150,9 @@ fn numbered_electronic_receipt_rejects_corrupted_save_and_adopts_verified_old_pw
 
 #[test]
 fn numbered_electronic_script_change_is_rejected_and_fresh_attempt_recovers() {
-    let c=Case::numbered(); c.direct_setup();
+    let c=Case::numbered(); c.stage_setup();
     success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"submit-before-edit"));
-    let task=c.direct_task();
+    let task:Value=store::read(&c.root.join("run/epw-state/active.json")).unwrap();
     let script=PathBuf::from(task["script"]["path"].as_str().unwrap());
     let original=fs::read(&script).unwrap();
     fs::write(&script,"#!/bin/bash\n# manually edited\nexit 0\n").unwrap();
@@ -1150,9 +1160,11 @@ fn numbered_electronic_script_change_is_rejected_and_fresh_attempt_recovers() {
     assert!(!out.status.success());
     assert_eq!(c.calls(),(String::new(),String::new(),String::new()));
     fs::write(&script,original).unwrap();
-    assert_eq!(c.direct_execute(),0);
+    success(c.stage_execute());
     success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"next-native-task"));
-    assert_ne!(c.direct_task()["id"],task["id"]);
+    let complete:Value=store::read(&c.root.join("run/epw-state/active.json")).unwrap();
+    assert_eq!(complete["id"],task["id"]);
+    assert_eq!(complete["state"],"succeeded");
 }
 
 #[test]
@@ -1211,10 +1223,10 @@ fn numbered_deleted_wannier_directory_rebuilds_without_repeating_upstream() {
     }
     c.script("sbatch", "#!/bin/sh\nprintf '203\\n'\n");
     success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "deleted-submit"));
-    assert!(c.root.join("run/5.epw-wannier/epw_wannier.in").is_file());
+    assert!(c.root.join("run/5.epw-wannier/wannier.sh").is_file());
     assert_eq!(before, c.calls(), "提交不能提前执行科学程序");
-    c.accounting(Some(204));
-    success(c.numbered_cli(1, &["--stage", "wannier", "--resume", "-r"], Some(204), "deleted-rebuild"));
+    c.stage_setup();
+    success(c.stage_execute());
     assert_eq!(before.0, c.calls().0, "完整上游 QE 不能重跑");
     assert_eq!(upstream, fs::read(stages::receipt(&cfg.work_dir, Step::Nscf)).unwrap());
     assert_eq!(c.calls().1.matches("wannier ").count(), before.1.matches("wannier ").count() + 1);
@@ -1250,10 +1262,9 @@ fn numbered_missing_checkpoint_rebuilds_but_modified_or_corrupt_evidence_is_reje
 fn numbered_deleted_stage_never_bypasses_queued_or_unknown_submission() {
     let c=Case::numbered(); c.direct_setup();
     success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"queued-wannier"));
-    let active=c.root.join("run/epw-state/native-active.json");
+    let active=c.root.join("run/epw-state/active.json");
     let before=fs::read(&active).unwrap();
-    let task=c.direct_task();
-    fs::remove_dir_all(task["directory"].as_str().unwrap()).unwrap();
+    fs::remove_dir_all(c.root.join("run/5.epw-wannier")).unwrap();
     assert!(!c.numbered_cli(1,&["--stage","wannier","-s"],None,"queued-deleted-stage").status.success());
     assert_eq!(before,fs::read(active).unwrap());
     assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(),1);
@@ -1524,3 +1535,6 @@ fn gap_resume_keeps_successful_temperature_and_preserves_failed_attempt() {
 
 #[path = "support/multitemperature.rs"]
 mod multitemperature;
+
+#[path = "support/stage_results.rs"]
+mod stage_results;

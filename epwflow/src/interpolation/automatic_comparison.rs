@@ -61,11 +61,66 @@ fn evidence(dir: &Path) -> Result<Vec<Identity>> {
         .map(|f| Identity::capture(&dir.join(&f.relative_path)))
         .collect()
 }
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PostCache {
+    schema_version: u32,
+    input_key: String,
+    output: comparison_data::Artifact,
+    origin: Identity,
+}
+
+/// 可核验的派生副本独立于电子模型；第 6 步归档不能丢掉相容声子后处理。
+fn cached_post(
+    work: &Path, kind: &str, key: &str, dir: &Path, output: &str,
+    execute: impl FnOnce() -> Result<()>,
+    validate: impl Fn() -> Result<()>,
+) -> Result<()> {
+    if !crate::foundation::layout::enabled(work) {
+        execute()?;
+        return validate();
+    }
+    let root = work.join("epw-state/post/phonon-cache");
+    let cache = root.join(format!("{kind}-{key}"));
+    let receipt = cache.join("manifest.json");
+    if cache.exists() {
+        let record: PostCache = store::read(&receipt)?;
+        ensure!(record.schema_version == 1 && record.input_key == key
+            && record.output.relative_path == Path::new(output),
+            "input_conflict: 声子后处理缓存身份不符");
+        let source = record.output.verify(&cache)?;
+        fs::copy(&source, dir.join(output))?;
+        record.output.verify(&cache)?;
+        validate()?;
+        fs::write(dir.join(format!("{kind}.exitcode")), "0\n")?;
+        store::write(&dir.join("reuse-outcome.json"), &serde_json::json!({
+            "decision":"verified_copy", "executed_programs":[],
+            "cache":Identity::capture(&receipt)?, "original_output":record.origin
+        }))?;
+        return Ok(());
+    }
+    execute()?;
+    save::nonempty(&dir.join(output))?;
+    validate()?;
+    fs::create_dir_all(&root)?;
+    let temporary = root.join(format!(".native-{}", store::token()));
+    fs::create_dir(&temporary)?;
+    let origin = Identity::capture(&dir.join(output))?;
+    fs::copy(&origin.path, temporary.join(output))?;
+    origin.verify()?;
+    store::write(&temporary.join("manifest.json"), &PostCache {
+        schema_version:1, input_key:key.into(),
+        output:comparison_data::Artifact::capture(&temporary,output)?, origin,
+    })?;
+    fs::rename(&temporary, &cache)?;
+    Ok(())
+}
 fn cart(point: [f64; 3], reciprocal: &[[f64; 3]; 3]) -> [f64; 3] {
     std::array::from_fn(|j| (0..3).map(|i| point[i] * reciprocal[i][j]).sum())
 }
 
-fn path_points(
+pub(crate) fn path_points(
     path: &Path,
     reciprocal: &[[f64; 3]; 3],
     intervals: usize,
@@ -261,13 +316,19 @@ pub(crate) fn run(
             },
         )?;
     }
-    let electron = root.join("electron");
+    let numbered = crate::foundation::layout::enabled(work);
+    let electron = if numbered { crate::foundation::layout::path(work, "comparison-native/electron") } else {root.join("electron")};
     let electron_input = electron.join("reference.in");
-    let electron_xml = electron.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix));
+    let electron_xml = if numbered {crate::foundation::stages::Step::Electronic.directory(cfg).join(format!("qe_eband/out/{}.save/data-file-schema.xml",cfg.qe.prefix))} else {electron.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix))};
     let inputs = [
         electron_input.clone(),
         crate::foundation::layout::path(&f2_work, "scf/snapshot-files.json"),
     ];
+    if numbered {
+        let sampling = super::electronic_sampling::plan(cfg)?;
+        ensure!(serde_json::to_value(&sampling.path)? == serde_json::to_value(&path)? && sampling.mesh.iter().zip(&mesh).all(|(a,b)|a.iter().zip(b).all(|(a,b)|(a-b).abs()<1e-7)), "input_conflict: 第 5/6 步采样坐标不同");
+        crate::foundation::workspace_science::verify_electronic_comparison(cfg)?;
+    } else {
     attempt::run_with_inputs(
         work,
         "comparison-electron",
@@ -320,6 +381,7 @@ pub(crate) fn run(
         |_| evidence(&electron),
     )?;
 
+    }
     let phonon = root.join("phonon");
     let gamma_q = f2
         .qpoints
@@ -332,38 +394,70 @@ pub(crate) fn run(
         .find(|p| p.q_id == gamma_q.global_index)
         .context("data_invalid: 缺 Γ 映射")?
         .dyn_file;
+    let force = phonon.join("force-constants");
+    let force_file = force.join("reference.fc.xml");
+    let dynamical = f2.phonon_files.iter().map(|p|
+        Ok((p.q_id,store::hash_file(&p.dyn_file)?))).collect::<Result<Vec<_>>>()?;
+    let force_key=store::hash_bytes(&serde_json::to_vec(&(
+        "gamma-onsite-hermitian-v1",cfg.phonon.mode,&dynamical,
+        store::hash_file(&gamma_q.source_dyn0)?,store::hash_file(&q2r.path)?,
+        &qe.cell.elements,&cfg.atomic_masses,
+    ))?);
     attempt::run_with_inputs(
         work,
-        "comparison-phonon",
-        &phonon,
-        store::hash_bytes(format!("{digest}:phonon").as_bytes()),
+        "comparison-q2r",
+        &force,
+        store::hash_bytes(format!("{digest}:gamma-onsite-force").as_bytes()),
+        retry,
+        "q2r.exitcode",
+        None,
+        || {
+            fs::create_dir_all(&force)?;
+            store::write(&force.join("reuse-decision.json"), &serde_json::json!({
+                "required_programs_if_no_verified_cache":["q2r.x"],
+                "cache_key":force_key,
+                "reference_mode":cfg.phonon.mode,
+                "reason":"第 4 步 q2r/matdyn 使用 simple ASR；EPW 比较需要 Γ onsite 加 Hermitian 修正后、q2r/matdyn 不再施加 ASR。现有力常数未满足该口径；仅转换已核验动力学矩阵并补 q2r，不运行 PW/PH。",
+                "sources":f2.phonon_files
+            }))?;
+            fs::copy(&gamma_q.source_dyn0,force.join(format!("{}.dyn0", cfg.qe.prefix)))?;
+            let gamma_text=fs::read_to_string(gamma)?;
+            for p in &f2.phonon_files {
+                fs::write(force.join(format!("{}.dyn{}.xml",cfg.qe.prefix,p.q_id)),comparison_asr::qe_xml_records(&comparison_asr::corrected_stars(&fs::read_to_string(&p.dyn_file)?,&gamma_text,geometry.atoms.len())?)?)?;
+            }
+            fs::write(force.join("q2r.in"),format!("&input\n fildyn='{}.dyn.xml'\n flfrc='reference.fc'\n zasr='no'\n/\n",cfg.qe.prefix))?;
+            Ok(())
+        },
+        || cached_post(work,"q2r",&force_key,&force,"reference.fc.xml",||
+            qe_data::execution::run(&q2r,&force.join("q2r.in"),&force,launcher,backend,"q2r",false),
+            ||save::nonempty(&force_file)),
+        || save::nonempty(&force_file),
+        |_| evidence(&force),
+    )?;
+    let frequency = phonon.join("frequencies");
+    let force_identity = Identity::capture(&force_file)?;
+    let frequency_key=store::hash_bytes(&serde_json::to_vec(&(
+        "matdyn-no-asr-v1",&force_identity.sha256,&all,&geometry.reciprocal,
+        &qe.cell.elements,&cfg.atomic_masses,store::hash_file(&matdyn.path)?,
+    ))?);
+    attempt::run_with_inputs(
+        work,
+        "comparison-matdyn",
+        &frequency,
+        store::hash_bytes(format!("{digest}:frequencies:{}",force_identity.sha256).as_bytes()),
         retry,
         "matdyn.exitcode",
         None,
         || {
-            fs::create_dir_all(&phonon)?;
-            fs::copy(
-                &gamma_q.source_dyn0,
-                phonon.join(format!("{}.dyn0", cfg.qe.prefix)),
-            )?;
-            let gamma_text = fs::read_to_string(gamma)?;
-            for p in &f2.phonon_files {
-                fs::write(
-                    phonon.join(format!("{}.dyn{}.xml", cfg.qe.prefix, p.q_id)),
-                    comparison_asr::qe_xml_records(&comparison_asr::corrected_stars(
-                        &fs::read_to_string(&p.dyn_file)?,
-                        &gamma_text,
-                        geometry.atoms.len(),
-                    )?)?,
-                )?;
-            }
-            fs::write(
-                phonon.join("q2r.in"),
-                format!(
-                    "&input\n fildyn='{}.dyn.xml'\n flfrc='reference.fc'\n zasr='no'\n/\n",
-                    cfg.qe.prefix
-                ),
-            )?;
+            fs::create_dir_all(&frequency)?;
+            fs::copy(&force_file,frequency.join("reference.fc.xml"))?;
+            force_identity.verify()?;
+            store::write(&frequency.join("reuse-decision.json"),&serde_json::json!({
+                "required_programs_if_no_verified_cache":["matdyn.x"],
+                "cache_key":frequency_key,
+                "reason":"第 4 步频率采用不同 ASR，且不包含完整路径加 DOS 网格；读取已完成的比较力常数，在所需 q 点补频率，不重跑 q2r/PW/PH。",
+                "force_constants":force_identity,"qpoints":all
+            }))?;
             let mut input = String::from("&input\n flfrc='reference.fc.xml'\n flfrq='reference.freq'\n asr='no'\n q_in_cryst_coord=.false.\n q_in_band_form=.false.\n");
             for (i, el) in qe.cell.elements.iter().enumerate() {
                 let mass =
@@ -375,40 +469,31 @@ pub(crate) fn run(
                 let p = cart(*p, &geometry.reciprocal);
                 input.push_str(&format!("{:.17e} {:.17e} {:.17e}\n", p[0], p[1], p[2]));
             }
-            fs::write(phonon.join("matdyn.in"), input)?;
+            fs::write(frequency.join("matdyn.in"), input)?;
             Ok(())
         },
         || {
-            qe_data::execution::run(
-                &q2r,
-                &phonon.join("q2r.in"),
-                &phonon,
-                launcher,
-                backend,
-                "q2r",
-                false,
-            )?;
-            // QE write_dyn_mat_header 总在 flfrc 基名后追加 .xml。
-            save::nonempty(&phonon.join("reference.fc.xml"))?;
-            qe_data::execution::run(
+            cached_post(work,"matdyn",&frequency_key,&frequency,"reference.freq",||qe_data::execution::run(
                 &matdyn,
-                &phonon.join("matdyn.in"),
-                &phonon,
+                &frequency.join("matdyn.in"),
+                &frequency,
                 launcher,
                 backend,
                 "matdyn",
                 false,
-            )
+            ),||check_points(
+                &native::parse_matdyn_path(&fs::read_to_string(frequency.join("reference.freq"))?)?,
+                &all,&geometry,modes))
         },
         || {
             check_points(
-                &native::parse_matdyn_path(&fs::read_to_string(phonon.join("reference.freq"))?)?,
+                &native::parse_matdyn_path(&fs::read_to_string(frequency.join("reference.freq"))?)?,
                 &all,
                 &geometry,
                 modes,
             )
         },
-        |_| evidence(&phonon),
+        |_| evidence(&frequency),
     )?;
 
     let epw_dir = root.join("epw");
@@ -427,7 +512,8 @@ pub(crate) fn run(
                 modes,
                 &epw_dir,
             )?;
-            EpwConfig::write_points(&epw_dir, &all, &all)?;
+            store::write(&epw_dir.join("reuse-decision.json"),&serde_json::json!({"required_programs":["epw.x"],"reason":"已有粗网格实空间数据不含路径及 DOS q 点的插值频率；用 epwread 读取模型，仅补声子求值。原生 band_plot 同时要求电子 k 表，给出一个占位点，输出不用于电子比较；电子对比复用第 5 步。","qpoints":all}))?;
+            EpwConfig::write_points(&epw_dir, if numbered { &all[..1] } else { &all }, &all)?;
             fs::write(
                 epw_dir.join("epw.in"),
                 epw.native_input(
@@ -444,7 +530,7 @@ pub(crate) fn run(
             native::checked_log(&fs::read_to_string(epw_dir.join("epw.out"))?, 0)?;
             check_points(
                 &native::parse_bands(&fs::read_to_string(epw_dir.join("band.eig"))?)?,
-                &all,
+                if numbered { &all[..1] } else { &all },
                 &geometry,
                 nwann,
             )?;
@@ -464,7 +550,9 @@ pub(crate) fn run(
         id.verify()?;
     }
     let mut provenance = vec![file(&request_path)?];
-    for dir in [&electron, &phonon, &epw_dir] {
+    let provenance_dirs = if numbered {vec![&phonon,&epw_dir]} else {vec![&electron,&phonon,&epw_dir]};
+    if numbered {for n in ["band.eig","sampling.json","metrics.json"] {provenance.push(file(&electron.join(n))?);}}
+    for dir in provenance_dirs {
         provenance.extend(
             evidence(dir)?
                 .iter()
@@ -479,8 +567,8 @@ pub(crate) fn run(
         fermi_reference: file(&states.wavefunctions.join("data-file-schema.xml"))?,
         qe_bands_xml: file(&electron_xml)?,
         qe_mesh_xml: file(&states.wavefunctions.join("data-file-schema.xml"))?,
-        epw_bands: file(&epw_dir.join("band.eig"))?,
-        qe_phonon_bands: file(&phonon.join("reference.freq"))?,
+        epw_bands: file(&if numbered {electron.join("band.eig")} else {epw_dir.join("band.eig")})?,
+        qe_phonon_bands: file(&frequency.join("reference.freq"))?,
         epw_phonon_bands: file(&epw_dir.join("phband.freq"))?,
         epw_log: file(&epw_dir.join("epw.out"))?,
         provenance,

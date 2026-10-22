@@ -108,7 +108,9 @@ fn run_coarse_stages(
         &crate::foundation::layout::path(&work, "coarse").join(format!("{}.wout", cfg.qe.prefix)),
         cfg.wannier.num_wann as usize,
     )?;
-    super::automatic_comparison::run(cfg, &epw_cfg, backend, launcher, work, f2_work, retry)?;
+    if !crate::foundation::layout::enabled(work) {
+        super::automatic_comparison::run(cfg, &epw_cfg, backend, launcher, work, f2_work, retry)?;
+    }
     if cfg.kpath.is_some() && !crate::foundation::layout::enabled(work) {
         coarse_res.artifacts.extend(super::automatic_comparison::artifacts(work)?);
     }
@@ -274,7 +276,7 @@ pub fn verify_coarse(cfg: &config::Config, work: &Path) -> Result<InterpolationM
     for artifact in &coarse.artifacts {
         crate::superconductivity::source::artifact_path(work, artifact)?;
     }
-    if cfg.kpath.is_some() {
+    if cfg.kpath.is_some() && !crate::foundation::layout::enabled(work) {
         ensure!(crate::foundation::layout::enabled(work) || coarse.artifacts.iter().any(|a| a.producer_stage == "comparison"),
             "data_invalid: 粗网格阶段缺少自动比较交付");
         super::comparison_data::load(&crate::foundation::layout::path(&work, "interpolation/comparison"))?;

@@ -19,6 +19,11 @@ pub fn collect_results(
     work: &std::path::Path,
     output: Option<&std::path::Path>,
 ) -> anyhow::Result<std::path::PathBuf> {
+    if output.is_none() && crate::foundation::layout::enabled(work) {
+        let root=work.join("results");
+        crate::foundation::stage_results::check(&root)?;
+        return Ok(root);
+    }
     let result = output
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| crate::foundation::layout::path(work,"results"));
@@ -27,7 +32,8 @@ pub fn collect_results(
         native::collect(work, Some(&result))?;
         found = true;
     }
-    if crate::foundation::layout::path(&work, "interpolation/comparison/manifest.json").exists() {
+    if crate::foundation::layout::path(&work, "interpolation/comparison/manifest.json").exists()
+        && (!crate::foundation::layout::enabled(work) || !found) {
         comparison::collect(work, Some(&result))?;
         found = true;
     }
@@ -40,6 +46,14 @@ pub fn plot_results(
     output: Option<&std::path::Path>,
     formats: &[String],
 ) -> anyhow::Result<std::path::PathBuf> {
+    if results.join("index.json").exists() {
+        let target=if let Some(output)=output {
+            anyhow::ensure!(!output.exists(),"input_conflict: 重绘输出已存在");
+            crate::qe_data::save::copy_tree(results,output)?;
+            output
+        } else {results};
+        return crate::foundation::stage_results::redraw(target);
+    }
     let mut found = false;
     let target = output
         .map(std::path::PathBuf::from)
@@ -57,6 +71,10 @@ pub fn plot_results(
 }
 
 pub fn check_results(results: &std::path::Path) -> anyhow::Result<serde_json::Value> {
+    if results.join("index.json").exists() {
+        let index=crate::foundation::stage_results::check(results)?;
+        return Ok(serde_json::json!({"schema_version":1,"operation_status":"ok","stage_results_verified":true,"entries":index.entries,"workflow_complete":false}));
+    }
     let mut report =
         serde_json::json!({"schema_version":1,"operation_status":"ok","workflow_complete":false});
     let mut found = false;

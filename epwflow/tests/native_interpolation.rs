@@ -335,8 +335,8 @@ fn automatic_comparison_delivers_stage_two_figures_from_native_path_and_mesh() {
     let source: interpolation::comparison::Sources = store::read(&work.join("comparison-native/sources.json")).unwrap();
     assert_eq!(source.path.len(),6);
     assert_eq!(source.mesh.len(),8);
-    assert!(work.join("comparison-native/phonon/reference.fc.xml").is_file());
-    let matdyn_input=fs::read_to_string(work.join("comparison-native/phonon/matdyn.in")).unwrap();
+    assert!(work.join("comparison-native/phonon/force-constants/reference.fc.xml").is_file());
+    let matdyn_input=fs::read_to_string(work.join("comparison-native/phonon/frequencies/matdyn.in")).unwrap();
     assert!(matdyn_input.contains("flfrc='reference.fc.xml'"));
     assert!(matdyn_input.contains("asr='no'") && matdyn_input.contains("q_in_band_form=.false."));
     let epw = interpolation::native::parse_bands(&fs::read_to_string(&source.epw_bands.path).unwrap()).unwrap();
@@ -392,7 +392,8 @@ fn automatic_comparison_resume_only_retries_failed_native_task_and_rejects_tampe
         qe_after.lines().filter(|l|*l=="pw"||l.starts_with("ph")).collect::<Vec<_>>());
     assert_eq!(calls(&c).lines().count(),2);
     assert!(work.join("native-attempts/history").read_dir().unwrap().any(|e|
-        e.unwrap().file_name().to_string_lossy().starts_with("comparison-phonon-")));
+        e.unwrap().file_name().to_string_lossy().starts_with("comparison-matdyn-")));
+    assert_eq!(qe_before.lines().filter(|l|*l=="q2r").count(),qe_after.lines().filter(|l|*l=="q2r").count());
     fs::write(work.join("comparison-native/electron/reference.out"),"tampered").unwrap();
     assert!(interpolation::scheduler::run_coarse_with_retry(&c.cfg,Backend::Local,&[],work,work,true).is_err());
     assert_eq!(qe_after,fs::read_to_string(c.root.join("scientific-calls")).unwrap());

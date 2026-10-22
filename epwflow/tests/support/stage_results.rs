@@ -1,0 +1,361 @@
+//! 0050：真实公开入口与 shell 的阶段交付契约；科学程序为隔离替身。
+use super::*;
+impl Case {
+    pub(super) fn stage_setup(&self) {
+        self.direct_setup();
+        self.script(
+            "scontrol",
+            "#!/bin/bash\nprintf 'JobId=%s JobState=RUNNING NumNodes=1\\n' \"${@: -1}\"\n",
+        );
+    }
+    pub(super) fn stage_execute(&self) -> Output {
+        let a: Value = store::read(&self.root.join("run/epw-state/active.json")).unwrap();
+        let script = PathBuf::from(a["script"]["path"].as_str().unwrap());
+        let receipt: Value = store::read(
+            &PathBuf::from(a["config"]["path"].as_str().unwrap())
+                .parent()
+                .unwrap()
+                .join("submission.json"),
+        )
+        .unwrap();
+        let job = receipt["job"].as_u64().unwrap();
+        let mut cmd = self.scheduled_command(&script, script.parent().unwrap(), job);
+        cmd.env("SLURM_NTASKS", "1");
+        let out = cmd.output().unwrap();
+        self.put("stage-worker.stdout", &String::from_utf8_lossy(&out.stdout));
+        self.put("stage-worker.stderr", &String::from_utf8_lossy(&out.stderr));
+        self.put(
+            &format!("job-{job}.state"),
+            if out.status.success() {
+                "COMPLETED"
+            } else {
+                "FAILED"
+            },
+        );
+        out
+    }
+    pub(super) fn stage_submit(&self, stage: &str, resume: bool) -> Output {
+        let mut args = vec!["--stage", stage, "-s"];
+        if resume {
+            args.push("--resume");
+        }
+        self.numbered_cli(
+            if stage == "electronic" { 0 } else { 1 },
+            &args,
+            None,
+            "stage-submit",
+        )
+    }
+    pub(super) fn post_calls(&self) -> String {
+        fs::read_to_string(self.root.join("post-calls")).unwrap_or_default()
+    }
+}
+#[test]
+fn wannier_allocation_publishes_without_phonons_and_repairs_only_derivatives() {
+    let c = Case::numbered();
+    c.stage_setup();
+    success(c.stage_submit("wannier", false));
+    success(c.stage_execute());
+    let result = c.root.join("run/results/5.epw-wannier");
+    for name in [
+        "electronic-bands.png",
+        "electronic-dos.png",
+        "electronic-bands.csv",
+        "electronic-dos.csv",
+        "sampling.json",
+        "metrics.json",
+        "stage-manifest.json",
+    ] {
+        assert!(result.join(name).is_file(), "缺少 {name}");
+    }
+    assert!(!c.root.join("run/4.qe-phonon-nosplit/ph.out").exists());
+    assert!(!c.root.join("run/6.epw-coarse").exists());
+    assert_eq!(c.post_calls(), "postw90\n");
+    let manifest: Value = store::read(&result.join("stage-manifest.json")).unwrap();
+    assert!(manifest["parameters"]["fermi_ev"]
+        .as_f64()
+        .unwrap()
+        .is_finite());
+    assert_eq!(
+        manifest["parameters"]["outer_window_ev"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        manifest["parameters"]["frozen_window_ev"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        c.calls()
+            .1
+            .lines()
+            .filter(|l| l.starts_with("wannier "))
+            .count(),
+        1
+    );
+    let scientific = c.calls();
+    let post = c.post_calls();
+    fs::remove_file(result.join("electronic-bands.png")).unwrap();
+    fs::remove_file(
+        c.root
+            .join("run/5.epw-wannier/comparison-native/electron/electronic-dos.png"),
+    )
+    .unwrap();
+    success(c.stage_submit("wannier", false));
+    success(c.stage_execute());
+    assert_eq!(scientific, c.calls());
+    assert_eq!(post, c.post_calls());
+    epwflow::foundation::stage_results::check(&c.root.join("run/results")).unwrap();
+    let submissions = fs::read(c.root.join("submissions")).unwrap();
+    success(c.stage_submit("wannier", false));
+    assert_eq!(submissions, fs::read(c.root.join("submissions")).unwrap());
+    let moved = c.root.join("portable-results");
+    copy_results(&c.root.join("run/results"), &moved);
+    fs::remove_file(moved.join("5.epw-wannier/electronic-bands.png")).unwrap();
+    let mut cmd = Command::new(BINS[1]);
+    cmd.args(["--plot", "--results", moved.to_str().unwrap()])
+        .env("PATH", "");
+    let out = cmd.output().unwrap();
+    success(out);
+    epwflow::foundation::stage_results::check(&moved).unwrap();
+    assert_eq!(scientific, c.calls());
+    assert_eq!(post, c.post_calls());
+}
+#[test]
+fn wannier_post_failure_keeps_model_and_recovery_never_calls_wannier90() {
+    let c = Case::numbered();
+    c.stage_setup();
+    c.put("post-failure", "postw90 STOP");
+    success(c.stage_submit("wannier", false));
+    assert!(!c.stage_execute().status.success());
+    let model = c.root.join("run/5.epw-wannier/completion.json");
+    let before = fs::read(&model).unwrap();
+    let calls = c.calls();
+    assert!(!c.stage_submit("wannier", false).status.success());
+    fs::remove_file(c.root.join("post-failure")).unwrap();
+    fs::remove_file(
+        c.root
+            .join("run/5.epw-wannier/comparison-native/electron/scf.werr"),
+    )
+    .unwrap();
+    success(c.stage_submit("wannier", true));
+    success(c.stage_execute());
+    assert_eq!(before, fs::read(&model).unwrap());
+    assert_eq!(calls, c.calls());
+    assert!(c.post_calls().lines().all(|l| l == "postw90"));
+}
+#[test]
+fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
+    let c = Case::numbered();
+    c.stage_setup();
+    success(c.stage_submit("wannier", false));
+    success(c.stage_execute());
+    let before = c.calls();
+    let post = c.post_calls();
+    let electron = store::hash_file(
+        &c.root
+            .join("run/5.epw-wannier/comparison-native/electron/band.eig"),
+    )
+    .unwrap();
+    success(c.stage_submit("coarse", false));
+    success(c.stage_execute());
+    assert_eq!(
+        before.0.lines().filter(|l| *l == "pw").count(),
+        c.calls().0.lines().filter(|l| *l == "pw").count()
+    );
+    assert_eq!(post, c.post_calls());
+    assert_eq!(
+        electron,
+        store::hash_file(
+            &c.root
+                .join("run/5.epw-wannier/comparison-native/electron/band.eig")
+        )
+        .unwrap()
+    );
+    let source: Value = store::read(
+        &c.root
+            .join("run/6.epw-coarse/comparison-native/sources.json"),
+    )
+    .unwrap();
+    assert!(source["epw_bands"]["path"]
+        .as_str()
+        .unwrap()
+        .contains("5.epw-wannier/comparison-native/electron"));
+    assert!(source["qe_bands_xml"]["path"]
+        .as_str()
+        .unwrap()
+        .contains("3.qe-electronic/qe_eband"));
+    assert!(!c
+        .root
+        .join("run/6.epw-coarse/comparison-native/electron")
+        .exists());
+    let results = c.root.join("run/results");
+    epwflow::foundation::stage_results::check(&results).unwrap();
+    let figures = results.join("6.epw-coarse/figures");
+    assert!(figures.join("phonon_dispersion_comparison.png").is_file());
+    assert!(figures.join("phonon_dos_comparison.png").is_file());
+    let calls = c.calls();
+    fs::remove_file(figures.join("phonon_dispersion_comparison.png")).unwrap();
+    success(c.stage_submit("coarse", false));
+    success(c.stage_execute());
+    assert_eq!(calls, c.calls());
+    assert_eq!(post, c.post_calls());
+    let moved = c.root.join("portable-all-stages");
+    copy_results(&results, &moved);
+    let mut cmd = Command::new(BINS[1]);
+    cmd.args(["--plot", "--results", moved.to_str().unwrap()])
+        .env("PATH", "");
+    success(cmd.output().unwrap());
+    epwflow::foundation::stage_results::check(&moved).unwrap();
+    assert_eq!(calls, c.calls());
+    assert_eq!(post, c.post_calls());
+    // 新电子拟合改变第 6 步身份，但同一 PH、ASR 和 q 点的后处理仍可复用。
+    c.numbered_change(|cfg| cfg.wannier.outer_window_ev.as_mut().unwrap()[0] = 1.4);
+    success(c.stage_submit("coarse", false));
+    success(c.stage_execute());
+    assert_eq!(
+        calls.0,
+        c.calls().0,
+        "电子模型变化不能重复 PW/PH/q2r/matdyn"
+    );
+    let phonon = c.root.join("run/6.epw-coarse/comparison-native/phonon");
+    for unit in ["force-constants", "frequencies"] {
+        let reuse: Value = store::read(&phonon.join(unit).join("reuse-outcome.json")).unwrap();
+        assert_eq!(reuse["decision"], "verified_copy");
+        assert_eq!(reuse["executed_programs"], json!([]));
+    }
+}
+
+#[test]
+fn matdyn_recovery_reuses_successful_force_constants_and_native_coarse() {
+    let c = Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(
+        0,
+        &["--stage", "phonon", "-r"],
+        Some(201),
+        "phonon-reference",
+    ));
+    c.stage_setup();
+    c.put("job-201.state", "COMPLETED");
+    c.put("submissions", "allocated preparation\n");
+    success(c.stage_submit("wannier", false));
+    success(c.stage_execute());
+    c.put("comparison-failure", "matdyn");
+    success(c.stage_submit("coarse", false));
+    assert!(!c.stage_execute().status.success());
+    let before = c.calls();
+    assert!(c.root.join("run/6.epw-coarse/completion.json").is_file());
+    let force = c
+        .root
+        .join("run/6.epw-coarse/comparison-native/phonon/force-constants/reference.fc.xml");
+    let hash = store::hash_file(&force).unwrap();
+    fs::remove_file(c.root.join("comparison-failure")).unwrap();
+    success(c.stage_submit("coarse", true));
+    success(c.stage_execute());
+    assert_eq!(hash, store::hash_file(&force).unwrap());
+    assert_eq!(
+        before.0.lines().filter(|s| *s == "q2r").count(),
+        c.calls().0.lines().filter(|s| *s == "q2r").count()
+    );
+    assert_eq!(
+        before
+            .1
+            .lines()
+            .filter(|s| s.starts_with("coarse "))
+            .count(),
+        c.calls()
+            .1
+            .lines()
+            .filter(|s| s.starts_with("coarse "))
+            .count()
+    );
+    assert_eq!(
+        before.0.lines().filter(|s| *s == "pw").count(),
+        c.calls().0.lines().filter(|s| *s == "pw").count()
+    );
+    let reason: Value = store::read(&force.parent().unwrap().join("reuse-decision.json")).unwrap();
+    assert_eq!(
+        reason["required_programs_if_no_verified_cache"],
+        json!(["q2r.x"])
+    );
+    assert!(reason["reason"].as_str().unwrap().contains("ASR"));
+}
+
+#[test]
+fn corrupted_embedded_coordinates_are_rejected_without_refitting() {
+    let c = Case::numbered();
+    c.stage_setup();
+    success(c.stage_submit("wannier", false));
+    success(c.stage_execute());
+    let before = c.calls();
+    c.put("run/5.epw-wannier/scf_band.kpt", "broken coordinates");
+    assert!(!c.stage_submit("wannier", false).status.success());
+    assert_eq!(before, c.calls());
+}
+
+#[test]
+fn registered_legacy_electronic_samples_migrate_without_refitting_or_changing_science() {
+    use epwflow::foundation::stages::{self, Step};
+    let c = Case::numbered();
+    c.stage_setup();
+    success(c.stage_submit("wannier", false));
+    success(c.stage_execute());
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let sampling = epwflow::interpolation::electronic_sampling::plan(&cfg).unwrap();
+    let fit = c.root.join("run/5.epw-wannier");
+    let post = fit.join("comparison-native/electron");
+    let old = c.root.join("run/6.epw-coarse/comparison-native");
+    fs::create_dir_all(old.join("epw")).unwrap();
+    let band = old.join("epw/band.eig");
+    fs::copy(post.join("band.eig"), &band).unwrap();
+    let source = |p: PathBuf| json!({"sha256":store::hash_file(&p).unwrap(),"path":p});
+    let xml = cfg
+        .work_dir
+        .join("2.qe-nscf/out/scf.save/data-file-schema.xml");
+    let old_sources = json!({"schema_version":2,"run_id":"legacy","ph_mode":"nosplit",
+        "fermi_reference":source(xml.clone()),"qe_mesh_xml":source(xml),
+        "qe_bands_xml":source(cfg.work_dir.join("3.qe-electronic/qe_eband/out/scf.save/data-file-schema.xml")),
+        "epw_bands":source(band.clone()),"qe_phonon_bands":source(band.clone()),
+        "epw_phonon_bands":source(band.clone()),"epw_log":source(fit.join("epw.out")),
+        "provenance":[source(fit.join("scf.chk"))],"path":sampling.path,"ticks":sampling.ticks,
+        "mesh":sampling.mesh,"mesh_shape":cfg.qe.nscf.k_grid,"reciprocal":sampling.reciprocal,
+        "window_ev":[-1.,1.],"wannier_wout":source(fit.join("scf.wout")),
+        "electronic_sigma_ev":0.1,"phonon_sigma_cm1":10.});
+    store::write(&old.join("sources.json"), &old_sources).unwrap();
+    // 构造旧 Completion 版本：模型已绑定，但没有新版内嵌绘图回执。
+    let receipt = stages::receipt(&cfg.work_dir, Step::Wannier);
+    let mut science: stages::Completion = store::read(&receipt).unwrap();
+    science
+        .outputs
+        .retain(|id| id.path != fit.join("embedded-bands.json"));
+    store::write(&receipt, &science).unwrap();
+    fs::remove_file(fit.join("embedded-bands.json")).unwrap();
+    fs::remove_file(fit.join("post-completion.json")).unwrap();
+    let before = fs::read(&receipt).unwrap();
+    let calls = c.calls();
+    let dos = c.post_calls();
+    let wout = store::hash_file(&fit.join("scf.wout")).unwrap();
+    let old_hash = store::hash_file(&old.join("sources.json")).unwrap();
+    success(c.stage_submit("wannier", false));
+    success(c.stage_execute());
+    assert_eq!(before, fs::read(&receipt).unwrap());
+    assert_eq!(calls, c.calls());
+    assert_eq!(dos, c.post_calls());
+    assert_eq!(wout, store::hash_file(&fit.join("scf.wout")).unwrap());
+    assert_eq!(
+        old_hash,
+        store::hash_file(&old.join("sources.json")).unwrap()
+    );
+    assert_eq!(
+        store::hash_file(&band).unwrap(),
+        store::hash_file(&post.join("band.eig")).unwrap()
+    );
+    let origin: Value = store::read(&post.join("band-origin.json")).unwrap();
+    assert_eq!(origin["driver"], "legacy_epw_readonly");
+}

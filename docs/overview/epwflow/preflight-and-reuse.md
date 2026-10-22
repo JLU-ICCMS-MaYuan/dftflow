@@ -67,11 +67,12 @@ flowchart TD
     I --> J[检查退出状态、科学输出与必要收敛条件]
     J -->|符合本项交付条件| K[写入完成记录，保存真实文件的内容指纹]
     J -->|不符合| L[保留失败或不完整结果，不能冒充有效交付]
-    R --> N[继续检查下一项，全部齐全才报告目标完成]
-    K --> N
+    R --> P[检查必要后处理、已有图形和结果发布，缺项只补缺项]
+    K --> P
+    P --> N[继续检查下一项，交付齐全才报告目标完成]
 ```
 
-`phonon` 目标的一次提交自动链在分配内继续推进；其他目标通常需要作业结束后重复同一公开命令来核验和推进。完整、相容的子任务会复用。预算不足或并行检查失败，也会在相应位置停止，不会绕过检查开始计算。
+`electronic` 到 `fine` 及 Tc 目标在一次阶段分配内自动推进并发布，不需要再次执行公开命令触发正常收尾；指定温度 gap 仍按方法分作业，由内部收尾发布。第 1／2 步保留单原生任务边界。完整、相容的子任务复用；预算不足或并行检查失败时停止，不绕过检查开始计算。
 
 ## 三个 CLI 分别检查到哪里
 
@@ -147,7 +148,7 @@ MPI 启动数要与 `resources.mpi` 相符，pool/image 与网格要相容；当
 
 例如，删除已绑定的 `MgB2.chk` 会让第 5 步无法复用；把它替换成另一份同名文件则可能直接报来源冲突。`--resume` 表示恢复失败任务，不表示忽略冲突。
 
-`reuse: phonon` 说明第 4 步可用；随后出现 `6.epw-coarse/comparison-native/phonon/` 是第 6 步的比较子任务。两者归属不同，详见[比较任务流程](workflow.md#第-6-步为什么还会出现-phonon-和-epw)。
+`reuse: phonon` 说明第 4 步可用；随后出现 `6.epw-coarse/comparison-native/phonon/` 是第 6 步的比较子任务。两者归属不同，详见[比较任务流程](workflow.md#比较用的数据从哪里来)。
 
 ## 用户平时用哪条命令看什么
 
@@ -172,7 +173,7 @@ sacct -j 作业号 --format=JobID,State,ExitCode,Elapsed
 | 单项 `reuse` | 这一项可以继续用，不代表本目标所有后处理、图表和整个超导流程都已经完成 |
 | 正式推进返回 `workflow_complete: true` | 本次目标所需的交付已经核验完成；例如 fine 完成仍不等于超导阶段完成 |
 
-作业正常结束后，除声子自动链由作业内完成收尾外，其他目标通常需要再次执行同一公开命令 `-s` 来接收输出并继续。没有失败时无需为了“继续”额外加 `--resume`。
+编号工作区的 electronic、phonon、wannier、coarse、fine 和 Tc 目标在阶段作业内完成目标所需的收尾、绘图与发布。gap 的两个方法作业各自归集，最后完成的方法发布。第 1／2 步独立目标及历史冻结脚本仍保留原任务边界；失败后显式 `--resume -s`，活动或终态未知时不重提。
 
 ## 源码依据与导航
 
@@ -181,3 +182,7 @@ sacct -j 作业号 --format=JobID,State,ExitCode,Elapsed
 - [原生任务记录](../../../epwflow/src/foundation/native_jobs.rs)、[工作区状态](../../../epwflow/src/foundation/workspace.rs)：活动任务、调度结果与续算。
 - [科学产物绑定范围](../../../epwflow/src/foundation/workspace_science.rs)、[超导输入检查](../../../epwflow/src/superconductivity/source.rs)：各阶段实际证据与下游原生数据角色。
 - [返回 EPW 总览](README.md)；[完整计算流程](workflow.md)；[原生超导行为](native-superconductivity.md)。
+
+## 逐阶段派生结果
+
+第 5 步的内嵌采样来源、DOS 完成记录与图像回执分开；缺图只补派生结果，不重新拟合。第 6 步科学粗网格回执先保存，随后完成声子比较及 results 发布；matdyn 失败保留相容的成功 q2r。各阶段发布到根 `results/<编号阶段>/`，`index.json` 仅作导航，不登记科学成功。流程与旧布局边界见 [完整流程图](workflow.md)。

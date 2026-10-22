@@ -36,7 +36,7 @@ if kind in ('q2r', 'matdyn'):
         assert force.is_file()
         prefix = force.name.split('.fc')[0]
         if Path('matdyn.in').exists():
-            nat = int(ET.parse(next(Path.cwd().glob('*.dyn*.xml'))).getroot().find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)
+            nat = int(ET.parse(next(iter(list(Path.cwd().glob('*.dyn*.xml'))+list(Path.cwd().parent.glob('force-constants/*.dyn*.xml'))))).getroot().find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)
             assert value('asr') == 'no' and value('amass\\(1\\)') is not None
         else:
             nat = len(ET.parse(Path('out')/(prefix+'.save')/'data-file-schema.xml').getroot().findall('output/atomic_structure/atomic_positions/atom'))

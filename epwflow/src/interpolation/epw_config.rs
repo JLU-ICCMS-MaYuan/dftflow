@@ -313,6 +313,11 @@ impl<'a> EpwConfig<'a> {
                         format!("dis_conv_window = {}", d.window_iterations),
                     ]);
                 }
+                if wannier_only && self.cfg.kpath.is_some() {
+                    data.extend(super::electronic_sampling::wdata(&super::electronic_sampling::plan(self.cfg)?)?);
+                }
+                ensure!(data.len() <= 200 && data.iter().all(|line| line.len() <= 256),
+                    "configuration: 内嵌 Wannier90 的 wdata 超过 200 条或单条 256 字节；保留已有 QE 数据，请缩短路径配置");
                 for (j, line) in data.iter().enumerate() {
                     s.push_str(&format!(" wdata({}) = {}\n", j + 1, quoted(line)?));
                 }

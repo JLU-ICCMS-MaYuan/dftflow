@@ -73,6 +73,13 @@ struct PostReceipt {
 }
 
 fn post_key(cfg: &Config, step: Step) -> Result<String> {
+    if step==Step::Wannier {
+        let receipt=Step::Wannier.directory(cfg).join("embedded-bands.json");
+        if receipt.exists() {
+            let sources:Vec<Identity>=store::read(&receipt)?;
+            for id in sources {id.verify()?;}
+        }
+    }
     let dependencies = if step == Step::Wannier {
         vec![Step::Wannier, Step::Electronic]
     } else {
@@ -90,10 +97,6 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
     if step == Step::Wannier {
         for p in [
             cfg.programs
-                .wannier90
-                .clone()
-                .unwrap_or(post_program(cfg, "wannier90")?),
-            cfg.programs
                 .postw90
                 .clone()
                 .unwrap_or(post_program(cfg, "postw90")?),
@@ -103,7 +106,7 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
         }
     }
     Ok(store::hash_bytes(&serde_json::to_vec(&(
-        if step == Step::Coarse { 4 } else { 3 },
+        if step == Step::Coarse { 5 } else { 4 },
         keys,
         programs,
         cfg.comparison.clone().unwrap_or_default(),
@@ -119,6 +122,10 @@ fn post_file(cfg: &Config, step: Step) -> PathBuf {
 
 pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
     if super::workspace_qe_plot::pending(cfg, target)? { return Ok(true); }
+    for step in target.closure() {
+        if matches!(step,Step::Electronic|Step::Phonon|Step::Wannier|Step::Coarse|Step::Superconductivity)
+            && stages::reusable(cfg,step)? && super::stage_results::pending(cfg,step)? {return Ok(true);}
+    }
     for step in [Step::Wannier, Step::Coarse] {
         if target < step || !stages::reusable(cfg, step)? {
             continue;
@@ -158,22 +165,13 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                 for id in r.outputs {
                     if !store::identity_available(&id)? { available = false; }
                 }
-                if available { continue; }
+                if available && !super::stage_results::pending(cfg,step)? { continue; }
             }
         }
         let outputs = if step == Step::Wannier {
-            run_electronic_leaf(cfg, "qe_eledos")?;
             let dir = step.directory(cfg);
             electronic_comparison(cfg, &dir, states(cfg)?.fermi)?;
-            [
-                "electronic-bands.png",
-                "electronic-dos.png",
-                "electronic-dos.csv",
-                "electronic-dos-normalization.json",
-            ]
-            .into_iter()
-            .map(|n| Identity::capture(&dir.join(n)))
-            .collect::<Result<Vec<_>>>()?
+            electronic_files().iter().map(|n|Identity::capture(&layout::path(&cfg.work_dir,"comparison-native/electron").join(n))).collect::<Result<Vec<_>>>()?
         } else {
             let path_key = store::hash_bytes(&serde_json::to_vec(&(
                 cfg.comparison.clone().unwrap_or_default().points_per_edge,
@@ -192,14 +190,14 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                 for (name, relative) in [
                     ("native", "comparison-native"),
                     ("tables", "interpolation/comparison"),
-                    ("results", "results"),
+                    ("results", "results/6.epw-coarse"),
                 ] {
                     let p = layout::path(&cfg.work_dir, relative);
                     if p.exists() {
                         fs::rename(p, history.join(name))?;
                     }
                 }
-                for label in ["comparison-electron", "comparison-phonon", "comparison-epw"] {
+                for label in ["comparison-q2r", "comparison-matdyn", "comparison-phonon", "comparison-epw"] {
                     let p = layout::path(&cfg.work_dir, "native-attempts")
                         .join(format!("{label}.json"));
                     if p.exists() {
@@ -222,12 +220,24 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                     true,
                 )?;
             }
+            if !layout::path(&cfg.work_dir,"comparison-native/sources.json").exists() {
+                let s=states(cfg)?;
+                let qe=QeSettings::from_config(cfg)?;
+                let epw=EpwConfig::from_config(cfg)?.with_fermi(s.fermi)?.with_bands(&s.eigenvalues)?.with_species(&qe.cell.elements)?;
+                interpolation::automatic_comparison::run(cfg,&epw,Backend::Local,&cfg.programs.launcher,&cfg.work_dir,&cfg.work_dir,true)?;
+            }
             store::write(&path_file, &path_key)?;
             let old = layout::path(&cfg.work_dir, "comparison-native/sources.json");
             let mut sources: interpolation::comparison::Sources = store::read(&old)?;
             let options = cfg.comparison.clone().unwrap_or_default();
             let output = layout::path(&cfg.work_dir, "interpolation/comparison");
-            let results = layout::path(&cfg.work_dir, "results");
+            let results = crate::delivery::comparison::result_dir(&cfg.work_dir);
+            sources.epw_bands = interpolation::comparison::SourceFile {
+                path:layout::path(&cfg.work_dir,"comparison-native/electron/band.eig"),
+                sha256:store::hash_file(&layout::path(&cfg.work_dir,"comparison-native/electron/band.eig"))?
+            };
+            let qe_bands=Step::Electronic.directory(cfg).join(format!("qe_eband/out/{}.save/data-file-schema.xml",cfg.qe.prefix));
+            sources.qe_bands_xml=interpolation::comparison::SourceFile {sha256:store::hash_file(&qe_bands)?,path:qe_bands};
             sources.electronic_sigma_ev = options.electronic_sigma_ev;
             sources.phonon_sigma_cm1 = options.phonon_sigma_cm1;
             let source = cfg.work_dir.join("epw-state/post/coarse-sources.json");
@@ -247,11 +257,13 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                 interpolation::comparison::export(&source, &output)?;
                 crate::delivery::comparison::collect(&cfg.work_dir, None)?;
             }
+            crate::delivery::comparison::collect(&cfg.work_dir,None)?;
             crate::delivery::comparison_plot::plot(
                 &results,
                 None,
                 &["png".into(), "svg".into(), "pdf".into()],
             )?;
+            super::stage_results::tree(cfg,Step::Coarse,"",&results,json!({"kind":"qe_epw_comparison","source":Identity::capture(&source)?}))?;
             vec![
                 Identity::capture(&output.join("manifest.json"))?,
                 Identity::capture(&results.join("comparison/manifest.json"))?,
@@ -259,6 +271,12 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
         };
         store::write(&file, &PostReceipt { key, outputs })?;
     }
+    if target==Step::Superconductivity && stages::reusable(cfg,Step::Superconductivity)? {
+        let result=Step::Superconductivity.directory(cfg).join("results");
+        crate::delivery::finalize_to(&cfg.work_dir,Some(&result))?;
+        super::stage_results::tree(cfg,Step::Superconductivity,"",&result,json!({"kind":"native_superconductivity"}))?;
+    }
+
     Ok(())
 }
 
@@ -389,6 +407,7 @@ pub fn run(cfg: &Config, step: Step) -> Result<()> {
                 root,
                 Some(&Step::Superconductivity.directory(cfg).join("results")),
             )?;
+            super::stage_results::tree(cfg,Step::Superconductivity,"",&Step::Superconductivity.directory(cfg).join("results"),json!({"kind":"native_superconductivity"}))?;
         }
     }
     Ok(())
@@ -580,6 +599,11 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
         .with_bands(&s.eigenvalues)?
         .with_species(&qe.cell.elements)?;
     if !super::native_jobs::continuing(&dir, "epw")? {
+    store::write(&dir.join("embedded-sampling-decision.json"),&json!({
+        "program":"epw.x","reason":"首次拟合尚无模型的路径及均匀网格采样；在本次拟合的 wdata 中一次输出，后续从真实 kpt 坐标提取，不另运行 Wannier90/PW。",
+        "nscf":Identity::capture(&interpolation::electronic_sampling::xml(cfg))?,
+        "sampling":interpolation::electronic_sampling::plan(cfg)?
+    }))?;
     save::copy_tree(&layout::path(&cfg.work_dir, "nscf/out"), &dir.join("out"))?;
     fs::write(
         dir.join("epw_wannier.in"),
@@ -608,6 +632,10 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
     interpolation::restart::velocity_files(&dir, prefix, s.kpoints.len(),
         cfg.qe.nscf.nbnd as usize - cfg.wannier.exclude_bands.len())?;
 
+    let bands=["_band.dat","_band.kpt","_band.labelinfo.dat"].iter()
+        .map(|suffix| Identity::capture(&dir.join(format!("{prefix}{suffix}"))))
+        .collect::<Result<Vec<_>>>()?;
+    store::write(&dir.join("embedded-bands.json"),&bands)?;
     Ok(())
 }
 
@@ -720,150 +748,121 @@ fn check_wannier_post(
     Ok(())
 }
 
+fn electronic_files() -> [&'static str;12] {
+    ["electronic-bands.png","electronic-bands.csv","electronic-dos.png","electronic-dos.csv",
+    "electronic-bands.plot.json","electronic-dos.plot.json","electronic-dos-normalization.json",
+    "sampling.json","metrics.json","band.eig","dos-completion.json","band-origin.json"]
+}
+
+pub(crate) fn verify_electronic_comparison(cfg:&Config)->Result<()> {
+    let r:PostReceipt=store::read(&post_file(cfg,Step::Wannier))?;
+    ensure!(r.key==post_key(cfg,Step::Wannier)?,"input_conflict: 第 5 步电子比较参数已变化");
+    for id in r.outputs {id.verify()?;}
+    Ok(())
+}
+
 fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
-    if super::native_jobs::enabled() {
-        let post = dir.join("native-post");
-        if !post.exists() {
-            fs::create_dir_all(&post)?;
-            for ext in ["win", "wout", "chk", "mmn", "amn", "eig", "nnkp"] {
-                let name = format!("{}.{ext}", cfg.qe.prefix);
-                if dir.join(&name).exists() { fs::copy(dir.join(&name),post.join(name))?; }
+    let post = layout::path(&cfg.work_dir, "comparison-native/electron");
+    fs::create_dir_all(&post)?;
+    // 科学模型只读；所有 postw90 输入和派生产物位于电子比较目录。
+    for ext in ["win", "wout", "chk", "mmn", "amn", "nnkp"] {
+        let name = format!("{}.{ext}", cfg.qe.prefix);
+        if dir.join(&name).exists() {
+            let source=Identity::capture(&dir.join(&name))?;
+            if !post.join(&name).exists() || store::hash_file(&post.join(&name))? != source.sha256 {
+                fs::copy(&source.path, post.join(&name))?;
+                source.verify()?;
             }
         }
-        fs::copy(dir.join(format!("{}.wout",cfg.qe.prefix)),post.join(format!("{}.wout",cfg.qe.prefix)))?;
-        electronic_comparison_inner(cfg,&post,fermi)?;
-        for name in ["electronic-bands.png","electronic-dos.png","electronic-dos.csv","electronic-dos-normalization.json"] {
-            fs::copy(post.join(name),dir.join(name))?;
-        }
-        return Ok(());
     }
-    electronic_comparison_inner(cfg,dir,fermi)
+    if dir.join("embedded-bands.json").exists() {
+    let embedded:Vec<Identity>=store::read(&dir.join("embedded-bands.json"))
+        .context("required: 旧模型缺少内嵌能带来源回执；保留科学模型，不能因迁移重新拟合")?;
+    for id in embedded {id.verify()?;}
+    for suffix in ["_band.dat", "_band.kpt", "_band.labelinfo.dat"] {
+        let name=format!("{}{suffix}",cfg.qe.prefix);
+        let source=dir.join(&name);
+        ensure!(source.is_file(),
+            "required: 已有拟合缺少 EPW 内嵌能带输出 {}；保留模型，不因目录迁移重算，请核对原始 EPW 输出",source.display());
+        fs::copy(&source,post.join(&name))?;
+    }
+    interpolation::electronic_sampling::extract(cfg, &post)?;
+    } else {
+        interpolation::electronic_sampling::legacy(cfg,&post)?;
+    }
+    electronic_comparison_inner(cfg,&post,fermi)?;
+    for name in ["electronic-bands.png","electronic-bands.csv","electronic-dos.png","electronic-dos.csv","electronic-dos-normalization.json"] {
+        fs::copy(post.join(name),dir.join(name))?;
+    }
+    let names=electronic_files().map(str::to_owned);
+    let provenance = [interpolation::electronic_sampling::xml(cfg),
+        Step::Electronic.directory(cfg).join(format!("qe_eband/out/{}.save/data-file-schema.xml",cfg.qe.prefix)),
+        dir.join(format!("{}.chk",cfg.qe.prefix)),dir.join(format!("{}.wout",cfg.qe.prefix))]
+        .iter().map(|p|Identity::capture(p)).collect::<Result<Vec<_>>>()?;
+    let log=fs::read_to_string(dir.join(format!("{}.wout",cfg.qe.prefix)))?;
+    super::stage_results::publish(cfg,Step::Wannier,"",&post,&names,
+        json!({"band_driver":"epw.x/wdata","dos_driver":"postw90",
+            "fermi_ev":fermi,"outer_window_ev":interpolation::comparison::parse_outer_window(&log)?,
+            "frozen_window_ev":interpolation::comparison::parse_frozen_window(&log)?,
+            "mesh":cfg.qe.nscf.k_grid,"mesh_weight":1.0/cfg.qe.nscf.k_grid.iter().product::<u32>() as f64,
+            "spin_degeneracy":2,"electronic_sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev}),provenance)
 }
 
 fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     let prefix = &cfg.qe.prefix;
     let win = dir.join(format!("{prefix}.win"));
-    let segments = qf_input::electronic::parse_kpath_segments(
-        cfg.kpath
-            .as_ref()
-            .context("required: 电子对比需要 KPATH.in")?
-            .to_str()
-            .unwrap(),
-    )?;
-    let mut path = String::from("\nbegin kpoint_path\n");
-    for segment in segments {
-        for pair in segment.windows(2) {
-            path.push_str(&format!(
-                "{} {} {} {} {} {} {} {}\n",
-                pair[0].1,
-                pair[0].0[0],
-                pair[0].0[1],
-                pair[0].0[2],
-                pair[1].1,
-                pair[1].0[0],
-                pair[1].0[1],
-                pair[1].0[2]
-            ));
-        }
-    }
-    path.push_str("end kpoint_path\n");
     let (original, eigenvalues) = standalone_inputs(cfg, &fs::read_to_string(&win)?)?;
-    let original =
-        regex::Regex::new(r"(?ims)^\s*begin\s+kpoint_path\s*$.*?^\s*end\s+kpoint_path\s*$")?
-            .replace_all(&original, "")
-            .into_owned();
     let options = cfg.comparison.clone().unwrap_or_default();
-    let window = interpolation::comparison::parse_outer_window(&fs::read_to_string(
-        dir.join(format!("{prefix}.wout")),
-    )?)?;
-    let updated = wannier90flow::post::update_win_content(
-        &original,
-        &[
-            ("write_hr".into(), json!(false)),
-            ("write_bvec".into(), json!(false)),
-            ("bands_plot".into(), json!(true)),
-            ("bands_num_points".into(), json!(options.points_per_edge)),
-            ("dos".into(), json!(true)),
-            ("num_elec_per_state".into(), json!(2)),
-            ("dos_kmesh".into(), json!(cfg.qe.nscf.k_grid)),
-            ("dos_energy_min".into(), json!(window[0])),
-            ("dos_energy_max".into(), json!(window[1])),
-            ("dos_energy_step".into(), json!(0.01)),
-            ("dos_adpt_smr".into(), json!(false)),
-            (
-                "dos_smr_fixed_en_width".into(),
-                json!(options.electronic_sigma_ev),
-            ),
-            ("dos_smr_type".into(), json!("gauss")),
-            ("fermi_energy".into(), json!(fermi)),
-        ],
-    );
-    let updated = wannier90flow::post::update_win_content(
-        &(updated + &path),
-        &[("restart".into(), json!("plot"))],
-    );
-    if !super::native_jobs::continuing(dir,"wannier-plot")? {
-        fs::write(&win, updated)?;
-        fs::write(dir.join(format!("{prefix}.eig")), eigenvalues)?;
-    }
-    let previous = [
-        format!("{prefix}.werr"), format!("{prefix}.wpout"),
-        format!("{prefix}_band.dat"), format!("{prefix}_band.labelinfo.dat"),
-        format!("{prefix}_dos.dat"), format!("{prefix}-dos.dat"),
-        "wannier-plot.out".into(), "wannier-plot.err".into(),
-        "postw90.out".into(), "postw90.err".into(),
-    ];
-    if !super::native_jobs::continuing(dir, "wannier-plot")? && previous.iter().any(|name| dir.join(name).exists()) {
-        let history = cfg.work_dir.join("epw-state/history")
-            .join(format!("wannier-post-{}", store::token()));
-        fs::create_dir_all(&history)?;
-        for name in previous {
-            if dir.join(&name).exists() {
-                fs::rename(dir.join(&name), history.join(name))?;
-            }
+    let window = interpolation::comparison::parse_outer_window(&fs::read_to_string(dir.join(format!("{prefix}.wout")))?)?;
+    let updated = wannier90flow::post::update_win_content(&original, &[
+        ("write_hr".into(), json!(false)), ("write_bvec".into(), json!(false)),
+        ("bands_plot".into(), json!(false)), ("dos".into(), json!(true)),
+        ("num_elec_per_state".into(), json!(2)), ("dos_kmesh".into(), json!(cfg.qe.nscf.k_grid)),
+        ("dos_energy_min".into(), json!(window[0])), ("dos_energy_max".into(), json!(window[1])),
+        ("dos_energy_step".into(), json!(0.01)), ("dos_adpt_smr".into(), json!(false)),
+        ("dos_smr_fixed_en_width".into(), json!(options.electronic_sigma_ev)),
+        ("dos_smr_type".into(), json!("gauss")), ("fermi_energy".into(), json!(fermi)),
+    ]);
+    let updated=regex::Regex::new(r"(?m)^\s*restart\s*=[^\n]*\n?")?.replace_all(&updated,"").into_owned();
+    let program=cfg.programs.postw90.clone().unwrap_or(post_program(cfg,"postw90")?);
+    let dos=PathBuf::from(wannier90flow::post::resolve_dos_output(dir.to_str().unwrap(),prefix));
+    let key=store::hash_bytes(&serde_json::to_vec(&(2,&updated,&eigenvalues,
+        store::hash_file(&dir.join(format!("{prefix}.chk")))?,store::hash_file(&program.path)?,&program.args))?);
+    let receipt=dir.join("dos-completion.json");
+    let reusable=if receipt.exists() {
+        let r:PostReceipt=store::read(&receipt)?;
+        if r.key==key {
+            let mut available=true;
+            for id in r.outputs {if !store::identity_available(&id)? {available=false;}}
+            available
+        }else{false}
+    }else{false};
+    fs::write(&win,&updated)?;
+    if !reusable {
+        let reason=json!({"schema_version":1,"decision":"necessary_postprocessing",
+            "reason":"已有电子模型未提供相容的 postw90 DOS；只求现有均匀网格总 DOS，不重新拟合",
+            "program":program.path,"model":Identity::capture(&dir.join(format!("{prefix}.chk")))?,
+            "mesh":cfg.qe.nscf.k_grid,"sigma_ev":options.electronic_sigma_ev,"expected_output":dos});
+        store::write(&dir.join("dos-decision.json"),&reason)?;
+        if !super::native_jobs::continuing(dir,"postw90")? {
+            let error=dir.join(format!("{prefix}.werr"));
+            if error.exists() {fs::rename(&error,dir.join(format!("failed-{}.werr",store::token())))?;}
+            fs::write(&win,&updated)?;
+            fs::write(dir.join(format!("{prefix}.eig")),eigenvalues)?;
         }
+        let mut argv=vec![program.path.to_string_lossy().into_owned()];
+        argv.extend(program.args);
+        argv.push(prefix.clone());
+        let report=super::process::run_report_named(&argv,dir,"postw90")?;
+        report.copy_logs(dir,"postw90")?;
+        check_wannier_post(&report,dir,prefix,"postw90 DOS")?;
+        let actual=PathBuf::from(wannier90flow::post::resolve_dos_output(dir.to_str().unwrap(),prefix));
+        store::write(&receipt,&PostReceipt {key,outputs:vec![Identity::capture(&actual)?,
+            Identity::capture(&dir.join(format!("{prefix}.wpout")))?]})?;
     }
-    // postw90 是原生计算；不以高斯拟合或总 DOS 伪装缺失投影。
-    let original_wout = fs::read(dir.join(format!("{prefix}.wout")))?;
-    let wannier = cfg
-        .programs
-        .wannier90
-        .clone()
-        .unwrap_or(post_program(cfg, "wannier90")?);
-    save::nonempty(&dir.join(format!("{prefix}.chk")))?;
-    let mut argv = vec![wannier.path.to_string_lossy().into_owned()];
-    argv.extend(wannier.args);
-    argv.push(prefix.clone());
-    let report = super::process::run_report_named(&argv, dir, "wannier-plot");
-    // 独立程序会重写 wout；失败也必须保留已发布拟合的收据身份。
-    fs::write(dir.join(format!("{prefix}.wout")), &original_wout)?;
-    let report = report?;
-    report.copy_logs(dir, "wannier-plot")?;
-    check_wannier_post(&report, dir, prefix, "Wannier90 restart=plot")?;
-    let program = cfg
-        .programs
-        .postw90
-        .clone()
-        .unwrap_or(post_program(cfg, "postw90")?);
-    save::nonempty(&program.path)?;
-    let mut argv = vec![program.path.to_string_lossy().into_owned()];
-    argv.extend(program.args);
-    argv.push(prefix.clone());
-    let report = super::process::run_report_named(&argv, dir, "postw90")?;
-    report.copy_logs(dir, "postw90")?;
-    check_wannier_post(&report, dir, prefix, "postw90")?;
-    let band = dir.join(format!("{prefix}_band.dat"));
-    let labels = dir.join(format!("{prefix}_band.labelinfo.dat"));
-    let dos = PathBuf::from(wannier90flow::post::resolve_dos_output(
-        dir.to_str().unwrap(),
-        prefix,
-    ));
-    for p in [&band, &labels, &dos] {
-        save::nonempty(p)?;
-    }
-    super::workspace_plot::bands(cfg, dir, &band, fermi)?;
-    super::workspace_plot::dos(cfg, dir, &dos, fermi)?;
-    save::nonempty(&dir.join("electronic-bands.png"))?;
+    let actual=PathBuf::from(wannier90flow::post::resolve_dos_output(dir.to_str().unwrap(),prefix));
+    super::workspace_plot::bands(cfg,dir,&dir.join("band.eig"),fermi)?;
+    super::workspace_plot::dos(cfg,dir,&actual,fermi)?;
     Ok(())
 }
 
@@ -886,6 +885,7 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
                     format!("{}.chk", cfg.qe.prefix),
                     format!("{}.wout", cfg.qe.prefix),
                     format!("{}_hr.dat", cfg.qe.prefix),
+                    "embedded-bands.json".into(),
                     "epw_wannier.in".into(),
                     "epw.out".into(),
                     "epw.err".into(),
@@ -900,8 +900,8 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
             {
                 return false;
             }
-            if step == Step::Coarse
-                && (rel.starts_with("comparison/")
+            if matches!(step,Step::Coarse|Step::Superconductivity)
+                && (rel.starts_with("batch-finalization.lock/") || rel.starts_with("comparison/")
                     || rel.starts_with("results/")
                     || rel.starts_with("comparison-native/"))
             {
@@ -942,6 +942,7 @@ pub fn invalidate(cfg: &Config, step: Step, history: &Path) -> Result<()> {
         Step::Phonon => paths.push(layout::path(root, "qe-data")),
         Step::Coarse => {
             paths.push(layout::path(root, "wannier"));
+            paths.push(root.join("results/6.epw-coarse"));
             // 新科学请求重新建立常规比较来源；资源变更通过阶段缓存复用。
             paths.push(root.join("comparison-native"));
             paths.push(crate::foundation::layout::path(&root, "native-attempts"));

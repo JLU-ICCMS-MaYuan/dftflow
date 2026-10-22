@@ -297,13 +297,14 @@ fn prepare(
     command.push(cfg.programs.epw.path.to_string_lossy().into_owned());
     command.extend(cfg.programs.epw.args.clone());
     command.extend(["-inp".into(), input.to_string_lossy().into_owned()]);
-    let task = native_jobs::prepare_group(
+    let mut task = native_jobs::prepare_group(
         cfg,
         &format!("{generation}-{number}"),
         method(mode),
         &command,
         &dir,
     )?;
+    native_jobs::group_finalizer(cfg,&mut task)?;
     Ok(Batch {
         mode,
         requests,
@@ -436,6 +437,7 @@ fn collect(run: &mut Run, index: usize, source: &NativeInputs) -> Result<()> {
 pub fn run(cfg: &Config, generation: &str, submit: bool, resume: bool) -> Result<()> {
     let root = Step::Superconductivity.directory(cfg);
     fs::create_dir_all(&root)?;
+    let _publication=crate::foundation::store::Lock::acquire(&root.join("batch-finalization"))?;
     let path = root.join("manifest.json");
     let f3 = crate::interpolation::manifest::InterpolationManifest::load(
         &crate::foundation::layout::path(&cfg.work_dir, "interpolation/manifest.json"),
@@ -568,5 +570,49 @@ pub fn run(cfg: &Config, generation: &str, submit: bool, resume: bool) -> Result
     }
     ensure!(run.execution_complete, "partial: 指定温度尚未执行完成");
     crate::delivery::finalize_to(&cfg.work_dir, Some(&root.join("results")))?;
+    crate::foundation::stage_results::tree(cfg,Step::Superconductivity,"",&root.join("results"),serde_json::json!({"kind":"native_superconductivity"}))?;
+    Ok(())
+}
+
+/// 每个方法结束后归集自身证据；最后完成的方法发布整阶段既有图。
+pub fn allocated_finish(config:&std::path::Path,group:&str,exit:i32)->Result<()> {
+    let cfg=Config::load(config)?;
+    let root=Step::Superconductivity.directory(&cfg);
+    let start=std::time::Instant::now();
+    let _lock=loop {
+        match store::Lock::acquire(&root.join("batch-finalization")) {
+            Ok(lock)=>break lock,
+            Err(e) if start.elapsed()<std::time::Duration::from_secs(30)=>{
+                let _=e;std::thread::sleep(std::time::Duration::from_millis(50));
+            },
+            Err(e)=>return Err(e),
+        }
+    };
+    let path=root.join("manifest.json");
+    let mut run:Run=store::read(&path)?;
+    let mut task=native_jobs::group_task(&cfg,group)?.context("data_invalid: 方法收尾缺任务身份")?;
+    native_jobs::allocated_group_exit(&cfg,&mut task,exit)?;
+    let index=run.batches.iter().position(|b|b.task.key==task.key).context("input_conflict: 方法任务不属于当前批次")?;
+    let f3=crate::interpolation::manifest::InterpolationManifest::load(&crate::foundation::layout::path(&cfg.work_dir,"interpolation/manifest.json"))?;
+    let source=super::source::bind(&cfg.work_dir,&cfg,&f3)?;
+    run.batches[index].task=task;
+    if !run.batches[index].collected {collect(&mut run,index,&source)?;}
+    let complete=run.batches[index].requests.iter().all(|q|run.latest(q).is_some_and(|a|matches!(a.status.as_str(),"valid"|"completed")));
+    native_jobs::finish_group(&cfg,&mut run.batches[index].task,complete)?;
+    run.refresh();store::write(&path,&run)?;
+    ensure!(exit==0,"execution_failed: 方法原生退出 {exit}，成功点已保留");
+    ensure!(complete,"partial: 方法有无效温度数据，原生证据已保留");
+    if run.execution_complete {
+        crate::delivery::finalize_to(&cfg.work_dir,Some(&root.join("results")))?;
+        crate::foundation::stage_results::tree(&cfg,Step::Superconductivity,"",&root.join("results"),serde_json::json!({"kind":"native_superconductivity"}))?;
+        let completion=crate::foundation::stages::Completion {
+            schema_version:1,step:Step::Superconductivity,
+            scientific_key:crate::foundation::stages::scientific_key(&cfg,Step::Superconductivity)?,
+            upstream:crate::foundation::stages::upstream(&cfg,Step::Superconductivity)?,
+            outputs:crate::foundation::workspace_science::evidence(&cfg,Step::Superconductivity)?,provenance:None
+        };
+        completion.verify()?;
+        store::write(&crate::foundation::stages::receipt(&cfg.work_dir,Step::Superconductivity),&completion)?;
+    }
     Ok(())
 }

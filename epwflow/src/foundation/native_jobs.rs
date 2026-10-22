@@ -611,6 +611,35 @@ pub fn finish_group(cfg: &Config, task: &mut Task, complete: bool) -> Result<()>
     persist(cfg, task)
 }
 
+/// 方法作业自己交回已退出的原生进程；分配仍运行，不能伪造调度器终态。
+pub fn allocated_group_exit(cfg:&Config,task:&mut Task,exit:i32)->Result<()> {
+    verify(task)?;
+    let job:u64=std::env::var("SLURM_JOB_ID").context("allocation: 方法收尾需要作业分配")?.parse()?;
+    ensure!(task.group.is_some() && task.job.is_none_or(|j|j==job),"input_conflict: 方法收尾作业身份不同");
+    task.job=Some(job);
+    task.exit_status=Some(exit);
+    task.stdout=Some(Identity::capture(&task.directory.join("epw.out"))?);
+    task.stderr=Some(Identity::capture(&task.directory.join("epw.err"))?);
+    task.state=if exit==0 {"awaiting_validation"}else{"failed"}.into();
+    store::atomic_bytes(&task.directory.join("epw.exitcode"),exit.to_string().as_bytes())?;
+    persist(cfg,task)
+}
+
+pub fn group_finalizer(cfg:&Config,task:&mut Task)->Result<()> {
+    let config=task.directory.join("delivery-config.toml");
+    store::atomic_bytes(&config,toml::to_string_pretty(cfg)?.as_bytes())?;
+    let executable=std::env::current_exe()?;
+    let body=fs::read_to_string(&task.script.path)?;
+    let q=super::slurm::shell_quote;
+    let body=format!("{body}native_exit=$?\n{} -c {} --batch-finish {} --batch-exit \"$native_exit\"\npublication_exit=$?\nif [[ $native_exit -ne 0 ]]; then exit \"$native_exit\"; fi\nexit \"$publication_exit\"\n",
+        q(executable.to_str().context("程序路径非 UTF-8")?),q(config.to_str().context("配置路径非 UTF-8")?),q(task.group.as_deref().unwrap()));
+    store::atomic_bytes(&task.script.path,body.as_bytes())?;
+    task.script=Identity::capture(&task.script.path)?;
+    task.inputs.push(Identity::capture(&config)?);
+    task.sources.push(Identity::capture(&executable)?);
+    persist(cfg,task)
+}
+
 pub fn prepare_group(cfg: &Config, generation: &str, group: &str, command: &[String], work: &Path) -> Result<Task> {
     ensure!(matches!(group, "iso" | "aniso"), "configuration: 无效方法分组");
     let key = task_key(generation, work, command, "epw")?;

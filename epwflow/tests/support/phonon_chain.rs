@@ -63,7 +63,7 @@ fn phonon_chain_single_submission_delivers_save_and_plots_without_downstream() {
     assert_eq!(ledger["spent_node_seconds"], 1);
     assert!(ledger["reservations"].as_array().unwrap().is_empty());
     success(c.numbered_cli(1, &["--stage", "coarse", "-s"], None, "chain-handoff"));
-    assert_eq!(c.direct_task()["stem"], "epw");
+    assert_eq!(c.chain_attempt()["target"], "coarse");
     assert_eq!(c.calls(), calls);
 }
 
@@ -113,17 +113,13 @@ fn phonon_chain_unknown_submission_is_not_repeated() {
 #[test]
 fn phonon_chain_adopts_verified_native_ph_and_q2r() {
     let c = Case::numbered(); c.chain_setup();
-    let mut found = false;
-    for _ in 0..20 {
-        success(c.numbered_cli(1, &["--stage", "coarse", "-s"], None, "legacy-submit"));
-        let stem = c.direct_task()["stem"].as_str().unwrap().to_owned();
-        assert_eq!(c.direct_execute(), 0);
-        if stem == "q2r" { found = true; break; }
-    }
-    assert!(found, "旧链未到达 q2r");
+    c.put("comparison-failure","matdyn");
+    success(c.chain_submit(false));assert!(!c.chain_execute().status.success());
+    assert_eq!(c.chain_calls("q2r"),1);
+    fs::remove_file(c.root.join("comparison-failure")).unwrap();
     let before = c.submission_count();
-    success(c.chain_submit(false)); success(c.chain_execute());
-    assert_eq!(c.chain_calls("ph"), 1); assert_eq!(c.chain_calls("q2r"), 1); assert_eq!(c.chain_calls("matdyn"), 2);
+    success(c.chain_submit(true)); success(c.chain_execute());
+    assert_eq!(c.chain_calls("ph"), 1); assert_eq!(c.chain_calls("q2r"), 1); assert_eq!(c.chain_calls("matdyn"), 3);
     assert_eq!(c.submission_count(), before + 1); assert!(c.calls().1.is_empty());
 }
 

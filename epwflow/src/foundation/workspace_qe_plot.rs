@@ -21,6 +21,7 @@ struct Request {
     dir: PathBuf,
     key: String,
     outputs: Vec<PathBuf>,
+    sources: Vec<Identity>,
 }
 impl Request {
     fn new(
@@ -37,7 +38,7 @@ impl Request {
         let contents: Vec<_> = identities.iter().map(|i| (&i.sha256, i.bytes)).collect();
         let key = store::hash_bytes(&serde_json::to_vec(&(2, contents, parameters))?);
         let outputs = files.iter().map(|p| dir.join(p)).collect();
-        Ok(Self { dir, key, outputs })
+        Ok(Self { dir, key, outputs, sources:identities })
     }
     fn complete(&self) -> Result<bool> {
         let file = self.dir.join("completion.json");
@@ -101,11 +102,11 @@ fn electronic_request(cfg: &Config, leaf: &str) -> Result<Request> {
                 dir.join("path-points.json"),
                 cfg.kpath.clone().context("required: 电子绘图需要 KPATH")?,
             ]);
-            &["electronic-bands.png", "electronic-bands.csv"]
+            &["electronic-bands.png", "electronic-bands.csv", "electronic-bands.plot.json"]
         }
         "qe_eledos" => {
             inputs.push(dir.join(format!("{}.tdos", cfg.qe.prefix)));
-            &["electronic-dos.png", "electronic-dos.csv"]
+            &["electronic-dos.png", "electronic-dos.csv", "electronic-dos.plot.json"]
         }
         _ => anyhow::bail!("configuration: 未知 QE 绘图任务 {leaf}"),
     };
@@ -126,7 +127,10 @@ pub fn electronic(cfg: &Config, leaf: &str) -> Result<()> {
             "qe_eledos" => workspace_plot::qe_dos(cfg, &request.dir, fermi),
             _ => unreachable!(),
         }
-    })
+    })?;
+    let names=request.outputs.iter().map(|p|p.file_name().unwrap().to_string_lossy().into_owned()).collect::<Vec<_>>();
+    super::stage_results::publish(cfg,Step::Electronic,leaf,&request.dir,&names,
+        serde_json::json!({"kind":leaf,"fermi_source":"NSCF","fermi_ev":nscf::parse_xml(&nscf_xml(cfg))?.fermi,"sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev}),request.sources)
 }
 
 fn phonon_inputs(cfg: &Config) -> Vec<(PathBuf, PathBuf)> {
@@ -235,7 +239,10 @@ pub fn phonon(cfg: &Config) -> Result<()> {
             sigma,
         )?;
         Ok(())
-    })
+    })?;
+    let qe=QeSettings::from_config(cfg)?;
+    super::stage_results::tree(cfg,Step::Phonon,"",&request.dir,
+        serde_json::json!({"sources":request.sources,"kind":"qe_phonon","prefix":cfg.qe.prefix,"elements":qe.cell.elements,"counts":qe.cell.counts,"sigma_cm1":cfg.comparison.clone().unwrap_or_default().phonon_sigma_cm1}))
 }
 
 pub fn refresh(cfg: &Config, step: Step) -> Result<()> {
@@ -262,6 +269,7 @@ pub fn pending(cfg: &Config, target: Step) -> Result<bool> {
         } else {
             vec![phonon_request(cfg)?]
         };
+        if super::stage_results::pending(cfg,step)? {return Ok(true);}
         for request in requests {
             if !request.complete()? {
                 return Ok(true);

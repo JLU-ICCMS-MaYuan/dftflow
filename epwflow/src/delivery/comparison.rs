@@ -18,21 +18,33 @@ pub fn summary(data: &Dataset) -> serde_json::Value {
     serde_json::json!({"schema_version":1, "operation_status":"ok", "workflow_complete":false, "comparison_complete":data.manifest.missing.is_empty(), "differences":data.differences, "run_id":data.manifest.run_id, "missing":data.manifest.missing})
 }
 
+pub fn result_dir(work: &Path) -> PathBuf {
+    if crate::foundation::layout::enabled(work) {work.join("results/6.epw-coarse")} else {crate::foundation::layout::path(work,"results")}
+}
+
 pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
     let source = crate::foundation::layout::path(&work, "interpolation/comparison");
     let data = load(&source)?;
     let output = output
         .map(PathBuf::from)
-        .unwrap_or_else(|| crate::foundation::layout::path(work,"results"));
+        .unwrap_or_else(|| result_dir(work));
     fs::create_dir_all(&output)?;
     let _lock = store::Lock::acquire(&output.join("comparison"))?;
     if output.join("comparison").is_dir() {
-        load(&output.join("comparison"))?;
         ensure!(
             store::hash_file(&source.join("manifest.json"))?
                 == store::hash_file(&output.join("comparison/manifest.json"))?,
             "input_conflict: 结果绑定其他来源；请使用新的 --output"
         );
+        for file in &data.manifest.files {
+            let target=output.join("comparison").join(&file.relative_path);
+            if !target.exists() {fs::copy(source.join(&file.relative_path),&target)?;}
+            file.verify(&output.join("comparison"))?;
+        }
+        load(&output.join("comparison"))?;
+        if !output.join("comparison-summary.json").exists() {
+            store::write(&output.join("comparison-summary.json"),&summary(&data))?;
+        }
         return Ok(output);
     }
     ensure!(

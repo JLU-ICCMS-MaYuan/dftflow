@@ -227,6 +227,8 @@ rm -r -- "$package_dir"
 新 EPW 配置使用 `layout = "numbered"`、`work_dir = "."` 和根 `input.toml`。
 修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。
 `--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
+第 3 步 QE 子任务完成即发布单侧图；第 5 步完成电子能带／总 DOS 对比，第 6 步完成声子谱／TDOS 对比及总览，图片、数据和来源按阶段保存在工作区根 `results/`。
+新版阶段作业内自动完成后处理和发布，正常完成后无需再次执行公开命令触发出图；第 5 步不等待声子。详见[阶段结果说明](docs/specs/0050-epw-stage-results/quickstart.md)。
 输入、`submit.sh` 和日志位于各实际计算目录，空 pool 在生成、提交及脚本启动时阻断。
 旧工作区可只读核验后一次性导入，不为目录改版重跑 QE。
 详见 [模块手册](epwflow/README.md) 和 [MgB₂ 直接操作说明](examples/MgB2/sugon-amd/run/README.md)。

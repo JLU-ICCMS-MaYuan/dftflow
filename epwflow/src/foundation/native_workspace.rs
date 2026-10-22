@@ -20,9 +20,9 @@ pub fn advance(config: &Path, target: Step, submit: bool, resume: bool) -> Resul
     advance_mode(config, target, submit, resume, None)
 }
 
-/// 唯一声子分配内自动运行既有阶段循环；父尝试已核对资源和提交身份。
-pub(super) fn allocated(config: &Path, resume: bool, attempt: &str) -> Result<()> {
-    advance_mode(config, Step::Phonon, false, resume, Some(attempt))
+/// 在目标阶段的同一分配内运行既有阶段循环；父尝试已核对资源和提交身份。
+pub(super) fn allocated(config: &Path, target: Step, resume: bool, attempt: &str) -> Result<()> {
+    advance_mode(config, target, false, resume, Some(attempt))
 }
 
 fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Option<&str>) -> Result<()> {
@@ -49,7 +49,7 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
     for step in target.closure() {
         if stages::reusable(&cfg, step)? {
             println!("reuse: {}", step.name());
-            super::workspace_qe_plot::refresh(&cfg, step)?;
+            if refresh_stage(&cfg,step,submit,resume,own)? {pending(&cfg,target,own.is_some())?;return Ok(());}
             continue;
         }
         parallelism::preflight(&cfg, step, false)?;
@@ -145,10 +145,11 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
                 native_jobs::accept(&cfg, &p.generation)?;
                 p.state = "complete".into();
                 store::write(&path, &p)?;
+                if refresh_stage(&cfg,step,submit,resume,own)? {pending(&cfg,target,own.is_some())?;return Ok(());}
             }
         }
     }
-    // 图表及独立 W90 后处理也从同一个原生执行边界逐项交回控制权。
+    // 图表及DOS 后处理也从同一个原生执行边界逐项交回控制权。
     let generation = store::hash_bytes(&serde_json::to_vec(&(
         "post",
         target,
@@ -159,9 +160,9 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
             .map(|&s| stages::scientific_key(&cfg, s))
             .collect::<Result<Vec<_>>>()?,
     ))?);
-    match native_jobs::scoped(&cfg, &generation, submit, resume, || {
-        workspace_science::refresh_post(&cfg, target)
-    }) {
+    let post = || workspace_science::refresh_post(&cfg, target);
+    let result=if own.is_some() {native_jobs::scoped_allocated(&cfg,&generation,resume,post)}else{native_jobs::scoped(&cfg,&generation,submit,resume,post)};
+    match result {
         Err(e) if native_jobs::paused(&e) => {
             pending(&cfg, target, own.is_some())?;
             Ok(())
@@ -178,12 +179,26 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
     }
 }
 
+/// 科学回执先保存；派生交付失败不会将已完成的科学阶段改为失败。
+fn refresh_stage(cfg:&Config,step:Step,submit:bool,resume:bool,own:Option<&str>)->Result<bool> {
+    if !matches!(step,Step::Electronic|Step::Phonon|Step::Wannier|Step::Coarse|Step::Superconductivity) {return Ok(false);}
+    let generation=store::hash_bytes(&serde_json::to_vec(&("stage-post",step,
+        stages::scientific_key(cfg,step)?,&cfg.comparison))?);
+    let result=if own.is_some() {native_jobs::scoped_allocated(cfg,&generation,resume,||workspace_science::refresh_post(cfg,step))}
+        else {native_jobs::scoped(cfg,&generation,submit,resume,||workspace_science::refresh_post(cfg,step))};
+    match result {
+        Err(e) if native_jobs::paused(&e)=>Ok(true),
+        Err(e)=>{native_jobs::reject(cfg,&generation)?;Err(e)},
+        Ok(())=>{native_jobs::accept(cfg,&generation)?;Ok(false)}
+    }
+}
+
 fn pending(cfg: &Config, target: Step, allocated: bool) -> Result<()> {
     let steps = target.closure().into_iter().map(|s| Ok(serde_json::json!({"step":s,"state":if stages::reusable(cfg,s)? {"validated"}else{"pending"}}))).collect::<Result<Vec<_>>>()?;
     let path = cfg.work_dir.join("native-plan.json");
     store::write(
         &path,
-        &serde_json::json!({"schema_version":1,"target":target,"task":native_jobs::status(cfg)?,"methods":native_jobs::groups_status(cfg)?,"steps":steps,"advance":if allocated {"本声子阶段在分配内自动完成，可用 --status 查看"} else {"作业结束后再次执行相同公开命令 -s"}}),
+        &serde_json::json!({"schema_version":1,"target":target,"task":native_jobs::status(cfg)?,"methods":native_jobs::groups_status(cfg)?,"steps":steps,"advance":if allocated {"本阶段在分配内自动完成，可用 --status 查看"} else {"作业结束后再次执行相同公开命令 -s"}}),
     )?;
     println!("plan: {}", path.display());
     // 不再产生 submit_all.sh；已有历史文件不修改，清单明确取代它。

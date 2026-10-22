@@ -57,7 +57,7 @@ pub fn path(root: &Path, relative: &str) -> PathBuf {
         "ph_init" => root.join(ph).join("init"),
         "ph" => root.join(ph).join("q"),
         "coarse" => root.join("6.epw-coarse"),
-        "results" => root.join("6.epw-coarse/results"),
+        "results" => root.join("results"),
         "fine" => root.join("7.epw-fine"),
         "wannier" => root.join("epw-state/coarse"),
         "qe-data" if tail == "save" || tail.starts_with("save/") => {
@@ -70,6 +70,9 @@ pub fn path(root: &Path, relative: &str) -> PathBuf {
         "interpolation" => root.join("epw-state/interpolation"),
         "superconductivity" => root.join("8.epw-superconductivity"),
         "native-attempts" => root.join("epw-state/native-attempts"),
+        "comparison-native" if tail == "electron" || tail.starts_with("electron/") => {
+            return root.join("5.epw-wannier/comparison-native").join(tail);
+        }
         "comparison-native" => root.join("6.epw-coarse").join(head),
         _ => root.join(head),
     };

@@ -8,11 +8,11 @@
 
 历史提交脚本、固定配置和回执保持原字节；新原生任务不再生成 submit.sh 阅读副本。[0044 规格与部署](../docs/specs/0044-mpi-submit-command/spec.md)。
 
-## 编号工作区提交：声子自动完成，指定温度按方法批量提交
+## 编号工作区：作业内完成阶段交付
 
-对 `layout='numbered'` 的工作区，`epw_phonon --stage phonon -s`（默认目标也是 phonon）只需执行一次：申请一个 Slurm 分配，在分配内自动完成依赖补齐、PH、EPW save 归集、q2r、两次 matdyn、QE 声子谱与 TDOS／元素 PDOS 图和最终核验。提交返回后无需再次运行命令推进；`--status --json` 可选，只查看。流程图见 [0048 快速说明](../docs/specs/0048-epw-phonon-stage-chain/quickstart.md)。
+`electronic`、`phonon`、`wannier`、`coarse`、`fine` 及 Tc 目标提交一个有界阶段分配，内部自动补齐目标所需的依赖、原生后处理、核验、已有图形和发布。正常完成后直接查看工作区根 `results/`，无需再次运行公开命令触发绘图，也不自动提交下一物理阶段。第 1／2 步仍保留单原生任务边界。指定温度 `task="gap"` 保留每方法一个原生多温度作业，最后完成的方法发布第 8 步已有图与数据。
 
-指定温度 `task="gap"` 的超导目标按下文一次提交所有方法；其他目标的 `-s` 仍核验上一任务并且最多提交一次新的原生调用，作业结束后重复同一个命令推进。其实际脚本直接执行 QE、Wannier90／postw90 或 EPW；准备输入、交接与核验由公开命令负责。
+第 3 步两个 QE 子任务各完成即发布；第 5 步完成电子能带和总 DOS 叠图，不等待声子；第 6 步完成声子谱、声子 TDOS 和复用电子数据的总览。流程与恢复见 [0050](../docs/specs/0050-epw-stage-results/quickstart.md)及 [Overview 流程图](../docs/overview/epwflow/workflow.md)。
 
 ```bash
 epw_phonon -c input.toml -s
@@ -20,17 +20,17 @@ epw_wannier -c input.toml -s
 epw_superconductivity -c input.toml -s
 ```
 
-声子目标由作业自动登记 `workflow_complete: true` 后切换下一条；gap 目标一次提交所选方法批次，作业结束后按下文归集；其余目标按上面的逐任务方式推进。失败后修复原因，用对应命令 `--resume -s`；声子恢复一次自动跑完余项，已验证的 PH／q2r／matdyn 保留复用。排队、运行中或回执未知时拒绝重提。Tc 的单模式、单温度、单初值分别提交，保留原搜索规则及次数上限。
+阶段作业成功发布后再报告完成。失败修复后用相同目标加 `--resume -s`，成功科学检查点继续复用，只补失败后处理、缺图或发布。排队、运行中或终态未知时拒绝重提。Tc 沿用原搜索规则、双初值和次数上限，在目标分配内执行，不扩大科学参数范围。
 
 输出给出实际提交的功能脚本、作业号与工作目录。QE／EPW 科学输出直接写指定 `.out`，错误写 `.err`，计算运行时即可查看，不等待复制 Slurm 日志；Wannier／postw90 保留种子参数接口。新脚本的命令类似：
 
 ```bash
-if ! cd -- "/path/to/1.qe-scf"; then exit 1; fi
+#SBATCH --chdir=/path/to/1.qe-scf
 source "/path/to/oneapi/setvars.sh" --force
 mpirun -np 32 /path/to/pw.x < scf.in > scf.out 2> scf.err
 ```
 
-输入及命令身份记录在可见的 `epw-state/native-jobs/`；独立 W90 后处理使用 `5.epw-wannier/native-post/`，不重写拟合来源。source 按配置直接执行，没有 if 或自动严格选项；科学命令失败仍返回非零。普通安全参数直接显示，含空格或 Shell 特殊字符时保留必要引用。
+输入及命令身份记录在可见的 `epw-state/native-jobs/`；电子后处理使用 `5.epw-wannier/comparison-native/electron/`。能带由 EPW 内嵌 Wannier90 的 wdata 输出，仅 DOS 调用 postw90，原模型保持只读。source 按配置直接执行，没有 if 或自动严格选项；科学命令失败仍返回非零。普通安全参数直接显示，含空格或 Shell 特殊字符时保留必要引用。
 
 `epw_phonon --all` 只准备下一就绪脚本与 `native-plan.json` 待完成清单，零提交，不生成自动全流程总脚本。`--status [--json]` 只读区分运行中、已结束待核验、失败及已核验。
 
@@ -65,7 +65,7 @@ kpath = "KPATH.in"
 
 ```text
 run/
-├── input.toml、POSCAR、pp/、KPATH.in、submit_all.sh
+├── input.toml、POSCAR、pp/、KPATH.in
 ├── 1.qe-scf/
 ├── 2.qe-nscf/
 ├── 3.qe-electronic/
@@ -77,29 +77,35 @@ run/
 ├── 6.epw-coarse/
 │   ├── comparison-native/
 │   ├── comparison/
-│   └── results/figures/
 ├── 7.epw-fine/
 ├── 8.epw-superconductivity/
 │   ├── iso/
 │   └── aniso/
+├── results/                 # 按阶段即时发布图、数据、参数及来源
+│   ├── index.json
+│   ├── 3.qe-electronic/
+│   ├── 4.qe-phonon-nosplit/
+│   ├── 5.epw-wannier/
+│   ├── 6.epw-coarse/
+│   └── 8.epw-superconductivity/
 └── epw-state/
 ```
 
-每个实际计算目录包含原生输入、`submit.sh` 和日志。分 q、细网格展宽及各温度尝试也在自己的目录生成提交脚本。依赖上游产物才能确定的输入和子任务在运行到该阶段时生成；未得到 NSCF 时不会伪造 EPW 选窗。脚本固定工作目录，能够从其他目录提交。根目录 `submit_all.sh` 将完整依赖交给一个有界 Slurm 分配顺序执行。
+实际计算目录保存运行到该任务时生成的原生输入、功能脚本和日志。分 q、细网格展宽及各温度尝试也在自己的目录生成提交脚本。依赖上游产物才能确定的输入和子任务在运行到该阶段时生成；未得到 NSCF 时不会伪造 EPW 选窗。脚本固定工作目录，能够从其他目录提交。一个阶段分配只执行目标范围内缺少的任务，不生成自动推进全部物理阶段的总提交脚本。
 
 第 1～4 步复用 qeflow／共享输入、执行及后处理组件，SCF 只做一次并保留独立快照。NSCF 为 EPW 所需的完整均匀网格。`qe_eband` 使用 `pw.x bands` 和 `bands.x`，`qe_eledos` 使用 `dos.x`。PH 三种模式都严格校验 q 点、动力学矩阵、dvscf 和 phsave 后归集到第 4 步 `save/`。
 
-第 5 步只拟合 Wannier；原生 `wannier90.x restart=plot` 和 `postw90.x` 生成电子能带、总 DOS 对比。程序优先读取 `[programs.wannier90]`、`[programs.postw90]`，缺省使用 `pw.x` 同目录的程序。两侧使用共同 Fermi 能和相同高斯展宽。非磁标量路径显式设置 postw90 每态电子数为 2，并核对原生日志；原生总 DOS 已计入自旋，CSV 和图不再乘二，规范化记录同时保存原始 DOS 与日志哈希。实际能窗与高对称点一并标注，断开的路径分段绘制，共享横坐标的端点名合并显示。依据见 [0031](../docs/specs/0031-postw90-dos-spin-normalization/acceptance.md)、[0032](../docs/specs/0032-disconnected-electronic-band-paths/acceptance.md)。
+第 5 步由 EPW 内嵌 Wannier90 拟合并通过 `wdata` 输出能带，按真实 `*_band.kpt` 核对共同点位；不再执行独立 `wannier90.x restart=plot`。只有电子 DOS 使用 `[programs.postw90]`，缺省为 `pw.x` 同目录的 postw90；读取同次拟合模型，不重新拟合。QE 路径参考读取第 3 步，DOS 参考读取第 2 步均匀网格；两侧保持相同网格、Fermi 零点、Gaussian 核宽及非磁标量每态两电子计数。实际四个能窗、路径分段、最大差和未配对态同时保留。图和来源发布到 `results/5.epw-wannier/`，原始模型留在第 5 步。
 
-独立拟合输入不声明粗网格插值使用的 `filkf/filqf`。后处理自动从校验后的同一 NSCF 提取晶格、原子、网格、原 k 点顺序及排除后的能带，补齐独立 W90 的 `.win/.eig`；无需用户维护另一份输入。原生 DOS 使用 `dos_smr_type = gauss`。除退出码外，还检查本次日志和 `.werr`，避免 Fortran 报错却零退出时错误放行。后处理失败保留拟合 `.wout/.chk/.ukk` 及收据，下次公开命令只重试缺失后处理；旧后处理日志和产物归档。依据见 [0023 验收](../docs/specs/0023-epw-wannier-native-start/acceptance.md)。
+独立拟合输入不声明粗网格插值使用的 `filkf/filqf`。后处理自动从校验后的同一 NSCF 提取晶格、原子、网格、原 k 点顺序及排除后的能带，补齐 DOS 所需 postw90 的 `.win/.eig`；无需用户维护另一份输入。原生 DOS 使用 `dos_smr_type = gauss`。除退出码外，还检查本次日志和 `.werr`，避免 Fortran 报错却零退出时错误放行。后处理失败保留拟合 `.wout/.chk/.ukk` 及收据，下次公开命令只重试缺失后处理；旧后处理日志和产物归档。依据见 [0023 验收](../docs/specs/0023-epw-wannier-native-start/acceptance.md)。
 
 `[wannier] guiding_centres = true` 可显式启用原生 W90 的中心相位引导；`false` 显式关闭。不设置时保留原生默认值和旧科学身份。程序同时核对原生日志中的实际采用值；修改此项只使 Wannier 及依赖它的阶段更新，完整相容的 QE／PH 继续复用。它用于局域化数值控制，不代替原生收敛和数据完整性检查，也不保证任意材料收敛。依据见 [0030](../docs/specs/0030-wannier-guiding-centres/acceptance.md)。
 
-独立 Wannier 交付同时校验并绑定 `.bvec/.mmn` 的网格、排除后带空间及完整有限数记录；粗网格只复制同一收据绑定的变换与配套数据。独立绘图关闭 `write_bvec`，保护已绑定文件。旧收据未绑定配套数据时只将第 5 步及其下游判为需要更新，原现场归档，QE／PH 保留；已绑定文件损坏仍报错。见 [0033](../docs/specs/0033-wannier-velocity-handoff/acceptance.md)。
+独立 Wannier 交付同时校验并绑定 `.bvec/.mmn` 的网格、排除后带空间及完整有限数记录；粗网格只复制同一收据绑定的变换与配套数据。DOS 后处理关闭 `write_bvec`，保护已绑定文件。旧收据未绑定配套数据时只将第 5 步及其下游判为需要更新，原现场归档，QE／PH 保留；已绑定文件损坏仍报错。见 [0033](../docs/specs/0033-wannier-velocity-handoff/acceptance.md)。
 
 Slurm 日志属于运行输出；旧原生输入记录中的标准 `slurm-数字.out/err` 项不作为固定科学输入核验。两种阶段归档共用当前日志同 inode 入口维护，见 [0035](../docs/specs/0035-native-retry-slurm-logs/acceptance.md)。EPW 会改写粗网格自己的 `out/prefix.wfcN` 工作副本；只从已冻结且校验通过的原生输入识别前缀与 `./out`，保留初始身份用于追溯，失败后归档并从已校验来源重建。原始 NSCF、portable SAVE、响应及其余输入仍严格核验，见 [0036](../docs/specs/0036-epw-mutable-wavefunction-scratch/acceptance.md)。
 
-第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，生成电子、声子对比及四项常规数据最大差值。第 7 步生成细网格矩阵元、α²F、λ；第 8 步根据 `superconductivity.task` 运行指定温度能隙或既有 Tc 搜索。严格元素／轨道投影继续暂缓，图表和差值只展示事实，科学合理性由用户判断。
+第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，生成声子谱、声子 TDOS 叠图，并读取第 5 步电子数据生成四面板总览和事实最大差值。第 6 步不新增电子参考 PW；声子后处理核对 ASR，不相容时事前说明最少补算原因，成功力常数与频率分别缓存。第 7 步生成细网格矩阵元、α²F、λ；第 8 步根据 `superconductivity.task` 运行指定温度能隙或既有 Tc 搜索。严格元素／轨道投影继续暂缓，图表和差值只展示事实，科学合理性由用户判断。
 
 ## 声子后处理与作业日志
 
@@ -145,7 +151,7 @@ initial_gap_mev = 10.0
 mixing_beta = -0.3
 ```
 
-执行 `epw_superconductivity -c "input.toml" --stage superconductivity -s`，在前置数据可复用时一次提交 iso／aniso 两个独立 Slurm 作业，无方法间依赖。每种方法只调用一次 EPW，`nstemp` 和完整 `temps` 列表包含全部配置温度，无需逐温度重复命令。作业结束后再次执行同命令归集结果，不重算已完成点。`--status --json` 的 `native_methods` 分别显示两个作业；实际启动时间由调度器决定，每个作业使用配置资源并单独登记共享预算。
+执行 `epw_superconductivity -c "input.toml" --stage superconductivity -s`，在前置数据可复用时一次提交 iso／aniso 两个独立 Slurm 作业，无方法间依赖。每种方法只调用一次 EPW，`nstemp` 和完整 `temps` 列表包含全部配置温度，无需逐温度重复命令。每个方法作业内部归集本批结果，最后完成的方法自动出图并发布到 `results/8.epw-superconductivity/`；不重算已完成点。`--status --json` 的 `native_methods` 分别显示两个作业；实际启动时间由调度器决定，每个作业使用配置资源并单独登记共享预算。
 
 `mu_star` 省略时默认 0.13，显式其他值优先；已有显式 0.05 不会被默认值覆盖。`mode` 可选 `iso`、`aniso`、`both`，每方法批次初值缺省 10 meV，后续温度遵循原生 EPW 能隙续接。温度列表为 1～50 个互不重复的 0.01～999.99 K 值，按配置顺序传递；频率截断须容纳首个 Matsubara 频率。负混合系数为原生线性混合、正值为 Broyden，绝对值须在 `(0,1]`。
 
@@ -283,3 +289,14 @@ epw_wannier --stage wannier -s
 `-r` 在该子任务结束时绘图；声子目标 `-s` 在同一分配内自动绘图并登记完成，其他目标在作业结束后下一次公开命令核验时绘图。重执行原命令可补缺图，失败恢复沿用 `--resume`。`plots/completion.json` 管理派生图，科学完成身份排除图片；声子数值后处理另存 `qe-post-completion.json`，绘图失败恢复不重复成功的 PH／q2r／matdyn。只读状态命令不补图。
 
 实现与隔离进程／真实数据只读出图证据见 [0047 验收](../docs/specs/0047-qe-stage-plots/acceptance.md)。本次源码交付没有切换默认安装、覆盖冻结脚本或新增科学作业。
+
+## 逐阶段结果与独立重绘
+
+`results/` 位于计算工作区根，与编号目录同级。第 3 步的 `qe_eband/`、`qe_eledos/` 分别发布；第 4 步保存单侧声子谱、TDOS／元素 DOS；第 5 步是电子两图；第 6 步是声子两图及四面板总览；第 8 步是已有超导图。第 7 步没有独立既有图，不创建空包或额外任务。每个包带表格、图参、来源和文件校验清单。
+
+```bash
+epw_superconductivity --results-check --results "results" --json
+epw_superconductivity --plot --results "results"
+```
+
+完整目录移动后可独立重绘；包内核验不把已不可访问的原始来源宣称为已验源。旧版可核验的比较采样只读整理到新电子目录；缺少真实坐标／模型来源时明确报告，不能为目录迁移重拟合。源码更新不自动改安装、冻结脚本或正在运行的工作区。

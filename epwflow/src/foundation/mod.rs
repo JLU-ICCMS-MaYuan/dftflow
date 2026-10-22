@@ -24,6 +24,7 @@ pub mod workspace_import;
 pub mod workspace_plot;
 pub mod workspace_qe_plot;
 pub mod workspace_electronic;
+pub mod stage_results;
 
 pub mod native_jobs;
 pub mod native_workspace;

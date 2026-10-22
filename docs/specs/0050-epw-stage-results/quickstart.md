@@ -1,12 +1,12 @@
-# 未来实施后的快速验证
+# 阶段交付与快速验证
 
-本文是验收操作设计，**本轮没有执行其中命令**；当前源码／安装不保证已具备目标行为。完整条件见 [Spec](spec.md)，记录位置见 [acceptance.md](acceptance.md)。
+本文对应本轮源码实现；自动回归与真实科学程序的证据分开，详见 [验收记录](acceptance.md)。默认安装和已有冻结脚本未更新。完整条件见 [Spec](spec.md)。
 
 ## 准备
 
 选用隔离测试工作区；固定当前配置、结构、模型身份和所选声子模式，记录科学文件集合及哈希。已有结果先核验，不复制未知或冲突来源。先核对当前执行程序与版本，区分源码、编译产物、安装和真实作业证据。
 
-普通回归计划使用仓库构建脚本，避免直接 Cargo 环境差异：
+自动回归使用仓库构建脚本；科学程序与调度器采用隔离替身，不触发真实计算：
 
 ```bash
 CARGO_PROFILE_TEST_DEBUG=0 bash "scripts/build-native.sh" test -p epwflow --no-fail-fast
@@ -22,7 +22,7 @@ CARGO_PROFILE_TEST_DEBUG=0 bash "scripts/build-native.sh" test -p epwflow --no-f
 epw_wannier -c "epwinput.toml" --stage wannier -s
 ```
 
-这是将来的验收调用示意；不在真实用户工作区直接试跑。只执行一次，等待生成的作业脚本自行结束，之后直接读取 `results/5.epw-wannier/` 与 `results/index.json`，不再次调用公开命令触发绘图或登记。
+以上为安装新版后、在已有计算授权范围内的正常使用方式。本轮没有提交真实作业。只需一次提交，等待生成的作业脚本自行结束，之后直接读取 `results/5.epw-wannier/` 与 `results/index.json`，不再次调用公开命令触发绘图或登记。
 
 核对电子两图、QE 与插值曲线、实际四窗口、最大差和未配对态说明，以及配套表、图参和来源。检查 `5.epw-wannier/comparison-native/electron/`；记录无 PH／粗网格依赖。调用账目证明能带由 epw.x 内嵌 W90 输出、没有外部 wannier90.x 绘图，postw90 只做 DOS。
 
@@ -52,3 +52,12 @@ epw_wannier -c "epwinput.toml" --stage wannier -s
 ## 证据归档
 
 按 SC-001～008 保存命令／脚本、版本、调用账目、源与输出哈希、故障注入点、恢复记录和实际图片检查结论。替身回归、真实程序验证、安装部署和科学收敛分别报告。本功能不评判粗网格是否收敛，不以图像相似宣称精度合格。
+
+## 校验和独立重绘
+
+```bash
+epw_superconductivity --results-check --results "results" --json
+epw_superconductivity --plot --results "results"
+```
+
+根目录检查返回阶段交付完整性，不将已有少数阶段包冒充整条超导流程完成。重绘只使用包内数值、图参和结构信息。第 3／5 步保留已有 PNG 图型；第 4 步保留既有图型；第 6／8 步沿用既有多格式图。第 7 步当前没有独立最终图，不创建空包。
