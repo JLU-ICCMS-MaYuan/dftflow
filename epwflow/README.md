@@ -1,6 +1,6 @@
 # epwflow
 
-编号工作区新原生脚本使用 `<功能>.sh`（如 `scf.sh`、`bands.sh`、`epw_wannier.sh`），Slurm 两路日志合并到 `slurm-<功能>.log` 并覆盖写入。公开命令在实际计算目录调用 sbatch；脚本只在正文 cd，不设置或传入 --chdir。手工 sbatch 时先进入脚本所在目录，使 Slurm 日志也留在那里。历史冻结脚本保持原字节，细节见 [0046 验收](../docs/specs/0046-epw-submit-simplification/acceptance.md)。
+编号工作区新原生脚本使用 `<功能>.sh`（如 `scf.sh`、`bands.sh`、`epw_wannier.sh`），Slurm 两路日志合并到 `slurm-<功能>.log` 并覆盖写入。公开命令在实际计算目录调用 sbatch；脚本仅用 `#SBATCH --chdir=绝对目标目录`，正文没有 cd，也不重复传命令行 --chdir。手工可从其他目录通过脚本绝对路径提交，科学输出和相对 Slurm 日志仍在目标目录；`squeue -o "%i %j %Z"` 可查看 WorkDir。SLURM_SUBMIT_DIR 仍表示调用 sbatch 的原目录。直接 bash 执行不会解释 #SBATCH，需由调用方指定工作目录。历史冻结脚本保持原字节，细节见 [0046 验收](../docs/specs/0046-epw-submit-simplification/acceptance.md)。
 
 ## MPI 启动器
 

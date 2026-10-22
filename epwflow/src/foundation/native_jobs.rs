@@ -615,7 +615,8 @@ fn prepare(
             .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c)),
         "configuration: 脚本功能名称含特殊字符"
     );
-    let mut text = format!("#!/bin/bash\n#SBATCH --job-name=epw-{purpose}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n#SBATCH --output=slurm-{purpose}.log\n#SBATCH --error=slurm-{purpose}.log\n#SBATCH --open-mode=truncate\nif ! cd -- {}; then exit 1; fi\n", r.partition, r.nodes, r.mpi, r.wall_seconds.div_ceil(60), double_quote(&work.to_string_lossy()));
+    let log = format!("slurm-{purpose}.log");
+    let mut text = format!("#!/bin/bash\n#SBATCH --job-name=epw-{purpose}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n{}#SBATCH --open-mode=truncate\n", r.partition, r.nodes, r.mpi, r.wall_seconds.div_ceil(60), slurm::log_directives(work, &log, &log));
     let mut sources = vec![Identity::capture(&cfg.structure)?];
     sources.extend(
         cfg.pseudos

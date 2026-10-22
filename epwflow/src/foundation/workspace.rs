@@ -392,7 +392,7 @@ pub fn start_phonon(config: &Path, resume: bool) -> Result<()> {
     let q = super::native_jobs::double_quote;
     let r = &cfg.resources;
     ensure!(!r.partition.contains(['\n', '\r']) && !dir.to_string_lossy().contains(['\n', '\r']), "configuration: Slurm 参数含换行");
-    let mut body = format!("#!/bin/bash\n#SBATCH --job-name=epw-phonon\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n#SBATCH --output=slurm-phonon.log\n#SBATCH --error=slurm-phonon.log\n#SBATCH --open-mode=truncate\nif ! cd -- {}; then exit 1; fi\n", r.partition, r.nodes, r.mpi, r.wall_seconds.div_ceil(60), q(&dir.to_string_lossy()));
+    let mut body = format!("#!/bin/bash\n#SBATCH --job-name=epw-phonon\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n{}#SBATCH --open-mode=truncate\n", r.partition, r.nodes, r.mpi, r.wall_seconds.div_ceil(60), slurm::log_directives(&dir, "slurm-phonon.log", "slurm-phonon.log"));
     if let Some(env) = &cfg.programs.environment_script {
         body.push_str(&format!("source {} --force\n", q(&env.to_string_lossy())));
     }

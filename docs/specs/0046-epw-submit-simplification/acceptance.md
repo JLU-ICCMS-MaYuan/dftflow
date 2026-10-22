@@ -1,8 +1,8 @@
 # 0046 验收记录
 
-日期：2026-10-22。范围以用户最后收窄指令及“开始落实”为准。仅源码、隔离验证和文档交付；默认安装和真实计算目录未修改，不提交真实作业、不推送、不操作线上 Issue。
+日期：2026-10-22。范围以用户最后收窄指令及“开始落实”为准。初次交付为源码、隔离验证和文档，未更新默认安装。后续用户授权“更新默认安装”并选择仅保留 --chdir；本次追加该修订与安装验收。真实计算目录保持原样，不提交真实作业、不推送、不操作线上 Issue。
 
-## 实现对应关系
+## f051139 初次实现对应关系
 
 - US1／FR-007／SC-001～002：正常公开入口、旧执行入口和超导单点／Tc 阶段不再获取或恢复目标控制／执行锁；残留旧锁不读取、不删除。作业号、活动／未知回执、失败检查保留。
 - US2／FR-001～006／SC-003：新原生脚本使用固定功能名称，Slurm 两路日志同名并显式 truncate，仅正文 cd，直接 source，普通参数不逐个引用，特殊参数安全转义。QE／EPW 标准输入重定向、科学输出直接落盘；种子接口不变。
@@ -36,6 +36,22 @@ CARGO_PROFILE_TEST_DEBUG=0 bash scripts/build-native.sh test -p epwflow -- --tes
 
 ## 交付边界
 
-未替换 `bin/epwflow` 或 PATH 中的安装程序，旧安装和已生成脚本不会自动采用新行为。未验证本轮真实 QE／EPW 数值，不把替身数据称为 MgB₂ 科学结果。线上 Issue 和 Spec URL 仍由用户发布和核验，不标记已关闭。
+初次提交未替换 `bin/epwflow` 或 PATH 中的安装程序；本次授权的更新见下方追加记录。已生成的旧脚本不自动改写。未验证本轮真实 QE／EPW 数值，不把替身数据称为 MgB₂ 科学结果。线上 Issue 和 Spec URL 仍由用户发布和核验，不标记已关闭。
 
 MgB₂ 算例 README 有本轮开始前的未提交修改，本次保留，不覆盖或混入提交。本次公开命令、TOML 和目录布局不变，脚本与日志说明更新在模块手册和 Overview；不要求用户改写已有科学输入。
+
+## 后续目录规则与默认安装
+
+用户后续选择仅保留 --chdir，替代初次提交的正文 cd。新原生科学脚本和声子总脚本复用 `slurm::log_directives`，用绝对目录设置 `#SBATCH --chdir`，删除正文 cd；公开 sbatch 不再传重复目录参数。既有分配内直接 bash 执行仍由调用方设置 current_dir。
+
+`--chdir` 在正文运行前确定任务 WorkDir，相对 Slurm 日志在该目录打开；正文 cd 不会修改调度器记录。SLURM_SUBMIT_DIR 始终为调用 sbatch 的原目录。`squeue -o "%i %j %Z"` 显示的 %Z 是 WorkDir。2026-10-22 已读取 [sbatch 官方定义](https://slurm.schedmd.com/sbatch.html#OPT_chdir) 与 [squeue 字段定义](https://slurm.schedmd.com/squeue.html)。
+
+本轮在最新已提交基线 `5d7bc16` 上运行相关定向回归：`slurm_log_filenames` 6 项与 `three_stage_execution` 中 7 项全部通过，无失败、无跳过。本轮验证范围为目录规则、实际 Bash 输出、特殊字符路径、旧任务日志兼容、目标旧锁忽略、预算锁保留、20／30／40 K 六点与声子总流程；没有重复运行不受影响的全量套件。此前 212 项去重通过仍仅为初次提交的证据。
+
+测试中的 sbatch 替身从 `/` 收到脚本绝对路径，按解析的 --chdir 设置进程 cwd，再实际运行 Bash；科学 `.out` 内容确认进程 pwd 正是目标目录，合并 Slurm 日志同样位于该目录。路径包含空格和引号。
+
+三个公开程序由上述 Cargo 测试构建，打包时只对程序设置已存在的私有加载器及运行库搜索路径，未覆盖运行库。安装更新 `bin/epwflow/` 以及当前 PATH 实际指向的 `~/.local/share/dftflow/current/bin/` 中三个 EPW 文件；所有候选先完成 --help 检查，再在各目标目录以临时文件替换，未修改其他模块或 PATH 配置。
+
+安装后核对三个默认命令解析路径及 SHA-256 与打包制品一致，并逐个 --help 启动成功。另在隔离临时目录用默认 `epw_phonon`、从 `/` 执行不带 -s 的 SCF 准备命令：新生成 scf.sh 含绝对 --chdir、没有正文 cd、科学输出直接重定向，任务状态 prepared；未调用真实 sbatch 或科学程序。历史冻结脚本和真实计算现场未修改。
+
+本地证据为 `docs/local/0046-epw-submit-simplification/install-chdir.json`，记录源码与打包 SHA-256、默认入口及隔离生成目录。

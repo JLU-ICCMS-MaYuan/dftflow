@@ -18,6 +18,18 @@ else:
     pub(super) fn direct_task(&self) -> Value {
         store::read(&self.root.join("run/epw-state/native-active.json")).unwrap()
     }
+    pub(super) fn scheduled_command(&self, script: &std::path::Path, directory: &std::path::Path, job: u64) -> Command {
+        let body = fs::read_to_string(script).unwrap();
+        let expected = shell_quote(directory.to_str().unwrap());
+        assert_eq!(body.lines().find_map(|l| l.strip_prefix("#SBATCH --chdir=")), Some(expected.as_str()));
+        assert!(!body.lines().any(|l| l.starts_with("cd ") || l.starts_with("if ! cd ")));
+        let mut cmd = Command::new("/bin/bash");
+        cmd.arg(script);
+        self.environment(&mut cmd, Some(job));
+        // 模拟 Slurm 在正文执行前设置 WorkDir；bash 自身不会解释 #SBATCH。
+        cmd.current_dir(directory);
+        cmd
+    }
     pub(super) fn direct_execute(&self) -> i32 {
         let task = self.direct_task();
         let job = task["job"].as_u64().unwrap();
@@ -35,13 +47,8 @@ else:
         assert!(!body.contains("set -") && !body.contains("|| exit $?"));
         assert!(!body.lines().any(|l| l.starts_with("exec ")));
         assert!(Command::new("/bin/bash").arg("-n").arg(&script).status().unwrap().success());
-        let mut cmd = Command::new("/bin/bash");
-        cmd.arg(&script);
-        self.environment(&mut cmd, Some(job));
-        // 从别处运行仍应 cd 至原生工作目录。
-        cmd.current_dir("/tmp");
-        let output = cmd.output().unwrap();
         let dir = PathBuf::from(task["directory"].as_str().unwrap());
+        let output = self.scheduled_command(&script, &dir, job).output().unwrap();
         if task["schema_version"] == 1 {
             let id = task["id"].as_str().unwrap();
             fs::write(dir.join(format!("native-{id}-{job}.out")), &output.stdout).unwrap();
@@ -51,7 +58,6 @@ else:
             let mut combined = output.stdout.clone();
             combined.extend(&output.stderr);
             fs::write(dir.join(log), combined).unwrap();
-            assert!(!body.contains("--chdir"));
             assert!(body.contains("#SBATCH --open-mode=truncate"));
             assert!(!dir.join("submit.sh").exists());
             assert_eq!(body.lines().find_map(|l| l.strip_prefix("#SBATCH --error=")), Some(log));
@@ -548,14 +554,11 @@ fn scientific_stdout_is_live_and_arguments_are_quoted_without_shell_expansion() 
     assert_eq!(script.file_name().unwrap(), "scf.sh");
     let body = fs::read_to_string(&script).unwrap();
     assert!(body.contains(" < ") && body.contains(" > scf.out 2> scf.err"));
-    assert!(!body.contains("-inp") && !body.contains("--chdir"));
-    let mut cmd = Command::new("/bin/bash");
-    cmd.arg(&script);
-    c.environment(&mut cmd, Some(201));
-    cmd.current_dir("/tmp");
+    assert!(!body.contains("-inp"));
+    let dir = PathBuf::from(task["directory"].as_str().unwrap());
+    let mut cmd = c.scheduled_command(&script, &dir, 201);
     let mut child = cmd.spawn().unwrap();
     wait_for_file(&c.root.join("science-started"));
-    let dir = PathBuf::from(task["directory"].as_str().unwrap());
     assert!(child.try_wait().unwrap().is_none());
     assert_eq!(fs::read_to_string(dir.join("scf.out")).unwrap(), "live science\n");
     assert_eq!(fs::read_to_string(dir.join("scf.err")).unwrap(), "science stderr\n");

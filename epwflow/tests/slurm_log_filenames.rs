@@ -205,6 +205,7 @@ fn generated_chain_keeps_logs_local_and_preserves_frozen_scripts() {
 #[test]
 fn public_submission_uses_short_names_and_refuses_duplicate_queued_jobs() {
     let c = Case::new(true);
+    c.executable("pw.x", "#!/bin/bash\npwd\n");
     success(
         c.command(PHONON)
             .args(["-c", c.config().to_str().unwrap(), "--stage", "electronic", "-s"])
@@ -216,7 +217,7 @@ fn public_submission_uses_short_names_and_refuses_duplicate_queued_jobs() {
     assert_eq!(rows.len(), 1);
     check_row(&rows[0], false, true);
     assert_eq!(rows[0]["options"]["output"], "slurm-scf.log");
-    assert!(rows[0]["options"].get("chdir").is_none());
+    assert_eq!(rows[0]["options"]["chdir"], c.work.join("1.qe-scf").to_str().unwrap());
     assert!(!rows[0]["argv"].as_array().unwrap().iter().any(|v| v.as_str().unwrap().starts_with("--chdir")));
     let script = Path::new(rows[0]["script"].as_str().unwrap());
     assert_eq!(script.file_name().unwrap(), "scf.sh");
@@ -230,6 +231,20 @@ fn public_submission_uses_short_names_and_refuses_duplicate_queued_jobs() {
         .unwrap();
     assert_eq!(c.rows().len(), 1, "排队中的任务不能重复提交");
     identity.verify().unwrap();
+    let body = fs::read_to_string(script).unwrap();
+    assert!(!body.lines().any(|line| line.starts_with("cd ") || line.starts_with("if ! cd ")));
+    // 从其他目录手工 sbatch；替身按 --chdir 启动实际 Bash，科学输出仍在目标目录。
+    success(c.command(c.root.join("sbatch"))
+        .arg(script)
+        .env("DFTFLOW_SLURM_TEST_EXECUTE", "1")
+        .current_dir("/")
+        .output().unwrap());
+    let rows = c.rows();
+    assert_eq!(rows[1]["cwd"], "/");
+    assert_eq!(rows[1]["exit_code"], 0);
+    check_row(&rows[1], false, true);
+    assert_eq!(fs::read_to_string(script.parent().unwrap().join("scf.out")).unwrap().trim(),
+        script.parent().unwrap().to_str().unwrap());
 }
 
 #[test]

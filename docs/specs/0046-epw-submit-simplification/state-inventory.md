@@ -117,21 +117,20 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=32
 #SBATCH --time=实际分钟数
+#SBATCH --chdir="/实际工作目录/2.qe-nscf"
 #SBATCH --output=slurm-nscf.log
 #SBATCH --error=slurm-nscf.log
 
-if ! cd -- "/实际工作目录/2.qe-nscf"; then exit 1; fi
 source "/data/home/mayuan/intel-2024/oneapi/intel2024_setvars.sh" --force
 mpirun -np 32 /data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/pw.x < nscf.in > nscf.out
 ```
 
 示例中的 `-np` 后面需要进程数，再接科学程序；用户原话保留于 Issue／Spec 不作修改。普通参数直接显示，路径需要引用时再引用。计算标准错误是否单独写 `nscf.err` 在设计时与现有解析契约一并落实；科学标准输出确定直接写 `.out`。
 
-工具在脚本目录调用 `sbatch` 即可，不再加 `--chdir`；手工执行则先进入脚本目录：
+后续目录规则：工具仍在脚本目录调用 `sbatch`，脚本仅保留绝对 `--chdir`；手工可从其他目录提交：
 
 ```bash
-cd "/实际工作目录/2.qe-nscf"
-sbatch nscf.sh
+sbatch "/实际工作目录/2.qe-nscf/nscf.sh"
 ```
 
 Slurm 的提交目录默认是调用进程的当前目录；脚本正文 `cd` 不会回溯改变 Slurm 打开相对日志路径的位置。相对日志、`--chdir`、`--open-mode` 的依据是 [Slurm 官方 sbatch 文档](https://slurm.schedmd.com/sbatch.html)，2026-10-22 已读取。默认追加或截断由系统 `JobFileAppend` 控制；实施若要求每次截断，需显式选择 `--open-mode=truncate`，不能只改文件名就声称实现覆盖。
@@ -142,7 +141,7 @@ Slurm 的提交目录默认是调用进程的当前目录；脚本正文 `cd` �
 2. 五项脚本优化按 Spec 独立验收；仅调整固定命名、科学输入输出、目录切换、环境加载、必要引用及其必需的回执读取。
 3. 预算账本／注册表及其锁保持原样；其他锁、其他状态去重、旧流程清退和历史科学数据清理全部暂缓。
 
-本轮只修改 0046 文档，没有执行上述代码修复，也没有清理现场。
+以上为最初需求整理；实现与后续目录规则及安装状态以验收记录为准。
 
 ## 实施后对应关系
 

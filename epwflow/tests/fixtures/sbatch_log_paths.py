@@ -1,8 +1,10 @@
 #!/usr/bin/python3
 """只模拟 sbatch 的指令、参数与日志定位；不运行脚本或科学程序。"""
 import json
+import os
 import pathlib
 import shlex
+import subprocess
 import sys
 
 root = pathlib.Path(__file__).resolve().parent
@@ -39,6 +41,11 @@ for key, default in [('output', 'slurm-%j.out'), ('error', 'slurm-%j.out')]:
     paths[key] = str(path)
 record = dict(script=str(script), cwd=str(pathlib.Path.cwd()), argv=sys.argv[1:],
               directives=directives, options=options, job=job, **paths)
+if os.environ.get('DFTFLOW_SLURM_TEST_EXECUTE') == '1':
+    with open(paths['output'], 'wb') as output, open(paths['error'], 'ab') as error:
+        record['exit_code'] = subprocess.run(
+            ['/bin/bash', str(script)], cwd=directory,
+            stdout=output, stderr=error, check=False).returncode
 with record_path.open('a') as stream:
     stream.write(json.dumps(record) + '\n')
 print(job)

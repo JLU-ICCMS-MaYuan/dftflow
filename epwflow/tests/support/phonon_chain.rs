@@ -23,9 +23,11 @@ impl Case {
         assert!(!body.contains("set -") && !body.contains("sbatch"));
         assert!(body.contains("--workspace-attempt"));
         assert!(Command::new("/bin/bash").arg("-n").arg(&script).status().unwrap().success());
-        let mut cmd = Command::new("/bin/bash");
-        cmd.arg(script).env("SLURM_NTASKS", "1");
-        let output = self.output(cmd, Some(job), "chain-worker");
+        let mut cmd = self.scheduled_command(&script, script.parent().unwrap(), job);
+        cmd.env("SLURM_NTASKS", "1");
+        let output = cmd.output().unwrap();
+        self.put("chain-worker.stdout", &String::from_utf8_lossy(&output.stdout));
+        self.put("chain-worker.stderr", &String::from_utf8_lossy(&output.stderr));
         self.put(&format!("job-{job}.state"), if output.status.success() { "COMPLETED" } else { "FAILED" });
         output
     }
