@@ -417,7 +417,6 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     }
     let missing = vec![
         "electronic element/orbital PDOS: complex atomic projector adapter unavailable".into(),
-        "phonon element DOS: EPW mass-weighted eigenvectors unavailable".into(),
     ];
     let delta: Vec<f64> = edos[0]
         .iter()

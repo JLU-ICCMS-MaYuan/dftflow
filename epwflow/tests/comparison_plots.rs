@@ -482,6 +482,11 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
             .unwrap()
             .starts_with(b"%PDF"));
         let svg = fs::read_to_string(figures.join(format!("{kind}.svg"))).unwrap();
+        if kind == "phonon_dos_comparison" {
+            assert!(svg.contains("Phonon DOS | total"));
+            assert!(!svg.contains("Phonon DOS | Mg") && !svg.contains("Phonon DOS | B"));
+            assert!(!svg.contains("Missing paired data / verified projection"));
+        }
         assert!(svg.contains("SYNTHETIC STYLE TEST"));
         if kind == "electronic_bands_comparison" || kind == "comparison_overview" {
             check_electronic_reference_lines(&svg, 0, true);

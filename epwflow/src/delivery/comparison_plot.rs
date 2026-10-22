@@ -631,7 +631,7 @@ where
         "{} | {} | {}",
         data.metadata.title,
         data.manifest.ph_mode,
-        if data.manifest.missing.is_empty() {
+        if data.manifest.missing.iter().all(|reason| reason.starts_with("phonon element DOS:")) {
             "diagnostic"
         } else {
             "PARTIAL RESULTS"
@@ -688,7 +688,7 @@ where
         {
             comparison_panel(&panels[i], curves, data, i, "total")?;
         }
-    } else if kind == 1 || kind == 3 {
+    } else if kind == 1 {
         let mut projections = vec!["total".to_string()];
         projections.extend(data.metadata.elements.clone());
         if kind == 1 {
@@ -703,8 +703,8 @@ where
         for (panel, p) in panels.iter().zip(projections) {
             comparison_panel(panel, curves, data, kind, &p)?;
         }
-    } else if kind == 2 {
-        comparison_panel(&body, &data.phonon, data, kind, "total")?;
+    } else if kind == 2 || kind == 3 {
+        comparison_panel(&body, if kind == 2 { &data.phonon } else { &data.phonon_dos }, data, kind, "total")?;
     } else {
         comparison_panel(
             &body,

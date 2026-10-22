@@ -1478,6 +1478,9 @@ fn numbered_native_retry_preserves_open_logs_and_ignores_legacy_log_inputs_only(
 #[path = "support/direct_submit.rs"]
 mod direct_submit;
 
+#[path = "support/qe_stage_plots.rs"]
+mod qe_stage_plots;
+
 #[test]
 fn gap_points_report_invalid_data_and_resume_failed_point_without_repeating_success() {
     for (mode,fault,status) in [(config::Mode::Iso,"unconverged","not_converged"),(config::Mode::Aniso,"nan","invalid"),(config::Mode::Iso,"missing","missing")] {

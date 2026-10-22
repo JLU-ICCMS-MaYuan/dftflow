@@ -256,3 +256,15 @@ epw_wannier --stage wannier -s
 显式声子路径使用专用 matdyn 解析：QE 7.4.1 的未使用第四列可未初始化，按固定宽度跳过该列，坐标、全部频率和点序仍严格核验；普通加权格式保持有限非负权重检查。编号自动比较的原 CLI 身份仅作历史追溯，升级后复用完整科学来源与成功原生子任务，冻结请求保持不变。依据见 [0037](../docs/specs/0037-matdyn-path-unused-weight/acceptance.md)、[0038](../docs/specs/0038-comparison-orchestrator-upgrade/acceptance.md)。
 
 共用比较渲染器将 G/GAMMA 显示为 Γ，在屏幕上分组合并拥挤的相邻端点文字；所有原竖线和科学曲线坐标保持。独立图与总览均使用该规则，显式 --plot 可离线重绘既有结果，见 [0039](../docs/specs/0039-comparison-path-labels/acceptance.md)。
+
+## QE 分阶段即时出图（0047）
+
+第 3 步每个电子子任务校验成功即生成自己的 QE 单独图：`qe_eband/plots/electronic-bands.png` 与 `qe_eledos/plots/electronic-dos.png`，同时保存 CSV。电子来源使用已核验 NSCF 的 Fermi 零点，不等待声子或 Wannier，也不要求拟合能窗。能带保留断开路径与高对称点标签。
+
+第 4 步 q2r／matdyn 后处理结束后，在 `4.qe-phonon-<模式>/plots/` 生成 `phband/phonon_band.png`、`phdos/phonon_dos.png` 和联合图。声子 DOS 同时显示 TDOS 与按结构汇总的元素贡献，原子／元素 CSV 可追溯；必须有完整逐原子投影，缺列明确报错。
+
+第 5 步继续生成 QE／Wannier 电子能带和总 DOS 叠图。第 6 步声子谱继续比较 QE／EPW，声子 DOS 的独立图与总览仅比较 TDOS，不展示元素曲线或元素投影缺失占位。第 3／4 步的单独图保留。电子元素／轨道投影及插值侧元素声子投影仍未恢复。
+
+`-r` 在该子任务结束时绘图；声子目标 `-s` 在同一分配内自动绘图并登记完成，其他目标在作业结束后下一次公开命令核验时绘图。重执行原命令可补缺图，失败恢复沿用 `--resume`。`plots/completion.json` 管理派生图，科学完成身份排除图片；声子数值后处理另存 `qe-post-completion.json`，绘图失败恢复不重复成功的 PH／q2r／matdyn。只读状态命令不补图。
+
+实现与隔离进程／真实数据只读出图证据见 [0047 验收](../docs/specs/0047-qe-stage-plots/acceptance.md)。本次源码交付没有切换默认安装、覆盖冻结脚本或新增科学作业。

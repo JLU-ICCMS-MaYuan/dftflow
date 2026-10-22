@@ -103,7 +103,7 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
         }
     }
     Ok(store::hash_bytes(&serde_json::to_vec(&(
-        3,
+        if step == Step::Coarse { 4 } else { 3 },
         keys,
         programs,
         cfg.comparison.clone().unwrap_or_default(),
@@ -118,6 +118,7 @@ fn post_file(cfg: &Config, step: Step) -> PathBuf {
 }
 
 pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
+    if super::workspace_qe_plot::pending(cfg, target)? { return Ok(true); }
     for step in [Step::Wannier, Step::Coarse] {
         if target < step || !stages::reusable(cfg, step)? {
             continue;
@@ -139,6 +140,11 @@ pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
 
 /// 展宽及图像独立于拟合/EPC 的科学清单，不能改写下游已绑定的原生数据。
 pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
+    for step in target.closure() {
+        if matches!(step, Step::Electronic | Step::Phonon) && stages::reusable(cfg, step)? {
+            super::workspace_qe_plot::refresh(cfg, step)?;
+        }
+    }
     for step in [Step::Wannier, Step::Coarse] {
         if target < step {
             continue;
@@ -240,12 +246,12 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                 }
                 interpolation::comparison::export(&source, &output)?;
                 crate::delivery::comparison::collect(&cfg.work_dir, None)?;
-                crate::delivery::comparison_plot::plot(
-                    &results,
-                    None,
-                    &["png".into(), "svg".into(), "pdf".into()],
-                )?;
             }
+            crate::delivery::comparison_plot::plot(
+                &results,
+                None,
+                &["png".into(), "svg".into(), "pdf".into()],
+            )?;
             vec![
                 Identity::capture(&output.join("manifest.json"))?,
                 Identity::capture(&results.join("comparison/manifest.json"))?,
@@ -527,15 +533,43 @@ fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
         qe.cell.lattice,
     )?;
     qf_input::matdyn::write_matdyn_phdos_input(dir.to_str().unwrap(), &shared, &cfg.qe.prefix)?;
-    for (program, input, stem) in [
+    let tasks = [
         ("q2r", "q2r.in", "q2r"),
         ("matdyn", "matdyn_phband.in", "matdyn_phband"),
         ("matdyn", "matdyn_phdos.in", "matdyn_phdos"),
-    ] {
-        qe_run(cfg, &dir, &post_program(cfg, program)?, input, stem)?;
+    ];
+    let inputs = tasks.iter().map(|(program, input, _)| {
+        Ok((
+            Identity::capture(&dir.join(input))?,
+            store::hash_file(&post_program(cfg, program)?.path)?,
+        ))
+    }).collect::<Result<Vec<_>>>()?;
+    let key = store::hash_bytes(&serde_json::to_vec(&(1, &manifest, inputs))?);
+    let checkpoint = dir.join("qe-post-completion.json");
+    let mut complete = false;
+    if checkpoint.is_file() {
+        let r: PostReceipt = store::read(&checkpoint)?;
+        if r.key == key {
+            complete = !r.outputs.is_empty();
+            for id in r.outputs {
+                if !store::identity_available(&id)? { complete = false; }
+            }
+        }
+    }
+    if !complete {
+        for (program, input, stem) in tasks {
+            qe_run(cfg, &dir, &post_program(cfg, program)?, input, stem)?;
+        }
+        let outputs = [
+            format!("{}.fc.xml", cfg.qe.prefix),
+            format!("{}.phband.freq", cfg.qe.prefix),
+            format!("{}_band.labelinfo.dat", cfg.qe.prefix),
+            format!("{}.phdos.dat", cfg.qe.prefix),
+        ].iter().map(|n| Identity::capture(&dir.join(n))).collect::<Result<Vec<_>>>()?;
+        store::write(&checkpoint, &PostReceipt { key, outputs })?;
     }
     store::write(&dir.join("save/manifest.json"), &manifest)?;
-    Ok(())
+    super::workspace_qe_plot::phonon(cfg)
 }
 
 fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
@@ -840,6 +874,9 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
         .filter(|f| {
             let name = f.relative_path.file_name().unwrap().to_string_lossy();
             let rel = f.relative_path.to_string_lossy();
+            if f.relative_path.components().any(|p| p.as_os_str() == "plots") || name == "qe-post-completion.json" {
+                return false;
+            }
             if step == Step::Wannier
                 && !rel.starts_with("out/")
                 && ![

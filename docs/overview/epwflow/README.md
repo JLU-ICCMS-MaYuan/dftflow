@@ -56,7 +56,7 @@ LDA 历史 40³/20³ EPC 已有 λ_integral=0.6853853、λ_sum=0.6853511，iso �
 
 并行预检覆盖生成、提交、脚本启动；手工 `sbatch` 同样校验实际 Slurm 分配。EPW 当前单 image、每 pool 一个 MPI；粗阶段读取实际 NSCF，细阶段按本次 nkf 检查空 pool。32 k 配 64 pool 明确报错退出，不更改用户物理网格。QE 保留自身整除规则。旧工作区提供 `--import-work`，核验后复制 SCF、NSCF、PH、后处理，来源保持只读；中断物化有恢复记录。
 
-程序继续受共享预算与来源保护约束，严格投影继续暂缓。上述布局、调度、复用及防护通过隔离公开进程/脚本验证；真实 MgB₂ 迁移只核验文件和哈希，不运行科学作业，也不将旧数值冒烟算作新链科学验收。使用见 [模块手册](../../../epwflow/README.md)、[MgB₂ 操作说明](../../../examples/MgB2/sugon-amd/run/README.md)，证据见 [0018 验收](../../specs/0018-epwflow-stage-workspaces/acceptance.md)。
+程序继续受共享预算与来源保护约束；电子投影及插值侧声子投影继续暂缓，QE 单侧元素声子 DOS 由 0047 提供。上述布局、调度、复用及防护通过隔离公开进程/脚本验证；真实 MgB₂ 迁移只核验文件和哈希，不运行科学作业，也不将旧数值冒烟算作新链科学验收。使用见 [模块手册](../../../epwflow/README.md)、[MgB₂ 操作说明](../../../examples/MgB2/sugon-amd/run/README.md)，证据见 [0018 验收](../../specs/0018-epwflow-stage-workspaces/acceptance.md)。
 
 ## 可见运行状态与阶段删除后的恢复
 
@@ -296,3 +296,15 @@ EPW 的 `wannier.selection_mode = "energy_only"` 使用共享 Rust 纯能量选�
 ## MPI 提交命令
 
 新生成的科学调用使用普通命令，`mpirun` 从作业环境 PATH 查找，不写登录节点 MPI 绝对路径；原参数、科学程序路径和用户 header 保留。共享规则及历史边界见 [MPI 调用约束](../README.md#科学任务的-mpi-调用) 与 [0044](../../specs/0044-mpi-submit-command/spec.md)。
+
+## QE 分阶段即时出图（0047）
+
+第 3 步每个电子子任务校验成功即生成自己的 QE 单独图：`qe_eband/plots/electronic-bands.png` 与 `qe_eledos/plots/electronic-dos.png`，同时保存 CSV。电子来源使用已核验 NSCF 的 Fermi 零点，不等待声子或 Wannier，也不要求拟合能窗。能带保留断开路径与高对称点标签。
+
+第 4 步 q2r／matdyn 后处理结束后，在 `4.qe-phonon-<模式>/plots/` 生成 `phband/phonon_band.png`、`phdos/phonon_dos.png` 和联合图。声子 DOS 同时显示 TDOS 与按结构汇总的元素贡献，原子／元素 CSV 可追溯；必须有完整逐原子投影，缺列明确报错。
+
+第 5 步继续生成 QE／Wannier 电子能带和总 DOS 叠图。第 6 步声子谱继续比较 QE／EPW，声子 DOS 的独立图与总览仅比较 TDOS，不展示元素曲线或元素投影缺失占位。第 3／4 步的单独图保留。电子元素／轨道投影及插值侧元素声子投影仍未恢复。
+
+`-r` 在该子任务结束时绘图；`-s` 在作业结束后下一次公开命令核验时绘图，无需等待后续阶段。重执行原有推进命令可补缺图，失败恢复沿用 `--resume`。`plots/completion.json` 管理派生图，科学完成身份排除图片；声子数值后处理另存 `qe-post-completion.json`，绘图失败恢复不重复成功的 PH／q2r／matdyn。只读状态命令不补图。
+
+实现与隔离进程／真实数据只读出图证据见 [0047 验收](../../specs/0047-qe-stage-plots/acceptance.md)。本次源码交付没有切换默认安装、覆盖冻结脚本或新增科学作业。

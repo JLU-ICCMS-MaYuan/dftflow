@@ -465,6 +465,7 @@ pub fn execute(path: &Path) -> Result<()> {
         for step in a.target.closure() {
             if stages::reusable(&cfg, step)? {
                 println!("reuse: {}", step.name());
+                super::workspace_qe_plot::refresh(&cfg, step)?;
                 continue;
             }
             parallelism::preflight(&cfg, step, true)?;

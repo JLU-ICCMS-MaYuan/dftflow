@@ -541,7 +541,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             dos_inputs(cfg)?;
             if reusable(cfg, "dos")? {
                 println!("reuse: electronic/dos");
-                return Ok(());
+                return super::workspace_qe_plot::electronic(cfg, name);
             }
             let mut paths = logs(&dir, "dos");
             paths.push(dir.join(format!("{}.tdos", cfg.qe.prefix)));
@@ -569,5 +569,5 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
         }
         _ => anyhow::bail!("configuration: 未知电子子阶段 {name}"),
     }
-    Ok(())
+    super::workspace_qe_plot::electronic(cfg, name)
 }

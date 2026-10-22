@@ -34,6 +34,7 @@ pub fn advance(config: &Path, target: Step, submit: bool, resume: bool) -> Resul
     for step in target.closure() {
         if stages::reusable(&cfg, step)? {
             println!("reuse: {}", step.name());
+            super::workspace_qe_plot::refresh(&cfg, step)?;
             continue;
         }
         parallelism::preflight(&cfg, step, false)?;

@@ -1,6 +1,6 @@
 //! 读取两侧原生总 DOS，沿用共享绘图库，不生成替代科学数据。
 use super::config::Config;
-use anyhow::{ensure, Result};
+use anyhow::{ensure, Context, Result};
 use plotters::{
     prelude::*,
     style::text_anchor::{HPos, Pos, VPos},
@@ -49,25 +49,50 @@ pub fn dos(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
         &dir.join("electronic-dos-normalization.json"),
         &serde_json::json!({"qe_spin_degeneracy":2,"postw90_num_elec_per_state":electrons,"postw90_multiplier":1,"electronic_sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev,"raw_native_files_modified":false,"postw90_log":super::store::Identity::capture(&wpout)?,"native_dos":super::store::Identity::capture(wannier)?}),
     )?;
-    let window = windows(cfg, dir, fermi)?;
-    let lo = window[0].0.max(qe[0].0).max(wan[0].0);
-    let hi = window[1]
-        .0
+    dos_figure(
+        &dir.join("electronic-dos.png"),
+        &qe,
+        Some(&wan),
+        &windows(cfg, dir, fermi)?,
+    )
+}
+
+fn dos_figure(
+    file: &Path,
+    qe: &[(f64, f64)],
+    wan: Option<&[(f64, f64)]>,
+    window: &[(f64, &str, RGBColor)],
+) -> Result<()> {
+    let lo = window
+        .first()
+        .map_or(qe[0].0, |w| w.0)
+        .max(qe[0].0)
+        .max(wan.map_or(qe[0].0, |w| w[0].0));
+    let hi = window
+        .get(1)
+        .map_or(qe.last().unwrap().0, |w| w.0)
         .min(qe.last().unwrap().0)
-        .min(wan.last().unwrap().0);
+        .min(wan.map_or(qe.last().unwrap().0, |w| w.last().unwrap().0));
     ensure!(lo < hi, "data_invalid: 两侧 DOS 没有共同能窗");
     let ymax = qe
         .iter()
-        .chain(&wan)
+        .chain(wan.unwrap_or(&[]))
         .filter(|(e, _)| *e >= lo && *e <= hi)
         .map(|(_, d)| *d)
         .fold(0.0, f64::max);
     ensure!(ymax > 0.0, "data_invalid: DOS 为空");
-    let path = dir.join("electronic-dos.png");
-    let backend = BitMapBackend::new(&path, (1000, 700));
+    let backend = BitMapBackend::new(file, (1000, 700));
     let area = backend.into_drawing_area();
     area.fill(&WHITE)?;
     let mut chart = ChartBuilder::on(&area)
+        .caption(
+            if wan.is_some() {
+                "QE / Wannier electronic DOS"
+            } else {
+                "QE electronic DOS"
+            },
+            ("sans-serif", 22),
+        )
         .margin(20)
         .x_label_area_size(45)
         .y_label_area_size(55)
@@ -81,16 +106,18 @@ pub fn dos(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
         .draw_series(LineSeries::new(qe.iter().copied(), BLACK.stroke_width(2)))?
         .label("QE")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], BLACK));
-    chart
-        .draw_series(DashedLineSeries::new(
-            wan.iter().copied(),
-            6,
-            4,
-            RED.stroke_width(2),
-        ))?
-        .label("Wannier")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED));
-    for (e, name, color) in window {
+    if let Some(wan) = wan {
+        chart
+            .draw_series(DashedLineSeries::new(
+                wan.iter().copied(),
+                6,
+                4,
+                RED.stroke_width(2),
+            ))?
+            .label("Wannier")
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED));
+    }
+    for (e, name, color) in window.iter().copied() {
         chart
             .draw_series(DashedLineSeries::new(
                 [(e, 0.0), (e, ymax * 1.05)],
@@ -134,10 +161,47 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
     ensure!(wx > 0.0, "data_invalid: Wannier 路径长度无效");
     let scale = xmax / wx;
     ensure!(xmax > 0.0 && lo < hi, "data_invalid: 能带范围为空");
-    let file = dir.join("electronic-bands.png");
-    let area = BitMapBackend::new(&file, (1000, 700)).into_drawing_area();
+    let label = fs::read_to_string(dir.join(format!("{}_band.labelinfo.dat", cfg.qe.prefix)))?;
+    let labels = path_labels(&label)?
+        .into_iter()
+        .map(|(x, name)| (x * scale, name))
+        .collect::<Vec<_>>();
+    bands_figure(
+        &dir.join("electronic-bands.png"),
+        &qe,
+        Some(&wan),
+        scale,
+        [lo, hi],
+        &window,
+        &labels,
+    )
+}
+
+type Band = (Vec<f64>, Vec<f64>);
+fn bands_figure(
+    file: &Path,
+    qe: &[Band],
+    wan: Option<&[Band]>,
+    scale: f64,
+    [lo, hi]: [f64; 2],
+    window: &[(f64, &str, RGBColor)],
+    labels: &[(f64, String)],
+) -> Result<()> {
+    let xmax = qe
+        .iter()
+        .flat_map(|(x, _)| x.iter().copied())
+        .fold(0.0, f64::max);
+    let area = BitMapBackend::new(file, (1000, 700)).into_drawing_area();
     area.fill(&WHITE)?;
     let mut chart = ChartBuilder::on(&area)
+        .caption(
+            if wan.is_some() {
+                "QE / Wannier electronic bands"
+            } else {
+                "QE electronic bands"
+            },
+            ("sans-serif", 22),
+        )
         .margin(20)
         .x_label_area_size(40)
         .y_label_area_size(55)
@@ -158,20 +222,22 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
             ))?;
         }
     }
-    for (x, y) in wan {
-        for range in path_sections(&x) {
-            chart.draw_series(DashedLineSeries::new(
-                x[range.clone()]
-                    .iter()
-                    .map(|v| v * scale)
-                    .zip(y[range].iter().copied()),
-                6,
-                4,
-                RED.stroke_width(2),
-            ))?;
+    if let Some(wan) = wan {
+        for (x, y) in wan {
+            for range in path_sections(&x) {
+                chart.draw_series(DashedLineSeries::new(
+                    x[range.clone()]
+                        .iter()
+                        .map(|v| v * scale)
+                        .zip(y[range].iter().copied()),
+                    6,
+                    4,
+                    RED.stroke_width(2),
+                ))?;
+            }
         }
     }
-    for (e, name, color) in window {
+    for (e, name, color) in window.iter().copied() {
         chart
             .draw_series(DashedLineSeries::new(
                 [(0.0, e), (xmax, e)],
@@ -185,11 +251,10 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
         .configure_series_labels()
         .background_style(WHITE)
         .draw()?;
-    let label = fs::read_to_string(dir.join(format!("{}_band.labelinfo.dat", cfg.qe.prefix)))?;
-    for (x, name) in path_labels(&label)? {
-        let (px, py) = chart.backend_coord(&(x * scale, lo));
+    for (x, name) in labels {
+        let (px, py) = chart.backend_coord(&(*x, lo));
         area.draw(&Text::new(
-            name,
+            name.clone(),
             (px, py + 12),
             TextStyle::from(("sans-serif", 18).into_font()).pos(Pos::new(HPos::Center, VPos::Top)),
         ))?;
@@ -210,6 +275,136 @@ fn native_dos_electrons(log: &str) -> Result<u32> {
         "data_invalid: 当前非磁标量 DOS 要求原生每态电子数为 2，实际 {value}"
     );
     Ok(value)
+}
+
+/// 单侧图直接读取电子任务产物，不依赖 PH 或实际 Wannier 能窗。
+pub fn qe_dos(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
+    let rows = table(
+        &dir.parent()
+            .unwrap()
+            .join(format!("{}.tdos", cfg.qe.prefix)),
+        fermi,
+    )?;
+    let mut csv = String::from("energy_minus_fermi_ev,states_per_ev_cell\n");
+    for (e, d) in &rows {
+        csv.push_str(&format!("{e:.12},{d:.12}\n"));
+    }
+    fs::write(dir.join("electronic-dos.csv"), csv)?;
+    dos_figure(&dir.join("electronic-dos.png"), &rows, None, &[])
+}
+
+pub fn qe_bands(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
+    let leaf = dir.parent().unwrap();
+    let xml = leaf.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix));
+    let states = crate::qe_data::nscf::parse_xml(&xml)?;
+    let geometry = crate::qe_data::xml::Geometry::read(&xml)?;
+    let points: Vec<[f64; 3]> = super::store::read(&leaf.join("path-points.json"))?;
+    let segments = qf_input::electronic::parse_kpath_segments(
+        cfg.kpath
+            .as_ref()
+            .context("required: 电子能带图需要 KPATH")?
+            .to_str()
+            .context("KPATH 非 UTF-8")?,
+    )?;
+    let intervals = cfg.comparison.clone().unwrap_or_default().points_per_edge as usize;
+    ensure!(
+        intervals > 0 && states.kpoints.len() == points.len(),
+        "data_invalid: 电子路径点数不匹配"
+    );
+    let mut x = Vec::new();
+    let mut label_text = String::new();
+    let mut index = 0;
+    let mut distance = 0.0;
+    for segment in segments {
+        let count = (segment.len() - 1) * intervals + 1;
+        ensure!(
+            index + count <= points.len(),
+            "data_invalid: 电子路径索引越界"
+        );
+        for j in 0..count {
+            let at = index + j;
+            let native = states.kpoints[at];
+            let expected = std::array::from_fn::<_, 3, _>(|a| {
+                (0..3)
+                    .map(|b| points[at][b] * geometry.reciprocal[b][a])
+                    .sum::<f64>()
+            });
+            ensure!(
+                native
+                    .iter()
+                    .zip(expected)
+                    .all(|(a, b)| (a - b).abs() < 1e-7),
+                "data_invalid: 电子路径坐标与原生结果不符"
+            );
+            if j > 0 {
+                distance += (0..3)
+                    .map(|a| (native[a] - states.kpoints[at - 1][a]).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+            }
+            x.push(distance);
+        }
+        for (j, (_, label)) in segment.iter().enumerate() {
+            label_text.push_str(&format!(
+                "{label} {} {}\n",
+                index + j * intervals + 1,
+                x[index + j * intervals]
+            ));
+        }
+        index += count;
+    }
+    ensure!(
+        index == points.len() && distance > 0.0,
+        "data_invalid: 电子路径覆盖不完整"
+    );
+    let mut csv = String::from("point_index,distance,band,energy_minus_fermi_ev\n");
+    let nband = states.nbnd;
+    ensure!(
+        states.eigenvalues.len() == x.len() && nband > 0,
+        "data_invalid: 电子本征值缺失"
+    );
+    let mut bands = Vec::new();
+    for band in 0..nband {
+        let mut energies = Vec::new();
+        for (i, row) in states.eigenvalues.iter().enumerate() {
+            ensure!(row.len() == nband, "data_invalid: 电子能带数不一致");
+            let energy = row[band] - fermi;
+            csv.push_str(&format!(
+                "{},{:.12},{},{:.12}\n",
+                i + 1,
+                x[i],
+                band + 1,
+                energy
+            ));
+            energies.push(energy);
+        }
+        bands.push((x.clone(), energies));
+    }
+    let lo = bands
+        .iter()
+        .flat_map(|(_, y)| y)
+        .copied()
+        .fold(f64::INFINITY, f64::min);
+    let hi = bands
+        .iter()
+        .flat_map(|(_, y)| y)
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    ensure!(
+        lo.is_finite() && hi.is_finite(),
+        "data_invalid: 电子能量非有限"
+    );
+    let padding = ((hi - lo) * 0.05).max(0.1);
+    fs::write(dir.join("electronic-bands.csv"), csv)?;
+    bands_figure(
+        &dir.join("electronic-bands.png"),
+        &bands,
+        None,
+        1.0,
+        [lo - padding, hi + padding],
+        &[],
+        &path_labels(&label_text)?,
+    )
 }
 
 fn path_sections(x: &[f64]) -> Vec<std::ops::Range<usize>> {
