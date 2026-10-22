@@ -1,12 +1,12 @@
 # epwflow
 
-自动生成的 `#SBATCH --output`／`--error` 只包含日志文件名，`#SBATCH --chdir` 负责将日志留在脚本所在目录，从其他目录提交也适用。已有冻结脚本保持原字节，不能手工删去长路径后重提；使用包含修复的程序生成新尝试才会采用新格式。源码、已有二进制和历史脚本的生效边界见 [0022 验收](../docs/specs/0022-slurm-log-filenames/acceptance.md)。
+编号工作区新原生脚本使用 `<功能>.sh`（如 `scf.sh`、`bands.sh`、`epw_wannier.sh`），Slurm 两路日志合并到 `slurm-<功能>.log` 并覆盖写入。公开命令在实际计算目录调用 sbatch；脚本只在正文 cd，不设置或传入 --chdir。手工 sbatch 时先进入脚本所在目录，使 Slurm 日志也留在那里。历史冻结脚本保持原字节，细节见 [0046 验收](../docs/specs/0046-epw-submit-simplification/acceptance.md)。
 
 ## MPI 启动器
 
 配置使用 `launcher = ["mpirun", "-np", "32"]`，并在 `programs.environment_script` 指定已有环境脚本。新作业先加载环境，再普通调用 `mpirun`；即使旧配置含 MPI 目录，新脚本也使用 PATH 查找，不增加 `exec`。登录节点无需先激活 MPI。科学程序路径和原参数仍按配置；其他自定义启动器沿用原规则。
 
-已有唯一提交脚本、固定配置和回执保持原字节；`submit.sh` 作为阅读副本及独立调试脚本可按迁移清单更新，不能据此改写正式完成证据。[0044 规格与部署](../docs/specs/0044-mpi-submit-command/spec.md)。
+历史提交脚本、固定配置和回执保持原字节；新原生任务不再生成 submit.sh 阅读副本。[0044 规格与部署](../docs/specs/0044-mpi-submit-command/spec.md)。
 
 ## 编号工作区逐任务提交（0026）
 
@@ -20,11 +20,19 @@ epw_superconductivity -c input.toml -s
 
 每条命令分别推进其目标；在当前目标显示 `workflow_complete: true` 后切换下一条。原生失败后修复配置，再用对应命令 `--resume -s`；排队、运行中或回执未知时拒绝重提。Tc 的单模式、单温度、单初值分别提交，保留原搜索规则及次数上限。
 
-输出给出实际提交的唯一 `submit-<任务>-<任务号>.sh`、作业号与工作目录；同目录 `submit.sh` 是便于阅读的当前副本。Slurm 日志使用同目录文件名 `native-<任务号>-<作业号>.out/.err`，脚本固定工作目录，支持从其他目录提交。输入及命令身份记录在可见的 `epw-state/native-jobs/`；独立 W90 后处理使用 `5.epw-wannier/native-post/`，不重写拟合来源。
+输出给出实际提交的功能脚本、作业号与工作目录。QE／EPW 科学输出直接写指定 `.out`，错误写 `.err`，计算运行时即可查看，不等待复制 Slurm 日志；Wannier／postw90 保留种子参数接口。新脚本的命令类似：
+
+```bash
+if ! cd -- "/path/to/1.qe-scf"; then exit 1; fi
+source "/path/to/oneapi/setvars.sh" --force
+mpirun -np 32 /path/to/pw.x < scf.in > scf.out 2> scf.err
+```
+
+输入及命令身份记录在可见的 `epw-state/native-jobs/`；独立 W90 后处理使用 `5.epw-wannier/native-post/`，不重写拟合来源。source 按配置直接执行，没有 if 或自动严格选项；科学命令失败仍返回非零。普通安全参数直接显示，含空格或 Shell 特殊字符时保留必要引用。
 
 `epw_phonon --all` 只准备下一就绪脚本与 `native-plan.json` 待完成清单，零提交，不生成自动全流程总脚本。`--status [--json]` 只读区分运行中、已结束待核验、失败及已核验。
 
-可手工修改脚本并 `sbatch` 独立 debug，但它不产生正式完成记录；正式命令拒绝接管修改过的唯一脚本。旧封存脚本和默认安装不随源码修改自动更新。旧非编号布局的新 `-s` 拒绝继续提交包装脚本；使用新的编号工作目录并通过 `--import-work` 显式导入。`-r` 的既有分配执行路径保留。
+可手工修改脚本并 `sbatch` 独立 debug，但它不产生正式完成记录；准备或活动任务的脚本被修改时，正式命令仍拒绝接管。版本 2 任务结束并完成核验后，覆盖功能脚本或 Slurm 日志不影响科学复用；输入、来源和科学输出仍严格校验。版本 1 历史任务保持原校验及日志读取。旧封存脚本和默认安装不随源码修改自动更新。旧非编号布局的新 `-s` 拒绝继续提交包装脚本；使用新的编号工作目录并通过 `--import-work` 显式导入。`-r` 的既有分配执行路径保留。
 
 以下早期脚本／自动串联说明属于旧路径；编号工作区以本节为准。[0026 设计与验收](../docs/specs/0026-epw-direct-native-submit/plan.md)。
 
@@ -109,7 +117,7 @@ epw_wannier --stage wannier --resume -s
 
 0018 旧现场的 PW 能带可在完整核验冻结来源、原生输入、零退出码、日志、XML 及全部 portable 波函数后接入；缺证据明确停止。失败日志移到 `epw-state/history/`，成功结果保持原位。修改过的旧 `submit.sh` 仍会被哈希检查拒绝，重新执行上述公开命令生成新尝试，不修改旧清单。PW 粒度恢复见 [0020](../docs/specs/0020-qe-electronic-postprocess-resume/acceptance.md)，DOS 参数与新尝试恢复见 [0021](../docs/specs/0021-qe-dos-pencil-resume/acceptance.md)。已绑定作业的旧脚本不能用 `sbatch` 重提；重新执行公开 `-s`（可加 `--resume`）会创建独立尝试，复用成功的 PW 和 bands，从 DOS 等未完成任务继续。
 
-同一工作区一次只能有一条生成／提交命令修改记录。`epw-state/control.lock` 是命令操作锁，`epw-state/execution.lock` 是科学执行锁；正常结束自动释放。锁归属与旧作业不一致时，提示锁路径、主机、PID 和 Slurm 归属，不自动删除。看到该提示先等待正在运行的命令结束；残留或归属未知必须核验，不能直接 `rm`。活动或终态未知的作业同样禁止重复提交。
+正常入口与阶段执行已移除 `epw-state/control.lock`、`epw-state/execution.lock` 及阶段 `execution.lock` 的获取和恢复。旧残留不需要手动删除，也不会因为它们存在而拒绝重复命令；同时写同一工作区不再受这些锁互斥。顺序重复调用仍依据作业记录处理，活动或提交回执未知时禁止重提。预算账本、注册表及其锁和其他用途的锁保持原样。
 
 同一阶段的独立产物最多使用 8 路完整哈希核验，流式读取使用 1 MiB 堆缓冲；减少共享盘串行等待，不省略文件或跨调用缓存。缺失与损坏仍分别处理，见 [0041](../docs/specs/0041-stage-output-verification-io/spec.md)。
 

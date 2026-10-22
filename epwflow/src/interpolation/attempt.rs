@@ -46,7 +46,8 @@ fn inputs(dir: &Path, result: &mut Vec<Identity>) -> Result<()> {
             !meta.file_type().is_symlink(),
             "input_conflict: 物化输入不得包含链接"
         );
-        if meta.is_file() && crate::foundation::native_jobs::is_log(&path) { continue; }
+        if meta.is_file() && (crate::foundation::native_jobs::is_log(&path)
+            || path.extension().is_some_and(|e| e == "sh")) { continue; }
         if meta.is_file() && crate::foundation::workspace::slurm_log(&path) { continue; }
         if meta.is_dir() {
             inputs(&path, result)?;

@@ -106,7 +106,7 @@ fn success(output: Output) {
         String::from_utf8_lossy(&output.stderr)
     );
 }
-fn check_row(row: &Value, job_placeholder: bool) {
+fn check_row(row: &Value, job_placeholder: bool, merged: bool) {
     let script = Path::new(row["script"].as_str().unwrap());
     for key in ["output", "error"] {
         let filename = row["options"][key].as_str().unwrap();
@@ -120,7 +120,7 @@ fn check_row(row: &Value, job_placeholder: bool) {
         assert_eq!(path.parent(), script.parent());
         assert!(path.is_file());
     }
-    assert_ne!(row["output"], row["error"]);
+    assert_eq!(row["output"] == row["error"], merged);
     assert!(Command::new("/bin/bash")
         .arg("-n")
         .arg(script)
@@ -152,7 +152,7 @@ fn numbered_scripts_keep_logs_local_when_submitted_from_other_directories() {
     assert_eq!(rows.len(), scripts.len());
     for row in rows {
         assert_eq!(row["cwd"], "/");
-        check_row(&row, true);
+        check_row(&row, true, false);
     }
 }
 
@@ -198,7 +198,7 @@ fn generated_chain_keeps_logs_local_and_preserves_frozen_scripts() {
                 "/"
             }
         );
-        check_row(&row, true);
+        check_row(&row, true, false);
     }
 }
 
@@ -214,7 +214,13 @@ fn public_submission_uses_short_names_and_refuses_duplicate_queued_jobs() {
     );
     let rows = c.rows();
     assert_eq!(rows.len(), 1);
-    check_row(&rows[0], true);
+    check_row(&rows[0], false, true);
+    assert_eq!(rows[0]["options"]["output"], "slurm-scf.log");
+    assert!(rows[0]["options"].get("chdir").is_none());
+    assert!(!rows[0]["argv"].as_array().unwrap().iter().any(|v| v.as_str().unwrap().starts_with("--chdir")));
+    let script = Path::new(rows[0]["script"].as_str().unwrap());
+    assert_eq!(script.file_name().unwrap(), "scf.sh");
+    assert_eq!(Path::new(rows[0]["cwd"].as_str().unwrap()), script.parent().unwrap());
     let identity =
         store::Identity::capture(Path::new(rows[0]["script"].as_str().unwrap())).unwrap();
     let _ = c
@@ -241,7 +247,7 @@ fn legacy_workflow_submission_does_not_override_log_names_with_paths() {
     c.api_child("legacy_workflow_submission_does_not_override_log_names_with_paths");
     let rows = c.rows();
     assert_eq!(rows.len(), 1);
-    check_row(&rows[0], true);
+    check_row(&rows[0], true, false);
     for argument in rows[0]["argv"].as_array().unwrap() {
         let argument = argument.as_str().unwrap();
         assert!(!argument.starts_with("--output=") && !argument.starts_with("--error="));
@@ -260,7 +266,7 @@ fn stage_backend_keeps_log_directory_separate_from_scientific_working_directory(
     c.api_child("stage_backend_keeps_log_directory_separate_from_scientific_working_directory");
     let rows = c.rows();
     assert_eq!(rows.len(), 1);
-    check_row(&rows[0], true);
+    check_row(&rows[0], true, false);
     let script = Path::new(rows[0]["script"].as_str().unwrap());
     let result = c
         .command("/bin/bash")
@@ -293,7 +299,7 @@ fn wannier_default_logs_stay_local_and_custom_headers_are_preserved() {
     }
     for row in c.rows() {
         assert_eq!(row["cwd"], "/");
-        check_row(&row, false);
+        check_row(&row, false, false);
     }
     // Slurm 执行的是 spool 副本，正文不能用 $0 的目录覆盖正确的工作目录。
     let spool = c.root.join("slurm_script");

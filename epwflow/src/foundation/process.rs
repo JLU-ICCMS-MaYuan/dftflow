@@ -10,6 +10,19 @@ pub struct ExecutionReport {
     pub duration_secs: f64,
 }
 
+impl ExecutionReport {
+    /// 直接重定向已写入目标文件；旧执行器的独立日志仍按原方式归集。
+    pub fn copy_logs(&self, work: &Path, stem: &str) -> Result<()> {
+        for (source, suffix) in [(&self.stdout_path, "out"), (&self.stderr_path, "err")] {
+            let destination = work.join(format!("{stem}.{suffix}"));
+            if source != &destination {
+                fs::copy(source, destination)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// 在明确工作目录执行命令，stdout/stderr 落盘到日志；失败按退出码或启动错误判定。
 pub fn run(command: &[String], work: &Path) -> Result<ExecutionReport> {
     let report = run_report(command, work)?;

@@ -176,7 +176,6 @@ pub fn run(
     let source = super::source::bind(work, cfg, &f3)?;
     let root = crate::foundation::layout::path(work, "superconductivity");
     std::fs::create_dir_all(&root)?;
-    let _lock = store::Lock::acquire(&root.join("execution"))?;
     let path = root.join("manifest.json");
     let mut r = if path.exists() {
         published(work, cfg, &f3.run_id)?

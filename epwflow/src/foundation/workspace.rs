@@ -37,18 +37,6 @@ fn attempt_path(root: &Path, id: &str) -> PathBuf {
     root.join("epw-state/attempts").join(id).join("attempt.json")
 }
 
-pub(super) fn control(cfg: &Config) -> Result<store::Lock> {
-    super::run_state::ready(&cfg.work_dir)?;
-    let target = cfg.work_dir.join("epw-state/control");
-    if cfg.work_dir.join("epw-state/control.lock").exists() && active(&cfg.work_dir).is_file() {
-        let old: Attempt = store::read(&active(&cfg.work_dir))?;
-        if let Some(job) = old.job {
-            store::recover_finished_lock(&target, job)?;
-        }
-    }
-    store::Lock::acquire(&target)
-}
-
 pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
     if !active(&cfg.work_dir).exists() {
         return Ok(());
@@ -66,11 +54,6 @@ pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
             &cfg.budget.ledger,
             &cfg.budget.campaign_id,
             budget::reconcile,
-        )?;
-        store::recover_finished_lock(&cfg.work_dir.join("epw-state/execution"), job)?;
-        store::recover_finished_lock(
-            &Step::Superconductivity.directory(cfg).join("execution"),
-            job,
         )?;
         for results in [
             layout::path(&cfg.work_dir, "results"),
@@ -228,12 +211,12 @@ fn script(cfg: &Config, dir: &Path, a: &Attempt) -> Result<PathBuf> {
 /// 每个阶段脚本都能独立提交；批量脚本仅负责组织三个公开入口。
 pub fn generate(config: &Path, target: Step) -> Result<PathBuf> {
     let cfg = Config::load(config)?;
-    let _guard = control(&cfg)?;
+    super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, None)?;
-    generate_locked(config, target, &cfg)
+    generate_current(config, target, &cfg)
 }
 
-fn generate_locked(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf> {
+fn generate_current(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf> {
     layout::initialize(cfg)?;
     // 在重建上游之前撤下过期的下游回执，防止相同字节的新结果命中旧交付。
     let stale = Step::ALL.into_iter()
@@ -331,9 +314,9 @@ fn generate_locked(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf>
 
 pub fn start(config: &Path, target: Step, submit: bool) -> Result<()> {
     let cfg = Config::load(config)?;
-    let _guard = control(&cfg)?;
+    super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, None)?;
-    let script_path = generate_locked(config, target, &cfg)?;
+    let script_path = generate_current(config, target, &cfg)?;
     status(&cfg)?;
     let pending = target
         .closure()
@@ -368,7 +351,6 @@ pub fn start(config: &Path, target: Step, submit: bool) -> Result<()> {
         .context("data_invalid: 生成脚本没有对应尝试")?;
     a.script.as_ref().unwrap().verify()?;
     if !submit {
-        drop(_guard);
         return execute(&attempt_path(&cfg.work_dir, &a.id));
     }
     let token = budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
@@ -446,7 +428,7 @@ pub fn execute(path: &Path) -> Result<()> {
         "allocation: 节点数量与配置不符"
     );
     {
-        let _guard = control(&cfg)?;
+        super::run_state::ready(&cfg.work_dir)?;
         check_active(&cfg, Some(&a.id))?;
         if active(&cfg.work_dir).exists() {
             let old: Attempt = store::read(&active(&cfg.work_dir))?;
@@ -475,7 +457,6 @@ pub fn execute(path: &Path) -> Result<()> {
         a.state = "running".into();
         persist(&cfg, &a)?;
     }
-    let _execution = store::Lock::acquire(&cfg.work_dir.join("epw-state/execution"))?;
     store::atomic_bytes(
         &cfg.work_dir.join("epw-state/current-config.toml"),
         toml::to_string_pretty(&cfg)?.as_bytes(),
@@ -722,7 +703,7 @@ pub fn execute_task(path: &Path) -> Result<()> {
         slurm::running_allocation(job)?.nodes == u64::from(cfg.resources.nodes),
         "allocation: 节点数不一致"
     );
-    let _control = control(&cfg)?;
+    super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, Some(&a.id))?;
     if active(&cfg.work_dir).exists() {
         let old: Attempt = store::read(&active(&cfg.work_dir))?;
@@ -739,8 +720,6 @@ pub fn execute_task(path: &Path) -> Result<()> {
     )?);
     a.state = "running".into();
     store::write(&active(&cfg.work_dir), a)?;
-    drop(_control);
-    let _guard = store::Lock::acquire(&cfg.work_dir.join("epw-state/execution"))?;
     let result = (|| -> Result<()> {
         if let Some(name) = &task.electronic_leaf {
             return super::workspace_science::run_electronic_leaf(&cfg, name);
@@ -749,14 +728,7 @@ pub fn execute_task(path: &Path) -> Result<()> {
         let frozen = PathBuf::from(task.argv.last().context("data_invalid: 子任务空命令")?);
         fs::copy(frozen, &task.input.path)?;
         let report = super::process::run_report(&task.argv, &task.directory)?;
-        fs::copy(
-            report.stdout_path,
-            task.directory.join(format!("{}.out", task.stem)),
-        )?;
-        fs::copy(
-            report.stderr_path,
-            task.directory.join(format!("{}.err", task.stem)),
-        )?;
+        report.copy_logs(&task.directory, &task.stem)?;
         fs::write(
             task.directory.join(format!("{}.exitcode", task.stem)),
             report

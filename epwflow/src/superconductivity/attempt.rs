@@ -374,11 +374,8 @@ fn collect(mut record: AttemptResult, dir: &Path) -> Result<AttemptResult> {
         let report = process::run_report(&command, dir)?;
         record.exit_status = report.exit_status;
         record.duration_secs = Some(report.duration_secs);
-        for (path, name) in [
-            (&report.stdout_path, "epw.out"),
-            (&report.stderr_path, "epw.err"),
-        ] {
-            fs::copy(path, dir.join(name))?;
+        report.copy_logs(dir, "epw")?;
+        for name in ["epw.out", "epw.err"] {
             record.artifacts.push(Identity::capture(&dir.join(name))?);
         }
         ensure!(

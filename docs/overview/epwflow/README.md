@@ -1,16 +1,20 @@
 # epwflow 当前入口与验证边界
 
-自动生成的 `#SBATCH --output`／`--error` 只写日志文件名，使用 `#SBATCH --chdir` 固定到脚本目录；正文所需的科学工作目录另外保持。编号阶段及电子子目录使用 `slurm-%j.out/.err`，旧生成入口保留阶段前缀，内部提交不再用绝对路径参数覆盖日志。公开提交、总脚本和跨目录直接提交均有隔离回归；历史冻结脚本不改写，需新版程序的新尝试才能采用新格式，见 [0022 验收](../../specs/0022-slurm-log-filenames/acceptance.md)。
+当前编号工作区的原生提交使用 `<功能>.sh` 和 `slurm-<功能>.log`，标准输出与错误共用同一 Slurm 日志并覆盖写入。公开命令在计算目录调用 sbatch，脚本正文 cd，不再设置或传入 --chdir；科学程序直接写自身 `.out/.err`。旧冻结脚本及历史执行路径保留原格式，见 [0046 验收](../../specs/0046-epw-submit-simplification/acceptance.md)。
 
 ## 编号工作区的原生任务提交
 
 三个公开 EPW 程序的编号工作区 `-s` 由作业外命令核验上一任务，再最多提交一次原生程序调用并立即返回。实际 Slurm 脚本直接包含 QE、Wannier90／postw90 或 EPW 命令，没有 DFTFlow 准备、校验或推进入口；用户在作业结束后重复公开命令推进，Tc 每次求解也按温度与初值分别进行。
 
-唯一提交脚本与可读的 `submit.sh` 位于实际科学目录，日志使用同目录文件名并固定工作目录。输入／脚本／程序身份、预算及作业回执由 `epw-state/native-jobs/` 保存；活动或未知任务禁止重提，失败须显式恢复，科学完成仍由既有收据核验。独立 W90 绘图在 `native-post/` 副本执行，保护拟合来源。
+原生脚本位于实际科学目录，不再创建仅供阅读的 submit.sh 副本。QE／EPW 命令通过 `< 输入.in > 输出.out 2> 错误.err` 直接读写，Wannier 种子参数接口保持。环境脚本直接 `source "路径" --force`，没有 if 包装、失败后缀或自动严格选项；普通安全参数直接显示，特殊参数使用必要双引号和转义。科学命令为脚本最后命令，非零退出仍传播。
+
+输入、程序身份、预算及作业回执由 `epw-state/native-jobs/` 保存。新任务记录为版本 2，读取直接输出；版本 1 历史任务继续读取原日志。准备和活动任务仍校验脚本，新格式终态的复用不依赖可覆盖脚本或 Slurm 日志，科学输入／来源／输出仍校验。独立 W90 绘图在 `native-post/` 副本执行，保护拟合来源。
+
+正常工作区入口及阶段执行不再获取／恢复 `epw-state/control.lock`、`epw-state/execution.lock` 或阶段 `execution.lock`，旧残留无需删除且不会因此拒绝命令；不提供这些锁原先的同时写入互斥。顺序重复命令仍检查已有作业，活动或提交回执未知时禁止重提，失败须显式恢复。预算账本／注册表及其锁、迁移专用保护、快照与结果／出图等其他锁维持原行为。
 
 编号工作区 `--all` 只准备下一就绪脚本和 `native-plan.json`，不生成自动串联总脚本。只读状态区分运行中、待核验、失败与已核验；手工 debug 不自动登记为正式交付。旧非编号布局新 `-s` 提示显式导入，避免继续提交包装脚本；历史封存和默认安装不自动变化，`-r` 保留既有分配语义。
 
-公开进程契约覆盖逐任务 QE／Wannier／粗细网格及两模式 Tc、环境失败、恢复、防重复和未知回执，不代表新增真实科学验收。设计与证据见 [0026](../../specs/0026-epw-direct-native-submit/plan.md)。以下历史自动串联说明不适用于新的编号工作区 `-s`。
+公开进程契约覆盖逐任务 QE／Wannier／粗细网格、两模式 Tc 与指定温度能隙、直接 source、恢复、顺序防重复和未知回执，不代表新增真实科学验收。设计与证据见 [0026](../../specs/0026-epw-direct-native-submit/plan.md)。以下历史自动串联说明不适用于新的编号工作区 `-s`。
 
 ## 指定温度超导能隙（0045）
 
@@ -42,7 +46,7 @@ LDA 历史 40³/20³ EPC 已有 λ_integral=0.6853853、λ_sum=0.6853511，iso �
 
 ## 编号工作区与当前配置续算
 
-新工作区设置 `layout="numbered"`，默认配置为根 `input.toml`，采用八个实际计算目录：SCF、NSCF、`qe_eband/qe_eledos`、三种 PH 模式之一、Wannier、粗 EPC、细 EPC、iso/aniso。实际计算的输入、`submit.sh` 与日志共目录；依赖上游数值的子任务在执行到该步时生成。各编号阶段的 `completion.json` 保存完成回执，第 3 步原生回执位于 `3.qe-electronic/receipts/`，第 5／6 步后处理回执为本阶段 `post-completion.json`；可见的 `epw-state/` 保存共享状态、尝试、交付清单和历史，不以链接伪装计算目录。
+新工作区设置 `layout="numbered"`，默认配置为根 `input.toml`，采用八个实际计算目录：SCF、NSCF、`qe_eband/qe_eledos`、三种 PH 模式之一、Wannier、粗 EPC、细 EPC、iso/aniso。实际计算的输入、功能脚本与日志共目录；依赖上游数值的子任务在执行到该步时生成。各编号阶段的 `completion.json` 保存完成回执，第 3 步原生回执位于 `3.qe-electronic/receipts/`，第 5／6 步后处理回执为本阶段 `post-completion.json`；可见的 `epw-state/` 保存共享状态、尝试、交付清单和历史，不以链接伪装计算目录。
 
 三个公开程序保持，`epw_wannier --stage wannier|coarse` 和 `epw_superconductivity --stage fine|superconductivity` 分离科学边界；默认分别到第 6、8 步。`epw_phonon --stage scf|nscf|electronic|phonon` 管理第 1～4 步，默认到 phonon，复用共享 qeflow/qf 输入、执行和后处理组件。PH 使用独立 SCF 快照，不额外做 SCF；nosplit、coords、index 均校验后交付 `save/`。
 

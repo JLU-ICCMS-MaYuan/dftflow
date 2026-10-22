@@ -4,7 +4,7 @@
 
 **当前范围以本轮收窄指令为准**：仅移除 `epw-state/control.lock`、`epw-state/execution.lock` 及阶段同类 `execution.lock`，保留五项脚本优化。此前“全部锁，包括预算账本锁”的选择已被替代；预算、注册表和其他种类锁及状态机制暂不调整。本清单是背景资料，不是全面去锁或状态重构的任务表。直接删除文件的影响与修改代码移除机制是两回事。
 
-## 当前观察与锁故障
+## 修复前现场观察与锁故障
 
 当前目录在检查期间持续变化，不作为静止快照使用。10:48:27 的读取结果是：
 
@@ -13,9 +13,9 @@
 - `native-active.json` 的目录为 `3.qe-electronic/qe_eband`，状态为 `submitted`，作业号为 1327914。这里只读取了本地记录，未实时查询该作业是否仍活动。
 - `1.qe-scf/`、`2.qe-nscf/` 存在 `completion.json`、输入／输出、带 token 的正式脚本和 `submit.sh`。
 
-本轮未删除锁或状态、未提交任务、未修改计算输入。此前读取曾看到残留空 `control.lock`；不能据此推断它的具体产生原因或是谁清理了它。
+以下观察来自修复前只读调查；本次实施仅修改源码，不删除真实现场的锁或状态、不提交任务、不修改计算输入。此前读取曾看到残留空 `control.lock`；不能据此推断它的具体产生原因或是谁清理了它。
 
-源码能证明的锁故障机制：
+修复前源码能证明的锁故障机制：
 
 1. [公开推进入口](../../../epwflow/src/foundation/native_workspace.rs)先调用 `workspace::control`，然后才检查、结算原生任务。
 2. [控制锁调用方](../../../epwflow/src/foundation/workspace.rs)只在旧 `active.json` 存在时尝试依赖旧作业的恢复；它不等同于当前 `native-active.json`。
@@ -106,7 +106,7 @@
 
 源码：[阶段回执](../../../epwflow/src/foundation/stages.rs)、[超导单点](../../../epwflow/src/superconductivity/points.rs)、[Tc 调度](../../../epwflow/src/superconductivity/scheduler.rs)、[比较导出](../../../epwflow/src/interpolation/comparison.rs)、[结果交付](../../../epwflow/src/delivery/native.rs)、[比较交付](../../../epwflow/src/delivery/comparison.rs)、[原生绘图](../../../epwflow/src/delivery/native_plot.rs)、[比较绘图](../../../epwflow/src/delivery/comparison_plot.rs)、[预算](../../../epwflow/src/foundation/budget.rs)、[状态根目录](../../../epwflow/src/foundation/store.rs)、[共享 QE 归档](../../../crates/qf-phonon/src/epw.rs)、[QE 链提交](../../../qeflow/src/phonon_chain.rs)。
 
-## 拟生成脚本的可读形式
+## 新原生脚本的可读形式
 
 以下是待实现的样式示例，不是现有目录已生成或已经执行的新脚本。用途为 NSCF，脚本名 `nscf.sh`。
 
@@ -136,10 +136,14 @@ sbatch nscf.sh
 
 Slurm 的提交目录默认是调用进程的当前目录；脚本正文 `cd` 不会回溯改变 Slurm 打开相对日志路径的位置。相对日志、`--chdir`、`--open-mode` 的依据是 [Slurm 官方 sbatch 文档](https://slurm.schedmd.com/sbatch.html)，2026-10-22 已读取。默认追加或截断由系统 `JobFileAppend` 控制；实施若要求每次截断，需显式选择 `--open-mode=truncate`，不能只改文件名就声称实现覆盖。
 
-## 当前实施顺序与边界
+## 实施顺序与边界
 
 1. 工作区控制／执行锁修复优先，可单独实现并验收。验证中断后再次执行原命令无需手动删锁，不依赖脚本优化是否完成。
 2. 五项脚本优化按 Spec 独立验收；仅调整固定命名、科学输入输出、目录切换、环境加载、必要引用及其必需的回执读取。
 3. 预算账本／注册表及其锁保持原样；其他锁、其他状态去重、旧流程清退和历史科学数据清理全部暂缓。
 
 本轮只修改 0046 文档，没有执行上述代码修复，也没有清理现场。
+
+## 实施后对应关系
+
+目标控制／执行锁调用已从正常入口、旧工作区执行和超导阶段移除；残留目录保持原样。其他状态清单及其他种类锁保留。原生新任务记录版本 2 直接绑定科学 `.out/.err`；旧版本 1 使用原日志回收，三份记录不合并。新功能脚本及 Slurm 日志不作为科学产物指纹。详见 [验收记录](acceptance.md)。

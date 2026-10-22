@@ -804,8 +804,7 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
     // 独立程序会重写 wout；失败也必须保留已发布拟合的收据身份。
     fs::write(dir.join(format!("{prefix}.wout")), &original_wout)?;
     let report = report?;
-    fs::copy(&report.stdout_path, dir.join("wannier-plot.out"))?;
-    fs::copy(&report.stderr_path, dir.join("wannier-plot.err"))?;
+    report.copy_logs(dir, "wannier-plot")?;
     check_wannier_post(&report, dir, prefix, "Wannier90 restart=plot")?;
     let program = cfg
         .programs
@@ -817,8 +816,7 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
     argv.extend(program.args);
     argv.push(prefix.clone());
     let report = super::process::run_report_named(&argv, dir, "postw90")?;
-    fs::copy(&report.stdout_path, dir.join("postw90.out"))?;
-    fs::copy(&report.stderr_path, dir.join("postw90.err"))?;
+    report.copy_logs(dir, "postw90")?;
     check_wannier_post(&report, dir, prefix, "postw90")?;
     let band = dir.join(format!("{prefix}_band.dat"));
     let labels = dir.join(format!("{prefix}_band.labelinfo.dat"));
@@ -875,7 +873,7 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
             name != "completion.json"
                 && name != "post-completion.json"
                 && !rel.starts_with("receipts/")
-                && name != "submit.sh"
+                && !name.ends_with(".sh")
                 && !name.starts_with("submit-")
                 && !super::native_jobs::is_log(&f.relative_path)
                 && !name.starts_with("slurm-")

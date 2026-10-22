@@ -328,8 +328,6 @@ fn resume_with_mpi(work: &Path, until: Option<Boundary>, submit: bool, resource:
                 .calculation_dir
                 .unwrap_or_else(|| b.work_dir.join("calculations").join(prior.attempt_id));
             for target in [
-                b.work_dir.join("epw-state/execution"),
-                calculation.join("superconductivity/execution"),
                 calculation.join("interpolation/comparison"),
                 calculation.join("results/comparison"),
                 calculation.join("results/figures/comparison-figures"),
@@ -669,7 +667,6 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
     let (cfg, binding) = fixed(work)?;
     let work = binding.work_dir.as_path();
     let job = job_id()?;
-    let _execution = store::Lock::acquire(&work.join("epw-state/execution"))?;
     let mut record = budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
         let _lock = store::Lock::acquire(&record_path(work))?;
         let mut r = load(work)?;

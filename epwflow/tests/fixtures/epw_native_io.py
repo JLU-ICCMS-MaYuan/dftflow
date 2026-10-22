@@ -9,7 +9,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 ROOT=Path(__file__).resolve().parent
 assert sys.argv[1]=='--io-contract', 'Program.args 未传递'
-text=Path(sys.argv[sys.argv.index('-inp')+1]).read_text()
+text=Path(sys.argv[sys.argv.index('-inp')+1]).read_text() if '-inp' in sys.argv else sys.stdin.read()
 def value(name):
     return re.search(r'(?m)^\s*'+re.escape(name)+r"\s*=\s*('(?:[^']|'')*'|[^\n]+)",text).group(1).strip().strip("'")
 def window_min():

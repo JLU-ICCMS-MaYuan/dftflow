@@ -34,6 +34,7 @@ else:
         }
         assert!(!body.contains("set -") && !body.contains("|| exit $?"));
         assert!(!body.lines().any(|l| l.starts_with("exec ")));
+        assert!(Command::new("/bin/bash").arg("-n").arg(&script).status().unwrap().success());
         let mut cmd = Command::new("/bin/bash");
         cmd.arg(&script);
         self.environment(&mut cmd, Some(job));
@@ -41,9 +42,20 @@ else:
         cmd.current_dir("/tmp");
         let output = cmd.output().unwrap();
         let dir = PathBuf::from(task["directory"].as_str().unwrap());
-        let id = task["id"].as_str().unwrap();
-        fs::write(dir.join(format!("native-{id}-{job}.out")), &output.stdout).unwrap();
-        fs::write(dir.join(format!("native-{id}-{job}.err")), &output.stderr).unwrap();
+        if task["schema_version"] == 1 {
+            let id = task["id"].as_str().unwrap();
+            fs::write(dir.join(format!("native-{id}-{job}.out")), &output.stdout).unwrap();
+            fs::write(dir.join(format!("native-{id}-{job}.err")), &output.stderr).unwrap();
+        } else {
+            let log = body.lines().find_map(|l| l.strip_prefix("#SBATCH --output=")).unwrap();
+            let mut combined = output.stdout.clone();
+            combined.extend(&output.stderr);
+            fs::write(dir.join(log), combined).unwrap();
+            assert!(!body.contains("--chdir"));
+            assert!(body.contains("#SBATCH --open-mode=truncate"));
+            assert!(!dir.join("submit.sh").exists());
+            assert_eq!(body.lines().find_map(|l| l.strip_prefix("#SBATCH --error=")), Some(log));
+        }
         let exit = output.status.code().unwrap();
         self.put(
             &format!("job-{job}.state"),
@@ -77,7 +89,7 @@ fn direct_mpirun_comes_from_job_environment_and_keeps_exit_status() {
         success(c.direct_advance(0, &["-s"], "mpi-environment-submit"));
         let task = c.direct_task();
         let body = fs::read_to_string(task["script"]["path"].as_str().unwrap()).unwrap();
-        assert!(body.lines().last().unwrap().starts_with("'mpirun' '-np' '1'"));
+        assert!(body.lines().last().unwrap().starts_with("mpirun -np 1 "));
         assert!(!body.contains("obsolete MPI"));
         assert!(!task["sources"].as_array().unwrap().iter().any(|id| id["path"].as_str().unwrap().ends_with("/mpirun")));
         assert_eq!(c.direct_execute(), 17);
@@ -187,11 +199,10 @@ fn direct_failed_scf_needs_resume_and_manual_script_edits_are_not_adopted() {
         .success());
     fs::write(&script, original).unwrap();
     let job = task["job"].as_u64().unwrap();
-    let id = task["id"].as_str().unwrap();
     let dir = PathBuf::from(task["directory"].as_str().unwrap());
     c.put(&format!("job-{job}.state"), "FAILED");
-    fs::write(dir.join(format!("native-{id}-{job}.out")), "native failed").unwrap();
-    fs::write(dir.join(format!("native-{id}-{job}.err")), "exit 17").unwrap();
+    fs::write(dir.join("scf.out"), "native failed").unwrap();
+    fs::write(dir.join("scf.err"), "exit 17").unwrap();
     assert!(!c
         .direct_advance(0, &["-s"], "direct-failed")
         .status
@@ -237,13 +248,13 @@ fn direct_status_is_read_only_and_unknown_receipt_never_resubmits() {
 }
 
 #[test]
-fn direct_environment_failure_stops_native_command_and_paths_with_spaces_work() {
+fn direct_source_is_unconditional_and_paths_with_spaces_work() {
     let c = Case::numbered();
     c.direct_setup();
     let executable = c.root.join("pw with spaces.x");
     fs::copy(c.root.join("pw.x"), &executable).unwrap();
     let environment = c.root.join("environment with spaces.sh");
-    c.put("environment with spaces.sh", "return 17\n");
+    c.put("environment with spaces.sh", "printf 'environment loaded\\n'\nreturn 17\n");
     c.numbered_change(|cfg| {
         cfg.programs.pw.path = executable;
         cfg.programs.environment_script = Some(environment);
@@ -251,12 +262,10 @@ fn direct_environment_failure_stops_native_command_and_paths_with_spaces_work() 
     success(c.direct_advance(0, &["-s"], "environment-submit"));
     let body = fs::read_to_string(c.direct_task()["script"]["path"].as_str().unwrap()).unwrap();
     assert!(body.contains("pw with spaces.x"));
-    assert_eq!(c.direct_execute(), 17);
-    assert!(!c.root.join("scientific-calls").exists());
-    assert!(!c
-        .direct_advance(0, &["-s"], "environment-failed")
-        .status
-        .success());
+    assert!(body.contains("\nsource ") && !body.contains("if source"));
+    assert_eq!(c.direct_execute(), 0);
+    assert!(c.root.join("scientific-calls").exists());
+    success(c.direct_advance(0, &["-s"], "environment-next"));
 }
 
 pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
@@ -304,15 +313,13 @@ pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
 }
 
 #[test]
-fn concurrent_public_commands_submit_only_once_and_reserve_budget_once() {
+fn sequential_public_commands_submit_only_once_and_reserve_budget_once() {
     let c = Case::numbered();
     c.direct_setup();
-    let outputs = std::thread::scope(|scope| {
-        let a = scope.spawn(|| c.direct_advance(0, &["-s"], "concurrent-a"));
-        let b = scope.spawn(|| c.direct_advance(0, &["-s"], "concurrent-b"));
-        [a.join().unwrap(), b.join().unwrap()]
-    });
-    assert_eq!(outputs.iter().filter(|o| o.status.success()).count(), 1);
+    success(c.direct_advance(0, &["-s"], "sequential-a"));
+    let again = c.direct_advance(0, &["-s"], "sequential-b");
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("仍为 RUNNING"));
     assert_eq!(
         fs::read_to_string(c.root.join("submissions"))
             .unwrap()
@@ -385,6 +392,11 @@ fn edited_script_can_be_submitted_for_independent_debug_without_formal_adoption(
 #[test]
 fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
     let c=Case::numbered();c.direct_setup();
+    for relative in ["epw-state/control.lock", "epw-state/execution.lock", "8.epw-superconductivity/execution.lock"] {
+        let lock = c.root.join("run").join(relative);
+        fs::create_dir_all(&lock).unwrap();
+        fs::write(lock.join("owner.json"), "stale owner").unwrap();
+    }
     c.numbered_change(|cfg|{let s=&mut cfg.superconductivity;s.task=config::SuperconductivityTask::Gap;s.mode=config::Mode::Both;s.gap_temperatures_k=vec![20.,30.,40.];s.mixing_beta=-0.3;s.iso=None;s.aniso=None;});
     let stages=[(0,"scf"),(0,"nscf"),(0,"electronic"),(0,"phonon"),(1,"wannier"),(1,"coarse"),(2,"fine"),(2,"superconductivity")];
     let mut step=0;
@@ -453,4 +465,156 @@ fn direct_gap_failure_needs_resume_and_freezes_failed_native_evidence() {
     let failed=epwflow::superconductivity::verify::record(&run.attempts[1].record.as_ref().unwrap().path).unwrap();
     assert_eq!(failed.status,"failed");assert_eq!(failed.exit_status,Some(17));assert!(failed.gap.is_none());
     let calls:Vec<Value>=c.calls().2.lines().map(|l|serde_json::from_str(l).unwrap()).collect();assert_eq!(calls.iter().map(|v|v["temperature_k"].as_f64().unwrap()).collect::<Vec<_>>(),[20.,30.,30.]);
+}
+
+#[test]
+fn workspace_residual_locks_do_not_block_public_submission() {
+    for owner in [false, true] {
+        let c = Case::numbered();
+        c.direct_setup();
+        for name in ["epw-state/control.lock", "epw-state/execution.lock", "8.epw-superconductivity/execution.lock"] {
+            let lock = c.root.join("run").join(name);
+            fs::create_dir_all(&lock).unwrap();
+            if owner { fs::write(lock.join("owner.json"), "stale owner").unwrap(); }
+        }
+        success(c.direct_advance(0, &["--stage", "scf", "-s"], "old-lock-submit"));
+        let again = c.direct_advance(0, &["--stage", "scf", "-s"], "old-lock-repeat");
+        assert!(!again.status.success());
+        let error = String::from_utf8_lossy(&again.stderr);
+        assert!(error.contains("RUNNING"), "{error}");
+        assert!(!error.contains("锁"), "{error}");
+        assert_eq!(c.direct_execute(), 0);
+        success(c.direct_advance(0, &["--stage", "scf", "-s"], "old-lock-complete"));
+        assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 1);
+        for name in ["epw-state/control.lock", "epw-state/execution.lock", "8.epw-superconductivity/execution.lock"] {
+            let lock = c.root.join("run").join(name);
+            assert!(lock.is_dir());
+            if owner { assert_eq!(fs::read_to_string(lock.join("owner.json")).unwrap(), "stale owner"); }
+        }
+    }
+}
+
+fn wait_for_file(path: &std::path::Path) {
+    let start = std::time::Instant::now();
+    while !path.exists() {
+        assert!(start.elapsed() < std::time::Duration::from_secs(15), "等待超时：{}", path.display());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn interrupted_public_submit_reenters_receipt_checks_without_workspace_lock() {
+    let c = Case::numbered();
+    c.direct_setup();
+    c.script("sbatch", &format!("#!/bin/bash\ntouch {}\nwhile [[ ! -e {} ]]; do sleep 0.02; done\nprintf '201\\n'\n",
+        shell_quote(c.root.join("inside-sbatch").to_str().unwrap()),
+        shell_quote(c.root.join("release-sbatch").to_str().unwrap())));
+    let mut cmd = Command::new(BINS[0]);
+    cmd.args(["-c", "input.toml", "--stage", "phonon", "-s"]);
+    c.environment(&mut cmd, None);
+    let mut child = cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().unwrap();
+    wait_for_file(&c.root.join("inside-sbatch"));
+    child.kill().unwrap();
+    child.wait().unwrap();
+    c.put("release-sbatch", "release orphan fixture");
+    let again = c.direct_advance(0, &["--stage", "phonon", "-s"], "interrupted-repeat");
+    assert!(!again.status.success());
+    let error = String::from_utf8_lossy(&again.stderr);
+    assert!(error.contains("提交回执未知"), "{error}");
+    assert!(!error.contains("锁"), "{error}");
+    assert_eq!(c.direct_task()["state"], "submission_pending");
+    assert!(!c.root.join("run/epw-state/control.lock").exists());
+    assert!(!c.root.join("run/epw-state/execution.lock").exists());
+}
+
+#[test]
+fn scientific_stdout_is_live_and_arguments_are_quoted_without_shell_expansion() {
+    let c = Case::numbered();
+    c.direct_setup();
+    let program = "science ' \" $HOME `touch injected`.x";
+    c.script(program, &format!("#!/bin/bash\nprintf 'live science\\n'\nprintf 'science stderr\\n' >&2\ntouch {}\nwhile [[ ! -e {} ]]; do sleep 0.02; done\nexit 17\n",
+        shell_quote(c.root.join("science-started").to_str().unwrap()),
+        shell_quote(c.root.join("release-science").to_str().unwrap())));
+    c.numbered_change(|cfg| { cfg.programs.pw.path = c.root.join(program); });
+    success(c.direct_advance(0, &["--stage", "scf", "-s"], "live-submit"));
+    let task = c.direct_task();
+    let script = PathBuf::from(task["script"]["path"].as_str().unwrap());
+    assert_eq!(script.file_name().unwrap(), "scf.sh");
+    let body = fs::read_to_string(&script).unwrap();
+    assert!(body.contains(" < ") && body.contains(" > scf.out 2> scf.err"));
+    assert!(!body.contains("-inp") && !body.contains("--chdir"));
+    let mut cmd = Command::new("/bin/bash");
+    cmd.arg(&script);
+    c.environment(&mut cmd, Some(201));
+    cmd.current_dir("/tmp");
+    let mut child = cmd.spawn().unwrap();
+    wait_for_file(&c.root.join("science-started"));
+    let dir = PathBuf::from(task["directory"].as_str().unwrap());
+    assert!(child.try_wait().unwrap().is_none());
+    assert_eq!(fs::read_to_string(dir.join("scf.out")).unwrap(), "live science\n");
+    assert_eq!(fs::read_to_string(dir.join("scf.err")).unwrap(), "science stderr\n");
+    c.put("release-science", "done");
+    assert_eq!(child.wait().unwrap().code(), Some(17));
+    assert!(!dir.join("injected").exists());
+}
+
+#[test]
+fn completed_task_reuses_science_after_fixed_script_and_slurm_log_are_overwritten() {
+    let c = Case::numbered();
+    c.direct_setup();
+    let args = ["--stage", "scf", "-s"];
+    success(c.direct_advance(0, &args, "fixed-submit"));
+    let task = c.direct_task();
+    assert_eq!(c.direct_execute(), 0);
+    success(c.direct_advance(0, &args, "fixed-complete"));
+    let script = PathBuf::from(task["script"]["path"].as_str().unwrap());
+    fs::write(&script, "#!/bin/bash\n# next use of fixed filename\n").unwrap();
+    fs::write(script.parent().unwrap().join("slurm-scf.log"), "next log").unwrap();
+    success(c.direct_advance(0, &args, "fixed-reuse"));
+    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 1);
+    fs::write(script.parent().unwrap().join("scf.out"), "damaged scientific output").unwrap();
+    assert!(!c.direct_advance(0, &args, "fixed-reject-damage").status.success());
+}
+
+#[test]
+fn legacy_task_logs_are_adopted_before_new_format_next_task() {
+    let c = Case::numbered();
+    c.direct_setup();
+    success(c.direct_advance(0, &["-s"], "legacy-create"));
+    let mut task = c.direct_task();
+    let script = PathBuf::from(task["script"]["path"].as_str().unwrap());
+    let body = fs::read_to_string(&script).unwrap();
+    let mut lines: Vec<_> = body.lines().map(str::to_owned).collect();
+    *lines.last_mut().unwrap() = task["command"].as_array().unwrap().iter()
+        .map(|v| shell_quote(v.as_str().unwrap())).collect::<Vec<_>>().join(" ");
+    fs::write(&script, lines.join("\n") + "\n").unwrap();
+    task["schema_version"] = json!(1);
+    task["script"] = serde_json::to_value(store::Identity::capture(&script).unwrap()).unwrap();
+    for path in [c.root.join("run/epw-state/native-active.json"),
+        c.root.join("run/epw-state/native-jobs").join(format!("{}.json", task["key"].as_str().unwrap())),
+        c.root.join("run/epw-state/native-jobs/history").join(format!("{}.json", task["id"].as_str().unwrap()))] {
+        store::write(&path, &task).unwrap();
+    }
+    assert_eq!(c.direct_execute(), 0);
+    let raw = script.parent().unwrap().join(format!("native-{}-201.out", task["id"].as_str().unwrap()));
+    let expected = fs::read(&raw).unwrap();
+    success(c.direct_advance(0, &["-s"], "legacy-adopt"));
+    assert_eq!(fs::read(script.parent().unwrap().join("scf.out")).unwrap(), expected);
+    assert_eq!(c.direct_task()["schema_version"], 2);
+    assert_eq!(c.direct_task()["stem"], "nscf");
+}
+
+#[test]
+fn budget_ledger_lock_still_blocks_budget_writes() {
+    let c = Case::numbered();
+    c.direct_setup();
+    let ledger = c.root.join("fixture-ledger.json");
+    let guard = store::Lock::acquire(&ledger).unwrap();
+    let blocked = c.direct_advance(0, &["-s"], "budget-lock-blocked");
+    assert!(!blocked.status.success());
+    let error = String::from_utf8_lossy(&blocked.stderr);
+    assert!(error.contains("fixture-ledger.json.lock"), "{error}");
+    assert!(!c.root.join("submissions").exists());
+    drop(guard);
+    success(c.direct_advance(0, &["--resume", "-s"], "budget-lock-released"));
 }

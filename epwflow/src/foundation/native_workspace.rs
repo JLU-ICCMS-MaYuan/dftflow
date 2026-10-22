@@ -18,7 +18,7 @@ struct Progress {
 
 pub fn advance(config: &Path, target: Step, submit: bool, resume: bool) -> Result<()> {
     let cfg = Config::load(config)?;
-    let _guard = workspace::control(&cfg)?;
+    super::run_state::ready(&cfg.work_dir)?;
     workspace::check_active(&cfg, None)?; // 旧包装作业活动时也不能新提交。
     native_jobs::reconcile(&cfg, resume)?;
     layout::initialize(&cfg)?;

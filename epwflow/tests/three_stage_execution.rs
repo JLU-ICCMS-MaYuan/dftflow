@@ -58,10 +58,11 @@ impl Case {
             );
         }
         c.script("epw.x", &format!(r#"#!/usr/bin/python3
-import pathlib,re,runpy,sys
+import io,pathlib,re,runpy,sys
 root=pathlib.Path({root})
-text=pathlib.Path(sys.argv[sys.argv.index('-inp')+1]).read_text()
-if (root/'fail-coarse').exists() and pathlib.Path(sys.argv[sys.argv.index('-inp')+1]).name == 'epw_coarse.in':
+text=pathlib.Path(sys.argv[sys.argv.index('-inp')+1]).read_text() if '-inp' in sys.argv else sys.stdin.read()
+sys.stdin=io.StringIO(text)
+if (root/'fail-coarse').exists() and re.search(r'(?m)^\s*epwread\s*=\s*\.false\.',text) and not re.search(r'(?m)^\s*wannierize\s*=\s*\.true\.',text):
     sys.exit(17)
 assert not any(re.search(r'\b'+name+r'\s*=',text) for name in ['dis_proj_min','dis_proj_max','dis_froz_proj'])
 name='epw_tc_io.py' if re.search(r'(?m)^\s*(?:liso|laniso)\s*=\s*\.true\.',text) else 'epw_native_io.py'
@@ -622,7 +623,7 @@ if kind in ['wannier90','postw90']:
         print('Error: standalone post failed despite STOP zero')
         sys.exit(0)
 if kind in ['bands','dos']:
-    text=Path(sys.argv[sys.argv.index('-inp')+1]).read_text()
+    text=Path(sys.argv[sys.argv.index('-inp')+1]).read_text() if '-inp' in sys.argv else sys.stdin.read()
     prefix=re.search(r"prefix\s*=\s*'([^']+)'",text).group(1)
     xml=ET.parse(Path('out')/(prefix+'.save')/'data-file-schema.xml').getroot()
     ks=xml.findall('output/band_structure/ks_energies')
@@ -687,7 +688,7 @@ fn numbered_wannier_post_zero_exit_error_preserves_fit_and_resumes() {
 }
 
 #[test]
-fn numbered_scripts_leave_shell_options_unset_and_stop_on_environment_failure() {
+fn numbered_scripts_leave_shell_options_unset_and_source_environment_directly() {
     let c = Case::numbered();
     let environment = c.root.join("environment with spaces.sh");
     c.numbered_change(|cfg| cfg.programs.environment_script = Some(environment.clone()));
@@ -696,7 +697,7 @@ fn numbered_scripts_leave_shell_options_unset_and_stop_on_environment_failure() 
     let work = c.root.join("run");
     let mut checked = 0;
     for entry in epwflow::qe_data::save::files(&work).unwrap() {
-        if !entry.relative_path.ends_with("submit.sh") { continue; }
+        if entry.relative_path.extension().is_none_or(|ext| ext != "sh") { continue; }
         let script = fs::read_to_string(work.join(&entry.relative_path)).unwrap();
         let (prefix, invocation) = script.trim_end().rsplit_once('\n').unwrap();
         assert!(!invocation.starts_with("exec "));
@@ -708,9 +709,9 @@ fn numbered_scripts_leave_shell_options_unset_and_stop_on_environment_failure() 
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
         assert_eq!(out.stdout, b"ready");
         fs::write(&environment, "return 17\n").unwrap();
-        let out = run("printf should-not-run");
-        assert_eq!(out.status.code(), Some(17));
-        assert!(out.stdout.is_empty());
+        let out = run("printf source-returned");
+        assert_eq!(out.status.code(), Some(0));
+        assert_eq!(out.stdout, b"source-returned");
         fs::write(&environment, "export EPW_TEST_ENV=\"${EPW_TEST_OPTIONAL}ready\"\n").unwrap();
         checked += 1;
     }

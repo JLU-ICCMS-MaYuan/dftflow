@@ -28,6 +28,13 @@ pub fn paused(e: &anyhow::Error) -> bool {
     e.downcast_ref::<Paused>().is_some()
 }
 pub(crate) fn is_log(path: &Path) -> bool {
+    if path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with("slurm-") && n.ends_with(".log"))
+    {
+        return true;
+    }
     path.file_name()
         .and_then(|n| n.to_str())
         .and_then(|n| n.strip_prefix("native-"))
@@ -151,12 +158,20 @@ pub fn accept(cfg: &Config, generation: &str) -> Result<()> {
 }
 fn verify(task: &Task) -> Result<()> {
     ensure!(
-        task.schema_version == 1,
+        matches!(task.schema_version, 1 | 2),
         "unsupported_version: 原生任务记录"
     );
-    task.script
-        .verify()
-        .context("input_conflict: 脚本已手工修改；独立调试不属于正式交付")?;
+    // 新格式的终态只依赖科学证据，固定名称脚本可供下一次计算覆盖。
+    if task.schema_version == 1
+        || matches!(
+            task.state.as_str(),
+            "prepared" | "submission_pending" | "submitted" | "unknown"
+        )
+    {
+        task.script
+            .verify()
+            .context("input_conflict: 脚本已手工修改；独立调试不属于正式交付")?;
+    }
     for id in task.inputs.iter().chain(&task.sources) {
         id.verify()?;
     }
@@ -273,15 +288,26 @@ pub fn reconcile(cfg: &Config, resume: bool) -> Result<()> {
             "failed"
         }
         .into();
-        let stdout = task.directory.join(format!("native-{}-{job}.out", task.id));
-        let stderr = task.directory.join(format!("native-{}-{job}.err", task.id));
+        let (stdout, stderr) = if task.schema_version == 1 {
+            (
+                task.directory.join(format!("native-{}-{job}.out", task.id)),
+                task.directory.join(format!("native-{}-{job}.err", task.id)),
+            )
+        } else {
+            (
+                task.directory.join(format!("{}.out", task.stem)),
+                task.directory.join(format!("{}.err", task.stem)),
+            )
+        };
         task.stdout = Some(Identity::capture(&stdout).context("data_invalid: 缺少原生 stdout")?);
         task.stderr = Some(Identity::capture(&stderr).context("data_invalid: 缺少原生 stderr")?);
-        for (source, suffix) in [(&stdout, "out"), (&stderr, "err")] {
-            fs::copy(
-                source,
-                task.directory.join(format!("{}.{suffix}", task.stem)),
-            )?;
+        if task.schema_version == 1 {
+            for (source, suffix) in [(&stdout, "out"), (&stderr, "err")] {
+                fs::copy(
+                    source,
+                    task.directory.join(format!("{}.{suffix}", task.stem)),
+                )?;
+            }
         }
         store::atomic_bytes(
             &task.directory.join(format!("{}.exitcode", task.stem)),
@@ -443,7 +469,6 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
         persist(&cfg, &task)?;
         let out = Command::new("sbatch")
             .arg("--parsable")
-            .arg(format!("--chdir={}", work.display()))
             .arg(&task.script.path)
             .current_dir(work)
             .output();
@@ -485,6 +510,30 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
     Err(Paused.into())
 }
 
+fn double_quote(value: &str) -> String {
+    let mut out = String::from("\"");
+    for c in value.chars() {
+        if matches!(c, '\\' | '"' | '$' | '`') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
+    out
+}
+
+fn readable_quote(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"/_-.:=,+%@".contains(&c))
+    {
+        value.to_owned()
+    } else {
+        double_quote(value)
+    }
+}
+
 fn prepare(
     cfg: &Config,
     generation: &str,
@@ -496,7 +545,19 @@ fn prepare(
     // 历史任务键／argv 保持原样，仅新脚本使用运行环境中的启动器。
     let invocation = qf_runner::plain_scientific_argv(command);
     let id = store::token();
-    let q = slurm::shell_quote;
+    let q = readable_quote;
+    // QE/EPW 使用 stdin；Wannier 等种子参数型程序保留原接口。
+    let input_arg = invocation
+        .windows(2)
+        .position(|p| matches!(p[0].as_str(), "-inp" | "-in"));
+    let purpose = if stem == "epw" {
+        input_arg
+            .and_then(|i| Path::new(&invocation[i + 1]).file_stem())
+            .and_then(|n| n.to_str())
+            .unwrap_or(stem)
+    } else {
+        stem
+    };
     let r = &cfg.resources;
     ensure!(
         !r.partition.contains(['\n', '\r']),
@@ -506,7 +567,13 @@ fn prepare(
         !work.to_string_lossy().contains(['\n', '\r']),
         "configuration: 工作目录含换行"
     );
-    let mut text = format!("#!/bin/bash\n#SBATCH --job-name=epw-{stem}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n#SBATCH --chdir={}\n#SBATCH --output=native-{id}-%j.out\n#SBATCH --error=native-{id}-%j.err\nif ! cd -- {}; then exit 1; fi\n", r.partition, r.nodes, r.mpi, r.wall_seconds.div_ceil(60), q(&work.to_string_lossy()), q(&work.to_string_lossy()));
+    ensure!(
+        purpose
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c)),
+        "configuration: 脚本功能名称含特殊字符"
+    );
+    let mut text = format!("#!/bin/bash\n#SBATCH --job-name=epw-{purpose}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n#SBATCH --output=slurm-{purpose}.log\n#SBATCH --error=slurm-{purpose}.log\n#SBATCH --open-mode=truncate\nif ! cd -- {}; then exit 1; fi\n", r.partition, r.nodes, r.mpi, r.wall_seconds.div_ceil(60), double_quote(&work.to_string_lossy()));
     let mut sources = vec![Identity::capture(&cfg.structure)?];
     sources.extend(
         cfg.pseudos
@@ -520,8 +587,8 @@ fn prepare(
     if let Some(env) = &cfg.programs.environment_script {
         sources.push(Identity::capture(env)?);
         text.push_str(&format!(
-            "if source {} --force; then :; else status=$?; exit \"$status\"; fi\n",
-            q(&env.to_string_lossy())
+            "source {} --force\n",
+            double_quote(&env.to_string_lossy())
         ));
     }
     // 固定显式科学程序和自定义启动器；mpirun 已改为作业环境 PATH 查找。
@@ -553,16 +620,29 @@ fn prepare(
         }
     }
     ensure!(!inputs.is_empty(), "configuration: 原生调用缺少固定输入");
-    text.push_str(&invocation.iter().map(|s| q(s)).collect::<Vec<_>>().join(" "));
+    text.push_str(
+        &invocation
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| input_arg.is_none_or(|n| *i != n && *i != n + 1))
+            .map(|(_, s)| q(s))
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    if let Some(i) = input_arg {
+        text.push_str(&format!(" < {}", q(&invocation[i + 1])));
+    }
+    text.push_str(&format!(
+        " > {} 2> {}",
+        q(&format!("{stem}.out")),
+        q(&format!("{stem}.err"))
+    ));
     text.push('\n');
-    let script = work.join(format!("submit-{stem}-{id}.sh"));
+    let script = work.join(format!("{purpose}.sh"));
     store::atomic_bytes(&script, text.as_bytes())?;
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
-    // submit.sh 供人阅读；正式回执绑定唯一脚本，后续任务不会改写它。
-    store::atomic_bytes(&work.join("submit.sh"), text.as_bytes())?;
-    fs::set_permissions(work.join("submit.sh"), fs::Permissions::from_mode(0o755))?;
     let task = Task {
-        schema_version: 1,
+        schema_version: 2,
         id,
         key: key.into(),
         generation: generation.into(),

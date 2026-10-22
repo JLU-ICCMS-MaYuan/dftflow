@@ -58,7 +58,6 @@ pub fn run_with_retry(
     before()?;
     let root = crate::foundation::layout::path(&work, "superconductivity");
     std::fs::create_dir_all(&root)?;
-    let _lock = store::Lock::acquire(&root.join("execution"))?;
     let modes = match cfg.superconductivity.mode {
         Mode::Iso => vec![Mode::Iso],
         Mode::Aniso => vec![Mode::Aniso],

@@ -78,8 +78,7 @@ pub fn run_epw(
         dir.join(input_name).to_string_lossy().into_owned(),
     ]);
     let report = super::super::foundation::process::run_report(&cmd, dir)?;
-    fs::copy(report.stdout_path, dir.join("epw.out"))?;
-    fs::copy(report.stderr_path, dir.join("epw.err"))?;
+    report.copy_logs(dir, "epw")?;
     fs::write(
         dir.join("epw.exitcode"),
         report

@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """两模式原生 IO 替身；边界数值只验证搜索与交付，不能作为科学 Tc。"""
 import sys,re,math,pathlib,struct,json
-text=pathlib.Path(sys.argv[-1]).read_text()
+text=pathlib.Path(sys.argv[sys.argv.index('-inp')+1]).read_text() if '-inp' in sys.argv else sys.stdin.read()
 def value(name):
     return re.search(r'(?m)^\s*'+re.escape(name)+r'\s*=\s*([^\n]+)',text).group(1).strip()
 prefix=value('prefix').strip("'")

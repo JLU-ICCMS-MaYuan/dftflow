@@ -135,7 +135,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     let old = QeManifest::load(&old_path)?;
     old.verify()?;
     let provenance = Identity::capture(&old_path)?;
-    let _guard = store::Lock::acquire(&cfg.work_dir.join("epw-state/control"))?;
+    super::run_state::ready(&cfg.work_dir)?;
     ensure!(
         !cfg.work_dir.join("epw-state/active.json").exists(),
         "input_conflict: 先核对已有工作区尝试，再导入旧现场"
