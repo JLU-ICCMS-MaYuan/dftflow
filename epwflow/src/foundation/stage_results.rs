@@ -311,6 +311,9 @@ pub fn pending(cfg: &Config, step: Step) -> Result<bool> {
     if entries.is_empty() {
         return Ok(true);
     }
+    if step == Step::Coarse && !entries.iter().any(|e| e.unit == "decay") {
+        return Ok(true);
+    }
     if step == Step::Electronic
         && ["qe_eband", "qe_eledos"]
             .iter()
@@ -370,6 +373,9 @@ pub fn redraw(results: &Path) -> Result<PathBuf> {
     }
     for stage in stages {
         let dir = results.join(&stage);
+        if dir.join("decay/decay-manifest.json").exists() {
+            crate::delivery::decay::redraw(&dir.join("decay"))?;
+        }
         if dir.join("comparison/manifest.json").exists() {
             crate::delivery::comparison_plot::plot(
                 &dir,

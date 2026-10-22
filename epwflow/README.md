@@ -300,3 +300,11 @@ epw_superconductivity --plot --results "results"
 ```
 
 完整目录移动后可独立重绘；包内核验不把已不可访问的原始来源宣称为已验源。旧版可核验的比较采样只读整理到新电子目录；缺少真实坐标／模型来源时明确报告，不能为目录迁移重拟合。源码更新不自动改安装、冻结脚本或正在运行的工作区。
+
+## 粗网格实空间衰减图（0051）
+
+第 6 步原生核验成功后，同一阶段分配独立生成 `decay.H`、`decay.dynmat`、`decay.epmate`、`decay.epmatp` 的四张图和 2×2 总览，先于其他比较后处理。第 5 步只拟合 Wannier，尚不产生完整四类量；不等待第 7 步，也不新增科学计算或作业。
+
+查看 `results/6.epw-coarse/decay/decay-overview.png`，独立图主体为 `decay-H`、`decay-dynmat`、`decay-epmate`、`decay-epmatp`，全部提供 PNG／SVG／PDF。横轴为实空间距离 Å，纵轴按原生文件为 Ry，使用紫色散点和十进制对数。重复距离逐行保留，零值保留在数据并注明未绘制，坏数和来源冲突拒绝。
+
+阶段内派生目录为 `6.epw-coarse/decay/`；发布包附原始副本、逐行绘图数据、参数及来源。完整 `results/` 移动后可用上面的 `--plot --results` 独立重绘。图像失败后原目标加 `--resume -s` 仅补派生结果，缺原生 decay 文件则列缺项，不自动重跑 EPW。图仅供人工判断，不提供阈值、评级或放行门。使用与验收见 [0051 快速说明](../docs/specs/0051-epw-real-space-decay/quickstart.md)和[验收记录](../docs/specs/0051-epw-real-space-decay/acceptance.md)；本项未部署默认安装。

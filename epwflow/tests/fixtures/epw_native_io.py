@@ -53,6 +53,10 @@ def embedded_bands(bg):
     Path(prefix+'_band.dat').write_text(''.join(''.join(f'{x:.12f} {HA*.01*b:.12f}\n' for x in axis)+'\n' for b in range(8,8+n)))
     Path(prefix+'_band.labelinfo.dat').write_text('P0 1 0\nQ0 2 1\n')
 if coarse or reread:
+    if coarse and value('elph')=='.true.':
+        # 原生 EPW 在粗网格到实空间变换时写出这四份诊断。
+        for name in ('decay.H','decay.dynmat','decay.epmate','decay.epmatp'):
+            Path(name).write_text('# R [Ang] max matrix element [Ry]\n0.0 1.0\n2.0 1.0D-2\n2.0 2.0D-2\n4.0 0.0\n')
     if coarse:
         # 实际 EPW 在写完粗矩阵后仍加载插值网格，不能靠替身放过缺失网格。
         if value('elph')=='.true.':

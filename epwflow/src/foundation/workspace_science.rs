@@ -121,6 +121,12 @@ fn post_file(cfg: &Config, step: Step) -> PathBuf {
 }
 
 pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
+    if target >= Step::Coarse
+        && stages::reusable(cfg, Step::Coarse)?
+        && crate::delivery::decay::pending(cfg)?
+    {
+        return Ok(true);
+    }
     if super::workspace_qe_plot::pending(cfg, target)? { return Ok(true); }
     for step in target.closure() {
         if matches!(step,Step::Electronic|Step::Phonon|Step::Wannier|Step::Coarse|Step::Superconductivity)
@@ -147,6 +153,10 @@ pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
 
 /// 展宽及图像独立于拟合/EPC 的科学清单，不能改写下游已绑定的原生数据。
 pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
+    // 原生粗网格回执先落盘；衰减交付不等待电子／声子比较收尾。
+    if target >= Step::Coarse && stages::reusable(cfg, Step::Coarse)? {
+        crate::delivery::decay::refresh(cfg)?;
+    }
     for step in target.closure() {
         if matches!(step, Step::Electronic | Step::Phonon) && stages::reusable(cfg, step)? {
             super::workspace_qe_plot::refresh(cfg, step)?;
@@ -902,6 +912,7 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
             }
             if matches!(step,Step::Coarse|Step::Superconductivity)
                 && (rel.starts_with("batch-finalization.lock/") || rel.starts_with("comparison/")
+                    || rel.starts_with("decay/")
                     || rel.starts_with("results/")
                     || rel.starts_with("comparison-native/"))
             {

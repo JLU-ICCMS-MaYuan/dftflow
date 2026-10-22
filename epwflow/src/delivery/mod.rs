@@ -4,6 +4,7 @@ pub mod budget;
 pub mod cli;
 pub mod collect;
 pub mod compare;
+pub mod decay;
 pub mod comparison;
 pub mod comparison_plot;
 pub mod native;

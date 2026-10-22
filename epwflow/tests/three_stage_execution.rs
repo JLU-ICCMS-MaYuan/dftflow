@@ -1538,3 +1538,6 @@ mod multitemperature;
 
 #[path = "support/stage_results.rs"]
 mod stage_results;
+
+#[path = "support/decay.rs"]
+mod decay;

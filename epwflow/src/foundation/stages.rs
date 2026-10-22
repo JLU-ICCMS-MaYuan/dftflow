@@ -193,17 +193,29 @@ fn verify_outputs(
 }
 
 impl Completion {
+    fn decay_diagnostic(&self, id: &store::Identity) -> bool {
+        self.step == Step::Coarse && crate::delivery::decay::is_native(&id.path)
+    }
     /// 缺失可以重建；已存在文件仍逐项严格检查，不掩盖篡改或读取错误。
     pub fn available(&self) -> Result<bool> {
         ensure!(self.schema_version == 1 && !self.outputs.is_empty(), "data_invalid: 阶段清单缺证据");
-        verify_outputs(&self.outputs, store::identity_available)
+        // 缺少诊断文件由派生交付报告，不为补图重跑科学；存在但损坏仍拒绝。
+        verify_outputs(&self.outputs, |id| {
+            store::identity_available(id).map(|available| available || self.decay_diagnostic(id))
+        })
     }
     pub fn verify(&self) -> Result<()> {
         ensure!(
             self.schema_version == 1 && !self.outputs.is_empty(),
             "data_invalid: 阶段清单缺证据"
         );
-        verify_outputs(&self.outputs, |id| id.verify().map(|_| true))?;
+        verify_outputs(&self.outputs, |id| {
+            if self.decay_diagnostic(id) {
+                store::identity_available(id).map(|_| true)
+            } else {
+                id.verify().map(|_| true)
+            }
+        })?;
         // 来源保留追溯；复制后的数据不再依赖旧目录永久在线。
         Ok(())
     }

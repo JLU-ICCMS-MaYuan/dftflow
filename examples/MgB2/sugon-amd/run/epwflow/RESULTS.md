@@ -44,3 +44,11 @@ epw_superconductivity --plot --results "results"
 完整 `results/` 可移动后独立重绘，不调用 QE／EPW 或 Slurm。包内完整性核验与原始来源是否仍可访问是两件事。旧工作区只从可核验的旧采样整理派生结果；缺少真实点位或来源时明确报缺项，不能为目录更名重新拟合。
 
 [流程图与数据来源](../../../../../docs/overview/epwflow/workflow.md) · [0050 验收记录](../../../../../docs/specs/0050-epw-stage-results/acceptance.md)。
+
+## 第 6 步实空间衰减图（0051）
+
+0051 新版源码在上述粗网格目标的原生核验成功后，先独立发布 `results/6.epw-coarse/decay/`，声子比较尚未完成或失败也不阻塞这组图。阶段内同份派生结果位于 `6.epw-coarse/decay/`；既有冻结脚本和默认安装需另行更新，提交源码不会自动补当前算例目录。
+
+先看 `decay-overview.png`：左上 Hamiltonian、右上动力学矩阵、左下电子方向电声矩阵元、右下声子方向电声矩阵元。四张独立图分别为 `decay-H`、`decay-dynmat`、`decay-epmate`、`decay-epmatp`，每张及总览均有 PNG／SVG／PDF。坐标按原生单位 Å／Ry，紫色散点、对数纵轴，不合并相同距离，也不给出自动收敛结论。
+
+包内包含本次回执绑定的四份原始副本和绘图数据、参数、来源。可移动完整 `results/` 后用前文命令重绘；缺图恢复不重跑科学，缺原生文件明确列项而不重算 EPW。本轮已将该算例现有数据只读出图到独立测试目录，未修改算例科学文件，见 [0051 验收与实图位置](../../../../../docs/specs/0051-epw-real-space-decay/acceptance.md)。

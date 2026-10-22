@@ -74,6 +74,7 @@ pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
             &cfg.budget.campaign_id,
             budget::reconcile,
         )?;
+        crate::delivery::decay::recover_finished(cfg, job)?;
         for results in [
             layout::path(&cfg.work_dir, "results"),
             Step::Superconductivity.directory(cfg).join("results"),
