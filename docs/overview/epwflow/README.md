@@ -1,5 +1,7 @@
 # epwflow 当前入口与验证边界
 
+先看[完整流程图与续算说明](workflow.md)：八阶段的数据关系、第 6 步内部的比较任务，以及为什么 `--stage fine` 会先补齐 `comparison-native`。该页同时区分当前现场与 0048 声子自动链的范围。
+
 当前编号工作区的原生提交使用 `<功能>.sh` 和 `slurm-<功能>.log`，标准输出与错误共用同一 Slurm 日志并覆盖写入。公开命令在计算目录调用 sbatch，脚本正文 cd，不再设置或传入 --chdir；科学程序直接写自身 `.out/.err`。旧冻结脚本及历史执行路径保留原格式，见 [0046 验收](../../specs/0046-epw-submit-simplification/acceptance.md)。
 
 ## 编号工作区的原生任务提交
