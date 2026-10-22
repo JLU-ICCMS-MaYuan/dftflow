@@ -192,3 +192,23 @@ fn phonon_chain_terminal_interruption_is_reported_and_resumed() {
     assert_eq!(c.chain_calls("ph"), 1); assert_eq!(c.chain_calls("q2r"), 1);
     assert_eq!(c.chain_calls("matdyn"), 3); assert_eq!(c.chain_attempt()["state"], "succeeded");
 }
+
+#[test]
+fn phonon_chain_final_registration_interruption_resumes_without_science() {
+    let c = Case::numbered(); c.chain_setup();
+    success(c.chain_submit(false)); success(c.chain_execute());
+    let calls = c.calls();
+    // 科学与图表回执已发布，模拟父完成记录尚未落盘时 worker 中断。
+    let mut parent = c.chain_attempt(); parent["state"] = json!("failed");
+    parent["error"] = json!("final registration interrupted");
+    let path = PathBuf::from(parent["config"]["path"].as_str().unwrap()).parent().unwrap().join("attempt.json");
+    store::write(&path, &parent).unwrap();
+    store::write(&c.root.join("run/epw-state/active.json"), &parent).unwrap();
+    assert!(!c.chain_submit(false).status.success());
+    success(c.chain_submit(true)); assert_eq!(c.submission_count(), 2);
+    success(c.chain_execute());
+    assert_eq!(c.chain_attempt()["state"], "succeeded"); assert_eq!(c.calls(), calls);
+    let out = c.numbered_cli(0, &["--status", "--json"], None, "final-registration-status");
+    let status: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(status["workflow_complete"], true);
+}

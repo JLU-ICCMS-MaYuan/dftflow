@@ -362,9 +362,11 @@ pub fn start_phonon(config: &Path, resume: bool) -> Result<()> {
     super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, None)?;
     super::native_jobs::reconcile(&cfg, resume)?;
+    let mut unfinished_attempt = false;
     if active(&cfg.work_dir).is_file() {
         let old = read_attempt(&active(&cfg.work_dir))?;
         if old.phonon_chain && old.state != "succeeded" {
+            unfinished_attempt = true;
             let previous = Config::load(&old.config.path)?;
             ensure!(resume || stages::scientific_key(&previous, Step::Phonon)? != stages::scientific_key(&cfg, Step::Phonon)?,
                 "execution_failed: 声子分配未完整成功；修复后显式 --resume -s");
@@ -378,7 +380,7 @@ pub fn start_phonon(config: &Path, resume: bool) -> Result<()> {
             pending = true;
         }
     }
-    if !pending && !super::workspace_qe_plot::pending(&cfg, Step::Phonon)? {
+    if !pending && !super::workspace_qe_plot::pending(&cfg, Step::Phonon)? && !unfinished_attempt {
         println!("workflow_status: complete\nworkflow_complete: true");
         return Ok(());
     }
