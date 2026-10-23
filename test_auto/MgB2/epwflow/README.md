@@ -10,7 +10,7 @@
 
 ## 重新执行真实测试
 
-先按[构建说明](../../../scripts/build-native.sh)编译并完成兼容打包。测试应传入已经在计算节点可启动的制品；在运行期间不能覆盖绑定程序。以下命令从仓库根执行，使用已有 Python 3.11+，不安装 Python 依赖。
+先按[构建说明](../../../scripts/build-native.sh)编译；交付构建会自动完成本机配置要求的兼容打包并更新仓库模块目录。测试应传入已经在计算节点可启动的制品；在运行期间不能覆盖绑定程序。以下命令从仓库根执行，使用已有 Python 3.11+，不安装 Python 依赖。
 
 ```bash
 EPW_TEST_PYTHON="/data/home/mayuan/anaconda3/bin/python3"

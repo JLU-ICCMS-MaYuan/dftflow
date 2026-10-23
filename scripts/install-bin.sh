@@ -1,87 +1,79 @@
 #!/usr/bin/env bash
-# 将已有兼容制品按模块安装到仓库 bin；不改变 PATH 或历史运行绑定。
-# 用法：install-bin.sh [--module epwflow] SOURCE_BIN [BIN_ROOT] [DYN0_BINARY]
-selected_module=""
-if [[ "${1:-}" == --module ]]; then
-    [[ "${2:-}" == epwflow ]] || { echo '按模块安装当前支持 epwflow' >&2; exit 1; }
-    selected_module="$2"
-    shift 2
-fi
+# 将显式成功制品发布到仓库模块目录；共享产品映射，不创建第二套用户安装。
 script_dir=$(cd "$(dirname "$0")" && pwd) || exit $?
 repo_dir=$(cd "$script_dir/.." && pwd) || exit $?
-source_bin=$(cd "${1:?用法: install-bin.sh SOURCE_BIN [BIN_ROOT] [DYN0_BINARY]}" && pwd -P) || exit $?
+source "$script_dir/product-layout.sh" || exit $?
+dftflow_products=("${dftflow_main_products[@]}")
+if [[ "${1:-}" == --module ]]; then
+    selected=()
+    for product in "${dftflow_all_products[@]}"; do
+        [[ $(dftflow_module "$product") != "${2:-}" ]] || selected+=("$product")
+    done
+    [[ ${#selected[@]} -gt 0 ]] || { echo "未知模块: ${2:-}" >&2; exit 1; }
+    dftflow_products=("${selected[@]}")
+    shift 2
+elif [[ "${1:-}" == --products ]]; then
+    dftflow_select_products "${2:-}" || exit 1
+    shift 2
+fi
+source_bin=$(cd "${1:?用法: install-bin.sh [--products CSV|--module FAMILY] SOURCE_BIN [BIN_ROOT] [DYN0]}" && pwd -P) || exit $?
 bin_root="${2:-$repo_dir/bin}"
 dyn0="${3:-}"
+case "$bin_root/" in "$HOME/.local/share/dftflow/"*) echo '旧用户安装目录已退役。' >&2; exit 2 ;; esac
 mkdir -p "$bin_root" || exit $?
 bin_root=$(cd "$bin_root" && pwd -P) || exit $?
-case "$source_bin/" in "$bin_root/"*) echo '源目录不能位于安装目录内' >&2; exit 1 ;; esac
+case "$source_bin/" in
+    "$bin_root/.build/"*) ;;
+    "$bin_root/"*) echo '源目录不能位于公开安装模块内' >&2; exit 1 ;;
+esac
 lock_dir="$bin_root/.install-bin.lock"
-mkdir "$lock_dir" || { echo '另一个分组安装正在进行；请检查安装锁' >&2; exit 1; }
+mkdir "$lock_dir" || { echo '另一个发布正在进行；请检查安装锁' >&2; exit 1; }
 stage=""
 cleanup() {
     [[ -z "$stage" ]] || rm -rf -- "$stage"
-    rmdir "$lock_dir" || exit $?
+    rmdir "$lock_dir"
 }
 trap cleanup EXIT
 stage=$(mktemp -d "$bin_root/.install-bin.XXXXXX") || exit $?
 mkdir "$stage/source" || exit $?
-programs=(qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity)
-if [[ -n "$selected_module" ]]; then programs=(epw_phonon epw_wannier epw_superconductivity); fi
-for program in "${programs[@]}"; do
-    [[ -f "$source_bin/$program" && -x "$source_bin/$program" ]] || { echo "缺少可执行文件: $source_bin/$program" >&2; exit 1; }
-    cp -p "$source_bin/$program" "$stage/source/$program" || exit $?
-done
-# 入口映射和启动检查复用现有实现，避免维护第二套命令名清单。
-if [[ -z "$selected_module" ]]; then
-    bash "$script_dir/verify-entries.sh" "$stage/source" >/dev/null || exit $?
-    bash "$script_dir/install-compat.sh" "$stage/source" "$stage/entries" >/dev/null || exit $?
-else
-    mkdir "$stage/entries" || exit $?
-    for program in "${programs[@]}"; do
-        "$stage/source/$program" --help >/dev/null || exit $?
-        ln -s "../source/$program" "$stage/entries/$program" || exit $?
-    done
-fi
-for entry in "$stage/entries/"*; do
-    program=$(basename "$(readlink "$entry")") || exit $?
-    case "$program" in
-        epw_phonon|epw_wannier|epw_superconductivity) module=epwflow ;;
-        wannier90) module=wannierflow ;;
-        substitution) module=substitutionflow ;;
-        qeflow|vaspflow|scflow) module="$program" ;;
-        *) echo "未知程序: $program" >&2; exit 1 ;;
-    esac
-    mkdir -p "$stage/grouped/$module" || exit $?
-    name=$(basename "$entry") || exit $?
-    if [[ "$name" == "$program" ]]; then
-        mv "$stage/source/$program" "$stage/grouped/$module/$program" || exit $?
-    else
-        ln -s "$program" "$stage/grouped/$module/$name" || exit $?
-    fi
+for product in "${dftflow_products[@]}"; do
+    [[ -f "$source_bin/$product" && -x "$source_bin/$product" ]] || { echo "缺少可执行文件: $source_bin/$product" >&2; exit 1; }
+    cp -p "$source_bin/$product" "$stage/source/$product" || exit $?
 done
 if [[ -n "$dyn0" ]]; then
-    [[ -f "$dyn0" && -x "$dyn0" ]] || { echo "缺少独立可执行文件: $dyn0" >&2; exit 1; }
-    mkdir "$stage/grouped/tools" || exit $?
-    cp -p "$dyn0" "$stage/grouped/tools/qf-gen-dyn0" || exit $?
-    "$stage/grouped/tools/qf-gen-dyn0" --help >/dev/null || exit $?
+    [[ -f "$dyn0" && -x "$dyn0" ]] || { echo "缺少独立工具: $dyn0" >&2; exit 1; }
+    [[ " ${dftflow_products[*]} " != *' qf-gen-dyn0 '* ]] || { echo '独立工具来源重复' >&2; exit 1; }
+    cp -p "$dyn0" "$stage/source/qf-gen-dyn0" || exit $?
+    dftflow_products+=(qf-gen-dyn0)
 fi
-# 全部检查完成后才替换安装文件，拒绝模块目录链接和同名目录。
+csv=$(IFS=,; echo "${dftflow_products[*]}")
+bash "$script_dir/install-compat.sh" --products "$csv" "$stage/source" "$stage/entries" >/dev/null || exit $?
+# 全部入口真正启动后才准备替换目标；错误的兼容入口也会在此拒绝。
+for entry in "$stage/entries/"*; do
+    "$entry" --help >/dev/null || { echo "入口无法启动: $entry" >&2; exit 1; }
+done
+for product in "${dftflow_products[@]}"; do
+    module=$(dftflow_module "$product") || exit 1
+    mkdir -p "$stage/grouped/$module" || exit $?
+    cp -p "$stage/source/$product" "$stage/grouped/$module/$product" || exit $?
+    while IFS= read -r entry; do
+        [[ "$entry" == "$product" ]] || ln -s "$product" "$stage/grouped/$module/$entry" || exit $?
+    done < <(dftflow_entries "$product")
+done
 for module_dir in "$stage/grouped/"*; do
-    module=$(basename "$module_dir") || exit $?
-    dest_dir="$bin_root/$module"
-    if [[ -L "$dest_dir" || ( -e "$dest_dir" && ! -d "$dest_dir" ) ]]; then
-        echo "模块目标不是普通目录: $dest_dir" >&2; exit 1
-    fi
+    dest_dir="$bin_root/$(basename "$module_dir")"
+    [[ ! -L "$dest_dir" && ( ! -e "$dest_dir" || -d "$dest_dir" ) ]] || { echo "模块目标不是普通目录: $dest_dir" >&2; exit 1; }
     for entry in "$module_dir/"*; do
-        dest="$dest_dir/$(basename "$entry")" || exit $?
+        dest="$dest_dir/$(basename "$entry")"
         [[ ! -d "$dest" ]] || { echo "安装目标是目录: $dest" >&2; exit 1; }
     done
 done
+bash "$script_dir/check-bin-in-use.sh" "$bin_root" "${dftflow_products[@]}" || exit $?
 for module_dir in "$stage/grouped/"*; do
-    module=$(basename "$module_dir") || exit $?
-    mkdir -p "$bin_root/$module" || exit $?
+    dest_dir="$bin_root/$(basename "$module_dir")"
+    mkdir -p "$dest_dir" || exit $?
     for entry in "$module_dir/"*; do
-        mv -f "$entry" "$bin_root/$module/$(basename "$entry")" || exit $?
+        mv -f "$entry" "$dest_dir/$(basename "$entry")" || exit $?
     done
 done
-echo "已更新分组安装目录：$bin_root（${selected_module:-全部模块}；独立 dyn0 按显式参数安装）"
+echo "已发布产品到 $bin_root：${dftflow_products[*]}"

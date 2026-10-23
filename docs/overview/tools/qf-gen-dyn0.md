@@ -22,21 +22,21 @@ qf-gen-dyn0 --xml /path/to/out/MgB2.save/data-file-schema.xml --nq1 2 --nq2 2 --
 
 ## 使用边界
 
-不属于主 workspace、不由主安装器安装、不参与 index/coords 自动链。不保证任意磁性/对称性设置下与 QE 等价。主程序 qeflow gen-dyn0 已移除；生产链使用 QE only_init 列表。
+不属于主 workspace，独立构建后通过共享发布器写入 `bin/tools/`，不参与 index/coords 自动链。不保证任意磁性/对称性设置下与 QE 等价。主程序 qeflow gen-dyn0 已移除；生产链使用 QE only_init 列表。
 
 ## 实现依据与关联
 
-[独立工具说明](../../../tools/qf-gen-dyn0/README.md)；[源码](../../../tools/qf-gen-dyn0/src/main.rs)。本次只读核对实现，未重新运行程序测试。
+[独立工具说明](../../../tools/qf-gen-dyn0/README.md)；[源码](../../../tools/qf-gen-dyn0/src/main.rs)。构建与发布契约见 [0017](../../specs/0017-build-binaries-layout/quickstart.md)，实际测试结果见其验收记录。
 
 关联 [Feature 记录](../../specs/0006-qe-phonon-submit-chain/spec.md)。
 
 ## 单独构建与使用
 
-在仓库根目录执行（本次未执行构建）：
+在仓库根目录执行：
 
 ```bash
-cargo build --manifest-path tools/qf-gen-dyn0/Cargo.toml --release --locked
-tools/qf-gen-dyn0/target/release/qf-gen-dyn0 --help
+bash scripts/build-native.sh build --manifest-path tools/qf-gen-dyn0/Cargo.toml --release --locked
+bin/tools/qf-gen-dyn0 --help
 ```
 
-依赖已缓存时可加 --offline；无需 OpenBLAS、spglib、QE 或 Slurm。未独立安装时，用上述可执行文件路径代替命令名。要获取实际 QE 列表，请用 [qe_ph_nosplit --dyn0](../qeflow/qe_ph_nosplit.md)。
+依赖已缓存时可加 --offline；无需 OpenBLAS、spglib、QE 或 Slurm。成功构建会自动发布，加载仓库 `scripts/env.sh` 后可直接用命令名；缓存位于仓库 `bin/.build/`。要获取实际 QE 列表，请用 [qe_ph_nosplit --dyn0](../qeflow/qe_ph_nosplit.md)。

@@ -19,16 +19,19 @@ docker run --rm --platform linux/amd64 \
     dftflow-musl-builder:0004 bash -c '
       cargo -Zhost-config -Ztarget-applies-to-host --config .cargo/linux-host.toml test --release --workspace --locked --target x86_64-unknown-linux-musl -j4 || exit $?
       cargo -Zhost-config -Ztarget-applies-to-host --config .cargo/linux-host.toml build --workspace --locked --release --target x86_64-unknown-linux-musl -j4 || exit $?
-      mkdir -p dist/linux-x86_64-musl/bin || exit $?
-      for name in qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity; do
-        cp /build/x86_64-unknown-linux-musl/release/$name dist/linux-x86_64-musl/bin/ || exit $?
-        strip dist/linux-x86_64-musl/bin/$name || exit $?
+      source scripts/product-layout.sh || exit $?
+      source_bin=/src/bin/.build/linux-x86_64-musl/package-source
+      mkdir -p "$source_bin" dist/linux-x86_64-musl/bin || exit $?
+      for name in "${dftflow_main_products[@]}"; do
+        cp "/build/x86_64-unknown-linux-musl/release/$name" "$source_bin/$name" || exit $?
+        strip "$source_bin/$name" || exit $?
+        cp "$source_bin/$name" "dist/linux-x86_64-musl/bin/$name" || exit $?
       done
       bash scripts/linux/verify-static.sh dist/linux-x86_64-musl/bin || exit $?
-      cp scripts/install-compat.sh dist/linux-x86_64-musl/ || exit $?
+      cp scripts/install-compat.sh scripts/product-layout.sh dist/linux-x86_64-musl/ || exit $?
       { rustc --version && uname -sm && pkg-config --modversion openblas; } > dist/linux-x86_64-musl/BUILD-INFO.txt || exit $?
       cd dist/linux-x86_64-musl || exit $?
-      sha256sum bin/* install-compat.sh BUILD-INFO.txt > SHA256SUMS || exit $?
+      sha256sum bin/* install-compat.sh product-layout.sh BUILD-INFO.txt > SHA256SUMS || exit $?
     ' || exit $?
 # 断网重跑已经编译的全部测试，验证运行不需要网络。
 docker run --rm --network none --platform linux/amd64 \

@@ -18,18 +18,29 @@ else
 fi
 
 _dftflow_bin=$(CDPATH= cd -- "$(dirname -- "$_dftflow_env_file")/../bin" && pwd -P) || {
-    printf '%s\n' '找不到仓库 bin 目录；请先完成 DFTFlow 分组安装。' >&2
+    printf '%s\n' '找不到仓库 bin 目录；请先运行 bash scripts/build-native.sh 完成构建。' >&2
     unset _dftflow_env_file _dftflow_bin
     return 1
 }
 
-# 倒序逐项前插，避免重复加载不断增长；只暴露公开产品目录。
+# 移除这些目录的旧位置后按固定顺序前置；重复加载幂等且始终优先于旧入口。
 for _dftflow_family in tools scflow wannierflow vaspflow substitutionflow qeflow epwflow; do
     _dftflow_dir="$_dftflow_bin/$_dftflow_family"
-    case ":${PATH-}:" in
-        *":$_dftflow_dir:"*) ;;
-        *) PATH="$_dftflow_dir${PATH:+:$PATH}" ;;
-    esac
+    _dftflow_rest="${PATH-}"
+    _dftflow_filtered=""
+    _dftflow_sep=""
+    while :; do
+        _dftflow_part="${_dftflow_rest%%:*}"
+        if [ "$_dftflow_part" != "$_dftflow_dir" ]; then
+            _dftflow_filtered="$_dftflow_filtered$_dftflow_sep$_dftflow_part"
+            _dftflow_sep=:
+        fi
+        case "$_dftflow_rest" in
+            *:*) _dftflow_rest="${_dftflow_rest#*:}" ;;
+            *) break ;;
+        esac
+    done
+    PATH="$_dftflow_dir${_dftflow_sep:+:$_dftflow_filtered}"
 done
 export PATH
-unset _dftflow_env_file _dftflow_bin _dftflow_family _dftflow_dir
+unset _dftflow_env_file _dftflow_bin _dftflow_family _dftflow_dir _dftflow_rest _dftflow_filtered _dftflow_sep _dftflow_part

@@ -12,35 +12,27 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 - `python`：保留原 `master` 分支的 Python 版本，切换时的提交为 `7a172fe`。
 - `python-reference-0004`：迁移数值对照使用的冻结标签（`9396b3a`），与 `python` 分支用途不同，继续保留。
 
-## 编译产物与安装目录
+## 编译产物与程序目录
 
-编译和安装是两步：Cargo 把构建缓存和原始产物写入 `target/`；日常使用的可执行程序复制到仓库的 `bin/<模块>/`，同一路径更新覆盖，不放在测试数据目录中。`bin/` 是本机制品目录，不提交 Git。
+受支持的交付构建入口在成功返回前自动将本次产品发布到仓库 `bin/<模块>/`。无需再执行第二次用户安装；仅编译过的模块更新，`test`、`check` 和库构建不发布 CLI。`bin/` 是本机制品目录，不提交 Git。
 
 ```text
-仓库/
-├── bin/
-│   ├── epwflow/          epw_phonon、epw_wannier、epw_superconductivity
-│   ├── qeflow/           qeflow 与 qe_* 兼容入口
-│   ├── vaspflow/         vaspflow 与 vasp_* 兼容入口
-│   ├── substitutionflow/ substitution 与 substitution_* 兼容入口
-│   ├── scflow/           scflow
-│   ├── wannierflow/      wannier90 与 wannier_* 兼容入口
-│   └── tools/            独立 qf-gen-dyn0（显式安装时）
-├── target/               按平台存放构建缓存与原始可执行文件
-├── dist/                 平台交付包
-└── docs/local/           本机环境、制品来源、哈希和验证证据
-
-~/.local/share/dftflow/native/linux-x86_64/
-├── include/              OpenBLAS、spglib 等头文件
-├── lib/                  原生库、私有 glibc 加载器和 pkgconfig/
-└── lib64/                本机 spglib 等库和 pkgconfig/
+仓库/bin/
+├── epwflow/          epw_phonon、epw_wannier、epw_superconductivity
+├── qeflow/           qeflow 与 qe_* 兼容入口
+├── vaspflow/         vaspflow 与 vasp_* 兼容入口
+├── substitutionflow/ substitution 与 substitution_* 兼容入口
+├── scflow/           scflow
+├── wannierflow/      wannier90 与 wannier_* 兼容入口
+├── tools/            独立 qf-gen-dyn0
+├── .build/           平台缓存、Cargo 原始制品及发布指纹
+├── .native/          本机开发依赖、私有加载器与运行库
+└── .history/         有迁移清单的历史证据，不加入 PATH
 ```
 
-例如，本机 EPW 三程序统一使用 `/data/home/mayuan/code/dftflow/bin/epwflow/`，QE 使用 `/data/home/mayuan/code/dftflow/bin/qeflow/`。组内兼容入口是指向同组真实程序的相对软链接：`bin/qeflow/qe_scf -> qeflow`，不重复复制二进制。`qf-gen-dyn0` 来自独立 Cargo 工程，放在 `bin/tools/`。
+组内兼容入口使用相对软链接，例如 `bin/qeflow/qe_scf -> qeflow`。构建不包含外部 `pw.x`、`ph.x`、`epw.x` 或 VASP。独立 dyn0 仍是另一个 Cargo 工程，经同一构建入口发布到 `bin/tools/`。
 
-安装器只整理 DFTFlow 自身已经构建、完成必要运行库打包的程序，不移动外部 `pw.x`、`ph.x`、`epw.x` 或 VASP。原生依赖仍在本机前缀中，尤其 `native/` 的私有加载器和运行库不能因整理 `bin/` 而删除。`lib`/`lib64` 是依赖安装目录的选择，不表示同时维护两套位数不同的程序。
-
-新路径可以直接调用，例如 `"$PWD/bin/qeflow/qe_scf" --help`。本次分组安装不修改 PATH 或 `~/.local/bin`；旧的 `scripts/install-current.sh` 仍作为显式兼容安装方式保留，其默认目标仍为 `~/.local/share/dftflow/current/bin`。已有脚本或运行记录绑定的旧程序先保留，不改写科学身份记录，也不把历史目录全量清理当作安装步骤。
+旧 `scripts/install-current.sh` 已退役，不再维护 `~/.local/share/dftflow/`。原有安装依赖迁移、历史二进制归档与当前验证边界见 [0017 验收](docs/specs/0017-build-binaries-layout/acceptance.md)。
 
 ### 在任意目录直接使用命令
 
@@ -63,7 +55,7 @@ epw_phonon --help
 
 更新按程序逐文件原子替换，不保证所有程序同时切换；应在没有活动计算链时更新。生成脚本和 EPW 身份记录可能固定了程序绝对路径、链接目标和哈希，仅复制到新目录不会自动迁移这些绑定；已有运行按其恢复约定处理，新运行使用 `bin/<模块>/`。
 
-历史安装副本与构建缓存的清理方法见 [编译历史清理指南](docs/specs/0011-build-history-cleanup/quickstart.md)。
+本次唯一入口与依赖迁移见 [0017 操作指南](docs/specs/0017-build-binaries-layout/quickstart.md)；旧安装清理的历史说明保留在 [0011](docs/specs/0011-build-history-cleanup/quickstart.md)，不作为新的安装契约。
 
 ## 编译依赖：OpenBLAS 与两平台安装
 
@@ -110,10 +102,10 @@ pkg-config --libs --static openblas
 
 本机使用 OpenBLAS **0.3.30、GENERIC、单线程、静态库**；`GENERIC` 避免仅针对编译机的 CPU 指令调优，`USE_THREAD=0` 避免数值库内部线程与工作流并行叠加。它不替代 QE/MPI 的并行设置。
 
-以下命令在专门的依赖源码构建目录执行，需要已有 C/Fortran 编译器和下载工具：
+先将下例 `/path/to/dftflow` 替换为仓库绝对路径，再在依赖源码构建目录执行；需要已有 C/Fortran 编译器和下载工具：
 
 ```bash
-export DFTFLOW_NATIVE_PREFIX="$HOME/.local/share/dftflow/native/linux-x86_64"
+export DFTFLOW_NATIVE_PREFIX="/path/to/dftflow/bin/.native/linux-x86_64"
 mkdir -p "$DFTFLOW_NATIVE_PREFIX"
 
 curl -fL https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.30/OpenBLAS-0.3.30.tar.gz \
@@ -161,13 +153,13 @@ bash scripts/build-native.sh build --release --locked -p qeflow
 bash scripts/build-native.sh build --release --locked --offline -p qeflow
 ```
 
-脚本按 `uname` 选择 `.cargo/linux-x86_64.toml` 或 `.cargo/macos-arm64.toml`，先加载不入 Git 的 `docs/local/build-<平台>.env`。无参数时实际执行 `cargo --config .cargo/<平台>.toml build --release --workspace --locked`；`--locked` 固定 Cargo.lock，`--offline` 需要依赖已完整缓存。
+交付构建另需 `jq`；Linux 配置私有依赖前缀时还需 `patchelf` 和匹配主机的运行库。脚本按 `uname` 选择 `.cargo/linux-x86_64.toml` 或 `.cargo/macos-arm64.toml`，先加载不入 Git 的 `docs/local/build-<平台>.env`。无参数时实际执行 `cargo --config .cargo/<平台>.toml build --release --workspace --locked`；`--locked` 固定 Cargo.lock，`--offline` 需要依赖已完整缓存。
 
 Linux 用户前缀的本机环境文件可以按下例编写；路径根据机器调整：
 
 ```bash
 # docs/local/build-linux-x86_64.env
-export DFTFLOW_NATIVE_PREFIX="$HOME/.local/share/dftflow/native/linux-x86_64"
+export DFTFLOW_NATIVE_PREFIX="/path/to/dftflow/bin/.native/linux-x86_64"
 export RUSTFLAGS="-L native=$DFTFLOW_NATIVE_PREFIX/lib -L native=$DFTFLOW_NATIVE_PREFIX/lib64 -C link-arg=-Wl,-rpath,$DFTFLOW_NATIVE_PREFIX/lib -C link-arg=-Wl,-rpath,$DFTFLOW_NATIVE_PREFIX/lib64"
 # 如 bindgen 无法发现 libclang，再按实际安装位置设置 LIBCLANG_PATH
 ```
@@ -176,8 +168,8 @@ export RUSTFLAGS="-L native=$DFTFLOW_NATIVE_PREFIX/lib -L native=$DFTFLOW_NATIVE
 
 | 构建平台 | Cargo 配置 | 二进制目录 |
 | --- | --- | --- |
-| Linux x86_64 原生（glibc） | `.cargo/linux-x86_64.toml` | `target/linux-x86_64/x86_64-unknown-linux-gnu/release/` |
-| macOS arm64 原生 | `.cargo/macos-arm64.toml` | `target/macos-arm64/aarch64-apple-darwin/release/` |
+| Linux x86_64 原生（glibc） | `.cargo/linux-x86_64.toml` | `bin/.build/linux-x86_64/x86_64-unknown-linux-gnu/release/` |
+| macOS arm64 原生 | `.cargo/macos-arm64.toml` | `bin/.build/macos-arm64/aarch64-apple-darwin/release/` |
 | Linux x86_64 musl 静态交付 | `.cargo/linux-host.toml` + `scripts/linux/Dockerfile` | `dist/linux-x86_64-musl/bin/` |
 
 macOS Mach-O 不能直接在 Linux 执行。在 macOS Docker/OrbStack 或安装了 Docker 的 Linux 上，以下脚本构建真正的 Linux amd64 ELF，安装容器内原生依赖并检查静态链接和断网运行；不是使用宿主机的 Homebrew OpenBLAS 交叉链接：
@@ -188,37 +180,21 @@ bash scripts/linux/build.sh
 
 它使用单独 Docker 构建卷保存中间产物，把交付包导出到 `dist/linux-x86_64-musl/`。首次需要下载依赖、基础镜像及 Cargo 包。运行 QE/VASP 等计算仍需要目标机器上配置外部求解器。
 
-## 安装、更新与旧节点兼容
+## 更新与旧节点兼容
 
-普通原生安装：编译完成后调用固定路径安装器。Linux 示例（macOS 使用对应构建目录）：
-
-```bash
-build_bin="$PWD/target/linux-x86_64/x86_64-unknown-linux-gnu/release"
-bash scripts/install-bin.sh "$build_bin"
-```
-
-脚本先复制到临时目录并验证 54 个入口，再按模块逐文件替换仓库 `bin/` 下的程序和相对软链接；成功或失败退出均清理临时副本和安装锁。缺失、不可启动的源程序或目标目录冲突会在替换前拒绝，不生成历史版本。可用第二个参数指定其他分组安装根目录。
-
-安装器提供 54 个命令名：五个原家族程序的 51 个入口，加三个独立 EPW 阶段程序。兼容名字按入口名分派到对应子命令。独立 [dyn0 工具](tools/qf-gen-dyn0/README.md) 需从自己的 Cargo 工程编译；显式传第三个参数时安装到 `bin/tools/`，不传时保留已有独立工具：
+日常更新直接重新运行交付构建，例如：
 
 ```bash
-bash scripts/install-bin.sh "$build_bin" "$PWD/bin" \
-    "/path/to/built/qf-gen-dyn0"
+bash scripts/build-native.sh build --release --locked -p epwflow --bins
+bash scripts/build-native.sh build --release --locked --manifest-path tools/qf-gen-dyn0/Cargo.toml
+source "/path/to/dftflow/scripts/env.sh"
 ```
 
+构建入口读取本次 Cargo 制品报告，完成必要的兼容打包、全部选中入口启动检查与目标预检，再发布到固定模块路径。来源与发布后 SHA-256 记录在 `bin/.build/published/<程序>.json`。增量构建的 fresh 制品同样会发布；只构建 EPW 不更新其他模块。编译或预检失败保留现有程序。显式交叉目标只构建，不替换宿主模块程序。
 
-本机登录节点与计算节点的 glibc 不一致，实际安装副本额外设置了私有加载器和运行库搜索路径，原始 `target/` 产物保留。这是当前共享文件系统上的兼容打包方式：
+Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter 和运行库搜索路径；该共享前缀必须在目标节点可读。运行库与加载器必须配套；已有前缀出现库版本冲突时拒绝覆盖。不要把含私有 glibc 的目录加入全局 `LD_LIBRARY_PATH`。未配置私有前缀的原生程序使用系统运行库；跨节点兼容性应另行核验，通用静态交付仍使用 musl。
 
-```bash
-# Linux x86_64；先安装 patchelf，并配置本机 DFTFLOW_NATIVE_PREFIX
-package_dir=$(mktemp -d)
-bash scripts/linux/package-native-runtime.sh \
-    "$build_bin" "$package_dir" "$DFTFLOW_NATIVE_PREFIX"
-bash scripts/install-bin.sh "$package_dir"
-rm -r -- "$package_dir"
-```
-
-先完成兼容打包，再安装到仓库 `bin/<模块>/`。打包设置私有 ELF interpreter 和 rpath；计算节点必须能访问同一共享路径。不要把含私有 glibc 的目录加入全局 `LD_LIBRARY_PATH`。此方式绑定本机运行库路径；通用 Linux 静态交付仍使用 musl 包。
+发布会检查选中产品的本机进程和 Slurm 脚本引用；发现活动引用时保留现有程序并报告作业或进程。发布按文件替换，不宣称整组事务；历史科学身份不会被修改。可用 `scripts/install-bin.sh --products 程序列表 /已验证制品目录` 显式发布外部准备的快照，日常构建无需另执行它。
 
 `qe_scf` / `qe_nscf` 支持 `-i/--input`、`-c/--config`、`-r/--run`、`-s/--submit`；默认配置 `input.toml`。仅准备时不运行，`-r` 实际执行，`-s` 提交 `run_qe.sh`；运行和提交互斥。NSCF 继承 SCF 的 XML、电荷密度和 PAW 数据。
 
@@ -232,7 +208,7 @@ rm -r -- "$package_dir"
 输入、`submit.sh` 和日志位于各实际计算目录，空 pool 在生成、提交及脚本启动时阻断。
 旧工作区可只读核验后一次性导入，不为目录改版重跑 QE。
 详见 [模块手册](epwflow/README.md) 和 [MgB₂ 直接操作说明](examples/MgB2/sugon-amd/run/README.md)。
-仅更新三个 EPW 程序可使用 `bash scripts/install-bin.sh --module epwflow /兼容制品目录`。
+仅更新三个 EPW 程序可使用 `bash scripts/build-native.sh build --release --locked -p epwflow --bins`。
 
 ## QE 声子一次提交
 

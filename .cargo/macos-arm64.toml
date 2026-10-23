@@ -1,7 +1,7 @@
 # Apple Silicon 原生构建；brew install openblas spglib。
 [build]
 target = "aarch64-apple-darwin"
-target-dir = "target/macos-arm64"
+target-dir = "bin/.build/macos-arm64"
 
 [env]
 BINDGEN_EXTRA_CLANG_ARGS = { value = "-I/opt/homebrew/include", force = false }

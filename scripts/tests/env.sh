@@ -39,6 +39,18 @@ fi
 SH
 mkdir -p "$test_dir/missing/scripts" || exit $?
 cp "$repo_dir/scripts/env.sh" "$test_dir/missing/scripts/env.sh" || exit $?
+cat > "$test_dir/priority.sh" <<'SH' || exit $?
+env_file="$1"
+expected_bin="$2"
+PATH="/usr/bin:$expected_bin/epwflow:/bin:$expected_bin/epwflow"
+. "$env_file" || exit $?
+[ "$(command -v epw_phonon)" = "$expected_bin/epwflow/epw_phonon" ] || exit $?
+case "$PATH" in "$expected_bin/epwflow:"*) ;; *) exit 1 ;; esac
+after="$PATH"
+. "$env_file" || exit $?
+[ "$PATH" = "$after" ] || exit $?
+case "$PATH" in *":$expected_bin/epwflow:"*) exit 1 ;; esac
+SH
 for shell in bash zsh; do
     command -v "$shell" >/dev/null || { echo "缺少验收 shell: $shell" >&2; exit 1; }
     shell_bin=$(command -v "$shell") || exit $?
@@ -50,6 +62,8 @@ for shell in bash zsh; do
     done
     env -i HOME="$test_dir/home" PATH="/usr/bin:/bin" \
         "$shell_bin" "${flags[@]}" "$test_dir/missing.sh" "$test_dir/missing/scripts/env.sh" || exit $?
+    env -i HOME="$test_dir/home" PATH="/usr/bin:/bin" \
+        "$shell_bin" "${flags[@]}" "$test_dir/priority.sh" "$repo_dir/scripts/env.sh" "$repo_dir/bin" || exit $?
     if "$shell_bin" "${flags[@]}" "$repo_dir/scripts/env.sh" >"$test_dir/direct.log" 2>&1; then
         echo "直接执行应给出 source 提示: $shell" >&2
         exit 1

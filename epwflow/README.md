@@ -234,13 +234,13 @@ epw_phonon --import-work epwflow/work
 ## 构建和验证
 
 ```bash
-bash scripts/build-native.sh build -p epwflow --locked
-# 先准备与计算节点兼容的原生运行制品，再仅安装本模块：
-bash scripts/install-bin.sh --module epwflow /兼容制品目录
+bash scripts/build-native.sh build --release -p epwflow --bins --locked
+# 成功后已自动发布到 bin/epwflow；当前终端加载仓库入口：
+source "/path/to/dftflow/scripts/env.sh"
 bash scripts/build-native.sh test -p epwflow -p qeflow --locked
 ```
 
-`bin/` 已被 Git 忽略，按 `epwflow`、`qeflow`、`scflow`、`substitutionflow`、`vaspflow`、`wannierflow` 分组。`scripts/env.sh` 将模块路径加入当前终端 PATH，不要求在测试目录寻找可执行文件。
+构建会先完成本机配置要求的兼容打包与启动检查，活动引用存在时拒绝替换；测试不更新已发布 CLI。详见 [0017](../docs/specs/0017-build-binaries-layout/quickstart.md)。`bin/` 已被 Git 忽略，按 `epwflow`、`qeflow`、`scflow`、`substitutionflow`、`vaspflow`、`wannierflow` 分组。`scripts/env.sh` 将模块路径加入当前终端 PATH，不要求在测试目录寻找可执行文件。
 
 公开进程及脚本测试使用隔离替身，证明调度、布局、复用和数据防护，不认证科学数值。后续授权的真实 MgB₂ PBE 八阶段及 iso／aniso 三温度 gap 已完成，见 [联合验收](../docs/specs/0050-epw-stage-results/real-chain-validation.md)；原生 Tc 搜索不在该轮验收范围。预算、来源保护及原生收敛检查继续有效，历史科学证据见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
 

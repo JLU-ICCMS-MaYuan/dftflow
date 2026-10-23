@@ -1,110 +1,54 @@
-# 构建目录迁移验证指南
+# 0017：构建、直接调用与迁移验证
 
-本指南定义端到端检查流程。构建/迁移部分仍为待实施目标；PATH 环境脚本已实现，当前可按「从任意目录使用命令」加载。
+## 日常构建
 
-## 前置条件
-
-- 在仓库根目录操作，Rust/Cargo、原生依赖与平台配置已就绪。
-- 构建入口会使用仓库 `bin/`；如目标环境依赖本地忽略配置，先确认配置文件存在。
-- EPW 测试目录迁移前，先完成运行任务、脚本引用和哈希来源检查。
-
-## Workspace 构建与位置检查
+在仓库根目录执行；原生开发依赖、Rust/Cargo 与 `jq` 需就绪。Linux 使用私有兼容前缀时还需 `patchelf`。
 
 ```bash
-bash scripts/build-native.sh build --release --workspace --locked
-```
-
-预期：公开程序出现在以下位置，全部可执行；已有兼容命令软链接也位于对应家族目录：
-
-```text
-bin/epwflow/{epw_phonon,epw_wannier,epw_superconductivity}
-bin/qeflow/qeflow
-bin/vaspflow/vaspflow
-bin/substitutionflow/substitution
-bin/wannierflow/wannier90
-bin/scflow/scflow
-```
-
-## 独立工具
-
-```bash
+# 主 workspace 八个产品，成功后已发布到 bin/<模块>/
+bash scripts/build-native.sh
+# 仅更新 EPW 三程序
+bash scripts/build-native.sh build --release --locked -p epwflow --bins
+# 独立 dyn0 工程，同一入口发布到 bin/tools/
 bash scripts/build-native.sh build --release --locked --manifest-path tools/qf-gen-dyn0/Cargo.toml
-bin/tools/qf-gen-dyn0 --help
 ```
 
-若 Cargo 参数透传不能同时保持 workspace 平台配置与独立工程设置，使用 Plan 实施时定义的仓库封装入口；不得改用算例路径。
+原始 Cargo 输出与缓存位于 `bin/.build/<平台>/`，本机依赖位于 `bin/.native/<平台>/`。交付构建读取本次制品报告，完成必要兼容打包及全部选中入口启动验证后更新公开目录；不用再安装到用户目录。直接执行裸 `cargo build` 不经过发布步骤，日常使用上述 wrapper。显式交叉目标只构建，不替换宿主程序。
 
-## 运行和打包验证
+发布来源记录在 `bin/.build/published/<程序>.json`，包含原始 Cargo 制品路径及原始、发布后 SHA-256。私有依赖和缓存不加入 PATH；发布前发现本机进程或 Slurm 脚本仍引用选中产品时会失败并保留原程序，待活动任务结束后重新构建即可。
 
-```bash
-cargo test --workspace --locked
-bash scripts/tests/install-current.sh bin
-bash scripts/tests/install-bin.sh "<扁平 staging 目录>" "<独立临时目标目录>" "bin/tools/qf-gen-dyn0"
-```
-
-实际隔离安装测试应使用全新临时目录和由本次构建生成的 staging；示例占位路径须替换。Linux musl 构建完成后核验发布清单、静态依赖和离线帮助启动。
-
-## 路径与重复构建检查
-
-```bash
-find bin -maxdepth 3 -type f -perm -111 -print | sort
-rg -n 'bin-window-contract|local_run/.*/bin|target/release/(qeflow|vaspflow|wannier90|substitution|epw_)' test_auto scripts README.md docs
-git status --short
-```
-
-预期：最终程序仅位于指定家族目录；缓存在 `bin/.build/`；测试/运行目录没有 DFTFlow 产品 ELF；活动引用扫描无旧程序路径；`bin/` 仍被忽略。重复执行构建后，家族交付路径集合一致，程序哈希与本次 staging 一致。
-
-## 从任意目录使用命令
-
-`PATH` 不递归搜索子目录，因此需要加入七个家族目录。在 Bash/Zsh 中 source 环境脚本，脚本会从自身位置定位仓库；其他机器将脚本路径替换为实际位置。
+## 从任意目录调用
 
 ```bash
 source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+hash -r
+command -v epw_phonon qeflow qe_scf qf-gen-dyn0
 ```
 
-首次加载时，新加入的家族目录优先于原有 `PATH`，后续重复加载不重复添加；不把 `.build` 或测试目录加入搜索范围。已存在于原 `PATH` 中的家族目录保留原位置。此命令可直接粘贴到当前终端执行；直接使用 `bash scripts/env.sh` 会提示需要 source 并退出失败，因为子进程不能修改父 shell 的环境。
+其他仓库位置替换为实际绝对路径。加载器支持 Bash/Zsh，七家族路径始终前置且重复加载幂等，保留其他系统路径。Bash 可用 `hash -r` 清除之前缓存的命令位置；Zsh 可用 `rehash`。
 
-如需新终端持久生效，将上述同一 source 行手动放入所用 shell 的启动文件一次：Bash 通常为 `~/.bashrc`，Zsh 为 `~/.zshrc`。Bash 登录 shell 还需其实际使用的 `~/.bash_profile`、`~/.bash_login` 或 `~/.profile` 加载同一配置或 `~/.bashrc`。新开对应交互终端，或在当前 shell 加载刚编辑的文件：
+新终端需由用户将相同 source 行加入实际使用的 `~/.bashrc` 或 `~/.zshrc`；Bash 登录文件应加载相应配置。本需求按原约定不自动编辑真实启动文件；已经打开的其他终端需要各自加载一次。独立批处理环境也应显式 source 或使用产品绝对路径。
+
+## 测试与检查
 
 ```bash
-# Bash 用户加载自己编辑的配置文件
-source "$HOME/.bashrc"
+CARGO_PROFILE_TEST_DEBUG=0 bash scripts/build-native.sh test --workspace --locked --no-fail-fast
+bash scripts/build-native.sh test --locked --manifest-path tools/qf-gen-dyn0/Cargo.toml
+bash scripts/tests/build-publish.sh
+bash scripts/tests/env.sh
+bash scripts/tests/install-current.sh
 ```
 
-```zsh
-# Zsh 用户加载自己编辑的配置文件
-source "$HOME/.zshrc"
-```
+`test`、`check` 和仅构建库不会发布日常 CLI。自动发布回归用隔离的实际 Cargo 工程验证，不提交科学作业；环境回归在隔离 Bash/Zsh 中检查全部真实入口、重复加载、含空格路径及新终端。
 
-从仓库外核对解析位置及帮助启动（仅验证调用，不提交科学计算）：
+## 本机迁移与历史
 
-```bash
-(
-    cd "/tmp" || exit 1
-    command -v epw_phonon
-    command -v qeflow
-    command -v qe_scf
-    command -v substitution
-    epw_phonon --help
-    qeflow --help
-)
-```
+旧 `install-current.sh` 已退役，运行时明确失败且不创建旧安装。旧依赖、用户入口、测试目录历史二进制的迁移与删除结果以 [验收记录](acceptance.md) 为准，源码实现不等同于所有机器已完成迁移。
 
-预期解析位置分别位于 `bin/epwflow/`、`bin/qeflow/`、`bin/substitutionflow/`。同样核对其余产品及兼容命令；出现旧安装或同名 alias/函数时，用 `type -a 命令名` 查找来源，Bash 可执行 `hash -r` 清除命令缓存。当前 shell 的环境仅被其后代继承；独立批处理/Slurm 脚本需明确加载配置或继续使用程序绝对路径。
+本机迁移先将依赖复制到仓库私有前缀，更新 `.pc`／CMake／ELF／环境文件等实际引用；以旧路径不可访问时的构建和启动验证为删除前提，最后清理自有入口和旧根目录。不能跳过活动任务核验直接删除加载器，也不能重写冻结回执冒充历史身份。
 
-### 本轮验证记录（2026-10-20）
+历史二进制按原哈希保存在 `bin/.history/0017/` 并另记原路径清单。它们不是日常入口；旧冻结记录保持原文，通过迁移清单定位原始证据。继续工作应使用现有新尝试或导入契约，而非修改旧身份。旧程序若硬编码旧加载器，仅保留字节不代表其原路径仍可直接执行。
 
-以下为环境脚本交付前的配置示例验证记录。后续真实脚本与新终端回归见 [本批验收](acceptance.md)，历史记录不替代当前脚本验收。
+## 平台验证边界
 
-从本文提取 PATH 配置，在仓库外临时目录分别使用不加载用户配置的 Bash（`--noprofile --norc`）和 Zsh（`-f`）运行；初始环境仅提供 `/usr/bin:/bin` 作为命令搜索路径，并使用临时 HOME 隔离用户配置。
-
-- 两种 shell 各 55 个已安装产品及兼容入口全部通过 `command -v` 路径核验与 `--help`，均解析至对应家族目录。
-- 配置连续加载两次后 `PATH` 完全一致；七个家族目录各出现一次，原 `/usr/bin:/bin` 保留。
-- 本目录 7 篇文档的相对链接及 8 段 Bash/Zsh 示例语法检查通过。
-- 没有更改真实 shell 启动文件。README 集成、新终端持久生效验证和其余构建/迁移任务仍由 Tasks 跟踪，本记录仅证明配置示例及当前安装入口在隔离 shell 下可用。
-
-当前脚本回归命令：
-
-```bash
-bash "scripts/tests/env.sh"
-```
+Linux musl 发行链经 `scripts/linux/build.sh` 在 Docker 中构建和离线验证，制品快照位于 `bin/.build/linux-x86_64-musl/package-source/`，发行包仍在 `dist/`。交叉发行不覆盖宿主程序。没有 Docker 的机器不能把脚本语法检查当作真实 musl 构建通过；macOS 的当前实测状态同样在验收中单列。

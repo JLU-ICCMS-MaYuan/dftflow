@@ -25,7 +25,7 @@ QE 0006 的完整调度在 [phonon_chain.rs](../../qeflow/src/phonon_chain.rs)�
 
 ## 按平台构建
 
-在仓库根目录运行（以下为使用说明，本次未执行）：
+在仓库根目录运行：
 
 ```bash
 bash scripts/build-native.sh
@@ -37,8 +37,8 @@ bash scripts/build-native.sh build --release --workspace --locked --offline
 
 | 平台 | 配置 | 默认产物目录 |
 | --- | --- | --- |
-| Linux x86_64 原生 | [.cargo/linux-x86_64.toml](../../.cargo/linux-x86_64.toml) | target/linux-x86_64/x86_64-unknown-linux-gnu/release |
-| macOS arm64 原生 | [.cargo/macos-arm64.toml](../../.cargo/macos-arm64.toml) | target/macos-arm64/aarch64-apple-darwin/release |
+| Linux x86_64 原生 | [.cargo/linux-x86_64.toml](../../.cargo/linux-x86_64.toml) | bin/.build/linux-x86_64/x86_64-unknown-linux-gnu/release |
+| macOS arm64 原生 | [.cargo/macos-arm64.toml](../../.cargo/macos-arm64.toml) | bin/.build/macos-arm64/aarch64-apple-darwin/release |
 
 平台公共配置保持独立；本机依赖路径可由忽略目录中的 `build-<platform>.env` 和 DFTFLOW_NATIVE_PREFIX 提供。musl 另走 [scripts/linux/build.sh](../../scripts/linux/build.sh)，不能把当前原生 glibc 构建称作 musl 静态制品。
 
@@ -50,29 +50,25 @@ bash scripts/build-native.sh build --release --workspace --locked --offline
 
 ## 从源码到终端命令
 
-“日常使用的程序”指终端 PATH 实际找到的可执行文件；“新代码”指工作树中的源码。编辑源码不会自动更新安装目录，必须编译并把入口指向新制品。
+[build-native.sh](../../scripts/build-native.sh) 对 `build` 读取本次 Cargo JSON 制品报告，使用 [唯一产品映射](../../scripts/product-layout.sh)，将成功构建的自有 CLI 自动发布到仓库 `bin/<模块>/`。无需额外用户安装；`test`、`check` 和仅构建库不会替换日常程序。交付构建需要 `jq`，Linux 私有运行库打包需要 `patchelf`。
 
 ```bash
-# 查看当前终端选中了什么
-command -v qeflow
-command -v qe_phonon_split_index
-command -v qf-gen-dyn0
-
-# 将八个已经构建并完成所需兼容打包的程序按模块安装
-bash scripts/install-bin.sh /path/to/built/bin
-# 显式安装独立 dyn0（不提供第三个参数时保留已有工具）
-bash scripts/install-bin.sh /path/to/built/bin "$PWD/bin" /path/to/qf-gen-dyn0
+bash scripts/build-native.sh build --release --workspace --locked
+bash scripts/build-native.sh build --release --locked -p epwflow --bins
+bash scripts/build-native.sh build --release --locked --manifest-path tools/qf-gen-dyn0/Cargo.toml
 ```
 
-[install-bin.sh](../../scripts/install-bin.sh) 默认安装到仓库 `bin/`，按 `epwflow`、`qeflow`、`vaspflow`、`scflow`、`wannierflow`、`substitutionflow` 分组；可显式安装的独立工具在 `bin/tools/`。真实二进制只复制一份，兼容命令使用组内相对软链接，例如 `bin/qeflow/qe_scf -> qeflow`。`bin/` 不入 Git，构建缓存仍在 `target/`。
+原始制品、缓存与测试 harness 位于 `bin/.build/<平台>/`，本机私有编译和运行依赖可位于 `bin/.native/<平台>/`。公开模块仍为 epwflow、qeflow、vaspflow、scflow、wannierflow、substitutionflow 和 tools，兼容名使用组内相对链接。独立工具仍单独构建；主 workspace 构建不顺带更新它。显式交叉目标只构建，不替换宿主程序。
 
-分组安装复用 [install-compat.sh](../../scripts/install-compat.sh) 的入口清单和全部 54 个入口启动检查；通过后预检目标冲突并逐文件替换，安装锁避免并发写入，退出清理临时副本，不创建历史版本。显式 dyn0 额外检查启动。缺失／损坏来源或目标目录冲突在替换前拒绝；更新仍不是整组事务，应在无活动计算链时进行。
+发布前完成所选产品全部入口启动验证、目标冲突检查及本机／Slurm 活动引用检查，再逐文件替换；编译和预检失败保留原可用程序。发布锁阻止并发写入，不宣称整组事务。来源与发布后 SHA-256 保存于 `bin/.build/published/<程序>.json`，fresh 增量构建仍会发布。
 
-本次分组安装不改 PATH 或 `~/.local/bin`。[install-current.sh](../../scripts/install-current.sh) 保留为显式兼容方式，其默认位置仍是 `~/.local/share/dftflow/current/bin`。历史程序、已生成脚本和 EPW 身份记录不会自动迁移；已有记录绑定程序的绝对路径、链接目标和哈希，不改写这些记录绕过校验。历史清理方法见 [清理指南](../specs/0011-build-history-cleanup/quickstart.md)。
+[install-bin.sh](../../scripts/install-bin.sh) 保留为显式制品发布入口，支持 `--products CSV` 或 `--module FAMILY`，与自动构建复用同一清单；[install-current.sh](../../scripts/install-current.sh) 已退役，明确失败且不创建旧用户安装。兼容入口生成器要求显式目标目录，不再默认写入用户命令目录。
+
+本机依赖迁移、历史二进制归档和旧用户目录删除的实际状态见 [0017 验收](../specs/0017-build-binaries-layout/acceptance.md)。历史脚本与身份记录不自动改写；迁移清单保留原路径及哈希，日常入口不使用历史副本。
 
 ### 在任意目录调用程序
 
-在 Bash/Zsh 中加载 [scripts/env.sh](../../scripts/env.sh)，脚本从自身位置定位仓库 `bin/`，将七个公开家族目录加入并导出 `PATH`，保留原有路径，重复加载不重复添加：
+在 Bash/Zsh 中加载 [scripts/env.sh](../../scripts/env.sh)，脚本从自身位置定位仓库 `bin/`，将七个公开家族目录加入并导出 `PATH`，保留原有路径，将已有模块路径也移到前面，重复加载保持幂等：
 
 ```bash
 source "/path/to/dftflow/scripts/env.sh"
@@ -83,9 +79,11 @@ command -v epw_phonon qeflow qe_scf
 
 环境加载回归覆盖 Bash/Zsh、仓库外 55 个真实入口、重复加载、原有路径保留、含空格的仓库位置、缺失 `bin` 时的失败保护以及临时 HOME 中新交互终端加载。详见 [0017 验收](../specs/0017-build-binaries-layout/acceptance.md)。
 
-登录节点与计算节点 glibc 不匹配时，项目提供 [package-native-runtime.sh](../../scripts/linux/package-native-runtime.sh)，打包一致的加载器与运行库并用 patchelf 修正制品。该方式依赖共享可读路径，不代表跨任意 Linux 的通用静态包；不通过修改系统库或全局 LD_LIBRARY_PATH 来切换。
+Linux 配置 `DFTFLOW_NATIVE_PREFIX` 时，交付构建自动调用 [package-native-runtime.sh](../../scripts/linux/package-native-runtime.sh)，准备一致的加载器与运行库并用 patchelf 修正制品；已有前缀的库版本冲突会拒绝覆盖。该方式依赖共享可读路径，不代表跨任意 Linux 的通用静态包；不通过修改系统库或全局 LD_LIBRARY_PATH 来切换。
 
 ## 已留档的重新编译事实
+
+[0017 验收](../specs/0017-build-binaries-layout/acceptance.md) 记录了 2026-10-23 的本机 Linux 原生交付：新的私有缓存中构建八个主程序和独立 dyn0，自动发布九个产品；workspace 388 项通过、10 项显式真实科学用例跳过，独立工具 4 项通过，Bash/Zsh 的 55 个实际入口回归通过。旧安装依赖迁入仓库，54 份历史产品按原哈希归档，旧用户安装根及其 55 个自有入口已删除；删除后构建、测试和启动不重建旧根。macOS、Docker/musl 及新增计算节点实测未执行，不能由本机证据替代。
 
 [0006 验收记录末节](../specs/0006-qe-phonon-submit-chain/acceptance.md) 记载了用户要求全量重编译后的交付：从空 target 目录构建五份主程序与独立工具，主 workspace 97 项及独立工具 4 项测试通过，51 个主入口核验通过，并完成本机安装切换。真实 QE 初始化也有完成记录。
 

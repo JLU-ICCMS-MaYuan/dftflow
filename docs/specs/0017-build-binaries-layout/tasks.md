@@ -6,9 +6,9 @@
 
 **目的**：形成可验证的唯一构建/交付清单，查明现有运行引用，避免破坏历史验收环境。
 
-- [ ] T001 [US1] 盘点全部受支持 Cargo 构建入口、输出位置、二进制清单及平台配置，记录于本 Spec 的 `research.md`。
-- [ ] T002 [US2] 只读核验测试目录 DFTFlow 可执行文件的哈希、脚本/调度器引用、进程与可复建来源，记录于验收证据。
-- [ ] T003 [US1] 定义唯一家族映射及 staging 接口，确认与 `scripts/install-bin.sh` 的既有契约一致。
+- [x] T001 [US1] 盘点全部受支持 Cargo 构建入口、输出位置、二进制清单及平台配置，记录于本 Spec 的 `research.md`。
+- [x] T002 [US2] 只读核验测试目录 DFTFlow 可执行文件的哈希、脚本/调度器引用、进程与可复建来源，记录于验收证据。
+- [x] T003 [US1] 定义唯一家族映射及 staging 接口，确认与 `scripts/install-bin.sh` 的既有契约一致。
 
 ## 阶段 2：用户故事 1——统一家族构建输出（P1）
 
@@ -18,11 +18,11 @@
 
 ### 实施
 
-- [ ] T004 [US1] 更新 `scripts/build-native.sh`，把 Cargo target/cache 定向到仓库 `bin/.build/` 并在成功后归档产品。
-- [ ] T005 [US1] 适配 `tools/qf-gen-dyn0` 独立 Cargo 构建及其 README，使产物落入 `bin/tools/`。
-- [ ] T006 [US1] 适配 `scripts/install-current.sh` 及其入口/隔离测试，从家族目录或显式 staging 取得八个主程序，同时保持固定安装目的地。
-- [ ] T007 [US1] 适配 `scripts/linux/build.sh` 和 `scripts/linux/package-native-runtime.sh`，让 musl 发布包来源绑定规范产物并保持发行验证。
-- [ ] T008 [US1] 扩展 `scripts/tests/install-bin.sh` 覆盖规范家族输入、重复覆盖、缺失/损坏源和失败保护；复用 `scripts/install-bin.sh` 映射。
+- [x] T004 [US1] 更新 `scripts/build-native.sh`，把 Cargo target/cache 定向到仓库 `bin/.build/` 并在成功后归档产品。
+- [x] T005 [US1] 适配 `tools/qf-gen-dyn0` 独立 Cargo 构建及其 README，使产物落入 `bin/tools/`。
+- [x] T006 [US1] 退役 `scripts/install-current.sh` 的旧安装行为，回归验证不再创建旧根目录；统一使用仓库自动发布。
+- [x] T007 [US1] 适配 `scripts/linux/build.sh` 和 `scripts/linux/package-native-runtime.sh`，让 musl 发布包来源绑定规范产物并保持发行验证。
+- [x] T008 [US1] 复用 `scripts/tests/install-bin.sh` 的显式制品来源、分组发布和失败保护回归，新增实际 Cargo 自动发布回归；覆盖重复覆盖、缺失/损坏源及模块隔离，映射统一由 `scripts/product-layout.sh` 提供。
 
 ## 阶段 3：用户故事 2——移除测试目录程序副本（P1）
 
@@ -32,9 +32,9 @@
 
 ### 实施
 
-- [ ] T009 [US2] 核验完成后将 `test_auto/MgB2/local_run/010-public-pbe/bin-window-contract/` 的 EPW 三程序迁出到 `bin/epwflow/`，按记录确认仅移除这些副本且来源数据不变。
-- [ ] T010 [US2] 更新 `test_auto/MgB2/epwflow/` 与本地可跟踪测试脚本中的二进制路径，保持忽略目录和历史输入边界。
-- [ ] T011 [US2] 更新 `README.md`、`docs/overview/dftflow-rust.md`、`docs/overview/tools/qf-gen-dyn0.md`、`tools/qf-gen-dyn0/README.md` 与 `docs/manual-testing.md` 的构建路径说明。
+- [x] T009 [US2] 核验完成后将测试目录全部历史产品（包括 `010-public-pbe/bin-window-contract/`）迁入 `bin/.history/0017/`，保持原哈希；公开 `bin/epwflow/` 使用当前源码重建产品，科学数据和冻结记录不变。
+- [x] T010 [US2] 更新 `test_auto/MgB2/epwflow/` 与本地可跟踪测试脚本中的二进制路径，保持忽略目录和历史输入边界。
+- [x] T011 [US2] 更新 `README.md`、`docs/overview/dftflow-rust.md`、`docs/overview/tools/qf-gen-dyn0.md`、`tools/qf-gen-dyn0/README.md` 与 `docs/manual-testing.md` 的构建路径说明。
 
 ## 阶段 4：用户故事 3——任意目录调用（P1）
 
@@ -47,10 +47,10 @@
 
 ## 最终阶段：质量门与收敛
 
-- [ ] T012 [US1] 在空 target/cache 下运行 workspace 和独立工具构建、测试及全部公开程序 `--help`。
-- [ ] T013 [US1] 连续运行两次构建，比较家族路径集合、权限与 SHA-256，验证旧程序被稳定路径覆盖。
-- [ ] T014 [US2] 执行测试目录可执行文件清点、旧路径活动引用扫描、所有修改脚本 `bash -n` 与测试回归。
-- [ ] T015 [US1] 运行固定安装隔离测试、分组安装验证及 Linux musl 打包/离线验证，检查 `bin/` 仍被忽略且工作树仅含本任务改动。
+- [x] T012 [US1] 在空 target/cache 下运行 workspace 和独立工具构建、测试及全部公开程序 `--help`。
+- [x] T013 [US1] 连续运行两次构建，比较家族路径集合、权限与 SHA-256，验证旧程序被稳定路径覆盖。
+- [x] T014 [US2] 执行测试目录可执行文件清点、旧路径活动引用扫描、所有修改脚本 `bash -n` 与测试回归。
+- [ ] T015 [US1] 运行旧安装入口退役测试、分组发布验证及可执行平台的 Linux musl 打包/离线验证；平台缺口保留明确记录，检查产物忽略与提交范围。
 
 ## 依赖与执行顺序
 
@@ -80,4 +80,25 @@
 
 - [x] T018 [US3] 实现可 source 的 `scripts/env.sh`，添加 `scripts/tests/env.sh` 覆盖仓库外真实程序、含空格的仓库位置、缺失目录与重复加载保护、临时 HOME 新终端加载；同步 `docs/overview/dftflow-rust.md`。验证见 `acceptance.md`。
 
-US3 已实现。T004～T015 等未勾选项不由 PATH 回归代替；本需求尚未整体完成。
+上述为原 PATH 批次记录；本次构建、迁移和删除的结果以末尾收敛记录及 `acceptance.md` 为准。
+
+## 2026-10-23：合并后的实施与收敛
+
+用户原话、后续依赖调查和删除目标全部并入本需求；原保留 current 的技术任务由下列目标替代，不新增父子需求。T016～T018 保留历史通过记录，发生实现变化后重新验证。
+
+- [x] T019 [US1] 合并原话、调查、契约与任务，删除重复草稿目录，修复全部本地链接并核验覆盖表。
+- [x] T020 [US1] 共享产品和入口清单，支持 Cargo JSON 的本次制品发布、完整／部分／独立工具构建及 fresh 增量结果。
+- [x] T021 [US1] 隔离回归覆盖非交付、编译失败、启动失败、目标冲突、模块不干扰和含空格路径；失败保持原程序。
+- [x] T022 [US3] 重新验证环境加载的优先级与幂等，全部实际入口仓库外调用；保留真实启动文件手动配置边界。
+- [x] T023 [US4] 迁移本机私有依赖、元数据和构建配置，旧路径不可访问时实际编译与启动验证。
+- [x] T024 [US2] 活动作业终态核验后，将历史测试二进制迁往私有归档，记录原路径及一致哈希，更新可变脚本，保留科学数据和冻结记录。
+- [x] T025 [US4] 清理旧自有入口并完整删除旧根；再次构建、测试与启动证明不重建，记录残余历史引用边界。
+- [x] T026 [US4] 回写全部文档、检查表和验收；精确提交本任务，保留无关工作树修改，不推送。
+
+## 2026-10-23：实施结果
+
+本机 Linux 原生实施已完成：workspace 388 通过、10 项真实科学用例明确跳过，独立工具 4 通过；自动发布、实际入口、失败保护及安装迁移回归通过。九产品的依赖、源与发布指纹均已核验。54 份历史产品按原哈希归档，22,057 份非产品文件的大小和修改时间保持；旧根完整删除、55 个自有旧入口清理，删除后回归不重建旧目录。详细证据和跳过原因见 [验收](acceptance.md)。
+
+T015 的旧安装退役、分组发布、脚本语法、忽略与提交范围检查已完成；本机没有 Docker，实际 musl 容器构建、测试及断网发行验证未执行，故 T015 保持未勾选。macOS 原生和新增计算节点实测同样未执行，不能计通过。平台缺口与 CHK011 的线上链接核验分开保留，不以本机交付关闭全部平台或线上需求。
+
+本次明确授权内完成合并、实施、迁移和提交；不推送，不改真实 shell 启动文件、科学数据或冻结身份。代码采用唯一产品清单、复用发布入口和显式失败传播，不增加第二套安装流程。

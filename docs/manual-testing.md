@@ -69,13 +69,15 @@ python3 -m pytest test_auto/MgB2/qeflow -q
 
 ## 四、Rust 家族二进制构建与 CLI
 
+当前构建缓存位于 `bin/.build/`，自有程序从 `bin/<模块>/` 调用；交付构建自动发布，旧用户安装入口已退役。完整验证与迁移边界见 [0017](specs/0017-build-binaries-layout/quickstart.md)。
+
 ```bash
 cd /path/to/dftflow
-cargo build --release          # 产出 target/release/{qeflow,vaspflow,scflow,wannier90,substitution}
-cargo test --workspace         # 75 项 Rust 集成测试（黄金基线对照）
+bash scripts/build-native.sh build --release --workspace --locked  # 自动发布到 bin/<模块>/
+bash scripts/build-native.sh test --workspace --locked              # 测试不发布 CLI
 
 # 旧名兼容入口（48 个，argv[0] 分派）
-scripts/install-compat.sh <bin_dir> [target_dir]
+bash scripts/install-compat.sh <已验证的扁平制品目录> <显式临时入口目录>
 ```
 
 | 家族二进制 | 覆盖旧命令 |
