@@ -15,18 +15,89 @@ epw_phonon -c "epwinput.toml" --check --json
 
 ## 八阶段操作
 
-按下表逐步运行；确认上一阶段完成后再执行下一阶段。公开命令不会自动提交下一阶段。
+按以下步骤逐步运行；确认上一阶段完成后再执行下一阶段。公开命令不会自动提交下一阶段。
 
-| 步骤 | 提交命令 | 完成后查看 |
-| --- | --- | --- |
-| 1 SCF | `epw_phonon -c "epwinput.toml" --stage scf -s` | `1.qe-scf/` |
-| 2 NSCF | `epw_phonon -c "epwinput.toml" --stage nscf -s` | `2.qe-nscf/` |
-| 3 QE 电子 | `epw_phonon -c "epwinput.toml" --stage electronic -s` | `results/3.qe-electronic/` 单独能带与 DOS |
-| 4 QE 声子 | `epw_phonon -c "epwinput.toml" --stage phonon -s` | `results/4.qe-phonon-nosplit/` 声子谱、TDOS、Mg／B 元素 DOS |
-| 5 Wannier | `epw_wannier -c "epwinput.toml" --stage wannier -s` | `results/5.epw-wannier/` QE／EPW 电子能带及 DOS 对比 |
-| 6 coarse | `epw_wannier -c "epwinput.toml" --stage coarse -s` | `results/6.epw-coarse/` 声子对比、四面板总览及 `decay/` 衰减图 |
-| 7 fine | `epw_superconductivity -c "epwinput.toml" --stage fine -s` | `7.epw-fine/` 原生 α²F／λ 与清单 |
-| 8 gap | `epw_superconductivity -c "epwinput.toml" --stage superconductivity -s` | `results/8.epw-superconductivity/` 能隙、Z、温度曲线与数据 |
+### 第 1 步：SCF
+
+执行自洽计算，生成后续阶段所需的电子基态。
+
+```bash
+epw_phonon -c "epwinput.toml" --stage scf -s
+```
+
+完成后查看 `1.qe-scf/`。
+
+### 第 2 步：NSCF
+
+执行非自洽计算，准备 Wannier 化所需的电子态。
+
+```bash
+epw_phonon -c "epwinput.toml" --stage nscf -s
+```
+
+完成后查看 `2.qe-nscf/`。
+
+### 第 3 步：QE 电子
+
+计算 QE 电子能带与 DOS，供独立查看和后续比较。
+
+```bash
+epw_phonon -c "epwinput.toml" --stage electronic -s
+```
+
+完成后在 `results/3.qe-electronic/` 查看单独能带与 DOS。
+
+### 第 4 步：QE 声子
+
+计算声子及其后处理结果。
+
+```bash
+epw_phonon -c "epwinput.toml" --stage phonon -s
+```
+
+完成后在 `results/4.qe-phonon-nosplit/` 查看声子谱、TDOS、Mg／B 元素 DOS。
+
+### 第 5 步：Wannier
+
+执行 Wannier 化并生成电子比较图，用于检查拟合与选窗。
+
+```bash
+epw_wannier -c "epwinput.toml" --stage wannier -s
+```
+
+完成后在 `results/5.epw-wannier/` 查看 QE／EPW 电子能带及 DOS 对比。
+
+### 第 6 步：coarse
+
+处理粗网格电声数据，生成声子比较与实空间衰减图。
+
+```bash
+epw_wannier -c "epwinput.toml" --stage coarse -s
+```
+
+完成后在 `results/6.epw-coarse/` 查看声子对比、四面板总览，在其中的 `decay/` 查看衰减图。
+
+### 第 7 步：fine
+
+执行细网格插值，生成原生 α²F／λ 数据。
+
+```bash
+epw_superconductivity -c "epwinput.toml" --stage fine -s
+```
+
+完成后在 `7.epw-fine/` 查看原生 α²F／λ 与清单。
+
+### 第 8 步：gap
+
+按配置中的方法与温度计算超导能隙。
+
+```bash
+epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
+```
+
+完成后在 `results/8.epw-superconductivity/` 查看能隙、Z、温度曲线与数据。
+
+### 阶段完成与执行顺序
 
 **第 1／2 步**作业完成后，再执行相同命令核验完成记录；已完成的科学计算不会重跑。
 
@@ -57,7 +128,7 @@ epw_superconductivity --results-check --results "results" --json
 
 ## 输入与目录
 
-当前 SCF／NSCF 为 4×4×2、NSCF 16 带，PH 为 2×2×1，细 k／q 为 8×8×4／4×4×2，5 个 Wannier 函数；`mpirun -np 32`、MPI=32、EPW `-nk 32` 保持一致。超导迭代使用输入中的实际混合设置 `mixing_beta=-0.3`、历史长度 8，最多 1000 次、相对标准 1e-8；不自动调窗、扫描网格或修改温度。
+当前 SCF／NSCF 为 4×4×2、NSCF 16 带，PH 为 2×2×1，细 k／q 为 8×8×4／4×4×2，5 个 Wannier 函数；MPI 启动器为 `mpirun`，其 `-np 32`、MPI=32、EPW `-nk 32` 保持一致。超导迭代使用输入中的实际混合设置 `mixing_beta=-0.3`、历史长度 8，最多 1000 次、相对标准 1e-8；不自动调窗、扫描网格或修改温度。
 
 阶段数据在本目录按 `1.qe-scf/` 至 `8.epw-superconductivity/` 生成，阶段状态在 `epw-state/`，最终图片与对应数据按阶段发布到同级 `results/`。原生科学文件继续保留在各阶段，续算时不要删除。
 
