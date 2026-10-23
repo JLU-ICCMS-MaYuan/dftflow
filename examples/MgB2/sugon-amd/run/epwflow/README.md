@@ -117,7 +117,19 @@ epw_superconductivity --results-check --results "results" --json
 
 `COMPLETED` 和退出码用于核对调度状态；还应检查阶段科学完成记录、根结果包及第 8 步各温度有效性。当前父脚本和合并日志位于对应阶段，如 `4.qe-phonon-nosplit/phonon.sh` 与 `slurm-phonon.log`；原生程序日志保留在实际任务目录。`results/index.json` 只导航已发布图片与数据，不代替科学完成记录。
 
-0053 新版 CLI 生成的科学命令使用 `> xxx.out 2>&1`，例如 SCF 的正常输出和错误都在 `1.qe-scf/scf.out`，Slurm 日志设置保持原样。已有版本 1／2 任务仍读取其原分离日志；不要删除旧 `.err` 或修改已绑定的脚本。本轮保留当前已绑定的 SCF 脚本，新格式由后续新任务正常生成；源码编译与默认安装的区别见 [0053 验收](../../../../../docs/specs/0053-epw-merged-program-output/acceptance.md)。
+0053 新版 CLI 生成的科学命令使用 `> xxx.out 2>&1`，例如 SCF 的正常输出和错误都在 `1.qe-scf/scf.out`，Slurm 日志设置保持原样。已有版本 1／2 任务仍读取其原分离日志；不要删除旧 `.err` 或修改已绑定的脚本。仓库与默认 EPW 入口已更新，本目录已实际完成一次新格式 SCF，见 [0053 验收](../../../../../docs/specs/0053-epw-merged-program-output/acceptance.md)。
+
+需要重跑 SCF 并重新生成 `scf.sh` 时，无需删除 `1.qe-scf` 或 `completion.json`：
+
+```bash
+epw_phonon -c "epwinput.toml" --stage scf --resume -s
+```
+
+每次执行都会强制开始新批次，旧脚本及结果完整归档到 `epw-state/history/`；运行中或状态未知时拒绝重提。作业结束后，去掉 `--resume` 归集结果并保留后续复用：
+
+```bash
+epw_phonon -c "epwinput.toml" --stage scf -s
+```
 
 失败后先看日志，修正原因，再对同一目标加 `--resume -s`。成功科学检查点与相容后处理会复用；缺图或发布失败只补派生结果。活动或终态未知的作业拒绝重复提交，不手删状态规避核验。必要计算原因在比较目录的 `reuse-decision.json`／`dos-decision.json` 中。
 

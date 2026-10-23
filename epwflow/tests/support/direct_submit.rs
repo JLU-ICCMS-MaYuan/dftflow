@@ -194,6 +194,101 @@ fn direct_failed_scf_needs_resume_and_manual_script_edits_are_not_adopted() {
 }
 
 #[test]
+fn failed_version_two_scf_resumes_with_merged_script_and_preserves_old_directory() {
+    let c = Case::numbered();
+    c.direct_setup();
+    let args = ["--stage", "scf", "-s"];
+    success(c.direct_advance(0, &args, "v2-resume-submit"));
+    let mut task = c.direct_task();
+    let script = PathBuf::from(task["script"]["path"].as_str().unwrap());
+    let old_body = fs::read_to_string(&script).unwrap().replace("2>&1", "2> scf.err");
+    fs::write(&script, &old_body).unwrap();
+    task["schema_version"] = json!(2);
+    task["script"] = serde_json::to_value(store::Identity::capture(&script).unwrap()).unwrap();
+    for path in [c.root.join("run/epw-state/native-active.json"),
+        c.root.join("run/epw-state/native-jobs").join(format!("{}.json", task["key"].as_str().unwrap())),
+        c.root.join("run/epw-state/native-jobs/history").join(format!("{}.json", task["id"].as_str().unwrap()))] {
+        store::write(&path, &task).unwrap();
+    }
+    let dir = script.parent().unwrap();
+    fs::write(dir.join("scf.out"), "failed stdout\n").unwrap();
+    fs::write(dir.join("scf.err"), "failed stderr\n").unwrap();
+    c.put(&format!("job-{}.state", task["job"].as_u64().unwrap()), "FAILED");
+    assert!(!c.direct_advance(0, &args, "v2-resume-failed").status.success());
+    assert!(dir.exists());
+    success(c.direct_advance(0, &["--stage", "scf", "--resume", "-s"], "v2-resume-new"));
+    let next = c.direct_task();
+    assert_eq!(next["schema_version"], 3);
+    assert_ne!(next["generation"], task["generation"]);
+    assert_eq!(next["script"]["path"], task["script"]["path"]);
+    assert!(fs::read_to_string(&script).unwrap().contains(" > scf.out 2>&1"));
+    assert!(!dir.join("scf.err").exists());
+    let history = fs::read_dir(c.root.join("run/epw-state/history")).unwrap()
+        .map(|e| e.unwrap().path().join("calculation"))
+        .find(|p| p.join("scf.err").is_file()).unwrap();
+    assert_eq!(fs::read_to_string(history.join("scf.sh")).unwrap(), old_body);
+    assert_eq!(fs::read_to_string(history.join("scf.out")).unwrap(), "failed stdout\n");
+    assert_eq!(fs::read_to_string(history.join("scf.err")).unwrap(), "failed stderr\n");
+    assert_eq!(c.direct_execute(), 0);
+    success(c.direct_advance(0, &args, "v2-resume-complete"));
+    assert!(dir.join("completion.json").is_file());
+    assert!(!dir.join("scf.err").exists());
+    assert_eq!(c.direct_task()["stdout"], c.direct_task()["stderr"]);
+    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 2);
+}
+
+#[test]
+fn explicit_scf_resume_recomputes_success_each_time_and_blocks_running_jobs() {
+    let c = Case::numbered();
+    c.direct_setup();
+    let args = ["--stage", "scf", "-s"];
+    let resume = ["--stage", "scf", "--resume", "-s"];
+    success(c.direct_advance(0, &args, "force-scf-initial"));
+    assert_eq!(c.direct_execute(), 0);
+    success(c.direct_advance(0, &args, "force-scf-initial-complete"));
+    let dir = c.root.join("run/1.qe-scf");
+    for iteration in 0..2 {
+        let previous = c.direct_task();
+        let receipt = fs::read(dir.join("completion.json")).unwrap();
+        let snapshot = fs::read(dir.join("snapshot-files.json")).unwrap();
+        // 固定脚本可以由下一次生成覆盖，旧版字节仍须进入归档。
+        let old_script = format!("#!/bin/bash\n# old script {iteration}\n");
+        fs::write(dir.join("scf.sh"), &old_script).unwrap();
+        let submitted = c.direct_advance(0, &resume, &format!("force-scf-restart-{iteration}"));
+        assert!(String::from_utf8_lossy(&submitted.stdout).contains("不带 --resume"));
+        success(submitted);
+        let plan: Value = store::read(&c.root.join("run/native-plan.json")).unwrap();
+        assert!(plan["advance"].as_str().unwrap().contains("不带 --resume"));
+        let next = c.direct_task();
+        assert_ne!(next["generation"], previous["generation"]);
+        assert_ne!(next["job"], previous["job"]);
+        assert_eq!(next["schema_version"], 3);
+        assert!(dir.is_dir());
+        assert!(!dir.join("completion.json").exists());
+        assert!(!dir.join("snapshot").exists());
+        let script = fs::read_to_string(dir.join("scf.sh")).unwrap();
+        assert!(script.contains(" > scf.out 2>&1"));
+        let history = fs::read_dir(c.root.join("run/epw-state/history")).unwrap()
+            .map(|e| e.unwrap().path().join("calculation"))
+            .find(|p| fs::read_to_string(p.join("scf.sh")).ok().as_deref() == Some(old_script.as_str())).unwrap();
+        assert_eq!(fs::read(history.join("completion.json")).unwrap(), receipt);
+        assert_eq!(fs::read(history.join("snapshot-files.json")).unwrap(), snapshot);
+        assert!(history.join("snapshot").is_dir());
+        assert!(!c.direct_advance(0, &resume, "force-scf-running-rejected").status.success());
+        assert_eq!(c.direct_task()["id"], next["id"]);
+        assert_eq!(fs::read_to_string(dir.join("scf.sh")).unwrap(), script);
+        assert_eq!(c.direct_execute(), 0);
+        // 普通 -s 负责归集；成功后的再次普通 -s 不重复提交。
+        success(c.direct_advance(0, &args, "force-scf-collect"));
+        success(c.direct_advance(0, &args, "force-scf-reuse"));
+        assert!(dir.join("completion.json").is_file());
+        assert!(dir.join("snapshot").is_dir());
+        assert!(!dir.join("scf.err").exists());
+    }
+    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 3);
+}
+
+#[test]
 fn direct_status_is_read_only_and_unknown_receipt_never_resubmits() {
     let c = Case::numbered();
     c.direct_setup();

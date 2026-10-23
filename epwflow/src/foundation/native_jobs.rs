@@ -575,10 +575,15 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
         submit_task(&cfg, &mut task)?;
     }
     println!(
-        "script: {}\ndirectory: {}\nworkflow_status: {}\nnext: 作业结束后再次执行同一公开命令 -s",
+        "script: {}\ndirectory: {}\nworkflow_status: {}\nnext: {}",
         task.script.path.display(),
         work.display(),
-        task.state
+        task.state,
+        if stem == "scf" {
+            "作业结束后执行 --stage scf -s（不带 --resume）归集；--resume -s 会重新计算"
+        } else {
+            "作业结束后再次执行同一公开命令 -s"
+        }
     );
     Err(Paused.into())
 }

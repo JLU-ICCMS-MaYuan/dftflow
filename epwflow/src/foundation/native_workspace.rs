@@ -47,7 +47,9 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
         }
     }
     for step in target.closure() {
-        if stages::reusable(&cfg, step)? {
+        // 显式 SCF 恢复提交开启新批次；依赖阶段及分配内接续仍按完成记录复用。
+        let restart_scf = own.is_none() && submit && resume && target == Step::Scf;
+        if !restart_scf && stages::reusable(&cfg, step)? {
             println!("reuse: {}", step.name());
             if refresh_stage(&cfg,step,submit,resume,own)? {pending(&cfg,target,own.is_some())?;return Ok(());}
             continue;
@@ -67,7 +69,7 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
             None
         };
         let mut p = match old {
-            Some(p) if p.key == key => {
+            Some(p) if p.key == key && !restart_scf => {
                 ensure!(
                     p.state != "failed" || resume,
                     "execution_failed: {} 校验失败，修复后显式 --resume -s",
@@ -196,9 +198,16 @@ fn refresh_stage(cfg:&Config,step:Step,submit:bool,resume:bool,own:Option<&str>)
 fn pending(cfg: &Config, target: Step, allocated: bool) -> Result<()> {
     let steps = target.closure().into_iter().map(|s| Ok(serde_json::json!({"step":s,"state":if stages::reusable(cfg,s)? {"validated"}else{"pending"}}))).collect::<Result<Vec<_>>>()?;
     let path = cfg.work_dir.join("native-plan.json");
+    let advance = if allocated {
+        "本阶段在分配内自动完成，可用 --status 查看"
+    } else if target == Step::Scf {
+        "作业结束后执行 --stage scf -s（不带 --resume）归集；--resume -s 会重新计算"
+    } else {
+        "作业结束后再次执行相同公开命令 -s"
+    };
     store::write(
         &path,
-        &serde_json::json!({"schema_version":1,"target":target,"task":native_jobs::status(cfg)?,"methods":native_jobs::groups_status(cfg)?,"steps":steps,"advance":if allocated {"本阶段在分配内自动完成，可用 --status 查看"} else {"作业结束后再次执行相同公开命令 -s"}}),
+        &serde_json::json!({"schema_version":1,"target":target,"task":native_jobs::status(cfg)?,"methods":native_jobs::groups_status(cfg)?,"steps":steps,"advance":advance}),
     )?;
     println!("plan: {}", path.display());
     // 不再产生 submit_all.sh；已有历史文件不修改，清单明确取代它。

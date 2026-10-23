@@ -70,7 +70,7 @@ struct Options {
     /// 在已经登记的 Slurm 分配内运行本阶段。
     #[arg(short = 'r', long)]
     run: bool,
-    /// 从固定输入和已验证的完成记录恢复，须搭配 -s 或 -r。
+    /// 恢复失败阶段；显式 --stage scf --resume -s 归档旧结果并强制重算，须搭配 -s 或 -r。
     #[arg(long)]
     resume: bool,
     /// 检查配置；结合 -w 检查本阶段数据。

@@ -60,3 +60,42 @@ bash scripts/build-native.sh build --release --locked -p epwflow --bins
 ## 文档与关闭边界
 
 规格、设计、数据契约、任务、模块 README、MgB₂ 说明和 Overview 已同步。保留线上远程链接待核验项，不宣称线上 Issue 已创建或关闭。根 README 没有新增操作入口，无需修改。按明确路径提交本任务，编译产物与本机证据不纳入 Git。
+
+## 后续：显式 SCF 强制重跑与默认安装
+
+用户明确选择“修改 --resume：即使 SCF 已成功，每次执行也强制重新计算”。本次将编号工作区的 `--stage scf --resume -s` 改为创建新批次；无需用户删除 `1.qe-scf` 或完成回执。旧目录由程序归档至 `epw-state/history/`，当前路径重新生成脚本。普通 `--stage scf -s` 归集及复用，其他阶段和依赖恢复不增加强制重算。活动／未知任务仍先阻断。提交输出及 `native-plan.json` 提醒 SCF 归集时不带 `--resume`。
+
+### 定向与完整回归
+
+新增两个公开 CLI／真实 Bash 回归：
+
+- `failed_version_two_scf_resumes_with_merged_script_and_preserves_old_directory`：不手工删除旧目录，将版本 2 失败任务恢复为版本 3，旧脚本及 stdout／stderr 完整归档，新脚本仍在原路径，成功归集不依赖 `.err`。
+- `explicit_scf_resume_recomputes_success_each_time_and_blocks_running_jobs`：完成回执与快照仍在时，连续两次显式恢复均重新提交、产生新批次；原回执／快照完整归档；运行中再次恢复拒绝；普通 `-s` 完成归集并保持复用。另核验提交及待办提示明确说明不带 `--resume` 归集。
+
+共享 QE 与基础库回归 63 通过、0 失败。EPW 最终完整回归及提示调整后的定向复验见下方最终统计。两项新增用例计入完整回归，不与单独执行次数重复相加。
+
+第一轮测试过程中重新编译覆盖了公开进程用例所绑定的可执行文件，出现已删除可执行文件路径的身份拒绝；该轮已停止，退出 143，不计为完整回归通过。构建稳定后另起完整回归，日志为 `docs/local/0053-epw-merged-program-output/retest/final-tests.log`。后续仅调整归集提示，待完整测试进程结束后再编译并定向复验，避免运行中的制品再次被覆盖。
+
+### 真实 MgB₂ SCF
+
+在原 `examples/MgB2/sugon-amd/run/epwflow` 执行用户指定命令：
+
+```bash
+epw_phonon -c "epwinput.toml" --stage scf --resume -s
+```
+
+- 新作业 **1344407**：1 节点、32 MPI，`COMPLETED / 0:0`，实际 9 节点秒；`scf.out` 有 `JOB DONE.`。
+- `1.qe-scf/scf.sh` 已重新生成，科学命令使用 `> scf.out 2>&1`；`bash -n` 通过，无新科学 `scf.err`。
+- 旧阶段归档到 `epw-state/history/scf-18e11313eecf2f47-7d314-c/calculation/`；运行前登记的 **18 份文件全部 SHA256 不变**。没有手工删除阶段或改写旧任务版本。
+- 新任务版本 3，stdout／stderr 绑定同一 `scf.out`。用不带 `--resume` 的 `--stage scf -s` 归集后，任务为 `validated`，新 `completion.json` 的 **30 份产物逐一大小与 SHA256 核验通过**。
+- 旧作业 1343700 的 4 节点秒在本次首次归集时补结算，新作业新增 9 节点秒；账本由 5124 到 **5137／28800 节点秒**，预留归零。未提交 PH、Wannier、EPC 或超导作业。
+
+仓库 `bin/epwflow`、固定 `current/bin` 及默认用户入口的三个 EPW 程序已更新并核对制品指纹、解析路径和 `--help`。使用既有运行库，不覆盖其他模块及共享依赖。原安装备份、前后清单、现场哈希、调度证据和测试日志仅保存在忽略的 `docs/local/0053-epw-merged-program-output/retest/`。
+
+### 后续回归统计
+
+完整 EPW 回归进程正常跑完全部测试目标，退出 **101**：**250 通过、1 失败、10 忽略**。唯一失败为 `multitemperature::batch_wrong_temperature_log_and_active_upstream_change_are_rejected`，在准备上游时拒绝定位带 `(deleted)` 后缀的测试 `epw_superconductivity` 路径；后续检查该路径的程序仍存在。未为此放宽程序身份核验，具体环境成因未确定。
+
+同一用例使用既有测试可执行文件单独复验 **1 通过、0 失败**（`wrong-temperature-diagnose.log`），因此 EPW 已覆盖 **251 项成功用例**，但不将这一合计冒充单次全量命令退出 0。10 项未执行用例的名称及条件沿用本文前述清单。共享 QE 与基础库单次完整回归 **63 通过、0 失败**。
+
+归集提示调整后，最终源码的三项 SCF 定向回归 **3 通过、0 失败**（`final-scf-resume.log`）；全量失败的同一用例用最终测试程序再次复验 **1 通过、0 失败**（`final-failed-case-retest.log`），不重复计入 251 项覆盖。随后三个 release 程序重新编译成功；最终源码指纹、打包制品与安装路径记录于 `final-source-identities.json`、`package-final/` 及 `installation-final.json`。真实 SCF 只执行上述一次，最后仅刷新归集提示与运行制品，不重复提交科学作业。

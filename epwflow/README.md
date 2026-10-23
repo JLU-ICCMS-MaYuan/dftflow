@@ -40,6 +40,8 @@ mpirun -np 32 /path/to/pw.x < scf.in > scf.out 2>&1
 
 三个公开程序管理 QE 到超导的八个阶段。编号工作区使用根目录 `input.toml`，每次生成、提交或 `--resume` 都读取当前配置，按阶段核验参数和上游文件哈希，复用相容结果。
 
+显式 SCF 恢复提交是强制重算入口：`epw_phonon -c "epwinput.toml" --stage scf --resume -s` 每次归档旧阶段并启动新批次，即使已有成功结果；不必手工删除目录或回执。`scf.sh` 在原路径重新生成，旧脚本和科学结果保存在 `epw-state/history/`。运行中或提交未知时拒绝重提。作业结束后用不带 `--resume` 的 `--stage scf -s` 归集及复用；其他阶段和依赖恢复不增加强制重算。
+
 ```bash
 source /data/home/mayuan/code/dftflow/scripts/env.sh
 cd /data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run
