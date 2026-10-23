@@ -6,6 +6,8 @@
 
 **状态**：已确认需求基线；US3 的 PATH 入口已实现并验证，构建与历史制品迁移任务仍待实施。
 
+**后续变更草稿（2026-10-23）**：[0054](../0054-repository-bin-runtime/spec.md) 根据用户最新要求承接构建自动发布，并提出以仓库为唯一运行入口、迁移依赖后删除旧用户安装目录。本文关于保留 current 安装目的地的描述为原确认基线；0054 尚未定稿或实施，不借本关联声明原任务已经完成。
+
 ## 原始需求记录
 
 > 我希望你能把所有编译好的可执行程序都放在/data/home/mayuan/code/dftflow/bin里面，并且按照目录分割好，比如 epwflow， qeflow， substitutionflow，vaspflow 等等。不要像 /data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/010-public-pbe/bin-window-contrac这样放在测试目录下面。把这一条新建一个 issue ，spec 完成。

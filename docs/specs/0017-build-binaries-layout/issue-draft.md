@@ -6,6 +6,10 @@
 - **关联 Spec**：[spec.md](spec.md)
 - **关联需求**：[0011 固定安装与编译历史整理](../0011-build-history-cleanup/issue-draft.md)
 
+## 后续需求关联（2026-10-23）
+
+用户再次要求编译后直接使用仓库程序，并明确删除 `~/.local/share/dftflow/`，已建立 [0054 Issue／Spec 草稿](../0054-repository-bin-runtime/issue-draft.md)。0054 承接本需求未完成的自动发布环节，并提出替代下文保留 current 安装位置的旧边界；尚未定稿或实施，不改写本需求历史确认、已完成的 PATH 验收及未完成任务状态。
+
 ## 原始需求记录
 
 > 我希望你能把所有编译好的可执行程序都放在/data/home/mayuan/code/dftflow/bin里面，并且按照目录分割好，比如 epwflow， qeflow， substitutionflow，vaspflow 等等。不要像 /data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/010-public-pbe/bin-window-contrac这样放在测试目录下面。把这一条新建一个 issue ，spec 完成。

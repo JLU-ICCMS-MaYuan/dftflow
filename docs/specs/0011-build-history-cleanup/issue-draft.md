@@ -5,6 +5,10 @@
 - 关联 Spec：[spec.md](spec.md)
 - 操作指南：[quickstart.md](quickstart.md)
 
+## 后续需求关联（2026-10-23）
+
+[0054 Issue／Spec 草稿](../0054-repository-bin-runtime/issue-draft.md) 记录用户最新要求：以仓库 `bin/` 为唯一日常入口，构建后自动更新，并在迁移实际依赖和引用后完整删除 `~/.local/share/dftflow/`。本页保留当时固定 current 安装与保留 native 的历史方案和证据；0054 尚未定稿或实施，不将后续删除目标误写为本次旧方案已经迁移完成。
+
 ## 原始需求记录
 
 > 我靠，感觉不能把这些东西写进 README.md，你写的整体看起来乱七八糟，还是把这部分迁移到新 issue 和 spec 里面把，以此告诉大家怎么删除编译历史垃圾。
