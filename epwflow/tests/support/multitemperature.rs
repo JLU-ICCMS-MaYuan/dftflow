@@ -96,6 +96,10 @@ fn batch_default_mu_and_explicit_value_use_method_range_directories() {
         let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
         assert_eq!(cfg.superconductivity.mu_star, mu.unwrap_or(0.13));
         assert_eq!(c.execute_record(task), 0);
+        assert!(!dir.join("epw.err").exists());
+        let recorded = c.method_task(name);
+        assert_eq!(recorded["schema_version"], 3);
+        assert_eq!(recorded["stdout"], recorded["stderr"]);
         success(c.direct_advance(2, &ARGS, "batch-collect"));
         let run = epwflow::superconductivity::points::Run::load(
             &c.root.join("run/8.epw-superconductivity/manifest.json"),

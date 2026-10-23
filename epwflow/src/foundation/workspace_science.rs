@@ -743,7 +743,11 @@ fn check_wannier_post(
     report: &super::process::ExecutionReport, dir: &Path, prefix: &str, label: &str,
 ) -> Result<()> {
     let stdout = fs::read_to_string(&report.stdout_path)?;
-    let stderr = fs::read_to_string(&report.stderr_path)?;
+    let stderr = if report.stdout_path == report.stderr_path {
+        String::new()
+    } else {
+        fs::read_to_string(&report.stderr_path)?
+    };
     let error_file = dir.join(format!("{prefix}.werr"));
     let error = if error_file.exists() { fs::read_to_string(error_file)? } else { String::new() };
     let text = format!("{error}\n{stdout}\n{stderr}");

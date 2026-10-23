@@ -321,6 +321,9 @@ fn collect(run: &mut Run, index: usize, source: &NativeInputs) -> Result<()> {
     let mut artifacts = vec![];
     let mut log = None;
     for suffix in ["in", "out", "err"] {
+        if suffix == "err" && batch.task.schema_version == 3 {
+            continue;
+        }
         let path = dir.join(format!("epw.{suffix}"));
         if path.is_file() {
             let snapshot = dir.join(format!("epw-attempt-{number:04}.{suffix}"));

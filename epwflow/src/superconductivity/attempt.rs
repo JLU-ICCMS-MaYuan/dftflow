@@ -378,8 +378,8 @@ fn collect(mut record: AttemptResult, dir: &Path) -> Result<AttemptResult> {
         record.exit_status = report.exit_status;
         record.duration_secs = Some(report.duration_secs);
         report.copy_logs(dir, "epw")?;
-        for name in ["epw.out", "epw.err"] {
-            record.artifacts.push(Identity::capture(&dir.join(name))?);
+        for (_, suffix) in report.log_files() {
+            record.artifacts.push(Identity::capture(&dir.join(format!("epw.{suffix}")))?);
         }
         ensure!(
             report.exit_status == Some(0),

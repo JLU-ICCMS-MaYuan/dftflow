@@ -22,19 +22,19 @@ epw_superconductivity -c input.toml -s
 
 阶段作业成功发布后再报告完成。失败修复后用相同目标加 `--resume -s`，成功科学检查点继续复用，只补失败后处理、缺图或发布。排队、运行中或终态未知时拒绝重提。Tc 沿用原搜索规则、双初值和次数上限，在目标分配内执行，不扩大科学参数范围。
 
-输出给出实际提交的功能脚本、作业号与工作目录。QE／EPW 科学输出直接写指定 `.out`，错误写 `.err`，计算运行时即可查看，不等待复制 Slurm 日志；Wannier／postw90 保留种子参数接口。新脚本的命令类似：
+输出给出实际提交的功能脚本、作业号与工作目录。新原生任务的科学程序 stdout／stderr 均直接写指定 `.out`，运行时即可查看，不产生独立科学 `.err`；Slurm 自身日志指令沿用原设置。Wannier／postw90 保留种子参数接口。新脚本的命令类似：
 
 ```bash
 #SBATCH --chdir=/path/to/1.qe-scf
 source "/path/to/oneapi/setvars.sh" --force
-mpirun -np 32 /path/to/pw.x < scf.in > scf.out 2> scf.err
+mpirun -np 32 /path/to/pw.x < scf.in > scf.out 2>&1
 ```
 
 输入及命令身份记录在可见的 `epw-state/native-jobs/`；电子后处理使用 `5.epw-wannier/comparison-native/electron/`。能带由 EPW 内嵌 Wannier90 的 wdata 输出，仅 DOS 调用 postw90，原模型保持只读。source 按配置直接执行，没有 if 或自动严格选项；科学命令失败仍返回非零。普通安全参数直接显示，含空格或 Shell 特殊字符时保留必要引用。
 
 `epw_phonon --all` 只准备下一就绪脚本与 `native-plan.json` 待完成清单，零提交，不生成自动全流程总脚本。`--status [--json]` 只读区分运行中、已结束待核验、失败及已核验。
 
-可手工修改脚本并 `sbatch` 独立 debug，但它不产生正式完成记录；准备或活动任务的脚本被修改时，正式命令仍拒绝接管。版本 2 任务结束并完成核验后，覆盖功能脚本或 Slurm 日志不影响科学复用；输入、来源和科学输出仍严格校验。版本 1 历史任务保持原校验及日志读取。旧封存脚本和默认安装不随源码修改自动更新。旧非编号布局的新 `-s` 拒绝继续提交包装脚本；使用新的编号工作目录并通过 `--import-work` 显式导入。`-r` 的既有分配执行路径保留。
+可手工修改脚本并 `sbatch` 独立 debug，但它不产生正式完成记录；准备或活动任务的脚本被修改时，正式命令仍拒绝接管。版本 2／3 任务结束并完成核验后，覆盖功能脚本或 Slurm 日志不影响科学复用；输入、来源和科学输出仍严格校验。版本 3 的两路日志身份指向同一 `.out`；版本 1／2 历史任务继续读取并验证原分离日志，不能删除其 `.err`。普通本地执行器保留原日志行为。旧封存脚本和默认安装不随源码修改自动更新。旧非编号布局的新 `-s` 拒绝继续提交包装脚本；使用新的编号工作目录并通过 `--import-work` 显式导入。`-r` 的既有分配执行路径保留。日志契约和验证见 [0053](../docs/specs/0053-epw-merged-program-output/acceptance.md)。
 
 以下早期脚本／自动串联说明属于旧路径；编号工作区以本节为准。[0026 设计与验收](../docs/specs/0026-epw-direct-native-submit/plan.md)。
 

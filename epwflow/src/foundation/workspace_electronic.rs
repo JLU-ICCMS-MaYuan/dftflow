@@ -221,8 +221,17 @@ fn capture(
     save_root: Option<PathBuf>,
     provenance: Vec<Identity>,
 ) -> Result<NativeReceipt> {
+    // 新原生任务只绑定合并的 .out；旧收据和非原生执行仍要求独立 .err。
+    let merged_stderr = if super::native_jobs::enabled() {
+        super::native_jobs::active_task(cfg)?
+            .filter(|task| task.schema_version == 3 && Some(task.directory.as_path()) == input.parent())
+            .map(|task| task.directory.join(format!("{}.err", task.stem)))
+    } else {
+        None
+    };
     let mut outputs = paths
         .iter()
+        .filter(|path| merged_stderr.as_ref() != Some(*path))
         .map(|p| Identity::capture(p))
         .collect::<Result<Vec<_>>>()?;
     if let Some(root) = &save_root {

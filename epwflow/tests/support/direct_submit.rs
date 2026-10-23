@@ -116,6 +116,15 @@ fn direct_mpirun_comes_from_job_environment_and_keeps_exit_status() {
 #[test]
 fn stage_allocations_complete_upstream_once_then_both_native_solvers() {
     let c=Case::numbered();c.stage_setup();
+    // 所有原生阶段都实际写两路日志，证明归集读取的是执行中的同一 .out。
+    let programs = ["pw", "ph", "q2r", "matdyn", "bands", "dos", "postw90", "epw"];
+    for name in programs {
+        let implementation = c.root.join(format!("{name}-implementation"));
+        fs::rename(c.root.join(format!("{name}.x")), &implementation).unwrap();
+        c.script(&format!("{name}.x"), &format!(
+            "#!/bin/bash\nprintf 'merged stdout {name}\\n'\nprintf 'merged stderr {name}\\n' >&2\n{} \"$@\"\n",
+            shell_quote(implementation.to_str().unwrap())));
+    }
     for (bin,stage) in [(0,"electronic"),(1,"coarse"),(2,"fine")] {
         success(c.numbered_cli(bin,&["--stage",stage,"-s"],None,"stage-chain-submit"));
         success(c.stage_execute());
@@ -128,7 +137,26 @@ fn stage_allocations_complete_upstream_once_then_both_native_solvers() {
     assert_eq!(c.calls().0.lines().filter(|s|*s=="ph").count(),1);
     assert_eq!(c.post_calls(),"postw90\n");
     assert!(c.root.join("run/results/8.epw-superconductivity/stage-manifest.json").is_file());
-
+    let mut seen = std::collections::BTreeSet::new();
+    for entry in fs::read_dir(c.root.join("run/epw-state/native-jobs")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|ext| ext != "json") { continue; }
+        let task: Value = store::read(&path).unwrap();
+        assert_eq!(task["schema_version"], 3);
+        assert_eq!(task["stdout"], task["stderr"]);
+        let log = fs::read_to_string(task["stdout"]["path"].as_str().unwrap()).unwrap();
+        let name = task["command"].as_array().unwrap().iter().filter_map(Value::as_str)
+            .find_map(|arg| programs.iter().find(|name| arg.ends_with(&format!("/{name}.x"))).copied()).unwrap();
+        assert!(log.contains(&format!("merged stdout {name}\n")));
+        assert!(log.contains(&format!("merged stderr {name}\n")));
+        seen.insert(name);
+        let dir = PathBuf::from(task["directory"].as_str().unwrap());
+        assert!(!dir.join(format!("{}.err", task["stem"].as_str().unwrap())).exists());
+        let script = PathBuf::from(task["script"]["path"].as_str().unwrap());
+        assert!(fs::read_to_string(&script).unwrap().contains(" 2>&1"));
+        assert!(Command::new("/bin/bash").arg("-n").arg(script).status().unwrap().success());
+    }
+    assert_eq!(seen, programs.into_iter().collect());
 }
 
 #[test]
@@ -474,15 +502,15 @@ fn scientific_stdout_is_live_and_arguments_are_quoted_without_shell_expansion() 
     let script = PathBuf::from(task["script"]["path"].as_str().unwrap());
     assert_eq!(script.file_name().unwrap(), "scf.sh");
     let body = fs::read_to_string(&script).unwrap();
-    assert!(body.contains(" < ") && body.contains(" > scf.out 2> scf.err"));
+    assert!(body.contains(" < ") && body.contains(" > scf.out 2>&1"));
     assert!(!body.contains("-inp"));
     let dir = PathBuf::from(task["directory"].as_str().unwrap());
     let mut cmd = c.scheduled_command(&script, &dir, 201);
     let mut child = cmd.spawn().unwrap();
     wait_for_file(&c.root.join("science-started"));
     assert!(child.try_wait().unwrap().is_none());
-    assert_eq!(fs::read_to_string(dir.join("scf.out")).unwrap(), "live science\n");
-    assert_eq!(fs::read_to_string(dir.join("scf.err")).unwrap(), "science stderr\n");
+    assert_eq!(fs::read_to_string(dir.join("scf.out")).unwrap(), "live science\nscience stderr\n");
+    assert!(!dir.join("scf.err").exists());
     c.put("release-science", "done");
     assert_eq!(child.wait().unwrap().code(), Some(17));
     assert!(!dir.join("injected").exists());
@@ -530,8 +558,45 @@ fn legacy_task_logs_are_adopted_before_new_format_next_task() {
     let expected = fs::read(&raw).unwrap();
     success(c.direct_advance(0, &["--stage","nscf","-s"], "legacy-adopt"));
     assert_eq!(fs::read(script.parent().unwrap().join("scf.out")).unwrap(), expected);
-    assert_eq!(c.direct_task()["schema_version"], 2);
+    assert_eq!(c.direct_task()["schema_version"], 3);
     assert_eq!(c.direct_task()["stem"], "nscf");
+}
+
+#[test]
+fn legacy_version_two_keeps_separate_logs_and_rejects_missing_stderr() {
+    for missing_stderr in [false, true] {
+        let c = Case::numbered();
+        c.direct_setup();
+        success(c.direct_advance(0, &["-s"], "v2-create"));
+        let mut task = c.direct_task();
+        let script = PathBuf::from(task["script"]["path"].as_str().unwrap());
+        let body = fs::read_to_string(&script).unwrap().replace("2>&1", "2> scf.err");
+        fs::write(&script, body).unwrap();
+        task["schema_version"] = json!(2);
+        task["script"] = serde_json::to_value(store::Identity::capture(&script).unwrap()).unwrap();
+        for path in [c.root.join("run/epw-state/native-active.json"),
+            c.root.join("run/epw-state/native-jobs").join(format!("{}.json", task["key"].as_str().unwrap())),
+            c.root.join("run/epw-state/native-jobs/history").join(format!("{}.json", task["id"].as_str().unwrap()))] {
+            store::write(&path, &task).unwrap();
+        }
+        assert_eq!(c.direct_execute(), 0);
+        let dir = script.parent().unwrap();
+        let original = fs::read(dir.join("scf.out")).unwrap();
+        if missing_stderr {
+            fs::remove_file(dir.join("scf.err")).unwrap();
+        }
+        let out = c.direct_advance(0, &["--stage", "nscf", "-s"], "v2-collect");
+        if missing_stderr {
+            assert!(!out.status.success());
+            assert!(String::from_utf8_lossy(&out.stderr).contains("缺少原生 stderr"));
+            assert!(!dir.join("scf.err").exists());
+        } else {
+            success(out);
+            assert_eq!(fs::read(dir.join("scf.out")).unwrap(), original);
+            assert!(dir.join("scf.err").exists());
+            assert_eq!(c.direct_task()["schema_version"], 3);
+        }
+    }
 }
 
 #[test]

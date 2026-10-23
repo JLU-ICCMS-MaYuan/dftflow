@@ -204,7 +204,7 @@ pub fn accept(cfg: &Config, generation: &str) -> Result<()> {
 }
 fn verify(task: &Task) -> Result<()> {
     ensure!(
-        matches!(task.schema_version, 1 | 2),
+        matches!(task.schema_version, 1 | 2 | 3),
         "unsupported_version: 原生任务记录"
     );
     ensure!(task.group.as_deref().is_none_or(|name| matches!(name, "iso" | "aniso")), "data_invalid: 原生方法分组无效");
@@ -222,6 +222,42 @@ fn verify(task: &Task) -> Result<()> {
     for id in task.inputs.iter().chain(&task.sources) {
         id.verify()?;
     }
+    if task.schema_version == 3 {
+        let output = task.directory.join(format!("{}.out", task.stem));
+        for id in task.stdout.iter().chain(&task.stderr) {
+            ensure!(id.path == output, "data_invalid: 合并日志身份必须指向科学输出");
+        }
+    }
+    Ok(())
+}
+
+/// 按记录版本读取日志；不能用文件是否存在猜测旧任务的日志契约。
+fn log_paths(task: &Task) -> Result<(PathBuf, PathBuf)> {
+    let stdout = task.directory.join(format!("{}.out", task.stem));
+    match task.schema_version {
+        1 => {
+            let job = task.job.context("data_invalid: 旧原生日志缺少作业号")?;
+            Ok((
+                task.directory.join(format!("native-{}-{job}.out", task.id)),
+                task.directory.join(format!("native-{}-{job}.err", task.id)),
+            ))
+        }
+        2 => Ok((stdout, task.directory.join(format!("{}.err", task.stem)))),
+        3 => Ok((stdout.clone(), stdout)),
+        _ => anyhow::bail!("unsupported_version: 原生任务记录"),
+    }
+}
+
+fn capture_logs(task: &mut Task) -> Result<()> {
+    let (stdout, stderr) = log_paths(task)?;
+    let output = Identity::capture(&stdout).context("data_invalid: 缺少原生 stdout")?;
+    let error = if stdout == stderr {
+        output.clone()
+    } else {
+        Identity::capture(&stderr).context("data_invalid: 缺少原生 stderr")?
+    };
+    task.stdout = Some(output);
+    task.stderr = Some(error);
     Ok(())
 }
 
@@ -339,25 +375,14 @@ pub fn reconcile_task(cfg: &Config, resume: bool, task: &mut Task) -> Result<()>
             "failed"
         }
         .into();
-        let (stdout, stderr) = if task.schema_version == 1 {
-            (
-                task.directory.join(format!("native-{}-{job}.out", task.id)),
-                task.directory.join(format!("native-{}-{job}.err", task.id)),
-            )
-        } else {
-            (
-                task.directory.join(format!("{}.out", task.stem)),
-                task.directory.join(format!("{}.err", task.stem)),
-            )
-        };
+        let (stdout, stderr) = log_paths(task)?;
         // 方法作业可能在打开输出前被取消；保留空日志证明该批没有完成点。
         if task.group.is_some() && task.state == "failed" {
             for path in [&stdout, &stderr] {
                 if !path.exists() { store::atomic_bytes(path, b"")?; }
             }
         }
-        task.stdout = Some(Identity::capture(&stdout).context("data_invalid: 缺少原生 stdout")?);
-        task.stderr = Some(Identity::capture(&stderr).context("data_invalid: 缺少原生 stderr")?);
+        capture_logs(task)?;
         if task.schema_version == 1 {
             for (source, suffix) in [(&stdout, "out"), (&stderr, "err")] {
                 fs::copy(
@@ -534,8 +559,7 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
             .context("execution_failed: 无法执行声子子任务脚本")?;
         task.duration_secs = start.elapsed().as_secs_f64();
         task.exit_status = status.code();
-        task.stdout = Some(Identity::capture(&work.join(format!("{stem}.out")))?);
-        task.stderr = Some(Identity::capture(&work.join(format!("{stem}.err")))?);
+        capture_logs(&mut task)?;
         store::atomic_bytes(&work.join(format!("{stem}.exitcode")), task.exit_status.unwrap_or(128).to_string().as_bytes())?;
         task.state = if status.success() { "awaiting_validation" } else { "failed" }.into();
         persist(&cfg, &task)?;
@@ -618,8 +642,7 @@ pub fn allocated_group_exit(cfg:&Config,task:&mut Task,exit:i32)->Result<()> {
     ensure!(task.group.is_some() && task.job.is_none_or(|j|j==job),"input_conflict: 方法收尾作业身份不同");
     task.job=Some(job);
     task.exit_status=Some(exit);
-    task.stdout=Some(Identity::capture(&task.directory.join("epw.out"))?);
-    task.stderr=Some(Identity::capture(&task.directory.join("epw.err"))?);
+    capture_logs(task)?;
     task.state=if exit==0 {"awaiting_validation"}else{"failed"}.into();
     store::atomic_bytes(&task.directory.join("epw.exitcode"),exit.to_string().as_bytes())?;
     persist(cfg,task)
@@ -775,17 +798,13 @@ fn prepare_mode(
     if let Some(i) = input_arg {
         text.push_str(&format!(" < {}", q(&invocation[i + 1])));
     }
-    text.push_str(&format!(
-        " > {} 2> {}",
-        q(&format!("{stem}.out")),
-        q(&format!("{stem}.err"))
-    ));
+    text.push_str(&format!(" > {} 2>&1", q(&format!("{stem}.out"))));
     text.push('\n');
     let script = work.join(format!("{purpose}.sh"));
     store::atomic_bytes(&script, text.as_bytes())?;
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
     let task = Task {
-        schema_version: 2,
+        schema_version: 3,
         group: group.map(str::to_owned),
         id,
         key: key.into(),

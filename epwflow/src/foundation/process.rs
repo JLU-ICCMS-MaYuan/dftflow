@@ -11,11 +11,19 @@ pub struct ExecutionReport {
 }
 
 impl ExecutionReport {
+    /// 新原生任务的两路路径相同，只归集一份 .out；旧执行器保留分离日志。
+    pub fn log_files(&self) -> impl Iterator<Item = (&Path, &'static str)> {
+        let merged = self.stdout_path == self.stderr_path;
+        [(self.stdout_path.as_path(), "out"), (self.stderr_path.as_path(), "err")]
+            .into_iter()
+            .filter(move |(_, suffix)| !merged || *suffix == "out")
+    }
+
     /// 直接重定向已写入目标文件；旧执行器的独立日志仍按原方式归集。
     pub fn copy_logs(&self, work: &Path, stem: &str) -> Result<()> {
-        for (source, suffix) in [(&self.stdout_path, "out"), (&self.stderr_path, "err")] {
+        for (source, suffix) in self.log_files() {
             let destination = work.join(format!("{stem}.{suffix}"));
-            if source != &destination {
+            if source != destination {
                 fs::copy(source, destination)?;
             }
         }
