@@ -217,6 +217,7 @@ fn dos_figure(
             wan.is_some(),
             window,
             &elements.iter().map(|e| e.0.clone()).collect::<Vec<_>>(),
+            wan.is_some() || !elements.is_empty(),
         )?;
         let coverage = if let Some(wan) = wan {
             format!("DOS support: QE [{:.2}, {:.2}], EPW [{:.2}, {:.2}] eV; missing ranges are not filled.",qe[0].0,qe.last().unwrap().0,wan[0].0,wan.last().unwrap().0)
@@ -436,17 +437,10 @@ fn bands_figure(
                     .zip(y[range].iter().copied())
                     .collect::<Vec<_>>();
                 for points in crate::delivery::comparison_plot::clip(&points, lo, hi) {
-                    if wan.is_some() {
-                        let stroke = style::REFERENCE_STROKE;
-                        chart.draw_series(DashedLineSeries::new(
-                            points,
-                            stroke.dash,
-                            stroke.gap,
-                            style::QE.stroke_width(stroke.width),
-                        ))?;
-                    } else {
-                        chart.draw_series(LineSeries::new(points, style::QE.stroke_width(2)))?;
-                    }
+                    chart.draw_series(LineSeries::new(
+                        points,
+                        style::QE.stroke_width(if wan.is_some() { style::REFERENCE_STROKE.width } else { 2 }),
+                    ))?;
                 }
             }
         }
@@ -485,7 +479,7 @@ fn bands_figure(
             [(0., 0.), (xmax, 0.)],
             style::FERMI.stroke_width(2),
         )))?;
-        outside_legend(&area, wan.is_some(), window, &[])?;
+        outside_legend(&area, wan.is_some(), window, &[], false)?;
         for (x, name) in separated_labels(qe, labels) {
             let (px, py) = chart.backend_coord(&(x, lo));
             area.draw(&Text::new(
@@ -513,11 +507,12 @@ fn outside_legend(
     native: bool,
     window: &[(f64, &str, RGBColor)],
     elements: &[String],
+    reference_dashed: bool,
 ) -> Result<()> {
     let mut entries = vec![(
         "QE".to_string(),
         style::QE,
-        (native || !elements.is_empty()).then_some(style::REFERENCE_STROKE),
+        reference_dashed.then_some(style::REFERENCE_STROKE),
     )];
     if native {
         entries.push((
@@ -557,7 +552,7 @@ fn outside_legend(
         } else {
             area.draw(&PathElement::new(
                 [(775, y), (805, y)],
-                color.stroke_width(2),
+                color.stroke_width(if *color == style::QE && native { style::REFERENCE_STROKE.width } else { 2 }),
             ))?;
         }
         area.draw(&Text::new(
@@ -1129,7 +1124,10 @@ mod electronic_delivery_tests {
                 } else { &[[40,40,40], [0,70,210]] };
                 colors.iter().all(|color| (300..2100).filter(|&col| {
                     &pixels[(row * 3000 + col) * 4..][..3] == color
-                }).count() > 100)
+                }).count() > 100) && (case != "Bands" || (300..2100).all(|col| {
+                    let rgb = &pixels[(row * 3000 + col) * 4..][..3];
+                    rgb[0] < 100 && rgb[1] < 120 && rgb[2] < 230
+                }))
             });
             assert!(
                 same_row_visible,

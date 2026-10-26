@@ -109,3 +109,13 @@ SC-010 的生产渲染回归输入完全相同的能带、DOS，以及三条 TDO
 真实已有 PBE MgB₂ 包在空科学程序 PATH 下重绘到 `test_auto/MgB2/local_run/014-electronic-plots/overlap-style-optegcsq/results`，八张均为 3000×2100／300.0248 DPI。31 份原结果文件及 13 份 CSV／plot.json 的集合与 SHA-256 不变；六张多曲线图片换线型，两张 QE 单侧能带不变，结果包完整性检查通过。查看三图预览确认长短虚线、元素颜色及红色费米线；证据为同目录 `verification.json`、`figures.json`、`check.json`、`preview.png`。新科学调用／Slurm 作业均为零，预算不增加。
 
 四个产品 `epw_phonon`、`epw_wannier`、`epw_superconductivity`、`wannier90` 已由独立快照重新构建，按明确产品名单安装至仓库 `bin/`；默认 PATH 的 `epw_wannier` 已实际重绘并通过包核验。安装后逐产品与已验证制品 SHA-256 一致，来源和哈希见 `docs/local/0055-overlap-deployment.json`；构建／安装日志为 `0055-overlap-build.log`／`0055-overlap-install.log`。独立 `wannier90 plot` 另用完全相同的两份能带输入核验曲线本体同时可见深灰和蓝色（`standalone-wannier.json`）。未改动其他任务的源码或提交其工作树变更。
+
+## 电子能带 QE 实线纠正验收
+
+用户指出能带 QE 参考必须为实线，此次纠正此前扩大范围的实现。第 5 步两张能带对比图、四面板总览的电子能带面板和独立 Wannier 绘图均为 QE 深灰连续实线先绘、EPW／Wannier 蓝色短虚线后绘；保持 4∶3 参考／插值线宽和红色费米线。DOS 的长短虚线规则不变。
+
+EPW 单元 45 通过、2 个既有外部来源用例忽略，共享绘图 4 通过，公开比较／总览回归 9 通过。完全相同的能带输入在绘图区同一行保留两色且横向连续，SVG 中 QE 能带为完整多点折线，图例为实线。日志为 `docs/local/0055-band-solid-unit.log` 和 `0055-band-solid-comparison.log`。
+
+真实已有 PBE MgB₂ 结果重绘至 `test_auto/MgB2/local_run/014-electronic-plots/band-solid-2r9ljckd/results`，八张保持 3000×2100／300.0248 DPI；对照上版包，只有第 5 步两张能带 PNG 改变，其余六张图片字节不变。31 份源结果及 13 份 CSV／plot.json 集合与 SHA-256 不变；空科学程序 PATH 重绘及结果包核验通过，没有科学调用或新 Slurm 作业。证据在同目录 `verification.json`、`figures.json`、`check.json` 和 `preview.png`。上述纠正覆盖前一节记录的电子能带长虚线行为，前一节作为历史证据保留。
+
+四个受影响程序已重新构建并安装，默认 PATH 的 `epw_wannier --plot` 实际重绘及 `--results-check` 通过；独立 `wannier90 plot` 用相同的两份能带确认两色可见且 QE 全区间连续。构建和安装日志为 `docs/local/0055-band-solid-build.log`，默认入口日志为 `0055-band-solid-installed-plot.log`／`0055-band-solid-installed-check.json`；制品与源码 SHA-256 记录在 `0055-band-solid-deployment.json`。此次不重建或替换 `epw_clear`，不提交已有 AGENTS.md 修改。

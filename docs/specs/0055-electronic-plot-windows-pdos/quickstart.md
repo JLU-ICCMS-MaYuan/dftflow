@@ -40,4 +40,4 @@ env -i PATH=/nonexistent /usr/bin/bwrap --unshare-all --die-with-parent \
 
 ## 已有图片改用新虚线样式
 
-在工作区用 `epw_wannier --plot --results "./results"` 重绘，不调用科学程序。QE 参考／TDOS 为较粗长虚线，EPW／Wannier 为蓝色短虚线，QE 元素 PDOS 使用不同短虚线；费米线仍为红色。该入口重绘整包，不限制为某个阶段。`epw_phonon --plot` 仍不提供此操作。
+在工作区用 `epw_wannier --plot --results "./results"` 重绘，不调用科学程序。电子能带 QE 为深灰实线；DOS 的 QE 参考／TDOS 为较粗长虚线；EPW／Wannier 为蓝色短虚线，QE 元素 PDOS 使用不同短虚线；费米线仍为红色。该入口重绘整包，不限制为某个阶段。`epw_phonon --plot` 仍不提供此操作。

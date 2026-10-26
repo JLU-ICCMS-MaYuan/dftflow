@@ -444,7 +444,15 @@ where
                 clip(&curve.points, ymin, ymax)
             };
             for points in paths {
-                if method == "qe" {
+                if method == "qe" && kind == 0 {
+                    let stroke = style::REFERENCE_STROKE;
+                    let series = ctx.draw_series(LineSeries::new(points, color.stroke_width(stroke.width)))?;
+                    if !legend {
+                        series.label("QE (solid)").legend(move |(x, y)| {
+                            PathElement::new(vec![(x, y), (x + 30, y)], color.stroke_width(stroke.width))
+                        });
+                    }
+                } else if method == "qe" {
                     let stroke = style::REFERENCE_STROKE;
                     let series = ctx.draw_series(DashedLineSeries::new(
                         points,

@@ -2,7 +2,7 @@
 use anyhow::{Context, Result};
 use plotters::prelude::*;
 use std::{fs, path::Path};
-pub const RENDERER_VERSION: u32 = 56;
+pub const RENDERER_VERSION: u32 = 57;
 /// 比较曲线按下层／上层绘制；整数线宽 4:3 使下层约粗 30%。
 #[derive(Clone, Copy)]
 pub struct ComparisonStroke {

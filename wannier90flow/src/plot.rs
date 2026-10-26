@@ -1,6 +1,6 @@
 //! wannier_plot：QE 与 Wannier90 能带对比图（复刻 `wannier90flow/wannier90_plot.py`）。
 //!
-//! QE 深灰长虚线先画、W90 蓝色短虚线后画；下层加粗约 30%，费米线为红色。
+//! QE 深灰实线先画、W90 蓝色短虚线后画；下层加粗约 30%，费米线为红色。
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -316,13 +316,11 @@ pub fn plot_comparison(
     }
     mesh.draw()?;
 
-    // 先画更粗的 QE 长虚线，再覆盖 W90 短虚线；完全重合仍能分辨两侧。
+    // 先画更粗的 QE 实线，再覆盖 W90 短虚线；完全重合仍能分辨两侧。
         let reference = qf_plot::electronic::REFERENCE_STROKE;
         for (x, y) in &qe_segments {
-            chart.draw_series(DashedLineSeries::new(
+            chart.draw_series(LineSeries::new(
                 x.iter().zip(y.iter()).map(|(x, y)| (*x, *y)),
-                reference.dash,
-                reference.gap,
                 qf_plot::electronic::QE.stroke_width(reference.width),
             ))?;
         }
