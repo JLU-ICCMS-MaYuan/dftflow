@@ -133,12 +133,32 @@ epw_phonon -c "epwinput.toml" --stage scf -s
 
 失败后先看日志，修正原因，再对同一目标加 `--resume -s`。成功科学检查点与相容后处理会复用；缺图或发布失败只补派生结果。活动或终态未知的作业拒绝重复提交，不手删状态规避核验。必要计算原因在比较目录的 `reuse-decision.json`／`dos-decision.json` 中。
 
-完整 `results/` 可移动到其他目录独立重绘：
+## 重新绘制已有图片
+
+在本目录执行以下命令，可以重新绘制第 3 步已发布的 QE 电子图：
 
 ```bash
-epw_superconductivity --plot --results "results"
-epw_superconductivity --results-check --results "results" --json
+epw_phonon --plot --results "./results"
+epw_phonon --results-check --results "./results" --json
 ```
+
+重绘读取结果包内已有数值和绘图参数，不加 `-s`，不提交 Slurm 作业，也不重新运行 QE／EPW。完整 `results/` 移动到其他目录后同样可以独立重绘。
+
+第 3 步重绘后的四张图保存在：
+
+```text
+results/3.qe-electronic/
+├── qe_eband/
+│   ├── electronic-bands.png
+│   └── electronic-bands-valence.png
+└── qe_eledos/
+    ├── electronic-dos.png
+    └── electronic-dos-valence.png
+```
+
+两种能量范围见[电子图怎么看](#电子图怎么看)。当前命令会重绘整个 `results/` 中已有的阶段图片，尚不支持只选择第 3 步；重绘更新的是结果包中的图片。
+
+前提是已有 `results/index.json` 和配套 `.plot.json`。旧结果缺少元素 PDOS 时，单纯重绘不会补算投影。
 
 ## 输入与目录
 
