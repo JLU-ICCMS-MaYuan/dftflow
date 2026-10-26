@@ -293,18 +293,32 @@ pub fn write_calculation_input(
     Ok(outdir)
 }
 
-/// Γ 中心完整均匀网格；不作对称约化，供 QE NSCF 与 EPW 共用。
-pub fn uniform_kpoints_text(grid: [i64; 3], weights: bool) -> Result<String> {
+/// QE 使用有符号整数记录点数；在生成正文前拒绝非法维度和乘积溢出。
+pub fn uniform_kpoint_count(grid: [i64; 3]) -> Result<usize> {
     anyhow::ensure!(grid.iter().all(|n| *n > 0), "kpoints 必须为正整数");
     let total = grid.iter().try_fold(1i64, |n, v| n.checked_mul(*v))
         .ok_or_else(|| anyhow::anyhow!("kpoints 数量溢出"))?;
+    anyhow::ensure!(total <= i32::MAX as i64, "kpoints 数量超过 QE 整数范围");
+    Ok(total as usize)
+}
+
+/// Γ 中心完整均匀网格；带权重输出与官方 kmesh.pl 的公式、点序和打印完全一致。
+pub fn uniform_kpoints_text(grid: [i64; 3], weights: bool) -> Result<String> {
+    let total = uniform_kpoint_count(grid)?;
     let [nx, ny, nz] = grid;
     let mut points = format!("K_POINTS crystal\n{total}\n");
+    // Rust 默认指数没有正号及两位补零，显式适配 Perl/C 的 %14.6e。
+    let weight = format!("{:.6e}", 1.0 / total as f64);
+    let (mantissa, exponent) = weight.split_once('e').unwrap();
+    let weight = format!("{mantissa}e{:+03}", exponent.parse::<i32>()?);
     for x in 0..nx { for y in 0..ny { for z in 0..nz {
-        points.push_str(&format!(" {:21.17}{:21.17}{:21.17}",
-            x as f64 / nx as f64, y as f64 / ny as f64, z as f64 / nz as f64));
-        if weights { points.push_str(&format!(" {:21.17}", 1.0 / total as f64)); }
-        points.push('\n');
+        if weights {
+            points.push_str(&format!("{:12.8}{:12.8}{:12.8}{:>14}\n",
+                x as f64 / nx as f64, y as f64 / ny as f64, z as f64 / nz as f64, weight));
+        } else {
+            points.push_str(&format!(" {:21.17}{:21.17}{:21.17}\n",
+                x as f64 / nx as f64, y as f64 / ny as f64, z as f64 / nz as f64));
+        }
     } } }
     Ok(points)
 }

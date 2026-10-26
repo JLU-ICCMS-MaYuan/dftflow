@@ -25,8 +25,8 @@ fn nscf_sections_and_complete_grid() {
         .collect();
     assert_eq!(points.len(), 6);
     assert!(points.iter().all(|p| p.len() == 4));
-    assert!((points.iter().map(|p| p[3]).sum::<f64>() - 1.).abs() < 1e-14);
-    assert_eq!(&points[5][..3], &[0.5, 2.0 / 3.0, 0.0]);
+    assert!((points.iter().map(|p| p[3]).sum::<f64>() - 1.).abs() < 1e-6);
+    assert_eq!(&points[5][..3], &[0.5, 0.66666667, 0.0]);
     assert!(qf_input::pw::uniform_kpoints_text([0, 1, 1], true).is_err());
 }
 
