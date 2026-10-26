@@ -39,7 +39,7 @@ flowchart TD
 | 用户目标 | 命令 | 作业内交付 |
 | --- | --- | --- |
 | 第 1～4 步 | `epw_phonon --stage scf\|nscf\|electronic\|phonon` | 电荷、电子态、QE 单侧图或当前模式的声子与 save |
-| 第 5 步 | `epw_wannier --stage wannier` | 拟合、电子两张对比图、对应数据和窗口 |
+| 第 5 步 | `epw_wannier --stage wannier` | 拟合、双能窗电子四张对比图、对应数据和窗口 |
 | 第 6 步 | `epw_wannier --stage coarse` | 粗网格耦合、声子两张对比图与四面板总览 |
 | 第 7 步 | `epw_superconductivity --stage fine` | 细矩阵元、α²F 和 λ；没有既有图时不额外新增绘图 |
 | 第 8 步 | `epw_superconductivity --stage superconductivity` | 指定温度能隙或 Tc 搜索与既有结果图 |
@@ -135,3 +135,9 @@ epw_superconductivity --results-check --results "results" --json
 - [阶段依赖](../../../epwflow/src/foundation/stages.rs)、[分配内推进](../../../epwflow/src/foundation/native_workspace.rs)、[电子采样](../../../epwflow/src/interpolation/electronic_sampling.rs)。
 - [声子比较](../../../epwflow/src/interpolation/automatic_comparison.rs)、[阶段发布](../../../epwflow/src/foundation/stage_results.rs)、[派生图](../../../epwflow/src/foundation/workspace_science.rs)。
 - [返回 EPW 总览](README.md)；[模块手册](../../../epwflow/README.md)。
+
+## 电子图的两种范围
+
+第 3 步：QE 能带两张、QE TDOS＋元素 PDOS 两张。第 5 步：QE／EPW 能带两张、TDOS 对比两张，共 8 张。普通文件名看费米能上下 5 eV，带 `-valence` 的文件看共同 QE 最低已计算占据态到费米能以上 5 eV。对应能带和 DOS 同窗，实际拟合窗另行标注。电子图全部画红色费米线，插值用蓝色，其他线和普通标签避开红蓝；PNG 为 3000×2100、至少 300 DPI。
+
+第 3 步元素投影缺失时，只从已有 NSCF 波函数的隔离副本补必要 projwfc；已有相容投影和成功原生检查点复用。TDOS 与元素投影读取同次原生网格，保留残差；第 5 步不增加元素投影。详见 [当前电子图行为](README.md#电子双能窗元素-pdos-与保留色)和 [0055 验收](../../specs/0055-electronic-plot-windows-pdos/acceptance.md)。

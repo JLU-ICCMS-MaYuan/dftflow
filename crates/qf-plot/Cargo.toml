@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 plotters = { workspace = true }
 anyhow = { workspace = true }
+resvg = "0.43"
+png = "0.17"

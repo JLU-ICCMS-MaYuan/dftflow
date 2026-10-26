@@ -1,4 +1,5 @@
 //! 四类叠图共享同一绘图模型；QE 先画实线，EPW 后画虚线。
+use crate::foundation::electronic_style as style;
 use super::comparison::{self, Artifact, Curve, Dataset, KINDS};
 use crate::foundation::store;
 use anyhow::{ensure, Result};
@@ -216,7 +217,7 @@ where
 }
 
 /// 显式截取线段，窗外数据不贴着边界生成虚假的水平能带。
-fn clip(points: &[(f64, f64)], lo: f64, hi: f64) -> Vec<Vec<(f64, f64)>> {
+pub(crate) fn clip(points: &[(f64, f64)], lo: f64, hi: f64) -> Vec<Vec<(f64, f64)>> {
     let mut paths: Vec<Vec<(f64, f64)>> = Vec::new();
     for pair in points.windows(2) {
         let (a, b) = (pair[0], pair[1]);
@@ -323,7 +324,7 @@ where
         );
     }
     let xmin = if kind == 1 {
-        data.metadata.window_ev[0]
+        -5.0
     } else {
         selected
             .iter()
@@ -332,7 +333,7 @@ where
             .fold(f64::INFINITY, f64::min)
     };
     let xmax = if kind == 1 {
-        data.metadata.window_ev[1]
+        5.0
     } else {
         selected
             .iter()
@@ -341,7 +342,7 @@ where
             .fold(f64::NEG_INFINITY, f64::max)
     };
     let (ymin, ymax) = if kind == 0 {
-        (data.metadata.window_ev[0], data.metadata.window_ev[1])
+        (-5.0, 5.0)
     } else {
         let lo = selected
             .iter()
@@ -411,14 +412,14 @@ where
     }
     // 全部 QE 图层先完成，再画全部 EPW 图层；不按分支交错覆盖。
     for method in ["qe", "epw"] {
-        let color = match (projection.split(':').next().unwrap_or("total"), method) {
-            ("Mg", "qe") => RGBColor(30, 69, 135),
-            ("Mg", _) => RGBColor(75, 125, 210),
+        let color = if kind<=1 {if method=="epw" {style::INTERPOLATED} else {style::QE}} else {match (projection.split(':').next().unwrap_or("total"), method) {
+            ("Mg", "qe") => style::WINDOWS[0],
+            ("Mg", _) => style::INTERPOLATED,
             ("B", "qe") => RGBColor(23, 98, 70),
-            ("B", _) => RGBColor(42, 160, 112),
+            ("B", _) => style::INTERPOLATED,
             (_, "qe") => RGBColor(45, 45, 55),
-            _ => RGBColor(211, 65, 49),
-        };
+            _ => style::INTERPOLATED,
+        }};
         let mut legend = false;
         for curve in &selected {
             if curve.method != method {
@@ -478,10 +479,10 @@ where
                 .iter()
                 .copied()
                 .filter(|p| p.0 >= xmin && p.0 <= xmax)
-                .map(|p| Circle::new(p, 4, RGBColor(25, 105, 190).filled())),
+                .map(|p| Circle::new(p, 4, style::WINDOWS[1].filled())),
         )?
         .label("QE ph.x (direct points)")
-        .legend(|(x, y)| Circle::new((x + 15, y), 4, RGBColor(25, 105, 190).filled()));
+        .legend(|(x, y)| Circle::new((x + 15, y), 4, style::WINDOWS[1].filled()));
     }
     if kind == 2 {
         if let Some(marker) = data
@@ -531,7 +532,7 @@ where
     }
     if kind == 0 || kind == 1 {
         // 电子能量已经是 E−E_F；零点参考与四个物理窗口边界分别标识。
-        let fermi_color = RGBColor(47, 125, 60);
+        let fermi_color = style::FERMI;
         let (points, anchor, offset) = if kind == 0 {
             ([(xmin, 0.0), (xmax, 0.0)], (xmax, 0.0), (-35, -22))
         } else {
@@ -560,12 +561,12 @@ where
             (
                 data.metadata.disentanglement_window_ev,
                 ["dis_win_min", "dis_win_max"],
-                [RGBColor(39, 114, 197), RGBColor(0, 139, 139)],
+                [style::WINDOWS[0], style::WINDOWS[1]],
             ),
             (
                 data.metadata.frozen_window_ev,
                 ["dis_froz_min", "dis_froz_max"],
-                [RGBColor(230, 125, 34), RGBColor(174, 73, 166)],
+                [style::WINDOWS[2], style::WINDOWS[3]],
             ),
         ] {
             if let Some(window) = window {
@@ -592,12 +593,12 @@ where
                 x0 + (x1 - x0).signum() * offset,
                 y0 + (y1 - y0).signum() * offset,
             );
-            plot.use_screen_coord().draw(&DashedPathElement::new(
+            if energy>=-5. && energy<=5. {plot.use_screen_coord().draw(&DashedPathElement::new(
                 [first, (x1, y1)],
                 12,
                 count as u32 * 18 - 12,
                 color.stroke_width(2),
-            ))?;
+            ))?;}
             ctx.draw_series(std::iter::empty::<PathElement<(f64, f64)>>())?
                 .label(format!("{name}: {energy:.3} eV (E-EF)"))
                 .legend(move |(x, y)| {
@@ -641,7 +642,7 @@ where
     let body = body.titled(
         &format!(
             "Common EF = {:.6} eV; electronic window = [{:.3}, {:.3}] eV relative to EF",
-            data.metadata.fermi_ev, data.metadata.window_ev[0], data.metadata.window_ev[1]
+            data.metadata.fermi_ev, -5.0, 5.0
         ),
         ("sans-serif", 15),
     )?;
@@ -796,8 +797,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             let svg = stage.join(format!("{name}.svg"));
             render(SVGBackend::new(&svg, size).into_drawing_area(), &data, i)?;
             if formats.iter().any(|f| f == "pdf") {
-                let mut options = svg2pdf::usvg::Options::default();
-                options.fontdb_mut().load_system_fonts();
+                let options = style::font_options();
                 let tree = svg2pdf::usvg::Tree::from_str(&fs::read_to_string(&svg)?, &options)?;
                 let pdf = svg2pdf::to_pdf(&tree, Default::default(), Default::default())
                     .map_err(|e| anyhow::anyhow!("PDF 转换失败: {e}"))?;
@@ -805,11 +805,10 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             }
         }
         if formats.iter().any(|f| f == "png") {
-            render(
-                BitMapBackend::new(&stage.join(format!("{name}.png")), size).into_drawing_area(),
-                &data,
-                i,
-            )?;
+            let mut svg=String::new();
+            let logical=if i==0 || i==1 {(1000,700)} else {size};
+            render(SVGBackend::with_string(&mut svg,logical).into_drawing_area(),&data,i)?;
+            style::png(&svg,&stage.join(format!("{name}.png")), logical.0*3,logical.1*3)?;
         }
         for format in formats {
             files.push(Artifact::capture(&stage, &format!("{name}.{format}"))?);

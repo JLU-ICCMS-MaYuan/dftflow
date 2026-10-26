@@ -399,11 +399,11 @@ fn check_electronic_reference_lines(svg: &str, panel: usize, horizontal: bool) {
         .unwrap()[0]
         .1;
     for (name, color, relative) in [
-        ("dis_win_min", "#2772C5", -0.5),
-        ("dis_win_max", "#008B8B", 0.5),
-        ("dis_froz_min", "#E67D22", -0.5),
-        ("dis_froz_max", "#AE49A6", 0.2),
-        ("E_F", "#2F7D3C", 0.0),
+        ("dis_win_min", "#00733C", -0.5),
+        ("dis_win_max", "#7D5523", 0.5),
+        ("dis_froz_min", "#DC8700", -0.5),
+        ("dis_froz_max", "#91419B", 0.2),
+        ("E_F", "#DC0000", 0.0),
     ] {
         if name == "E_F" {
             assert!(svg.contains("E_F: E - E_F = 0 eV"));
@@ -414,9 +414,9 @@ fn check_electronic_reference_lines(svg: &str, panel: usize, horizontal: bool) {
             assert!(svg.contains(&format!("{name}: {relative:.3} eV (E-EF)")));
         }
         let position = if horizontal {
-            (bottom[0].1 - 1) as f64 - (relative + 0.5) * (bottom[0].1 - 1 - top) as f64
+            (bottom[0].1 - 1) as f64 - ((relative + 5.0)/10.0) * (bottom[0].1 - 1 - top) as f64
         } else {
-            bottom[0].0 as f64 + (relative + 0.5) * (bottom[1].0 - bottom[0].0) as f64
+            bottom[0].0 as f64 + ((relative + 5.0)/10.0) * (bottom[1].0 - bottom[0].0) as f64
         };
         let segments = doc
             .descendants()
@@ -517,9 +517,9 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
             }
         }
         assert!(svg.contains("dis_win_min = 6.50000; dis_win_max = 7.50000"));
-        assert!(svg.contains("electronic window = [-0.500, 0.500] eV relative to EF"));
-        let qe = svg.find("#2D2D37").unwrap();
-        let epw = svg.find("#D34131").unwrap();
+        assert!(svg.contains("electronic window = [-5.000, 5.000] eV relative to EF"));
+        let qe = svg.find(if kind=="electronic_bands_comparison" || kind=="electronic_dos_comparison" || kind=="comparison_overview" {"#282828"} else {"#2D2D37"}).unwrap();
+        let epw = svg.find("#0046D2").unwrap();
         assert!(qe < epw, "EPW 必须后绘");
         if kind == "phonon_dispersion_comparison" || kind == "comparison_overview" {
             assert!(svg.contains("#8A2BE2"));

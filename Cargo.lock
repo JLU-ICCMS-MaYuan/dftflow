@@ -593,12 +593,14 @@ dependencies = [
  "clap 4.6.7",
  "libc",
  "plotters",
+ "png 0.17.16",
  "qeflow",
  "qf-config",
  "qf-crystal",
  "qf-input",
  "qf-io",
  "qf-phonon",
+ "qf-plot",
  "qf-runner",
  "qf-wannier",
  "regex",
@@ -1581,6 +1583,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "plotters",
+ "png 0.17.16",
+ "resvg",
 ]
 
 [[package]]
@@ -2501,6 +2505,7 @@ dependencies = [
  "clap 4.6.7",
  "plotters",
  "qf-config",
+ "qf-plot",
  "qf-runner",
  "qf-wannier",
  "roxmltree",

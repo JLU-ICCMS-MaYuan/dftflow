@@ -107,7 +107,7 @@ run/
 
 Slurm 日志属于运行输出；旧原生输入记录中的标准 `slurm-数字.out/err` 项不作为固定科学输入核验。两种阶段归档共用当前日志同 inode 入口维护，见 [0035](../docs/specs/0035-native-retry-slurm-logs/acceptance.md)。EPW 会改写粗网格自己的 `out/prefix.wfcN` 工作副本；只从已冻结且校验通过的原生输入识别前缀与 `./out`，保留初始身份用于追溯，失败后归档并从已校验来源重建。原始 NSCF、portable SAVE、响应及其余输入仍严格核验，见 [0036](../docs/specs/0036-epw-mutable-wavefunction-scratch/acceptance.md)。
 
-第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，生成声子谱、声子 TDOS 叠图，并读取第 5 步电子数据生成四面板总览和事实最大差值。第 6 步不新增电子参考 PW；声子后处理核对 ASR，不相容时事前说明最少补算原因，成功力常数与频率分别缓存。第 7 步生成细网格矩阵元、α²F、λ；第 8 步根据 `superconductivity.task` 运行指定温度能隙或既有 Tc 搜索。严格元素／轨道投影继续暂缓，图表和差值只展示事实，科学合理性由用户判断。
+第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，生成声子谱、声子 TDOS 叠图，并读取第 5 步电子数据生成四面板总览和事实最大差值。第 6 步不新增电子参考 PW；声子后处理核对 ASR，不相容时事前说明最少补算原因，成功力常数与频率分别缓存。第 7 步生成细网格矩阵元、α²F、λ；第 8 步根据 `superconductivity.task` 运行指定温度能隙或既有 Tc 搜索。第 3 步提供 QE 元素电子 PDOS；插值侧元素／轨道投影仍未提供。图表和差值只展示事实，科学合理性由用户判断。
 
 ## 声子后处理与作业日志
 
@@ -135,7 +135,7 @@ epw_wannier --stage wannier --resume -s
 
 不再生成 `quality-sources`、独立参考 NSCF／直接 PH／dynmat、抽样点、质量报告或绑定清单；`[interpolation.quality]` 已删除，旧配置中的该节会被拒绝。粗 EPC 不再输出抽样 band_plot，常规绘图重读仍保留。
 
-`comparison/metrics.json` 的 `differences` 分别保存电子路径、电子 DOS 网格、声子路径、声子 DOS 网格最大绝对差值。电子使用共同 Fermi 零点和实际 Outer 显示窗，较少一侧全部匹配较多一侧的有序子集，使平方差之和最小，记录配对与未配对态数；这种能量配对不代表同一本征态。声子以 q2r/matdyn 为 QE 对照，在相同 q 点比较全部 3N 个排序频率，统一 cm⁻¹ 并保留虚频符号。
+`comparison/metrics.json` 的 `differences` 分别保存电子路径、电子 DOS 网格、声子路径、声子 DOS 网格最大绝对差值。电子使用共同 Fermi 零点和实际 Outer 比较指标窗；图像另用近费米／完整价带显示窗，较少一侧全部匹配较多一侧的有序子集，使平方差之和最小，记录配对与未配对态数；这种能量配对不代表同一本征态。声子以 q2r/matdyn 为 QE 对照，在相同 q 点比较全部 3N 个排序频率，统一 cm⁻¹ 并保留虚频符号。
 
 每项包括坐标、带／排序模式编号和两侧原值；路径最大值标紫，DOS 图注明最大值的网格坐标。无配对时最大值为 null，终端显示“无可配对数据”。差值没有阈值、RMS、评级或告警，也不影响退出码、发布和下游执行。文件、来源、单位、坐标、有限数、预算、原生执行和求解收敛检查继续有效。
 
@@ -286,7 +286,7 @@ epw_wannier --stage wannier -s
 
 第 4 步 q2r／matdyn 后处理结束后，在 `4.qe-phonon-<模式>/plots/` 生成 `phband/phonon_band.png`、`phdos/phonon_dos.png` 和联合图。声子 DOS 同时显示 TDOS 与按结构汇总的元素贡献，原子／元素 CSV 可追溯；必须有完整逐原子投影，缺列明确报错。
 
-第 5 步继续生成 QE／Wannier 电子能带和总 DOS 叠图。第 6 步声子谱继续比较 QE／EPW，声子 DOS 的独立图与总览仅比较 TDOS，不展示元素曲线或元素投影缺失占位。第 3／4 步的单独图保留。电子元素／轨道投影及插值侧元素声子投影仍未恢复。
+第 5 步继续生成 QE／Wannier 电子能带和总 DOS 叠图。第 6 步声子谱继续比较 QE／EPW，声子 DOS 的独立图与总览仅比较 TDOS，不展示元素曲线或元素投影缺失占位。第 3／4 步的单独图保留。QE 元素电子 PDOS 已接入第 3 步；EPW 元素／轨道 PDOS 及插值侧元素声子投影仍未提供。
 
 `-r` 在该子任务结束时绘图；按较新的 0050，`-s` 在目标阶段的作业内自动完成后处理、绘图和发布，不等待再次公开调用。重执行原命令可补缺图，失败恢复沿用 `--resume`。`plots/completion.json` 管理派生图，科学完成身份排除图片；声子数值后处理另存 `qe-post-completion.json`，绘图失败恢复不重复成功的 PH／q2r／matdyn。只读状态命令不补图。
 
@@ -294,7 +294,7 @@ epw_wannier --stage wannier -s
 
 ## 逐阶段结果与独立重绘
 
-`results/` 位于计算工作区根，与编号目录同级。第 3 步的 `qe_eband/`、`qe_eledos/` 分别发布；第 4 步保存单侧声子谱、TDOS／元素 DOS；第 5 步是电子两图；第 6 步是声子两图及四面板总览；第 8 步是已有超导图。第 7 步没有独立既有图，不创建空包或额外任务。每个包带表格、图参、来源和文件校验清单。
+`results/` 位于计算工作区根，与编号目录同级。第 3 步的 `qe_eband/`、`qe_eledos/` 分别发布；第 4 步保存单侧声子谱、TDOS／元素 DOS；第 5 步是双窗电子四图；第 6 步是声子两图及四面板总览；第 8 步是已有超导图。第 7 步没有独立既有图，不创建空包或额外任务。每个包带表格、图参、来源和文件校验清单。
 
 ```bash
 epw_superconductivity --results-check --results "results" --json
@@ -310,3 +310,13 @@ epw_superconductivity --plot --results "results"
 查看 `results/6.epw-coarse/decay/decay-overview.png`，独立图主体为 `decay-H`、`decay-dynmat`、`decay-epmate`、`decay-epmatp`，全部提供 PNG／SVG／PDF。横轴为实空间距离 Å，纵轴按原生文件为 Ry，使用紫色散点和十进制对数。重复距离逐行保留，零值保留在数据并注明未绘制，坏数和来源冲突拒绝。
 
 阶段内派生目录为 `6.epw-coarse/decay/`；发布包附原始副本、逐行绘图数据、参数及来源。完整 `results/` 移动后可用上面的 `--plot --results` 独立重绘。图像失败后原目标加 `--resume -s` 仅补派生结果，缺原生 decay 文件则列缺项，不自动重跑 EPW。图仅供人工判断，不提供阈值、评级或放行门。使用与验收见 [0051 快速说明](../docs/specs/0051-epw-real-space-decay/quickstart.md)和[验收记录](../docs/specs/0051-epw-real-space-decay/acceptance.md)；后续合并版已完成真实联合验收并部署默认安装，详见 [联合交付记录](../docs/specs/0050-epw-stage-results/real-chain-validation.md)。
+
+## 电子图的默认双能窗与配色
+
+第 3 步交付 4 张 QE 图，第 5 步交付 4 张 QE／EPW 对比图，共 8 张。每阶段分别提供能带与 DOS 的两种范围：`electronic-bands.png`／`electronic-dos.png` 使用 E_F±5 eV；`electronic-bands-valence.png`／`electronic-dos-valence.png` 使用共同 QE NSCF 最低占据态至 E_F＋5 eV。最低态包含赝势显式半芯态，表示已计算网格的最小值。显示范围不修改实际拟合能窗或原比较指标。
+
+全部电子图、总览电子面板及独立重绘画出红色费米线；蓝色只表示 EPW／Wannier 插值。QE 用深灰，元素和窗口用绿／橙／褐／紫等其他颜色，普通文字黑色。四个实际窗口的值仍列在图例，超出显示范围的窗口不扩大坐标轴。默认电子 PNG 从数值矢量直接生成 3000×2100，PNG 密度为 300.0248 DPI，不放大旧图片。
+
+第 3 步 DOS 同图画 TDOS＋Mg／B 等真实元素 PDOS，第 5 步仍只比较 TDOS。投影缺失时，在已核验 NSCF 波函数的独立副本内运行必要 `projwfc -pd .true.`，不重算 PW／PH／Wannier／EPW；程序默认从 pw.x 同目录解析。TDOS 读取同次 projwfc `.pdos_tot` 的 DOS 列，保证与 PDOS 原生同网格；原 dos.x 表保留。逐 atom/wfc 的 LDOS 只累加一次，保留投影残差，不强制归一。当前仅支持非磁标量投影，缺波函数或不支持的自旋明确报错，不自动重算 NSCF。
+
+投影失败时已成功的能带及 TDOS 图保留并注明缺项；修复后恢复只接续投影和派生产物。投影程序已成功而解析或发布失败时复用 `native-checkpoint.json`。独立重绘只读取包内 `.plot.json`，不调用原生程序。设计、调用证据和验证入口见 [0055 验收](../docs/specs/0055-electronic-plot-windows-pdos/acceptance.md)。

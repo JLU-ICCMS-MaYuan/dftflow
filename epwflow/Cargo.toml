@@ -38,3 +38,7 @@ qf-io = { path = "../crates/qf-io" }
 qf-runner = { path = "../crates/qf-runner" }
 plotters = { workspace = true }
 svg2pdf = { workspace = true }
+qf-plot = { path = "../crates/qf-plot" }
+
+[dev-dependencies]
+png = "0.17"

@@ -29,7 +29,7 @@ impl Case {
         for name in ["Mg.upf", "B.upf"] {
             fs::write(c.root.join(name), "fixture").unwrap();
         }
-        for name in ["pw.x", "ph.x", "epw.x", "bands.x", "dos.x", "launcher"] {
+        for name in ["pw.x", "ph.x", "epw.x", "bands.x", "dos.x", "projwfc.x", "launcher"] {
             c.executable(name, "#!/bin/sh\nexit 91\n");
         }
         c.executable("sbatch", include_str!("fixtures/sbatch_log_paths.py"));

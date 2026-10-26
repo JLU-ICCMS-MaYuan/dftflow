@@ -599,7 +599,7 @@ impl Case {
             .replace("parent/'nscf/out'", "parent/'2.qe-nscf/out'")
             .replace("ROOT/'run/nscf/out'", "ROOT/'run/2.qe-nscf/out'");
         c.put("epw_native_io.py",&epw);
-        for kind in ["bands","dos","wannier90","postw90"] {
+        for kind in ["bands","dos","projwfc","wannier90","postw90"] {
             c.script(&format!("{kind}.x"),&format!(r#"#!/usr/bin/python3
 from pathlib import Path
 import re,sys,xml.etree.ElementTree as ET
@@ -623,7 +623,7 @@ if kind in ['wannier90','postw90']:
         Path(prefix+'.werr').write_text('Error: standalone post failed despite STOP zero')
         print('Error: standalone post failed despite STOP zero')
         sys.exit(0)
-if kind in ['bands','dos']:
+if kind in ['bands','dos','projwfc']:
     text=Path(sys.argv[sys.argv.index('-inp')+1]).read_text() if '-inp' in sys.argv else sys.stdin.read()
     prefix=re.search(r"prefix\s*=\s*'([^']+)'",text).group(1)
     xml=ET.parse(Path('out')/(prefix+'.save')/'data-file-schema.xml').getroot()
@@ -631,6 +631,16 @@ if kind in ['bands','dos']:
     if kind=='bands':
         Path(prefix+'_band').write_text('fixture band file')
         Path(prefix+'_band.gnu').write_text(''.join('0 '+str(i)+'\n1 '+str(i)+'\n\n' for i in range(16)))
+    elif kind=='projwfc':
+        if (Path(__file__).parent/'fail-pdos').exists(): sys.exit(17)
+        with Path(__file__).with_name('pdos-calls').open('a') as f:f.write(kind+'\n')
+        assert 'ngauss=0' in text and float(re.search(r'degauss=([0-9.]+)',text).group(1))>0
+        atoms=xml.findall('output/atomic_structure/atomic_positions/atom')
+        filpdos=re.search(r"filpdos\s*=\s*'([^']+)'",text).group(1)
+        for i,atom in enumerate(atoms,1):
+            print('state #',i,': atom',i,'('+atom.attrib['name']+'), wfc 1 (l=0 m=1)')
+            Path(filpdos+'.pdos_atm#'+str(i)+'('+atom.attrib['name']+')_wfc#1(s)').write_text('\n'.join(str(j/10)+' 0.2 0.2' for j in range(-100,100)))
+        Path(filpdos+'.pdos_tot').write_text('\n'.join(str(j/10)+' 1 0.6' for j in range(-100,100)))
     else:
         Path(prefix+'.tdos').write_text('\n'.join(str(i/10)+' 1' for i in range(-100,100)))
     print('JOB DONE.')
@@ -809,6 +819,11 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
         if entry.relative_path.starts_with("epw-state"){continue}
         let path=cfg.work_dir.join(&entry.relative_path);
         if path.extension().is_some_and(|e|e=="in") && path.file_name().unwrap()!="elepdos.in" {
+            if path.file_name().unwrap()=="projwfc.in" {
+                assert!(path.parent().unwrap().join("native-checkpoint.json").is_file());
+                assert!(path.parent().unwrap().parent().unwrap().join("submit.sh").is_file(),"投影使用电子 DOS 叶子的父作业");
+                continue;
+            }
             let reuse=path.parent().unwrap().join("reuse-outcome.json");
             if reuse.is_file() && store::read::<Value>(&reuse).unwrap()["decision"]=="verified_copy" {continue;}
             assert!(path.parent().unwrap().join("submit.sh").is_file(),"缺少脚本 {}",path.display());

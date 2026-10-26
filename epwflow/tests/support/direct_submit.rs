@@ -117,7 +117,7 @@ fn direct_mpirun_comes_from_job_environment_and_keeps_exit_status() {
 fn stage_allocations_complete_upstream_once_then_both_native_solvers() {
     let c=Case::numbered();c.stage_setup();
     // 所有原生阶段都实际写两路日志，证明归集读取的是执行中的同一 .out。
-    let programs = ["pw", "ph", "q2r", "matdyn", "bands", "dos", "postw90", "epw"];
+    let programs = ["pw", "ph", "q2r", "matdyn", "bands", "dos", "projwfc", "postw90", "epw"];
     for name in programs {
         let implementation = c.root.join(format!("{name}-implementation"));
         fs::rename(c.root.join(format!("{name}.x")), &implementation).unwrap();

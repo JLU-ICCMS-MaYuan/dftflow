@@ -202,7 +202,7 @@ fn freeze(cfg: &Config, target: Step) -> Result<(PathBuf, Attempt)> {
         sources.push(Identity::capture(&p.path)?);
     }
     if target.closure().contains(&Step::Electronic) {
-        for name in ["bands", "dos"] {
+        for name in ["bands", "dos", "projwfc"] {
             sources.push(Identity::capture(&super::workspace_science::post_program(&fixed, name)?.path)?);
         }
     }

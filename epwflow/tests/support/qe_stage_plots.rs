@@ -181,3 +181,23 @@ fn phonon_plot_failure_resumes_from_numeric_checkpoint_without_rerunning_matdyn(
     png(&c, "run/4.qe-phonon-nosplit/plots/phband/phonon_band.png");
     assert_eq!(calls, c.calls(), "PH、q2r、matdyn 均不得重跑");
 }
+
+#[test]
+fn element_pdos_failure_preserves_tdos_and_bands_and_resumes_without_pw_or_dos() {
+    let c=Case::numbered();c.stage_setup();c.put("fail-pdos","controlled projection failure");
+    success(c.stage_submit("electronic",false));assert!(!c.stage_execute().status.success());
+    let root=c.root.join("run");
+    let dos=fs::read(root.join("3.qe-electronic/receipts/dos.json")).unwrap();
+    assert!(root.join("results/3.qe-electronic/qe_eband/electronic-bands-valence.png").is_file());
+    let incomplete:Value=store::read(&root.join("results/3.qe-electronic/qe_eledos/electronic-pdos.json")).unwrap();
+    assert_eq!(incomplete["complete"],false);
+    let calls=c.calls();fs::remove_file(c.root.join("fail-pdos")).unwrap();
+    success(c.stage_submit("electronic",true));success(c.stage_execute());
+    assert_eq!(dos,fs::read(root.join("3.qe-electronic/receipts/dos.json")).unwrap());assert_eq!(calls,c.calls());
+    let pdos=c.root.join("pdos-calls");let native=fs::read(&pdos).unwrap();
+    fs::remove_file(root.join("3.qe-electronic/qe_eledos/pdos/completion.json")).unwrap();
+    fs::remove_file(root.join("results/3.qe-electronic/qe_eledos/electronic-dos-valence.png")).unwrap();
+    success(c.stage_submit("electronic",false));success(c.stage_execute());
+    assert_eq!(native,fs::read(pdos).unwrap(),"已完成原生投影不得因派生收据丢失重算");
+    let complete:Value=store::read(&root.join("results/3.qe-electronic/qe_eledos/electronic-pdos.json")).unwrap();assert_eq!(complete["complete"],true);
+}

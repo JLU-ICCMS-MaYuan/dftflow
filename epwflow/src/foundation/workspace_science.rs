@@ -43,7 +43,7 @@ pub(super) fn post_program(cfg: &Config, name: &str) -> Result<Program> {
             .parent()
             .context("configuration: QE 缺程序目录")?
             .join(format!("{name}.x")),
-        args: if matches!(name, "bands" | "dos") {
+        args: if matches!(name, "bands" | "dos" | "projwfc") {
             vec!["-pd".into(), ".true.".into()]
         } else {
             vec![]
@@ -106,7 +106,8 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
         }
     }
     Ok(store::hash_bytes(&serde_json::to_vec(&(
-        if step == Step::Coarse { 5 } else { 4 },
+        if step == Step::Coarse { 6 } else { 5 },
+        super::electronic_style::RENDERER_VERSION,
         keys,
         programs,
         cfg.comparison.clone().unwrap_or_default(),
@@ -762,10 +763,12 @@ fn check_wannier_post(
     Ok(())
 }
 
-fn electronic_files() -> [&'static str;12] {
+fn electronic_files() -> [&'static str;17] {
     ["electronic-bands.png","electronic-bands.csv","electronic-dos.png","electronic-dos.csv",
     "electronic-bands.plot.json","electronic-dos.plot.json","electronic-dos-normalization.json",
-    "sampling.json","metrics.json","band.eig","dos-completion.json","band-origin.json"]
+    "sampling.json","metrics.json","band.eig","dos-completion.json","band-origin.json",
+    "electronic-bands-valence.png","electronic-bands-valence.plot.json",
+    "electronic-dos-valence.png","electronic-dos-valence.plot.json","electronic-display.json"]
 }
 
 pub(crate) fn verify_electronic_comparison(cfg:&Config)->Result<()> {
@@ -993,14 +996,14 @@ mod post_program_tests {
     use super::*;
 
     #[test]
-    fn pencil_is_limited_to_bands_and_dos_without_inherited_pools() {
+    fn pencil_is_limited_to_electronic_postprocessing_without_inherited_pools() {
         let mut cfg: Config = toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
         cfg.programs.pw.path = PathBuf::from("/qe with spaces/bin/pw.x");
         cfg.programs.pw.args = vec!["-nk".into(), "8".into()];
-        for name in ["bands", "dos", "q2r", "matdyn", "wannier90", "postw90"] {
+        for name in ["bands", "dos", "projwfc", "q2r", "matdyn", "wannier90", "postw90"] {
             let p = post_program(&cfg, name).unwrap();
             assert_eq!(p.path, PathBuf::from(format!("/qe with spaces/bin/{name}.x")));
-            let expected = if matches!(name, "bands" | "dos") {
+            let expected = if matches!(name, "bands" | "dos" | "projwfc") {
                 vec!["-pd".to_string(), ".true.".to_string()]
             } else {
                 vec![]

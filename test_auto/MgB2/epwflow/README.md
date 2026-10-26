@@ -66,3 +66,21 @@ CARGO_PROFILE_RELEASE_DEBUG=0 bash "scripts/build-native.sh" test --locked --rel
 ```
 
 本轮冻结源码、构建日志、制品哈希、预算和作业列表见全链验收。线上 Gitee 仍由用户管理；本地通过不代替线上 Issue 关闭。
+
+## 0055：电子八图与 QE 元素 PDOS
+
+`014-electronic-plots/validation-v2/` 复用 `012-stage-results/` 已完成的 PBE 科学数据；只补必要 projwfc，输出八张双能窗电子图，不重跑 PW／PH／Wannier／EPW。成功原生投影即使后续解析失败也保留检查点，最后的 1370782 作业只复用并完成出图。来源的 69 个 NSCF 文件与 7 个直接参考文件哈希保持不变。实际过程、调用边界及待办见 [0055 验收](../../../docs/specs/0055-electronic-plot-windows-pdos/acceptance.md)。
+
+新增脚本：
+
+- `electronic_0055.sh <已构建的 electronic_0055_real 测试程序> <新输出目录>`：仅在已登记 Slurm 分配内执行；原始测试程序在仓库 `bin/.build`，兼容加载器来自仓库 `bin/.native`，不复制编排器到 test_auto。
+- `verify_electronic_0055.py <results目录>`：以现有 Pillow 检查 8 张 PNG、3000×2100、300 DPI、相同能窗、红色费米线、蓝色插值及真实 Mg／B PDOS。该脚本只验证展示和文件完整性，不评定科学精度。
+
+构建真实用例但不执行：
+
+```bash
+CARGO_PROFILE_RELEASE_DEBUG=0 bash scripts/build-native.sh test --release --locked \
+  -p epwflow --test electronic_0055_real --no-run
+```
+
+按构建日志给出的测试程序路径，在已预留原共享预算的 Slurm 分配内调用上述 Bash 脚本；新输出目录须位于 `test_auto/MgB2/local_run/`。恢复仅允许未完成现场，需显式设置 `DFTFLOW_0055_RESUME=1`；已完成现场拒绝覆盖。没有相容旧投影时该测试会实际运行 projwfc，不能在登录节点调用。重画已有包直接使用 `epw_wannier --plot --results <结果目录>`，不运行此真实后处理测试。

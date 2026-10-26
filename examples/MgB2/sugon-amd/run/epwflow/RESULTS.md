@@ -24,10 +24,10 @@ epw_wannier -c "epwinput.toml" --stage coarse -s
 
 | 目录 | 已有图片与配套数据 |
 | --- | --- |
-| `results/3.qe-electronic/qe_eband/` | QE 单独电子能带，完成即发布 |
-| `results/3.qe-electronic/qe_eledos/` | QE 单独电子 DOS，完成即发布 |
+| `results/3.qe-electronic/qe_eband/` | QE 单独电子能带，两种能窗，完成即发布 |
+| `results/3.qe-electronic/qe_eledos/` | QE TDOS＋元素 PDOS，两种能窗，完成即发布 |
 | `results/4.qe-phonon-<模式>/` | QE 单独声子谱、TDOS、元素 DOS 和 CSV |
-| `results/5.epw-wannier/` | 两张电子比较图、窗口、差值和来源 |
+| `results/5.epw-wannier/` | 双能窗的四张电子比较图、窗口、差值和来源 |
 | `results/6.epw-coarse/` | 声子比较及四面板总览 |
 | `results/8.epw-superconductivity/` | 当前求解模式已有的超导图与数据 |
 
@@ -52,3 +52,9 @@ epw_superconductivity --plot --results "results"
 先看 `decay-overview.png`：左上 Hamiltonian、右上动力学矩阵、左下电子方向电声矩阵元、右下声子方向电声矩阵元。四张独立图分别为 `decay-H`、`decay-dynmat`、`decay-epmate`、`decay-epmatp`，每张及总览均有 PNG／SVG／PDF。坐标按原生单位 Å／Ry，紫色散点、对数纵轴，不合并相同距离，也不给出自动收敛结论。
 
 包内包含本次回执绑定的四份原始副本和绘图数据、参数、来源。可移动完整 `results/` 后用前文命令重绘；缺图恢复不重跑科学，缺原生文件明确列项而不重算 EPW。初次已将该算例历史数据只读出图到独立测试目录；后续联合验收在从 SCF 完成的独立真实现场验证自动发布与移动重绘，未重算科学，见 [0051 验收与实图位置](../../../../../docs/specs/0051-epw-real-space-decay/acceptance.md)。
+
+## 电子双能窗
+
+第 3 步 4 张、第 5 步 4 张，共 8 张。`electronic-bands.png`／`electronic-dos.png` 是 E_F±5 eV，`electronic-bands-valence.png`／`electronic-dos-valence.png` 是共同 QE 最低已计算占据态至 E_F＋5 eV；对应能带／DOS 同范围。每张均有红色费米线，插值专用蓝色，窗口／元素与普通标签不占用红蓝。PNG 为 3000×2100、300.0248 DPI，配套 `.plot.json`／CSV 可移动重绘。
+
+第 3 步同图显示 QE TDOS 和真实 Mg／B 元素 PDOS，第 5 步只比较总 DOS。投影缺项会明确注明，不能把不完整图当作完整结果；相容原生投影成功后只修复派生出图，不重新执行科学阶段。

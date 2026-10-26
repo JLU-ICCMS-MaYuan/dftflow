@@ -45,7 +45,7 @@ epw_phonon -c "epwinput.toml" --stage nscf -s
 epw_phonon -c "epwinput.toml" --stage electronic -s
 ```
 
-完成后在 `results/3.qe-electronic/` 查看单独能带与 DOS。
+完成后在 `results/3.qe-electronic/` 查看 4 张单独 QE 图：两种范围的能带、TDOS＋Mg／B 元素 PDOS。
 
 ### 第 4 步：QE 声子
 
@@ -65,7 +65,7 @@ epw_phonon -c "epwinput.toml" --stage phonon -s
 epw_wannier -c "epwinput.toml" --stage wannier -s
 ```
 
-完成后在 `results/5.epw-wannier/` 查看 QE／EPW 电子能带及 DOS 对比。
+完成后在 `results/5.epw-wannier/` 查看 4 张 QE／EPW 电子能带及总 DOS 对比图。
 
 ### 第 6 步：coarse
 
@@ -149,3 +149,9 @@ epw_superconductivity --results-check --results "results" --json
 共享预算沿用 `docs/local/epwflow-campaign.json`，累计上限 28800 节点秒／100 GiB，同时最多两个作业。新建现场不会清零历史消费；预留不足时由程序明确拒绝。旧 examples 现场已归档到 `test_auto/MgB2/local_run/012-stage-results/example-before-manual/`，不作为本目录当前完成证据。
 
 [图片与数据说明](RESULTS.md) · [测试脚本与复现](../../../../../test_auto/MgB2/epwflow/README.md) · [EPW 手册](../../../../../epwflow/README.md)
+
+## 电子图怎么看
+
+第 3／5 步各 4 张，共 8 张。默认文件 `electronic-bands.png`、`electronic-dos.png` 看费米能上下 5 eV；带 `-valence` 的文件看最低已计算 QE 占据态到费米能以上 5 eV。同一种预设的能带和 DOS 使用相同范围。
+
+红线是费米能（E−E_F＝0），蓝线只表示 EPW／Wannier 插值。QE 是深灰线，Mg／B 投影与选窗边界使用其他颜色。每张 PNG 为 3000×2100、至少 300 DPI，配套数据在同目录，可直接独立重绘。第 3 步若缺原子投影，会从已有 NSCF 波函数副本补一次 projwfc；已完成的相容投影不重复计算。第 5 步 DOS 不画元素投影。详细验证见 [0055](../../../../../docs/specs/0055-electronic-plot-windows-pdos/acceptance.md)。

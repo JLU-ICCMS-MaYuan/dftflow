@@ -275,7 +275,9 @@ pub fn plot_comparison(
         }
     }
 
-    let root = BitMapBackend::new(output_img, (1500, 1050)).into_drawing_area();
+    let mut svg=String::new();
+    {
+    let root = SVGBackend::with_string(&mut svg, (1000, 700)).into_drawing_area();
     root.fill(&WHITE)?;
     let y_pad = (w90_max - w90_min).abs() * 0.02;
     let mut chart = ChartBuilder::on(&root)
@@ -286,7 +288,7 @@ pub fn plot_comparison(
         .margin(20)
         .x_label_area_size(40)
         .y_label_area_size(60)
-        .build_cartesian_2d(0.0..x_max, (w90_min - y_pad)..(w90_max * 1.2))?;
+        .build_cartesian_2d(0.0..x_max, (w90_min - y_pad).min(-0.1)..(w90_max * 1.2).max(0.1))?;
     let mut mesh = chart.configure_mesh();
     mesh.y_desc("Energy - Ef (eV)").y_labels(10);
     // 以高对称点位置为 x 刻度（闭包与数据需活到函数结束）
@@ -319,21 +321,21 @@ pub fn plot_comparison(
     for (k, e) in &w90_segments {
         chart.draw_series(LineSeries::new(
             k.iter().zip(e.iter()).map(|(x, y)| (*x, *y)),
-            BLUE.stroke_width(2),
+            qf_plot::electronic::INTERPOLATED.stroke_width(2),
         ))?;
     }
-    // QE 红色虚线（上层）
+    // QE 使用黑色，红色仅保留给费米能。
     for (x, y) in &qe_segments {
         chart.draw_series(
             x.iter()
                 .zip(y.iter())
-                .map(|(x, y)| Circle::new((*x, *y), 2, RED.filled())),
+                .map(|(x, y)| Circle::new((*x, *y), 2, BLACK.filled())),
         )?;
     }
     // y = 0 参考线
     chart.draw_series(std::iter::once(PathElement::new(
         vec![(0.0, 0.0), (x_max, 0.0)],
-        BLACK.mix(0.5).stroke_width(1),
+        qf_plot::electronic::FERMI.stroke_width(2),
     )))?;
     // 高对称点竖线
     for (d, _) in &ticks {
@@ -348,6 +350,8 @@ pub fn plot_comparison(
         .position(SeriesLabelPosition::UpperRight)
         .draw()?;
     root.present()?;
+    }
+    qf_plot::electronic::png(&svg,output_img,3000,2100)?;
     println!("Comparison plot saved to {}", output_img.display());
     Ok(())
 }
