@@ -138,11 +138,13 @@ epw_phonon -c "epwinput.toml" --stage scf -s
 在本目录执行以下命令，可以重新绘制第 3 步已发布的 QE 电子图：
 
 ```bash
-epw_phonon --plot --results "./results"
-epw_phonon --results-check --results "./results" --json
+epw_wannier --plot --results "./results"
+epw_wannier --results-check --results "./results" --json
 ```
 
 重绘读取结果包内已有数值和绘图参数，不加 `-s`，不提交 Slurm 作业，也不重新运行 QE／EPW。完整 `results/` 移动到其他目录后同样可以独立重绘。
+
+当前 `epw_phonon` 入口不开放 `--plot`／`--results-check`，因此统一使用 `epw_wannier` 处理结果包。这两个命令不要求第 5 步已完成，也不会启动 Wannier 计算；只有第 3 步结果时同样可用。
 
 第 3 步重绘后的四张图保存在：
 
