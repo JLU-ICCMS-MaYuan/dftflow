@@ -166,23 +166,34 @@ fn dos_figure(
             .max_light_lines(0)
             .bold_line_style(RGBColor(235, 235, 235))
             .draw()?;
-        chart.draw_series(LineSeries::new(
-            dos_points(qe, lo, hi),
-            style::QE.stroke_width(2),
-        ))?;
+        if wan.is_some() || !elements.is_empty() {
+            let stroke = style::REFERENCE_STROKE;
+            chart.draw_series(DashedLineSeries::new(
+                dos_points(qe, lo, hi),
+                stroke.dash,
+                stroke.gap,
+                style::QE.stroke_width(stroke.width),
+            ))?;
+        } else {
+            chart.draw_series(LineSeries::new(
+                dos_points(qe, lo, hi),
+                style::QE.stroke_width(2),
+            ))?;
+        }
         for (i, (_, rows)) in elements.iter().enumerate() {
             let color = style::ELEMENTS[i % style::ELEMENTS.len()];
-            chart.draw_series(LineSeries::new(
-                dos_points(rows, lo, hi),
-                color.stroke_width(2),
+            let stroke = style::element_stroke(i);
+            chart.draw_series(DashedLineSeries::new(
+                dos_points(rows, lo, hi), stroke.dash, stroke.gap,
+                color.stroke_width(stroke.width),
             ))?;
         }
         if let Some(wan) = wan {
             chart.draw_series(DashedLineSeries::new(
                 dos_points(wan, lo, hi),
-                6,
-                4,
-                style::INTERPOLATED.stroke_width(2),
+                style::INTERPOLATED_STROKE.dash,
+                style::INTERPOLATED_STROKE.gap,
+                style::INTERPOLATED.stroke_width(style::INTERPOLATED_STROKE.width),
             ))?;
         }
         for (e, _, color) in window.iter().copied() {
@@ -425,7 +436,17 @@ fn bands_figure(
                     .zip(y[range].iter().copied())
                     .collect::<Vec<_>>();
                 for points in crate::delivery::comparison_plot::clip(&points, lo, hi) {
-                    chart.draw_series(LineSeries::new(points, style::QE.stroke_width(2)))?;
+                    if wan.is_some() {
+                        let stroke = style::REFERENCE_STROKE;
+                        chart.draw_series(DashedLineSeries::new(
+                            points,
+                            stroke.dash,
+                            stroke.gap,
+                            style::QE.stroke_width(stroke.width),
+                        ))?;
+                    } else {
+                        chart.draw_series(LineSeries::new(points, style::QE.stroke_width(2)))?;
+                    }
                 }
             }
         }
@@ -440,9 +461,9 @@ fn bands_figure(
                     for points in crate::delivery::comparison_plot::clip(&points, lo, hi) {
                         chart.draw_series(DashedLineSeries::new(
                             points,
-                            6,
-                            4,
-                            style::INTERPOLATED.stroke_width(2),
+                            style::INTERPOLATED_STROKE.dash,
+                            style::INTERPOLATED_STROKE.gap,
+                            style::INTERPOLATED.stroke_width(style::INTERPOLATED_STROKE.width),
                         ))?;
                     }
                 }
@@ -493,29 +514,45 @@ fn outside_legend(
     window: &[(f64, &str, RGBColor)],
     elements: &[String],
 ) -> Result<()> {
-    let mut entries = vec![("QE".to_string(), style::QE, false)];
+    let mut entries = vec![(
+        "QE".to_string(),
+        style::QE,
+        (native || !elements.is_empty()).then_some(style::REFERENCE_STROKE),
+    )];
     if native {
-        entries.push(("EPW".into(), style::INTERPOLATED, true));
+        entries.push((
+            "EPW".into(),
+            style::INTERPOLATED,
+            Some(style::INTERPOLATED_STROKE),
+        ));
     }
     for (i, name) in elements.iter().enumerate() {
         entries.push((
             format!("{name} PDOS"),
             style::ELEMENTS[i % style::ELEMENTS.len()],
-            false,
+            Some(style::element_stroke(i)),
         ));
     }
     for (e, name, color) in window {
-        entries.push((format!("{name}: {e:.3} eV"), *color, true));
+        entries.push((
+            format!("{name}: {e:.3} eV"),
+            *color,
+            Some(style::ComparisonStroke {
+                dash: 4,
+                gap: 4,
+                width: 1,
+            }),
+        ));
     }
-    entries.push(("E_F = 0 eV".into(), style::FERMI, false));
-    for (i, (label, color, dashed)) in entries.iter().enumerate() {
+    entries.push(("E_F = 0 eV".into(), style::FERMI, None));
+    for (i, (label, color, stroke)) in entries.iter().enumerate() {
         let y = 80 + i as i32 * 25;
-        if *dashed {
+        if let Some(stroke) = stroke {
             area.draw(&DashedPathElement::new(
                 [(775, y), (805, y)],
-                6,
-                4,
-                color.stroke_width(2),
+                stroke.dash,
+                stroke.gap,
+                color.stroke_width(stroke.width),
             ))?;
         } else {
             area.draw(&PathElement::new(
@@ -1014,6 +1051,21 @@ mod electronic_delivery_tests {
             .filter(|(_, p)| p[0] > 200 && p[1] < 30 && p[2] < 30)
             .map(|(i, _)| i % 3000)
             .collect::<Vec<_>>();
+        let blue = pixels
+            .chunks_exact(4)
+            .filter(|p| p[0] < 30 && p[1] < 100 && p[2] > 180)
+            .count();
+        assert!(red.len() > 1000 && blue > 1000);
+        // 对比图允许设计内的虚线间隔；密集折线碎片另用 QE 单侧实线检查。
+        legacy["wan"] = serde_json::Value::Null;
+        super::super::store::write(&file, &legacy).unwrap();
+        redraw(&file).unwrap();
+        let mut continuous = png::Decoder::new(fs::File::open(root.join("dense.png")).unwrap())
+            .read_info()
+            .unwrap();
+        let mut data = vec![0; continuous.output_buffer_size()];
+        continuous.next_frame(&mut data).unwrap();
+        let pixels = &data;
         for row in 300..1800 {
             assert!(
                 (750..1250).any(|col| {
@@ -1023,11 +1075,7 @@ mod electronic_delivery_tests {
                 "密集尖峰不应出现脱离主体的断裂，像素行 {row}"
             );
         }
-        let blue = pixels
-            .chunks_exact(4)
-            .filter(|p| p[0] < 30 && p[1] < 100 && p[2] > 180)
-            .count();
-        assert!(red.len() > 1000 && blue > 1000);
+
         // 竖直费米线集中于零点列；旧红窗口位于另一列，应消失（图例除外）。
         let body = red
             .iter()
@@ -1038,6 +1086,56 @@ mod electronic_delivery_tests {
         let saved: serde_json::Value = super::super::store::read(&file).unwrap();
         assert_eq!(saved["bounds"], serde_json::Value::Null);
         assert_eq!(saved["window"][0][2], serde_json::json!([0, 115, 60]));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn coincident_bands_and_dos_show_both_colors_inside_the_plot() {
+        let root = std::env::temp_dir().join(format!(
+            "electronic-overlap-{}",
+            super::super::store::token()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        for case in ["Dos", "Bands", "Elements"] {
+            let kind = if case == "Elements" { "Dos" } else { case };
+            let file = root.join(format!("{case}.plot.json"));
+            // 两侧逐点完全相同，避开费米线；不借助图例或不重合部分证明可见。
+            let curve = if kind == "Dos" {
+                serde_json::json!([[-5., 1.], [5., 1.]])
+            } else {
+                serde_json::json!([[[0., 1.], [1., 1.]]])
+            };
+            super::super::store::write(
+                &file,
+                &serde_json::json!({
+                    "kind": kind, "qe": curve,
+                    "wan": if case == "Elements" { serde_json::Value::Null } else { curve.clone() },
+                    "elements": if case == "Elements" { serde_json::json!([["B", curve], ["Mg", curve]]) } else { serde_json::json!([]) },
+                    "window": [], "note": "identical data", "labels": [], "bounds": [-5., 5.]
+                }),
+            )
+            .unwrap();
+            redraw(&file).unwrap();
+            let mut reader = png::Decoder::new(
+                fs::File::open(root.join(format!("{case}.png")))
+                .unwrap(),
+            )
+            .read_info()
+            .unwrap();
+            let mut pixels = vec![0; reader.output_buffer_size()];
+            reader.next_frame(&mut pixels).unwrap();
+            let same_row_visible = (180..1800).any(|row| {
+                let colors: &[[u8; 3]] = if case == "Elements" {
+                    &[[40,40,40], [0,115,60], [220,135,0]]
+                } else { &[[40,40,40], [0,70,210]] };
+                colors.iter().all(|color| (300..2100).filter(|&col| {
+                    &pixels[(row * 3000 + col) * 4..][..3] == color
+                }).count() > 100)
+            });
+            assert!(
+                same_row_visible,
+                "{case}: 完全重合的曲线在绘图区同一行必须保留所有颜色"
+            );
+        }
         fs::remove_dir_all(root).unwrap();
     }
 }

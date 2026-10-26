@@ -317,6 +317,8 @@ epw_superconductivity --plot --results "results"
 
 全部电子图、总览电子面板及独立重绘画出红色费米线；蓝色只表示 EPW／Wannier 插值。QE 用深灰，元素和窗口用绿／橙／褐／紫等其他颜色，普通文字黑色。四个实际窗口的值仍列在图例，超出显示范围的窗口不扩大坐标轴。默认电子 PNG 从数值矢量直接生成 3000×2100，PNG 密度为 300.0248 DPI，不放大旧图片。
 
+比较曲线采用深灰 QE 长虚线先绘、蓝色插值短虚线后绘；下层线宽为上层的 4∶3（约粗 33%），重合处仍保留两种颜色，图例同步。第 3 步 TDOS 也用较粗长虚线，各元素 PDOS 使用不同长度的短虚线；单独 QE 能带保持实线。费米线仍为红色，重绘不改变科学数据。
+
 第 3 步 DOS 同图画 TDOS＋Mg／B 等真实元素 PDOS，第 5 步仍只比较 TDOS。投影缺失时，在已核验 NSCF 波函数的独立副本内运行必要 `projwfc -pd .true.`，不重算 PW／PH／Wannier／EPW；程序默认从 pw.x 同目录解析。TDOS 读取同次 projwfc `.pdos_tot` 的 DOS 列，保证与 PDOS 原生同网格；原 dos.x 表保留。逐 atom/wfc 的 LDOS 只累加一次，保留投影残差，不强制归一。当前仅支持非磁标量投影，缺波函数或不支持的自旋明确报错，不自动重算 NSCF。
 
 投影失败时已成功的能带及 TDOS 图保留并注明缺项；修复后恢复只接续投影和派生产物。投影程序已成功而解析或发布失败时复用 `native-checkpoint.json`。独立重绘只读取包内 `.plot.json`，不调用原生程序。设计、调用证据和验证入口见 [0055 验收](../docs/specs/0055-electronic-plot-windows-pdos/acceptance.md)。

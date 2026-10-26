@@ -412,14 +412,22 @@ where
     }
     // 全部 QE 图层先完成，再画全部 EPW 图层；不按分支交错覆盖。
     for method in ["qe", "epw"] {
-        let color = if kind<=1 {if method=="epw" {style::INTERPOLATED} else {style::QE}} else {match (projection.split(':').next().unwrap_or("total"), method) {
-            ("Mg", "qe") => style::WINDOWS[0],
-            ("Mg", _) => style::INTERPOLATED,
-            ("B", "qe") => RGBColor(23, 98, 70),
-            ("B", _) => style::INTERPOLATED,
-            (_, "qe") => RGBColor(45, 45, 55),
-            _ => style::INTERPOLATED,
-        }};
+        let color = if kind <= 1 {
+            if method == "epw" {
+                style::INTERPOLATED
+            } else {
+                style::QE
+            }
+        } else {
+            match (projection.split(':').next().unwrap_or("total"), method) {
+                ("Mg", "qe") => style::WINDOWS[0],
+                ("Mg", _) => style::INTERPOLATED,
+                ("B", "qe") => RGBColor(23, 98, 70),
+                ("B", _) => style::INTERPOLATED,
+                (_, "qe") => RGBColor(45, 45, 55),
+                _ => style::INTERPOLATED,
+            }
+        };
         let mut legend = false;
         for curve in &selected {
             if curve.method != method {
@@ -437,34 +445,46 @@ where
             };
             for points in paths {
                 if method == "qe" {
-                    let series = ctx.draw_series(LineSeries::new(points, color.stroke_width(2)))?;
-                    if !legend {
-                        series
-                            .label(if kind == 2 {
-                                "QE q2r/matdyn (solid)"
-                            } else {
-                                "QE (solid)"
-                            })
-                            .legend(move |(x, y)| {
-                                PathElement::new(vec![(x, y), (x + 30, y)], color.stroke_width(2))
-                            });
-                    }
-                } else {
+                    let stroke = style::REFERENCE_STROKE;
                     let series = ctx.draw_series(DashedLineSeries::new(
                         points,
-                        9,
-                        5,
-                        color.stroke_width(2),
+                        stroke.dash,
+                        stroke.gap,
+                        color.stroke_width(stroke.width),
                     ))?;
                     if !legend {
                         series
-                            .label("EPW / Wannier (dashed)")
+                            .label(if kind == 2 {
+                                "QE q2r/matdyn (long dash)"
+                            } else {
+                                "QE (long dash)"
+                            })
                             .legend(move |(x, y)| {
                                 DashedPathElement::new(
                                     vec![(x, y), (x + 30, y)],
-                                    9,
-                                    5,
-                                    color.stroke_width(2),
+                                    stroke.dash,
+                                    stroke.gap,
+                                    color.stroke_width(stroke.width),
+                                )
+                            });
+                    }
+                } else {
+                    let stroke = style::INTERPOLATED_STROKE;
+                    let series = ctx.draw_series(DashedLineSeries::new(
+                        points,
+                        stroke.dash,
+                        stroke.gap,
+                        color.stroke_width(stroke.width),
+                    ))?;
+                    if !legend {
+                        series
+                            .label("EPW / Wannier (short dash)")
+                            .legend(move |(x, y)| {
+                                DashedPathElement::new(
+                                    vec![(x, y), (x + 30, y)],
+                                    stroke.dash,
+                                    stroke.gap,
+                                    color.stroke_width(stroke.width),
                                 )
                             });
                     }

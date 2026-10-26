@@ -2,7 +2,28 @@
 use anyhow::{Context, Result};
 use plotters::prelude::*;
 use std::{fs, path::Path};
-pub const RENDERER_VERSION: u32 = 55;
+pub const RENDERER_VERSION: u32 = 56;
+/// 比较曲线按下层／上层绘制；整数线宽 4:3 使下层约粗 30%。
+#[derive(Clone, Copy)]
+pub struct ComparisonStroke {
+    pub dash: u32,
+    pub gap: u32,
+    pub width: u32,
+}
+pub const REFERENCE_STROKE: ComparisonStroke = ComparisonStroke {
+    dash: 18,
+    gap: 6,
+    width: 4,
+};
+pub const INTERPOLATED_STROKE: ComparisonStroke = ComparisonStroke {
+    dash: 6,
+    gap: 6,
+    width: 3,
+};
+/// 元素投影使用不同短虚线周期，防止多条完全重合时后绘元素完全覆盖先绘元素。
+pub fn element_stroke(index: usize) -> ComparisonStroke {
+    ComparisonStroke { dash: 6 + 2 * (index % ELEMENTS.len()) as u32, gap: 6, width: 3 }
+}
 pub const FERMI: RGBColor = RGBColor(220, 0, 0);
 pub const INTERPOLATED: RGBColor = RGBColor(0, 70, 210);
 pub const QE: RGBColor = RGBColor(40, 40, 40);

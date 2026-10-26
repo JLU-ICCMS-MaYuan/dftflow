@@ -97,3 +97,15 @@ SC-001／006：八图、两阶段、真实窗口和数据；SC-002：像素与 P
 
 
 最后删除了已被外置图例替代的重复图例回调，统一由共用函数绘制图例。v12 的 39 项单元测试和 9 项比较测试再次通过；重绘后的 8 张 PNG **逐字节哈希不变**，13 份数值及图参哈希也不变。最终程序重新按相同构建命令发布，记录见 `docs/local/0055-final-delivery-build.log`。公开制品的空 PATH 重绘／核验及八图检查记录为 `0055-delivered-*`；布局调整没有改变数据或科学调用。
+
+## 重合曲线可见性补充验收
+
+用户后续明确要求长短虚线及下层约加粗 30%，覆盖先前的 QE 实线约定。共享样式采用下层 18／6、宽 4，上层 6／6、宽 3（实际粗 33.3%）；独立电子图、既有四面板总览和独立 Wannier 对比同步。第 3 步 TDOS／元素图使用加粗长虚线总量和不同短虚线元素曲线；单侧 QE 能带仍为实线。图例同步，红色费米线和蓝色插值保留。
+
+SC-010 的生产渲染回归输入完全相同的能带、DOS，以及三条 TDOS／B／Mg 曲线，检查绘图区同一行的全部颜色像素，排除图例和不重合部分。密集 20001 点窄峰仍通过单曲线连续性检查，不把设计内的虚线间隔当成渲染碎片。
+
+最终独立源码快照基于 `f91419b` 加本次五份源码／测试改动，包含已提交的 0056，不携带工作区未提交的 0057 等改动。EPW 单元 45 通过、2 个既有真实来源用例忽略，共享绘图 4 通过，公开比较入口／总览 9 通过；合计 58 通过、2 忽略，不将忽略或历史全链当作此次通过。日志：`docs/local/0055-overlap-clean-unit-final.log`、`docs/local/0055-overlap-clean-comparison-final.log`，源码边界见 `docs/local/0055-overlap-source.json`。
+
+真实已有 PBE MgB₂ 包在空科学程序 PATH 下重绘到 `test_auto/MgB2/local_run/014-electronic-plots/overlap-style-optegcsq/results`，八张均为 3000×2100／300.0248 DPI。31 份原结果文件及 13 份 CSV／plot.json 的集合与 SHA-256 不变；六张多曲线图片换线型，两张 QE 单侧能带不变，结果包完整性检查通过。查看三图预览确认长短虚线、元素颜色及红色费米线；证据为同目录 `verification.json`、`figures.json`、`check.json`、`preview.png`。新科学调用／Slurm 作业均为零，预算不增加。
+
+四个产品 `epw_phonon`、`epw_wannier`、`epw_superconductivity`、`wannier90` 已由独立快照重新构建，按明确产品名单安装至仓库 `bin/`；默认 PATH 的 `epw_wannier` 已实际重绘并通过包核验。安装后逐产品与已验证制品 SHA-256 一致，来源和哈希见 `docs/local/0055-overlap-deployment.json`；构建／安装日志为 `0055-overlap-build.log`／`0055-overlap-install.log`。独立 `wannier90 plot` 另用完全相同的两份能带输入核验曲线本体同时可见深灰和蓝色（`standalone-wannier.json`）。未改动其他任务的源码或提交其工作树变更。

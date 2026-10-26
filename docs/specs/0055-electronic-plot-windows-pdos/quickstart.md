@@ -37,3 +37,7 @@ env -i PATH=/nonexistent /usr/bin/bwrap --unshare-all --die-with-parent \
 ```
 
 示例中的程序需为本机可直接启动的 ELF；计算节点的私有加载器包装程序还须一并映射其仓库运行库。实际本机验收使用 `bin/.build/.../release/epw_wannier`。原 `/data` 没有映射，源科学目录在进程内不存在。以同一映射改用 `--results-check` 可核验包内完整性；重绘前后比较 CSV／plot.json 哈希。不要删除真实科学目录来制造不可访问条件。
+
+## 已有图片改用新虚线样式
+
+在工作区用 `epw_wannier --plot --results "./results"` 重绘，不调用科学程序。QE 参考／TDOS 为较粗长虚线，EPW／Wannier 为蓝色短虚线，QE 元素 PDOS 使用不同短虚线；费米线仍为红色。该入口重绘整包，不限制为某个阶段。`epw_phonon --plot` 仍不提供此操作。

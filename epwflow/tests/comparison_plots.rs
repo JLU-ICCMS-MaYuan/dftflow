@@ -488,6 +488,19 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
             assert!(!svg.contains("Missing paired data / verified projection"));
         }
         assert!(svg.contains("SYNTHETIC STYLE TEST"));
+        assert!(svg.contains("long dash") && svg.contains("short dash"));
+        let doc = roxmltree::Document::parse(&svg).unwrap();
+        for (color, width) in [("#282828", "4"), ("#0046D2", "3")] {
+            let curves: Vec<_> = doc.descendants().filter(|n|
+                n.has_tag_name("polyline") && n.attribute("stroke") == Some(color)
+            ).collect();
+            // 声子参考使用自己的深灰；插值颜色在所有面板一致。
+            if color == "#282828" && kind.starts_with("phonon_") { continue; }
+            assert!(!curves.is_empty(), "{kind}: 缺少 {color} 比较曲线");
+            assert!(curves.iter().all(|n| n.attribute("stroke-width") == Some(width)),
+                "{kind}: 图例与比较曲线的粗细必须一致");
+        }
+
         if kind == "electronic_bands_comparison" || kind == "comparison_overview" {
             check_electronic_reference_lines(&svg, 0, true);
         }

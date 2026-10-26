@@ -1,7 +1,6 @@
 //! wannier_plot：QE 与 Wannier90 能带对比图（复刻 `wannier90flow/wannier90_plot.py`）。
 //!
-//! 绘图为 plotters 内容等价重绘（非像素级）：W90 蓝色实线、QE 红色虚线、
-//! 高对称点竖线、y=0 虚线；数值解析逻辑 1:1 复刻。
+//! QE 深灰长虚线先画、W90 蓝色短虚线后画；下层加粗约 30%，费米线为红色。
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -317,22 +316,26 @@ pub fn plot_comparison(
     }
     mesh.draw()?;
 
-    // W90 蓝色实线（底层）
-    for (k, e) in &w90_segments {
-        chart.draw_series(LineSeries::new(
-            k.iter().zip(e.iter()).map(|(x, y)| (*x, *y)),
-            qf_plot::electronic::INTERPOLATED.stroke_width(2),
-        ))?;
-    }
-    // QE 使用黑色，红色仅保留给费米能。
-    for (x, y) in &qe_segments {
-        chart.draw_series(
-            x.iter()
-                .zip(y.iter())
-                .map(|(x, y)| Circle::new((*x, *y), 2, BLACK.filled())),
-        )?;
-    }
-    // y = 0 参考线
+    // 先画更粗的 QE 长虚线，再覆盖 W90 短虚线；完全重合仍能分辨两侧。
+        let reference = qf_plot::electronic::REFERENCE_STROKE;
+        for (x, y) in &qe_segments {
+            chart.draw_series(DashedLineSeries::new(
+                x.iter().zip(y.iter()).map(|(x, y)| (*x, *y)),
+                reference.dash,
+                reference.gap,
+                qf_plot::electronic::QE.stroke_width(reference.width),
+            ))?;
+        }
+        let interpolated = qf_plot::electronic::INTERPOLATED_STROKE;
+        for (k, e) in &w90_segments {
+            chart.draw_series(DashedLineSeries::new(
+                k.iter().zip(e.iter()).map(|(x, y)| (*x, *y)),
+                interpolated.dash,
+                interpolated.gap,
+                qf_plot::electronic::INTERPOLATED.stroke_width(interpolated.width),
+            ))?;
+        }
+        // y = 0 参考线
     chart.draw_series(std::iter::once(PathElement::new(
         vec![(0.0, 0.0), (x_max, 0.0)],
         qf_plot::electronic::FERMI.stroke_width(2),
