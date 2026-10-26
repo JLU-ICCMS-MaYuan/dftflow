@@ -4,7 +4,7 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 五个 Rust 家族程序为 `qeflow`、`vaspflow`、`scflow`、`wannier90`、`substitution`；`mattersim_opt` 按约定保留 Python。
 
-开发中的 [epwflow](epwflow/README.md) 仅构建 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个阶段程序，支持检查、脚本生成、提交和恢复；完整真实原生超导链仍在验收。qeflow 的 nosplit 流程现可通过 `[qe_phonon].retain_epw_data=true` 归档 EPW 所需声子数据，见 [保留数据说明](qeflow/README.md#为-epw-保留声子数据)。MgB₂ 运行数据位于 `test_auto/MgB2/local_run/` 的编号目录；源码、受测构建和当前安装分别核对。
+开发中的 [epwflow](epwflow/README.md) 提供 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个阶段程序和历史清理工具 `epw_clear`，支持检查、脚本生成、提交和恢复；完整真实原生超导链仍在验收。qeflow 的 nosplit 流程现可通过 `[qe_phonon].retain_epw_data=true` 归档 EPW 所需声子数据，见 [保留数据说明](qeflow/README.md#为-epw-保留声子数据)。MgB₂ 运行数据位于 `test_auto/MgB2/local_run/` 的编号目录；源码、受测构建和当前安装分别核对。
 
 ## 分支约定
 
@@ -18,7 +18,7 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 ```text
 仓库/bin/
-├── epwflow/          epw_phonon、epw_wannier、epw_superconductivity
+├── epwflow/          epw_phonon、epw_wannier、epw_superconductivity、epw_clear
 ├── qeflow/           qeflow 与 qe_* 兼容入口
 ├── vaspflow/         vaspflow 与 vasp_* 兼容入口
 ├── substitutionflow/ substitution 与 substitution_* 兼容入口
@@ -47,7 +47,7 @@ source "/data/home/mayuan/code/dftflow/scripts/env.sh"
 如需新终端自动生效，将同一行手动加入所用 shell 的 `~/.bashrc` 或 `~/.zshrc`。Bash 登录 shell 还需其登录配置加载 `~/.bashrc` 或同一配置行。脚本只影响当前 shell 及其后代，不自动修改启动文件。完整步骤见 [PATH 配置与验证](docs/specs/0017-build-binaries-layout/quickstart.md#从任意目录使用命令)。
 
 ```bash
-command -v epw_phonon epw_wannier epw_superconductivity qe_scf
+command -v epw_phonon epw_wannier epw_superconductivity epw_clear qe_scf
 epw_phonon --help
 ```
 
@@ -202,6 +202,7 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 
 新 EPW 配置使用 `layout = "numbered"`、`work_dir = "."` 和根 `input.toml`。
 阶段重算保留编号工作目录本身，只将旧内容归档到 `epw-state/history/`；已经进入目录的终端无需重新 `cd`，当前 Slurm 日志持续可读。
+在工作区根执行 `epw_clear --dry-run` 预览三类历史，`epw_clear --yes` 全部清空；现用计算与结果保留。详见 [清理用法](docs/overview/epwflow/epw_clear.md)。
 修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。
 `--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
 第 3 步 QE 子任务完成即发布单侧图；第 5 步完成电子能带／总 DOS 对比，第 6 步完成声子谱／TDOS 对比及总览，图片、数据和来源按阶段保存在工作区根 `results/`。
@@ -209,7 +210,7 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 输入、`submit.sh` 和日志位于各实际计算目录，空 pool 在生成、提交及脚本启动时阻断。
 旧工作区可只读核验后一次性导入，不为目录改版重跑 QE。
 详见 [模块手册](epwflow/README.md) 和 [MgB₂ 直接操作说明](examples/MgB2/sugon-amd/run/README.md)。
-仅更新三个 EPW 程序可使用 `bash scripts/build-native.sh build --release --locked -p epwflow --bins`。
+更新三个 EPW 阶段程序及清理工具可使用 `bash scripts/build-native.sh build --release --locked -p epwflow --bins`。
 
 ## QE 声子一次提交
 

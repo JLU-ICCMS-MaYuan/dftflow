@@ -17,6 +17,10 @@ path = "src/bin/epw_wannier.rs"
 name = "epw_superconductivity"
 path = "src/bin/epw_superconductivity.rs"
 
+[[bin]]
+name = "epw_clear"
+path = "src/bin/epw_clear.rs"
+
 [dependencies]
 qeflow = { path = "../qeflow" }
 wannier90flow = { path = "../wannier90flow" }

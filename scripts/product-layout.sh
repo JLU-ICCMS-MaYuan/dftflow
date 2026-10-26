@@ -1,10 +1,10 @@
 # DFTFlow 产品与兼容入口的唯一清单，供构建、发布和验证复用。
-dftflow_main_products=(qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity)
+dftflow_main_products=(qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity epw_clear)
 dftflow_all_products=("${dftflow_main_products[@]}" qf-gen-dyn0)
 
 dftflow_module() {
     case "$1" in
-        epw_phonon|epw_wannier|epw_superconductivity) printf '%s\n' epwflow ;;
+        epw_phonon|epw_wannier|epw_superconductivity|epw_clear) printf '%s\n' epwflow ;;
         wannier90) printf '%s\n' wannierflow ;;
         substitution) printf '%s\n' substitutionflow ;;
         qf-gen-dyn0) printf '%s\n' tools ;;

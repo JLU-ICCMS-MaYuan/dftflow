@@ -51,6 +51,21 @@ epw_wannier --stage wannier -s
 
 MgB₂ 当前目录与数据导入说明见 [算例说明](../examples/MgB2/sugon-amd/run/README.md)。完整需求和验收见 [0018](../docs/specs/0018-epwflow-stage-workspaces/spec.md)；当前功能入口为 [Overview](../docs/overview/epwflow/README.md)。
 
+## 清理历史计算
+
+在编号工作区根执行，默认只预览；`--yes` 实际清空三类历史的全部内容：
+
+```bash
+epw_clear --dry-run
+epw_clear --yes
+# 在其他目录指定工作区：
+epw_clear --work "/path/to/epwflow" --dry-run
+```
+
+范围固定为 `epw-state/history/`、`epw-state/native-attempts/history/` 和 `epw-state/native-jobs/history/`。存在的 history 根保留，缺失时不创建；不另建备份。现用计算、`results/`、任务记录及预算保留，不要求完整科学配置。
+
+活动／未知作业、现用记录或链接引用历史、清理根及其祖先为链接时，删除前拒绝并说明具体原因；历史内部链接只删除链接本身。删除失败返回非零并列出路径。清理与计算／输入生成／恢复顺序执行。完整参数及边界见 [epw_clear](../docs/overview/epwflow/epw_clear.md)，验证见 [0057](../docs/specs/0057-epw-clear-history/acceptance.md)。
+
 ## 输入与布局
 
 新配置在原 EPW TOML 基础上设置：

@@ -12,6 +12,10 @@
 
 显式 `epw_phonon -c "epwinput.toml" --stage scf --resume -s` 每次强制启动新的 SCF 批次，即使已有成功结果；无需手动删除 `1.qe-scf` 或回执。公共阶段归档保留编号工作目录本身的 inode，只把旧脚本、结果和快照等内容移入 `epw-state/history/`，再在原目录生成新输入；已进入目录的终端无需重新 cd。当前 Slurm 日志留在原位，历史入口与原文件保持硬链接，打开的句柄继续写入；归档失败停止新计算。运行中或提交未知时仍拒绝重复提交。作业结束后用不带 `--resume` 的 `--stage scf -s` 归集和复用；其他目标的 SCF 依赖及恢复规则不变。依据见 [0056](../../specs/0056-epw-stable-workdir/acceptance.md)。
 
+## 历史清理
+
+独立维护命令 [epw_clear](epw_clear.md) 默认预览，`--yes` 清空阶段搬迁、失败尝试和原生作业的三处 history；保留现用计算、结果、任务记录及预算。`--work` 默认当前目录，不要求完整科学配置。现用引用、活动／未知任务或链接祖先会在删除前拒绝，历史内部链接不跟随。清理与其他写入命令顺序执行。实际安装和清理证据见 [0057](../../specs/0057-epw-clear-history/acceptance.md)。
+
 ## 编号工作区的原生任务提交
 
 编号工作区的 `epw_phonon --stage phonon -s`（包括默认声子目标）一次提交一个有界 Slurm 分配，内部自动补齐必要依赖、运行 PH、归集并核验 EPW save、q2r、两类 matdyn、QE 声子谱及 TDOS／元素 PDOS 图，最后登记完成。用户无需再次运行命令推进，亦不会自动执行 Wannier／coarse／fine／超导；`--status [--json]` 只读反映本次声子目标及父尝试状态。设计和公开进程验证见 [0048](../../specs/0048-epw-phonon-stage-chain/acceptance.md)。
@@ -131,13 +135,14 @@ Wannier 配置支持可选布尔值 `guiding_centres`，显式透传原生中心
 
 ## 公开程序及选项
 
-外部配置默认 `input.toml`，缺失时兼容读取 `inputepw.toml`，也可由 `-c/--config` 指定；字段属于 epwflow，不能与 qeflow 配置自动混用。完整流程图和命令见[模块手册](../../../epwflow/README.md)。
+三个阶段程序的外部配置默认 `input.toml`，缺失时兼容读取 `inputepw.toml`，也可由 `-c/--config` 指定；字段属于 epwflow，不能与 qeflow 配置自动混用。完整流程图和命令见[模块手册](../../../epwflow/README.md)。
 
 | 程序或选项 | 实际行为与限制 |
 | --- | --- |
 | `epw_phonon` | 直接复用 qeflow nosplit 完整声子链，保留 EPW 数据；独立 SCF 快照、完整均匀 NSCF 和严格交付 |
 | `epw_wannier` | 第 5／6 步：原生 Wannier／粗网格、来源核验和常规比较；不执行细网格或 α²F |
 | `epw_superconductivity` | 第三阶段边界：细网格 EPC／谱、原生两模式求解与结果包；要求前两阶段完成证据 |
+| [epw_clear](epw_clear.md) | 历史维护工具；默认预览，`--work` 指定工作区，`--yes` 清空三处 history，无需完整科学配置 |
 | `epw_phonon --all` | 只生成三份阶段脚本及总提交脚本；运行后用 afterok 串联，持久化逐次回执，未知或部分提交不自动重试 |
 | 默认调用 | 固定输入，生成 `epw-state/generated/` 下的阶段脚本；可手工 sbatch，运行时验证脚本及程序身份、前置和预算 |
 | `--check [-w W] [--json]` | 无 -w 时检查配置／文件，运行版本为 unverified；有 -w 时核查本阶段数据或原生质量来源 |

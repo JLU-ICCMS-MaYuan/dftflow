@@ -6,7 +6,7 @@ source "$script_dir/product-layout.sh" || exit $?
 programs=("${dftflow_main_products[@]}")
 if [[ "${1:-}" == --module ]]; then
     [[ "${2:-}" == epwflow ]] || { echo '按模块打包当前支持 epwflow' >&2; exit 1; }
-    programs=(epw_phonon epw_wannier epw_superconductivity)
+    programs=(epw_phonon epw_wannier epw_superconductivity epw_clear)
     shift 2
 elif [[ "${1:-}" == --products ]]; then
     dftflow_select_products "${2:-}" || exit 1

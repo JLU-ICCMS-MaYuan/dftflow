@@ -21,7 +21,7 @@ printf 'pub fn value() -> u32 { 1 }\n' > "$fixture/qeflow/src/lib.rs" || exit $?
 printf 'fn main() { if std::env::var_os("FAIL_PRODUCT").is_some() { std::process::exit(17); } if std::env::args().any(|v| v == "--hold") { std::thread::sleep(std::time::Duration::from_secs(60)); } println!("first"); }\n' > "$fixture/qeflow/src/main.rs" || exit $?
 printf '[package]\nname="epwflow"\nversion="0.1.0"\nedition="2021"\n' > "$fixture/epwflow/Cargo.toml" || exit $?
 mkdir "$fixture/epwflow/src/bin" || exit $?
-for name in epw_phonon epw_wannier epw_superconductivity; do
+for name in epw_phonon epw_wannier epw_superconductivity epw_clear; do
     printf 'fn main() { println!("%s"); }\n' "$name" > "$fixture/epwflow/src/bin/$name.rs" || exit $?
 done
 run_build() { bash "$fixture/scripts/build-native.sh" "$@" > "$test_dir/build.log" 2>&1; }
@@ -47,6 +47,7 @@ cp "$test_dir/main.rs" "$fixture/qeflow/src/main.rs" || exit $?
 rm "$fixture/bin/epwflow/epw_wannier" || exit $?
 run_build build --release -p epwflow || { cat "$test_dir/build.log"; exit 1; }
 [[ -x "$fixture/bin/epwflow/epw_wannier" ]] || exit 1
+[[ -x "$fixture/bin/epwflow/epw_clear" ]] || exit 1
 [[ $(shasum -a 256 "$fixture/bin/qeflow/qeflow") == "$original" ]] || exit 1
 # 目标冲突必须在任何产品替换前拒绝。
 rm "$fixture/bin/qeflow/qe_scf" || exit $?

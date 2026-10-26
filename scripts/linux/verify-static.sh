@@ -2,7 +2,7 @@
 bin_dir="${1:?用法: verify-static.sh <bin_dir>}"
 work_dir="$(mktemp -d)" || exit $?
 trap 'rm -rf "$work_dir"' EXIT
-for name in qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity; do
+for name in qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity epw_clear; do
     binary="$bin_dir/$name"
     file "$binary" || exit $?
     readelf -h "$binary" > "$work_dir/header" || exit $?

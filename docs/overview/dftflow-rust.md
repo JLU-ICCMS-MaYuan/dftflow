@@ -4,9 +4,9 @@
 
 ## 当前交付物
 
-主 workspace 生成八个程序：原五个家族程序 qeflow、vaspflow、scflow、wannier90、substitution，以及三个 EPW 阶段程序 epw_phonon、epw_wannier、epw_superconductivity。原五个家族通过 argv[0] 识别兼容命令，共 51 个唯一入口；加三个 EPW 程序后，主安装器验证 **54 个入口**。三个 EPW 入口是独立二进制，不分派到旧 epwflow 命令。
+主 workspace 生成九个程序：原五个家族程序 qeflow、vaspflow、scflow、wannier90、substitution，三个 EPW 阶段程序 epw_phonon、epw_wannier、epw_superconductivity，以及历史清理工具 [epw_clear](epwflow/epw_clear.md)。原五个家族通过 argv[0] 识别兼容命令，共 51 个唯一入口；加四个 EPW 程序后，主安装器验证 **55 个入口**。四个 EPW 入口是独立二进制，不分派到旧 epwflow 命令。
 
-[独立 qf-gen-dyn0](tools/qf-gen-dyn0.md) 是另一个 Cargo 工程，单独构建，不计入主 workspace 的八个目标或 54 个入口；分组安装器可通过显式参数一并安装它。保留的 Python mattersim_opt 通过 pyproject.toml 提供，不由 Rust 安装器安装。源码中的语言迁移范围与历史验收见 [0004](../specs/0004-dftflow-rust/spec.md)。
+[独立 qf-gen-dyn0](tools/qf-gen-dyn0.md) 是另一个 Cargo 工程，单独构建，不计入主 workspace 的九个目标或 55 个入口；分组安装器可通过显式参数一并安装它。保留的 Python mattersim_opt 通过 pyproject.toml 提供，不由 Rust 安装器安装。源码中的语言迁移范围与历史验收见 [0004](../specs/0004-dftflow-rust/spec.md)。
 
 | 程序 | 实现职责 | 用法导航 |
 | --- | --- | --- |
@@ -77,7 +77,7 @@ command -v epw_phonon qeflow qe_scf
 
 把脚本路径替换为实际仓库位置即可；脚本路径含空格也受支持。`PATH` 不递归搜索子目录，不加入缓存和测试目录。需要新交互终端自动加载时，由用户将同一 `source` 行加入 Bash 的 `~/.bashrc` 或 Zsh 的 `~/.zshrc`；Bash 登录 shell 的配置仍需加载相应文件。加载脚本不会编辑这些启动文件。批处理作业应显式加载环境或使用绝对路径。
 
-环境加载回归覆盖 Bash/Zsh、仓库外 55 个真实入口、重复加载、原有路径保留、含空格的仓库位置、缺失 `bin` 时的失败保护以及临时 HOME 中新交互终端加载。详见 [0017 验收](../specs/0017-build-binaries-layout/acceptance.md)。
+环境加载回归覆盖 Bash/Zsh、仓库外 56 个真实入口、重复加载、原有路径保留、含空格的仓库位置、缺失 `bin` 时的失败保护以及临时 HOME 中新交互终端加载。原构建布局证据见 [0017 验收](../specs/0017-build-binaries-layout/acceptance.md)，新增清理入口的回归见 [0057 验收](../specs/0057-epw-clear-history/acceptance.md)。
 
 Linux 配置 `DFTFLOW_NATIVE_PREFIX` 时，交付构建自动调用 [package-native-runtime.sh](../../scripts/linux/package-native-runtime.sh)，准备一致的加载器与运行库并用 patchelf 修正制品；已有前缀的库版本冲突会拒绝覆盖。该方式依赖共享可读路径，不代表跨任意 Linux 的通用静态包；不通过修改系统库或全局 LD_LIBRARY_PATH 来切换。
 

@@ -26,8 +26,8 @@ for entry in "$expected_bin/"*/*; do
     "$name" --help >/dev/null || exit $?
     count=$((count + 1))
 done
-[ "$count" -eq 55 ] || exit $?
-printf '%s\n' '55 个真实入口、仓库外调用、重复加载及原路径保留通过'
+[ "$count" -eq 56 ] || exit $?
+printf '%s\n' '56 个真实入口、仓库外调用、重复加载及原路径保留通过'
 SH
 cat > "$test_dir/missing.sh" <<'SH' || exit $?
 before="$PATH"

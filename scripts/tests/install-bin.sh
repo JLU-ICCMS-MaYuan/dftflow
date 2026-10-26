@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 使用真实已构建程序验证分组安装及失败保护；不运行科学计算。
-source_bin=$(cd "${1:?缺少八程序目录}" && pwd) || exit $?
+source_bin=$(cd "${1:?缺少主程序目录}" && pwd) || exit $?
 dyn0="${2:?缺少独立 dyn0 程序}"
 repo_dir=$(cd "$(dirname "$0")/../.." && pwd) || exit $?
 test_dir=$(mktemp -d) || exit $?
@@ -9,7 +9,7 @@ dest="$test_dir/bin"
 install_grouped() { bash "$repo_dir/scripts/install-bin.sh" "$1" "$dest" "${2:-}" >/dev/null; }
 verify() {
     local program module count=0 entry
-    for program in qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity; do
+    for program in qeflow vaspflow scflow wannier90 substitution epw_phonon epw_wannier epw_superconductivity epw_clear; do
         case "$program" in
             epw_*) module=epwflow ;;
             wannier90) module=wannierflow ;;
@@ -23,7 +23,7 @@ verify() {
         "$entry" --help >/dev/null || exit $?
         count=$((count + 1))
     done
-    [[ "$count" == 55 ]] || exit $?
+    [[ "$count" == 56 ]] || exit $?
     [[ ! -e "$dest/.install-bin.lock" ]] || exit $?
     [[ $(find "$dest" -name '.install-bin.*' | wc -l) -eq 0 ]] || exit $?
 }
@@ -32,11 +32,11 @@ verify || exit $?
 mkdir -p "$test_dir/module-bin/qeflow" || exit $?
 printf '保留其他模块\n' > "$test_dir/module-bin/qeflow/unchanged" || exit $?
 bash "$repo_dir/scripts/install-bin.sh" --module epwflow "$source_bin" "$test_dir/module-bin" >/dev/null || exit $?
-for program in epw_phonon epw_wannier epw_superconductivity; do
+for program in epw_phonon epw_wannier epw_superconductivity epw_clear; do
     cmp "$source_bin/$program" "$test_dir/module-bin/epwflow/$program" || exit $?
 done
 [[ $(cat "$test_dir/module-bin/qeflow/unchanged") == '保留其他模块' ]] || exit $?
-[[ $(find "$test_dir/module-bin/epwflow" -type f | wc -l) -eq 3 ]] || exit $?
+[[ $(find "$test_dir/module-bin/epwflow" -type f | wc -l) -eq 4 ]] || exit $?
 install_grouped "$source_bin" || exit $?
 verify || exit $?
 mkdir "$test_dir/invalid" || exit $?
@@ -73,4 +73,4 @@ if install_grouped "$dest/epwflow" 2>"$test_dir/error"; then
     echo '来源位于目标内应安装失败' >&2; exit 1
 fi
 verify || exit $?
-echo '分组安装通过：重复更新、55 入口、缺失／损坏源、目标冲突及源目标重叠保护。'
+echo '分组安装通过：重复更新、56 入口、缺失／损坏源、目标冲突及源目标重叠保护。'
