@@ -1,0 +1,19 @@
+{
+  "observed_on": "2026-10-26",
+  "source": "examples/MgB2/sugon-amd/run/epwflow/3.qe-electronic/qe_eledos/plots/electronic-dos.png",
+  "source_png_sha256": "65f0cda8b00a569fc0a9698e4c7138c7fa34af617d20a893940307f0bb904d54",
+  "copied_png_sha256": "65f0cda8b00a569fc0a9698e4c7138c7fa34af617d20a893940307f0bb904d54",
+  "size_pixels": [
+    1000,
+    700
+  ],
+  "dpi_metadata": null,
+  "source_plot_sha256": "2bf458983f45e4e2dd75f6e11964b62db30451bc1dcabe5e3c6ae1671bd72b64",
+  "samples": 20001,
+  "energy_minus_fermi_ev": [
+    -109.16990224089967,
+    90.83009775910033
+  ],
+  "dos_max_states_per_ev_cell": 32.5,
+  "role": "当前工作区渲染产物，只读复制；不是用户上传截图原件"
+}
