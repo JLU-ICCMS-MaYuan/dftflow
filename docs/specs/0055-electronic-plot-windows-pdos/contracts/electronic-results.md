@@ -2,9 +2,9 @@
 
 ## 文件与显示
 
-第 3 步 `qe_eband/plots` 与第 5 步 `comparison-native/electron` 各保存 `electronic-bands.png`（近费米）和 `electronic-bands-valence.png`（完整价带）；第 3 步 `qe_eledos/plots` 和第 5 步电子比较目录各保存同名规则的 `electronic-dos*.png`。每张都有对应 `.plot.json`；完整 CSV 不随显示裁剪删行。
+第 3 步 `qe_eband/plots` 与第 5 步 `comparison-native/electron` 各保存 `electronic-bands.png`（第 3 步近费米，第 5 步实际拟合外窗）和 `electronic-bands-valence.png`（完整价带）；第 3 步 `qe_eledos/plots` 和第 5 步电子比较目录各保存同名规则的 `electronic-dos*.png`。每张都有对应 `.plot.json`；完整 CSV 不随显示裁剪删行。
 
-`electronic-display.json` 保存近费米／完整价带的共同边界、最低占据能量、费米能与 NSCF XML 身份、3000×2100 像素、PNG 密度与配色。PNG 默认 10×7 英寸，密度按 PNG 像素／米规则向上量化为 300.0248 DPI。
+`electronic-display.json` 保存近费米／完整价带边界及阶段默认边界、最低占据能量、费米能与 NSCF XML 身份、3000×2100 像素、PNG 密度与配色。PNG 默认 10×7 英寸，密度按 PNG 像素／米规则向上量化为 300.0248 DPI。
 
 能带 y=0、DOS x=0 是红色费米线；蓝色只用于插值。QE 深灰，元素和窗口从绿、橙、褐、紫等颜色中选择，文字默认黑色。窗口超出显示范围仍列出真实值，不映射到画布外。插值 DOS 不覆盖的低能区保持缺失，图下注明两侧实际 DOS 支持范围。
 
@@ -31,4 +31,6 @@ QE 的 projwfc 会将能轴裁剪到本征值附近，即使输入相同 Emin／
 
 ## 重合曲线的显示样式
 
-DOS 多曲线图先画下层参考／TDOS：长虚线 18／6、线宽 4；电子能带参考下层使用连续实线、线宽 4；插值最后覆盖：蓝色短虚线 6／6、线宽 3。第 3 步元素 PDOS 依既有颜色次序使用长度 6、8、10、12、14、16 的短虚线（间隔 6、线宽 3），避免相同周期完全遮挡先绘元素。数值表、曲线坐标、能轴和费米线不变；没有叠图的 QE 单侧能带及单曲线 DOS 保持实线。图例与曲线共用样式常量，重绘历史包采用当前线型。
+所有 QE 参考／TDOS 均为连续实线（多曲线图线宽 4，单曲线图线宽 2）；插值最后覆盖：蓝色短虚线 6／6、线宽 3。第 3 步元素 PDOS 依既有颜色次序使用不同短虚线，避免完全遮挡其他元素。图例与实际曲线一致；能带、电子 DOS、声子比较不得另设 QE 虚线分支。数值、坐标、费米线、能轴和投影数据不变。
+
+第 5 步默认两个 PNG 及对应 plot.json 的 bounds 必须为实际 dis_win_min／max 相对 E_F 的边界；重绘旧包也按保存的实际窗口更新。窗口缺失、重复、非有限或倒序时拒绝。`electronic-display.json` 以 `default_ev` 和 `default_preset=wannier_outer` 表示当前默认图，原 `near_ev=[-5,5]` 不再代表第 5 步默认图。`-valence` 及单侧 QE 范围不变，科学数值和实际选窗不修改。

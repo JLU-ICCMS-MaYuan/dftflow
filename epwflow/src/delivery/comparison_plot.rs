@@ -444,37 +444,13 @@ where
                 clip(&curve.points, ymin, ymax)
             };
             for points in paths {
-                if method == "qe" && kind == 0 {
-                    let stroke = style::REFERENCE_STROKE;
-                    let series = ctx.draw_series(LineSeries::new(points, color.stroke_width(stroke.width)))?;
+                if method == "qe" {
+                    let width = style::REFERENCE_WIDTH;
+                    let series = ctx.draw_series(LineSeries::new(points, color.stroke_width(width)))?;
                     if !legend {
-                        series.label("QE (solid)").legend(move |(x, y)| {
-                            PathElement::new(vec![(x, y), (x + 30, y)], color.stroke_width(stroke.width))
-                        });
-                    }
-                } else if method == "qe" {
-                    let stroke = style::REFERENCE_STROKE;
-                    let series = ctx.draw_series(DashedLineSeries::new(
-                        points,
-                        stroke.dash,
-                        stroke.gap,
-                        color.stroke_width(stroke.width),
-                    ))?;
-                    if !legend {
-                        series
-                            .label(if kind == 2 {
-                                "QE q2r/matdyn (long dash)"
-                            } else {
-                                "QE (long dash)"
-                            })
-                            .legend(move |(x, y)| {
-                                DashedPathElement::new(
-                                    vec![(x, y), (x + 30, y)],
-                                    stroke.dash,
-                                    stroke.gap,
-                                    color.stroke_width(stroke.width),
-                                )
-                            });
+                        series.label(if kind == 2 { "QE q2r/matdyn (solid)" } else { "QE (solid)" })
+                            .legend(move |(x, y)| PathElement::new(
+                                vec![(x, y), (x + 30, y)], color.stroke_width(width)));
                     }
                 } else {
                     let stroke = style::INTERPOLATED_STROKE;

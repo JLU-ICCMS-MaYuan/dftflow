@@ -90,24 +90,60 @@ pub fn dos(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
         &dir.join("electronic-dos-normalization.json"),
         &serde_json::json!({"qe_spin_degeneracy":2,"postw90_num_elec_per_state":electrons,"postw90_multiplier":1,"electronic_sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev,"raw_native_files_modified":false,"postw90_log":super::store::Identity::capture(&wpout)?,"native_dos":super::store::Identity::capture(wannier)?}),
     )?;
+    let window = windows(cfg, dir, fermi)?;
+    let outer = outer_bounds(&window)?;
     dos_figure(
         &dir.join("electronic-dos.png"),
         &qe,
         Some(&wan),
-        &windows(cfg, dir, fermi)?,
+        &window,
         &metrics_note(dir, "electronic_mesh")?,
-        Some([-5., 5.]),
+        Some(outer),
         &[],
     )?;
     dos_figure(
         &dir.join("electronic-dos-valence.png"),
         &qe,
         Some(&wan),
-        &windows(cfg, dir, fermi)?,
+        &window,
         &metrics_note(dir, "electronic_mesh")?,
-        Some(display_bounds(cfg, dir, fermi)?),
+        Some(display_bounds(cfg, dir, fermi, Some(outer))?),
         &[],
     )
+}
+
+/// 窗口值已相对 E_F；必须按名字查找，不能混淆绝对窗或 frozen 边界。
+fn outer_bounds(window: &[(f64, &str, RGBColor)]) -> Result<[f64; 2]> {
+    let boundary = |name| -> Result<f64> {
+        let values = window.iter().filter(|v| v.1 == name).map(|v| v.0).collect::<Vec<_>>();
+        ensure!(values.len() == 1 && values[0].is_finite(),
+            "data_invalid: 默认插值图需要唯一且有限的实际 {name}");
+        Ok(values[0])
+    };
+    let bounds = [boundary("dis_win_min")?, boundary("dis_win_max")?];
+    ensure!(bounds[0] < bounds[1], "data_invalid: 实际 Wannier 外窗顺序错误");
+    Ok(bounds)
+}
+fn is_primary(file: &Path) -> bool {
+    matches!(file.file_name().and_then(|s| s.to_str()),
+        Some("electronic-bands.png" | "electronic-dos.png"))
+}
+fn primary_bounds(file: &Path, native: bool, window: &[(f64, &str, RGBColor)],
+                  previous: Option<[f64; 2]>) -> Result<Option<[f64; 2]>> {
+    if native && is_primary(file) { Ok(Some(outer_bounds(window)?)) } else { Ok(previous) }
+}
+fn sync_default_bounds(file: &Path, native: bool, bounds: [f64; 2]) -> Result<()> {
+    if native && is_primary(file) {
+        let metadata = file.parent().unwrap().join("electronic-display.json");
+        if metadata.exists() {
+            let mut value: serde_json::Value = super::store::read(&metadata)?;
+            let object = value.as_object_mut().context("data_invalid: 电子显示参数必须为对象")?;
+            object.insert("default_ev".into(), serde_json::json!(bounds));
+            object.insert("default_preset".into(), serde_json::json!("wannier_outer"));
+            super::store::write(&metadata, &value)?;
+        }
+    }
+    Ok(())
 }
 
 fn dos_figure(
@@ -119,6 +155,7 @@ fn dos_figure(
     bounds: Option<[f64; 2]>,
     elements: &[(String, Vec<(f64, f64)>)],
 ) -> Result<()> {
+    let bounds = primary_bounds(file, wan.is_some(), window, bounds)?;
     super::store::write(
         &plot_file(file),
         &PlotData::Dos {
@@ -166,20 +203,12 @@ fn dos_figure(
             .max_light_lines(0)
             .bold_line_style(RGBColor(235, 235, 235))
             .draw()?;
-        if wan.is_some() || !elements.is_empty() {
-            let stroke = style::REFERENCE_STROKE;
-            chart.draw_series(DashedLineSeries::new(
-                dos_points(qe, lo, hi),
-                stroke.dash,
-                stroke.gap,
-                style::QE.stroke_width(stroke.width),
-            ))?;
-        } else {
-            chart.draw_series(LineSeries::new(
-                dos_points(qe, lo, hi),
-                style::QE.stroke_width(2),
-            ))?;
-        }
+        chart.draw_series(LineSeries::new(
+            dos_points(qe, lo, hi),
+            style::QE.stroke_width(if wan.is_some() || !elements.is_empty() {
+                style::REFERENCE_WIDTH
+            } else { 2 }),
+        ))?;
         for (i, (_, rows)) in elements.iter().enumerate() {
             let color = style::ELEMENTS[i % style::ELEMENTS.len()];
             let stroke = style::element_stroke(i);
@@ -217,7 +246,6 @@ fn dos_figure(
             wan.is_some(),
             window,
             &elements.iter().map(|e| e.0.clone()).collect::<Vec<_>>(),
-            wan.is_some() || !elements.is_empty(),
         )?;
         let coverage = if let Some(wan) = wan {
             format!("DOS support: QE [{:.2}, {:.2}], EPW [{:.2}, {:.2}] eV; missing ranges are not filled.",qe[0].0,qe.last().unwrap().0,wan[0].0,wan.last().unwrap().0)
@@ -242,7 +270,8 @@ fn dos_figure(
         }
         area.present()?;
     }
-    style::png(&svg, file, 3000, 2100)
+    style::png(&svg, file, 3000, 2100)?;
+    sync_default_bounds(file, wan.is_some(), [lo, hi])
 }
 
 pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
@@ -363,7 +392,7 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
         &dir.join("electronic-bands.png"),
         &qe,
         Some(&wan),
-        [-5., 5.],
+        bounds,
         &window,
         &labels,
         &metrics_note(dir, "electronic_path")?,
@@ -372,7 +401,7 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
         &dir.join("electronic-bands-valence.png"),
         &qe,
         Some(&wan),
-        display_bounds(cfg, dir, fermi)?,
+        display_bounds(cfg, dir, fermi, Some(bounds))?,
         &window,
         &labels,
         &metrics_note(dir, "electronic_path")?,
@@ -384,11 +413,13 @@ fn bands_figure(
     file: &Path,
     qe: &[Band],
     wan: Option<&[Band]>,
-    [lo, hi]: [f64; 2],
+    bounds: [f64; 2],
     window: &[(f64, &str, RGBColor)],
     labels: &[(f64, String)],
     note: &str,
 ) -> Result<()> {
+    let [lo, hi] = primary_bounds(file, wan.is_some(), window, Some(bounds))?
+        .context("data_invalid: 能带缺少显示范围")?;
     super::store::write(
         &plot_file(file),
         &PlotData::Bands {
@@ -439,7 +470,7 @@ fn bands_figure(
                 for points in crate::delivery::comparison_plot::clip(&points, lo, hi) {
                     chart.draw_series(LineSeries::new(
                         points,
-                        style::QE.stroke_width(if wan.is_some() { style::REFERENCE_STROKE.width } else { 2 }),
+                        style::QE.stroke_width(if wan.is_some() { style::REFERENCE_WIDTH } else { 2 }),
                     ))?;
                 }
             }
@@ -479,7 +510,7 @@ fn bands_figure(
             [(0., 0.), (xmax, 0.)],
             style::FERMI.stroke_width(2),
         )))?;
-        outside_legend(&area, wan.is_some(), window, &[], false)?;
+        outside_legend(&area, wan.is_some(), window, &[])?;
         for (x, name) in separated_labels(qe, labels) {
             let (px, py) = chart.backend_coord(&(x, lo));
             area.draw(&Text::new(
@@ -498,7 +529,8 @@ fn bands_figure(
         }
         area.present()?;
     }
-    style::png(&svg, file, 3000, 2100)
+    style::png(&svg, file, 3000, 2100)?;
+    sync_default_bounds(file, wan.is_some(), [lo, hi])
 }
 
 /// 图例放在绘图区右侧的独立留白，避免遮挡窄峰或切断费米线。
@@ -507,12 +539,11 @@ fn outside_legend(
     native: bool,
     window: &[(f64, &str, RGBColor)],
     elements: &[String],
-    reference_dashed: bool,
 ) -> Result<()> {
     let mut entries = vec![(
         "QE".to_string(),
         style::QE,
-        reference_dashed.then_some(style::REFERENCE_STROKE),
+        None,
     )];
     if native {
         entries.push((
@@ -552,7 +583,7 @@ fn outside_legend(
         } else {
             area.draw(&PathElement::new(
                 [(775, y), (805, y)],
-                color.stroke_width(if *color == style::QE && native { style::REFERENCE_STROKE.width } else { 2 }),
+                color.stroke_width(if *color == style::QE && (native || !elements.is_empty()) { style::REFERENCE_WIDTH } else { 2 }),
             ))?;
         }
         area.draw(&Text::new(
@@ -616,7 +647,7 @@ pub fn qe_dos(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         None,
         &[],
         note,
-        Some(display_bounds(cfg, dir, fermi)?),
+        Some(display_bounds(cfg, dir, fermi, None)?),
         &elements,
     )
 }
@@ -736,7 +767,7 @@ pub fn qe_bands(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         &dir.join("electronic-bands-valence.png"),
         &bands,
         None,
-        display_bounds(cfg, dir, fermi)?,
+        display_bounds(cfg, dir, fermi, None)?,
         &[],
         &path_labels(&label_text)?,
         "",
@@ -976,7 +1007,7 @@ fn metrics_note(dir: &Path, kind: &str) -> Result<String> {
 }
 
 /// 显示下界只取共同 NSCF 有限采样中的最低占据态，不影响科学比较窗。
-fn display_bounds(cfg: &Config, dir: &Path, fermi: f64) -> Result<[f64; 2]> {
+fn display_bounds(cfg: &Config, dir: &Path, fermi: f64, default: Option<[f64; 2]>) -> Result<[f64; 2]> {
     let xml = crate::interpolation::electronic_sampling::xml(cfg);
     let states = crate::qe_data::nscf::parse_xml(&xml)?;
     let minimum = states
@@ -994,6 +1025,8 @@ fn display_bounds(cfg: &Config, dir: &Path, fermi: f64) -> Result<[f64; 2]> {
         &dir.join("electronic-display.json"),
         &serde_json::json!({
         "schema_version":1,"near_ev":[-5.,5.],"valence_ev":[minimum-fermi,5.],
+        "default_ev":default.unwrap_or([-5.,5.]),
+        "default_preset":if default.is_some() {"wannier_outer"} else {"fermi_pm5"},
         "minimum_occupied_ev":minimum,"fermi_ev":fermi,"reference":super::store::Identity::capture(&xml)?,
         "minimum_scope":"finite QE NSCF sampling, explicit pseudopotential valence states",
         "pixels":[3000,2100],"dpi":300.0248,"fermi_color":[220,0,0],"interpolated_color":[0,70,210],
@@ -1084,7 +1117,44 @@ mod electronic_delivery_tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn coincident_bands_and_dos_show_both_colors_inside_the_plot() {
+    fn wannier_primary_replot_uses_actual_outer_window_without_changing_data_or_valence() {
+        let root = std::env::temp_dir().join(format!("outer-display-{}", super::super::store::token()));
+        fs::create_dir_all(&root).unwrap();
+        super::super::store::write(&root.join("electronic-display.json"),
+            &serde_json::json!({"fermi_ev":7., "near_ev":[-5.,5.], "valence_ev":[-20.,5.]})).unwrap();
+        for (kind, name, curve) in [
+            ("Bands", "electronic-bands", serde_json::json!([[[0.,1.],[-9.,13.]]])),
+            ("Dos", "electronic-dos", serde_json::json!([[-10.,1.],[0.,2.],[14.,1.]])),
+        ] {
+            for valence in [false, true] {
+                let file=root.join(format!("{name}{}.plot.json", if valence {"-valence"} else {""}));
+                let before=serde_json::json!({"kind":kind,"qe":curve,"wan":curve,
+                    "bounds":if valence {[-20.,5.]} else {[-5.,5.]},"labels":[],
+                    "window":[[-8.25,"dis_win_min",[0,115,60]], [12.75,"dis_win_max",[125,85,35]]]});
+                super::super::store::write(&file,&before).unwrap();
+                redraw(&file).unwrap();
+                let after:serde_json::Value=super::super::store::read(&file).unwrap();
+                assert_eq!(after["bounds"], serde_json::json!(if valence {[-20.,5.]} else {[-8.25,12.75]}));
+                assert_eq!(after["qe"],before["qe"]);
+                assert_eq!(after["wan"],before["wan"]);
+                // 第 3 步不读取 Wannier 窗，沿用独立的显示预设。
+                let mut qe=before;qe["wan"]=serde_json::Value::Null;
+                super::super::store::write(&file,&qe).unwrap();
+                redraw(&file).unwrap();
+                let saved:serde_json::Value=super::super::store::read(&file).unwrap();
+                assert_eq!(saved["bounds"],qe["bounds"]);
+            }
+        }
+        let metadata:serde_json::Value=super::super::store::read(&root.join("electronic-display.json")).unwrap();
+        assert_eq!(metadata["default_ev"],serde_json::json!([-8.25,12.75]));
+        assert_eq!(metadata["default_preset"],"wannier_outer");
+        assert_eq!(metadata["fermi_ev"],7.,"已相对费米能的外窗不能二次减去 E_F");
+        assert!(outer_bounds(&[]).is_err());
+        assert!(outer_bounds(&[(2.,"dis_win_min",style::QE),(1.,"dis_win_max",style::QE)]).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn coincident_bands_and_dos_keep_qe_solid_and_all_colors_visible() {
         let root = std::env::temp_dir().join(format!(
             "electronic-overlap-{}",
             super::super::store::token()
@@ -1124,14 +1194,14 @@ mod electronic_delivery_tests {
                 } else { &[[40,40,40], [0,70,210]] };
                 colors.iter().all(|color| (300..2100).filter(|&col| {
                     &pixels[(row * 3000 + col) * 4..][..3] == color
-                }).count() > 100) && (case != "Bands" || (300..2100).all(|col| {
+                }).count() > 100) && (300..2100).all(|col| {
                     let rgb = &pixels[(row * 3000 + col) * 4..][..3];
-                    rgb[0] < 100 && rgb[1] < 120 && rgb[2] < 230
-                }))
+                    rgb.iter().any(|&v| v < 100)
+                })
             });
             assert!(
                 same_row_visible,
-                "{case}: 完全重合的曲线在绘图区同一行必须保留所有颜色"
+                "{case}: 完全重合时必须保留所有颜色，且 QE 参考线不得出现虚线间隔"
             );
         }
         fs::remove_dir_all(root).unwrap();

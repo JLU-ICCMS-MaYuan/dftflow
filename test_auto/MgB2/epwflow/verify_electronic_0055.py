@@ -14,8 +14,12 @@ for file in files:
     assert min(info["dpi"])>=300,(file,info)
     data=json.loads(file.with_suffix(".plot.json").read_text())
     bounds=data["bounds"]
-    assert bounds[0]<0<bounds[1] and bounds[1]==5
-    if "valence" not in file.name:assert bounds==[-5,5]
+    assert bounds[0]<0<bounds[1]
+    if "valence" in file.name:assert bounds[1]==5
+    elif "5.epw-wannier" in str(file):
+        windows={name:energy for energy,name,_ in data["window"]}
+        assert bounds==[windows["dis_win_min"],windows["dis_win_max"]],(file,bounds,windows)
+    else:assert bounds==[-5,5]
     red=blue=0
     for r,g,b in image.getdata():
         red+=r>200 and g<30 and b<30

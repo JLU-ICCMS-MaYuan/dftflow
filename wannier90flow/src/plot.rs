@@ -317,11 +317,10 @@ pub fn plot_comparison(
     mesh.draw()?;
 
     // 先画更粗的 QE 实线，再覆盖 W90 短虚线；完全重合仍能分辨两侧。
-        let reference = qf_plot::electronic::REFERENCE_STROKE;
         for (x, y) in &qe_segments {
             chart.draw_series(LineSeries::new(
                 x.iter().zip(y.iter()).map(|(x, y)| (*x, *y)),
-                qf_plot::electronic::QE.stroke_width(reference.width),
+                qf_plot::electronic::QE.stroke_width(qf_plot::electronic::REFERENCE_WIDTH),
             ))?;
         }
         let interpolated = qf_plot::electronic::INTERPOLATED_STROKE;

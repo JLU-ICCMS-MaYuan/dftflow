@@ -119,3 +119,21 @@ EPW 单元 45 通过、2 个既有外部来源用例忽略，共享绘图 4 通�
 真实已有 PBE MgB₂ 结果重绘至 `test_auto/MgB2/local_run/014-electronic-plots/band-solid-2r9ljckd/results`，八张保持 3000×2100／300.0248 DPI；对照上版包，只有第 5 步两张能带 PNG 改变，其余六张图片字节不变。31 份源结果及 13 份 CSV／plot.json 集合与 SHA-256 不变；空科学程序 PATH 重绘及结果包核验通过，没有科学调用或新 Slurm 作业。证据在同目录 `verification.json`、`figures.json`、`check.json` 和 `preview.png`。上述纠正覆盖前一节记录的电子能带长虚线行为，前一节作为历史证据保留。
 
 四个受影响程序已重新构建并安装，默认 PATH 的 `epw_wannier --plot` 实际重绘及 `--results-check` 通过；独立 `wannier90 plot` 用相同的两份能带确认两色可见且 QE 全区间连续。构建和安装日志为 `docs/local/0055-band-solid-build.log`，默认入口日志为 `0055-band-solid-installed-plot.log`／`0055-band-solid-installed-check.json`；制品与源码 SHA-256 记录在 `0055-band-solid-deployment.json`。此次不重建或替换 `epw_clear`，不提交已有 AGENTS.md 修改。
+
+## QE 参考实线及第 5 步实际外窗纠正验收
+
+用户指出前次只修正能带、遗漏 DOS，并要求第 5 步默认能带与 DOS 使用实际 dis_win 外窗。本节覆盖前两节中仍保留 QE DOS 长虚线及第 5 步默认 ±5 eV 的行为；原记录保留为历史证据。
+
+共享样式删除 QE 虚线定义，所有 QE 参考及其图例统一实线，涵盖能带、DOS、声子比较和总览；插值保留蓝色短虚线，电子费米线为红色。第 3 步元素 PDOS 保留不同长度的短虚线，TDOS 为实线。多曲线图参考／插值线宽为 4∶3。
+
+第 5 步默认 `electronic-bands.png`、`electronic-dos.png` 统一使用实际 dis_win_min−E_F～dis_win_max−E_F，正常发布与旧结果包独立重绘均适用。绘图参数保存相同边界，已有显示元数据补充 `default_ev`／`default_preset`；缺失、重复、非有限或反序的外窗拒绝出图，不以 frozen 窗或显示预设代替。`-valence` 范围、第 3 步默认 ±5 eV 及通用比较总览预设保持原约定，不修改实际拟合窗口或科学比较指标。
+
+执行 `CARGO_PROFILE_RELEASE_DEBUG=0 bash scripts/build-native.sh test --offline --release --locked -p epwflow --lib --test comparison_plots`：EPW 单元 46 通过、2 项既有外部真实来源用例忽略，比较／总览 9 通过，共 55 通过、2 忽略。新增回归检查完全重合的能带、DOS、TDOS／元素曲线本体连续无 QE 虚线空隙，检查所有比较面板的 SVG 实线及旧包外窗重绘不改变数值、不二次扣除费米能。忽略项为显式真实粗网格衰减与 wdata 来源检查，不计通过。日志为 `docs/local/0055-qe-solid-outer-tests.log`。
+
+四个受影响程序经离线发布构建重新更新到仓库 `bin/epwflow/{epw_phonon,epw_wannier,epw_superconductivity}` 及 `bin/wannierflow/wannier90`。构建日志为 `docs/local/0055-qe-solid-outer-build.log`；加载 `scripts/env.sh` 后解析到上述入口，四个产品的构建源与发布文件 SHA-256 均匹配发布元数据。源码边界为 `2c811c3` 加本次改动，未混入 AGENTS.md；来源与制品哈希见 `docs/local/0055-qe-solid-outer-deployment.json`。未替换 `epw_clear`。
+
+使用已发布 `epw_wannier` 在 `PATH=/nonexistent` 下直接原位重绘用户指定的 `test_auto/MgB2/local_run/014-electronic-plots/band-solid-2r9ljckd/results`，结果包核验及八图校验通过。对应实际 E_F 为 9.16990224089968 eV，绝对外窗为 −3.40453～26.42576 eV，因此两张默认对比图显示 −12.574432240899679～17.255857759100323 eV（相对费米能）。完整价带仍为 −75.29716629237811～5 eV。八张 PNG 保持 3000×2100、300.0248 DPI；实际查看默认能带、默认 DOS 和完整价带 DOS，确认实线、虚线、红色费米线和范围。
+
+更新前完整结果备份及本轮证据位于 `test_auto/MgB2/local_run/014-electronic-plots/qe-solid-outer-ifh9bhhb/`，包括 `before-results/`、`verification.json`、`figures.json`、`check.json`、`preview.png`。5 份科学 CSV 字节不变，8 份绘图数据中的科学数组与全部来源信息不变，仅两张默认对比图的边界更新；已有显示元数据同步。改变的图片为第 3 步两张 DOS、第 5 步默认能带及两张 DOS，其余三张能带字节不变。无科学程序调用、无新 Slurm 作业，预算不增加。不将结果包核验写成完整工作流或科学拟合验收。
+
+模块手册、Overview、示例 README 与需求产物已同步当前行为；线上 Issue 仍由用户管理，不推送，不改写旧科学数据或冻结脚本。

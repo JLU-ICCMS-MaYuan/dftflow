@@ -489,15 +489,16 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
         }
         assert!(svg.contains("SYNTHETIC STYLE TEST"));
         assert!(svg.contains("short dash"));
-        if kind == "electronic_bands_comparison" || kind == "comparison_overview" {
-            assert!(svg.contains("QE (solid)"));
-            let doc = roxmltree::Document::parse(&svg).unwrap();
-            assert!(doc.descendants().any(|n| n.has_tag_name("polyline")
-                && n.attribute("stroke") == Some("#282828")
-                && n.attribute("points").unwrap_or("").split_whitespace().count() > 50),
-                "电子 QE 参考必须是连续实线，不能按虚线拆成小段");
-        } else {
-            assert!(svg.contains("long dash"));
+        assert!(svg.contains("(solid)"));
+        assert!(!svg.contains("long dash"));
+        let doc = roxmltree::Document::parse(&svg).unwrap();
+        for line in doc.descendants().filter(|n| n.has_tag_name("polyline")
+            && matches!(n.attribute("stroke"), Some("#282828" | "#2D2D37"))) {
+            let points: Vec<(i32,i32)> = line.attribute("points").unwrap().split_whitespace()
+                .map(|p| { let (x,y)=p.split_once(',').unwrap(); (x.parse().unwrap(),y.parse().unwrap()) }).collect();
+            assert!(points.len() > 50 || (points.len() == 2 && points[0].1 == points[1].1
+                && points[1].0 - points[0].0 == 30),
+                "{kind}: QE 必须为完整实线或实线图例，不能出现虚线碎段");
         }
         let doc = roxmltree::Document::parse(&svg).unwrap();
         for (color, width) in [("#282828", "4"), ("#0046D2", "3")] {

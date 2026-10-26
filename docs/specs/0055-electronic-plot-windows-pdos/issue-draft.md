@@ -34,9 +34,9 @@ QE 元素 PDOS；第 5 步只比较总 DOS（推荐）
 | E3-02 | 第 3 步 QE 电子能带 | 最低 QE 价带～+5 eV |
 | E3-03 | 第 3 步 QE TDOS＋各元素 PDOS，同图 | −5～+5 eV |
 | E3-04 | 第 3 步 QE TDOS＋各元素 PDOS，同图 | 最低 QE 价带～+5 eV |
-| E5-01 | 第 5 步 QE／EPW 电子能带叠图 | −5～+5 eV |
+| E5-01 | 第 5 步 QE／EPW 电子能带叠图 | 实际 dis_win_min−E_F～dis_win_max−E_F |
 | E5-02 | 第 5 步 QE／EPW 电子能带叠图 | 最低 QE 价带～+5 eV |
-| E5-03 | 第 5 步 QE／EPW TDOS 叠图 | −5～+5 eV |
+| E5-03 | 第 5 步 QE／EPW TDOS 叠图 | 实际 dis_win_min−E_F～dis_win_max−E_F |
 | E5-04 | 第 5 步 QE／EPW TDOS 叠图 | 最低 QE 价带～+5 eV |
 
 两种范围均以同一个 QE 费米能为零；最低价带使用共同 QE 参考中的最低已计算占据态，不用 Wannier 外窗下界代替。各元素曲线汇总画在对应 QE DOS 图中，不按元素再增加独立图；原声子、衰减图和既有总览不计入本次 8 张。完整定义见 [Spec](spec.md)。
@@ -90,7 +90,7 @@ QE 元素 PDOS；第 5 步只比较总 DOS（推荐）
 我希望即使他们的线重叠在一起来，也能看到两个颜色，你可以一个线用长一点的打断的虚线，一个用短一点的打断的虚线。而且被压在下面的虚线（一般来说是先绘制的）可以稍微粗 30%。这样他在底部也不会被挡住。
 ```
 
-此前将长短虚线要求扩大到电子能带，属于实现范围错误。按用户后续纠正：电子能带比较始终为 QE 深灰实线先绘、EPW／Wannier 蓝色短虚线后绘；DOS 的较粗长虚线与短虚线规则保留。图例同步，费米线、能窗、图数和科学数据不变。
+此前把长短虚线同时用于 QE 参考曲线，且第一次纠正仅覆盖能带，导致 DOS 仍为虚线；该解释已由下文最新纠正覆盖。当前规则为 QE 参考实线、EPW／Wannier 插值蓝色虚线，元素 PDOS 用不同短虚线区分。
 
 ## 电子能带线型纠正
 
@@ -98,4 +98,29 @@ QE 元素 PDOS；第 5 步只比较总 DOS（推荐）
 你为什么把 epw 和 qe 对比的那个能带图也按照这个要求改了。这是不对的，在这个图里面qe 的计算结果就是要实线的。
 ```
 
-电子能带例外适用于第 5 步独立图、四面板总览电子能带面板及独立 Wannier 比较。QE 实线不受 DOS 多曲线虚线要求影响；不自动扩大到其他图种。保持参考先绘、插值后绘和现有粗细比例。
+该次纠正只恢复了能带，遗漏 DOS；以下最新原话明确 QE 参考在 DOS 中也必须是实线，作为统一规则采用。保持参考先绘、插值后绘和现有粗细比例。
+
+## QE 参考实线统一纠正
+
+```text
+/data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/014-electronic-plots/band-solid-2r9ljckd/results/5.epw-wannier/electronic-dos-valence.png 这个里面的 qe 为什么是虚线？我要求：图里面qe 的计算结果就是要实线的。
+
+/data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/014-electronic-plots/band-solid-2r9ljckd/results/5.epw-wannier/electronic-dos-valence.png
+/data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/014-electronic-plots/band-solid-2r9ljckd/results/5.epw-wannier/electronic-dos.png
+都是一样的问题。
+```
+
+所有 QE 参考曲线（含电子能带、电子 TDOS、声子谱及声子 TDOS 比较）统一实线，EPW／Wannier 插值为蓝色短虚线。第 3 步 QE TDOS 同样实线，元素 PDOS 维持不同短虚线以区分贡献。不得再按图种把 QE 参考改为虚线；曲线与图例一致。直接更新用户指明结果包中的两张 DOS 图片，同时核验其余图片、数值与来源；仅绘图，不执行科学计算。
+
+## 第 5 步默认图使用实际拟合外窗
+
+```text
+/data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/014-electronic-plots/band-solid-2r9ljckd/results/5.epw-wannier/electronic-bands.png 我还希望这个能带和 /data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/014-electronic-plots/band-solid-2r9ljckd/results/5.epw-wannier/electronic-dos.png 绘制的范围是从 dis_win_min到 dis_win_max。这才对！
+
+下面目录的 qe 为什么是虚线？我要求：图里面qe 的计算结果就是要实线的。
+/data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/014-electronic-plots/band-solid-2r9ljckd/results/5.epw-wannier/electronic-dos-valence.png
+/data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/014-electronic-plots/band-solid-2r9ljckd/results/5.epw-wannier/electronic-dos.png
+都是一样的问题。
+```
+
+采用本条后续要求：第 5 步 `electronic-bands.png` 与 `electronic-dos.png` 的显示边界改为实际执行模型的 dis_win_min／max，按共同 E_F 换算后绘图；不改变实际拟合参数或原比较指标。`-valence` 图保留最低 QE 价带至 E_F+5 eV，第 3 步仍保留近费米与完整价带两种预设。能带和 DOS 在同阶段、同预设使用相同能量边界；总览既有预设不因这两个指定文件自动扩大范围。所有 QE 参考均为实线，包含两个 DOS 图；直接重绘指定结果目录，保留科学数据和重绘前派生副本。

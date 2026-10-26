@@ -150,7 +150,7 @@ epw_wannier --stage wannier --resume -s
 
 不再生成 `quality-sources`、独立参考 NSCF／直接 PH／dynmat、抽样点、质量报告或绑定清单；`[interpolation.quality]` 已删除，旧配置中的该节会被拒绝。粗 EPC 不再输出抽样 band_plot，常规绘图重读仍保留。
 
-`comparison/metrics.json` 的 `differences` 分别保存电子路径、电子 DOS 网格、声子路径、声子 DOS 网格最大绝对差值。电子使用共同 Fermi 零点和实际 Outer 比较指标窗；图像另用近费米／完整价带显示窗，较少一侧全部匹配较多一侧的有序子集，使平方差之和最小，记录配对与未配对态数；这种能量配对不代表同一本征态。声子以 q2r/matdyn 为 QE 对照，在相同 q 点比较全部 3N 个排序频率，统一 cm⁻¹ 并保留虚频符号。
+`comparison/metrics.json` 的 `differences` 分别保存电子路径、电子 DOS 网格、声子路径、声子 DOS 网格最大绝对差值。电子使用共同 Fermi 零点和实际 Outer 比较指标窗；图像另用阶段默认／完整价带显示窗，较少一侧全部匹配较多一侧的有序子集，使平方差之和最小，记录配对与未配对态数；这种能量配对不代表同一本征态。声子以 q2r/matdyn 为 QE 对照，在相同 q 点比较全部 3N 个排序频率，统一 cm⁻¹ 并保留虚频符号。
 
 每项包括坐标、带／排序模式编号和两侧原值；路径最大值标紫，DOS 图注明最大值的网格坐标。无配对时最大值为 null，终端显示“无可配对数据”。差值没有阈值、RMS、评级或告警，也不影响退出码、发布和下游执行。文件、来源、单位、坐标、有限数、预算、原生执行和求解收敛检查继续有效。
 
@@ -328,11 +328,11 @@ epw_superconductivity --plot --results "results"
 
 ## 电子图的默认双能窗与配色
 
-第 3 步交付 4 张 QE 图，第 5 步交付 4 张 QE／EPW 对比图，共 8 张。每阶段分别提供能带与 DOS 的两种范围：`electronic-bands.png`／`electronic-dos.png` 使用 E_F±5 eV；`electronic-bands-valence.png`／`electronic-dos-valence.png` 使用共同 QE NSCF 最低占据态至 E_F＋5 eV。最低态包含赝势显式半芯态，表示已计算网格的最小值。显示范围不修改实际拟合能窗或原比较指标。
+第 3 步交付 4 张 QE 图，第 5 步交付 4 张 QE／EPW 对比图，共 8 张。每阶段分别提供能带与 DOS 的两种范围：默认文件 `electronic-bands.png`／`electronic-dos.png` 在第 3 步使用 E_F±5 eV，第 5 步使用实际 dis_win_min−E_F～dis_win_max−E_F；`electronic-bands-valence.png`／`electronic-dos-valence.png` 使用共同 QE NSCF 最低占据态至 E_F＋5 eV。最低态包含赝势显式半芯态，表示已计算网格的最小值。显示范围不修改实际拟合能窗或原比较指标。
 
 全部电子图、总览电子面板及独立重绘画出红色费米线；蓝色只表示 EPW／Wannier 插值。QE 用深灰，元素和窗口用绿／橙／褐／紫等其他颜色，普通文字黑色。四个实际窗口的值仍列在图例，超出显示范围的窗口不扩大坐标轴。默认电子 PNG 从数值矢量直接生成 3000×2100，PNG 密度为 300.0248 DPI，不放大旧图片。
 
-电子能带对比中，QE 使用深灰实线先绘，EPW／Wannier 使用蓝色短虚线后绘，独立图与总览电子能带面板一致。DOS 对比保留较粗 QE 长虚线和蓝色插值短虚线；第 3 步 TDOS 也用较粗长虚线，各元素 PDOS 使用不同长度的短虚线。比较曲线的下层线宽为上层的 4∶3（约粗 33%），图例同步；费米线仍为红色，重绘不改变科学数据。
+QE 参考曲线统一使用深灰实线，涵盖能带、DOS、声子比较及总览；EPW／Wannier 使用蓝色短虚线后绘。第 3 步 TDOS 为实线，各元素 PDOS 使用不同长度的短虚线。多曲线图中参考／插值线宽为 4∶3（约粗 33%），图例同步；电子费米线仍为红色，重绘不改变科学数据。
 
 第 3 步 DOS 同图画 TDOS＋Mg／B 等真实元素 PDOS，第 5 步仍只比较 TDOS。投影缺失时，在已核验 NSCF 波函数的独立副本内运行必要 `projwfc -pd .true.`，不重算 PW／PH／Wannier／EPW；程序默认从 pw.x 同目录解析。TDOS 读取同次 projwfc `.pdos_tot` 的 DOS 列，保证与 PDOS 原生同网格；原 dos.x 表保留。逐 atom/wfc 的 LDOS 只累加一次，保留投影残差，不强制归一。当前仅支持非磁标量投影，缺波函数或不支持的自旋明确报错，不自动重算 NSCF。
 

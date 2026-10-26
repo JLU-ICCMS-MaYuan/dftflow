@@ -2,7 +2,7 @@
 use anyhow::{Context, Result};
 use plotters::prelude::*;
 use std::{fs, path::Path};
-pub const RENDERER_VERSION: u32 = 57;
+pub const RENDERER_VERSION: u32 = 58;
 /// 比较曲线按下层／上层绘制；整数线宽 4:3 使下层约粗 30%。
 #[derive(Clone, Copy)]
 pub struct ComparisonStroke {
@@ -10,11 +10,8 @@ pub struct ComparisonStroke {
     pub gap: u32,
     pub width: u32,
 }
-pub const REFERENCE_STROKE: ComparisonStroke = ComparisonStroke {
-    dash: 18,
-    gap: 6,
-    width: 4,
-};
+/// QE 参考始终为实线；仅共享粗细，不提供可误用于参考线的虚线样式。
+pub const REFERENCE_WIDTH: u32 = 4;
 pub const INTERPOLATED_STROKE: ComparisonStroke = ComparisonStroke {
     dash: 6,
     gap: 6,
