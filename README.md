@@ -201,6 +201,7 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 ## QE／EPW 编号工作区
 
 新 EPW 配置使用 `layout = "numbered"`、`work_dir = "."` 和根 `input.toml`。
+阶段重算保留编号工作目录本身，只将旧内容归档到 `epw-state/history/`；已经进入目录的终端无需重新 `cd`，当前 Slurm 日志持续可读。
 修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。
 `--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
 第 3 步 QE 子任务完成即发布单侧图；第 5 步完成电子能带／总 DOS 对比，第 6 步完成声子谱／TDOS 对比及总览，图片、数据和来源按阶段保存在工作区根 `results/`。

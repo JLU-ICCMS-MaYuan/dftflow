@@ -992,14 +992,30 @@ fn numbered_stage_archive_preserves_the_open_slurm_log() {
     use std::os::unix::fs::MetadataExt;
     let c = Case::numbered();
     success(c.numbered_cli(0, &[], None, "log-prepare"));
+    let stage = c.root.join("run/4.qe-phonon-nosplit");
+    let stage_inode = fs::metadata(&stage).unwrap().ino();
     let path = c.root.join("run/4.qe-phonon-nosplit/slurm-201.out");
     let mut log = fs::File::create(&path).unwrap();
     log.write_all(b"before archive\n").unwrap();
     c.accounting(Some(201));
     success(c.numbered_cli(0, &["-r"], Some(201), "log-run"));
+    assert_eq!(stage_inode, fs::metadata(&stage).unwrap().ino());
     log.write_all(b"after archive\n").unwrap();
     assert_eq!(log.metadata().unwrap().ino(), fs::metadata(&path).unwrap().ino());
     assert_eq!(fs::read_to_string(path).unwrap(), "before archive\nafter archive\n");
+}
+
+#[test]
+fn numbered_archive_failure_does_not_start_scientific_programs() {
+    let c = Case::numbered();
+    success(c.numbered_cli(0, &[], None, "archive-error-prepare"));
+    c.put("run/epw-state/history", "blocked destination");
+    let before = c.calls();
+    c.accounting(Some(201));
+    let output = c.numbered_cli(0, &["-r"], Some(201), "archive-error-run");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("无法归档阶段"));
+    assert_eq!(before, c.calls(), "归档失败不能启动科学程序");
 }
 
 #[test]

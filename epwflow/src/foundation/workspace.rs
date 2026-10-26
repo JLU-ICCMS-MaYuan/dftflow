@@ -677,7 +677,7 @@ pub fn execute(path: &Path) -> Result<()> {
     result
 }
 
-/// 只移动本阶段；成功的相容上游目录不受影响。未知文件保留在历史。
+/// 保留阶段目录本身，只归档旧内容；成功的相容上游不受影响。
 pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
     let request = cfg
         .work_dir
@@ -715,9 +715,11 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
         let chain_script = if dir.join(&chain_name).is_file() {
             Some(fs::read(dir.join(&chain_name))?)
         } else { None };
-        fs::create_dir_all(&history)?;
-        fs::rename(&dir, history.join("calculation"))?;
-        preserve_active_logs(&history.join("calculation"), &dir)?;
+        archive_contents(
+            &dir,
+            &history.join("calculation"),
+            std::env::var("SLURM_JOB_ID").ok().and_then(|job| job.parse::<u64>().ok()),
+        ).with_context(|| format!("execution_failed: 无法归档阶段 {} 到 {}", dir.display(), history.display()))?;
         if let Some(body) = chain_script {
             store::atomic_bytes(&dir.join(&chain_name), &body)?;
             fs::set_permissions(dir.join(&chain_name), fs::Permissions::from_mode(0o755))?;
@@ -732,6 +734,45 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
     if step == Step::Electronic { super::workspace_electronic::archive(cfg, &history)?; }
     Ok(())
 }
+
+/// 先预检所有目标，避免覆盖；当前 Slurm 日志留在原位，以硬链接保存历史入口。
+fn archive_contents(dir: &Path, destination: &Path, job: Option<u64>) -> Result<()> {
+    let metadata = fs::symlink_metadata(dir)?;
+    ensure!(metadata.is_dir() && !metadata.file_type().is_symlink(),
+        "input_conflict: 阶段目录不是普通目录 {}", dir.display());
+    fs::create_dir_all(destination)?;
+    let mut entries = fs::read_dir(dir)?.collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in &entries {
+        let target = destination.join(entry.file_name());
+        match fs::symlink_metadata(&target) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+            Err(e) => return Err(e).with_context(|| format!("无法检查归档目标 {}", target.display())),
+            Ok(_) => anyhow::bail!("input_conflict: 归档目标已存在，保留原文件 {} -> {}",
+                entry.path().display(), target.display()),
+        }
+    }
+    for entry in entries {
+        let source = entry.path();
+        let target = destination.join(entry.file_name());
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let log = job.is_some_and(|id| id > 0
+            && (name == format!("slurm-{id}.out") || name == format!("slurm-{id}.err")
+                || (name.ends_with(".log") && slurm_log(&source))))
+            && entry.file_type()?.is_file();
+        if log {
+            fs::hard_link(&source, &target)
+        } else {
+            fs::rename(&source, &target)
+        }.with_context(|| format!("execution_failed: 归档失败 {} -> {}", source.display(), target.display()))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "workspace_archive_tests.rs"]
+mod archive_tests;
 
 pub(crate) fn slurm_log(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|s| s.to_str()) else { return false; };

@@ -10,7 +10,7 @@
 
 0053 原生任务版本 3 的 stdout／stderr 身份均绑定同一科学 `.out`；完成检查、电子回执、超导尝试和方法收尾不要求独立 `.err`。版本 1／2 仍按原分离日志契约严格读取，缺失旧 `.err` 不会自动降级；普通本地执行器保持原日志行为。非零退出、脚本／输入／科学日志篡改仍拒绝。历史脚本保持原字节，新任务生成新格式。2026-10-23 后续已更新仓库及默认安装的三个 EPW 程序，并在原 MgB₂ 工作区实际完成一次新格式 SCF，证据见 [0053 验收](../../specs/0053-epw-merged-program-output/acceptance.md)。
 
-显式 `epw_phonon -c "epwinput.toml" --stage scf --resume -s` 每次强制启动新的 SCF 批次，即使已有成功结果；无需手动删除 `1.qe-scf` 或回执。旧阶段目录、脚本、日志和快照归档至 `epw-state/history/`，新脚本在原路径生成。运行中或提交未知时仍拒绝重复提交。作业结束后用不带 `--resume` 的 `--stage scf -s` 归集和复用；其他目标的 SCF 依赖及恢复规则不变。
+显式 `epw_phonon -c "epwinput.toml" --stage scf --resume -s` 每次强制启动新的 SCF 批次，即使已有成功结果；无需手动删除 `1.qe-scf` 或回执。公共阶段归档保留编号工作目录本身的 inode，只把旧脚本、结果和快照等内容移入 `epw-state/history/`，再在原目录生成新输入；已进入目录的终端无需重新 cd。当前 Slurm 日志留在原位，历史入口与原文件保持硬链接，打开的句柄继续写入；归档失败停止新计算。运行中或提交未知时仍拒绝重复提交。作业结束后用不带 `--resume` 的 `--stage scf -s` 归集和复用；其他目标的 SCF 依赖及恢复规则不变。依据见 [0056](../../specs/0056-epw-stable-workdir/acceptance.md)。
 
 ## 编号工作区的原生任务提交
 
