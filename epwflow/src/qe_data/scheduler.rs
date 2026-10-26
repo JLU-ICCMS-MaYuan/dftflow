@@ -10,7 +10,7 @@ use anyhow::{bail, ensure, Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// 在共享预算账本上预留本运行资源；超限拒绝（FR-010）。
+/// 在共享账本上登记本运行，不限制计算时长或存储空间。
 fn charge_budget(binding: &snapshot::RunBinding, cfg: &config::Config) -> Result<String> {
     let r = &cfg.resources;
     budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
@@ -19,8 +19,6 @@ fn charge_budget(binding: &snapshot::RunBinding, cfg: &config::Config) -> Result
             &format!("qe-data:{}", binding.run_id),
             r.nodes,
             r.mpi,
-            r.wall_seconds,
-            r.storage_bytes,
         )
     })
     .context("budget_denied: qe-data 预算预留失败")

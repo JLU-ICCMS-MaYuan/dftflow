@@ -24,7 +24,7 @@ EPW_TEST_BIN="$PWD/bin/epwflow"
 "$EPW_TEST_PYTHON" "test_auto/MgB2/epwflow/real_chain.py" portable --case "$EPW_TEST_CASE"
 ```
 
-`prepare` 拒绝覆盖已有目录，仅隔离结构和工作目录路径，保留科学参数、外部程序、资源和共享预算；冻结配置、程序及其 SHA-256。`run` 真正调用公开 `-s` 并等待 Slurm，因此会消费原共享预算。每次提交仍受累计 28800 节点秒／100 GiB、最多两个作业的约束，不按测试目录重置。
+`prepare` 拒绝覆盖已有目录，仅隔离结构和工作目录路径，保留科学参数、外部程序、资源和共享账本；冻结配置、程序及其 SHA-256。`run` 真正调用公开 `-s` 并等待 Slurm，会记录实际消费。0058 取消程序内的累计节点时与存储额度，保留最多两个作业的登记约束；集群自身规则仍由 Slurm 管理。源配置必须删除 `resources.wall_seconds`、`resources.storage_bytes`，旧冻结快照不会自动改写；历史现场及当时的预算证据保持原样。
 
 每阶段先核验作业内完成及即时发布，再重复公开命令检查没有新增科学任务。第 1／2 步按公开协议在作业结束后再次核验。第 8 步只提交两个方法作业，每种方法一次 EPW 执行完整温度列表。失败时立即停止，日志、回执和科学检查点保留，不自动取消、重复提交或更改参数。
 
@@ -83,4 +83,4 @@ CARGO_PROFILE_RELEASE_DEBUG=0 bash scripts/build-native.sh test --release --lock
   -p epwflow --test electronic_0055_real --no-run
 ```
 
-按构建日志给出的测试程序路径，在已预留原共享预算的 Slurm 分配内调用上述 Bash 脚本；新输出目录须位于 `test_auto/MgB2/local_run/`。恢复仅允许未完成现场，需显式设置 `DFTFLOW_0055_RESUME=1`；已完成现场拒绝覆盖。没有相容旧投影时该测试会实际运行 projwfc，不能在登录节点调用。重画已有包直接使用 `epw_wannier --plot --results <结果目录>`，不运行此真实后处理测试。
+按构建日志给出的测试程序路径，在已登记的 Slurm 分配内调用上述 Bash 脚本；新输出目录须位于 `test_auto/MgB2/local_run/`。恢复仅允许未完成现场，需显式设置 `DFTFLOW_0055_RESUME=1`；已完成现场拒绝覆盖。没有相容旧投影时该测试会实际运行 projwfc，不能在登录节点调用。重画已有包直接使用 `epw_wannier --plot --results <结果目录>`，不运行此真实后处理测试。

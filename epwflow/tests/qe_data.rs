@@ -93,8 +93,6 @@ Si = "{structure}"
 partition = "local"
 nodes = 1
 mpi = 1
-wall_seconds = 60
-storage_bytes = 1048576
 
 [budget]
 campaign_id = "epic-0007"

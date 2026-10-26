@@ -63,7 +63,7 @@ fn success(o: Output) {
 }
 
 #[test]
-fn exactly_three_programs_and_no_legacy_public_subcommands() {
+fn three_stage_programs_and_clear_have_no_legacy_public_subcommands() {
     let cargo: toml::Value = toml::from_str(include_str!("../Cargo.toml")).unwrap();
     assert_eq!(cargo["package"]["autobins"].as_bool(), Some(false));
     let names: Vec<_> = cargo["bin"]
@@ -74,10 +74,10 @@ fn exactly_three_programs_and_no_legacy_public_subcommands() {
         .collect();
     assert_eq!(
         names,
-        ["epw_phonon", "epw_wannier", "epw_superconductivity"]
+        ["epw_phonon", "epw_wannier", "epw_superconductivity", "epw_clear"]
     );
     let c = Case::new();
-    for (i, name) in names.iter().enumerate() {
+    for (i, name) in names[..3].iter().enumerate() {
         let out = c.run(i, &["--help"]);
         assert!(out.status.success());
         assert!(String::from_utf8_lossy(&out.stdout).contains(name));
@@ -87,6 +87,9 @@ fn exactly_three_programs_and_no_legacy_public_subcommands() {
             .status
             .success());
     }
+    let help = Command::new(env!("CARGO_BIN_EXE_epw_clear")).arg("--help").output().unwrap();
+    assert!(help.status.success());
+    assert!(String::from_utf8_lossy(&help.stdout).contains("epw_clear"));
     assert!(!c.root.join("run").exists());
     assert!(!c.root.join("calls").exists());
 }

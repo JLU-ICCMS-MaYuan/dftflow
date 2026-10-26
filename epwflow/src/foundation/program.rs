@@ -114,10 +114,6 @@ struct Options {
     #[arg(long)]
     mpi: Option<u32>,
     #[arg(long)]
-    wall_seconds: Option<u64>,
-    #[arg(long)]
-    storage_bytes: Option<u64>,
-    #[arg(long)]
     token: Option<String>,
     #[arg(long)]
     job: Option<u64>,
@@ -336,8 +332,6 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
                 label: o.label.context("required: 需要 --label")?,
                 nodes: o.nodes.context("required: 需要 --nodes")?,
                 mpi: o.mpi.context("required: 需要 --mpi")?,
-                wall_seconds: o.wall_seconds.context("required: 需要 --wall-seconds")?,
-                storage_bytes: o.storage_bytes.context("required: 需要 --storage-bytes")?,
             },
         };
         EpwCommand::Budget {

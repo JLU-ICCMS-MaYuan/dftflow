@@ -20,6 +20,7 @@ else:
     }
     pub(super) fn scheduled_command(&self, script: &std::path::Path, directory: &std::path::Path, job: u64) -> Command {
         let body = fs::read_to_string(script).unwrap();
+        assert!(!body.lines().filter_map(|l| l.trim().strip_prefix("#SBATCH")).flat_map(str::split_whitespace).any(|a| a.starts_with("--time") || a.starts_with("-t")), "{}", script.display());
         let expected = shell_quote(directory.to_str().unwrap());
         assert_eq!(body.lines().find_map(|l| l.strip_prefix("#SBATCH --chdir=")), Some(expected.as_str()));
         assert!(!body.lines().any(|l| l.starts_with("cd ") || l.starts_with("if ! cd ")));

@@ -99,8 +99,6 @@ runpy.run_path(str(root/name),run_name='__main__')
         cfg.programs.epw.args = vec!["--io-contract".into()];
         cfg.programs.wannier90 = None;
         cfg.programs.pw2wannier90 = None;
-        cfg.resources.wall_seconds = 600;
-        cfg.resources.storage_bytes = 64 * 1024 * 1024;
         cfg.qe.prefix = "scf".into();
         cfg.qe.scf.k_grid = [2; 3];
         cfg.qe.nscf.k_grid = [2; 3];
@@ -141,6 +139,31 @@ runpy.run_path(str(root/name),run_name='__main__')
     fn script(&self, name: &str, text: &str) {
         self.put(name, text);
         fs::set_permissions(self.root.join(name), fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    fn assert_scripts_without_time_limits(&self) {
+        let mut pending = vec![self.root.join("run")];
+        let mut scripts = 0;
+        while let Some(dir) = pending.pop() {
+            for entry in fs::read_dir(dir).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                if entry.file_type().unwrap().is_dir() {
+                    pending.push(path);
+                } else if path.extension().is_some_and(|e| e == "sh") {
+                    scripts += 1;
+                    let text = fs::read_to_string(&path).unwrap();
+                    for line in text.lines() {
+                        if let Some(options) = line.trim().strip_prefix("#SBATCH") {
+                            assert!(!options.split_whitespace().any(|a| a.starts_with("--time") || a.starts_with("-t")), "{}: {line}", path.display());
+                        }
+                        assert!(!line.trim_start().starts_with("timeout ") && !line.contains("ulimit -t"), "{}: {line}", path.display());
+                    }
+                }
+            }
+        }
+        assert!(scripts > 0);
+        let submissions = fs::read_to_string(self.root.join("submissions")).unwrap_or_default();
+        assert!(!submissions.split_whitespace().any(|a| a.starts_with("--time") || a == "-t"));
     }
     fn accounting(&self, active: Option<u64>) {
         self.put(
@@ -199,8 +222,7 @@ runpy.run_path(str(root/name),run_name='__main__')
         let cfg=config::Config::load(&self.root.join("inputepw.toml")).unwrap();
         let ledger=cfg.budget.ledger.to_string_lossy().into_owned();
         let reserve=self.cli(0,&["--budget","reserve","--ledger",&ledger,"--label",label,
-            "--nodes",&cfg.resources.nodes.to_string(),"--mpi",&cfg.resources.mpi.to_string(),
-            "--wall-seconds",&cfg.resources.wall_seconds.to_string(),"--storage-bytes",&cfg.resources.storage_bytes.to_string()],"manual-allocation-reserve");
+            "--nodes",&cfg.resources.nodes.to_string(),"--mpi",&cfg.resources.mpi.to_string()],"manual-allocation-reserve");
         assert!(reserve.status.success(),"{}",String::from_utf8_lossy(&reserve.stderr));
         let text=String::from_utf8(reserve.stdout).unwrap();
         let token=text.trim().strip_prefix("reserved: token=").unwrap();
@@ -518,6 +540,8 @@ fn public_chain_resumes_partial_solver_then_only_unfinished_delivery() {
     assert_eq!(ledger["spent_node_seconds"], 5);
     assert_eq!(ledger["allocations"].as_array().unwrap().len(), 0);
     assert_eq!(ledger["reservations"].as_array().unwrap().len(), 0);
+    assert_eq!(ledger["limits"], json!({"max_lanes": 2}), "新账本不生成时间或存储上限");
+    c.assert_scripts_without_time_limits();
     assert_eq!(
         fs::read_to_string(c.root.join("submissions"))
             .unwrap()
@@ -786,6 +810,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     c.numbered_change(|cfg|{cfg.resources.mpi=3;cfg.programs.launcher[2]="3".into();cfg.programs.epw.args[2]="3".into();});
     fs::remove_file(c.root.join("tc-failure")).unwrap();c.accounting(Some(210));
     success(c.numbered_cli(2,&["--stage","superconductivity","--resume","-r"],Some(210),"numbered-superconductivity"));
+    c.assert_scripts_without_time_limits();
     assert_eq!(before.0,c.calls().0);assert!(!c.calls().2.is_empty());
     let completed:Value=store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();assert_eq!(partial["native_modes"]["aniso"],completed["native_modes"]["aniso"]);
     let coarse_calls=c.calls().1.matches("coarse ").count();
@@ -909,6 +934,33 @@ fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
 }
 
 #[test]
+fn numbered_submit_and_execution_ignore_exhausted_time_and_storage_limits() {
+    let c = Case::numbered();
+    c.direct_setup();
+    success(c.cli(0, &["--budget", "reserve", "--ledger", "fixture-ledger.json", "--label", "initialize", "--nodes", "1", "--mpi", "1"], "initialize-ledger"));
+    let path = c.root.join("fixture-ledger.json");
+    let mut ledger: Value = store::read(&path).unwrap();
+    ledger["reservations"] = json!([]);
+    ledger["spent_node_seconds"] = json!(1000000);
+    ledger["limits"]["node_seconds"] = json!(1);
+    ledger["limits"]["storage_bytes"] = json!(1);
+    ledger["legacy_source"] = json!({"storage_actual_bytes": 999999999999u64});
+    store::write(&path, &ledger).unwrap();
+    success(c.numbered_cli(0, &["--stage", "scf", "-s"], None, "submit-over-old-limits"));
+    assert_eq!(c.direct_execute(), 0);
+    success(c.numbered_cli(0, &["--stage", "scf", "-s"], None, "reconcile-over-old-limits"));
+    c.assert_scripts_without_time_limits();
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let summary = epwflow::delivery::budget::ledger_summary(&cfg).unwrap();
+    assert_eq!(summary["limits"], json!({"max_lanes": 2}));
+    assert!(summary["spent_node_seconds"].as_u64().unwrap() >= 1000000);
+    let saved: Value = store::read(&path).unwrap();
+    assert_eq!(saved["limits"], ledger["limits"]);
+    assert_eq!(saved["legacy_source"], ledger["legacy_source"]);
+    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 1);
+}
+
+#[test]
 fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
     let c=Case::numbered(); c.stage_setup();
     success(c.numbered_cli(0,&["--stage","electronic","-s"],None,"numbered-submit"));
@@ -920,7 +972,7 @@ fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
     assert!(!blocked.status.success());
     assert!(c.root.join("run/epw-state/control.lock/owner.json").is_file());
     drop(control);
-    c.numbered_change(|cfg|cfg.resources.wall_seconds=300);
+    c.numbered_change(|cfg|cfg.resources.partition="other".into());
     assert!(!c.numbered_cli(0,&["--stage","electronic","-s","--resume"],None,"numbered-duplicate").status.success());
     assert_eq!(fs::read(&script).unwrap(),before);
     assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(),1);

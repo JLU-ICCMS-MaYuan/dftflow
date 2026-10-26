@@ -7,15 +7,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// epic-0007 授权上限：8 节点小时、100 GiB、最多 2 个运行作业。
-pub const LIMIT_NODE_SECONDS: u64 = 8 * 3600;
-pub const LIMIT_STORAGE_BYTES: u64 = 100 * 1024 * 1024 * 1024;
+/// 保留原有并发登记约束；不限制计算时长或存储空间。
 pub const LIMIT_MAX_LANES: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Limits {
-    node_seconds: u64,
-    storage_bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    node_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    storage_bytes: Option<u64>,
     max_lanes: u32,
 }
 
@@ -53,18 +53,14 @@ pub struct BudgetLedger {
 }
 
 impl BudgetLedger {
-    /// 核对当前分配已经登记且覆盖阶段请求，不创建第二份预留。
+    /// 核对当前分配已经登记，不检查时间／存储额度或创建第二份预留。
     pub fn require_allocation(&self, job: u64, resources: &super::config::Resources) -> Result<String> {
         let allocation = self
             .allocations
             .iter()
             .find(|a| a.job_id == Some(job))
             .context("allocation: 当前 Slurm 分配尚未登记；请先 budget reserve/attach")?;
-        ensure!(
-            allocation.node_seconds >= resources.nodes as u64 * resources.wall_seconds
-                && allocation.storage_bytes >= resources.storage_bytes,
-            "budget_denied: 已登记分配不足以覆盖请求时间或存储"
-        );
+        resources.validate()?;
         Ok(allocation.reservation_id.clone())
     }
 
@@ -73,8 +69,8 @@ impl BudgetLedger {
             schema_version: 1,
             campaign_id: campaign_id.to_string(),
             limits: Limits {
-                node_seconds: LIMIT_NODE_SECONDS,
-                storage_bytes: LIMIT_STORAGE_BYTES,
+                node_seconds: None,
+                storage_bytes: None,
                 max_lanes: LIMIT_MAX_LANES,
             },
             spent_node_seconds: 0,
@@ -126,13 +122,6 @@ impl BudgetLedger {
             .chain(self.allocations.iter().map(|a| a.node_seconds))
             .sum()
     }
-    fn reserved_storage(&self) -> u64 {
-        self.reservations
-            .iter()
-            .map(|r| r.storage_bytes)
-            .chain(self.allocations.iter().map(|a| a.storage_bytes))
-            .sum::<u64>() + self.legacy_storage()
-    }
     fn save(&self, path: &Path) -> Result<()> {
         store::write(path, self)
     }
@@ -154,8 +143,7 @@ impl BudgetLedger {
         let nodes = number(&source["limits"]["node_seconds"])?;
         let storage = number(&source["limits"]["storage_bytes"])?;
         let lanes = number(&source["limits"]["concurrent_jobs"])?;
-        ensure!(nodes > 0 && nodes <= LIMIT_NODE_SECONDS && storage > 0 && storage <= LIMIT_STORAGE_BYTES
-            && lanes > 0 && lanes <= LIMIT_MAX_LANES as u64, "budget_denied: 历史上限不符合原授权");
+        ensure!(lanes > 0 && lanes <= LIMIT_MAX_LANES as u64, "budget_denied: 历史并发上限不符合原约束");
         let spent = number(&source["spent_node_seconds"])?;
         number(&source["storage_actual_bytes"])?;
         let mut ids = std::collections::BTreeSet::new();
@@ -174,7 +162,7 @@ impl BudgetLedger {
         }
         ensure!(total == spent, "budget_denied: 历史累计消费与逐项记录不一致");
         let mut ledger = Self::init(campaign);
-        ledger.limits = Limits { node_seconds: nodes, storage_bytes: storage, max_lanes: lanes as u32 };
+        ledger.limits = Limits { node_seconds: Some(nodes), storage_bytes: Some(storage), max_lanes: lanes as u32 };
         ledger.spent_node_seconds = spent;
         ledger.legacy_source = Some(source);
         Ok(ledger)
@@ -248,36 +236,23 @@ where
     Ok(r)
 }
 
-/// 预留一笔外部参考或阶段资源；恰好达到上限可接受，超限拒绝，不删除数据释放额度。
+/// 登记一笔外部参考或阶段请求；不要求预计时间或存储。
 pub fn reserve(
     ledger: &mut BudgetLedger,
     label: &str,
     nodes: u32,
     mpi: u32,
-    wall_seconds: u64,
-    storage_bytes: u64,
 ) -> Result<String> {
     ensure!(
-        nodes == 1 && (1..=64).contains(&mpi) && (1..=7200).contains(&wall_seconds),
-        "budget_denied: 每作业只允许1节点、1～64 MPI、1～7200秒"
-    );
-    ensure!(storage_bytes > 0, "budget_denied: 必须预留存储");
-    let node_seconds = (nodes as u64) * wall_seconds;
-    ensure!(
-        ledger.spent_node_seconds + ledger.reserved_node_seconds() + node_seconds
-            <= ledger.limits.node_seconds,
-        "budget_denied: 节点时间预留超过授权上限"
-    );
-    ensure!(
-        ledger.reserved_storage().checked_add(storage_bytes).is_some_and(|n| n <= ledger.limits.storage_bytes),
-        "budget_denied: 存储预留超过授权上限"
+        nodes == 1 && (1..=64).contains(&mpi),
+        "budget_denied: 每作业只允许1节点、1～64 MPI"
     );
     let id = store::token();
     ledger.reservations.push(Reservation {
         id: id.clone(),
         label: label.to_string(),
-        node_seconds,
-        storage_bytes,
+        node_seconds: 0,
+        storage_bytes: 0,
     });
     Ok(id)
 }
@@ -317,7 +292,7 @@ pub fn attach(ledger: &mut BudgetLedger, token: &str, job_id: Option<u64>) -> Re
 pub fn reserve_workflow(ledger: &mut BudgetLedger, label: &str, r: &super::config::Resources) -> Result<String> {
     ensure!(ledger.reservations.len() + ledger.allocations.len() < ledger.limits.max_lanes as usize,
         "budget_denied: 已有两个未结算任务；先核对终态并结算");
-    reserve(ledger, label, r.nodes, r.mpi, r.wall_seconds, r.storage_bytes)
+    reserve(ledger, label, r.nodes, r.mpi)
 }
 
 /// 提交回执与计算节点启动可能并发；仅同一 token/作业允许幂等绑定。
@@ -334,7 +309,7 @@ pub fn registered_allocation(ledger: &BudgetLedger, job: u64, r: &super::config:
     ledger.require_allocation(job, r)
 }
 
-/// 仅生成脚本的计算节点入口可自动登记；已有分配仍复用原预留并检查额度。
+/// 仅生成脚本的计算节点入口可自动登记；已有分配仍复用原登记。
 pub fn register_generated(ledger: &mut BudgetLedger, job: u64, r: &super::config::Resources) -> Result<String> {
     if ledger.allocations.iter().any(|a| a.job_id == Some(job)) {
         return registered_allocation(ledger, job, r);
@@ -387,7 +362,7 @@ pub fn status_json(ledger_path: &Path, campaign_id: &str) -> Result<serde_json::
     Ok(serde_json::json!({
         "schema_version": 1,
         "campaign_id": ledger.campaign_id,
-        "limits": {"node_seconds": ledger.limits.node_seconds, "storage_bytes": ledger.limits.storage_bytes, "max_lanes": ledger.limits.max_lanes},
+        "limits": {"max_lanes": ledger.limits.max_lanes},
         "spent_node_seconds": ledger.spent_node_seconds,
         "reserved_node_seconds": ledger.reserved_node_seconds(),
         "lanes": ledger.lanes,

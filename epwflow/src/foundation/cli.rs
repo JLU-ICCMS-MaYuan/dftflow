@@ -154,10 +154,6 @@ pub enum BudgetAction {
         nodes: u32,
         #[arg(long)]
         mpi: u32,
-        #[arg(long = "wall-seconds")]
-        wall_seconds: u64,
-        #[arg(long = "storage-bytes")]
-        storage_bytes: u64,
     },
     Attach {
         #[arg(long)]
@@ -300,11 +296,9 @@ fn budget_cmd(action: Option<BudgetAction>) -> Result<()> {
             label,
             nodes,
             mpi,
-            wall_seconds,
-            storage_bytes,
         }) => {
             let token = budget::with_ledger(&ledger, "epic-0007", |ledger| {
-                budget::reserve(ledger, &label, nodes, mpi, wall_seconds, storage_bytes)
+                budget::reserve(ledger, &label, nodes, mpi)
             })?;
             println!("reserved: token={}", token);
             Ok(())

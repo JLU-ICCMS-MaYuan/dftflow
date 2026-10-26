@@ -332,7 +332,6 @@ mod tests {
         let mut new = cfg.clone();
         new.resources.mpi = 32;
         new.resources.partition = "other".into();
-        new.resources.wall_seconds = 60;
         new.programs.launcher = vec!["mpirun".into(), "-np".into(), "32".into()];
         new.programs.epw.args = vec!["-nk".into(), "32".into()];
         assert_eq!(old, keys(&new));

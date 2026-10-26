@@ -61,31 +61,19 @@ fn actual() -> Result<()> {
     // 本机历史试验仍共用原账本；不得为测试建立零消费的新账本。
     let ledger: serde_json::Value = store::read(&cfg.budget.ledger)?;
     let attempts = ledger["attempts"].as_array().context("缺原共享预算记录")?;
-    let reserved: u64 = attempts
-        .iter()
-        .map(|a| a["reserved_node_seconds"].as_u64().unwrap_or(0))
-        .sum();
     let matching: Vec<_> = attempts
         .iter()
         .filter(|a| a["job_id"].as_u64() == Some(job))
         .collect();
     ensure!(
         ledger["campaign"] == "epic-0007"
-            && ledger["limits"]["node_seconds"] == 28800
             && matching.len() == 1
-            && matching[0]["reserved_node_seconds"].as_u64().unwrap_or(0)
-                >= cfg.resources.wall_seconds
-            && ledger["spent_node_seconds"]
-                .as_u64()
-                .context("缺历史消费")?
-                + reserved
-                <= 28800
             && attempts
                 .iter()
                 .filter(|a| a["reserved_node_seconds"].as_u64().unwrap_or(0) > 0)
                 .count()
                 <= 2,
-        "共享预算未登记本次分配或超限"
+        "共享账本未登记本次分配或并发超限"
     );
     ensure!(!cfg.work_dir.exists(), "目标已存在，禁止覆盖或暗中重试");
     let states = epwflow::qe_data::nscf::parse_xml(&c.nscf_xml.path)?;

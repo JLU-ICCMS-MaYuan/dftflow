@@ -46,31 +46,19 @@ fn allocation(cfg: &Config) -> Result<u64> {
     // 原共享历史账本，不为本项建立新的零消费预算。
     let ledger: serde_json::Value = store::read(&cfg.budget.ledger)?;
     let attempts = ledger["attempts"].as_array().context("缺原共享预算")?;
-    let reserved: u64 = attempts
-        .iter()
-        .map(|a| a["reserved_node_seconds"].as_u64().unwrap_or(0))
-        .sum();
     let matching: Vec<_> = attempts
         .iter()
         .filter(|a| a["job_id"].as_u64() == Some(job))
         .collect();
     ensure!(
         ledger["campaign"] == "epic-0007"
-            && ledger["limits"]["node_seconds"] == 28800
             && matching.len() == 1
-            && matching[0]["reserved_node_seconds"].as_u64().unwrap_or(0)
-                >= cfg.resources.wall_seconds
-            && ledger["spent_node_seconds"]
-                .as_u64()
-                .context("缺历史消费")?
-                + reserved
-                <= 28800
             && attempts
                 .iter()
                 .filter(|a| a["reserved_node_seconds"].as_u64().unwrap_or(0) > 0)
                 .count()
                 <= 2,
-        "共享预算未登记或超限"
+        "共享账本未登记或并发超限"
     );
     Ok(job)
 }
@@ -132,7 +120,7 @@ fn actual(diagnostic: bool) -> Result<()> {
         "求解器、初值、容差或必需能隙温度改变"
     );
     ensure!(
-        cfg.resources.nodes == 1 && cfg.resources.mpi == 24 && cfg.resources.wall_seconds <= 7200,
+        cfg.resources.nodes == 1 && cfg.resources.mpi == 24,
         "超出本次有界分配"
     );
     let job = allocation(&cfg)?;

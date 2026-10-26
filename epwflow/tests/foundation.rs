@@ -1,7 +1,7 @@
 #[path = "support/cli.rs"]
 mod stage_cli;
 use std::{collections::BTreeMap, fs, path::PathBuf, process::{Command, Output}, sync::atomic::{AtomicU64, Ordering}};
-use epwflow::foundation::{environment, state, storage};
+use epwflow::foundation::{environment, state};
 use std::os::unix::fs::PermissionsExt;
 static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Case { root: PathBuf }
@@ -46,32 +46,105 @@ fn legacy_budget_read_is_immutable_and_first_write_preserves_spending_and_eviden
     assert_eq!(s["historical_storage_bytes"],1073741824u64);
     assert_eq!(fs::read(c.root.join("legacy.json")).unwrap(),before);
     assert!(!c.root.join("state").exists());
-    assert!(c.run(&["budget","reserve","--ledger","legacy.json","--label","next","--nodes","1","--mpi","1","--wall-seconds","7200","--storage-bytes","1"]).status.success());
+    assert!(c.run(&["budget","reserve","--ledger","legacy.json","--label","next","--nodes","1","--mpi","1"]).status.success());
     let ledger:serde_json::Value=epwflow::foundation::store::read(&c.root.join("legacy.json")).unwrap();
     assert_eq!(ledger["spent_node_seconds"],400);
     assert_eq!(ledger["legacy_source"],source);
-    assert_eq!(ledger["reservations"][0]["node_seconds"],7200);
+    assert_eq!(ledger["reservations"][0]["node_seconds"],0);
     let token=ledger["reservations"][0]["id"].as_str().unwrap();
     fail(c.run(&["budget","attach","--ledger","legacy.json","--token",token,"--job","101"]),"历史分配已结算");
     assert_eq!(epwflow::foundation::store::read::<serde_json::Value>(&c.root.join("legacy.json")).unwrap(),ledger);
 }
 
 #[test]
-fn legacy_budget_rejects_unknown_reservations_totals_and_storage_reset() {
-    for kind in 0..4 {
+fn legacy_budget_rejects_unknown_reservations_and_inconsistent_totals() {
+    for kind in 0..3 {
         let c=Case::new();let mut source=legacy_budget();
         match kind {
             0=>source["attempts"][0]["state"]=serde_json::json!("RUNNING"),
             1=>source["attempts"][0]["reserved_node_seconds"]=serde_json::json!(7200),
-            2=>source["spent_node_seconds"]=serde_json::json!(399),
-            _=>source["storage_actual_bytes"]=serde_json::json!(107374182400u64),
+            _=>source["spent_node_seconds"]=serde_json::json!(399),
         }
         c.put("legacy.json", &serde_json::to_string(&source).unwrap());
         let before=fs::read(c.root.join("legacy.json")).unwrap();
-        let out=if kind==3 {c.run(&["budget","reserve","--ledger","legacy.json","--label","overflow","--nodes","1","--mpi","1","--wall-seconds","1","--storage-bytes","1"])}
-            else {c.run(&["budget","status","--ledger","legacy.json","--json"])};
+        let out=c.run(&["budget","status","--ledger","legacy.json","--json"]);
         assert!(!out.status.success());
         assert_eq!(fs::read(c.root.join("legacy.json")).unwrap(),before);
+    }
+}
+
+#[test]
+fn removed_resource_fields_are_rejected_with_the_config_path() {
+    for field in ["wall_seconds", "storage_bytes"] {
+        for value in ["0", "9223372036854775807", "'obsolete'", "18446744073709551615"] {
+            let c = Case::new();
+            c.edit("[resources]", &format!("[resources]\n{field} = {value}"));
+            let before = fs::read(c.root.join("input.toml")).unwrap();
+            let out = c.run(&["check", "-c", "input.toml"]);
+            assert!(!out.status.success());
+            let error = String::from_utf8_lossy(&out.stderr);
+            assert!(error.contains("input.toml") && error.contains(field), "{error}");
+            assert!(error.contains(if value == "18446744073709551615" { "number too large" } else { "unknown field" }), "{error}");
+            assert_eq!(before, fs::read(c.root.join("input.toml")).unwrap());
+            assert!(!c.root.join("calls").exists());
+            assert!(!c.root.join("run").exists());
+        }
+    }
+    let c = Case::new();
+    assert!(c.run(&["prepare", "-c", "input.toml"]).status.success());
+    let snap = c.root.join("run/input-init.toml");
+    let text = fs::read_to_string(&snap).unwrap();
+    assert!(!text.contains("wall_seconds") && !text.contains("storage_bytes"));
+    let obsolete = text.replace("[resources]", "[resources]\nwall_seconds = 7200");
+    fs::write(&snap, &obsolete).unwrap();
+    fail(c.run(&["check", "-c", snap.to_str().unwrap()]), "wall_seconds");
+    assert_eq!(obsolete, fs::read_to_string(&snap).unwrap(), "冻结快照不得自动改写");
+}
+
+#[test]
+fn all_public_programs_remove_time_and_storage_cli_options() {
+    for bin in [env!("CARGO_BIN_EXE_epw_phonon"), env!("CARGO_BIN_EXE_epw_wannier"), env!("CARGO_BIN_EXE_epw_superconductivity")] {
+        let c = Case::new();
+        let help = Command::new(bin).arg("--help").output().unwrap();
+        assert!(help.status.success());
+        let text = String::from_utf8_lossy(&help.stdout);
+        for flag in ["--wall-seconds", "--storage-bytes"] {
+            assert!(!text.contains(flag));
+            let out = Command::new(bin).args([flag, "1"]).current_dir(&c.root).output().unwrap();
+            assert!(!out.status.success());
+            assert!(String::from_utf8_lossy(&out.stderr).contains(flag));
+        }
+    }
+}
+
+#[test]
+fn historical_time_and_storage_limits_do_not_deny_registration_or_accounting() {
+    for (time_limit, storage_limit) in [(1, 1), (999999, 999999999999u64), (0, 0)] {
+        let c = Case::new();
+        let mut source = legacy_budget();
+        source["limits"]["node_seconds"] = time_limit.into();
+        source["limits"]["storage_bytes"] = storage_limit.into();
+        source["historical_jobs"][0]["node_seconds"] = 1000000.into();
+        source["spent_node_seconds"] = 1000300.into();
+        source["storage_actual_bytes"] = 9999999999999u64.into();
+        c.put("legacy.json", &serde_json::to_string_pretty(&source).unwrap());
+        let before = fs::read(c.root.join("legacy.json")).unwrap();
+        let st = c.json(&["budget", "status", "--ledger", "legacy.json", "--json"]);
+        assert_eq!(st["limits"], serde_json::json!({"max_lanes": 2}));
+        assert_eq!(fs::read(c.root.join("legacy.json")).unwrap(), before);
+        let out = c.run(&["budget", "reserve", "--ledger", "legacy.json", "--label", "over-old-limit", "--nodes", "1", "--mpi", "1"]);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let token = String::from_utf8(out.stdout).unwrap().trim().strip_prefix("reserved: token=").unwrap().to_string();
+        assert!(c.run(&["budget", "attach", "--ledger", "legacy.json", "--token", &token, "--job", "11"]).status.success());
+        c.script("sacct", "#!/bin/sh\nprintf '11|COMPLETED|100000|1|\\n'\n");
+        assert!(c.run(&["budget", "reconcile", "--ledger", "legacy.json"]).status.success());
+        let st = c.json(&["budget", "status", "--ledger", "legacy.json", "--json"]);
+        assert_eq!(st["spent_node_seconds"], 1100300);
+        assert_eq!(st["lanes"], 0);
+        let saved: serde_json::Value = epwflow::foundation::store::read(&c.root.join("legacy.json")).unwrap();
+        assert_eq!(saved["legacy_source"], source);
+        assert_eq!(saved["limits"]["node_seconds"], time_limit);
+        assert_eq!(saved["limits"]["storage_bytes"], storage_limit);
     }
 }
 
@@ -143,18 +216,17 @@ fn help_and_execution_modes() {
 }
 
 #[test]
-fn budget_reserve_attach_reconcile_and_deny() {
+fn budget_reserve_attach_reconcile_and_reject_duplicate_allocation() {
     let c = Case::new();
     c.script("sacct", "#!/bin/sh\nprintf '11|COMPLETED|120|1|\n11.batch|COMPLETED|120|1|\n'\n");
     let reserved = c.run(&["budget", "reserve", "--ledger", "ledger.json", "--label", "stage-a",
-        "--nodes", "1", "--mpi", "1", "--wall-seconds", "3600", "--storage-bytes", "1024"]);
+        "--nodes", "1", "--mpi", "1"]);
     assert!(reserved.status.success(), "{}", String::from_utf8_lossy(&reserved.stderr));
     let output = String::from_utf8(reserved.stdout).unwrap();
     let id = output.trim().strip_prefix("reserved: token=").unwrap();
     assert!(c.run(&["budget", "attach", "--ledger", "ledger.json", "--token", id, "--job", "11"]).status.success());
-    // 已绑定任务仍保留请求时限的预算；不得在运行状态未知时提前退款。
-    assert!(!c.run(&["budget", "reserve", "--ledger", "ledger.json", "--label", "invalid",
-        "--nodes", "1", "--mpi", "1", "--wall-seconds", "25201", "--storage-bytes", "1024"]).status.success());
+    // 已绑定任务不能重复登记；结算仍依据实际终态而非预计时长。
+    fail(c.run(&["budget", "attach", "--ledger", "ledger.json", "--token", id, "--job", "11"]), "分配已登记");
     assert!(c.run(&["budget", "reconcile", "--ledger", "ledger.json"]).status.success());
     let st = c.json(&["budget", "status", "--ledger", "ledger.json", "--json"]);
     assert_eq!(st["lanes"], 0);
@@ -163,15 +235,6 @@ fn budget_reserve_attach_reconcile_and_deny() {
     let again = c.json(&["budget", "status", "--ledger", "ledger.json", "--json"]);
     assert_eq!(again["spent_node_seconds"], 120);
 
-}
-
-#[test]
-fn storage_monitor_stops_on_limit() {
-    let mut m = storage::StorageMonitor::new(1000);
-    assert!(m.add(500).is_ok());
-    assert!(m.add(600).is_err(), "超出存储上限必须 storage_denied");
-    assert!(m.should_stop(), "超限必须请求停止");
-    assert_eq!(m.peak(), 1100, "必须记录实际峰值");
 }
 
 #[test]
@@ -213,11 +276,11 @@ fn visible_default_budget_registry_preserves_the_old_campaign_binding() {
     let map = serde_json::json!({ledger.to_str().unwrap(): "epic-0007"});
     fs::write(&old, serde_json::to_vec_pretty(&map).unwrap()).unwrap();
     let original = fs::read(&old).unwrap();
-    let args = ["budget", "reserve", "--ledger", "different-ledger.json", "--label", "guard", "--nodes", "1", "--mpi", "1", "--wall-seconds", "1", "--storage-bytes", "1"];
+    let args = ["budget", "reserve", "--ledger", "different-ledger.json", "--label", "guard", "--nodes", "1", "--mpi", "1"];
     let mut cmd = c.cmd(&args);
     cmd.env_remove("EPWFLOW_LOCAL_STATE").env_remove("XDG_STATE_HOME").env("HOME", &home);
     fail(cmd.output().unwrap(), "已登记在其它路径");
-    let mut cmd = c.cmd(&["budget", "reserve", "--ledger", "existing-ledger.json", "--label", "migrate", "--nodes", "1", "--mpi", "1", "--wall-seconds", "1", "--storage-bytes", "1"]);
+    let mut cmd = c.cmd(&["budget", "reserve", "--ledger", "existing-ledger.json", "--label", "migrate", "--nodes", "1", "--mpi", "1"]);
     cmd.env_remove("EPWFLOW_LOCAL_STATE").env_remove("XDG_STATE_HOME").env("HOME", &home);
     let result = cmd.output().unwrap();
     assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));

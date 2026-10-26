@@ -345,10 +345,6 @@ fn b06_unknown_scheduler_preserves_active_allocation() {
         "1",
         "--mpi",
         "1",
-        "--wall-seconds",
-        "60",
-        "--storage-bytes",
-        "1",
     ]);
     assert!(
         out.status.success(),
@@ -674,7 +670,7 @@ fn strict_scheduler_identity_and_accounting() {
 }
 
 #[test]
-fn attached_allocations_still_reserve_shared_budget() {
+fn attached_allocations_still_enforce_existing_concurrency_limit() {
     let c = Case::new();
     let mut tokens = Vec::new();
     for _ in 0..4 {
@@ -688,10 +684,6 @@ fn attached_allocations_still_reserve_shared_budget() {
             "--nodes",
             "1",
             "--mpi",
-            "1",
-            "--wall-seconds",
-            "7200",
-            "--storage-bytes",
             "1",
         ]);
         assert!(
@@ -721,26 +713,14 @@ fn attached_allocations_still_reserve_shared_budget() {
         ])
         .status
         .success());
-    let denied = c.cli(&[
-        "budget",
-        "reserve",
-        "--ledger",
-        "campaign/ledger.json",
-        "--label",
-        "excess",
-        "--nodes",
-        "1",
-        "--mpi",
-        "1",
-        "--wall-seconds",
-        "1",
-        "--storage-bytes",
-        "1",
-    ]);
+    assert!(c.cli(&["budget", "attach", "--ledger", "campaign/ledger.json",
+        "--token", &tokens[1], "--job", "13"]).status.success());
+    let denied = c.cli(&["budget", "attach", "--ledger", "campaign/ledger.json",
+        "--token", &tokens[2], "--job", "14"]);
     assert!(!denied.status.success());
     let ledger: Value = store::read(&c.root.join("campaign/ledger.json")).unwrap();
-    assert_eq!(ledger["allocations"].as_array().unwrap().len(), 1);
-    assert_eq!(ledger["reservations"].as_array().unwrap().len(), 3);
+    assert_eq!(ledger["allocations"].as_array().unwrap().len(), 2);
+    assert_eq!(ledger["reservations"].as_array().unwrap().len(), 2);
 }
 
 #[test]

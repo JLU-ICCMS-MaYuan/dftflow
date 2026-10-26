@@ -277,8 +277,8 @@ pub(super) fn generate_phase_for(config: &Path, until: Boundary, executable_path
     ensure!(!path.exists(), "input_conflict: 已有未登记脚本，保留现场");
     let r = &cfg.resources;
     let quote = slurm::shell_quote;
-    let mut body = format!("#!/bin/bash\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}:{:02}:{:02}\n{}export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\ncd {} || exit $?\n",
-        r.partition, r.nodes, r.mpi, r.wall_seconds / 3600, r.wall_seconds / 60 % 60, r.wall_seconds % 60,
+    let mut body = format!("#!/bin/bash\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n{}export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\ncd {} || exit $?\n",
+        r.partition, r.nodes, r.mpi,
         slurm::log_directives(path.parent().unwrap(), &format!("{}.%j.out", until.name()), &format!("{}.%j.err", until.name())), quote(&b.work_dir.to_string_lossy()));
     if let Some(env) = &cfg.programs.environment_script {
         body.push_str(&source_environment(env)?);
@@ -453,13 +453,6 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
                 &r.nodes.to_string(),
                 "--ntasks",
                 &r.mpi.to_string(),
-                "--time",
-                &format!(
-                    "{}:{:02}:{:02}",
-                    r.wall_seconds / 3600,
-                    r.wall_seconds / 60 % 60,
-                    r.wall_seconds % 60
-                ),
             ])
             .arg(format!("--job-name=epw-{}", record.attempt_id))
             .arg(format!("--comment=epwflow:{}", record.attempt_id))

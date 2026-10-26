@@ -744,7 +744,7 @@ fn prepare_mode(
         "configuration: 脚本功能名称含特殊字符"
     );
     let log = format!("slurm-{purpose}.log");
-    let mut text = format!("#!/bin/bash\n#SBATCH --job-name=epw-{purpose}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n{}#SBATCH --open-mode=truncate\n", r.partition, r.nodes, r.mpi, r.wall_seconds.div_ceil(60), slurm::log_directives(work, &log, &log));
+    let mut text = format!("#!/bin/bash\n#SBATCH --job-name=epw-{purpose}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n{}#SBATCH --open-mode=truncate\n", r.partition, r.nodes, r.mpi, slurm::log_directives(work, &log, &log));
     let mut sources = vec![Identity::capture(&cfg.structure)?];
     sources.extend(
         cfg.pseudos

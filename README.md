@@ -203,6 +203,7 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 新 EPW 配置使用 `layout = "numbered"`、`work_dir = "."` 和根 `input.toml`。
 阶段重算保留编号工作目录本身，只将旧内容归档到 `epw-state/history/`；已经进入目录的终端无需重新 `cd`，当前 Slurm 日志持续可读。
 在工作区根执行 `epw_clear --dry-run` 预览三类历史，`epw_clear --yes` 全部清空；现用计算与结果保留。详见 [清理用法](docs/overview/epwflow/epw_clear.md)。
+EPW 的 `[resources]` 不再接受 `wall_seconds`、`storage_bytes`，新脚本和提交命令不增加时长限制，旧时间／存储预算不再阻断任务；集群自身规则仍由 Slurm 管理。源配置应删除旧字段，冻结快照不手工改写，详见 [资源说明](epwflow/README.md#计算时长与存储)。
 修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。
 `--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
 第 3 步 QE 子任务完成即发布单侧图；第 5 步完成电子能带／总 DOS 对比，第 6 步完成声子谱／TDOS 对比及总览，图片、数据和来源按阶段保存在工作区根 `results/`。

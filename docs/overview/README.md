@@ -24,6 +24,7 @@ DFTFlow 为第一性原理计算准备输入、组织外部求解器和调度任
 - [三种声子模式、dyn0 来源、目录和一次提交链（0006）](qeflow/phonon-workflow.md)。
 - [只用 QE 初始化生成 dyn0](qeflow/qe_ph_nosplit.md) 与 [独立 Rust dyn0 工具](tools/qf-gen-dyn0.md)。 初始化输入和日志的位置见 [文件问答](qeflow/phonon-workflow.md#dyn0-初始化文件问答)。
 - [Rust 架构、平台构建与安装](dftflow-rust.md)。
+- [EPW 资源与作业登记](epwflow/README.md)：程序不再额外限制计算时长和存储空间；保留历史、身份与原有并发检查，集群规则仍由 Slurm 管理。
 - [声子绘图旧入口](qe-phonon-plot.md)、[scflow 旧入口](scflow.md)：保留链接，具体用法由家族页面维护。
 
 - [epwflow 实际拟合外窗、比较诊断与测试数据目录](epwflow/README.md#实际解纠缠外窗与测试目录)：已支持按实际 Wannier 外窗重绘；宽窗缺态和暂缓投影保留；声子新 50／20 门已复核通过，真实 Tc 尚未验收。

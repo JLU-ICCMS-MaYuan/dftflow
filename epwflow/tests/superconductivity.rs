@@ -71,8 +71,6 @@ Si = "{structure}"
 partition = "local"
 nodes = 1
 mpi = 1
-wall_seconds = 60
-storage_bytes = 1048576
 
 [budget]
 campaign_id = "epic-0007"
@@ -533,7 +531,7 @@ fn centikelvin_search_brackets_handles_uncertain_and_detects_inconsistent() {
 }
 
 #[test]
-fn native_stage_requires_existing_sufficient_allocation() {
+fn native_stage_requires_existing_allocation_without_time_or_storage_quota() {
     use epwflow::foundation::budget::BudgetLedger;
     let root = std::env::temp_dir().join(format!("epwflow-f4-budget-{}", store::token()));
     std::fs::create_dir_all(&root).unwrap();
@@ -543,8 +541,8 @@ fn native_stage_requires_existing_sufficient_allocation() {
         "limits":{"node_seconds":28800,"storage_bytes":107374182400_u64,"max_lanes":2},
         "spent_node_seconds":0,"reservations":[],"lanes":1,"storage_roots":[],"revision":0,
         "allocations":[{"reservation_id":"native","job_id":42,
-            "node_seconds":cfg.resources.nodes as u64 * cfg.resources.wall_seconds,
-            "storage_bytes":cfg.resources.storage_bytes}]
+            "node_seconds":7200,
+            "storage_bytes":1048576}]
     });
     let ledger: BudgetLedger = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(
@@ -554,12 +552,12 @@ fn native_stage_requires_existing_sufficient_allocation() {
     assert!(ledger.require_allocation(43, &cfg.resources).is_err());
     value["allocations"][0]["node_seconds"] = 0.into();
     let ledger: BudgetLedger = serde_json::from_value(value.clone()).unwrap();
-    assert!(ledger.require_allocation(42, &cfg.resources).is_err());
+    assert!(ledger.require_allocation(42, &cfg.resources).is_ok());
     value["allocations"][0]["node_seconds"] =
-        (cfg.resources.nodes as u64 * cfg.resources.wall_seconds).into();
+        7200.into();
     value["allocations"][0]["storage_bytes"] = 0.into();
     let ledger: BudgetLedger = serde_json::from_value(value).unwrap();
-    assert!(ledger.require_allocation(42, &cfg.resources).is_err());
+    assert!(ledger.require_allocation(42, &cfg.resources).is_ok());
     std::fs::remove_dir_all(root).unwrap();
 }
 

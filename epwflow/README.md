@@ -8,9 +8,15 @@
 
 历史提交脚本、固定配置和回执保持原字节；新原生任务不再生成 submit.sh 阅读副本。[0044 规格与部署](../docs/specs/0044-mpi-submit-command/spec.md)。
 
+## 计算时长与存储
+
+DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。`[resources]` 只保留 `partition`、`nodes`、`mpi`；`wall_seconds`、`storage_bytes` 已删除，出现旧字段会报出配置文件与字段名。CLI 不再接受 `--wall-seconds` 或 `--storage-bytes`，新脚本及提交命令不添加 `--time`。
+
+从自己维护的源配置中删除两项后再生成新尝试。含旧字段的冻结快照直接拒绝，不要手工修改带哈希快照；历史脚本及已提交作业不会自动变化。账本继续保存历史消费、作业身份和并发登记，历史时间／存储上限不再约束新任务，状态只显示仍生效的并发限制。源码、受测构建与当前安装分别核对，见 [0058](../docs/specs/0058-epw-remove-resource-limits/acceptance.md)。
+
 ## 编号工作区：作业内完成阶段交付
 
-`electronic`、`phonon`、`wannier`、`coarse`、`fine` 及 Tc 目标提交一个有界阶段分配，内部自动补齐目标所需的依赖、原生后处理、核验、已有图形和发布。正常完成后直接查看工作区根 `results/`，无需再次运行公开命令触发绘图，也不自动提交下一物理阶段。第 1／2 步仍保留单原生任务边界。指定温度 `task="gap"` 保留每方法一个原生多温度作业，最后完成的方法发布第 8 步已有图与数据。
+`electronic`、`phonon`、`wannier`、`coarse`、`fine` 及 Tc 目标提交一个阶段分配，内部自动补齐目标所需的依赖、原生后处理、核验、已有图形和发布。正常完成后直接查看工作区根 `results/`，无需再次运行公开命令触发绘图，也不自动提交下一物理阶段。第 1／2 步仍保留单原生任务边界。指定温度 `task="gap"` 保留每方法一个原生多温度作业，最后完成的方法发布第 8 步已有图与数据。
 
 第 3 步两个 QE 子任务各完成即发布；第 5 步完成电子能带和总 DOS 叠图，不等待声子；第 6 步完成声子谱、声子 TDOS 和复用电子数据的总览。流程与恢复见 [0050](../docs/specs/0050-epw-stage-results/quickstart.md)及 [Overview 流程图](../docs/overview/epwflow/workflow.md)。
 
@@ -152,7 +158,7 @@ epw_wannier --stage wannier --resume -s
 
 `comparison/metrics.json` 的 `differences` 分别保存电子路径、电子 DOS 网格、声子路径、声子 DOS 网格最大绝对差值。电子使用共同 Fermi 零点和实际 Outer 比较指标窗；图像另用阶段默认／完整价带显示窗，较少一侧全部匹配较多一侧的有序子集，使平方差之和最小，记录配对与未配对态数；这种能量配对不代表同一本征态。声子以 q2r/matdyn 为 QE 对照，在相同 q 点比较全部 3N 个排序频率，统一 cm⁻¹ 并保留虚频符号。
 
-每项包括坐标、带／排序模式编号和两侧原值；路径最大值标紫，DOS 图注明最大值的网格坐标。无配对时最大值为 null，终端显示“无可配对数据”。差值没有阈值、RMS、评级或告警，也不影响退出码、发布和下游执行。文件、来源、单位、坐标、有限数、预算、原生执行和求解收敛检查继续有效。
+每项包括坐标、带／排序模式编号和两侧原值；路径最大值标紫，DOS 图注明最大值的网格坐标。无配对时最大值为 null，终端显示“无可配对数据”。差值没有阈值、RMS、评级或告警，也不影响退出码、发布和下游执行。文件、来源、单位、坐标、有限数、作业登记、原生执行和求解收敛检查继续有效。
 
 新比较包使用版本 2，四张独立图和总览仍可自包含移动重绘；版本 1 历史包可只读重绘，不补算四项差值。历史工作区、冻结记录和旧报告保持；已有 SCF／NSCF／PH 可通过 `--import-work` 导入新编号工作区，导入不复制抽样参考。默认安装不随源码更新。设计及验证见 [0043](../docs/specs/0043-epw-comparison-max-differences/acceptance.md)，取代 [0040](../docs/specs/0040-interpolation-quality-warnings/spec.md) 的独立核验要求。
 
@@ -217,7 +223,7 @@ sbatch 5.epw-wannier/submit.sh
 
 | 修改 | 更新范围 |
 | --- | --- |
-| MPI、pool、分区、时限 | 只更新后续提交资源，已有相容科学结果保留 |
+| MPI、pool、分区 | 只更新后续提交资源，已有相容科学结果保留 |
 | `interpolation.k_grid/q_grid`，即 nkf／nqf | 第 7、8 步 |
 | Wannier 能窗、初始投影、函数数目 | 第 5～8 步 |
 | `phonon.q_grid`，即粗 nq | PH、声子后处理及第 6～8 步；SCF、NSCF、Wannier 保留 |
@@ -257,7 +263,7 @@ bash scripts/build-native.sh test -p epwflow -p qeflow --locked
 
 构建会先完成本机配置要求的兼容打包与启动检查，活动引用存在时拒绝替换；测试不更新已发布 CLI。详见 [0017](../docs/specs/0017-build-binaries-layout/quickstart.md)。`bin/` 已被 Git 忽略，按 `epwflow`、`qeflow`、`scflow`、`substitutionflow`、`vaspflow`、`wannierflow` 分组。`scripts/env.sh` 将模块路径加入当前终端 PATH，不要求在测试目录寻找可执行文件。
 
-公开进程及脚本测试使用隔离替身，证明调度、布局、复用和数据防护，不认证科学数值。后续授权的真实 MgB₂ PBE 八阶段及 iso／aniso 三温度 gap 已完成，见 [联合验收](../docs/specs/0050-epw-stage-results/real-chain-validation.md)；原生 Tc 搜索不在该轮验收范围。预算、来源保护及原生收敛检查继续有效，历史科学证据见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
+公开进程及脚本测试使用隔离替身，证明调度、布局、复用和数据防护，不认证科学数值。后续授权的真实 MgB₂ PBE 八阶段及 iso／aniso 三温度 gap 已完成，见 [联合验收](../docs/specs/0050-epw-stage-results/real-chain-validation.md)；原生 Tc 搜索不在该轮验收范围。作业登记、来源保护及原生收敛检查继续有效，历史科学证据见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
 
 
 ## 可见运行状态与删除阶段后重建（0025）

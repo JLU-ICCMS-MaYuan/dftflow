@@ -17,8 +17,6 @@ fn charge_budget(cfg: &config::Config, run_id: &str) -> Result<String> {
             &format!("interpolation:{}", run_id),
             r.nodes,
             r.mpi,
-            r.wall_seconds,
-            r.storage_bytes,
         )
     })
     .context("budget_denied: interpolation 预算预留失败")

@@ -237,8 +237,8 @@ fn script(cfg: &Config, dir: &Path, a: &Attempt) -> Result<PathBuf> {
     fs::create_dir_all(dir)?;
     let q = slurm::shell_quote;
     let r = &cfg.resources;
-    let mut text=format!("#!/bin/bash\n#SBATCH --job-name=epw-{}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n{}cd -- {} || exit $?\n",
-        a.target.name(),r.partition,r.nodes,r.mpi,(r.wall_seconds+59)/60,
+    let mut text=format!("#!/bin/bash\n#SBATCH --job-name=epw-{}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n{}cd -- {} || exit $?\n",
+        a.target.name(),r.partition,r.nodes,r.mpi,
         slurm::log_directives(dir, "slurm-%j.out", "slurm-%j.err"),q(&dir.to_string_lossy()));
     if let Some(p) = &cfg.programs.environment_script {
         text.push_str(&super::workflow::source_environment(p)?);
@@ -405,7 +405,7 @@ pub fn start_stage(config: &Path, target: Step, resume: bool) -> Result<()> {
     let q = super::native_jobs::double_quote;
     let r = &cfg.resources;
     ensure!(!r.partition.contains(['\n', '\r']) && !dir.to_string_lossy().contains(['\n', '\r']), "configuration: Slurm 参数含换行");
-    let mut body = format!("#!/bin/bash\n#SBATCH --job-name=epw-{}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n#SBATCH --time={}\n{}#SBATCH --open-mode=truncate\n", target.name(), r.partition, r.nodes, r.mpi, r.wall_seconds.div_ceil(60), slurm::log_directives(&dir, &format!("slurm-{}.log",target.name()), &format!("slurm-{}.log",target.name())));
+    let mut body = format!("#!/bin/bash\n#SBATCH --job-name=epw-{}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n{}#SBATCH --open-mode=truncate\n", target.name(), r.partition, r.nodes, r.mpi, slurm::log_directives(&dir, &format!("slurm-{}.log",target.name()), &format!("slurm-{}.log",target.name())));
     if let Some(env) = &cfg.programs.environment_script {
         body.push_str(&format!("source {} --force\n", q(&env.to_string_lossy())));
     }

@@ -42,7 +42,7 @@ pub struct Programs {
     pub environment_script:Option<PathBuf>, pub wannier90:Option<Program>, pub pw2wannier90:Option<Program>,
     #[serde(default,skip_serializing_if="Option::is_none")] pub postw90:Option<Program>,
 }
-data!(Resources{partition:String,nodes:u32,mpi:u32,wall_seconds:u64,storage_bytes:u64});
+data!(Resources{partition:String,nodes:u32,mpi:u32});
 data!(BudgetConfig{campaign_id:String,ledger:PathBuf});
 data!(Qe{prefix:String,ecutwfc_ry:f64,ecutrho_ry:f64,occupations:Occupations,smearing:Option<Smearing>,degauss_ry:Option<f64>,scf:Scf,nscf:Nscf});
 data!(Scf{k_grid:[u32;3],k_shift:[u32;3],conv_thr_ry:f64});
@@ -95,8 +95,6 @@ impl Resources {
     pub fn validate(&self)->Result<()>{
         ensure!(self.nodes==1,"configuration: resources.nodes: 只允许 1 节点");
         ensure!((1..=64).contains(&self.mpi),"configuration: resources.mpi: 必须在 1..64");
-        ensure!((1..=7200).contains(&self.wall_seconds),"configuration: resources.wall_seconds: 必须在 1..7200");
-        ensure!((1..=107374182400).contains(&self.storage_bytes),"configuration: resources.storage_bytes: 超出 100 GiB");
         ensure!(!self.partition.is_empty() && self.partition.chars().all(|c| c.is_ascii_alphanumeric()||"_-".contains(c)),"configuration: resources.partition: 非法分区");Ok(())
     }
 }
@@ -117,13 +115,13 @@ impl Config {
     fn load_impl(path:&Path,historical:bool)->Result<Self>{
         let path=paths::absolute(&std::env::current_dir()?,path)?;
         let raw=fs::read_to_string(&path).with_context(||format!("configuration: 无法读取 {}",path.display()))?;
-        let mut value:toml::Value=toml::from_str(&raw).context("configuration: TOML 字段/类型错误")?;
+        let mut value:toml::Value=toml::from_str(&raw).with_context(||format!("configuration: {}: TOML 字段/类型错误",path.display()))?;
         if historical {
             if let Some(section)=value.get_mut("interpolation").and_then(toml::Value::as_table_mut) {
                 section.remove("quality");
             }
         }
-        let mut c:Self=value.try_into().context("configuration: TOML 字段/类型错误")?;
+        let mut c:Self=value.try_into().with_context(||format!("configuration: {}: TOML 字段/类型错误",path.display()))?;
         c.validate()?;
         c.resolve(path.parent().context("configuration: 配置缺少父目录")?)?;
         let marker=c.work_dir.join("epw-state/layout.json");

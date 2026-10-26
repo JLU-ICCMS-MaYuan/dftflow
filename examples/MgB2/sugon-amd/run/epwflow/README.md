@@ -168,7 +168,7 @@ results/3.qe-electronic/
 
 阶段数据在本目录按 `1.qe-scf/` 至 `8.epw-superconductivity/` 生成，阶段状态在 `epw-state/`，最终图片与对应数据按阶段发布到同级 `results/`。原生科学文件继续保留在各阶段，续算时不要删除。
 
-共享预算沿用 `docs/local/epwflow-campaign.json`，累计上限 28800 节点秒／100 GiB，同时最多两个作业。新建现场不会清零历史消费；预留不足时由程序明确拒绝。旧 examples 现场已归档到 `test_auto/MgB2/local_run/012-stage-results/example-before-manual/`，不作为本目录当前完成证据。
+共享账本沿用 `docs/local/epwflow-campaign.json`，保留历史消费与最多两个作业的登记约束；时间和存储旧额度不再约束新任务。DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。源配置须删除 `resources.wall_seconds`、`resources.storage_bytes`；含旧字段会明确报错。旧冻结快照和已提交脚本不自动改写，当前安装不随源码自动更新，见 [0058 验收](../../../../../docs/specs/0058-epw-remove-resource-limits/acceptance.md)。旧 examples 现场已归档到 `test_auto/MgB2/local_run/012-stage-results/example-before-manual/`，不作为本目录当前完成证据。
 
 [图片与数据说明](RESULTS.md) · [测试脚本与复现](../../../../../test_auto/MgB2/epwflow/README.md) · [EPW 手册](../../../../../epwflow/README.md)
 
