@@ -55,54 +55,21 @@ impl<'a> QeSettings<'a> {
     }
 
     fn pw_input(&self, outdir: &str, nscf: bool, reference: Option<&[[f64; 3]]>) -> Result<String> {
+        use crate::foundation::native_config::{SCF,NSCF,ELECTRONIC};
+        let task: &[&str] = if reference.is_some() {&[ELECTRONIC,"qe_eband","pw"]} else if nscf {&[NSCF,"pw"]} else {&[SCF,"pw"]};
         let qe = &self.config.qe;
         let mut shared = qf_config::Config::default();
         shared.qe.lattice_mode = Some(qf_config::LATTICE_MODE_CELL_PARAMETERS.into());
         // QE atom_pfile 限制为 80 字节；目录与短相对名共同定位原显式文件。
         shared.pp_dir = Some(self.pseudo_dir.to_str().context("赝势目录不是 UTF-8")?.into());
-        let mut species = String::from("ATOMIC_SPECIES\n");
-        for el in &self.cell.elements {
-            let path = &self.config.pseudos[el];
-            let name = path.strip_prefix(&self.pseudo_dir)?.to_str().context("赝势路径不是 UTF-8")?;
-            ensure!(
-                path.is_absolute() && !name.chars().any(char::is_whitespace),
-                "configuration: QE 赝势卡片需要不含空白的绝对路径；请先固定到受控赝势目录"
-            );
-            species.push_str(&format!(
-                "  {el} {:.4} {}\n",
-                qf_input::species::get_atomic_mass(el, self.config.atomic_masses.get(el).copied()),
-                qf_input::to_qe_value(&json!(name))
-            ));
-        }
-        let mut params = PwParams::default();
-        params.control.insert(
-            "calculation".into(),
-            json!(if nscf { "nscf" } else { "scf" }),
-        );
-        params.control.insert("outdir".into(), json!(outdir));
-        params.system.insert("ecutwfc".into(), json!(qe.ecutwfc_ry));
-        params.system.insert("ecutrho".into(), json!(qe.ecutrho_ry));
-        params
-            .system
-            .insert("occupations".into(), json!(qe.occupations));
-        if let Some(v) = qe.degauss_ry {
-            params.system.insert("degauss".into(), json!(v));
-        }
-        if let Some(v) = &qe.smearing {
-            params.system.insert("smearing".into(), json!(v));
-        }
+        let sections: serde_json::Value=self.config.native_value(task)?;
+        let mut params=PwParams {
+            control: serde_json::from_value(sections["CONTROL"].clone())?,
+            system: serde_json::from_value(sections["SYSTEM"].clone())?,
+            electrons: serde_json::from_value(sections["ELECTRONS"].clone())?,
+        };
+        params.control.insert("outdir".into(),json!(outdir));
         let points = if nscf {
-            params.system.insert("nbnd".into(), json!(qe.nscf.nbnd));
-            // EPW 5.9 allocates symmetry-sized arrays before restoring crystal
-            // symmetries. A nosym NSCF save can therefore cause an out-of-bounds
-            // write in its coarse-grid stage. Keep the crystal metadata and
-            // supply the full explicit mesh below; validate actual output
-            // coverage rather than relying on nosym to establish completeness.
-            params.system.insert("nosym".into(), json!(reference.is_some()));
-            params.system.insert("noinv".into(), json!(reference.is_some()));
-            params
-                .electrons
-                .insert("conv_thr".into(), json!(qe.nscf.conv_thr_ry));
             if let Some(points) = reference {
                 ensure!(!points.is_empty() && points.iter().flatten().all(|v| v.is_finite()),
                     "data_invalid: 常规电子路径点为空或非有限");
@@ -110,18 +77,31 @@ impl<'a> QeSettings<'a> {
                 for p in points { text.push_str(&format!("{:.17e} {:.17e} {:.17e} {:.17e}\n",
                     p[0], p[1], p[2], 1.0 / points.len() as f64)); }
                 text
-            } else { qf_input::pw::uniform_kpoints_text(qe.nscf.k_grid.map(i64::from), true)? }
+            } else { format!("K_POINTS {}\n",self.config.native_value::<String>(&[NSCF,"pw","K_POINTS"])?) }
         } else {
-            params
-                .electrons
-                .insert("conv_thr".into(), json!(qe.scf.conv_thr_ry));
-            let [a, b, c] = qe.scf.k_grid;
-            let [x, y, z] = qe.scf.k_shift;
-            format!("K_POINTS automatic\n  {a} {b} {c} {x} {y} {z}\n")
+            format!("K_POINTS {}\n",self.config.native_value::<String>(&[SCF,"pw","K_POINTS"])?)
         };
-        qf_input::pw::write_pw_input_with_species(
+        let mut card_path=task.to_vec();card_path.push("ATOMIC_SPECIES");
+        let native_species:String=self.config.native_value(&card_path)?;
+        let mut seen=std::collections::BTreeSet::new();
+        for row in native_species.lines().filter(|s|!s.trim().is_empty()) {
+            let columns:Vec<_>=row.split_whitespace().collect();
+            ensure!(columns.len()==3,"configuration: stages.{}: ATOMIC_SPECIES 每行需要三列",task.join("."));
+            let element=columns[0];
+            ensure!(self.cell.elements.iter().any(|el|el==element)&&seen.insert(element),"configuration: stages.{}.ATOMIC_SPECIES: 重复或未知元素 {element}",task.join("."));
+            let mass:f64=columns[1].parse()?;ensure!(mass.is_finite()&&mass>0.,"configuration: stages.{}.ATOMIC_SPECIES: 非法质量",task.join("."));
+            let file=columns[2].trim_matches('\'');
+            ensure!(self.pseudo_dir.join(file).canonicalize()?==self.config.pseudos[element].canonicalize()?,"input_conflict: stages.{}.ATOMIC_SPECIES 的 {element} 赝势 {file} 与 pseudos.{element}={} 不一致",task.join("."),self.config.pseudos[element].display());
+        }
+        ensure!(seen.len()==self.cell.elements.len(),"configuration: stages.{}.ATOMIC_SPECIES: 元素集合不完整",task.join("."));
+        let species=format!("ATOMIC_SPECIES\n{}\n",native_species);
+        let input=qf_input::pw::write_pw_input_with_species(
             &shared, &self.cell, &params, &qe.prefix, &points, 17, &species,
-        )
+        )?;
+        let mut result=self.config.apply_native(task,&input)?;
+        let comments=format!("! 参数来源 stages.{}（物种卡片及 K 点卡片）；结构卡片来自已绑定 POSCAR{}\n",task.join("."),if reference.is_some(){"；路径来自 KPATH 和本阶段工作流"}else{""});
+        result.insert_str(0,&comments);
+        Ok(result)
     }
 
     pub fn scf_input(&self, outdir: &str) -> Result<String> {
@@ -160,12 +140,12 @@ impl<'a> QeSettings<'a> {
         params
     }
 
-    pub fn phonon_init_input(&self, outdir: &str) -> String {
-        qf_input::ph::render_inputph(&self.config.qe.prefix, outdir, &self.ph_params(true))
+    pub fn phonon_init_input(&self, outdir: &str) -> Result<String> {
+        self.config.apply_native(&[&self.config.phonon_stage(),"ph"],&qf_input::ph::render_inputph(&self.config.qe.prefix, outdir, &self.ph_params(true)))
     }
 
-    pub fn phonon_nosplit_input(&self, outdir: &str) -> String {
-        qf_input::ph::render_inputph(&self.config.qe.prefix, outdir, &self.ph_params(false))
+    pub fn phonon_nosplit_input(&self, outdir: &str) -> Result<String> {
+        self.config.apply_native(&[&self.config.phonon_stage(),"ph"],&qf_input::ph::render_inputph(&self.config.qe.prefix, outdir, &self.ph_params(false)))
     }
 
     pub fn phonon_q_input(
@@ -200,6 +180,7 @@ impl<'a> QeSettings<'a> {
                 );
             }
         }
-        Ok(qf_input::ph::render_inputph(&self.config.qe.prefix, outdir, &params) + &tail)
+        let input=qf_input::ph::render_inputph(&self.config.qe.prefix, outdir, &params) + &tail;
+        self.config.apply_native(&[&self.config.phonon_stage(),"q","ph"],&input)
     }
 }

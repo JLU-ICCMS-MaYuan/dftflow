@@ -135,6 +135,7 @@ pub fn bind_native_roles(
         .collect::<Result<Vec<_>>>()?;
     evidence.verify()?;
     Ok(NativeInputs {
+        configured_stages: Some(serde_json::json!({"8.epw-superconductivity":cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::SUPER])?})),
         interpolation_digest: evidence.sha256.clone(),
         prefix: cfg.qe.prefix.clone(),
         k_grid: cfg.interpolation.k_grid,

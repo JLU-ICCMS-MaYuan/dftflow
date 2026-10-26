@@ -1,5 +1,7 @@
 //! 0015：原生 EPW 输出的格式、来源与完整覆盖检查。
 
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
 use epwflow::interpolation::native::{self, NativeSpectrum};
 use std::{fs, process::Command};
 
@@ -165,7 +167,7 @@ fn mori_config() -> epwflow::foundation::config::Config {
     cfg.atomic_masses.insert("B".into(), 10.811);
     cfg.qe.nscf.k_grid = [6; 3];
     cfg.qe.nscf.nbnd = 16;
-    cfg.qe.scf.k_grid = [8; 3];
+    cfg.qe.scf.k_grid = [6; 3];
     cfg.qe.ecutrho_ry = 160.;
     cfg.phonon.q_grid = [3; 3];
     cfg.phonon.tr2_ph = 1e-16;
@@ -190,6 +192,7 @@ fn mori_config() -> epwflow::foundation::config::Config {
     cfg.interpolation.fermi_source = FermiSource::FineFixedElectrons;
     cfg.superconductivity.mu_star = 0.05;
     cfg.superconductivity.frequency_cutoff_ev = 0.5;
+    native_fixture::matrix(&mut cfg);
     cfg
 }
 

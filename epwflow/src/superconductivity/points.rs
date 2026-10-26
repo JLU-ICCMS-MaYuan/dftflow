@@ -33,24 +33,20 @@ pub fn plan(cfg: &Config) -> Result<Vec<Request>> {
         Mode::Aniso => vec![Mode::Aniso],
         Mode::Both => vec![Mode::Iso, Mode::Aniso],
     };
-    modes
-        .into_iter()
-        .flat_map(|mode| {
-            cfg.superconductivity
-                .gap_temperatures_k
-                .iter()
-                .map(move |&t| (mode, t))
-        })
-        .map(|(mode, t)| {
-            Request::from_config(
+    let mut requests=Vec::new();
+    for mode in modes {
+        let settings=cfg.solver_for(mode)?;
+        for &t in &settings.gap_temperatures_k {
+            requests.push(Request::from_config(
                 cfg,
                 mode,
                 SolveKind::Gap,
                 crate::foundation::config::temperature(t, "gap_temperature")?,
-                Some(cfg.superconductivity.initial_gap()),
-            )
-        })
-        .collect()
+                Some(settings.initial_gap()),
+            )?);
+        }
+    }
+    Ok(requests)
 }
 fn same(a: &Request, b: &Request) -> Result<bool> {
     Ok(serde_json::to_value(a)? == serde_json::to_value(b)?)

@@ -250,7 +250,7 @@ pub(crate) fn run(
     let (path, ticks) = path_points(
         kpath,
         &geometry.reciprocal,
-        options.points_per_edge as usize,
+        cfg.native_value::<u32>(&[crate::foundation::native_config::COARSE,"workflow","points_per_edge"])? as usize,
     )?;
     let states = f2.states.as_ref().context("data_invalid: 缺 F2 均匀网格")?;
     let mesh: Vec<_> = states
@@ -417,8 +417,11 @@ pub(crate) fn run(
     let force_file = force.join("reference.fc.xml");
     let dynamical = f2.phonon_files.iter().map(|p|
         Ok((p.q_id,store::hash_file(&p.dyn_file)?))).collect::<Result<Vec<_>>>()?;
+    let onsite:String=cfg.native_value(&[crate::foundation::native_config::COARSE,"workflow","onsite_asr"])?;
+    ensure!(onsite=="gamma_hermitian","configuration: stages.6.epw-coarse.workflow.onsite_asr: 当前只支持 gamma_hermitian");
     let force_key=store::hash_bytes(&serde_json::to_vec(&(
         "gamma-onsite-hermitian-v1",cfg.phonon.mode,&dynamical,
+        cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::COARSE,"comparison","q2r"])? ,
         store::hash_file(&gamma_q.source_dyn0)?,store::hash_file(&q2r.path)?,
         &qe.cell.elements,&cfg.atomic_masses,
     ))?);
@@ -445,6 +448,7 @@ pub(crate) fn run(
                 fs::write(force.join(format!("{}.dyn{}.xml",cfg.qe.prefix,p.q_id)),comparison_asr::qe_xml_records(&comparison_asr::corrected_stars(&fs::read_to_string(&p.dyn_file)?,&gamma_text,geometry.atoms.len())?)?)?;
             }
             fs::write(force.join("q2r.in"),format!("&input\n fildyn='{}.dyn.xml'\n flfrc='reference.fc'\n zasr='no'\n/\n",cfg.qe.prefix))?;
+            cfg.configure_file(&[crate::foundation::native_config::COARSE,"comparison","q2r"],&force.join("q2r.in"))?;
             Ok(())
         },
         || cached_post(work,"q2r",&force_key,&force,"reference.fc.xml",||
@@ -457,6 +461,7 @@ pub(crate) fn run(
     let force_identity = Identity::capture(&force_file)?;
     let frequency_key=store::hash_bytes(&serde_json::to_vec(&(
         "matdyn-no-asr-v1",&force_identity.sha256,&all,&geometry.reciprocal,
+        cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::COARSE,"comparison","matdyn"])? ,
         &qe.cell.elements,&cfg.atomic_masses,store::hash_file(&matdyn.path)?,
     ))?);
     attempt::run_with_inputs(
@@ -489,6 +494,7 @@ pub(crate) fn run(
                 input.push_str(&format!("{:.17e} {:.17e} {:.17e}\n", p[0], p[1], p[2]));
             }
             fs::write(frequency.join("matdyn.in"), input)?;
+            cfg.configure_file(&[crate::foundation::native_config::COARSE,"comparison","matdyn"],&frequency.join("matdyn.in"))?;
             Ok(())
         },
         || {

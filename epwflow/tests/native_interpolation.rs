@@ -1,4 +1,6 @@
 //! F2→F3 原生格式的独立进程交接；数值只用于接口故障注入。
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
 use epwflow::{
     foundation::{
         config::{self, EnergyReference, PhMode, Program},
@@ -117,6 +119,7 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
         cfg.kpath = Some(kpath);
         cfg.comparison = Some(config::Comparison { points_per_edge: 2, electronic_sigma_ev: 0.1, phonon_sigma_cm1: 10. });
     }
+    native_fixture::matrix(&mut cfg);
     let binding = snapshot::prepare(&cfg, &root.join("input.toml")).unwrap();
     qe_data::scheduler::run_registered(
         &binding,
@@ -152,7 +155,7 @@ fn native_pipeline_pairs_new_coarse_and_isolates_smearings() {
     assert!(coarse.fine.is_none() && coarse.spectra.is_empty());
     assert!(!work.join("fine").exists());
     assert!(!work.join("interpolation/manifest.json").exists());
-    assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 1);
+    assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 2);
     assert!(epwflow::superconductivity::source::bind(work, &c.cfg, &coarse).is_err());
     let identity = store::Identity::capture(&work.join("wannier/manifest.json")).unwrap();
     let f3 = interpolation::scheduler::run_fine_registered(
@@ -179,8 +182,8 @@ fn native_pipeline_pairs_new_coarse_and_isolates_smearings() {
         before
     );
     let calls = fs::read_to_string(c.root.join("epw-calls")).unwrap();
-    assert_eq!(calls.lines().count(), 3);
-    assert_eq!(calls.matches("coarse ").count(), 1);
+    assert_eq!(calls.lines().count(), 4);
+    assert_eq!(calls.matches("coarse ").count(), 2);
     assert!(!c.cfg.budget.ledger.exists());
     // 在首个展宽有效时也不能复用未知的粗网格现场。
     assert!(run(&c).is_err());
@@ -200,7 +203,7 @@ fn native_pipeline_failure_preserves_evidence_and_blocks_downstream() {
         let calls = fs::read_to_string(c.root.join("epw-calls")).unwrap();
         assert_eq!(
             calls.lines().count(),
-            if failure.starts_with("fine-") { 2 } else { 1 },
+            if failure.starts_with("fine-") { 3 } else { 2 },
             "{failure}: {err}"
         );
         if failure == "fine-exit" {
@@ -224,7 +227,7 @@ fn energy_window_mismatch_blocks_publication_even_without_comparison_plots() {
         assert!(!c.cfg.work_dir.join("interpolation/manifest.json").exists());
         assert!(!c.cfg.work_dir.join("fine").exists());
         assert!(c.cfg.work_dir.join("coarse/scf.wout").is_file());
-        assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 1);
+        assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 2);
     }
 }
 
@@ -253,7 +256,7 @@ fn fine_rechecks_actual_windows_in_hash_consistent_legacy_coarse_manifest() {
     ).unwrap_err().to_string();
     assert!(error.contains("原生 dis_win_min"), "{error}");
     assert!(!work.join("fine").exists());
-    assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 1);
+    assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 2);
 }
 
 #[test]
@@ -337,11 +340,11 @@ fn automatic_comparison_delivers_stage_two_figures_from_native_path_and_mesh() {
     assert_eq!(source.mesh.len(),8);
     assert!(work.join("comparison-native/phonon/force-constants/reference.fc.xml").is_file());
     let matdyn_input=fs::read_to_string(work.join("comparison-native/phonon/frequencies/matdyn.in")).unwrap();
-    assert!(matdyn_input.contains("flfrc='reference.fc.xml'"));
-    assert!(matdyn_input.contains("asr='no'") && matdyn_input.contains("q_in_band_form=.false."));
+    assert!(matdyn_input.contains("flfrc = 'reference.fc.xml'"));
+    assert!(matdyn_input.contains("asr = 'no'") && matdyn_input.contains("q_in_band_form = .false."));
     let epw = interpolation::native::parse_bands(&fs::read_to_string(&source.epw_bands.path).unwrap()).unwrap();
     assert_eq!(epw.values.len(),14);
-    assert_eq!(calls(&c).lines().filter(|l|l.starts_with("coarse ")).count(),1);
+    assert_eq!(calls(&c).lines().filter(|l|l.starts_with("coarse ")).count(),2);
     assert_eq!(calls(&c).lines().filter(|l|l.starts_with("reread ")).count(),1);
     let qe_calls=fs::read_to_string(c.root.join("scientific-calls")).unwrap();
     assert_eq!(qe_calls.lines().filter(|l|*l=="q2r").count(),1);
@@ -374,7 +377,7 @@ fn automatic_comparison_delivers_stage_two_figures_from_native_path_and_mesh() {
     fs::rename(work.join("results"),&moved).unwrap();
     epwflow::delivery::comparison_plot::plot(&moved,None,&["svg".into()]).unwrap();
     assert_eq!(qe_calls,fs::read_to_string(c.root.join("scientific-calls")).unwrap());
-    assert_eq!(calls(&c).lines().count(),2);
+    assert_eq!(calls(&c).lines().count(),3);
 }
 
 #[test]
@@ -390,7 +393,7 @@ fn automatic_comparison_resume_only_retries_failed_native_task_and_rejects_tampe
     let qe_after=fs::read_to_string(c.root.join("scientific-calls")).unwrap();
     assert_eq!(qe_before.lines().filter(|l|*l=="pw"||l.starts_with("ph")).collect::<Vec<_>>(),
         qe_after.lines().filter(|l|*l=="pw"||l.starts_with("ph")).collect::<Vec<_>>());
-    assert_eq!(calls(&c).lines().count(),2);
+    assert_eq!(calls(&c).lines().count(),3);
     assert!(work.join("native-attempts/history").read_dir().unwrap().any(|e|
         e.unwrap().file_name().to_string_lossy().starts_with("comparison-matdyn-")));
     assert_eq!(qe_before.lines().filter(|l|*l=="q2r").count(),qe_after.lines().filter(|l|*l=="q2r").count());
@@ -415,7 +418,7 @@ fn automatic_comparison_large_differences_allow_fine_without_quality_decisions()
     let fine=interpolation::scheduler::run_fine_registered(&c.cfg,Backend::Local,&[],work).unwrap();
     assert!(fine.validation.all_passed());
     assert!(!fine.spectra.is_empty());
-    assert_eq!(calls(&c).lines().count(),4);
+    assert_eq!(calls(&c).lines().count(),5);
 }
 
 #[test]
@@ -431,7 +434,7 @@ fn failed_coarse_requires_explicit_retry_and_archives_evidence() {
     retry_coarse(&c).unwrap();
     source.verify().unwrap();
     assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(), qe_calls);
-    assert_eq!(calls(&c).lines().count(), 2);
+    assert_eq!(calls(&c).lines().count(), 4);
     let history = c.cfg.work_dir.join("native-attempts/history");
     let archives: Vec<_> = fs::read_dir(history).unwrap().map(|e| e.unwrap().path()).filter(|p| p.is_dir()).collect();
     assert_eq!(archives.len(), 1);
@@ -444,14 +447,14 @@ fn failed_coarse_requires_explicit_retry_and_archives_evidence() {
 fn second_smearing_retry_keeps_first_and_coarse_unchanged() {
     let c = case("fine-second-exit");
     assert!(run(&c).is_err());
-    assert_eq!(calls(&c).lines().count(), 3);
+    assert_eq!(calls(&c).lines().count(), 4);
     let coarse = store::Identity::capture(&c.cfg.work_dir.join("wannier/manifest.json")).unwrap();
     let first = store::Identity::capture(&c.cfg.work_dir.join("fine/smearing-0001/scf.a2f")).unwrap();
     let checkpoint = store::Identity::capture(&c.cfg.work_dir.join("native-attempts/fine-smearing-0001.json")).unwrap();
     fs::write(c.root.join("epw-failure"), "").unwrap();
     let m = retry_fine(&c).unwrap();
     coarse.verify().unwrap(); first.verify().unwrap(); checkpoint.verify().unwrap();
-    assert_eq!(calls(&c).lines().count(), 4);
+    assert_eq!(calls(&c).lines().count(), 5);
     assert_eq!(calls(&c).matches("smearing-0001").count(), 1);
     epwflow::superconductivity::source::bind(&c.cfg.work_dir, &c.cfg, &m).unwrap().verify(config::Mode::Aniso).unwrap();
     let archives: Vec<_> = fs::read_dir(c.cfg.work_dir.join("native-attempts/history")).unwrap().map(|e| e.unwrap().path()).filter(|p| p.is_dir()).collect();

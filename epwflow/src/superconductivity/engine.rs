@@ -48,6 +48,7 @@ fn default_seeds() -> [f64; 2] {
 
 pub struct Engine<'a> {
     cfg: &'a Config,
+    settings: config::Superconductivity,
     source: &'a NativeInputs,
     launcher: &'a [String],
     root: &'a Path,
@@ -66,9 +67,10 @@ impl<'a> Engine<'a> {
         super::solver_config::SolverConfig::from_config(cfg)?;
         ensure!(mode != Mode::Both, "configuration: 每种模式独立搜索");
         source.verify(mode)?;
+        let settings=cfg.solver_for(mode)?;
         let tc = match mode {
-            Mode::Iso => cfg.superconductivity.iso.as_ref(),
-            _ => cfg.superconductivity.aniso.as_ref(),
+            Mode::Iso => settings.iso.as_ref(),
+            _ => settings.aniso.as_ref(),
         }
         .context("configuration: 缺少模式搜索配置")?;
         let id = Identity::capture(&cfg.programs.epw.path)?;
@@ -84,7 +86,7 @@ impl<'a> Engine<'a> {
         } else {
             store::hash_bytes(&serde_json::to_vec(&(
                 source,
-                &cfg.superconductivity,
+                &settings,
                 &cfg.programs.epw,
                 launcher,
                 &id,
@@ -99,10 +101,9 @@ impl<'a> Engine<'a> {
                     && saved.mode == mode
                     && saved.binding_digest == binding_digest
                     && serde_json::to_value(&saved.thresholds)? == serde_json::to_value(tc)?
-                    && saved.initial_gaps_mev == cfg.superconductivity.initial_gaps_mev
+                    && saved.initial_gaps_mev == settings.initial_gaps_mev
                     && saved.gap_temperatures_centikelvin
-                        == cfg
-                            .superconductivity
+                        == settings
                             .gap_temperatures_k
                             .iter()
                             .map(|&t| config::temperature(t, "gap_temperature"))
@@ -157,17 +158,17 @@ impl<'a> Engine<'a> {
                 attempts: vec![],
                 complete: false,
                 reason: None,
-                gap_temperatures_centikelvin: cfg
-                    .superconductivity
+                gap_temperatures_centikelvin: settings
                     .gap_temperatures_k
                     .iter()
                     .map(|&t| config::temperature(t, "gap_temperature"))
                     .collect::<Result<_>>()?,
-                initial_gaps_mev: cfg.superconductivity.initial_gaps_mev,
+                initial_gaps_mev: settings.initial_gaps_mev,
             }
         };
         Ok(Self {
             cfg,
+            settings,
             source,
             launcher,
             root,
@@ -309,8 +310,8 @@ impl<'a> Engine<'a> {
             }
         }
         let tc = match self.result.mode {
-            Mode::Iso => self.cfg.superconductivity.iso.as_ref(),
-            _ => self.cfg.superconductivity.aniso.as_ref(),
+            Mode::Iso => self.settings.iso.as_ref(),
+            _ => self.settings.aniso.as_ref(),
         }
         .unwrap();
         ensure!(
@@ -364,12 +365,12 @@ impl<'a> Engine<'a> {
     }
 
     fn nonlinear(&mut self, t: i64, before: &mut impl FnMut() -> Result<()>) -> Result<Side> {
-        let seeds = self.cfg.superconductivity.initial_gaps_mev;
+        let seeds = self.settings.initial_gaps_mev;
         let a = self.attempt(t, SolveKind::Nonlinear, Some(seeds[0]), before)?;
         let b = self.attempt(t, SolveKind::Nonlinear, Some(seeds[1]), before)?;
         let tc = match self.result.mode {
-            Mode::Iso => self.cfg.superconductivity.iso.as_ref(),
-            _ => self.cfg.superconductivity.aniso.as_ref(),
+            Mode::Iso => self.settings.iso.as_ref(),
+            _ => self.settings.aniso.as_ref(),
         }
         .unwrap();
         super::aniso::classify(

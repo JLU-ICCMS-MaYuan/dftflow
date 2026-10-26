@@ -48,7 +48,8 @@ impl Request {
         temperature: i64,
         seed_mev: Option<f64>,
     ) -> Result<Self> {
-        let sc = &cfg.superconductivity;
+        let settings=cfg.solver_for(mode)?;
+        let sc = &settings;
         let r = Self {
             mode,
             kind,
@@ -159,6 +160,8 @@ impl Request {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeInputs {
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub configured_stages: Option<serde_json::Value>,
     pub interpolation_digest: String,
     pub prefix: String,
     pub k_grid: [u32; 3],
@@ -228,6 +231,21 @@ fn quoted(path: &Path) -> Result<String> {
 }
 
 pub fn render(request: &Request, input: &NativeInputs) -> Result<String> {
+    let text=render_base(request,input)?;
+    configured(request,input,&text)
+}
+pub(crate) fn configured(request:&Request,input:&NativeInputs,text:&str)->Result<String> {
+    let Some(stages)=&input.configured_stages else{return Ok(text.to_owned())};
+    let method=if request.mode==Mode::Iso{"iso"}else{"aniso"};
+    // 恢复只执行固定列表中的剩余温度，Tc 则使用本次已核验搜索请求。
+    // 温度/初值来自请求，不从另一个方法或第七步继承。
+    let mut values=stages.clone();let section=&mut values[crate::foundation::native_config::SUPER][method]["epw"]["INPUTEPW"];
+    for key in ["temps","nstemp"] {section.as_object_mut().unwrap().remove(key);}
+    let derived=&mut values[crate::foundation::native_config::SUPER]["workflow"]["derived"];
+    for key in ["temps","nstemp"] {derived[format!("{method}.epw.INPUTEPW.{key}")]=serde_json::json!("本方法固定温度计划的当前已核验请求/恢复子集");}
+    crate::foundation::native_config::apply(&values,&[crate::foundation::native_config::SUPER,method,"epw"],text)
+}
+pub(crate) fn render_base(request: &Request, input: &NativeInputs) -> Result<String> {
     request.validate()?;
     let iso = request.mode == Mode::Iso;
     let mut s = format!("DFTFlow EPW 5.9 single-temperature solve\n&inputepw\n prefix = '{}'\n outdir = {}\n epwread = .true.\n epbread = .false.\n epwwrite = .false.\n wannierize = .false.\n ep_coupling = .false.\n elph = .false.\n eliashberg = .true.\n liso = {}\n laniso = {}\n tc_linear = {}\n tc_linear_solver = 'lapack'\n limag = .true.\n lreal = .false.\n lpade = .false.\n lacon = .false.\n imag_read = .false.\n fbw = .false.\n positive_matsu = .true.\n gridsamp = 0\n nswi = 0\n nstemp = 1\n temps(1) = {:.2}\n muc = {:.16e}\n wscut = {:.16e}\n nsiter = {}\n conv_thr_iaxis = {:.16e}\n broyden_beta = {:.16e}\n broyden_ndim = {}\n a_gap0 = {:.16e}\n nqstep = {}\n iverbosity = 2\n",

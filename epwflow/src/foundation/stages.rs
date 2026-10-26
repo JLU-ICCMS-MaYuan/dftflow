@@ -100,7 +100,7 @@ fn program(path: &Path) -> Result<Value> {
 /// 参数所有权保持局部：尤其 Wannier 不读取 PH 网格，粗网格不读取细网格。
 pub fn parameters(cfg: &Config, step: Step) -> Result<Value> {
     let qe = &cfg.qe;
-    Ok(match step {
+    let mut value=match step {
         Step::Scf => json!({"structure":store::hash_file(&cfg.structure)?,
             "pseudos":cfg.pseudos.iter().map(|(el,p)| Ok((el.clone(),store::hash_file(p)?))).collect::<Result<BTreeMap<_,_>>>()?,
             "pw":program(&cfg.programs.pw.path)?,"prefix":qe.prefix,"ecutwfc":qe.ecutwfc_ry,"ecutrho":qe.ecutrho_ry,
@@ -118,12 +118,30 @@ pub fn parameters(cfg: &Config, step: Step) -> Result<Value> {
             "epw":program(&cfg.programs.epw.path)?}),
         Step::Fine => {
             let v = serde_json::to_value(&cfg.interpolation)?;
-            json!({"interpolation":v,"epw":program(&cfg.programs.epw.path)?,"temperature":cfg.superconductivity.gap_temperatures_k[0]})
+            json!({"interpolation":v,"epw":program(&cfg.programs.epw.path)?})
         }
         Step::Superconductivity => {
             json!({"solver":cfg.superconductivity,"epw":program(&cfg.programs.epw.path)?})
         }
-    })
+    };
+    let name=match step {
+        Step::Scf=>super::native_config::SCF.to_owned(),Step::Nscf=>super::native_config::NSCF.to_owned(),
+        Step::Electronic=>super::native_config::ELECTRONIC.to_owned(),Step::Phonon=>cfg.phonon_stage(),
+        Step::Wannier=>super::native_config::WANNIER.to_owned(),Step::Coarse=>super::native_config::COARSE.to_owned(),
+        Step::Fine=>super::native_config::FINE.to_owned(),Step::Superconductivity=>super::native_config::SUPER.to_owned(),
+    };
+    let mut native:Value=cfg.native_value(&[&name])?;
+    if step==Step::Wannier {native.as_object_mut().unwrap().remove("electron_dos");}
+    if step==Step::Coarse {native.as_object_mut().unwrap().remove("comparison");}
+    if let Some(workflow)=native.get_mut("workflow").and_then(Value::as_object_mut) {
+        workflow.remove("phonon_sigma_cm1");
+        if step==Step::Coarse {workflow.remove("onsite_asr");}
+        if let Some(derived)=workflow.get_mut("derived").and_then(Value::as_object_mut) {
+            derived.retain(|key,_|!(step==Step::Wannier&&key.starts_with("electron_dos.")) && !(step==Step::Coarse&&key.starts_with("comparison.")));
+        }
+    }
+    value["native"]=native;
+    Ok(value)
 }
 
 pub fn scientific_key(cfg: &Config, step: Step) -> Result<String> {

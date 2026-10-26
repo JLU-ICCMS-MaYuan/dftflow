@@ -33,20 +33,16 @@ fn source_ids(cfg: &Config) -> Result<Vec<Identity>> {
         .map(|f| Identity::capture(&root.join(&f.relative_path)))
         .collect()
 }
-fn input(cfg: &Config) -> String {
-    let sigma = cfg
-        .comparison
-        .clone()
-        .unwrap_or_default()
-        .electronic_sigma_ev
-        / 13.605693122994;
-    format!("&projwfc\n prefix='{}', outdir='./out', filpdos='{}.pdos',\n ngauss=0, degauss={sigma:.15}, Emin=-100, Emax=100, DeltaE=0.01,\n/\n",cfg.qe.prefix,cfg.qe.prefix)
+fn input(cfg: &Config) -> Result<String> {
+    let sigma:f64=cfg.native_value(&[super::native_config::ELECTRONIC,"qe_eledos","projwfc","PROJWFC","degauss"])?;
+    let text=format!("&projwfc\n prefix='{}', outdir='./out', filpdos='{}.pdos',\n ngauss=0, degauss={sigma:.15}, Emin=-100, Emax=100, DeltaE=0.01,\n/\n",cfg.qe.prefix,cfg.qe.prefix);
+    cfg.apply_native(&[super::native_config::ELECTRONIC,"qe_eledos","projwfc"],&text)
 }
 fn key(cfg: &Config, ids: &[Identity]) -> Result<String> {
     let program = post_program(cfg, "projwfc")?;
     Ok(store::hash_bytes(&serde_json::to_vec(&(
         1,
-        input(cfg),
+        input(cfg)?,
         store::hash_file(&program.path)?,
         program.args,
         ids.iter().map(|i| (&i.sha256, i.bytes)).collect::<Vec<_>>(),
@@ -140,7 +136,7 @@ pub fn run(cfg: &Config) -> Result<()> {
             &root.join("decision.json"),
             &serde_json::json!({"decision":"necessary_postprocessing",
             "reason":"缺少与当前状态／展宽相容的原子投影，TDOS 不含分解信息；从已完成 NSCF 波函数求原子投影，不能由 TDOS 或 Wannier 初始轨道恢复元素贡献",
-            "program":post_program(cfg,"projwfc")?,"sources":ids,"input":input(cfg),"recalculate_scf_nscf_ph_wannier_epw":false}),
+            "program":post_program(cfg,"projwfc")?,"sources":ids,"input":input(cfg)?,"recalculate_scf_nscf_ph_wannier_epw":false}),
         )?;
         if !root.join("out").exists() {
             save::copy_tree(&source(cfg), &root.join("out"))?;
@@ -154,11 +150,11 @@ pub fn run(cfg: &Config) -> Result<()> {
                 p.display()
             );
         }
-        fs::write(root.join("projwfc.in"), input(cfg))?;
+        fs::write(root.join("projwfc.in"), input(cfg)?)?;
         store::write(&request, &request_key)?;
     }
     ensure!(
-        fs::read_to_string(root.join("projwfc.in"))? == input(cfg),
+        fs::read_to_string(root.join("projwfc.in"))? == input(cfg)?,
         "input_conflict: projwfc 输入被更改"
     );
     if !native_complete {
@@ -379,7 +375,7 @@ pub fn export(cfg: &Config, out: &Path, fermi: f64) -> Result<()> {
     fs::write(out.join("electronic-pdos.csv"), csv)?;
     store::write(
         &out.join("electronic-pdos.json"),
-        &serde_json::json!({"complete":!elements.is_empty(),"elements":elements.iter().map(|(n,_)|n).collect::<Vec<_>>(),"aggregation":"sum each atom/wfc LDOS once; do not add m components twice","maximum_tdos_projection_residual":maximum,"fermi_ev":fermi,"sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev,"sources":files(cfg)?.iter().map(|p|Identity::capture(p)).collect::<Result<Vec<_>>>()?,"rescale":false,"total_source":"projwfc pdos_tot DOS column when complete; dos.x otherwise","dos_x_reference":Identity::capture(&cfg.work_dir.join("3.qe-electronic/qe_eledos").join(format!("{}.tdos",cfg.qe.prefix)))?}),
+        &serde_json::json!({"complete":!elements.is_empty(),"elements":elements.iter().map(|(n,_)|n).collect::<Vec<_>>(),"aggregation":"sum each atom/wfc LDOS once; do not add m components twice","maximum_tdos_projection_residual":maximum,"fermi_ev":fermi,"sigma_ev":cfg.native_value::<f64>(&[super::native_config::ELECTRONIC,"qe_eledos","projwfc","PROJWFC","degauss"])?*13.605693122994,"sources":files(cfg)?.iter().map(|p|Identity::capture(p)).collect::<Result<Vec<_>>>()?,"rescale":false,"total_source":"projwfc pdos_tot DOS column when complete; dos.x otherwise","dos_x_reference":Identity::capture(&cfg.work_dir.join("3.qe-electronic/qe_eledos").join(format!("{}.tdos",cfg.qe.prefix)))?}),
     )
 }
 

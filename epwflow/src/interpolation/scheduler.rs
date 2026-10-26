@@ -84,21 +84,30 @@ fn run_coarse_stages(
     let f2_manifest_path = crate::foundation::layout::path(&f2_work, "qe-data").join("manifest.json");
     let binding = adapter::bind_f2(&f2_manifest_path, cfg)?;
     let structure = crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
-    let epw_cfg = epw_config::EpwConfig::from_config(cfg)?
+    // 非编号三程序链的计算实体位于 calculations/<id>，采样必须读取该实体的 F2。
+    let mut native_cfg = cfg.clone();
+    if !crate::foundation::layout::enabled(work) {
+        native_cfg.work_dir = f2_work.to_owned();
+    }
+    let epw_cfg = epw_config::EpwConfig::from_config(&native_cfg)?
         .with_fermi(binding.fermi_ev)?
         .with_bands(&binding.eigenvalues)?
         .with_species(&structure.cell.elements)?;
     epw_cfg.window_selection()?;
     epw_cfg.require_window_support()?;
     if charge { charge_budget(cfg, "f3")?; }
-    // EPW 在一次粗网格执行中完成内置 Wannier 化，不另启动不完整的独立链。
+    // 非编号内部调用也分别使用第 5、6 步配置；公开编号链由工作区调度。
     let f2 = crate::qe_data::manifest::QeManifest::load(&f2_manifest_path)?;
     let digest = attempt_digest(cfg, launcher, &[
         store::Identity::capture(&f2_manifest_path)?,
     ], "coarse")?;
     let mut coarse_res = super::attempt::run(work, "coarse", &crate::foundation::layout::path(&work, "coarse"), digest, retry,
         || { coarse::stage_f2(&f2, work)?; coarse::prepare_coarse(&epw_cfg, work) },
-        || coarse::run_epw(&epw_cfg, &crate::foundation::layout::path(&work, "coarse"), "epw_coarse.in", launcher, backend),
+        || {
+            let dir=crate::foundation::layout::path(work,"coarse");
+            if !crate::foundation::layout::enabled(work) {coarse::run_epw(&epw_cfg,&dir,"epw_wannier.in",launcher,backend)?;}
+            coarse::run_epw(&epw_cfg,&dir,"epw_coarse.in",launcher,backend)
+        },
         || coarse::collect_coarse(work, &epw_cfg),
         |r| artifact_evidence(work, &r.artifacts))?;
     f2.verify()?;

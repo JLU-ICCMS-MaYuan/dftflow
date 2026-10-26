@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parent
 kind, *args = sys.argv[1:]
 text = Path(args[args.index('-inp')+1]).read_text() if '-inp' in args else sys.stdin.read()
+text='\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('!'))+'\n'
 def value(name, default=None):
     m = re.search(r'\b'+name+r"\s*=\s*('(?:[^']|'')*'|[^,\n]+)", text, re.I)
     return m.group(1).strip().strip("'") if m else default

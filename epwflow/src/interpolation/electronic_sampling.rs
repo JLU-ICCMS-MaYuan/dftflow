@@ -32,7 +32,7 @@ pub fn plan(cfg: &Config) -> Result<Sampling> {
     let (path, ticks) = automatic_comparison::path_points(
         cfg.kpath.as_ref().context("required: 电子比较需要 KPATH")?,
         &geo.reciprocal,
-        cfg.comparison.clone().unwrap_or_default().points_per_edge as usize,
+        cfg.native_value::<u32>(&[crate::foundation::native_config::WANNIER,"workflow","points_per_edge"])? as usize,
     )?;
     let mesh = states.kpoints.iter().map(|p| geo.crystal(*p)).collect();
     Ok(Sampling {
@@ -54,7 +54,7 @@ fn length(a: [f64; 3], b: [f64; 3], reciprocal: &[[f64; 3]; 3]) -> f64 {
 }
 /// 每个 QE 样本均为某段端点；允许 W90 额外采样，随后按真实坐标提取。
 /// 首段以最短 QE 间隔校准，避免 W90 nint 把短段取成零点。
-pub fn wdata(s: &Sampling) -> Result<Vec<String>> {
+pub fn wdata(s: &Sampling, bands_plot: bool, bands_num_points: u32) -> Result<Vec<String>> {
     let edges: Vec<_> = s
         .path
         .windows(2)
@@ -125,8 +125,8 @@ pub fn wdata(s: &Sampling) -> Result<Vec<String>> {
         }
     }
     let mut data = vec![
-        "bands_plot = true".into(),
-        "bands_num_points = 1".into(),
+        format!("bands_plot = {bands_plot}"),
+        format!("bands_num_points = {bands_num_points}"),
         "begin kpoint_path".into(),
     ];
     for (i, (a, b)) in rows.iter().enumerate() {
@@ -328,7 +328,7 @@ mod tests {
             mesh: vec![[0.25, 0.25, 0.0]],
             reciprocal: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
         };
-        let data = wdata(&s).unwrap();
+        let data = wdata(&s, true, 1).unwrap();
         assert_eq!(data.len(), 7); // 校准、合并路径、网格三段以及四个设置行。
         assert!(data.iter().all(|l| l.len() <= 79));
     }
@@ -359,7 +359,7 @@ mod tests {
             mesh: vec![[0., 0., 0.], [0.25, 0.5, 0.75]],
             reciprocal,
         };
-        let data = wdata(&s).unwrap();
+        let data = wdata(&s, true, 1).unwrap();
         let mut points = vec![];
         let mut reference = 0.;
         for row in &data[3..data.len() - 1] {
@@ -394,7 +394,7 @@ mod tests {
         let path = std::env::var_os("DFTFLOW_0050_REAL_CONFIG").expect("显式配置");
         let cfg = Config::load(Path::new(&path)).unwrap();
         let sampling = plan(&cfg).unwrap();
-        let data = wdata(&sampling).unwrap();
+        let data = wdata(&sampling, true, 1).unwrap();
         eprintln!(
             "path={} mesh={} sampling_wdata={}",
             sampling.path.len(),

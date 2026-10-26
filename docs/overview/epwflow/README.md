@@ -1,5 +1,7 @@
 # epwflow 当前入口与验证边界
 
+2026-10-26，按版本 2 配置清理后完成 PBE MgB₂ 小网格八阶段重算；iso／aniso 的 20／30／40 K 六点均收敛且数据有效，结果包来源和图表检查通过。使用本轮固定的私有构建，默认安装未切换；该结果不构成 Tc 或网格收敛验收。见 [0059 验收](../../specs/0059-epw-native-stage-config/acceptance.md)。
+
 当前编号工作区的阶段作业在内部完成必要后处理、绘图及发布：第 3 步两个 QE 子任务各自交付，第 4 步交付单侧声子及元素 DOS，第 5 步交付电子对比，第 6 步交付实空间衰减图、声子 TDOS／谱和复用电子值的总览。`results/` 与编号目录同级，保存图片、表格、图参和来源，可移动重绘。electronic 到 fine 及 Tc 目标使用阶段分配；gap 保留独立方法作业并由最后完成的方法发布。没有既有图的第 7 步不新增任务。见 [0050 验收](../../specs/0050-epw-stage-results/acceptance.md)，源码行为不等于默认安装已更新或真实科学输出已验收。
 
 先看[完整流程图与续算说明](workflow.md)：八阶段的数据关系、第 6 步内部的比较任务，以及为什么 `--stage fine` 会先补齐 `comparison-native`。该页说明第 5 步电子交付、第 6 步声子交付、共同采样及逐阶段 results。
@@ -38,7 +40,7 @@ DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由
 
 ## 指定温度超导能隙（0049）
 
-`superconductivity.task="gap"` 按 `mode="iso"|"aniso"|"both"` 分组，每种方法一次原生 EPW 多温度执行，`nstemp` 与 `temps(i)` 覆盖配置中的全部温度，支持 1～50 点及非等距列表。每方法批次配置一个 `initial_gap_mev`（缺省 10 meV），后续温度遵循原生 EPW 的能隙续接；不运行 Tc 搜索。省略 `mu_star` 使用 0.13，显式值优先；省略 task 仍保持旧 tc 行为及配置身份。
+`stages."8.epw-superconductivity".workflow.task="gap"` 配合 `mode="iso"|"aniso"|"both"` 分组，每种方法一次原生 EPW 多温度执行。两个方法的 `epw.INPUTEPW` 各自显式填写 `muc`、`gap_edge`、`nstemp`、`temps` 和求解参数；后续温度遵循原生 EPW 能隙续接，不运行 Tc 搜索。选择 `task="tc"` 时保留既有搜索能力。
 
 第 8 步的 `epw_superconductivity --stage superconductivity -s` 一次提交所选方法：both 为两个独立 Slurm 作业，无方法间依赖。每个方法共用 `8.epw-superconductivity/iso-mu<实际值>-<起始温度>-<终止温度>/` 或 `aniso-mu<实际值>-<起始温度>-<终止温度>/`，首尾按配置列表顺序命名，不建温度子目录。每个目录保留原生输入、脚本、日志、各温度 Δ／Z 和不可变尝试快照。
 
@@ -137,7 +139,7 @@ Wannier 配置支持可选布尔值 `guiding_centres`，显式透传原生中心
 
 ## 公开程序及选项
 
-三个阶段程序的外部配置默认 `input.toml`，缺失时兼容读取 `inputepw.toml`，也可由 `-c/--config` 指定；字段属于 epwflow，不能与 qeflow 配置自动混用。完整流程图和命令见[模块手册](../../../epwflow/README.md)。
+三个阶段程序的外部配置默认 `input.toml`，缺失时兼容读取 `inputepw.toml`，也可由 `-c/--config` 指定；仅支持 `schema_version = 2` 的八阶段原生参数协议，旧版不兼容，不提供迁移。字段、单位、独立设置和推导追溯见[原生阶段配置](native-stage-config.md)，不能与 qeflow 配置自动混用。完整流程图和命令见[模块手册](../../../epwflow/README.md)。
 
 | 程序或选项 | 实际行为与限制 |
 | --- | --- |

@@ -1,3 +1,5 @@
+#[path="support/native_fixture.rs"]
+mod native_fixture;
 use epwflow::{
     foundation::config::Config,
     interpolation::epw_config::{EpwConfig, NativeStage},
@@ -10,6 +12,7 @@ fn cfg() -> Config {
     c.wannier.frozen_window_ev = None;
     c.wannier.frozen_max_ev = None;
     c.qe.nscf.nbnd = 4;
+    native_fixture::matrix(&mut c);
     c
 }
 
@@ -37,15 +40,15 @@ fn guiding_centres_is_optional_explicit_and_verified_in_the_native_log() {
 }
 
 #[test]
-fn comparison_defaults_preserve_legacy_binding_and_invalid_sampling_is_rejected() {
+fn comparison_native_sampling_and_invalid_values_are_rejected() {
     let mut c: Config = toml::from_str(include_str!("fixtures/input.toml")).unwrap();
-    assert!(c.comparison.is_none());
+    assert!(c.comparison.is_some());
     assert!(serde_json::to_value(&c).unwrap().get("comparison").is_none());
     c.comparison = Some(Default::default());
     c.validate().unwrap();
     for points in [0,1001] {
         c.comparison.as_mut().unwrap().points_per_edge=points;
-        assert!(format!("{:#}",c.validate().unwrap_err()).contains("comparison.points_per_edge"));
+        assert!(format!("{:#}",c.validate().unwrap_err()).contains("points_per_edge"));
     }
     c.comparison.as_mut().unwrap().points_per_edge=20;
     c.comparison.as_mut().unwrap().electronic_sigma_ev=f64::NAN;
@@ -150,12 +153,12 @@ fn energy_only_uses_four_bounds_and_existing_epw_without_projectability() {
 }
 
 #[test]
-fn energy_only_rejects_target_loss_and_preserves_legacy_config_encoding() {
+fn energy_only_rejects_target_loss_and_preserves_native_config_encoding() {
     let mut c = cfg();
     let old = toml::to_string(&c).unwrap();
-    assert!(!old.contains("selection_mode"));
+    assert!(old.contains("selection_mode"));
     assert!(toml::from_str::<Config>(
-        &old.replace("[wannier]", "[wannier]\nselection_mode = 'unknown'")
+        &old.replace("selection_mode = \"fixed_plus_projectability\"", "selection_mode = 'unknown'")
     )
     .is_err());
     c.wannier.selection_mode = qf_wannier::SelectionMode::EnergyOnly;
@@ -176,7 +179,7 @@ fn energy_only_rejects_target_loss_and_preserves_legacy_config_encoding() {
         .to_string()
         .contains("目标窗"));
     c.wannier.frozen_window_ev = Some([-0.5, 0.5]);
-    c.interpolation.fsthick_ev = 0.6;
+    c.set_native(&["5.epw-wannier", "epw", "INPUTEPW", "fsthick"], serde_json::json!(0.6)).unwrap();
     let ec = EpwConfig::from_config(&c)
         .unwrap()
         .with_fermi(0.)

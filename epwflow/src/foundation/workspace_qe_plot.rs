@@ -133,7 +133,7 @@ pub fn electronic(cfg: &Config, leaf: &str) -> Result<()> {
     })?;
     let names=request.outputs.iter().map(|p|p.file_name().unwrap().to_string_lossy().into_owned()).collect::<Vec<_>>();
     super::stage_results::publish(cfg,Step::Electronic,leaf,&request.dir,&names,
-        serde_json::json!({"kind":leaf,"fermi_source":"NSCF","fermi_ev":nscf::parse_xml(&nscf_xml(cfg))?.fermi,"sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev}),request.sources)?;
+        serde_json::json!({"kind":leaf,"fermi_source":"NSCF","fermi_ev":nscf::parse_xml(&nscf_xml(cfg))?.fermi,"sigma_ev":cfg.native_value::<f64>(&[super::native_config::ELECTRONIC,"qe_eledos","dos","DOS","degauss"])?*13.605693122994}),request.sources)?;
     pdos
 }
 

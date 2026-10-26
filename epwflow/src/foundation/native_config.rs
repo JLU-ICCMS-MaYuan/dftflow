@@ -1,0 +1,1423 @@
+//! 版本 2 的外部配置；运行时类型只适配既有科学算法，不是另一种配置格式。
+use super::config::{self, RuntimeConfig};
+use anyhow::{bail, ensure, Context, Result};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::{json, Value};
+use std::{
+    collections::BTreeMap,
+    ops::{Deref, DerefMut},
+    path::PathBuf,
+};
+
+pub const SCF: &str = "1.qe-scf";
+pub const NSCF: &str = "2.qe-nscf";
+pub const ELECTRONIC: &str = "3.qe-electronic";
+pub const WANNIER: &str = "5.epw-wannier";
+pub const COARSE: &str = "6.epw-coarse";
+pub const FINE: &str = "7.epw-fine";
+pub const SUPER: &str = "8.epw-superconductivity";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Document {
+    pub schema_version: u32,
+    pub work_dir: PathBuf,
+    pub outdir: PathBuf,
+    pub structure: PathBuf,
+    pub pseudos: BTreeMap<String, PathBuf>,
+    pub programs: config::Programs,
+    pub resources: config::Resources,
+    pub budget: config::BudgetConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kpath: Option<PathBuf>,
+    pub stages: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub(crate) runtime: RuntimeConfig,
+    document: Document,
+}
+impl Deref for Config {
+    type Target = RuntimeConfig;
+    fn deref(&self) -> &RuntimeConfig {
+        &self.runtime
+    }
+}
+impl DerefMut for Config {
+    fn deref_mut(&mut self) -> &mut RuntimeConfig {
+        &mut self.runtime
+    }
+}
+impl<'de> Deserialize<'de> for Config {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        let document = Document::deserialize(d)?;
+        ensure_version(document.schema_version).map_err(serde::de::Error::custom)?;
+        let runtime = decode(&document).map_err(serde::de::Error::custom)?;
+        Ok(Self { runtime, document })
+    }
+}
+impl Serialize for Config {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        self.document()
+            .map_err(serde::ser::Error::custom)?
+            .serialize(s)
+    }
+}
+fn ensure_version(version: u32) -> Result<()> {
+    ensure!(
+        version == 2,
+        "unsupported_version: 仅支持 schema_version = 2，不兼容旧配置"
+    );
+    Ok(())
+}
+fn at<'a>(v: &'a Value, path: &[&str]) -> Result<&'a Value> {
+    let mut node = v;
+    for name in path {
+        node = node
+            .get(*name)
+            .with_context(|| format!("configuration: stages.{}: 缺少必填参数", path.join(".")))?;
+    }
+    Ok(node)
+}
+fn get<T: serde::de::DeserializeOwned>(v: &Value, path: &[&str]) -> Result<T> {
+    serde_json::from_value(at(v, path)?.clone())
+        .with_context(|| format!("configuration: stages.{}: 参数类型错误", path.join(".")))
+}
+fn optional<T: serde::de::DeserializeOwned>(v: &Value, path: &[&str]) -> Result<Option<T>> {
+    let mut node = v;
+    for name in path {
+        let Some(next) = node.get(*name) else {
+            return Ok(None);
+        };
+        node = next;
+    }
+    Ok(Some(serde_json::from_value(node.clone()).with_context(
+        || format!("configuration: stages.{}: 参数类型错误", path.join(".")),
+    )?))
+}
+fn put(v: &mut Value, path: &[&str], value: Value) {
+    let (last, parents) = path.split_last().unwrap();
+    let mut node = v;
+    for name in parents {
+        if !node.get(*name).is_some_and(Value::is_object) {
+            node[*name] = json!({});
+        }
+        node = &mut node[*name];
+    }
+    if value.is_null() {
+        if let Some(o) = node.as_object_mut() {
+            o.remove(*last);
+        }
+    } else {
+        node[*last] = value;
+    }
+}
+fn stages(d: &Document) -> Value {
+    serde_json::to_value(&d.stages).expect("阶段配置已由 serde 校验")
+}
+fn ph_name(d: &Document) -> Result<String> {
+    let names: Vec<_> = d
+        .stages
+        .keys()
+        .filter(|s| s.starts_with("4.qe-phonon-"))
+        .cloned()
+        .collect();
+    ensure!(
+        names.len() == 1,
+        "configuration: stages: 必须且只能设置一种 4.qe-phonon-nosplit/index/coords 阶段"
+    );
+    ensure!(
+        [
+            "4.qe-phonon-nosplit",
+            "4.qe-phonon-index",
+            "4.qe-phonon-coords"
+        ]
+        .contains(&names[0].as_str()),
+        "configuration: stages.{}: 未知声子模式",
+        names[0]
+    );
+    Ok(names[0].clone())
+}
+fn pw_grid(v: &Value, stage: &str) -> Result<([u32; 3], [u32; 3])> {
+    let text: String = get(v, &[stage, "pw", "K_POINTS"])?;
+    let mut rows = text.lines().filter(|row| !row.trim().is_empty());
+    let kind = rows
+        .next()
+        .context("configuration: K_POINTS 卡片为空")?
+        .trim();
+    if kind == "automatic" {
+        ensure!(stage!=NSCF,"configuration: stages.{NSCF}.pw.K_POINTS: 需要显式 crystal 完整均匀网格，不能使用 automatic 的对称性约化");
+        let nums = rows
+            .flat_map(str::split_whitespace)
+            .map(str::parse::<u32>)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        ensure!(
+            nums.len() == 6,
+            "configuration: stages.{stage}.pw.K_POINTS: automatic 需要六个整数"
+        );
+        return Ok(([nums[0], nums[1], nums[2]], [nums[3], nums[4], nums[5]]));
+    }
+    ensure!(
+        kind == "crystal",
+        "configuration: stages.{stage}.pw.K_POINTS: 当前支持 automatic(SCF) 或完整 crystal 网格"
+    );
+    let count: usize = rows
+        .next()
+        .context("configuration: K_POINTS 缺少点数")?
+        .trim()
+        .parse()?;
+    let points = rows
+        .map(|row| {
+            row.split_whitespace()
+                .map(str::parse::<f64>)
+                .collect::<std::result::Result<Vec<_>, _>>()
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    ensure!(
+        count > 0
+            && points.len() == count
+            && points
+                .iter()
+                .all(|p| p.len() == 4 && p.iter().all(|x| x.is_finite()) && p[3] > 0.),
+        "configuration: stages.{stage}.pw.K_POINTS: 点数/坐标/权重无效"
+    );
+    let mut axes: [Vec<f64>; 3] = std::array::from_fn(|_| Vec::new());
+    for p in &points {
+        for i in 0..3 {
+            let x = p[i].rem_euclid(1.);
+            if !axes[i].iter().any(|v| (v - x).abs() < 1e-9) {
+                axes[i].push(x);
+            }
+        }
+    }
+    let dims = axes.map(|mut a| {
+        a.sort_by(f64::total_cmp);
+        a
+    });
+    let grid = std::array::from_fn(|i| dims[i].len() as u32);
+    ensure!(
+        grid.iter().map(|n| *n as usize).product::<usize>() == count,
+        "configuration: stages.{stage}.pw.K_POINTS: 不是完整直积网格"
+    );
+    for axis in &dims {
+        for (i, x) in axis.iter().enumerate() {
+            ensure!(
+                (*x - i as f64 / axis.len() as f64).abs() <= 1e-8,
+                "configuration: stages.{stage}.pw.K_POINTS: 网格必须均匀且零位移"
+            );
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for p in points {
+        let index: [i64; 3] =
+            std::array::from_fn(|i| (p[i].rem_euclid(1.) * grid[i] as f64).round() as i64);
+        ensure!(
+            seen.insert(index),
+            "configuration: stages.{stage}.pw.K_POINTS: 重复点"
+        );
+    }
+    Ok((grid, [0; 3]))
+}
+
+fn grid(v: &Value, path: &[&str], prefix: &str) -> Result<[u32; 3]> {
+    let mut r = [0; 3];
+    for (i, x) in r.iter_mut().enumerate() {
+        let name = format!("{prefix}{}", i + 1);
+        let mut p = path.to_vec();
+        p.push(&name);
+        *x = get(v, &p)?;
+    }
+    Ok(r)
+}
+fn solver(
+    v: &Value,
+    mode: &str,
+    task: config::SuperconductivityTask,
+) -> Result<config::Superconductivity> {
+    let p = at(v, &[SUPER, mode, "epw", "INPUTEPW"])?;
+    let workflow = at(v, &[SUPER, "workflow"])?;
+    Ok(config::Superconductivity {
+        task,
+        mode: get(workflow, &["mode"])?,
+        mu_star: get(p, &["muc"])?,
+        frequency_cutoff_ev: get(p, &["wscut"])?,
+        max_iterations: get(p, &["nsiter"])?,
+        convergence_relative: get(p, &["conv_thr_iaxis"])?,
+        mixing_beta: get(p, &["broyden_beta"])?,
+        mixing_history: get(p, &["broyden_ndim"])?,
+        initial_shape: get(p, &["a_gap0"])?,
+        initial_gap_mev: if task == config::SuperconductivityTask::Gap {
+            Some(get::<f64>(p, &["gap_edge"])? * 1000.)
+        } else {
+            None
+        },
+        initial_gaps_mev: optional::<[f64; 2]>(workflow, &["initial_gaps"])?
+            .map(|v| v.map(|x| x * 1000.))
+            .unwrap_or([0.; 2]),
+        gap_temperatures_k: get(p, &["temps"])?,
+        spectrum_index: get(workflow, &["spectrum_index"])?,
+        iso: optional(workflow, &["iso"])?,
+        aniso: optional(workflow, &["aniso"])?,
+    })
+}
+
+/// 已由原生格式生成器产生的数据与文件路径，只能通过已登记的推导规则进入输入。
+pub fn apply(v: &Value, task: &[&str], input: &str) -> Result<String> {
+    let clean = input
+        .lines()
+        .filter(|line| !line.starts_with("! 参数来源 "))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    let input = clean.as_str();
+    let call = at(v, task)?
+        .as_object()
+        .context("configuration: 原生程序配置必须是表")?;
+    let stage = task[0];
+    let derived = at(v, &[stage, "workflow", "derived"])?
+        .as_object()
+        .context("configuration: workflow.derived 必须是表")?;
+    let task_name = task[1..].join(".");
+    let assignment = regex::Regex::new(r"(?i)([a-z_][a-z_0-9]*(?:\s*\(\s*\d+\s*\))?)\s*=")?;
+    let sections = regex::Regex::new(r"(?im)^\s*&([a-z_][a-z_0-9]*)\b")?;
+    let mut output = String::new();
+    let mut provenance = Vec::new();
+    let mut end = 0;
+    for section in sections.captures_iter(input) {
+        let start = section.get(0).unwrap();
+        if start.start() < end {
+            continue;
+        }
+        let name = section[1].to_uppercase();
+        let mut quote = None;
+        let mut stop = None;
+        let mut mask = vec![true; input.len() - start.end()];
+        for (i, c) in input[start.end()..].char_indices() {
+            if let Some(q) = quote {
+                mask[i] = false;
+                if c == q {
+                    quote = None;
+                }
+            } else if c == '\'' || c == '"' {
+                quote = Some(c);
+                mask[i] = false;
+            } else if c == '/' {
+                stop = Some(start.end() + i);
+                break;
+            }
+        }
+        let stop = stop.with_context(|| format!("data_invalid: {name} 原生输入缺少结束符"))?;
+        let body = &input[start.end()..stop];
+        let found: Vec<_> = assignment
+            .captures_iter(body)
+            .filter(|c| mask[c.get(0).unwrap().start()])
+            .collect();
+        let mut original = BTreeMap::new();
+        for (i, c) in found.iter().enumerate() {
+            let key = c[1].replace(' ', "");
+            let finish = found
+                .get(i + 1)
+                .map_or(body.len(), |n| n.get(0).unwrap().start());
+            let value = body[c.get(0).unwrap().end()..finish]
+                .trim()
+                .trim_end_matches(',')
+                .trim()
+                .to_string();
+            ensure!(
+                original.insert(key.to_lowercase(), value).is_none(),
+                "data_invalid: {name} 原生参数重复 {}",
+                &c[1]
+            );
+        }
+        let settings = call
+            .get(&name)
+            .and_then(Value::as_object)
+            .with_context(|| {
+                format!(
+                    "configuration: stages.{}.{}: 缺少原生输入段",
+                    task.join("."),
+                    name
+                )
+            })?;
+        let mut result = BTreeMap::new();
+        for (key, value) in settings {
+            ensure!(
+                key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),
+                "configuration: stages.{}.{name}.{key}: 非法原生参数名",
+                task.join(".")
+            );
+            let location = format!("{task_name}.{name}.{key}");
+            ensure!(
+                !derived.contains_key(&location),
+                "configuration: stages.{stage}.{location}: 手填与 workflow.derived 双重定义"
+            );
+            if let Some(values) = value.as_array() {
+                for (n, value) in values.iter().enumerate() {
+                    result.insert(format!("{}({})", key, n + 1), qf_input::to_qe_value(value));
+                }
+            } else {
+                result.insert(key.to_lowercase(), qf_input::to_qe_value(value));
+            }
+            provenance.push(format!("! 参数来源 stages.{stage}.{location}"));
+        }
+        for (key, value) in original {
+            let base = key.split('(').next().unwrap();
+            let location = format!("{task_name}.{name}.{base}");
+            if let Some(rule) = derived.get(&location) {
+                ensure!(
+                    !settings.keys().any(|k| k.eq_ignore_ascii_case(base)),
+                    "configuration: stages.{stage}.{location}: 推导与原生值重复"
+                );
+                result.insert(key.clone(), value);
+                provenance.push(format!(
+                    "! 参数来源 stages.{stage}.workflow.derived.{location}: {rule}; {key}"
+                ));
+            } else {
+                ensure!(result.contains_key(&key) || (key == base && settings.contains_key(base)),"configuration: stages.{stage}.{location}: 实际输入包含未配置且未登记推导的科学参数");
+            }
+        }
+        output.push_str(&input[end..start.start()]);
+        output.push_str(&format!("&{}\n", &section[1]));
+        let mut parameters = result.into_iter().collect::<Vec<_>>();
+        // 原生数组按数字下标输出，保持卡片/路径等数组正文的阅读顺序。
+        let order = |name: &str| -> (String, usize) {
+            let (base, index) = name.split_once('(').map_or((name, 0), |(base, index)| {
+                (base, index.trim_end_matches(')').parse().unwrap_or(0))
+            });
+            (base.to_owned(), index)
+        };
+        parameters.sort_by_key(|(name, _)| order(name));
+        for (key, value) in parameters {
+            output.push_str(&format!(" {key} = {value}\n"));
+        }
+        output.push_str("/\n");
+        end = stop + 1;
+        if input.as_bytes().get(end) == Some(&b'\n') {
+            end += 1;
+        }
+    }
+    ensure!(end > 0, "data_invalid: 原生输入没有 namelist");
+    output.push_str(&input[end..]);
+    provenance.sort();
+    provenance.dedup();
+    let first = sections
+        .find(&output)
+        .context("data_invalid: 缺少输入段")?
+        .start();
+    output.insert_str(first, &(provenance.join("\n") + "\n"));
+    Ok(output)
+}
+
+impl Config {
+    pub fn write_parameter_map(&self, path: &std::path::Path) -> Result<()> {
+        fn flatten(value: &Value, path: String, rows: &mut Vec<Value>) {
+            if let Some(object) = value.as_object() {
+                for (key, value) in object {
+                    flatten(value, format!("{path}.{key}"), rows);
+                }
+            } else {
+                rows.push(json!({"configuration":path,"value":value}));
+            }
+        }
+        let mut rows = vec![];
+        flatten(&self.stage_document()?, "stages".into(), &mut rows);
+        super::store::write(
+            path,
+            &json!({"schema_version":2,"parameters":rows,"units":"各原生程序的单位，见配置注释和参数契约","structure":super::store::Identity::capture(&self.structure)?}),
+        )
+    }
+    pub fn apply_native(&self, task: &[&str], input: &str) -> Result<String> {
+        apply(&self.stage_document()?, task, input)
+    }
+    pub fn configure_file(&self, task: &[&str], path: &std::path::Path) -> Result<()> {
+        let input = std::fs::read_to_string(path)?;
+        let text = self.apply_native(task, &input)?;
+        std::fs::write(path, &text)?;
+        super::store::write(
+            &path.with_extension("parameters.json"),
+            &json!({"schema_version":1,"configuration":format!("stages.{}",task.join(".")),"input":super::store::Identity::capture(path)?,"configured":at(&self.stage_document()?,task)?,"derived":at(&self.stage_document()?,&[task[0],"workflow","derived"])?}),
+        )
+    }
+}
+fn decode(d: &Document) -> Result<RuntimeConfig> {
+    let v = stages(d);
+    let ph = ph_name(d)?;
+    let (scf_grid, shift) = pw_grid(&v, SCF)?;
+    let (nscf_grid, nscf_shift) = pw_grid(&v, NSCF)?;
+    ensure!(
+        nscf_shift == [0; 3],
+        "configuration: stages.{NSCF}.pw.K_POINTS: EPW 完整均匀 NSCF 需要零位移"
+    );
+    let species: String = get(&v, &[SCF, "pw", "ATOMIC_SPECIES"])?;
+    let mut masses = BTreeMap::new();
+    for row in species.lines().filter(|s| !s.trim().is_empty()) {
+        let p: Vec<_> = row.split_whitespace().collect();
+        ensure!(
+            p.len() == 3,
+            "configuration: stages.{SCF}.pw.ATOMIC_SPECIES: 每行需要元素、质量、赝势文件"
+        );
+        ensure!(
+            masses
+                .insert(p[0].to_owned(), p[1].parse::<f64>()?)
+                .is_none(),
+            "configuration: stages.{SCF}.pw.ATOMIC_SPECIES: 重复元素"
+        );
+    }
+    let bounds = |a: &str, b: &str| -> Result<Option<[f64; 2]>> {
+        match (
+            optional::<f64>(&v, &[WANNIER, "wannier90", a])?,
+            optional::<f64>(&v, &[WANNIER, "wannier90", b])?,
+        ) {
+            (None, None) => Ok(None),
+            (Some(x), Some(y)) => Ok(Some([x, y])),
+            _ => bail!("configuration: stages.{WANNIER}.wannier90.{a}/{b}: 必须成对指定"),
+        }
+    };
+    let fine = at(&v, &[FINE, "epw", "INPUTEPW"])?;
+    let fine_wf = at(&v, &[FINE, "workflow"])?;
+    let task = get(&v, &[SUPER, "workflow", "task"])?;
+    let mode: config::Mode = get(&v, &[SUPER, "workflow", "mode"])?;
+    let sc = solver(
+        &v,
+        if mode == config::Mode::Aniso {
+            "aniso"
+        } else {
+            "iso"
+        },
+        task,
+    )?;
+    let comparison = config::Comparison {
+        points_per_edge: get(&v, &[ELECTRONIC, "workflow", "points_per_edge"])?,
+        electronic_sigma_ev: get(
+            &v,
+            &[WANNIER, "electron_dos", "postw90", "dos_smr_fixed_en_width"],
+        )?,
+        phonon_sigma_cm1: get(&v, &[&ph, "workflow", "phonon_sigma_cm1"])?,
+    };
+    Ok(RuntimeConfig {
+        schema_version: 2,
+        work_dir: d.work_dir.clone(),
+        outdir: d.outdir.clone(),
+        structure: d.structure.clone(),
+        pseudos: d.pseudos.clone(),
+        programs: d.programs.clone(),
+        resources: d.resources.clone(),
+        budget: d.budget.clone(),
+        layout: d.layout.clone(),
+        kpath: d.kpath.clone(),
+        atomic_masses: masses,
+        comparison: Some(comparison),
+        qe: config::Qe {
+            prefix: get(&v, &[SCF, "pw", "CONTROL", "prefix"])?,
+            ecutwfc_ry: get(&v, &[SCF, "pw", "SYSTEM", "ecutwfc"])?,
+            ecutrho_ry: get(&v, &[SCF, "pw", "SYSTEM", "ecutrho"])?,
+            occupations: get(&v, &[SCF, "pw", "SYSTEM", "occupations"])?,
+            smearing: optional(&v, &[SCF, "pw", "SYSTEM", "smearing"])?,
+            degauss_ry: optional(&v, &[SCF, "pw", "SYSTEM", "degauss"])?,
+            scf: config::Scf {
+                k_grid: scf_grid,
+                k_shift: shift,
+                conv_thr_ry: get(&v, &[SCF, "pw", "ELECTRONS", "conv_thr"])?,
+            },
+            nscf: config::Nscf {
+                k_grid: nscf_grid,
+                nbnd: get(&v, &[NSCF, "pw", "SYSTEM", "nbnd"])?,
+                conv_thr_ry: get(&v, &[NSCF, "pw", "ELECTRONS", "conv_thr"])?,
+            },
+        },
+        phonon: config::Phonon {
+            mode: serde_json::from_value(json!(ph.rsplit('-').next().unwrap()))?,
+            q_grid: grid(&v, &[&ph, "ph", "INPUTPH"], "nq")?,
+            tr2_ph: get(&v, &[&ph, "ph", "INPUTPH", "tr2_ph"])?,
+        },
+        wannier: config::Wannier {
+            selection_mode: get(&v, &[WANNIER, "workflow", "selection_mode"])?,
+            guiding_centres: optional(&v, &[WANNIER, "wannier90", "guiding_centres"])?,
+            num_wann: get(&v, &[WANNIER, "wannier90", "num_wann"])?,
+            projections: get(&v, &[WANNIER, "wannier90", "projections"])?,
+            exclude_bands: get(&v, &[WANNIER, "wannier90", "exclude_bands"])?,
+            energy_reference: config::EnergyReference::QeZero,
+            outer_window_ev: bounds("dis_win_min", "dis_win_max")?,
+            frozen_window_ev: if optional::<f64>(&v, &[WANNIER, "wannier90", "dis_froz_min"])?
+                .is_some()
+            {
+                bounds("dis_froz_min", "dis_froz_max")?
+            } else {
+                None
+            },
+            frozen_max_ev: if optional::<f64>(&v, &[WANNIER, "wannier90", "dis_froz_min"])?
+                .is_none()
+            {
+                optional(&v, &[WANNIER, "wannier90", "dis_froz_max"])?
+            } else {
+                None
+            },
+            localization: config::Convergence {
+                max_iterations: get(&v, &[WANNIER, "wannier90", "num_iter"])?,
+                tolerance_angstrom2: get(&v, &[WANNIER, "wannier90", "conv_tol"])?,
+                window_iterations: get(&v, &[WANNIER, "wannier90", "conv_window"])?,
+            },
+            disentanglement: Some(config::Convergence {
+                max_iterations: get(&v, &[WANNIER, "wannier90", "dis_num_iter"])?,
+                tolerance_angstrom2: get(&v, &[WANNIER, "wannier90", "dis_conv_tol"])?,
+                window_iterations: get(&v, &[WANNIER, "wannier90", "dis_conv_window"])?,
+            }),
+        },
+        interpolation: config::Interpolation {
+            k_grid: grid(fine, &[], "nkf")?,
+            q_grid: grid(fine, &[], "nqf")?,
+            electron_smearing: match get::<i32>(&v, &[FINE, "epw", "INPUTEPW", "ngaussw"])? {
+                0 => config::Smearing::Gaussian,
+                1 => config::Smearing::Mp,
+                -1 => config::Smearing::Mv,
+                -99 => config::Smearing::Fd,
+                _ => bail!("configuration: stages.{FINE}.epw.INPUTEPW.ngaussw: 不支持的展宽"),
+            },
+            degaussw_ev: get(&v, &[FINE, "epw", "INPUTEPW", "degaussw"])?,
+            phonon_smearings_mev: {
+                let mut smearings = vec![get(&v, &[FINE, "epw", "INPUTEPW", "degaussq"])?];
+                if let Some(tasks) = v[FINE].get("spectra").and_then(Value::as_object) {
+                    for task in tasks.values() {
+                        smearings.push(get(task, &["epw", "INPUTEPW", "degaussq"])?);
+                    }
+                }
+                smearings
+            },
+            spectral_points: get(&v, &[FINE, "epw", "INPUTEPW", "nqstep"])?,
+            fsthick_ev: get(&v, &[FINE, "epw", "INPUTEPW", "fsthick"])?,
+            eps_acoustic_cm1: get(&v, &[FINE, "epw", "INPUTEPW", "eps_acoustic"])?,
+            fermi_source: get(fine_wf, &["fermi_source"])?,
+        },
+        superconductivity: sc,
+    })
+}
+
+fn validate_node(node: &Value, path: &str) -> Result<()> {
+    let object = node
+        .as_object()
+        .with_context(|| format!("configuration: {path}: 需要配置表"))?;
+    let allowed=match path.rsplit('.').next().unwrap_or("") {
+        "CONTROL"=>Some("calculation prefix outdir pseudo_dir verbosity tstress tprnfor disk_io restart_mode wf_collect nstep"),
+        "SYSTEM"=>Some("ibrav nat ntyp nbnd ecutwfc ecutrho occupations smearing degauss nosym noinv force_symmorphic use_all_frac"),
+        "ELECTRONS"=>Some("conv_thr electron_maxstep mixing_beta mixing_ndim mixing_mode diagonalization diago_thr_init diago_david_ndim startingpot startingwfc scf_must_converge"),
+        "INPUTPH"=>Some("prefix outdir tr2_ph ldisp only_init lqdir recover only_wfc fildyn fildvscf nq1 nq2 nq3 start_q last_q alpha_mix nmix_ph niter_ph trans epsil amass verbosity"),
+        "BANDS"=>Some("prefix outdir filband lsym no_overlap lp plot_2d"),
+        "DOS"=>Some("prefix outdir fildos ngauss degauss Emin Emax DeltaE bz_sum"),
+        "PROJWFC"=>Some("prefix outdir filpdos filproj ngauss degauss Emin Emax DeltaE lsym pawproj lwrite_overlaps diag_basis kresolveddos"),
+        "INPUT"=>Some("fildyn flfrc zasr asr flfrq fldos q_in_cryst_coord q_in_band_form dos ndos nk1 nk2 nk3 amass loto_2d write_lr read_lr"),
+        "INPUTEPW"=>Some("prefix outdir dvscf_dir ep_coupling elph etf_mem nbndsub iverbosity amass nk1 nk2 nk3 nq1 nq2 nq3 nkf1 nkf2 nkf3 nqf1 nqf2 nqf3 fsthick degaussw degaussq nqstep nqsmear delta_qsmear eps_acoustic elecselfen phonselfen a2f ngaussw efermi_read fermi_energy epwread epwwrite epbread wannierize ephwrite eliashberg band_plot num_iter proj bands_skipped wdata dis_win_min dis_win_max dis_froz_min dis_froz_max selecqread filkf filqf liso laniso mp_mesh_k nstemp temps tc_linear tc_linear_solver limag lreal lpade lacon imag_read fbw positive_matsu gridsamp nswi muc wscut nsiter conv_thr_iaxis conv_thr_raxis broyden_beta broyden_ndim a_gap0 gap_edge fila2f"),
+        "wannier90"=>Some("num_wann num_iter conv_tol conv_window dis_num_iter dis_conv_tol dis_conv_window guiding_centres projections exclude_bands bands_plot bands_num_points dis_proj_min dis_proj_max dis_froz_proj dis_win_min dis_win_max dis_froz_min dis_froz_max"),
+        "postw90"=>Some("write_hr write_bvec bands_plot dos num_elec_per_state dos_kmesh dos_energy_min dos_energy_max dos_energy_step dos_adpt_smr dos_smr_fixed_en_width dos_smr_type fermi_energy"),
+        _=>None,
+    };
+    if let Some(allowed) = allowed {
+        for (key, value) in object {
+            ensure!(
+                allowed.split_whitespace().any(|k| k == key),
+                "configuration: {path}.{key}: 未知或当前流程不支持的原生参数"
+            );
+            validate_parameter(key, value, &format!("{path}.{key}"))?;
+        }
+        return Ok(());
+    }
+    if path.ends_with(".spectra") {
+        for (name, task) in object {
+            ensure!(
+                !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+                "configuration: {path}.{name}: 非法子任务名"
+            );
+            validate_node(task, &format!("{path}.{name}"))?;
+        }
+        return Ok(());
+    }
+    for (key, value) in object {
+        if key == "workflow" {
+            let workflow = value
+                .as_object()
+                .with_context(|| format!("configuration: {path}.workflow: 必须是表"))?;
+            for (name, item) in workflow {
+                ensure!(
+                    [
+                        "derived",
+                        "points_per_edge",
+                        "phonon_sigma_cm1",
+                        "fermi_source",
+                        "selection_mode",
+                        "onsite_asr",
+                        "task",
+                        "mode",
+                        "spectrum_index",
+                        "initial_gaps",
+                        "iso",
+                        "aniso"
+                    ]
+                    .contains(&name.as_str()),
+                    "configuration: {path}.workflow.{name}: 未知工作流设置"
+                );
+                if name == "derived" {
+                    for (target, rule) in item
+                        .as_object()
+                        .context("configuration: workflow.derived 必须是表")?
+                    {
+                        let field = target.rsplit('.').next().unwrap();
+                        ensure!(["outdir","pseudo_dir","ibrav","nat","ntyp","fildyn","flfrc","flfrq","fldos","filband","fildos","filpdos","dvscf_dir","fermi_energy","proj","bands_skipped","wdata","dis_win_min","dis_win_max","dis_froz_min","dis_froz_max","dos_energy_min","dos_energy_max","start_q","last_q","gap_edge","tc_linear","fila2f"].contains(&field),"configuration: {path}.workflow.derived.{target}: 不是允许自动推导的参数");
+                        ensure!(
+                            rule.as_str().is_some_and(|s| !s.trim().is_empty()),
+                            "configuration: {path}.workflow.derived.{target}: 缺少推导来源"
+                        );
+                    }
+                }
+            }
+        } else if key == "K_POINTS" || key == "ATOMIC_SPECIES" {
+            ensure!(
+                path.ends_with(".pw") && value.is_string(),
+                "configuration: {path}.{key}: 需要 PW 原生卡片文本"
+            );
+        } else {
+            ensure!(
+                [
+                    "pw",
+                    "spectra",
+                    "ph",
+                    "q2r",
+                    "matdyn",
+                    "dos",
+                    "projwfc",
+                    "bands",
+                    "epw",
+                    "wannier90",
+                    "postw90",
+                    "qe_eband",
+                    "qe_eledos",
+                    "q",
+                    "dispersion",
+                    "comparison",
+                    "electron_dos",
+                    "iso",
+                    "aniso",
+                    "CONTROL",
+                    "SYSTEM",
+                    "ELECTRONS",
+                    "INPUTPH",
+                    "INPUT",
+                    "BANDS",
+                    "DOS",
+                    "PROJWFC",
+                    "INPUTEPW"
+                ]
+                .contains(&key.as_str()),
+                "configuration: {path}.{key}: 未知阶段任务或输入段"
+            );
+            validate_node(value, &format!("{path}.{key}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_parameter(key: &str, value: &Value, path: &str) -> Result<()> {
+    let booleans = "tstress tprnfor wf_collect nosym noinv force_symmorphic use_all_frac scf_must_converge ldisp only_init lqdir recover only_wfc trans epsil lsym no_overlap lp plot_2d pawproj lwrite_overlaps diag_basis kresolveddos q_in_cryst_coord q_in_band_form dos loto_2d write_lr read_lr ep_coupling elph elecselfen phonselfen a2f efermi_read epwread epwwrite epbread wannierize ephwrite eliashberg band_plot selecqread liso laniso mp_mesh_k tc_linear limag lreal lpade lacon imag_read fbw positive_matsu guiding_centres dis_froz_proj write_hr write_bvec bands_plot dos_adpt_smr";
+    let strings = "calculation prefix outdir pseudo_dir verbosity disk_io restart_mode occupations smearing mixing_mode diagonalization startingpot startingwfc fildyn fildvscf filband fildos bz_sum filpdos filproj flfrc zasr asr flfrq fldos dvscf_dir bands_skipped filkf filqf fila2f dos_smr_type tc_linear_solver";
+    let integers = "nstep ibrav nat ntyp nbnd electron_maxstep mixing_ndim diago_david_ndim nq1 nq2 nq3 start_q last_q nmix_ph niter_ph ngauss ndos nk1 nk2 nk3 etf_mem nbndsub iverbosity nkf1 nkf2 nkf3 nqf1 nqf2 nqf3 nqstep nqsmear ngaussw num_iter nstemp gridsamp nswi nsiter broyden_ndim num_wann conv_window dis_num_iter dis_conv_window num_elec_per_state bands_num_points";
+    let is = |list: &str| list.split_whitespace().any(|s| s == key);
+    let valid = if is(booleans) {
+        value.is_boolean()
+    } else if is(strings) {
+        value
+            .as_str()
+            .is_some_and(|s| !s.contains(['\n', '\r', '\0']))
+    } else if is(integers) {
+        value.as_i64().is_some()
+    } else if ["amass", "temps", "alpha_mix"].contains(&key) {
+        value
+            .as_array()
+            .is_some_and(|a| !a.is_empty() && a.iter().all(Value::is_number))
+    } else if ["projections", "proj", "wdata"].contains(&key) {
+        value.as_array().is_some_and(|a| {
+            a.iter()
+                .all(|s| s.as_str().is_some_and(|s| !s.contains(['\n', '\r', '\0'])))
+        })
+    } else if key == "exclude_bands" {
+        value
+            .as_array()
+            .is_some_and(|a| a.iter().all(|n| n.as_u64().is_some_and(|n| n > 0)))
+    } else if key == "dos_kmesh" {
+        value
+            .as_array()
+            .is_some_and(|a| a.len() == 3 && a.iter().all(|n| n.as_u64().is_some_and(|n| n > 0)))
+    } else {
+        value.is_number()
+    };
+    ensure!(valid, "configuration: {path}: 原生参数类型错误");
+    Ok(())
+}
+
+impl Config {
+    pub fn validate_native(&self) -> Result<()> {
+        ensure_version(self.schema_version)?;
+        let v = self.stage_document()?;
+        let ph = self.phonon_stage();
+        let expected = [
+            SCF,
+            NSCF,
+            ELECTRONIC,
+            ph.as_str(),
+            WANNIER,
+            COARSE,
+            FINE,
+            SUPER,
+        ];
+        for key in v
+            .as_object()
+            .context("configuration: stages 必须是表")?
+            .keys()
+        {
+            ensure!(
+                expected.contains(&key.as_str()),
+                "configuration: stages.{key}: 未知阶段"
+            );
+        }
+        for name in expected {
+            at(&v, &[name])?;
+        }
+        fn finite(value: &Value, path: &str) -> Result<()> {
+            match value {
+                Value::Null => bail!("configuration: {path}: 空值或非有限数"),
+                Value::Number(n) => ensure!(
+                    n.as_f64().is_some_and(f64::is_finite),
+                    "configuration: {path}: 非有限数"
+                ),
+                Value::String(s) => ensure!(
+                    !s.contains(['\0', '\r']),
+                    "configuration: {path}: 非法控制字符"
+                ),
+                Value::Array(a) => {
+                    for (i, x) in a.iter().enumerate() {
+                        finite(x, &format!("{path}[{i}]"))?;
+                    }
+                }
+                Value::Object(o) => {
+                    for (k, x) in o {
+                        finite(x, &format!("{path}.{k}"))?;
+                    }
+                }
+                _ => (),
+            };
+            Ok(())
+        }
+        finite(&v, "stages")?;
+        for (name, stage) in v.as_object().unwrap() {
+            validate_node(stage, &format!("stages.{name}"))?;
+        }
+        for stage in [SCF, NSCF] {
+            let calculation: String = get(&v, &[stage, "pw", "CONTROL", "calculation"])?;
+            ensure!(
+                calculation == if stage == SCF { "scf" } else { "nscf" },
+                "configuration: stages.{stage}.pw.CONTROL.calculation: 与阶段定义不符"
+            );
+            let cut: f64 = get(&v, &[stage, "pw", "SYSTEM", "ecutwfc"])?;
+            let rho: f64 = get(&v, &[stage, "pw", "SYSTEM", "ecutrho"])?;
+            ensure!(
+                cut > 0. && rho >= cut,
+                "configuration: stages.{stage}.pw.SYSTEM.ecutwfc/ecutrho: 非法截断能"
+            );
+        }
+        // 重复参数只做约束检查，不把上游值写入下游配置。
+        for task in [
+            vec![SCF, "pw"],
+            vec![NSCF, "pw"],
+            vec![ELECTRONIC, "qe_eband", "pw"],
+        ] {
+            let system = at(&v, &[task.as_slice(), &["SYSTEM"]].concat())?;
+            let occ: String = get(system, &["occupations"])?;
+            if occ == "smearing" {
+                get::<String>(system, &["smearing"])?;
+                config::positive(
+                    get(system, &["degauss"])?,
+                    &format!("stages.{}.SYSTEM.degauss", task.join(".")),
+                )?;
+            } else {
+                ensure!(
+                    occ == "fixed"
+                        && system.get("degauss").is_none()
+                        && system.get("smearing").is_none(),
+                    "configuration: stages.{}.SYSTEM.occupations: 占据与展宽字段冲突",
+                    task.join(".")
+                );
+            }
+        }
+        for (name, stage) in v.as_object().unwrap() {
+            let rules = at(stage, &["workflow", "derived"])?
+                .as_object()
+                .context("configuration: 推导表缺失")?;
+            for target in rules.keys() {
+                let mut cursor = stage;
+                let mut present = true;
+                for key in target.split('.') {
+                    if let Some(n) = cursor.get(key) {
+                        cursor = n;
+                    } else {
+                        present = false;
+                        break;
+                    }
+                }
+                ensure!(!present,"configuration: stages.{name}.{target}: 手填与 stages.{name}.workflow.derived.{target} 双重定义");
+            }
+        }
+        let prefix: String = get(&v, &[SCF, "pw", "CONTROL", "prefix"])?;
+        let same = |path: &[&str], expected: Value, source: &str| -> Result<()> {
+            let actual = at(&v, path)?;
+            ensure!(
+                *actual == expected,
+                "input_conflict: stages.{}={} 与 {source}={} 不一致",
+                path.join("."),
+                actual,
+                expected
+            );
+            Ok(())
+        };
+        // 下游叠图复用第 3 步点位，分别声明并核对，不能暗中继承。
+        for stage in [WANNIER, COARSE] {
+            same(
+                &[stage, "workflow", "points_per_edge"],
+                at(&v, &[ELECTRONIC, "workflow", "points_per_edge"])?.clone(),
+                &format!("stages.{ELECTRONIC}.workflow.points_per_edge（同一电子参考路径）"),
+            )?;
+        }
+        same(
+            &[WANNIER, "epw", "INPUTEPW", "num_iter"],
+            at(&v, &[WANNIER, "wannier90", "num_iter"])?.clone(),
+            &format!("stages.{WANNIER}.wannier90.num_iter（同一次内嵌拟合）"),
+        )?;
+        same(
+            &[WANNIER, "wannier90", "bands_plot"],
+            json!(true),
+            "当前电子比较交付契约",
+        )?;
+        same(
+            &[WANNIER, "wannier90", "bands_num_points"],
+            json!(1),
+            "共同点位路径校准规则",
+        )?;
+        same(
+            &[NSCF, "pw", "CONTROL", "prefix"],
+            json!(prefix),
+            &format!("stages.{SCF}.pw.CONTROL.prefix"),
+        )?;
+        for task in [
+            vec![ELECTRONIC, "qe_eband", "pw", "CONTROL", "prefix"],
+            vec![ELECTRONIC, "qe_eband", "bands", "BANDS", "prefix"],
+            vec![ELECTRONIC, "qe_eledos", "dos", "DOS", "prefix"],
+            vec![ELECTRONIC, "qe_eledos", "projwfc", "PROJWFC", "prefix"],
+            vec![&ph, "ph", "INPUTPH", "prefix"],
+            vec![SUPER, "iso", "epw", "INPUTEPW", "prefix"],
+            vec![SUPER, "aniso", "epw", "INPUTEPW", "prefix"],
+        ] {
+            same(
+                &task,
+                json!(prefix),
+                &format!("stages.{SCF}.pw.CONTROL.prefix（读取同一数据集）"),
+            )?;
+        }
+        same(
+            &[&ph, "ph", "INPUTPH", "only_init"],
+            json!(self.phonon.mode != config::PhMode::Nosplit),
+            "声子拆分模式",
+        )?;
+        if self.phonon.mode != config::PhMode::Nosplit {
+            same(
+                &[&ph, "q", "ph", "INPUTPH", "prefix"],
+                json!(prefix),
+                &format!("stages.{SCF}.pw.CONTROL.prefix"),
+            )?;
+            same(
+                &[&ph, "q", "ph", "INPUTPH", "only_init"],
+                json!(false),
+                "逐 q 实际响应计算",
+            )?;
+            same(
+                &[&ph, "q", "ph", "INPUTPH", "ldisp"],
+                json!(self.phonon.mode == config::PhMode::Index),
+                "声子点来源模式",
+            )?;
+        }
+        for (stage, flags) in [
+            (
+                WANNIER,
+                vec![("wannierize", true), ("epwread", false), ("elph", false)],
+            ),
+            (
+                COARSE,
+                vec![("wannierize", false), ("epwread", false), ("elph", true)],
+            ),
+            (
+                FINE,
+                vec![
+                    ("wannierize", false),
+                    ("epwread", true),
+                    ("ephwrite", true),
+                    ("liso", false),
+                    ("laniso", false),
+                ],
+            ),
+        ] {
+            for (key, flag) in flags {
+                same(
+                    &[stage, "epw", "INPUTEPW", key],
+                    json!(flag),
+                    "当前阶段原生执行契约",
+                )?;
+            }
+        }
+        for stage in [WANNIER, COARSE, FINE] {
+            same(
+                &[stage, "epw", "INPUTEPW", "prefix"],
+                json!(prefix),
+                &format!("stages.{SCF}.pw.CONTROL.prefix"),
+            )?;
+            for (base, grid, source) in [
+                (
+                    "nk",
+                    self.qe.nscf.k_grid,
+                    format!("stages.{NSCF}.pw.K_POINTS"),
+                ),
+                (
+                    "nq",
+                    self.phonon.q_grid,
+                    format!("stages.{ph}.ph.INPUTPH.nq1/nq2/nq3"),
+                ),
+            ] {
+                if stage == WANNIER && base == "nq" {
+                    continue;
+                }
+                for (i, n) in grid.iter().enumerate() {
+                    same(
+                        &[stage, "epw", "INPUTEPW", &format!("{base}{}", i + 1)],
+                        json!(n),
+                        &source,
+                    )?;
+                }
+            }
+            same(
+                &[stage, "epw", "INPUTEPW", "nbndsub"],
+                json!(self.wannier.num_wann),
+                &format!("stages.{WANNIER}.wannier90.num_wann"),
+            )?;
+        }
+        for stage in [WANNIER, COARSE, FINE] {
+            let masses: Vec<f64> = get(&v, &[stage, "epw", "INPUTEPW", "amass"])?;
+            ensure!(
+                masses.len() == self.atomic_masses.len()
+                    && masses.iter().all(|m| m.is_finite() && *m > 0.),
+                "configuration: stages.{stage}.epw.INPUTEPW.amass: 需要按结构物种顺序的正质量数组"
+            );
+        }
+        if let Some(tasks) = v[FINE].get("spectra").and_then(Value::as_object) {
+            for (name, task) in tasks {
+                for key in [
+                    "nkf1",
+                    "nkf2",
+                    "nkf3",
+                    "nqf1",
+                    "nqf2",
+                    "nqf3",
+                    "fsthick",
+                    "degaussw",
+                    "ngaussw",
+                    "efermi_read",
+                    "epwread",
+                    "ephwrite",
+                    "wannierize",
+                ] {
+                    let actual = at(task, &["epw", "INPUTEPW", key])?;
+                    let expected = at(&v, &[FINE, "epw", "INPUTEPW", key])?;
+                    ensure!(actual==expected,"input_conflict: stages.{FINE}.spectra.{name}.epw.INPUTEPW.{key}={actual} 与 stages.{FINE}.epw.INPUTEPW.{key}={expected} 不符：同一原生矩阵绑定");
+                }
+            }
+        }
+        let nk = self.native_value::<u32>(&[FINE, "epw", "INPUTEPW", "nstemp"])?;
+        let temps = self.native_value::<Vec<f64>>(&[FINE, "epw", "INPUTEPW", "temps"])?;
+        ensure!(
+            nk as usize == temps.len() && nk > 0,
+            "configuration: stages.{FINE}.epw.INPUTEPW.nstemp/temps: 长度不符"
+        );
+        for mode in [config::Mode::Iso, config::Mode::Aniso] {
+            let name = if mode == config::Mode::Iso {
+                "iso"
+            } else {
+                "aniso"
+            };
+            let s = self.solver_for(mode)?;
+            for (key, expected) in [
+                ("epwread", true),
+                ("wannierize", false),
+                ("elph", false),
+                ("eliashberg", true),
+                ("limag", true),
+                ("lreal", false),
+            ] {
+                same(
+                    &[SUPER, name, "epw", "INPUTEPW", key],
+                    json!(expected),
+                    "当前虚频轴求解的阶段契约",
+                )?;
+            }
+            if s.task == config::SuperconductivityTask::Gap {
+                same(
+                    &[SUPER, name, "epw", "INPUTEPW", "tc_linear"],
+                    json!(false),
+                    "指定温度非线性能隙任务",
+                )?;
+            }
+            let n: u32 = get(&v, &[SUPER, name, "epw", "INPUTEPW", "nstemp"])?;
+            ensure!(
+                n as usize == s.gap_temperatures_k.len() && n > 0 && n <= 50,
+                "configuration: stages.{SUPER}.{name}.epw.INPUTEPW.nstemp/temps: 长度不符"
+            );
+            for (base, g) in [
+                ("nkf", self.interpolation.k_grid),
+                ("nqf", self.interpolation.q_grid),
+            ] {
+                for (i, x) in g.iter().enumerate() {
+                    same(
+                        &[SUPER, name, "epw", "INPUTEPW", &format!("{base}{}", i + 1)],
+                        json!(x),
+                        &format!("stages.{FINE}.epw.INPUTEPW.{base}{}", i + 1),
+                    )?;
+                }
+            }
+            same(
+                &[SUPER, name, "epw", "INPUTEPW", "liso"],
+                json!(mode == config::Mode::Iso),
+                "当前方法定义",
+            )?;
+            same(
+                &[SUPER, name, "epw", "INPUTEPW", "laniso"],
+                json!(mode == config::Mode::Aniso),
+                "当前方法定义",
+            )?;
+            config::positive(
+                s.frequency_cutoff_ev,
+                &format!("stages.{SUPER}.{name}.epw.INPUTEPW.wscut"),
+            )?;
+            ensure!(
+                s.mu_star >= 0.
+                    && s.max_iterations > 0
+                    && s.convergence_relative > 0.
+                    && s.mixing_beta.abs() > 0.
+                    && s.mixing_beta.abs() <= 1.
+                    && (1..=8).contains(&s.mixing_history),
+                "configuration: stages.{SUPER}.{name}.epw.INPUTEPW: 迭代/混合参数无效"
+            );
+            let mut seen = std::collections::BTreeSet::new();
+            if s.task == config::SuperconductivityTask::Gap {
+                config::positive(
+                    s.initial_gap(),
+                    &format!("stages.{SUPER}.{name}.epw.INPUTEPW.gap_edge"),
+                )?;
+            }
+            for t in &s.gap_temperatures_k {
+                ensure!(*t <= 999.99, "configuration: stages.{SUPER}.{name}.epw.INPUTEPW.temps: 原生温度文件格式最多支持 999.99 K");
+                ensure!(
+                    seen.insert(config::temperature(*t, "temps")?),
+                    "configuration: stages.{SUPER}.{name}.epw.INPUTEPW.temps: 重复温度"
+                );
+                config::temperature(*t, &format!("stages.{SUPER}.{name}.epw.INPUTEPW.temps"))?;
+                if s.task == config::SuperconductivityTask::Gap
+                    && (s.mode == config::Mode::Both || s.mode == mode)
+                {
+                    crate::superconductivity::attempt::Request::from_config(
+                        self,
+                        mode,
+                        crate::superconductivity::attempt::SolveKind::Gap,
+                        config::temperature(*t, "temps")?,
+                        Some(s.initial_gap()),
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+    /// 多展宽是显式子任务，各子任务必须完整填写 INPUTEPW；不继承主任务。
+    pub fn fine_task(&self, smearing: f64) -> Result<Vec<String>> {
+        let values = self.stage_document()?;
+        let primary: f64 = get(&values, &[FINE, "epw", "INPUTEPW", "degaussq"])?;
+        if primary == smearing {
+            return Ok(vec![FINE.into(), "epw".into()]);
+        }
+        if let Some(tasks) = values[FINE].get("spectra").and_then(Value::as_object) {
+            for (name, task) in tasks {
+                if get::<f64>(task, &["epw", "INPUTEPW", "degaussq"])? == smearing {
+                    return Ok(vec![
+                        FINE.into(),
+                        "spectra".into(),
+                        name.clone(),
+                        "epw".into(),
+                    ]);
+                }
+            }
+        }
+        bail!("configuration: stages.{FINE}: degaussq={smearing} 没有对应的显式原生子任务")
+    }
+    pub fn stage_document(&self) -> Result<Value> {
+        Ok(stages(&self.document()?))
+    }
+    pub fn native_value<T: serde::de::DeserializeOwned>(&self, path: &[&str]) -> Result<T> {
+        get(&self.stage_document()?, path)
+    }
+    /// 原生编辑只有一个入口，立即重新建立算法视图；不允许两份参数各自漂移。
+    pub fn set_native(&mut self, path: &[&str], value: Value) -> Result<()> {
+        let mut d = self.document()?;
+        let mut v = stages(&d);
+        put(&mut v, path, value);
+        d.stages = serde_json::from_value(v)?;
+        let runtime = decode(&d)?;
+        self.document = d;
+        self.runtime = runtime;
+        Ok(())
+    }
+    pub fn phonon_stage(&self) -> String {
+        format!(
+            "4.qe-phonon-{}",
+            match self.phonon.mode {
+                config::PhMode::Nosplit => "nosplit",
+                config::PhMode::Index => "index",
+                config::PhMode::Coords => "coords",
+            }
+        )
+    }
+    pub fn solver_for(&self, mode: config::Mode) -> Result<config::Superconductivity> {
+        let owner=if self.superconductivity.mode == config::Mode::Aniso {config::Mode::Aniso} else {config::Mode::Iso};
+        if mode == owner {
+            return Ok(self.superconductivity.clone());
+        }
+        solver(
+            &self.stage_document()?,
+            if mode == config::Mode::Iso {"iso"} else {"aniso"},
+            self.superconductivity.task,
+        )
+    }
+    fn document(&self) -> Result<Document> {
+        let mut d = self.document.clone();
+        d.schema_version = self.schema_version;
+        d.work_dir = self.work_dir.clone();
+        d.outdir = self.outdir.clone();
+        d.structure = self.structure.clone();
+        d.pseudos = self.pseudos.clone();
+        d.programs = self.programs.clone();
+        d.resources = self.resources.clone();
+        d.budget = self.budget.clone();
+        d.layout = self.layout.clone();
+        d.kpath = self.kpath.clone();
+        // 算法视图的可变字段仅写回其所有者；其他阶段始终保存自己的原生设置。
+        let mut v = stages(&d);
+        let ph = ph_name(&d)?;
+        let active = self.phonon_stage();
+        if ph != active {
+            let item = v.as_object_mut().unwrap().remove(&ph).unwrap();
+            v[&active] = item;
+        }
+        put(
+            &mut v,
+            &[SCF, "pw", "CONTROL", "prefix"],
+            json!(self.qe.prefix),
+        );
+        for (key, value) in [
+            ("ecutwfc", json!(self.qe.ecutwfc_ry)),
+            ("ecutrho", json!(self.qe.ecutrho_ry)),
+            ("occupations", json!(self.qe.occupations)),
+            ("smearing", json!(self.qe.smearing)),
+            ("degauss", json!(self.qe.degauss_ry)),
+        ] {
+            put(&mut v, &[SCF, "pw", "SYSTEM", key], value);
+        }
+        for (stage, g, shift, thr) in [
+            (
+                SCF,
+                self.qe.scf.k_grid,
+                self.qe.scf.k_shift,
+                self.qe.scf.conv_thr_ry,
+            ),
+            (NSCF, self.qe.nscf.k_grid, [0; 3], self.qe.nscf.conv_thr_ry),
+        ] {
+            if pw_grid(&v, stage)? != (g, shift) {
+                let card = if stage == NSCF {
+                    qf_input::pw::uniform_kpoints_text(g.map(i64::from), true)?
+                        .trim_start_matches("K_POINTS ")
+                        .to_owned()
+                } else {
+                    format!(
+                        "automatic\n{} {} {} {} {} {}",
+                        g[0], g[1], g[2], shift[0], shift[1], shift[2]
+                    )
+                };
+                put(&mut v, &[stage, "pw", "K_POINTS"], json!(card));
+            }
+            put(&mut v, &[stage, "pw", "ELECTRONS", "conv_thr"], json!(thr));
+        }
+        put(
+            &mut v,
+            &[NSCF, "pw", "SYSTEM", "nbnd"],
+            json!(self.qe.nscf.nbnd),
+        );
+        put(
+            &mut v,
+            &[&active, "ph", "INPUTPH", "tr2_ph"],
+            json!(self.phonon.tr2_ph),
+        );
+        for (i, n) in self.phonon.q_grid.iter().enumerate() {
+            put(
+                &mut v,
+                &[&active, "ph", "INPUTPH", &format!("nq{}", i + 1)],
+                json!(n),
+            );
+        }
+        let w = &self.wannier;
+        let wp = [WANNIER, "wannier90"];
+        for (key, value) in [
+            ("num_wann", json!(w.num_wann)),
+            ("num_iter", json!(w.localization.max_iterations)),
+            ("conv_tol", json!(w.localization.tolerance_angstrom2)),
+            ("conv_window", json!(w.localization.window_iterations)),
+            ("guiding_centres", json!(w.guiding_centres)),
+            ("projections", json!(w.projections)),
+            ("exclude_bands", json!(w.exclude_bands)),
+        ] {
+            put(&mut v, &[wp[0], wp[1], key], value);
+        }
+        put(
+            &mut v,
+            &[WANNIER, "workflow", "selection_mode"],
+            json!(w.selection_mode),
+        );
+        for (keys, values) in [
+            (["dis_win_min", "dis_win_max"], w.outer_window_ev),
+            (["dis_froz_min", "dis_froz_max"], w.frozen_window_ev),
+        ] {
+            for (i, key) in keys.iter().enumerate() {
+                put(
+                    &mut v,
+                    &[WANNIER, "wannier90", key],
+                    json!(values.map(|a| a[i]).or(if *key == "dis_froz_max" {
+                        w.frozen_max_ev
+                    } else {
+                        None
+                    })),
+                );
+            }
+        }
+        if let Some(c) = &w.disentanglement {
+            for (k, x) in [
+                ("dis_num_iter", json!(c.max_iterations)),
+                ("dis_conv_tol", json!(c.tolerance_angstrom2)),
+                ("dis_conv_window", json!(c.window_iterations)),
+            ] {
+                put(&mut v, &[WANNIER, "wannier90", k], x);
+            }
+        }
+        let i = &self.interpolation;
+        for (key, val) in [
+            ("degaussw", json!(i.degaussw_ev)),
+            (
+                "degaussq",
+                json!(i
+                    .phonon_smearings_mev
+                    .first()
+                    .context("configuration: stages.7.epw-fine.epw.INPUTEPW.degaussq: 缺失")?),
+            ),
+            ("fsthick", json!(i.fsthick_ev)),
+            ("eps_acoustic", json!(i.eps_acoustic_cm1)),
+            ("nqstep", json!(i.spectral_points)),
+            (
+                "ngaussw",
+                json!(match i.electron_smearing {
+                    config::Smearing::Gaussian => 0,
+                    config::Smearing::Mp => 1,
+                    config::Smearing::Mv => -1,
+                    config::Smearing::Fd => -99,
+                }),
+            ),
+        ] {
+            put(&mut v, &[FINE, "epw", "INPUTEPW", key], val);
+        }
+        for (prefix, grid) in [("nkf", i.k_grid), ("nqf", i.q_grid)] {
+            for (n, value) in grid.iter().enumerate() {
+                put(
+                    &mut v,
+                    &[FINE, "epw", "INPUTEPW", &format!("{prefix}{}", n + 1)],
+                    json!(value),
+                );
+            }
+        }
+        put(
+            &mut v,
+            &[FINE, "workflow", "fermi_source"],
+            json!(i.fermi_source),
+        );
+        let sc = &self.superconductivity;
+        for (k, val) in [
+            ("task", json!(sc.task)),
+            ("mode", json!(sc.mode)),
+            ("spectrum_index", json!(sc.spectrum_index)),
+            ("iso", json!(sc.iso)),
+            ("aniso", json!(sc.aniso)),
+        ] {
+            put(&mut v, &[SUPER, "workflow", k], val);
+        }
+        if sc.task == config::SuperconductivityTask::Tc {
+            put(
+                &mut v,
+                &[SUPER, "workflow", "initial_gaps"],
+                json!(sc.initial_gaps_mev.map(|x| x / 1000.)),
+            );
+        }
+        let owner = if sc.mode == config::Mode::Aniso {
+            "aniso"
+        } else {
+            "iso"
+        };
+        for (k, val) in [
+            ("muc", json!(sc.mu_star)),
+            ("wscut", json!(sc.frequency_cutoff_ev)),
+            ("nsiter", json!(sc.max_iterations)),
+            ("conv_thr_iaxis", json!(sc.convergence_relative)),
+            ("broyden_beta", json!(sc.mixing_beta)),
+            ("broyden_ndim", json!(sc.mixing_history)),
+            ("a_gap0", json!(sc.initial_shape)),
+            ("temps", json!(sc.gap_temperatures_k)),
+        ] {
+            put(&mut v, &[SUPER, owner, "epw", "INPUTEPW", k], val);
+        }
+        if sc.task == config::SuperconductivityTask::Gap {
+            put(
+                &mut v,
+                &[SUPER, owner, "epw", "INPUTEPW", "gap_edge"],
+                json!(sc.initial_gap() / 1000.),
+            );
+        }
+        if let Some(c) = &self.comparison {
+            put(
+                &mut v,
+                &[ELECTRONIC, "workflow", "points_per_edge"],
+                json!(c.points_per_edge),
+            );
+            put(
+                &mut v,
+                &[WANNIER, "electron_dos", "postw90", "dos_smr_fixed_en_width"],
+                json!(c.electronic_sigma_ev),
+            );
+            put(
+                &mut v,
+                &[&active, "workflow", "phonon_sigma_cm1"],
+                json!(c.phonon_sigma_cm1),
+            );
+        }
+        d.stages = serde_json::from_value(v)?;
+        Ok(d)
+    }
+}

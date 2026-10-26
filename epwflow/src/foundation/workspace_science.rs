@@ -111,6 +111,8 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
         keys,
         programs,
         cfg.comparison.clone().unwrap_or_default(),
+        if step==Step::Wannier {cfg.native_value::<serde_json::Value>(&[super::native_config::WANNIER,"electron_dos"])?} else {cfg.native_value::<serde_json::Value>(&[super::native_config::COARSE,"comparison"])?},
+        cfg.native_value::<String>(&[super::native_config::COARSE,"workflow","onsite_asr"])? ,
         cfg.kpath
             .as_ref()
             .map(|p| store::hash_file(p))
@@ -185,7 +187,9 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
             electronic_files().iter().map(|n|Identity::capture(&layout::path(&cfg.work_dir,"comparison-native/electron").join(n))).collect::<Result<Vec<_>>>()?
         } else {
             let path_key = store::hash_bytes(&serde_json::to_vec(&(
-                cfg.comparison.clone().unwrap_or_default().points_per_edge,
+                cfg.native_value::<serde_json::Value>(&[super::native_config::COARSE,"comparison"])?,
+                cfg.native_value::<String>(&[super::native_config::COARSE,"workflow","onsite_asr"])?,
+                cfg.native_value::<u32>(&[super::native_config::COARSE,"workflow","points_per_edge"])?,
                 cfg.kpath
                     .as_ref()
                     .map(|p| store::hash_file(p))
@@ -318,11 +322,11 @@ pub fn generate(cfg: &Config, target: Step) -> Result<()> {
             Step::Electronic => super::workspace_electronic::inputs(cfg, &qe)?,
             Step::Phonon => {
                 if cfg.phonon.mode == PhMode::Nosplit {
-                    fs::write(dir.join("ph.in"), qe.phonon_nosplit_input("./out"))?;
+                    fs::write(dir.join("ph.in"), qe.phonon_nosplit_input("./out")?)?;
                 } else {
                     fs::create_dir_all(dir.join("init"))?;
                     let input = dir.join("init/ph_init.in");
-                    fs::write(&input, qe.phonon_init_input("./out"))?;
+                    fs::write(&input, qe.phonon_init_input("./out")?)?;
                     super::workspace::native_script(
                         &cfg.programs.ph,
                         &input,
@@ -555,6 +559,7 @@ fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
         .qe_phonon
         .phband
         .insert("kpath_file".into(), json!(cfg.kpath));
+    shared.qe_phonon.phband.insert("kpath_points".into(),cfg.native_value::<serde_json::Value>(&[&cfg.phonon_stage(),"workflow","points_per_edge"])?);
     qf_input::q2r::write_q2r_input(dir.to_str().unwrap(), &shared, &cfg.qe.prefix)?;
     qf_input::matdyn::write_matdyn_phband_input(
         dir.to_str().unwrap(),
@@ -563,6 +568,10 @@ fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
         qe.cell.lattice,
     )?;
     qf_input::matdyn::write_matdyn_phdos_input(dir.to_str().unwrap(), &shared, &cfg.qe.prefix)?;
+    let stage=cfg.phonon_stage();
+    cfg.configure_file(&[&stage,"q2r"],&dir.join("q2r.in"))?;
+    cfg.configure_file(&[&stage,"dispersion","matdyn"],&dir.join("matdyn_phband.in"))?;
+    cfg.configure_file(&[&stage,"dos","matdyn"],&dir.join("matdyn_phdos.in"))?;
     let tasks = [
         ("q2r", "q2r.in", "q2r"),
         ("matdyn", "matdyn_phband.in", "matdyn_phband"),
@@ -831,15 +840,12 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
     let (original, eigenvalues) = standalone_inputs(cfg, &fs::read_to_string(&win)?)?;
     let options = cfg.comparison.clone().unwrap_or_default();
     let window = interpolation::comparison::parse_outer_window(&fs::read_to_string(dir.join(format!("{prefix}.wout")))?)?;
-    let updated = wannier90flow::post::update_win_content(&original, &[
-        ("write_hr".into(), json!(false)), ("write_bvec".into(), json!(false)),
-        ("bands_plot".into(), json!(false)), ("dos".into(), json!(true)),
-        ("num_elec_per_state".into(), json!(2)), ("dos_kmesh".into(), json!(cfg.qe.nscf.k_grid)),
-        ("dos_energy_min".into(), json!(window[0])), ("dos_energy_max".into(), json!(window[1])),
-        ("dos_energy_step".into(), json!(0.01)), ("dos_adpt_smr".into(), json!(false)),
-        ("dos_smr_fixed_en_width".into(), json!(options.electronic_sigma_ev)),
-        ("dos_smr_type".into(), json!("gauss")), ("fermi_energy".into(), json!(fermi)),
-    ]);
+    let mut parameters:serde_json::Map<String,serde_json::Value>=cfg.native_value(&[super::native_config::WANNIER,"electron_dos","postw90"])?;
+    for (key,value) in [("dos_energy_min",window[0]),("dos_energy_max",window[1]),("fermi_energy",fermi)] {
+        ensure!(!parameters.contains_key(key),"configuration: stages.5.epw-wannier.electron_dos.postw90.{key}: 与实际模型派生值重复");
+        parameters.insert(key.into(),json!(value));
+    }
+    let updated = wannier90flow::post::update_win_content(&original,&parameters.into_iter().collect::<Vec<_>>());
     let updated=regex::Regex::new(r"(?m)^\s*restart\s*=[^\n]*\n?")?.replace_all(&updated,"").into_owned();
     let program=cfg.programs.postw90.clone().unwrap_or(post_program(cfg,"postw90")?);
     let dos=PathBuf::from(wannier90flow::post::resolve_dos_output(dir.to_str().unwrap(),prefix));
@@ -855,6 +861,13 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
         }else{false}
     }else{false};
     fs::write(&win,&updated)?;
+    store::write(&dir.join("postw90.parameters.json"),&json!({
+        "schema_version":1,"configuration":"stages.5.epw-wannier.electron_dos.postw90",
+        "input":Identity::capture(&win)?,
+        "configured":cfg.native_value::<serde_json::Value>(&[super::native_config::WANNIER,"electron_dos","postw90"])?,
+        "derived": {"dos_energy_min":window[0],"dos_energy_max":window[1],"fermi_energy":fermi,
+            "model":"同次 Wannier 模型；晶格、结构、mp_grid、kpoints 和 num_bands 来自已绑定 NSCF"}
+    }))?;
     if !reusable {
         let reason=json!({"schema_version":1,"decision":"necessary_postprocessing",
             "reason":"已有电子模型未提供相容的 postw90 DOS；只求现有均匀网格总 DOS，不重新拟合",

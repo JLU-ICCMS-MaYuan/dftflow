@@ -1,5 +1,7 @@
 #[path = "support/cli.rs"]
 mod stage_cli;
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
 use std::{collections::BTreeMap, fs, path::PathBuf, process::{Command, Output}, sync::atomic::{AtomicU64, Ordering}};
 use epwflow::foundation::{environment, state};
 use std::os::unix::fs::PermissionsExt;
@@ -151,7 +153,7 @@ fn historical_time_and_storage_limits_do_not_deny_registration_or_accounting() {
 #[test]
 fn readonly_check_all_modes_and_cross_directory() {
     for ph in ["nosplit","index","coords"] {for sc in ["iso","aniso","both"] {
-        let c=Case::new();c.edit("[phonon]",&format!("[phonon]\nmode = \"{ph}\""));c.edit("mode = \"both\"",&format!("mode = \"{sc}\""));
+        let c=Case::new();let mut cfg:epwflow::foundation::config::Config=toml::from_str(&fs::read_to_string(c.root.join("input.toml")).unwrap()).unwrap();native_fixture::phonon(&mut cfg,serde_json::from_value(serde_json::json!(ph)).unwrap());c.put("input.toml",&toml::to_string_pretty(&cfg).unwrap());c.edit("mode = \"both\"",&format!("mode = \"{sc}\""));
         let a=c.json(&["check","-c","input.toml","--json"]);
         let b=c.cmd(&["check","-c",c.root.join("input.toml").to_str().unwrap(),"--json"]).current_dir("/").output().unwrap();
         assert!(b.status.success()); assert_eq!(a,serde_json::from_slice::<serde_json::Value>(&b.stdout).unwrap());
@@ -162,17 +164,17 @@ fn readonly_check_all_modes_and_cross_directory() {
 #[test]
 fn rejects_unknown_nonfinite_range_and_incompatible_inputs() {
     for (from,to,field) in [
-        ("schema_version = 1","schema_version = 2","schema_version"),
-        ("schema_version = 1","bogus = 4\nschema_version = 1","bogus"),
+        ("schema_version = 2","schema_version = 1","schema_version"),
+        ("schema_version = 2","bogus = 4\nschema_version = 2","bogus"),
         ("nodes = 1","nodes = 2","resources.nodes"),
         ("mpi = 1","mpi = 65","resources.mpi"),
-        ("mu_star = 0.1","mu_star = nan","superconductivity.mu_star"),
+        ("muc = 0.1","muc = nan","muc"),
         ("min_k = 1.0","min_k = 0.0","min_k"),
         ("min_k = 1.0","min_k = 1.001","min_k"),
         ("mode = \"both\"","mode = \"wrong\"","mode"),
-        ("k_grid = [8,8,4]","k_grid = [7,8,4]","interpolation.k_grid"),
-        ("frozen_window_ev = [-2.0,2.0]","frozen_window_ev = [-20.0,2.0]","frozen_window_ev"),
-        ("[qe]","[qe]\nnoncolin = true","noncolin"),
+        ("nkf1 = 8","nkf1 = 7","stages.7.epw-fine.epw.INPUTEPW.nkf1"),
+        ("dis_froz_min = -2.0","dis_froz_min = -20.0","stages.5.epw-wannier.wannier90.dis_froz_min"),
+        ("[stages.\"1.qe-scf\".pw.SYSTEM]","[stages.\"1.qe-scf\".pw.SYSTEM]\nnoncolin = true","noncolin"),
     ] {
         let c=Case::new();c.edit(from,to);fail(c.run(&["check","-c","input.toml"]),field);assert!(!c.root.join("run").exists());
     }
@@ -201,7 +203,7 @@ fn snapshots_idempotent_and_external_input_is_not_reread() {
 fn refuses_conflicts_and_no_science_success_on_failed_submission() {
     let c=Case::new(); fs::create_dir(c.root.join("run")).unwrap();c.put("run/important", "keep");
     fail(c.run(&["prepare","-c","input.toml"]),"input_conflict"); assert_eq!(fs::read_to_string(c.root.join("run/important")).unwrap(),"keep");
-    let c=Case::new();c.edit("schema_version = 1","schema_version = 1\nlayout = 'numbered'");
+    let c=Case::new();c.edit("schema_version = 2","schema_version = 2\nlayout = 'numbered'");
     fail(c.run(&["submit","-c","input.toml","--stage","scf"]),"scheduler_unknown");
     assert!(!c.root.join("run/calculations").exists(),"提交失败不能运行科学阶段");
     let r:serde_json::Value=serde_json::from_slice(&fs::read(c.root.join("run/epw-state/native-active.json")).unwrap()).unwrap();

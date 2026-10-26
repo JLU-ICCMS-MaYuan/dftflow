@@ -16,7 +16,7 @@
 
 ## 指定温度能隙任务
 
-在 TOML 的 `[superconductivity]` 设置 `task="gap"`，由 mode 与 gap_temperatures_k 构成固定计划。每方法批次配置一个 initial_gap_mev，缺省为 10 meV；后续温度按原生 EPW 机制续接前温度能隙，不逐点重启；不要求 Tc 区间、精度或 initial_gaps_mev 双初值。同一方法一次设置完整 nstemp／temps(i)、tc_linear=false，完整保存各点请求和来源。省略 mu_star 使用 0.13，显式值优先。省略 task 时保留旧 tc 验证、清单读取和序列化身份。
+在 `stages."8.epw-superconductivity".workflow` 显式设置 `task="gap"` 与 `mode`。每个方法的 `epw.INPUTEPW` 分别填写 `muc`、`gap_edge`（eV）、`nstemp`、`temps`（K）及迭代控制，形成独立固定计划。后续温度按原生 EPW 机制续接，不逐点重启，不要求 Tc 区间或双初值。同一方法一次执行完整温度列表；完整保存各点请求和来源。第 7 步温度由自身阶段配置。`task="tc"` 保留既有搜索；不再为缺少的科学参数注入默认值。完整配置见[参数协议](native-stage-config.md)。
 
 温度列表包含 1～50 点，温度必须有限、为正、不重复、精确到 0.01 K 且不大于 999.99 K，频率截断须包含首个 Matsubara 频率。mixing_beta 负值采用原生线性混合，正值为 Broyden，绝对值在 `(0,1]`；混合历史仍限制为 1～8。当前 PBE 示例显式设置 -0.3，不暗中改变混合、初值或收敛标准。
 
@@ -85,3 +85,7 @@ F3 当前路径将每个展宽写入 fine/smearing-NNNN，F4 使用 spectrum_ind
 同一原生细网格、μ*=0.05、截断 0.5 eV 下，iso 在 36.71 K 的最大本征值为 1.0033547，37.06 K 为 0.9974889；区间中点 36.885 K、半宽 0.175 K 仅表示线性化区间估值。必需非线性双初值尚未有效，iso `complete=false`；aniso 没有有效分类区间。未收敛小能隙、平均能隙和原生经验公式均不能补成有效正常态或正式 Tc。
 
 原生谱路径故障已修复，显式恢复保留原失败／中断尝试和次数，最终阶段报告仍为未完成。Mori 图需要有效的逐态最低正 Matsubara 分布，当前不能用未收敛输出绘制已验收的能隙云图。来源、数值与预算证据见 [真实 Tc 验收](../../specs/0015-epwflow-mgb2-real-validation/native-tc-validation.md)。
+
+## 本轮 PBE 指定温度能隙
+
+2026-10-26，按版本 2 配置清理后完成 PBE MgB₂ 小网格八阶段重算；iso／aniso 的 20／30／40 K 六点均收敛且数据有效，结果包来源和图表检查通过。使用本轮固定的私有构建，默认安装未切换；该结果不构成 Tc 或网格收敛验收。见 [0059 验收](../../specs/0059-epw-native-stage-config/acceptance.md)。

@@ -96,13 +96,13 @@ if coarse or reread:
     if mode=='coarse-truncated':(out/(prefix+'.epmatwp')).write_bytes(b'broken')
     wout='Using band disentanglement : T\n<<< Disentanglement convergence criteria satisfied >>>\nCycle: 14\n<<< Wannierisation convergence criteria satisfied >>>\nFinal State\n'
     wout+=''.join(f'WF centre and spread {i} ( 0 0 0 ) 1.25\n' for i in range(1,n+1))
-    if coarse:
+    if coarse and value('wannierize')=='.true.':
         lower=window_min()
         if mode=='coarse-window':lower=str(float(lower)+0.02)
         wout+=f'| Outer: {lower} to {value("dis_win_max")} (eV)\n'
         if mode!='coarse-window-missing':
             wout+=f'| Inner: {value("dis_froz_min")} to {value("dis_froz_max")} (eV)\n'
-    Path(prefix+'.wout').write_text(wout)
+    if not coarse or value('wannierize')=='.true.': Path(prefix+'.wout').write_text(wout)
     kept=list(range(8,17));nk=coarse_nk
     Path(prefix+'.ukk').write_text('9 7\n'+'\n'.join(map(str,kept))+'\n'+'(0,0)\n'*(9*n*nk)+'T\n'*(9*nk)+'T\n'*7+'F\n'*9+'0 0 0\n'*n)
     if mode=='coarse-ukk':Path(prefix+'.ukk').write_text('9 7\n8\n')
@@ -110,8 +110,9 @@ if coarse or reread:
     if reread:bands('phband.freq',qpoints,[100/8.065543937+(20 if mode=='large-difference' else 0)]*6)
 else:
     config=ROOT/'input.toml'
-    expected_temperature=float(re.search(r'(?m)^gap_temperatures_k\s*=\s*\[\s*([-+0-9.eE]+)',config.read_text()).group(1)) if config.is_file() else 5.
-    assert value('nstemp')=='1' and float(value('temps'))==expected_temperature, '未显式采用配置的首个温度，EPW 会默认 300 K'
+    stage=re.search(r'(?s)\[stages\."7\.epw-fine"\.epw\.INPUTEPW\](.*?)(?:\n\[|$)',config.read_text()) if config.is_file() else None
+    expected_temperature=float(re.search(r'(?m)^temps\s*=\s*\[\s*([-+0-9.eE]+)',stage.group(1)).group(1)) if stage else 5.
+    assert value('nstemp')=='1' and float(value('temps(1)'))==expected_temperature, '未显式采用第 7 步自身温度，EPW 会默认 300 K'
     assert Path(prefix+'.ukk').is_file(), 'epwread 仍须 loadbm 读取原 ukk'
     assert Path('epwdata.fmt').exists() and (out/(prefix+'.epmatwp')).stat().st_size==16*n*n*6
     assert not Path('save').exists(), '细网格应重读粗网格，无需复制响应势'

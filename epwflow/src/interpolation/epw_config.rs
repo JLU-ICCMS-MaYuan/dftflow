@@ -84,17 +84,21 @@ impl<'a> EpwConfig<'a> {
             qf_wannier::SelectionMode::EnergyOnly => qf_wannier::select_energy_only,
             qf_wannier::SelectionMode::FixedPlusProjectability => qf_wannier::select_default,
         };
-        let selection = select(
+        let mut selection = select(
             self.bands.as_deref().context("data_invalid: 选窗缺少绑定的完整 F2 本征值")?,
             self.fermi_ev.context("data_invalid: 选窗缺少绑定的 F2 Fermi 能")?,
             w.num_wann as usize,
             &w.exclude_bands.iter().map(|&v| v as usize).collect::<Vec<_>>(),
             &bounds, reference,
         )?;
+        if w.selection_mode==qf_wannier::SelectionMode::FixedPlusProjectability {
+            for key in ["dis_proj_min","dis_proj_max"] {selection.parameters.insert(key.into(),self.cfg.native_value(&[crate::foundation::native_config::WANNIER,"wannier90",key])?);}
+        }
         if w.selection_mode == qf_wannier::SelectionMode::EnergyOnly {
             let fermi = selection.fermi_ev;
-            let lower = fermi - self.cfg.interpolation.fsthick_ev;
-            let upper = fermi + self.cfg.interpolation.fsthick_ev;
+            let fsthick: f64=self.cfg.native_value(&[crate::foundation::native_config::WANNIER,"epw","INPUTEPW","fsthick"])?;
+            let lower = fermi - fsthick;
+            let upper = fermi + fsthick;
             ensure!(selection.parameters["dis_froz_min"] <= lower
                 && upper <= selection.parameters["dis_froz_max"],
                 "data_invalid: 纯能量冻结窗未包含 EPC 目标窗 [{lower},{upper}] eV");
@@ -180,8 +184,7 @@ impl<'a> EpwConfig<'a> {
             s.push_str(&format!("{name} = {value:.16e}\n"));
         }
         if w.selection_mode == qf_wannier::SelectionMode::FixedPlusProjectability {
-            s.push_str(&format!("dis_proj_min = {}\ndis_proj_max = {}\n", qf_wannier::DIS_PROJ_MIN, qf_wannier::DIS_PROJ_MAX));
-            s.push_str(qf_wannier::PROJECTABILITY_SWITCH);
+            s.push_str(&format!("dis_proj_min = {}\ndis_proj_max = {}\ndis_froz_proj = {}",self.cfg.native_value::<f64>(&[crate::foundation::native_config::WANNIER,"wannier90","dis_proj_min"])?,self.cfg.native_value::<f64>(&[crate::foundation::native_config::WANNIER,"wannier90","dis_proj_max"])?,self.cfg.native_value::<bool>(&[crate::foundation::native_config::WANNIER,"wannier90","dis_froz_proj"])?));
             s.push('\n');
         }
         if let Some(d) = &w.disentanglement {
@@ -227,17 +230,6 @@ impl<'a> EpwConfig<'a> {
         let wannier_only = matches!(stage, NativeStage::WannierOnly);
         let elph = if wannier_only { ".false." } else { ".true." };
         let mut s = format!("DFTFlow EPW 5.9 workflow input\n&inputepw\n prefix = {}\n outdir = {}\n dvscf_dir = {}\n ep_coupling = .true.\n elph = {elph}\n etf_mem = 0\n nbndsub = {}\n iverbosity = 2\n", quoted(&self.cfg.qe.prefix)?, quoted(outdir)?, quoted(dvscf_dir)?, w.num_wann);
-        if !self.cfg.atomic_masses.is_empty() {
-            let species = self
-                .species
-                .as_ref()
-                .context("data_invalid: 显式原子质量必须绑定结构元素顺序")?;
-            for (n, el) in species.iter().enumerate() {
-                let mass =
-                    qf_input::species::get_atomic_mass(el, self.cfg.atomic_masses.get(el).copied());
-                s.push_str(&format!(" amass({}) = {mass:.16e}\n", n + 1));
-            }
-        }
         for (name, grid) in [
             ("nk", self.cfg.qe.nscf.k_grid),
             ("nq", self.cfg.phonon.q_grid),
@@ -254,13 +246,18 @@ impl<'a> EpwConfig<'a> {
             config::Smearing::Fd => -99,
         };
         s.push_str(&format!(" ngaussw = {ngaussw}\n"));
-        match i.fermi_source {
-            config::FermiSource::F2 => s.push_str(&format!(
+        use crate::foundation::native_config::{WANNIER,COARSE,FINE};
+        let stage_name=match stage {NativeStage::WannierOnly|NativeStage::Coarse=>WANNIER,NativeStage::ReuseWannier|NativeStage::Comparison=>COARSE,NativeStage::FineMatrices=>FINE};
+        let efermi_read:bool=if matches!(stage,NativeStage::Comparison) {
+            self.cfg.native_value(&[COARSE,"comparison","epw","INPUTEPW","efermi_read"])?
+        } else {self.cfg.native_value(&[stage_name,"epw","INPUTEPW","efermi_read"])?};
+        match efermi_read {
+            true => s.push_str(&format!(
                 " efermi_read = .true.\n fermi_energy = {:.16e}\n",
                 self.fermi_ev
                     .context("data_invalid: 缺少绑定的 F2 Fermi 能")?
             )),
-            config::FermiSource::FineFixedElectrons => s.push_str(" efermi_read = .false.\n"),
+            false => s.push_str(" efermi_read = .false.\n"),
         }
         match stage {
             NativeStage::WannierOnly | NativeStage::Coarse => {
@@ -297,9 +294,9 @@ impl<'a> EpwConfig<'a> {
                 }
                 if w.selection_mode == qf_wannier::SelectionMode::FixedPlusProjectability {
                     data.extend([
-                        qf_wannier::PROJECTABILITY_SWITCH.to_string(),
-                        format!("dis_proj_min = {}", qf_wannier::DIS_PROJ_MIN),
-                        format!("dis_proj_max = {}", qf_wannier::DIS_PROJ_MAX),
+                        format!("dis_froz_proj = {}",self.cfg.native_value::<bool>(&[crate::foundation::native_config::WANNIER,"wannier90","dis_froz_proj"])?),
+                        format!("dis_proj_min = {}", self.cfg.native_value::<f64>(&[crate::foundation::native_config::WANNIER,"wannier90","dis_proj_min"])?),
+                        format!("dis_proj_max = {}", self.cfg.native_value::<f64>(&[crate::foundation::native_config::WANNIER,"wannier90","dis_proj_max"])?),
                     ]);
                 }
                 data.extend([
@@ -314,7 +311,7 @@ impl<'a> EpwConfig<'a> {
                     ]);
                 }
                 if wannier_only && self.cfg.kpath.is_some() {
-                    data.extend(super::electronic_sampling::wdata(&super::electronic_sampling::plan(self.cfg)?)?);
+                    data.extend(super::electronic_sampling::wdata(&super::electronic_sampling::plan(self.cfg)?, self.cfg.native_value(&[crate::foundation::native_config::WANNIER,"wannier90","bands_plot"])?, self.cfg.native_value(&[crate::foundation::native_config::WANNIER,"wannier90","bands_num_points"])?)?);
                 }
                 ensure!(data.len() <= 200 && data.iter().all(|line| line.len() <= 256),
                     "configuration: 内嵌 Wannier90 的 wdata 超过 200 条或单条 256 字节；保留已有 QE 数据，请缩短路径配置");
@@ -330,14 +327,15 @@ impl<'a> EpwConfig<'a> {
             }
             NativeStage::FineMatrices => {
                 s.push_str(" epwread = .true.\n epwwrite = .false.\n wannierize = .false.\n ephwrite = .true.\n eliashberg = .true.\n liso = .false.\n laniso = .false.\n mp_mesh_k = .true.\n");
-                // EPW 缺省使用 300 K；显式绑定首个固定能隙温度以便复核。
-                s.push_str(&format!(" nstemp = 1\n temps = {:.16e}\n", self.cfg.superconductivity.gap_temperatures_k[0]));
+                // 原生数组由本阶段配置覆盖，不读取第八步温度。
+                let temps:Vec<f64>=self.cfg.native_value(&[crate::foundation::native_config::FINE,"epw","INPUTEPW","temps"])?;
+                s.push_str(&format!(" nstemp = 1\n temps = {:.16e}\n", temps.first().context("configuration: stages.7.epw-fine.epw.INPUTEPW.temps: 缺少温度")?));
             }
         }
         // EPW 5.9 写完粗矩阵后仍进入 use_wannier，必须提供可加载的网格。
         // 粗阶段沿用已有 NSCF/PH 网格，不生成独立抽样点文件。
         let grids = match stage {
-            NativeStage::Coarse | NativeStage::ReuseWannier => Some([
+            NativeStage::ReuseWannier => Some([
                 ("nkf", self.cfg.qe.nscf.k_grid),
                 ("nqf", self.cfg.phonon.q_grid),
             ]),
@@ -352,7 +350,16 @@ impl<'a> EpwConfig<'a> {
             }
         }
         s.push_str("/\n");
-        Ok(s)
+        let fine_task=if matches!(stage,NativeStage::FineMatrices){self.cfg.fine_task(smearing_mev)?}else{vec![FINE.to_owned(),"epw".to_owned()]};
+        let fine_parts=fine_task.iter().map(String::as_str).collect::<Vec<_>>();
+        let task:&[&str]=match stage {
+            NativeStage::WannierOnly=>&[WANNIER,"epw"],
+            NativeStage::ReuseWannier=>&[COARSE,"epw"],
+            NativeStage::Coarse=>&[WANNIER,"epw"],
+            NativeStage::Comparison=>&[COARSE,"comparison","epw"],
+            NativeStage::FineMatrices=>&fine_parts,
+        };
+        self.cfg.apply_native(task,&s)
     }
 
     /// 常规比较路径及 DOS 网格；显式选全 q，避免 Fermi 筛选遗漏频率。

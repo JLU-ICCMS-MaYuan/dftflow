@@ -30,3 +30,5 @@ pub mod native_jobs;
 pub mod native_workspace;
 pub mod electronic_style;
 pub mod workspace_pdos;
+
+pub mod native_config;

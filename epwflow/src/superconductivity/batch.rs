@@ -46,11 +46,12 @@ fn decimal(t: i64) -> String {
     (t as f64 / 100.0).to_string()
 }
 pub fn directory_name(cfg: &Config, mode: Mode) -> String {
-    let ts = &cfg.superconductivity.gap_temperatures_k;
+    let settings=cfg.solver_for(mode).expect("配置已在公开入口校验");
+    let ts = &settings.gap_temperatures_k;
     format!(
         "{}-mu{}-{}-{}",
         method(mode),
-        cfg.superconductivity.mu_star,
+        settings.mu_star,
         ts[0],
         ts[ts.len() - 1]
     )
@@ -61,7 +62,7 @@ pub fn render(requests: &[Request], source: &NativeInputs) -> Result<String> {
         !requests.is_empty() && requests.len() <= 50,
         "configuration: 原生批次需要 1～50 个温度"
     );
-    let mut text = attempt::render(&requests[0], source)?;
+    let mut text = attempt::render_base(&requests[0], source)?;
     let single = format!(
         " nstemp = 1\n temps(1) = {:.2}\n",
         requests[0].temperature_centikelvin as f64 / 100.0
@@ -89,7 +90,7 @@ pub fn render(requests: &[Request], source: &NativeInputs) -> Result<String> {
     }
     ensure!(text.contains(&single), "data_invalid: 原生温度输入模板缺失");
     text = text.replacen(&single, &temperatures, 1);
-    Ok(text.replacen("single-temperature solve", "multi-temperature solve", 1))
+    attempt::configured(&requests[0],source,&text.replacen("single-temperature solve", "multi-temperature solve", 1))
 }
 
 /// 真实 itemp／温度先与固定批次核对；随后只把索引归一化交给既有单段解析器。

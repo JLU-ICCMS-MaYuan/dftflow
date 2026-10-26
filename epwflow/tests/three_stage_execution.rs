@@ -1,5 +1,7 @@
 //! 三个公开程序与实际脚本的连续进程契约；全部数值为隔离替身，非科学验收。
 #![cfg(unix)]
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
 use epwflow::foundation::{config, slurm::shell_quote, store};
 use serde_json::{json, Value};
 use std::{
@@ -88,10 +90,11 @@ runpy.run_path(str(root/name),run_name='__main__')
         cfg.budget.ledger = c.root.join("fixture-ledger.json");
         cfg.programs.launcher.clear();
         cfg.programs.environment_script = None;
+        let programs = &mut cfg.programs;
         for (program, name) in [
-            (&mut cfg.programs.pw, "pw.x"),
-            (&mut cfg.programs.ph, "ph.x"),
-            (&mut cfg.programs.epw, "epw.x"),
+            (&mut programs.pw, "pw.x"),
+            (&mut programs.ph, "ph.x"),
+            (&mut programs.epw, "epw.x"),
         ] {
             program.path = c.root.join(name);
             program.args.clear();
@@ -128,6 +131,7 @@ runpy.run_path(str(root/name),run_name='__main__')
         tc.min_k = 5.;
         tc.max_k = 50.;
         cfg.superconductivity.aniso = cfg.superconductivity.iso.clone();
+        native_fixture::matrix(&mut cfg);
         cfg.validate().unwrap();
         c.put("inputepw.toml", &toml::to_string_pretty(&cfg).unwrap());
         c.accounting(None);
@@ -618,7 +622,7 @@ impl Case {
             .replace("kpoints=[cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]", "kpoints=kpoints if wannier_only else [cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]")
             .replace("qcr=[list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]", "qcr=[[0,0,0]] if wannier_only else [list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]")
             .replace("if coarse:\n        lower=window_min()", "if coarse and not reuse:\n        lower=window_min()")
-            .replace("Path(prefix+'.wout').write_text(wout)","if not reuse:Path(prefix+'.wout').write_text(wout)\n    if wannier_only:\n        Path(prefix+'.win').write_text('num_wann = '+str(n)+'\\n')\n        Path(prefix+'.chk').write_text('fixture checkpoint')")
+            .replace("if not coarse or value('wannierize')=='.true.': Path(prefix+'.wout').write_text(wout)","if not reuse:Path(prefix+'.wout').write_text(wout)\n    if wannier_only:\n        Path(prefix+'.win').write_text('num_wann = '+str(n)+'\\n')\n        Path(prefix+'.chk').write_text('fixture checkpoint')")
             .replace("kept=list(range(8,17));nk=coarse_nk", "kept=list(range(8,17));nk=coarse_nk\n    if wannier_only:\n        Path(prefix+'.bvec').write_text('native bvec\\n'+str(nk)+' 1\\n'+'1 0 0 1\\n'*nk)\n        Path(prefix+'.mmn').write_text('(0,0)\\n'*(9*9*nk))\n    if reuse:\n        assert Path(prefix+'.bvec').read_text().splitlines()[1].split()==[str(nk),'1'], '粗网格缺同一拟合 bvec'\n        assert len(Path(prefix+'.mmn').read_text().splitlines())==9*9*nk, '粗网格缺同一拟合 mmn'")
             .replace("parent/'nscf/out'", "parent/'2.qe-nscf/out'")
             .replace("ROOT/'run/nscf/out'", "ROOT/'run/2.qe-nscf/out'");
@@ -658,7 +662,7 @@ if kind in ['bands','dos','projwfc']:
     elif kind=='projwfc':
         if (Path(__file__).parent/'fail-pdos').exists(): sys.exit(17)
         with Path(__file__).with_name('pdos-calls').open('a') as f:f.write(kind+'\n')
-        assert 'ngauss=0' in text and float(re.search(r'degauss=([0-9.]+)',text).group(1))>0
+        assert re.search(r'ngauss\s*=\s*0',text) and float(re.search(r'degauss\s*=\s*([0-9.eE+-]+)',text).group(1))>0
         atoms=xml.findall('output/atomic_structure/atomic_positions/atom')
         filpdos=re.search(r"filpdos\s*=\s*'([^']+)'",text).group(1)
         for i,atom in enumerate(atoms,1):
@@ -689,7 +693,12 @@ else:
         let o=cmd.output().unwrap();self.put(&format!("{label}.stderr"),&String::from_utf8_lossy(&o.stderr));self.put(&format!("{label}.stdout"),&String::from_utf8_lossy(&o.stdout));o
     }
     fn numbered_change(&self,change:impl FnOnce(&mut config::Config)) {
-        let p=self.root.join("input.toml");let mut cfg=config::Config::load(&p).unwrap();change(&mut cfg);fs::write(p,toml::to_string_pretty(&cfg).unwrap()).unwrap();
+        let p=self.root.join("input.toml");let mut cfg=config::Config::load(&p).unwrap();
+        let own_wannier=cfg.native_value::<Value>(&["5.epw-wannier","epw","INPUTEPW"]).unwrap();
+        change(&mut cfg);native_fixture::matrix(&mut cfg);
+        // PH 的 q 网格不属于独立的电子拟合；夹具不能把它继承给第 5 步。
+        for key in ["nq1","nq2","nq3"] {cfg.set_native(&["5.epw-wannier","epw","INPUTEPW",key],own_wannier[key].clone()).unwrap();}
+        fs::write(p,toml::to_string_pretty(&cfg).unwrap()).unwrap();
     }
 }
 
@@ -814,15 +823,22 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     assert_eq!(before.0,c.calls().0);assert!(!c.calls().2.is_empty());
     let completed:Value=store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();assert_eq!(partial["native_modes"]["aniso"],completed["native_modes"]["aniso"]);
     let coarse_calls=c.calls().1.matches("coarse ").count();
-    c.numbered_change(|cfg|cfg.comparison.as_mut().unwrap().points_per_edge=3);c.accounting(Some(212));
-    let changed_path=c.numbered_cli(1,&["--stage","coarse","-r"],Some(212),"numbered-path-density");
+    let config_path=c.root.join("input.toml");
+    let original_config=fs::read(&config_path).unwrap();
+    let original=config::Config::load(&config_path).unwrap();
+    let mut changed=original.clone();
+    changed.set_native(&["6.epw-coarse","workflow","points_per_edge"],json!(3)).unwrap();
+    fs::write(&config_path,toml::to_string_pretty(&changed).unwrap()).unwrap();
+    c.accounting(Some(212));
+    let changed_path=c.numbered_cli(1,&["--stage","coarse","--check"],None,"numbered-path-density");
     assert!(!changed_path.status.success());
-    assert!(String::from_utf8_lossy(&changed_path.stderr).contains("未输出 QE 目标点"));
-    assert_eq!(coarse_calls,c.calls().1.matches("coarse ").count(),"路径后处理不能重算 EPC");
+    let error=String::from_utf8_lossy(&changed_path.stderr);
+    assert!(error.contains("stages.6.epw-coarse.workflow.points_per_edge") && error.contains("stages.3.qe-electronic.workflow.points_per_edge"),"{error}");
+    assert_eq!(coarse_calls,c.calls().1.matches("coarse ").count(),"冲突检查不能重算 EPC");
     assert_eq!(c.calls().1.matches("wannier ").count(),1);
-    assert!(stages::reusable(&config::Config::load(&c.root.join("input.toml")).unwrap(),Step::Fine).unwrap());
-    // 内嵌库没有独立 restart=plot 路线；恢复原采样不能偷偷重拟合。
-    c.numbered_change(|cfg|cfg.comparison.as_mut().unwrap().points_per_edge=2);c.accounting(Some(213));
+    assert!(stages::reusable(&original,Step::Fine).unwrap());
+    // 恢复本阶段的原始配置，成功科学数据不能因被拒绝的请求而改变。
+    fs::write(&config_path,original_config).unwrap();c.accounting(Some(213));
     success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(213),"numbered-path-restore"));
     let before=c.calls();
     c.numbered_change(|cfg|cfg.wannier.outer_window_ev.as_mut().unwrap()[0]=1.4);
@@ -1095,12 +1111,8 @@ fn numbered_import_verifies_legacy_source_and_materializes_without_qe() {
     success(c.cli(0,&["-c","inputepw.toml"],"legacy-source-generate"));
     success(c.bash(c.root.join("run/epw-state/generated/qe-data.sh"),Some(201),"legacy-source-qe"));
     c.accounting(None);
-    // 模拟真实历史契约：旧配置带质量小节，其字节指纹仍严格绑定。
+    // 布局导入仍支持已验证的版本 2；旧科学配置明确拒绝，不做隐式转换。
     let historical = c.root.join("run/input-init.toml");
-    let mut text = fs::read_to_string(&historical).unwrap();
-    text.push_str("\n[interpolation.quality]\nreference_manifest = 'removed-reference.json'\nelectron_max_ev = 0.05\n");
-    fs::write(&historical, text).unwrap();
-    assert!(config::Config::load(&historical).is_err(), "普通配置不接受已删除的小节");
     let binding_path = c.root.join("run/run-binding.json");
     let mut binding: Value = store::read(&binding_path).unwrap();
     binding["config_sha256"] = store::hash_file(&historical).unwrap().into();
@@ -1200,7 +1212,7 @@ fn numbered_electronic_retry_preserves_pw_with_32_mpi_and_then_changed_resources
 fn numbered_electronic_receipt_rejects_corrupted_save_and_adopts_verified_old_pw() {
     let c=Case::numbered();c.fail_bands();c.begin_failed_electronic();
     let calls=c.calls();
-    let prefix=config::Config::load(&c.root.join("input.toml")).unwrap().qe.prefix;
+    let prefix=config::Config::load(&c.root.join("input.toml")).unwrap().qe.prefix.clone();
     let wfc=c.root.join(format!("run/3.qe-electronic/qe_eband/out/{prefix}.save/wfc1.dat"));
     let original=fs::read(&wfc).unwrap();fs::write(&wfc,"corrupted").unwrap();
     c.accounting(Some(202));

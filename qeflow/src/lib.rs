@@ -545,17 +545,22 @@ fn with_args(exec_cmd: &str, args: &str, redirect: &str) -> String {
 /// scf/ph/q2r/matdyn 全部输入与脚本，按状态推进剩余步骤；-r 本地顺序运行并出图，
 /// -s 生成聚合 `submit_phonon_workflow.sh` 提交。
 pub fn run_qe_phonon_nosplit(config: Option<String>, input: Option<String>, run: bool, submit: bool) -> Result<()> {
-    run_nosplit(config, input, run, submit, None)
+    run_nosplit(config, input, run, submit, None, None)
 }
 
 /// 已登记分配内的共享执行入口；SCF 校验后、PH 启动前交付快照检查点。
 pub fn run_nosplit_with_scf_checkpoint(
     config: String, input: String, checkpoint: &mut dyn FnMut(&Path) -> Result<()>,
 ) -> Result<()> {
-    run_nosplit(Some(config), Some(input), true, false, Some(checkpoint))
+    run_nosplit(Some(config), Some(input), true, false, Some(checkpoint), None)
 }
 
-fn run_nosplit(config: Option<String>, input: Option<String>, run: bool, submit: bool, mut checkpoint: Option<&mut dyn FnMut(&Path) -> Result<()>>) -> Result<()> {
+/// 共享执行路径的原生输入适配钩子，在所有输入生成后、任何科学程序启动前调用。
+/// 调用方负责严格校验；默认 qeflow 入口不传钩子。
+pub fn run_nosplit_with_native_inputs(config:String,input:String,checkpoint:&mut dyn FnMut(&Path)->Result<()>,prepare:&mut dyn FnMut(&Path)->Result<()>) -> Result<()> {
+    run_nosplit(Some(config),Some(input),true,false,Some(checkpoint),Some(prepare))
+}
+fn run_nosplit(config: Option<String>, input: Option<String>, run: bool, submit: bool, mut checkpoint: Option<&mut dyn FnMut(&Path) -> Result<()>>, mut prepare:Option<&mut dyn FnMut(&Path)->Result<()>>) -> Result<()> {
     let source_config = std::fs::canonicalize(config.as_deref().unwrap_or("input.toml"))?;
     let input = if source_config.file_name().and_then(|p| p.to_str()) == Some("input-init.toml") {
         Some(phonon_chain::snapshot_structure(source_config.parent().unwrap().to_str().unwrap())?)
@@ -589,6 +594,7 @@ fn run_nosplit(config: Option<String>, input: Option<String>, run: bool, submit:
         &[format!("{matdyn_exec} < matdyn_phdos.in > matdyn_phdos.out")],
     )?;
 
+    if let Some(prepare)=prepare.as_mut(){prepare(Path::new(&ctx.workspace))?;}
     let status = refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
     let mut needed: Vec<(String, String)> = Vec::new();
     if status.scf != TaskState::Finished {

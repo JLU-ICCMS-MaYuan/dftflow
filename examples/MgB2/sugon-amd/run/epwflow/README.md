@@ -1,17 +1,26 @@
 # MgB₂ EPW 手动测试
 
-0046～0051 的合并版本已重新编译并完成联合验收。独立测试现场从 SCF 走通八阶段，iso／aniso 各一次 EPW 执行 20、30、40 K；结果与限制见 [联合验收记录](../../../../../docs/specs/0050-epw-stage-results/real-chain-validation.md)。本目录已清理历史运行文件，保留输入与说明，可从第 1 步开始手动测试。
+本目录采用按阶段填写原生参数的版本 2 配置，实施与本轮重算证据见 [0059 验收记录](../../../../../docs/specs/0059-epw-native-stage-config/acceptance.md)。旧计算已按授权范围清除且未备份归档；本轮已从 SCF 完成八阶段重算，iso／aniso 的 20／30／40 K 均收敛且数据有效，结果与图表已发布；这不是 Tc 或网格收敛验收。
 
 ## 开始前检查
 
 ```bash
 source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+export PATH="/data/home/mayuan/code/dftflow/docs/local/0059-native-bin:$PATH"
 cd "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow"
 command -v epw_phonon epw_wannier epw_superconductivity
 epw_phonon -c "epwinput.toml" --check --json
 ```
 
+本轮使用 `docs/local/0059-native-bin/` 中冻结并核验的三个程序；上述 PATH 仅作用于当前会话，默认安装不会随源码自动更新。
+
 `--check` 只检查配置、文件和并行设置，不提交作业。所有命令读取当前 `epwinput.toml`，结构为 `../POSCAR`，赝势位于上级 `pp/`。当前为 PBE 小网格功能测试，图与数值供人工检查，不代表网格或选窗已经收敛。
+
+## 按阶段修改配置
+
+当前 `epwinput.toml` 仅使用 `schema_version = 2`。例如 SCF 的截断能在 `stages."1.qe-scf".pw.SYSTEM.ecutwfc`，NSCF 在 `stages."2.qe-nscf".pw.SYSTEM.ecutwfc`；两处分别填写，单位均为 Ry。PH 初始化和逐 q 计算、电子后处理以及两个超导方法也分别配置。第 7 步 `temps=[20]` K 独立于第 8 步的 20／30／40 K。
+
+自动选窗、输入来源及调度保持在工作流配置；科学输入里的数组和卡片保留原生名称，不能再填写旧别名。完整对应关系见[参数说明](../../../../../docs/overview/epwflow/native-stage-config.md)。
 
 ## 八阶段操作
 
@@ -55,7 +64,7 @@ epw_phonon -c "epwinput.toml" --stage electronic -s
 epw_phonon -c "epwinput.toml" --stage phonon -s
 ```
 
-完成后在 `results/4.qe-phonon-nosplit/` 查看声子谱、TDOS、Mg／B 元素 DOS。
+完成后在 `results/4.qe-phonon-coords/` 查看声子谱、TDOS、Mg／B 元素 DOS。
 
 ### 第 5 步：Wannier
 
@@ -103,7 +112,7 @@ epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
 
 **第 3～7 步**各提交一次即可，阶段脚本在作业内完成必要后处理、核验、绘图及发布。第 3 步能带和 DOS 各自完成即可出图；第 7 步没有另加独立最终图，已有谱在第 8 步结果包展示。无需再次调用公开命令触发绘图。
 
-**第 8 步**当前 `task="gap"`、`mode="both"`、`mu_star=0.05`、温度 `[20,30,40]` K；执行一次命令提交两个独立方法作业，每个方法一次 EPW 处理全部温度。输出目录为 `iso-mu0.05-20-40/` 与 `aniso-mu0.05-20-40/`，全部有效温度齐备后在作业内发布最终结果。当前任务计算指定温度的能隙，不搜索 Tc。
+**第 8 步**当前工作流 `task="gap"`、`mode="both"`；`iso.epw.INPUTEPW` 与 `aniso.epw.INPUTEPW` 分别显式设置 `muc=0.05`、`nstemp=3`、`temps=[20,30,40]` K；执行一次命令提交两个独立方法作业，每个方法一次 EPW 处理全部温度。输出目录为 `iso-mu0.05-20-40/` 与 `aniso-mu0.05-20-40/`，全部有效温度齐备后在作业内发布最终结果。当前任务计算指定温度的能隙，不搜索 Tc。
 
 为了尽早检查选窗，也可按 **1 → 2 → 3 → 5 → 4 → 6 → 7 → 8** 执行。第 5 步不依赖声子；能带由 EPW 内嵌 Wannier90 的 wdata 输出，只有电子 DOS 调用 postw90。图中四个窗口边界取实际拟合日志。第 6 步复用第 5 步电子数据，只新增必要的声子求值；声子比较只画 TDOS，元素 DOS 在第 4 步单独交付。
 
@@ -115,9 +124,9 @@ epw_phonon -c "epwinput.toml" --status --json
 epw_superconductivity --results-check --results "results" --json
 ```
 
-`COMPLETED` 和退出码用于核对调度状态；还应检查阶段科学完成记录、根结果包及第 8 步各温度有效性。当前父脚本和合并日志位于对应阶段，如 `4.qe-phonon-nosplit/phonon.sh` 与 `slurm-phonon.log`；原生程序日志保留在实际任务目录。`results/index.json` 只导航已发布图片与数据，不代替科学完成记录。
+`COMPLETED` 和退出码用于核对调度状态；还应检查阶段科学完成记录、根结果包及第 8 步各温度有效性。当前父脚本和合并日志位于对应阶段，如 `4.qe-phonon-coords/phonon.sh` 与 `slurm-phonon.log`；原生程序日志保留在实际任务目录。`results/index.json` 只导航已发布图片与数据，不代替科学完成记录。
 
-0053 新版 CLI 生成的科学命令使用 `> xxx.out 2>&1`，例如 SCF 的正常输出和错误都在 `1.qe-scf/scf.out`，Slurm 日志设置保持原样。已有版本 1／2 任务仍读取其原分离日志；不要删除旧 `.err` 或修改已绑定的脚本。仓库与默认 EPW 入口已更新，本目录已实际完成一次新格式 SCF，见 [0053 验收](../../../../../docs/specs/0053-epw-merged-program-output/acceptance.md)。
+当前科学命令使用 `> xxx.out 2>&1`，例如 SCF 的正常输出和错误都在 `1.qe-scf/scf.out`，Slurm 日志单独保留。程序、输入和完成回执均以本轮新生成记录核验。
 
 需要重跑 SCF 并重新生成 `scf.sh` 时，无需删除 `1.qe-scf` 或 `completion.json`：
 
@@ -164,13 +173,13 @@ results/3.qe-electronic/
 
 ## 输入与目录
 
-当前 SCF／NSCF 为 4×4×2、NSCF 16 带，PH 为 2×2×1，细 k／q 为 8×8×4／4×4×2，5 个 Wannier 函数；MPI 启动器为 `mpirun`，其 `-np 32`、MPI=32、EPW `-nk 32` 保持一致。超导迭代使用输入中的实际混合设置 `mixing_beta=-0.3`、历史长度 8，最多 1000 次、相对标准 1e-8；不自动调窗、扫描网格或修改温度。
+当前 SCF／NSCF 为 4×4×2、NSCF 16 带，PH 为 2×2×1，细 k／q 为 8×8×4／4×4×2，5 个 Wannier 函数；MPI 启动器为 `mpirun`，其 `-np 32`、MPI=32、EPW `-nk 32` 保持一致。超导迭代使用输入中的实际混合设置 `broyden_beta=-0.3`、历史长度 8，最多 1000 次、相对标准 1e-8；不自动调窗、扫描网格或修改温度。
 
 阶段数据在本目录按 `1.qe-scf/` 至 `8.epw-superconductivity/` 生成，阶段状态在 `epw-state/`，最终图片与对应数据按阶段发布到同级 `results/`。原生科学文件继续保留在各阶段，续算时不要删除。
 
-共享账本沿用 `docs/local/epwflow-campaign.json`，保留历史消费与最多两个作业的登记约束；时间和存储旧额度不再约束新任务。DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。源配置须删除 `resources.wall_seconds`、`resources.storage_bytes`；含旧字段会明确报错。旧冻结快照和已提交脚本不自动改写，当前安装不随源码自动更新，见 [0058 验收](../../../../../docs/specs/0058-epw-remove-resource-limits/acceptance.md)。旧 examples 现场已归档到 `test_auto/MgB2/local_run/012-stage-results/example-before-manual/`，不作为本目录当前完成证据。
+共享账本沿用 `docs/local/epwflow-campaign.json`，保留历史消费与最多两个作业的登记约束；时间和存储旧额度不再约束新任务。DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。源配置须删除 `resources.wall_seconds`、`resources.storage_bytes`；含旧字段会明确报错。旧冻结快照和已提交脚本不自动改写，当前安装不随源码自动更新，见 [0058 验收](../../../../../docs/specs/0058-epw-remove-resource-limits/acceptance.md)。
 
-[图片与数据说明](RESULTS.md) · [测试脚本与复现](../../../../../test_auto/MgB2/epwflow/README.md) · [EPW 手册](../../../../../epwflow/README.md)
+[图片与数据导航](results/index.json) · [测试脚本与复现](../../../../../test_auto/MgB2/epwflow/README.md) · [EPW 手册](../../../../../epwflow/README.md)
 
 ## 电子图怎么看
 

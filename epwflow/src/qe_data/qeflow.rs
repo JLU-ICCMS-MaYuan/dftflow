@@ -176,6 +176,8 @@ pub fn run(
     if let Some(degauss) = cfg.qe.degauss_ry {
         input["qe_phonon"]["scf"]["degauss"] = json!(degauss);
     }
+    input["qe_phonon"]["phband"]["kpath_points"]=cfg.native_value(&[&cfg.phonon_stage(),"workflow","points_per_edge"])?;
+    input["qe_phonon"]["phdos"]["qpoints"]=json!([cfg.native_value::<u32>(&[&cfg.phonon_stage(),"dos","matdyn","INPUT","nk1"])?,cfg.native_value::<u32>(&[&cfg.phonon_stage(),"dos","matdyn","INPUT","nk2"])?,cfg.native_value::<u32>(&[&cfg.phonon_stage(),"dos","matdyn","INPUT","nk3"])?]);
     let config = dir.join("input.qeflow.toml");
     if existing.is_none() {
         store::atomic_bytes(&config, toml::to_string_pretty(&input)?.as_bytes())?;
@@ -206,7 +208,7 @@ pub fn run(
     } else {
         None
     };
-    qeflow::run_nosplit_with_scf_checkpoint(
+    qeflow::run_nosplit_with_native_inputs(
         config.to_string_lossy().into_owned(),
         cfg.structure.to_string_lossy().into_owned(),
         &mut |root| {
@@ -231,6 +233,15 @@ pub fn run(
                 attempt_count: 1,
                 success_count: 1,
             });
+            Ok(())
+        },
+        &mut |root| {
+            fs::write(root.join("scf.in"),qe.scf_input("out")?)?;
+            fs::write(root.join("ph.in"),qe.phonon_nosplit_input("out")?)?;
+            let stage=cfg.phonon_stage();
+            for (task,file) in [(vec![stage.as_str(),"q2r"],"q2r.in"),(vec![stage.as_str(),"dispersion","matdyn"],"matdyn_phband.in"),(vec![stage.as_str(),"dos","matdyn"],"matdyn_phdos.in")] {
+                cfg.configure_file(&task,&root.join(file))?;
+            }
             Ok(())
         },
     )

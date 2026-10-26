@@ -13,18 +13,6 @@ impl Case {
             sc.aniso = None;
             sc.mu_star = mu.unwrap_or(0.13);
         });
-        if mu.is_none() {
-            let path = c.root.join("input.toml");
-            let text = fs::read_to_string(&path).unwrap();
-            fs::write(
-                path,
-                text.lines()
-                    .filter(|l| !l.starts_with("mu_star ="))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            )
-            .unwrap();
-        }
         c.accounting(Some(201));
         success(c.numbered_cli(2, &["--stage", "fine", "-r"], Some(201), "batch-upstream"));
         c.direct_setup();
@@ -59,7 +47,7 @@ fn batch_prepared_script_changes_are_rejected_before_submission() {
 }
 
 #[test]
-fn batch_default_mu_and_explicit_value_use_method_range_directories() {
+fn batch_explicit_native_mu_values_use_method_range_directories() {
     for (mode, temperatures, mu, expected) in [
         (
             config::Mode::Iso,

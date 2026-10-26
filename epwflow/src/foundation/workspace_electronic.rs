@@ -138,11 +138,7 @@ fn key(cfg: &Config, task: &str) -> Result<String> {
             post_program(cfg, "dos")?,
             format!(
                 "sigma_ry={:.15}",
-                cfg.comparison
-                    .clone()
-                    .unwrap_or_default()
-                    .electronic_sigma_ev
-                    / 13.605693122994
+                cfg.native_value::<f64>(&[super::native_config::ELECTRONIC,"qe_eledos","dos","DOS","degauss"])?
             ),
             json!(stages::upstream(cfg, Step::Electronic)?),
         ),
@@ -151,7 +147,12 @@ fn key(cfg: &Config, task: &str) -> Result<String> {
     Ok(store::hash_bytes(&serde_json::to_vec(&(
         1,
         task,
-        stages::scientific_key(cfg, Step::Electronic)?,
+        cfg.native_value::<serde_json::Value>(&match task {
+            "pw-bands" => vec![super::native_config::ELECTRONIC,"qe_eband","pw"],
+            "bands" => vec![super::native_config::ELECTRONIC,"qe_eband","bands"],
+            _ => vec![super::native_config::ELECTRONIC,"qe_eledos","dos"],
+        })?,
+        if task == "pw-bands" {Some((cfg.native_value::<u32>(&[super::native_config::ELECTRONIC,"workflow","points_per_edge"])?,cfg.kpath.as_ref().map(|p|store::hash_file(p)).transpose()?))} else {None},
         upstream,
         store::hash_file(&program.path)?,
         if task == "pw-bands" {
@@ -456,6 +457,7 @@ pub(super) fn inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
             cfg.qe.prefix, cfg.qe.prefix
         ),
     )?;
+    cfg.configure_file(&[super::native_config::ELECTRONIC,"qe_eband","bands"],&bands.join("elebanddata.in"))?;
     dos_inputs(cfg)?;
     Ok(())
 }
@@ -469,16 +471,12 @@ fn dos_inputs(cfg: &Config) -> Result<()> {
     qf_input::electronic::write_eledos_inputs(dos.to_str().unwrap(), &shared, &cfg.qe.prefix)?;
     let file = dos.join("eletdos.in");
     let text = fs::read_to_string(&file)?;
-    let sigma = cfg
-        .comparison
-        .clone()
-        .unwrap_or_default()
-        .electronic_sigma_ev
-        / 13.605693122994;
+    let sigma: f64 = cfg.native_value(&[super::native_config::ELECTRONIC,"qe_eledos","dos","DOS","degauss"])?;
     fs::write(
         file,
         text.replacen("&dos", &format!("&dos\n ngauss=0, degauss={sigma:.15},"), 1),
     )?;
+    cfg.configure_file(&[super::native_config::ELECTRONIC,"qe_eledos","dos"],&dos.join("eletdos.in"))?;
     Ok(())
 }
 

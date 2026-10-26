@@ -5,6 +5,8 @@
 #[path = "support/cli.rs"]
 mod stage_cli;
 
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
 use epwflow::foundation::{config::Config, process, stage::Backend, store};
 use epwflow::interpolation::adapter;
 use epwflow::qe_data::{nscf, qe_config::QeSettings, reuse, scf};
@@ -50,19 +52,10 @@ impl Case {
 
     fn qe_fixture(&self) {
         let input = fs::read_to_string(self.root.join("input.toml")).unwrap();
-        self.put(
-            "input.toml",
-            &input
-                .replace("[phonon]", "[phonon]\nmode = \"nosplit\"")
-                .replace(
-                    "frozen_window_ev = [-2.0,2.0]",
-                    "frozen_window_ev = [-0.5,0.5]",
-                )
-                .replace(
-                    "energy_reference = \"f2_fermi\"",
-                    "energy_reference = \"qe_zero\"",
-                ),
-        );
+        let mut cfg:Config=toml::from_str(&input).unwrap();
+        native_fixture::phonon(&mut cfg,epwflow::foundation::config::PhMode::Nosplit);
+        cfg.wannier.frozen_window_ev=Some([-0.5,0.5]);
+        self.put("input.toml",&toml::to_string_pretty(&cfg).unwrap());
         // 此替身通过选窗能力预检，但不生成任何原生产物；来源完整性仍须拒绝。
         self.script(
             "epw.x",
@@ -385,7 +378,7 @@ fn b07_qe_stages_use_bound_prefix() {
     for (stage, input) in [
         ("scf", qe.scf_input("./tmp").unwrap()),
         ("nscf", qe.nscf_input("./tmp").unwrap()),
-        ("ph_init", qe.phonon_init_input("./tmp")),
+        ("ph_init", qe.phonon_init_input("./tmp").unwrap()),
     ] {
         let prefix = re.captures(&input).expect("输入必须声明 prefix");
         assert_eq!(&prefix[1], cfg.qe.prefix, "{stage} 必须使用已绑定 prefix");
@@ -532,8 +525,8 @@ fn shared_qe_inputs_keep_physics_and_full_mesh() {
         .collect();
     assert_eq!(rows[0][0], "Mg");
     assert!((rows[0][1].parse::<f64>().unwrap() - 24.305).abs() < 1e-10);
-    assert!((rows[1][1].parse::<f64>().unwrap() - 10.81).abs() < 1e-10);
-    assert_eq!(rows[0][2], "'Mg.upf'");
+    assert!((rows[1][1].parse::<f64>().unwrap() - 10.811).abs() < 1e-10);
+    assert_eq!(rows[0][2], "Mg.upf");
     assert!(input.contains(&format!("pseudo_dir = '{}'", cfg.pseudos["Mg"].parent().unwrap().display())));
     let nscf = qe.nscf_input("./tmp").unwrap();
     let system = nscf
@@ -550,7 +543,7 @@ fn shared_qe_inputs_keep_physics_and_full_mesh() {
     let count = cfg.qe.nscf.k_grid.iter().product::<u32>() as usize;
     assert_eq!(k.lines().next().unwrap().parse::<usize>().unwrap(), count);
     assert_eq!(k.lines().skip(1).count(), count);
-    let init = qe.phonon_init_input("./tmp");
+    let init = qe.phonon_init_input("./tmp").unwrap();
     assert!(init.contains("nq1 = 2") && init.ends_with("/\n"));
     let point = epwflow::qe_data::manifest::QPoint {
         global_index: 2,
@@ -562,7 +555,9 @@ fn shared_qe_inputs_keep_physics_and_full_mesh() {
         reciprocal_basis: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
         source_dyn0: "MgB2.dyn0".into(),
     };
-    let coords = qe
+    let mut coords_cfg=cfg.clone();native_fixture::phonon(&mut coords_cfg,epwflow::foundation::config::PhMode::Coords);
+    let coords_qe=QeSettings::from_config(&coords_cfg).unwrap();
+    let coords = coords_qe
         .phonon_q_input(
             "./tmp",
             &epwflow::foundation::config::PhMode::Coords,
@@ -588,7 +583,8 @@ fn shared_qe_inputs_keep_physics_and_full_mesh() {
         .unwrap();
     assert!(index.contains("start_q = 2") && index.contains("last_q = 2"));
     assert!(index.contains("only_init = .false."));
-    let nosplit = qe.phonon_nosplit_input("./tmp");
+    let mut nosplit_cfg=cfg.clone();native_fixture::phonon(&mut nosplit_cfg,epwflow::foundation::config::PhMode::Nosplit);
+    let nosplit = QeSettings::from_config(&nosplit_cfg).unwrap().phonon_nosplit_input("./tmp").unwrap();
     assert!(nosplit.contains("ldisp = .true.") && nosplit.contains("only_init = .false."));
     assert!(!nosplit.contains("last_q"));
 }
@@ -604,6 +600,7 @@ fn qe_species_layout_keeps_explicit_files_and_rejects_native_filename_limit() {
         fs::copy(&cfg.pseudos[el], &path).unwrap();
         cfg.pseudos.insert(el.into(), path);
     }
+    cfg.set_native(&[epwflow::foundation::native_config::NSCF,"pw","ATOMIC_SPECIES"],json!("Mg 24.305 'first/Mg.upf'\nB 10.811 'second/B.upf'")).unwrap();
     let qe = QeSettings::from_config(&cfg).unwrap();
     let input = qe.nscf_input("./out").unwrap();
     assert!(input.contains(&format!("pseudo_dir = '{}'", c.root.display())));
@@ -732,7 +729,7 @@ fn prepare_rejects_changed_bound_configuration_without_rewriting() {
     let config = fs::read_to_string(c.root.join("input.toml")).unwrap();
     c.put(
         "input.toml",
-        &config.replace("mu_star = 0.1", "mu_star = 0.12"),
+        &config.replace("muc = 0.1", "muc = 0.12"),
     );
     let out = c.cli(&["prepare", "-c", "input.toml"]);
     assert!(!out.status.success());

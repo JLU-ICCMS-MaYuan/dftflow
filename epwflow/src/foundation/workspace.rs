@@ -162,8 +162,11 @@ fn freeze(cfg: &Config, target: Step) -> Result<(PathBuf, Attempt)> {
         fs::copy(p, dir.join("KPATH.in"))?;
         fixed.kpath = Some(dir.join("KPATH.in"));
     }
+    let mut pseudo_root=cfg.pseudos.values().next().context("configuration: 缺少赝势")?.parent().context("configuration: 赝势缺少目录")?.to_path_buf();
+    for path in cfg.pseudos.values(){while !path.starts_with(&pseudo_root){ensure!(pseudo_root.pop(),"configuration: 赝势缺少共同目录");}}
     for (el, p) in &cfg.pseudos {
-        let dest = dir.join("pp").join(format!("{el}.UPF"));
+        let dest=dir.join("pp").join(p.strip_prefix(&pseudo_root)?);
+        fs::create_dir_all(dest.parent().context("configuration: 赝势目标目录")?)?;
         fs::copy(p, &dest)?;
         ensure!(
             store::hash_file(p)? == store::hash_file(&dest)?,
@@ -171,6 +174,7 @@ fn freeze(cfg: &Config, target: Step) -> Result<(PathBuf, Attempt)> {
         );
         fixed.pseudos.insert(el.clone(), dest);
     }
+    fixed.write_parameter_map(&dir.join("parameter-map.json"))?;
     let file = dir.join("input.toml");
     store::atomic_bytes(&file, toml::to_string_pretty(&fixed)?.as_bytes())?;
     let mut sources = vec![Identity::capture(&fixed.structure)?];

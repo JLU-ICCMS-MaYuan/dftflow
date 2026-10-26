@@ -101,6 +101,10 @@ pub fn run_coarse(
     backend: Backend,
 ) -> Result<CoarseResult> {
     prepare_coarse(epw_cfg, work)?;
+    let dir=crate::foundation::layout::path(work,"coarse");
+    if !crate::foundation::layout::enabled(work) {
+        run_epw(epw_cfg,&dir,"epw_wannier.in",launcher,backend)?;
+    }
     run_epw(epw_cfg, &crate::foundation::layout::path(&work, "coarse"), "epw_coarse.in", launcher, backend)?;
     collect_coarse(work, epw_cfg)
 }
@@ -120,9 +124,12 @@ pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
         &epw_cfg.window_selection()?,
     )?;
     epw_cfg.require_window_support()?;
+    if !crate::foundation::layout::enabled(work) {
+        fs::write(dir.join("epw_wannier.in"),epw_cfg.native_input(super::epw_config::NativeStage::WannierOnly,"./out","./save",epw_cfg.cfg.interpolation.phonon_smearings_mev[0])?)?;
+    }
     fs::write(
         dir.join("epw_coarse.in"),
-        if crate::foundation::layout::enabled(work) {epw_cfg.native_input(super::epw_config::NativeStage::ReuseWannier,"./out","./save",epw_cfg.cfg.interpolation.phonon_smearings_mev[0])?}else{epw_cfg.epw_coarse_input("./out")?},
+        epw_cfg.native_input(super::epw_config::NativeStage::ReuseWannier,"./out","./save",epw_cfg.cfg.interpolation.phonon_smearings_mev[0])?,
     )?;
     Ok(())
 }

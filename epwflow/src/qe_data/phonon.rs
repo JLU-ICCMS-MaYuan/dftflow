@@ -113,7 +113,7 @@ pub fn run_init(
     backend: Backend,
 ) -> Result<Vec<QPoint>> {
     let dir = crate::foundation::layout::path(&work, "ph_init");
-    let input = qe.phonon_init_input(dir.join("out").to_str().unwrap());
+    let input = qe.phonon_init_input(dir.join("out").to_str().unwrap())?;
     execute(qe, work, &dir, &input, "ph_init", launcher, backend)?;
     let geometry = geometry(qe, work)?;
     let points = dyn0(qe, &dir, &geometry)?;
@@ -155,7 +155,7 @@ pub fn run_nosplit(
     backend: Backend,
 ) -> Result<(Vec<QPoint>, Vec<PhResponse>)> {
     let dir = crate::foundation::layout::path(&work, "ph_nosplit");
-    let input = qe.phonon_nosplit_input(dir.join("out").to_str().unwrap());
+    let input = qe.phonon_nosplit_input(dir.join("out").to_str().unwrap())?;
     execute(qe, work, &dir, &input, "ph", launcher, backend)?;
     let geometry = geometry(qe, work)?;
     let points = dyn0(qe, &dir, &geometry)?;

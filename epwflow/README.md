@@ -1,5 +1,7 @@
 # epwflow
 
+仅支持按八阶段填写原生参数的 `schema_version=2`；名称、单位与实际输入对应关系见[参数说明](../docs/overview/epwflow/native-stage-config.md)。本轮固定私有构建已完成 PBE MgB₂ 八阶段及 iso／aniso 的 20／30／40 K 六点能隙验收，默认安装未切换，Tc 与网格收敛不在本次结论中。
+
 编号工作区新原生脚本使用 `<功能>.sh`（如 `scf.sh`、`bands.sh`、`epw_wannier.sh`），Slurm 两路日志合并到 `slurm-<功能>.log` 并覆盖写入。公开命令在实际计算目录调用 sbatch；脚本仅用 `#SBATCH --chdir=绝对目标目录`，正文没有 cd，也不重复传命令行 --chdir。手工可从其他目录通过脚本绝对路径提交，科学输出和相对 Slurm 日志仍在目标目录；`squeue -o "%i %j %Z"` 可查看 WorkDir。SLURM_SUBMIT_DIR 仍表示调用 sbatch 的原目录。直接 bash 执行不会解释 #SBATCH，需由调用方指定工作目录。历史冻结脚本保持原字节，细节见 [0046 验收](../docs/specs/0046-epw-submit-simplification/acceptance.md)。
 
 ## MPI 启动器
@@ -74,17 +76,30 @@ epw_clear --work "/path/to/epwflow" --dry-run
 
 ## 输入与布局
 
-新配置在原 EPW TOML 基础上设置：
+仅支持 `schema_version = 2`，科学参数按八个编号阶段、子任务、程序和原生输入段分别填写；旧版不兼容，也不提供迁移工具。相对路径按 TOML 所在目录解释，`work_dir = "."` 表示当前工作区。
 
 ```toml
+schema_version = 2
 layout = "numbered"
 work_dir = "."
 structure = "POSCAR"
 kpath = "KPATH.in"
-# pseudos、programs、resources、qe 等其余节仍然完整填写。
+
+[stages."1.qe-scf".pw.SYSTEM]
+ecutwfc = 40.0  # Ry
+ecutrho = 320.0 # Ry
+occupations = "smearing"
+smearing = "gaussian"
+degauss = 0.02  # Ry
+
+[stages."2.qe-nscf".pw.SYSTEM]
+ecutwfc = 40.0  # 此次 pw.x 独立设置，不从 SCF 继承
+# 其余科学参数也须分别填写；本片段不是完整配置。
 ```
 
-只有根 `input.toml` 需要日常维护；程序生成的原生输入、内部快照和清单由程序管理。相对路径按 TOML 所在目录解释，`work_dir = "."` 不再额外嵌套 epwflow。
+完整示例见 [MgB₂ 配置](../examples/MgB2/sugon-amd/run/epwflow/epwinput.toml)，字段和单位见[原生阶段参数说明](../docs/overview/epwflow/native-stage-config.md)。所有科学调用读取对应阶段配置；修改 NSCF 截断能不会改写 SCF。数据交接必须匹配的前缀、粗细网格、Wannier 维数等出现冲突时，执行前列出两处配置和值。`workflow` 单独保存自动选窗、输入来源、PH 拆分及搜索设置；`workflow.derived` 明确列出推导目标与来源。同一目标同时手填和推导会被拒绝。
+
+数组使用原生名，例如 `amass`、`temps`，生成 Fortran 索引数组；`ATOMIC_SPECIES` 和 `K_POINTS` 保存原生卡片文本。NSCF 使用完整 `K_POINTS crystal` 点表，不隐藏改写成另一种网格。输入注释、参数对应 JSON 和固定配置共同记录来源；内部算法类型不是另一份用户配置。
 
 ```text
 run/
@@ -122,13 +137,13 @@ run/
 
 独立拟合输入不声明粗网格插值使用的 `filkf/filqf`。后处理自动从校验后的同一 NSCF 提取晶格、原子、网格、原 k 点顺序及排除后的能带，补齐 DOS 所需 postw90 的 `.win/.eig`；无需用户维护另一份输入。原生 DOS 使用 `dos_smr_type = gauss`。除退出码外，还检查本次日志和 `.werr`，避免 Fortran 报错却零退出时错误放行。后处理失败保留拟合 `.wout/.chk/.ukk` 及收据，下次公开命令只重试缺失后处理；旧后处理日志和产物归档。依据见 [0023 验收](../docs/specs/0023-epw-wannier-native-start/acceptance.md)。
 
-`[wannier] guiding_centres = true` 可显式启用原生 W90 的中心相位引导；`false` 显式关闭。不设置时保留原生默认值和旧科学身份。程序同时核对原生日志中的实际采用值；修改此项只使 Wannier 及依赖它的阶段更新，完整相容的 QE／PH 继续复用。它用于局域化数值控制，不代替原生收敛和数据完整性检查，也不保证任意材料收敛。依据见 [0030](../docs/specs/0030-wannier-guiding-centres/acceptance.md)。
+`[stages."5.epw-wannier".wannier90] guiding_centres = true` 可显式启用原生 W90 的中心相位引导；`false` 显式关闭。不设置时保留原生默认值和旧科学身份。程序同时核对原生日志中的实际采用值；修改此项只使 Wannier 及依赖它的阶段更新，完整相容的 QE／PH 继续复用。它用于局域化数值控制，不代替原生收敛和数据完整性检查，也不保证任意材料收敛。依据见 [0030](../docs/specs/0030-wannier-guiding-centres/acceptance.md)。
 
 独立 Wannier 交付同时校验并绑定 `.bvec/.mmn` 的网格、排除后带空间及完整有限数记录；粗网格只复制同一收据绑定的变换与配套数据。DOS 后处理关闭 `write_bvec`，保护已绑定文件。旧收据未绑定配套数据时只将第 5 步及其下游判为需要更新，原现场归档，QE／PH 保留；已绑定文件损坏仍报错。见 [0033](../docs/specs/0033-wannier-velocity-handoff/acceptance.md)。
 
 Slurm 日志属于运行输出；旧原生输入记录中的标准 `slurm-数字.out/err` 项不作为固定科学输入核验。两种阶段归档共用当前日志同 inode 入口维护，见 [0035](../docs/specs/0035-native-retry-slurm-logs/acceptance.md)。EPW 会改写粗网格自己的 `out/prefix.wfcN` 工作副本；只从已冻结且校验通过的原生输入识别前缀与 `./out`，保留初始身份用于追溯，失败后归档并从已校验来源重建。原始 NSCF、portable SAVE、响应及其余输入仍严格核验，见 [0036](../docs/specs/0036-epw-mutable-wavefunction-scratch/acceptance.md)。
 
-第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，生成声子谱、声子 TDOS 叠图，并读取第 5 步电子数据生成四面板总览和事实最大差值。第 6 步不新增电子参考 PW；声子后处理核对 ASR，不相容时事前说明最少补算原因，成功力常数与频率分别缓存。第 7 步生成细网格矩阵元、α²F、λ；第 8 步根据 `superconductivity.task` 运行指定温度能隙或既有 Tc 搜索。第 3 步提供 QE 元素电子 PDOS；插值侧元素／轨道投影仍未提供。图表和差值只展示事实，科学合理性由用户判断。
+第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，生成声子谱、声子 TDOS 叠图，并读取第 5 步电子数据生成四面板总览和事实最大差值。第 6 步不新增电子参考 PW；声子后处理核对 ASR，不相容时事前说明最少补算原因，成功力常数与频率分别缓存。第 7 步生成细网格矩阵元、α²F、λ；第 8 步根据 `stages."8.epw-superconductivity".workflow.task` 运行指定温度能隙或既有 Tc 搜索。第 3 步提供 QE 元素电子 PDOS；插值侧元素／轨道投影仍未提供。图表和差值只展示事实，科学合理性由用户判断。
 
 ## 声子后处理与作业日志
 
@@ -162,21 +177,31 @@ epw_wannier --stage wannier --resume -s
 
 新比较包使用版本 2，四张独立图和总览仍可自包含移动重绘；版本 1 历史包可只读重绘，不补算四项差值。历史工作区、冻结记录和旧报告保持；已有 SCF／NSCF／PH 可通过 `--import-work` 导入新编号工作区，导入不复制抽样参考。默认安装不随源码更新。设计及验证见 [0043](../docs/specs/0043-epw-comparison-max-differences/acceptance.md)，取代 [0040](../docs/specs/0040-interpolation-quality-warnings/spec.md) 的独立核验要求。
 
-指定温度能隙使用以下超导段设置，保留原 TOML 的其他物理和程序参数：
+指定温度能隙在第 8 步分别填写两个方法的完整原生输入。以下仅展示有关字段，其他开关、网格和求解参数也必须独立填写：
 
 ```toml
-[superconductivity]
+[stages."8.epw-superconductivity".workflow]
 task = "gap"
 mode = "both"
-mu_star = 0.13
-gap_temperatures_k = [20.0, 30.0, 40.0]
-initial_gap_mev = 10.0
-mixing_beta = -0.3
+
+[stages."8.epw-superconductivity".iso.epw.INPUTEPW]
+muc = 0.13
+nstemp = 3
+temps = [20.0, 30.0, 40.0] # K
+gap_edge = 0.01           # eV
+broyden_beta = -0.3
+
+[stages."8.epw-superconductivity".aniso.epw.INPUTEPW]
+muc = 0.13
+nstemp = 3
+temps = [20.0, 30.0, 40.0] # K
+gap_edge = 0.01           # eV
+broyden_beta = -0.3
 ```
 
 执行 `epw_superconductivity -c "input.toml" --stage superconductivity -s`，在前置数据可复用时一次提交 iso／aniso 两个独立 Slurm 作业，无方法间依赖。每种方法只调用一次 EPW，`nstemp` 和完整 `temps` 列表包含全部配置温度，无需逐温度重复命令。每个方法作业内部归集本批结果，最后完成的方法自动出图并发布到 `results/8.epw-superconductivity/`；不重算已完成点。`--status --json` 的 `native_methods` 分别显示两个作业；实际启动时间由调度器决定，每个作业使用配置资源并单独登记共享预算。
 
-`mu_star` 省略时默认 0.13，显式其他值优先；已有显式 0.05 不会被默认值覆盖。`mode` 可选 `iso`、`aniso`、`both`，每方法批次初值缺省 10 meV，后续温度遵循原生 EPW 能隙续接。温度列表为 1～50 个互不重复的 0.01～999.99 K 值，按配置顺序传递；频率截断须容纳首个 Matsubara 频率。负混合系数为原生线性混合、正值为 Broyden，绝对值须在 `(0,1]`。
+`muc`、`gap_edge` 和求解控制必须显式配置，程序不注入科学默认值。两种方法独立读取自己的参数与温度；第 7 步也有自己的 `nstemp/temps`。温度列表为 1～50 个互不重复的 0.01～999.99 K 值，按配置顺序传递；频率截断须容纳首个 Matsubara 频率。负 `broyden_beta` 为原生线性混合、正值为 Broyden，绝对值须在 `(0,1]`。
 
 ```text
 8.epw-superconductivity/
@@ -188,7 +213,7 @@ mixing_beta = -0.3
 
 目录使用实际 μ* 和配置列表首尾温度，去掉数值冗余零，不按温度建立子目录。新点清单为 schema 4，旧 schema 3 继续核验；结果包保留 `points.csv`、有效的 `gap_summary.csv`／`gap_states.csv` 与图，不生成 Tc 表。执行完成、收敛和数据有效性分别记录，缺失或 NaN 不补零。
 
-EPW 原生多温度循环可能因不收敛提前停止，另一方法独立运行。保留已完成前缀，明确记录未执行温度；修正原因后用同命令加 `--resume -s`，只把剩余点交给新的原生批次。旧输入、日志和逐点证据保存在同方法目录的编号文件中，不覆盖失败证据。活动或未知回执不重提；第二个提交失败也保留第一个作业号。省略 `task` 仍为原 Tc 模式，继续使用已有搜索和双初值规则。设计及源码验证见 [0049](../docs/specs/0049-epw-multitemperature-submit/spec.md)，历史安装及六单点真实运行见 [0045](../docs/specs/0045-epw-gap-temperatures/acceptance.md)；初次 0049 未自动部署；后续真实双批次六点均有效，见 [联合验收](../docs/specs/0050-epw-stage-results/real-chain-validation.md)。
+EPW 原生多温度循环可能因不收敛提前停止，另一方法独立运行。保留已完成前缀，明确记录未执行温度；修正原因后用同命令加 `--resume -s`，只把剩余点交给新的原生批次。旧输入、日志和逐点证据保存在同方法目录的编号文件中，不覆盖失败证据。活动或未知回执不重提；第二个提交失败也保留第一个作业号。`workflow.task="tc"` 显式选择原有搜索和双初值规则。设计及源码验证见 [0049](../docs/specs/0049-epw-multitemperature-submit/spec.md)，历史安装及六单点真实运行见 [0045](../docs/specs/0045-epw-gap-temperatures/acceptance.md)；初次 0049 未自动部署；后续真实双批次六点均有效，见 [联合验收](../docs/specs/0050-epw-stage-results/real-chain-validation.md)。
 
 超导数值读取支持标准 E/D 指数和原生三位指数省略 E 的格式（如 1.7366215176-102）；仅接纳带小数点的明确尾数，星号、非有限及溢出仍拒绝。格式兼容不改变原生收敛、频率／状态映射和双初值判据，见 [0042](../docs/specs/0042-epw-fortran-exponent/acceptance.md)。
 
