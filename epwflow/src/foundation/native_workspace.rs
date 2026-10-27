@@ -235,3 +235,33 @@ fn pending(cfg: &Config, target: Step, allocated: bool) -> Result<()> {
     // 不再产生 submit_all.sh；已有历史文件不修改，清单明确取代它。
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "显式指定真实配置，只恢复和准备 Wannier，不提交或运行科学程序"]
+    fn real_wannier_resume_prepare_without_submission() {
+        let config = std::env::var_os("DFTFLOW_WANNIER_RESUME_PREPARE_CONFIG").expect("显式配置");
+        let config = Path::new(&config);
+        let cfg = Config::load(config).unwrap();
+        let old = native_jobs::active_task(&cfg).unwrap().unwrap();
+        assert_eq!(old.state, "failed");
+        for step in [Step::Scf, Step::Nscf, Step::Electronic, Step::Phonon] {
+            assert!(stages::reusable(&cfg, step).unwrap(), "前置阶段不可复用，停止现场准备：{}", step.name());
+        }
+        let path = Step::Wannier.directory(&cfg).join("epw_wannier.in");
+        assert!(!path.exists(), "此显式测试仅用于真实的归档后悬空状态");
+        advance(config, Step::Wannier, false, true).unwrap();
+        let task = native_jobs::active_task(&cfg).unwrap().unwrap();
+        assert_eq!(task.state, "prepared");
+        assert!(task.job.is_none() && task.reservation.is_none());
+        assert_ne!(task.id, old.id);
+        let input = std::fs::read_to_string(path).unwrap();
+        for projection in &cfg.wannier.projections { assert!(input.contains(projection)); }
+        assert!(input.contains(&format!("num_iter = {}", cfg.wannier.localization.max_iterations)));
+        assert!(task.script.path.is_file());
+        eprintln!("real_resume_prepared: {} task={} job=None", task.directory.display(), task.id);
+    }
+}

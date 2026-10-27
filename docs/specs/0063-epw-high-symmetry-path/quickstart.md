@@ -37,3 +37,21 @@ epw_wannier --config "epwinput.toml" --stage wannier -s
 ```
 
 每次有新原生任务提交时先等其结束。文件头兼容修复不意味着新模型一定收敛，也不替代 Wannier 完成回执。
+
+## 失败任务归档后的输入缺失
+
+若旧版本曾在归档后再次生成输入失败，旧活动记录可能仍引用已经移走的 `epw_wannier.in`。新版本的显式恢复会核验唯一匹配的历史输入、脚本、日志和外部来源，再原样保留旧失败记录并准备当前配置；不要删除回执或手工复制旧输入回来。证据损坏、归档歧义或任务状态不明仍会中断。
+
+对仍处于上述失败状态的现场，修复配置后显式恢复并提交：
+
+```bash
+epw_wannier --config "epwinput.toml" --stage wannier --resume -s
+```
+
+CLI 的 `--resume` 需要执行选项；本轮维护验收通过生产 API 的 `submit=false` 完成无提交恢复，不能把单独 `--resume` 写成有效的准备命令。若当前任务已经是 `prepared`，输入及脚本均存在，直接提交该任务：
+
+```bash
+epw_wannier --config "epwinput.toml" --stage wannier -s
+```
+
+本次真实 SiP₂ 已通过生产恢复准备，当前任务为 `prepared`，输入和脚本位于 `5.epw-wannier/`；可以使用上面的普通 `-s` 命令提交。配置仍为 `Si:s,p`／`P:s,p`、96 个函数、500 次上限和原有路径密度。正式入口及源码／制品身份的实测结果见 [验收记录](acceptance.md)。准备成功只证明恢复和提交前输入可用，不代表新的拟合已经运行或收敛。

@@ -24,6 +24,11 @@
 
 > 你看看，我记得有一个 issue 专门用来解决 5.epw-wannier这一步里面为 wannier 写高对称路径的。你当时没测试好吗？为什么还是报错了？在那个 issue和 spec 里面继续完成这个debug
 
+> (my_scripts) [mayuan@login02 SiP2]$ epw_wannier --config "epwinput.toml" --stage wannier --resume -s
+> input_conflict: input_conflict: 无法定位 /data/home/mayuan/code/dftflow/examples/SiP2/5.epw-wannier/epw_wannier.in:No such file or directory (os error 2)
+> (my_scripts) [mayuan@login02 SiP2]$ epw_wannier --config "epwinput.toml" --stage wannier  -s
+> input_conflict: input_conflict: 无法定位 /data/home/mayuan/code/dftflow/examples/SiP2/5.epw-wannier/epw_wannier.in:No such file or directory (os error 2)这是为什么？你在/data/home/mayuan/code/dftflow/examples/SiP2测试过了吗？为什么不行，还是报错。你确定你重新编译得到新的 CLI 了吗
+
 ## 附件与推断来源
 
 - PDF：`test_auto/MgB2/epwflow/Wed.9.Mori.pdf`，已用 `pdftotext -layout` 读取，第 4 页示例与聊天图片一致。文件位于本地忽略目录，未作为受控附件复制入 Git。复核方式与观察见 [调查记录](research.md)。
@@ -102,6 +107,7 @@ AI 观察：IMG-001 每行以两个带标签的端点声明一条线段。没有
 - **FR-009**：旧输入、成功模型、输出与回执不自动改写；复用必须经过来源和采样核查，不相容时保护现场，不自动重做 SCF／NSCF／PH 或拟合。
 - **FR-010**：实现后同步路径手册、示例和结果来源说明；源码、安装、受控测试与真实科学验证分别记录，不把短输入生成成功视为完整交付。
 - **FR-011**：兼容已有四行路径文件头中的自定义标题；仅在完整识别“标题、正整数、Line-Mode、Reciprocal”结构时跳过文件头，正文错误仍逐行拒绝并保留原始行号。不得通过改写用户路径文件或回执来绕过兼容问题。
+- **FR-012**：第 5 步归档失败原生任务时必须保留并撤下其旧活动记录，避免后续校验继续引用已移动的输入。历史遗留悬空记录仅在显式恢复、任务已明确失败、阶段已进入另一失败尝试且归档中的输入、脚本、日志及外部来源身份可核验时接续；缺失、损坏、歧义、活动或未知提交均拒绝，不能删除历史证据或重写哈希绕过校验。
 
 ### 关键实体
 
@@ -119,6 +125,7 @@ AI 观察：IMG-001 每行以两个带标签的端点声明一条线段。没有
 - **SC-005**：FR-008 的非法输入分别拒绝；旧结果相容复用与不相容保留现场的回归通过，保护数据的哈希保持不变。
 - **SC-006**：相关生产回归和文档检查通过，按 FR-010 记录各层验证边界；源码受控验证与真实科学运行分开记录。
 - **SC-007**：SiP₂ 原样路径在实际输入生成和公开 CLI 受控恢复中通过；任意标题的完整文件头、裸端点、大小写和空白、畸形文件头及正文错误均有回归。路径文件与已有电子来源不变；受控恢复不增加 SCF／NSCF／PH／电子参考调用。
+- **SC-008**：回归覆盖“拟合未收敛 → 归档后输入生成失败 → 再恢复”的完整链，以及历史悬空活动记录的严格接续与拒绝。对真实 SiP₂ 原有失败状态完成恢复及新输入准备，验证 `s,p`／500 次参数、正式 CLI 路径和哈希，保留 SCF／NSCF／PH 与原配置，不提交真实计算。
 
 ## 假设与依赖
 

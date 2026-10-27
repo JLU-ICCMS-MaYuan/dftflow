@@ -70,3 +70,9 @@ pdftotext -layout "test_auto/MgB2/epwflow/Wed.9.Mori.pdf" "/tmp/dftflow-mori-kpa
 SiP₂ 的真实文件头为 `SiP2 Pbam; historical Wannier path`、`20`、`Line-Mode`、`Reciprocal`。原严格解析器只认可 `K-Path ` 开头的标题；共享 QE 解析器跳过非坐标行，因此此前电子参考可以完成而第 5 步失败。既有测试使用固定 VASPKIT 标题或裸端点，没有覆盖此自定义标题，这是实现及测试遗漏，不是 Wannier 参数或收敛问题。
 
 不修改 KPATH 内容作为修复：电子阶段参数含整个文件哈希，即便只改标题也可能使已有电子参考失去复用身份。采用有界的四行文件头结构识别，允许任意标题，仅完整的正整数／Line-Mode／Reciprocal 后续结构可证明其为标题。正文不能继续跳过标题、数字或格式关键字，非有限数、缺列、错标签等按原始文件行号拒绝。不改共享 QE／声子解析器、电子科学身份或历史回执。
+
+## 第二处遗漏：失败任务归档后的活动记录
+
+现场 CLI SHA-256 为 `0b23530eb35693c4c71363d6b4096e5d716389bea6159be791ca3ca1e57d5fab`，与上一轮安装记录一致。旧 `native-active.json` 仍是 5000 次未收敛的失败任务，输入已位于 `history/wannier-18e25df120f3ab0b-2c48eb-1d/calculation/epw_wannier.in`；新一代阶段进度也已失败，但尚未创建新的原生任务。因此 `reconcile_task` 先验证旧输入就报缺失，无法走到显式恢复的归档及输入生成逻辑。
+
+上一轮恢复回归从成功模型变更参数，旧活动记录为 `validated`，而该状态跳过 `verify`，没有覆盖失败旧任务的路径。真实目录只读输入生成也不会经过任务归集，不能证明现场恢复可用。修复同时补正常归档交接和有界遗留接续，不能简单对所有失败任务跳过输入验证，也不把旧输入复制回当前目录掩盖活动记录悬空。

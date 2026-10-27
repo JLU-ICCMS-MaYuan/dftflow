@@ -470,3 +470,52 @@ fn sip2_titled_path_survives_wannier_resume_without_recomputing_references() {
     assert!(c.root.join("run/5.epw-wannier/completion.json").is_file());
     assert!(c.root.join("run/results/5.epw-wannier/stage-manifest.json").is_file());
 }
+
+#[test]
+fn failed_wannier_archive_generation_error_resumes_from_legacy_active_record() {
+    let c = Case::numbered();
+    c.stage_setup();
+    c.put("KPATH.in", "custom title\n20\nLine-Mode\nReciprocal\n0 0 0 G\n0.5 0 0 X\n0.5 0 0 X\n0.5 0.1 0 M\n");
+    c.numbered_change(|cfg| cfg.set_native(&["5.epw-wannier", "wannier90", "bands_num_points"], json!(100)).unwrap());
+    let solver = fs::read_to_string(c.root.join("epw_native_io.py")).unwrap();
+    c.put("epw_native_io.py", &solver.replace("<<< Wannierisation convergence criteria satisfied >>>", "simulated iteration limit"));
+    success(c.stage_submit("wannier", false));
+    let failure = c.stage_execute();
+    assert!(!failure.status.success());
+    assert!(String::from_utf8_lossy(&failure.stderr).contains("缺少原生 Wannier"));
+    let pointer = c.root.join("run/epw-state/native-active.json");
+    let old_record = fs::read(&pointer).unwrap();
+    let old: Value = serde_json::from_slice(&old_record).unwrap();
+    assert_eq!(old["state"], "failed");
+    let scientific = c.calls().0;
+    let path_hash = store::hash_file(&c.root.join("KPATH.in")).unwrap();
+    c.numbered_change(|cfg| {
+        cfg.wannier.localization.max_iterations = 500;
+        cfg.set_native(&["5.epw-wannier", "wannier90", "bands_num_points"], json!(1)).unwrap();
+    });
+    let failure = c.stage_submit("wannier", true);
+    assert!(!failure.status.success());
+    assert!(String::from_utf8_lossy(&failure.stderr).contains("零个间隔"));
+    assert!(!c.root.join("run/5.epw-wannier/epw_wannier.in").exists());
+    let history = fs::read_dir(c.root.join("run/epw-state/history")).unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|dir| dir.join("calculation/epw_wannier.in").exists()).unwrap();
+    assert!(!pointer.exists(), "新的失败任务归档必须撤下旧活动指针");
+    assert_eq!(fs::read(history.join("native-active-retired.json")).unwrap(), old_record);
+    // 注入旧版真实故障：归档已完成，但旧活动指针未撤下，也没有交接回执。
+    for name in ["native-active-retired.json", "native-archive-binding.json"] {
+        let file = history.join(name);
+        if file.exists() { fs::remove_file(file).unwrap(); }
+    }
+    fs::write(&pointer, &old_record).unwrap();
+    c.put("epw_native_io.py", &solver);
+    c.numbered_change(|cfg| cfg.set_native(&["5.epw-wannier", "wannier90", "bands_num_points"], json!(100)).unwrap());
+    success(c.stage_submit("wannier", true));
+    success(c.stage_execute());
+    assert_eq!(fs::read(history.join("native-active-retired.json")).unwrap(), old_record);
+    assert!(history.join("native-archive-binding.json").is_file());
+    assert_eq!(c.calls().0, scientific);
+    assert_eq!(store::hash_file(&c.root.join("KPATH.in")).unwrap(), path_hash);
+    assert_eq!(c.calls().1.lines().filter(|line| line.starts_with("wannier ")).count(), 2);
+    assert!(c.root.join("run/5.epw-wannier/completion.json").is_file());
+}

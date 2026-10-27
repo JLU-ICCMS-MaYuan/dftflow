@@ -81,3 +81,39 @@ CARGO_PROFILE_TEST_DEBUG=0 bash "scripts/build-native.sh" test -p epwflow --test
 真实 SiP₂ 的 KPATH、TOML、结构、已有阶段回执及 SCF／NSCF XML 共 10 份选定输入证据哈希保持不变，受控 fixture 与真实 KPATH 逐字节一致，见 `baseline.json`、`checks.json`。本轮未对全部大型响应文件重做哈希核验，不能把上述检查描述为完整来源重验。
 
 本轮更新正式 CLI，但没有向真实 Slurm 提交计算，没有重算真实 SCF／NSCF／PH 或 Wannier，没有放宽收敛检查。新拟合质量及收敛仍待用户运行当前 500 次配置后判断。未推送，也未操作或关闭线上 Gitee Issue。
+
+## 归档后悬空活动记录续修（2026-10-27）
+
+### 现场复现与上一轮测试缺口
+
+用户再次报 `epw_wannier.in` 缺失。正式 CLI 的 SHA-256 仍为上一节的 `0b23530e…d5fab`，确为已编译安装的文件。以该正式入口在真实 SiP₂ 目录不带 `-s` 调用，原样复现缺失输入错误，退出 1；见 `docs/local/0063-archived-resume-debug/real-old-cli-red.log`。
+
+旧活动任务 `18e2555b1a3cde2c-d84b-26` 已明确失败；其输入、脚本及日志实际在 `epw-state/history/wannier-18e25df120f3ab0b-2c48eb-1d/calculation/`，但活动记录仍引用当前第 5 步。后续一代输入生成又失败，未创建新任务，恢复入口因此先被旧输入核验拦住。上一轮公开恢复测试从成功模型改参数，旧任务为 `validated`，没有覆盖失败任务的这条路径；真实只读输入生成也没有经过任务归集。不能把这些测试描述为真实失败现场的恢复验收。
+
+### 修复与隔离回归
+
+归档失败第 5 步时，完整核验归档身份并原样保留旧活动记录，立即撤下旧指针。对旧版本遗留状态，仅显式恢复、旧任务明确退出失败、另一代进度已失败、当前旧输入确实缺失且归档唯一完整匹配时接续。输入、脚本、版本对应的日志及外部来源都参与核验；不改旧哈希、不删除失败证据、不复制旧输入回来或登记旧模型成功。
+
+以 `110047ce4c0c8e01f288180419800b38c744b546` 为基线，在原隔离目录只叠加本任务 4 个 Rust 文件；与工作树源码逐字节核对，另有 284 个 Rust／Cargo 文件全部与 HEAD 一致，继续排除无关 `native_config.rs` 改动。证据：`baseline.json`、`source-manifest.json`、`isolated-unchanged-source-proof.json`。
+
+- 库测试 58 通过、4 个真实数据测试默认跳过；见 `lib.log`。归档单测覆盖显式恢复、原记录字节保持、幂等，以及输入／脚本／日志／来源损坏、文件缺失、归档重复、进度缺失、同代进度、运行进度、未知任务、退出状态缺失及当前输入冲突 12 类拒绝条件。
+- 第 5、6 步进程回归 9 通过，86 项未选入本轮；见 `stage-results.log`。新增完整失败链为“拟合缺少收敛证据 → 改参数归档后短段生成失败 → 修复参数显式恢复”，同时核验新归档交接和测试重建的遗留活动指针；前置科学调用不增加、旧记录原样保留。
+- 第一轮真实目录调试测试因大文件哈希耗时较长，在任何恢复修改前中断；活动记录字节不变、输入仍缺失，见 `real-resume-prepare-debug-interrupted.json`。该中断运行不计通过，改用同一源码的优化测试程序完成相同核验。
+
+### 重新编译与正式安装
+
+隔离目录执行 `bash scripts/build-native.sh build --release -p epwflow --bins --locked` 成功；4 个正式入口通过既有安装器覆盖。实际加载 `scripts/env.sh` 后的 `epw_wannier` 路径为 `/data/home/mayuan/code/dftflow/bin/epwflow/epw_wannier`。正式文件、隔离打包文件和发布清单的 SHA-256 一致，新 SHA-256 为 `71428b654e71ac448e42b294947802e2b3e8cdc0a7a3d73b354ce23f8c4196f0`。证据：`release.log`、`install.log`、`published.json`。
+
+### 真实 SiP₂ 恢复准备
+
+从真实 `examples/SiP2` 目录显式启用 `real_wannier_resume_prepare_without_submission`，优化测试程序执行成功，1 通过，耗时 429.44 秒。先以既有回执完整核验 SCF、NSCF、电子参考及约 31 GB 声子交付，再调用生产 `advance(config, Wannier, submit=false, resume=true)`；没有使用调度或科学程序替身。输出明确复用 `scf`、`nscf`、`electronic`、`electronic/projwfc`，最终生成当前目录中的输入和脚本，任务 `18e2629c0eaa5d5a-335462-23` 为 `prepared`，`job=None`、`reservation=None`。见 `release-test-build.log`、`real-resume-prepare.log`、`real-prepared-before-formal.json`。
+
+新输入逐项核对为 `Si:s,p`、`P:s,p`、96 个 Wannier 函数、`num_iter=500` 和原有 `bands_num_points=1`。执行中曾误判密度 1 必然产生零间隔，实际生产路径校验通过后已更正说明；未修改原 TOML 或 KPATH。旧活动记录逐字节保留在原历史目录的 `native-active-retired.json`，另有版本 1 的归档绑定说明；原 10 份选定配置、路径、结构、阶段回执及 XML 哈希不变。
+
+本轮累计 68 个不同测试通过（58 个库测试、9 个进程测试、1 个显式真实准备测试）。默认跳过的其余 3 个真实测试未执行，不计通过；真实准备不等于拟合或收敛验收。
+
+### 正式 CLI 在真实目录复核
+
+加载 `scripts/env.sh`，在真实 `examples/SiP2` 执行正式 `epw_wannier --config "epwinput.toml" --stage wannier`，不带提交选项，退出 0。输出复用四项前置工作并到达 `workflow_status: prepared`；原先的缺失输入错误不再出现。调用前后任务 ID 相同，输入及脚本哈希相同，状态仍为 `prepared`，作业号及预留为空，没有重复创建或提交任务。见 `real-installed-cli-prepare.log`、`real-state-after.json`。
+
+现已可以用普通 `epw_wannier --config "epwinput.toml" --stage wannier -s` 提交该准备任务。已有 SCF／NSCF／PH 不重算；本轮未提交真实计算、未执行新拟合，也不宣称 500 次一定收敛。线上 Gitee 状态及实际拟合判断继续由用户管理。本轮仅提交本任务差异，不推送，保留原有 7 个无关修改文件。

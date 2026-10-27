@@ -1,6 +1,6 @@
 # 0063：第 5 步 Wannier 路径仅声明高对称端点
 
-唯一类型：`type:feature`。创建日期：2026-10-27。状态：本地实现、自定义文件头修复与正式 CLI 验证完成，线上状态仍由用户管理。
+唯一类型：`type:feature`。创建日期：2026-10-27。状态：本地实现、自定义文件头及失败归档交接续修完成，正式 CLI 在真实 SiP₂ 目录准备验证通过；线上状态仍由用户管理。
 
 沿用仓库线上 Gitee 由用户管理的约定。0063 是本地暂定编号，未创建线上 Issue，也不表示平台已分配该编号。
 
@@ -23,6 +23,11 @@
 > 这个报错是什么意思？？？？？
 
 > 你看看，我记得有一个 issue 专门用来解决 5.epw-wannier这一步里面为 wannier 写高对称路径的。你当时没测试好吗？为什么还是报错了？在那个 issue和 spec 里面继续完成这个debug
+
+> (my_scripts) [mayuan@login02 SiP2]$ epw_wannier --config "epwinput.toml" --stage wannier --resume -s
+> input_conflict: input_conflict: 无法定位 /data/home/mayuan/code/dftflow/examples/SiP2/5.epw-wannier/epw_wannier.in:No such file or directory (os error 2)
+> (my_scripts) [mayuan@login02 SiP2]$ epw_wannier --config "epwinput.toml" --stage wannier  -s
+> input_conflict: input_conflict: 无法定位 /data/home/mayuan/code/dftflow/examples/SiP2/5.epw-wannier/epw_wannier.in:No such file or directory (os error 2)这是为什么？你在/data/home/mayuan/code/dftflow/examples/SiP2测试过了吗？为什么不行，还是报错。你确定你重新编译得到新的 CLI 了吗
 
 随附图片的读取状态及 PDF 核查见 [Spec 附件登记](spec.md#附件与推断来源)。
 
@@ -75,3 +80,9 @@
 ## 自定义文件头回归
 
 继续在本项下修复 SiP₂ 已有四行文件头的自定义标题兼容遗漏，不新建 Issue。初次受控测试只覆盖固定 VASPKIT 标题和裸端点，漏测真实 SiP₂ 标题；严格解析器因此在第 1 行拒绝。目标为完整识别文件头、保留正文严格校验及原始行号，保持用户 KPATH 和已有电子来源身份不变。对应 FR-011／SC-007、T008～T010；验证及发布结果追加到 [验收记录](acceptance.md)。线上 Gitee 仍由用户管理，本地修复不代表线上已关闭。
+
+## 归档后悬空活动记录续修
+
+已发布 CLI 的哈希与发布记录一致；用户此次报错源于更早的失败任务已归档，而旧活动记录仍引用原输入路径。上一轮受控测试从成功模型改参数恢复，漏测“旧模型失败后再次输入生成失败”的状态。继续在本项下补 FR-012／SC-008 和 T011～T013，修复活动记录归档交接并严格接续遗留状态。必须在真实 SiP₂ 目录验证恢复与准备，不以只读路径生成或替身成功代替现场验收；实际作业仍由用户提交。
+
+本次续修已完成：68 个不同测试通过，真实失败记录经生产 API 核验接续，正式 CLI 在原目录退出 0 并保持同一 `prepared` 任务；新输入为 `s,p`／96 函数／500 次，旧失败记录原样归档、前置数据复用。4 个正式 CLI 已重编译安装；详见 [验收记录](acceptance.md)。未提交真实作业，不把准备成功当作拟合收敛或线上关闭。

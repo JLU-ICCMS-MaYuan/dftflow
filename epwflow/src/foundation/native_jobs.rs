@@ -299,7 +299,208 @@ pub fn reconcile(cfg: &Config, resume: bool) -> Result<()> {
     let Some(mut task) = active_task(cfg)? else {
         return Ok(());
     };
+    if resume && recover_archived_wannier(cfg, &task)? {
+        return Ok(());
+    }
     reconcile_task(cfg, resume, &mut task)
+}
+
+/// 只接续旧版本已归档却未撤下的失败 Wannier 指针，不复用失败模型。
+fn recover_archived_wannier(cfg: &Config, task: &Task) -> Result<bool> {
+    use super::stages::Step;
+    if task.state != "failed" || task.directory != Step::Wannier.directory(cfg) {
+        return Ok(false);
+    }
+    let mut missing = false;
+    for id in &task.inputs {
+        match fs::symlink_metadata(&id.path) {
+            Ok(_) => id.verify()?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => missing = true,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    if !missing { return Ok(false); }
+    let path = cfg.work_dir.join("epw-state/native-progress/wannier.json");
+    let progress: serde_json::Value = store::read(&path)?;
+    ensure!(progress["state"] == "failed"
+        && progress["generation"].as_str().is_some_and(|g| !g.is_empty() && g != task.generation),
+        "input_conflict: 旧输入缺失但没有另一代失败 Wannier 进度，拒绝推断归档");
+    let mut matches = Vec::new();
+    for entry in fs::read_dir(cfg.work_dir.join("epw-state/history"))? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().starts_with("wannier-")
+            && entry.file_type()?.is_dir()
+            && archived_wannier_matches(task, &entry.path())?
+        {
+            matches.push(entry.path());
+        }
+    }
+    ensure!(matches.len() == 1,
+        "input_conflict: 失败 Wannier 输入已移走，但完整匹配的归档有 {} 份；保留原记录，拒绝自动接续", matches.len());
+    retire_archived_wannier(cfg, task, &matches[0])?;
+    println!("recovered: 已核验并保留旧失败 Wannier 活动记录于 {}", matches[0].display());
+    Ok(true)
+}
+
+fn archived_wannier_matches(task: &Task, history: &Path) -> Result<bool> {
+    ensure!(matches!(task.schema_version, 1 | 2 | 3) && task.group.is_none()
+        && task.state == "failed" && task.exit_status.is_some() && !task.inputs.is_empty(),
+        "input_conflict: 只有明确退出且输入身份完整的失败 Wannier 任务可交接归档");
+    let stdout = task.stdout.as_ref().context("input_conflict: 失败任务缺少 stdout 身份")?;
+    let stderr = task.stderr.as_ref().context("input_conflict: 失败任务缺少 stderr 身份")?;
+    let expected = log_paths(task)?;
+    ensure!(stdout.path == expected.0 && stderr.path == expected.1,
+        "input_conflict: 归档日志不符合原任务版本契约");
+    let calculation = history.join("calculation");
+    if !calculation.is_dir() { return Ok(false); }
+    ensure!(!fs::symlink_metadata(&calculation)?.file_type().is_symlink(),
+        "input_conflict: 归档计算目录不能是符号链接");
+    for id in task.inputs.iter().chain(std::iter::once(&task.script))
+        .chain([stdout, stderr]).chain(&task.sources)
+    {
+        if let Ok(relative) = id.path.strip_prefix(&task.directory) {
+            ensure!(relative.components().all(|c| matches!(c, std::path::Component::Normal(_)))
+                && id.path == id.target, "input_conflict: 归档输入身份含链接或越界路径");
+            let archived = calculation.join(relative);
+            let metadata = match fs::symlink_metadata(&archived) {
+                Ok(metadata) => metadata,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+                Err(e) => return Err(e.into()),
+            };
+            ensure!(metadata.is_file() && !metadata.file_type().is_symlink()
+                && fs::canonicalize(&archived)?.starts_with(fs::canonicalize(&calculation)?),
+                "input_conflict: 归档证据不是独立普通文件 {}", archived.display());
+            if metadata.len() != id.bytes || store::hash_file(&archived)? != id.sha256 {
+                return Ok(false);
+            }
+        } else {
+            id.verify()?;
+        }
+    }
+    Ok(true)
+}
+
+fn retire_archived_wannier(cfg: &Config, task: &Task, history: &Path) -> Result<()> {
+    let record = active(cfg);
+    let bytes = fs::read(&record)?;
+    let current: Task = serde_json::from_slice(&bytes)?;
+    ensure!(current.id == task.id && current.key == task.key && current.generation == task.generation
+        && current.state == "failed", "input_conflict: 归档期间活动任务已改变");
+    let destination = history.join("native-active-retired.json");
+    ensure!(!destination.try_exists()?, "input_conflict: 原任务归档记录已存在，拒绝覆盖");
+    store::write(&history.join("native-archive-binding.json"), &serde_json::json!({
+        "schema_version":1,"stage":"wannier","task_id":task.id,"generation":task.generation,
+        "original_directory":task.directory,"calculation":history.join("calculation"),
+        "record_sha256":store::hash_bytes(&bytes),"reason":"失败任务原样归档，不复用旧模型；后续按当前配置准备新任务"
+    }))?;
+    fs::rename(record, destination)?;
+    Ok(())
+}
+
+/// 新的归档立即交接失败任务；旧版本遗留指针由显式恢复入口有界接续。
+pub(super) fn archive_failed_wannier(cfg: &Config, history: &Path) -> Result<()> {
+    let Some(task) = active_task(cfg)? else { return Ok(()); };
+    if task.state == "failed" && task.directory == super::stages::Step::Wannier.directory(cfg) {
+        ensure!(archived_wannier_matches(&task, history)?,
+            "input_conflict: 失败 Wannier 归档与原任务身份不一致，保留活动记录");
+        retire_archived_wannier(cfg, &task, history)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod archived_wannier_tests {
+    use super::*;
+    struct Fixture { cfg: Config, history: PathBuf }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            if !std::thread::panicking() { let _ = fs::remove_dir_all(&self.cfg.work_dir); }
+        }
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let mut cfg: Config = toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
+            cfg.work_dir = std::env::temp_dir().join(format!("archived-wannier-{}", store::token()));
+            cfg.layout = Some("numbered".into());
+            let work = super::super::stages::Step::Wannier.directory(&cfg);
+            fs::create_dir_all(&work).unwrap();
+            fs::write(work.join("epw_wannier.in"), "old input\n").unwrap();
+            fs::write(work.join("epw_wannier.sh"), "#!/bin/sh\n").unwrap();
+            fs::write(work.join("epw.out"), "old output\n").unwrap();
+            let source = cfg.work_dir.join("source.txt");
+            fs::write(&source, "frozen source\n").unwrap();
+            let log = Identity::capture(&work.join("epw.out")).unwrap();
+            let task = Task {
+                schema_version: 3, group: None, id: "old-task".into(), key: "old-key".into(),
+                generation: "old-generation".into(), directory: work.clone(), command: vec!["stub".into()],
+                stem: "epw".into(), script: Identity::capture(&work.join("epw_wannier.sh")).unwrap(),
+                inputs: vec![Identity::capture(&work.join("epw_wannier.in")).unwrap()],
+                sources: vec![Identity::capture(&source).unwrap()], state: "failed".into(),
+                job: None, reservation: None, attached: false, exit_status: Some(0), duration_secs: 1.,
+                stdout: Some(log.clone()), stderr: Some(log),
+            };
+            persist(&cfg, &task).unwrap();
+            let history = cfg.work_dir.join("epw-state/history/wannier-old");
+            fs::create_dir_all(history.join("calculation")).unwrap();
+            for name in ["epw_wannier.in", "epw_wannier.sh", "epw.out"] {
+                fs::rename(work.join(name), history.join("calculation").join(name)).unwrap();
+            }
+            store::write(&cfg.work_dir.join("epw-state/native-progress/wannier.json"),
+                &serde_json::json!({"key":"new-key","generation":"new-generation","state":"failed"})).unwrap();
+            Self { cfg, history }
+        }
+    }
+    #[test]
+    fn explicit_resume_preserves_verified_archived_record_and_is_idempotent() {
+        let f = Fixture::new();
+        let original = fs::read(active(&f.cfg)).unwrap();
+        assert!(reconcile(&f.cfg, false).is_err());
+        assert_eq!(fs::read(active(&f.cfg)).unwrap(), original);
+        reconcile(&f.cfg, true).unwrap();
+        assert!(!active(&f.cfg).exists());
+        assert_eq!(fs::read(f.history.join("native-active-retired.json")).unwrap(), original);
+        let binding: serde_json::Value = store::read(&f.history.join("native-archive-binding.json")).unwrap();
+        assert_eq!(binding["record_sha256"], store::hash_bytes(&original));
+        reconcile(&f.cfg, true).unwrap();
+        assert!(!super::super::stages::Step::Wannier.directory(&f.cfg).join("epw_wannier.in").exists());
+    }
+    #[test]
+    fn damaged_ambiguous_or_unproven_archives_never_retire_active_record() {
+        for case in ["input", "script", "output", "source", "missing", "duplicate", "progress", "same-generation", "running", "unknown", "exit", "current-input"] {
+            let f = Fixture::new();
+            let progress = f.cfg.work_dir.join("epw-state/native-progress/wannier.json");
+            match case {
+                "input" => fs::write(f.history.join("calculation/epw_wannier.in"), "bad").unwrap(),
+                "script" => fs::write(f.history.join("calculation/epw_wannier.sh"), "bad").unwrap(),
+                "output" => fs::write(f.history.join("calculation/epw.out"), "bad").unwrap(),
+                "source" => fs::write(f.cfg.work_dir.join("source.txt"), "bad").unwrap(),
+                "missing" => fs::remove_file(f.history.join("calculation/epw_wannier.in")).unwrap(),
+                "duplicate" => {
+                    let other = f.cfg.work_dir.join("epw-state/history/wannier-duplicate/calculation");
+                    fs::create_dir_all(&other).unwrap();
+                    for name in ["epw_wannier.in", "epw_wannier.sh", "epw.out"] {
+                        fs::copy(f.history.join("calculation").join(name), other.join(name)).unwrap();
+                    }
+                }
+                "progress" => fs::remove_file(&progress).unwrap(),
+                "same-generation" | "running" => store::write(&progress, &serde_json::json!({
+                    "key":"new-key","generation":if case == "same-generation" {"old-generation"} else {"new-generation"},
+                    "state":if case == "running" {"running"} else {"failed"}
+                })).unwrap(),
+                "unknown" | "exit" => {
+                    let mut task = active_task(&f.cfg).unwrap().unwrap();
+                    if case == "unknown" { task.state = "unknown".into(); } else { task.exit_status = None; }
+                    persist(&f.cfg, &task).unwrap();
+                }
+                "current-input" => fs::write(super::super::stages::Step::Wannier.directory(&f.cfg).join("epw_wannier.in"), "unexpected new input").unwrap(),
+                _ => unreachable!(),
+            }
+            let before = fs::read(active(&f.cfg)).unwrap();
+            assert!(reconcile(&f.cfg, true).is_err(), "case={case}");
+            assert_eq!(fs::read(active(&f.cfg)).unwrap(), before, "case={case}");
+            assert!(!f.history.join("native-active-retired.json").exists(), "case={case}");
+        }
+    }
 }
 pub fn reconcile_task(cfg: &Config, resume: bool, task: &mut Task) -> Result<()> {
     if task.state != "validated" {

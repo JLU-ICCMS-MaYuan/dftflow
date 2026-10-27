@@ -747,6 +747,7 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
     }
     super::workspace_science::invalidate(cfg, step, &history)?;
     if step == Step::Electronic { super::workspace_electronic::archive(cfg, &history)?; }
+    if step == Step::Wannier { super::native_jobs::archive_failed_wannier(cfg, &history)?; }
     Ok(())
 }
 
