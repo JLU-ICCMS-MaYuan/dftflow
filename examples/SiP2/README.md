@@ -13,6 +13,115 @@
 
 细网格、温度和 μ* 是用户确认的起始设置，尚未做收敛验证。历史 Wannier 的迭代上限为 500；当前配置采用流程的 5000 上限和收敛检查。费米能从新 NSCF 读取，不固定历史数值。其余数值迭代和后处理设置也需要后续核验。
 
+## 编号目录与操作顺序
+
+前三个电子计算阶段的说明保留在这里，供首次计算、查看结果和失败排查时查阅；后续声子导入、Wannier 接续和旧数据复制步骤继续保留在下文。**已有有效完成回执的阶段直接复用，首次计算示例不需要在当前目录重新执行。**
+
+| 目录 | 用途 | 主要结果与后续关系 |
+| --- | --- | --- |
+| `1.qe-scf/` | 计算自洽电荷密度 | 为 NSCF、电子能带与历史声子兼容核验提供基础 |
+| `2.qe-nscf/` | 在完整均匀 k 网格上计算电子态 | 为 DOS、Wannier 和 EPW 提供电子态及费米能 |
+| `3.qe-electronic/` | 计算 QE 电子能带和 DOS，并独立出图 | `qe_eband/` 放能带，`qe_eledos/` 放 DOS；不依赖声子计算 |
+| `4.qe-phonon-nosplit/` | 接入历史 PH，执行 q2r、matdyn 并出图 | 本例通过 `--import-phonon` 接续已有声子 |
+| `5.epw-wannier/` | Wannier 拟合与本阶段交付 | 复用已验证的电子和声子数据 |
+
+首次准备按 `SCF → NSCF` 顺序进行。之后可单独运行第 3 步查看电子结果；历史声子导入不要求先完成第 3 步。进入 Wannier 时，程序会补齐尚缺的电子参考。因此，目录编号不表示电子出图必须等待声子计算完成。
+
+以下命令均在本例根目录执行：
+
+```bash
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+command -v epw_phonon
+cd "/data/home/mayuan/code/dftflow/examples/SiP2"
+
+# 只读检查配置、输入和程序设置；configured 不代表计算已经完成。
+epw_phonon --config "epwinput.toml" --stage nscf --check --json
+```
+
+### 1.qe-scf：自洽电子计算
+
+本阶段使用 `pw.x` 的 `calculation='scf'`，得到自洽电荷密度和电子保存数据。当前使用零位移 `2×3×6` 网格、`60/720 Ry` 截断能，并显式固定密度和平滑 FFT。
+
+仅在新工作区尚未完成 SCF 时执行：
+
+```bash
+# 首次提交 SCF。
+epw_phonon --config "epwinput.toml" --stage scf -s
+```
+
+等待作业结束后，再执行普通命令校验产物并登记完成：
+
+```bash
+epw_phonon --config "epwinput.toml" --stage scf -s
+test -s "1.qe-scf/completion.json"
+```
+
+重点查看 `1.qe-scf/scf.in`、`scf.out`、`slurm-scf.log`，以及 `1.qe-scf/out/Si8P16.save/` 中的 XML、电荷密度和波函数。`completion.json` 是工作流完成回执；仅有 `JOB DONE.` 或 Slurm 成功状态仍需完成工作流核验。
+
+普通完成登记不加 `--resume`。显式 `--stage scf --resume -s` 会归档旧证据并强制启动新 SCF，不能把它当作“再查一次状态”的命令；当前已有 SCF 无需重算，也无需删除目录。
+
+### 2.qe-nscf：完整均匀网格电子态
+
+本阶段复用 SCF 电荷密度，使用 `pw.x` 的 `calculation='nscf'`，计算完整 `2×3×6=36` 个 k 点、每点 96 条能带。配置中的 `K_POINTS = [2, 3, 6]` 由 Rust 按 `kmesh.pl` 的顺序和数值格式展开到 `nscf.in`，无需手工列出 36 点。SCF 可通过对称性只计算不可约点，不能把它的点数直接当作 NSCF 的完整点数。
+
+仅在 SCF 完成且尚未完成 NSCF 时执行：
+
+```bash
+# 首次提交 NSCF。
+epw_phonon --config "epwinput.toml" --stage nscf -s
+```
+
+等待作业结束后，校验输入、输出的完整点数和网格，并登记完成：
+
+```bash
+epw_phonon --config "epwinput.toml" --stage nscf -s
+test -s "2.qe-nscf/completion.json"
+```
+
+主要文件为 `2.qe-nscf/nscf.in`、`nscf.out`、`slurm-nscf.log`，以及 `2.qe-nscf/out/Si8P16.save/`。其中 `data-file-schema.xml` 保存实际 k 点、能带数、费米能及 FFT 信息，`wfc*.dat` 为后续使用的波函数；这些数据需要保留。
+
+如果完整网格、FFT 或计算身份校验失败，先保留报错和现场，不删除回执强行接续。历史讨论中的 `calculation='bands'` 是显式改用 **`pw.x` 的运行模式**，不是运行后处理程序 `bands.x`，也不是第 3 步沿高对称路径的能带计算。当前使用 `nscf`，程序不会自动切换模式或重试。
+
+### 3.qe-electronic：QE 电子能带与 DOS
+
+这一步提供可以直接查看的 QE 电子结果。能带沿 `KPATH.in` 的高对称路径重新调用 `pw.x`，再用 `bands.x` 整理；DOS 用 `dos.x` 读取均匀网格电子态。NSCF 的 36 点用于均匀采样，不能直接替代高对称路径能带。
+
+SCF、NSCF 已完成，且没有其他活动任务占用该工作区时，可单独提交：
+
+```bash
+# 一次提交完成电子参考、后处理、绘图及正式交付。
+epw_phonon --config "epwinput.toml" --stage electronic -s
+```
+
+该阶段不调用 PH，不需要等待声子导入或 Wannier。也可以由下文的 Wannier 命令补齐；已有兼容任务正在运行时，应先等待该任务结束，避免重复提交。
+
+| 位置 | 内容 |
+| --- | --- |
+| `3.qe-electronic/qe_eband/` | 能带输入、脚本、日志与后处理数据 |
+| `3.qe-electronic/qe_eband/plots/electronic-bands.png` | QE 独立电子能带图，横轴标注高对称点 |
+| `3.qe-electronic/qe_eledos/` | DOS 输入、脚本、日志与后处理数据 |
+| `3.qe-electronic/qe_eledos/plots/electronic-dos.png` | QE 独立电子 DOS 图 |
+| 两个子目录的 `plots/` | 相应的绘图数据 CSV 和绘图完成记录 |
+| `3.qe-electronic/receipts/` | PW 能带、bands 和 DOS 的原生任务校验记录 |
+| `3.qe-electronic/completion.json` | 整个电子阶段的完成回执 |
+| `results/3.qe-electronic/` | 正式发布的电子阶段结果 |
+
+能带和 DOS 以已核验 NSCF 的费米能为共同零点；每个电子子任务校验成功后即可生成自己的图，不需要先设置 Wannier 拟合能窗。后处理失败时保留已成功的 PW 电子数据，通过报错确定恢复步骤，不手动删除整个第 3 阶段。
+
+### 电子计算的核查记录与当前状态
+
+早先的 2026-10-27 核查记录为：NSCF 作业 `1375900` 的 Slurm 状态为 `COMPLETED`、退出码 `0:0`，`nscf.out` 有 `JOB DONE.`，XML 为 `nks=36`、`nbnd=96`；当时 NSCF 完成回执尚未登记。**这是历史检查时点，不能继续作为当前“尚未登记”的结论。**
+
+本次补文档时再次只读检查，`1.qe-scf/completion.json` 与 `2.qe-nscf/completion.json` 均已存在；实际 XML 中，SCF 为 16 个不可约 k 点，NSCF 为 36 个完整 k 点、96 条能带，两者密度 FFT 均为 `216×128×60`，平滑 FFT 均为 `120×72×32`。这里只核对回执存在和 XML 数值，未重新读取全部波函数核验哈希，也不据此声明第 3 步或 Wannier 已完成。
+
+日常只读查看流程状态可执行：
+
+```bash
+epw_phonon --config "epwinput.toml" --status --json
+```
+
+配置检查、科学日志、完成回执和结果图表分别回答不同问题，应结合查看。历史 FFT 与 EPW 报错的详细分析继续保留在 [SiP₂ 错误分析](SiP2-errors-analysis.md)；六个 FFT 参数一致不能单独证明历史外部程序问题已经修复。
+
 ## 当前执行边界
 
 外部声子来源为：
