@@ -124,6 +124,41 @@ pub fn wdata(s: &Sampling, bands_plot: bool, bands_num_points: u32) -> Result<Ve
             rows.push((anchor, *p));
         }
     }
+    // 不同晶格方向的长度比可能使等分段无法合并。此时用不连续的端点对
+    // 覆盖所有目标；W90 原生输出每段两端，extract 仍按真实坐标恢复原路径。
+    // 这些行只是模型采样任务，不能把它们的人工横轴当作科学路径。
+    let mut targets: Vec<[f64; 3]> = Vec::new();
+    for point in s
+        .path
+        .iter()
+        .map(|p| p.crystal)
+        .chain(s.mesh.iter().copied())
+    {
+        if !targets
+            .iter()
+            .any(|p| p.iter().zip(point).all(|(a, b)| (a - b).abs() < 1e-10))
+        {
+            targets.push(point);
+        }
+    }
+    let mut pairs = Vec::new();
+    for pair in targets.chunks(2) {
+        pairs.push((pair[0], *pair.get(1).unwrap_or(&targets[0])));
+    }
+    if pairs.len() + 1 < rows.len() {
+        let shortest = *pairs
+            .iter()
+            .min_by(|a, b| {
+                length(a.0, a.1, &s.reciprocal).total_cmp(&length(b.0, b.1, &s.reciprocal))
+            })
+            .context("data_invalid: 空电子采样")?;
+        ensure!(
+            length(shortest.0, shortest.1, &s.reciprocal) > 1e-10,
+            "data_invalid: 零长度电子采样段"
+        );
+        rows = vec![shortest];
+        rows.extend(pairs);
+    }
     let mut data = vec![
         format!("bands_plot = {bands_plot}"),
         format!("bands_num_points = {bands_num_points}"),
@@ -383,6 +418,66 @@ mod tests {
                 points
                     .iter()
                     .any(|p: &[f64; 3]| p.iter().zip(target).all(|(a, b)| (a - b).abs() < 1e-12)),
+                "遗漏 {target:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn long_orthorhombic_path_packs_endpoints_without_losing_samples() {
+        let mut path = Vec::new();
+        for axis in 0..3 {
+            for i in 0..=80 {
+                let mut crystal = [0.; 3];
+                crystal[axis] = i as f64 / 160.;
+                path.push(PathPoint {
+                    segment_id: axis,
+                    point_id: path.len(),
+                    distance: path.len() as f64,
+                    crystal,
+                });
+            }
+        }
+        let mesh = (0..2)
+            .flat_map(|a| {
+                (0..3).flat_map(move |b| {
+                    (0..6).map(move |c| [a as f64 / 2., b as f64 / 3., c as f64 / 6.])
+                })
+            })
+            .collect();
+        let s = Sampling {
+            path,
+            ticks: vec![],
+            mesh,
+            reciprocal: [
+                [1., 0., 0.],
+                [0., 1.66599609188825, 0.],
+                [0., 0., 3.744448649530427],
+            ],
+        };
+        let data = wdata(&s, true, 1).unwrap();
+        assert!(data.len() < 150, "{} rows", data.len());
+        let mut output = Vec::new();
+        let mut reference = 0.;
+        for row in &data[3..data.len() - 1] {
+            let fields: Vec<_> = row.split_whitespace().collect();
+            let a: [f64; 3] = std::array::from_fn(|j| fields[j + 1].parse().unwrap());
+            let b: [f64; 3] = std::array::from_fn(|j| fields[j + 5].parse().unwrap());
+            let d = length(a, b, &s.reciprocal);
+            if reference == 0. {
+                reference = d;
+            }
+            let n = (d / reference).round() as usize;
+            assert!(n > 0);
+            for i in 0..=n {
+                output.push(std::array::from_fn(|j| {
+                    a[j] + (b[j] - a[j]) * i as f64 / n as f64
+                }));
+            }
+        }
+        for target in s.path.iter().map(|p| p.crystal).chain(s.mesh) {
+            assert!(
+                output.iter().any(|p: &[f64; 3]| same(p, &target)),
                 "遗漏 {target:?}"
             );
         }
