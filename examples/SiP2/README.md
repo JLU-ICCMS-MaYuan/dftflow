@@ -203,6 +203,91 @@ epw_wannier --config "epwinput.toml" --plot
 
 2026-10-27 已从作业 1380018 的原始输出生成上述三张诊断图；这三张图仍属于旧的 `sp3 / 5000` 模型。实际输出为 96 条带、96 个 Wannier 函数，没有额外能带用于解纠缠选子空间；窗口标线用于人工检查，不应把输入中的窗口线当成原生日志确认采用了能量筛选。新 `s,p / 500` 配置尚未重跑。
 
+## 6.epw-coarse：粗网格耦合与插值检查
+
+第 6 步复用已导入的声子响应势和第 5 步的 Wannier 模型，计算粗网格电子—声子耦合，再生成 QE/EPW 声子谱、声子总 DOS 对比及总览。当前粗电子网格和粗声子网格均为 `2×3×6`，`nbndsub=96`，`wannierize=false`；这里复用已有模型，不重新拟合。第 7 步才使用 `8×12×24` 电子细网格和 `4×6×12` 声子细网格。
+
+### 提交前确认第 5 步可复用
+
+先进入本例目录，并只读查看状态：
+
+```bash
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+cd "/data/home/mayuan/code/dftflow/examples/SiP2"
+epw_wannier --config "epwinput.toml" --stage wannier --status --json
+```
+
+重点看 `steps.wannier` 是否为 `reuse`，并确认第 4 步声子及电子前置阶段也可复用。`--status` 不推进任务；顶层 `workflow_complete` 可能包含其他阶段的状态，不能单独用它判断第 5 步。第 5 步应已有可验证的 `5.epw-wannier/completion.json`、后处理记录及 `results/5.epw-wannier/stage-manifest.json`，不能只看拟合图或 `All done`。
+
+本次只读核查时，第 5 步尚无完成回执，进度记录仍为 `failed`，现有 `.wout` 是此前 `sp3 / 5000` 的未收敛结果；当前 TOML 已改为 `s,p / 500`。因此，这份旧诊断图即使视觉上吻合，也不能直接当作当前配置的成功模型。若状态仍为 `update`，先处理第 5 步；不要直接运行粗网格命令，因为它会补齐缺失或不相容的依赖，可能重新启动 Wannier 拟合。
+
+如果只是已成功的原生任务尚未归集，按上节重复第 5 步命令核验和推进；如果明确报未收敛，则需先解决拟合问题。不要删除回执、手工改哈希或把诊断图当作成功登记。
+
+### 提交并手动推进第 6 步
+
+确认前置阶段可复用且没有活动作业后执行：
+
+```bash
+epw_wannier --config "epwinput.toml" --stage coarse -s
+```
+
+每次调用最多提交一项原生任务。记录命令返回的 `job_id`、`script` 和 `directory`，用返回的实际作业号查询队列；已有任务仍在运行时不要重复提交。当前主计算输入为 `6.epw-coarse/epw_coarse.in`，主要输出为该目录的 `epw.out`，脚本直接调用 `epw.x`。
+
+**每项作业结束后，重复同一命令**，让 CLI 核验结果、登记、提交下一项后处理或出图任务：
+
+```bash
+epw_wannier --config "epwinput.toml" --stage coarse -s
+```
+
+正常链路依次处理粗网格主计算、必要的声子比较采样及绘图发布。比较时可能调用 `q2r.x`、`matdyn.x` 或读取已有模型的 `epw.x`；这些属于后处理，不重新计算 SCF、NSCF 或 PH。第 5 步的电子能带/DOS 对比直接复用，不为第 6 步新增电子参考 PW 计算。
+
+仅查看状态时执行：
+
+```bash
+epw_wannier --config "epwinput.toml" --stage coarse --status --json
+```
+
+### 查看结果并判断本阶段完成
+
+主要查看以下位置：
+
+- `6.epw-coarse/epw.out`：粗网格原生计算日志。
+- `6.epw-coarse/comparison-native/`：声子比较的原生输入、后处理日志和采样来源。
+- `6.epw-coarse/decay/`：哈密顿量、动力学矩阵和耦合的实空间衰减图及数据。
+- `results/6.epw-coarse/figures/`：QE/EPW 声子谱、声子总 DOS 对比及总览，含 PNG/SVG/PDF。
+- `results/6.epw-coarse/comparison/`：比较表格、来源与清单。
+- `6.epw-coarse/completion.json`、`post-completion.json` 和 `results/6.epw-coarse/stage-manifest.json`：科学计算、派生交付与结果发布记录。
+
+以推进命令报告 `workflow_complete: true`，且上述记录和图表均可验证，作为第 6 步流程完成判断。只有 Slurm 的 `COMPLETED`、主计算结束或科学回执存在，还不能证明全部比较图已经发布。之后人工查看声子谱/DOS 是否吻合、实空间衰减是否合理；单次粗网格结果不等于网格已收敛，也不是超导结果。
+
+失败后先保留现场，依据日志解决明确报错，再恢复同一目标：
+
+```bash
+epw_wannier --config "epwinput.toml" --stage coarse --resume -s
+```
+
+恢复复用相容的已完成产物；不要为后处理或出图失败清空整个阶段，更不要重新提交声子。若提示上游不相容或数据损坏，先解决该问题，不强行进入下一阶段。
+
+## 第 6 步确认后：细网格与超导
+
+以下是后续目标的操作入口，先完成并检查第 6 步，再逐阶段执行。它们不会由粗网格命令自动提交。
+
+第 7 步复用粗网格数据，在当前起始细网格上插值并计算细网格耦合、α²F 与 λ：
+
+```bash
+epw_superconductivity --config "epwinput.toml" --stage fine -s
+```
+
+每项原生作业结束后重复上面的 `fine -s` 命令核验并推进，直到本目标报告完成。数据保存在 `7.epw-fine/`；当前不承诺该阶段新增独立图包。遇到失败先检查日志，修复后使用同目标的 `--resume -s`。
+
+第 7 步完成并确认结果后，第 8 步按当前 `task="gap"`、`mode="both"`，在 `5/10/20 K`、`μ*=0.1` 下分别运行 iso/aniso 能隙求解：
+
+```bash
+epw_superconductivity --config "epwinput.toml" --stage superconductivity -s
+```
+
+iso/aniso 是两个独立原生方法作业；结束后继续执行同一命令归集、核验和发布。按返回的实际目录查看日志，最终结果位于 `results/8.epw-superconductivity/`。这组指定温度的能隙计算不等于自动得到 Tc；细网格、展宽、温度和 μ* 的收敛仍需另行验证。
+
 ## 尚未复制旧数据时的准备步骤
 
 下列步骤仅供新建工作区参考；当前目录用户已完成复制，不必重复。
