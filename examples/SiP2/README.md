@@ -23,29 +23,31 @@
 
 当前原始 `save/` 导入尚未接通，不能直接进入 Wannier 或超导阶段。配置中的第 4 阶段用于满足完整配置要求，运行它会重算声子；**不要运行默认声子入口或 `--stage phonon`，也不要提交全流程。** 同一 FFT 设置还需要在声子导入时与来源数据逐项核验。
 
-当前只准备重新计算电子 SCF、NSCF。下列命令使用已构建、支持当前配置格式的本地程序；不依赖 PATH 中可能仍为旧版的程序。生成配置时只执行了 `--check`，未执行下面的提交命令。
+当前只准备重新计算电子 SCF、NSCF。下列命令通过仓库环境脚本加载正式 CLI，`epw_phonon` 应解析为 `/data/home/mayuan/code/dftflow/bin/epwflow/epw_phonon`。不再使用 `docs/local/0059-native-bin` 验证副本。这里只执行了 `--check`，未执行下面的提交命令。
 
 ```bash
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+command -v epw_phonon
 cd "/data/home/mayuan/code/dftflow/examples/SiP2"
 
 # 只读检查，不提交作业。
-"/data/home/mayuan/code/dftflow/docs/local/0059-native-bin/epw_phonon" \
+epw_phonon \
   --config "epwinput.toml" --stage nscf --check --json
 
 # 第一步：用户提交 SCF。
-"/data/home/mayuan/code/dftflow/docs/local/0059-native-bin/epw_phonon" \
+epw_phonon \
   --config "epwinput.toml" --stage scf -s
 
 # 等待 SCF 作业成功结束后，再运行同一命令登记完成状态。
-"/data/home/mayuan/code/dftflow/docs/local/0059-native-bin/epw_phonon" \
+epw_phonon \
   --config "epwinput.toml" --stage scf -s
 
 # 第二步：SCF 完成状态登记成功后，用户提交 NSCF。
-"/data/home/mayuan/code/dftflow/docs/local/0059-native-bin/epw_phonon" \
+epw_phonon \
   --config "epwinput.toml" --stage nscf -s
 
 # 等待 NSCF 成功结束后，登记完成并执行输入/输出证据校验。
-"/data/home/mayuan/code/dftflow/docs/local/0059-native-bin/epw_phonon" \
+epw_phonon \
   --config "epwinput.toml" --stage nscf -s
 ```
 
