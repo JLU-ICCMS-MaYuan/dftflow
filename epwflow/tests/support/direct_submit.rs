@@ -42,6 +42,12 @@ else:
         let script = PathBuf::from(task["script"]["path"].as_str().unwrap());
         let body = fs::read_to_string(&script).unwrap();
         assert!(!body.contains("--workspace-"));
+        assert!(!body.contains("--batch-finish") && !body.contains("--batch-exit"));
+        assert_eq!(fs::metadata(&script).unwrap().permissions().mode() & 0o111, 0o111);
+        for token in body.split_whitespace() {
+            let name = token.trim_matches(['\'', '"']).rsplit('/').next().unwrap();
+            assert!(!["epw_phonon", "epw_wannier", "epw_superconductivity"].contains(&name), "{}", script.display());
+        }
         for arg in task["command"].as_array().unwrap() {
             let name = std::path::Path::new(arg.as_str().unwrap())
                 .file_name()
@@ -76,7 +82,7 @@ else:
         exit
     }
     pub(super) fn direct_advance(&self, bin: usize, args: &[&str], label: &str) -> Output {
-        // 0050：底层单任务契约固定到 SCF；电子及以后阶段另测单分配自动交付。
+        // 默认声子自动链另测；这里保留单任务 SCF 和第 5～8 步原生推进契约。
         let mut args = args.to_vec();
         if bin == 0 && !args.contains(&"--stage") && !args.contains(&"--all") {
             args.extend(["--stage", "scf"]);
@@ -469,10 +475,11 @@ fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
     assert_eq!(c.execute_record(aniso),0);
     assert!(!c.root.join("run/results/8.epw-superconductivity/points.csv").exists());
     assert_eq!(c.execute_record(iso),0);
-    // 第二个原生作业返回前已经完成发布，不靠后续公开命令触发。
+    // 原生作业只计算；公开命令归集核验后才发布。
+    assert!(!c.root.join("run/results/8.epw-superconductivity/points.csv").exists());
+    success(c.direct_advance(2,&args,"gap-both-collect"));
     assert!(c.root.join("run/results/8.epw-superconductivity/points.csv").is_file());
     epwflow::foundation::stage_results::check(&c.root.join("run/results")).unwrap();
-    success(c.direct_advance(2,&args,"gap-both-collect"));
     let launches:Vec<Value>=fs::read_to_string(c.root.join("epw-invocations.jsonl")).unwrap().lines().map(|l|serde_json::from_str(l).unwrap()).collect();
     assert_eq!(launches.len(),2);
     for call in launches{assert_eq!(call["temperatures"],json!([20.,30.,40.]));}

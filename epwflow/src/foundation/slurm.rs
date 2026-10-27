@@ -44,7 +44,7 @@ pub fn submit_via_sbatch(
     };
     body.push_str(&line);
     body.push('\n');
-    fs::write(&script, body)
+    super::store::atomic_bytes(&script, body.as_bytes())
         .with_context(|| format!("execution_failed: 无法写脚本 {}", script.display()))?;
 
     let out = Command::new("sbatch")

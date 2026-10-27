@@ -159,7 +159,7 @@ fn external_import_one_job_no_pw_ph_idempotent_and_plot_repair() {
     assert!(!c
         .numbered_cli(
             1,
-            &["--stage", "wannier", "-s"],
+            &["--stage", "coarse", "-s"],
             None,
             "import-missing-markers"
         )

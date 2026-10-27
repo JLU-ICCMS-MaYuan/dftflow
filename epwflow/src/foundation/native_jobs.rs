@@ -653,21 +653,6 @@ pub fn allocated_group_exit(cfg:&Config,task:&mut Task,exit:i32)->Result<()> {
     persist(cfg,task)
 }
 
-pub fn group_finalizer(cfg:&Config,task:&mut Task)->Result<()> {
-    let config=task.directory.join("delivery-config.toml");
-    store::atomic_bytes(&config,toml::to_string_pretty(cfg)?.as_bytes())?;
-    let executable=std::env::current_exe()?;
-    let body=fs::read_to_string(&task.script.path)?;
-    let q=super::slurm::shell_quote;
-    let body=format!("{body}native_exit=$?\n{} -c {} --batch-finish {} --batch-exit \"$native_exit\"\npublication_exit=$?\nif [[ $native_exit -ne 0 ]]; then exit \"$native_exit\"; fi\nexit \"$publication_exit\"\n",
-        q(executable.to_str().context("程序路径非 UTF-8")?),q(config.to_str().context("配置路径非 UTF-8")?),q(task.group.as_deref().unwrap()));
-    store::atomic_bytes(&task.script.path,body.as_bytes())?;
-    task.script=Identity::capture(&task.script.path)?;
-    task.inputs.push(Identity::capture(&config)?);
-    task.sources.push(Identity::capture(&executable)?);
-    persist(cfg,task)
-}
-
 pub fn prepare_group(cfg: &Config, generation: &str, group: &str, command: &[String], work: &Path) -> Result<Task> {
     ensure!(matches!(group, "iso" | "aniso"), "configuration: 无效方法分组");
     let key = task_key(generation, work, command, "epw")?;

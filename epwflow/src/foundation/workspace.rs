@@ -261,15 +261,15 @@ fn script(cfg: &Config, dir: &Path, a: &Attempt) -> Result<PathBuf> {
     Ok(p)
 }
 
-/// 每个阶段脚本都能独立提交；批量脚本仅负责组织三个公开入口。
+/// 兼容第 1～4 步的分配内执行；第 5～8 步通过原生任务入口准备。
 pub fn generate(config: &Path, target: Step) -> Result<PathBuf> {
     let cfg = Config::load(config)?;
     super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, None)?;
-    generate_current(config, target, &cfg)
+    generate_current(target, &cfg, true)
 }
 
-fn archive_stale(cfg:&Config)->Result<()> {
+pub(super) fn archive_stale(cfg:&Config)->Result<()> {
     // 在重建上游之前撤下过期的下游回执，防止相同字节的新结果命中旧交付。
     let stale = Step::ALL.into_iter()
         .map(|s| Ok((s, stages::receipt(&cfg.work_dir, s).exists() && !stages::reusable(cfg, s)?)))
@@ -280,7 +280,8 @@ fn archive_stale(cfg:&Config)->Result<()> {
     Ok(())
 }
 
-fn generate_current(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf> {
+fn generate_current(target: Step, cfg: &Config, scripts: bool) -> Result<PathBuf> {
+    ensure!(!scripts || target < Step::Wannier, "input_conflict: 第 5～8 步请通过公开命令准备原生任务");
     layout::initialize(cfg)?;
     archive_stale(cfg)?;
     store::atomic_bytes(
@@ -312,6 +313,10 @@ fn generate_current(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf
     let mut last = None;
     for step in stages::execution_steps(&cfg, target) {
         let (_, mut a) = freeze(&cfg, step)?;
+        if !scripts {
+            last = Some(attempt_path(&cfg.work_dir, &a.id));
+            continue;
+        }
         let p = script(&cfg, &step.directory(&cfg), &a)?;
         a.script = Some(Identity::capture(&p)?);
         store::write(&attempt_path(&cfg.work_dir, &a.id), &a)?;
@@ -351,22 +356,6 @@ fn generate_current(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf
         }
         last = Some(p);
     }
-    let q = slurm::shell_quote;
-    let exe = std::env::current_exe()?;
-    let bins = exe.parent().context("environment: 缺少程序目录")?;
-    let config = super::paths::absolute(&std::env::current_dir()?, config)?;
-    // 一个有界分配内按依赖顺序运行；无需在登录节点等待其他作业结束。
-    let all = format!(
-        "#!/bin/bash\ncd -- {} || exit $?\nexec {} -c {} -s\n",
-        q(&cfg.work_dir.to_string_lossy()),
-        q(&bins.join("epw_superconductivity").to_string_lossy()),
-        q(&config.to_string_lossy())
-    );
-    store::atomic_bytes(&cfg.work_dir.join("submit_all.sh"), all.as_bytes())?;
-    fs::set_permissions(
-        cfg.work_dir.join("submit_all.sh"),
-        fs::Permissions::from_mode(0o755),
-    )?;
     last.context("data_invalid: 阶段集合为空")
 }
 
@@ -380,6 +369,9 @@ pub fn start_stage(config: &Path, target: Step, resume: bool) -> Result<()> {
 }
 
 pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: bool) -> Result<()> {
+    if target >= Step::Wannier {
+        return super::native_workspace::advance(config, target, submit, resume);
+    }
     let cfg = Config::load(config)?;
     super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, None)?;
@@ -466,7 +458,14 @@ pub fn start(config: &Path, target: Step, submit: bool) -> Result<()> {
     super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, None)?;
     super::native_jobs::check_groups(&cfg)?;
-    let script_path = generate_current(config, target, &cfg)?;
+    if target >= Step::Wannier {
+        if submit {
+            return super::native_workspace::advance(config, target, true, false);
+        }
+        let attempt = generate_current(target, &cfg, false)?;
+        return execute(&attempt);
+    }
+    let script_path = generate_current(target, &cfg, true)?;
     status(&cfg)?;
     let pending = target
         .closure()
@@ -630,7 +629,7 @@ pub fn execute(path: &Path) -> Result<()> {
             let upstream = stages::upstream(&cfg, step)?;
             let key = stages::scientific_key(&cfg, step)?;
             let directory = step.directory(&cfg);
-            let scripts = if directory.exists() {
+            let scripts = if a.target < Step::Wannier && directory.exists() {
                 crate::qe_data::save::files(&directory)?
                     .into_iter()
                     .filter(|f| {
@@ -728,7 +727,7 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
     let dir = step.directory(cfg);
     if dir.exists() {
         let chain_name = format!("{}.sh", step.name());
-        let chain_script = if dir.join(&chain_name).is_file() {
+        let chain_script = if step < Step::Wannier && dir.join(&chain_name).is_file() {
             Some(fs::read(dir.join(&chain_name))?)
         } else { None };
         archive_contents(

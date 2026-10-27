@@ -209,7 +209,7 @@ wannierize = true
 ephwrite = false
 eliashberg = false
 band_plot = false
-num_iter = 5000
+num_iter = 500
 
 [stages."5.postw90-dos"]
 write_hr = false
@@ -232,11 +232,11 @@ bands_plot = true
 bands_num_points = 1
 num_wann = 96
 projections = [
-    "Si:sp3",
-    "P:sp3",
+    "Si:s,p",
+    "P:s,p",
 ]
 exclude_bands = []
-num_iter = 5000
+num_iter = 500
 conv_tol = 0.00000001
 conv_window = 5
 guiding_centres = true

@@ -63,7 +63,9 @@ fn phonon_chain_single_submission_delivers_save_and_plots_without_downstream() {
     assert_eq!(ledger["spent_node_seconds"], 1);
     assert!(ledger["reservations"].as_array().unwrap().is_empty());
     success(c.numbered_cli(1, &["--stage", "coarse", "-s"], None, "chain-handoff"));
-    assert_eq!(c.chain_attempt()["target"], "coarse");
+    let plan: Value = store::read(&c.root.join("run/native-plan.json")).unwrap();
+    assert_eq!(plan["target"], "coarse");
+    assert_eq!(c.direct_task()["state"], "submitted");
     assert_eq!(c.calls(), calls);
 }
 

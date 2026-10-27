@@ -1,14 +1,26 @@
-//! 0050：真实公开入口与 shell 的阶段交付契约；科学程序为隔离替身。
+//! 阶段交付契约：第 5～8 步由公开命令逐项推进，科学程序为隔离替身。
 use super::*;
 impl Case {
     pub(super) fn stage_setup(&self) {
         self.direct_setup();
+        if let Ok(attempt) = store::read::<Value>(&self.root.join("run/epw-state/active.json")) {
+            if matches!(attempt["state"].as_str(), Some("succeeded" | "failed")) {
+                if let Some(job) = attempt["job"].as_u64() {
+                    self.put(&format!("job-{job}.state"), if attempt["state"] == "succeeded" { "COMPLETED" } else { "FAILED" });
+                }
+            }
+        }
         self.script(
             "scontrol",
             "#!/bin/bash\nprintf 'JobId=%s JobState=RUNNING NumNodes=1\\n' \"${@: -1}\"\n",
         );
     }
     pub(super) fn stage_execute(&self) -> Output {
+        if let Ok(plan) = store::read::<Value>(&self.root.join("run/native-plan.json")) {
+            if matches!(plan["target"].as_str(), Some("wannier" | "coarse" | "fine" | "superconductivity")) {
+                return self.direct_stage_execute(plan["target"].as_str().unwrap());
+            }
+        }
         use std::{io::Write, os::unix::fs::MetadataExt};
         let a: Value = store::read(&self.root.join("run/epw-state/active.json")).unwrap();
         let script = PathBuf::from(a["script"]["path"].as_str().unwrap());
@@ -42,6 +54,23 @@ impl Case {
             },
         );
         out
+    }
+    fn direct_stage_execute(&self, stage: &str) -> Output {
+        let bin = if matches!(stage, "wannier" | "coarse") { 1 } else { 2 };
+        for _ in 0..128 {
+            let task = self.direct_task();
+            if task["state"] == "submitted" {
+                assert!(task["job"].is_u64());
+                self.execute_record(task);
+            }
+            let out = self.numbered_cli(bin, &["--stage", stage, "-s"], None, "native-stage-advance");
+            self.put("stage-worker.stdout", &String::from_utf8_lossy(&out.stdout));
+            self.put("stage-worker.stderr", &String::from_utf8_lossy(&out.stderr));
+            if !out.status.success() || String::from_utf8_lossy(&out.stdout).contains("workflow_complete: true") {
+                return out;
+            }
+        }
+        panic!("原生阶段 {stage} 未在有限次公开推进中结束");
     }
     pub(super) fn stage_submit(&self, stage: &str, resume: bool) -> Output {
         let mut args = vec!["--stage", stage, "-s"];

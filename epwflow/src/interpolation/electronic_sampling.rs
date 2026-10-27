@@ -224,7 +224,7 @@ pub(crate) fn high_symmetry_edges(path: &Path) -> Result<Vec<PathEdge>> {
     Ok(edges)
 }
 /// 原生 labelinfo 给出真实端点的行号；逐段核对 kpt，不依赖两侧采样点数一致。
-fn native_path_points(
+pub(crate) fn native_path_points(
     edges: &[PathEdge],
     reciprocal: &[[f64; 3]; 3],
     labelinfo: &str,

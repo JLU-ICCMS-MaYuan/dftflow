@@ -298,14 +298,13 @@ fn prepare(
     command.push(cfg.programs.epw.path.to_string_lossy().into_owned());
     command.extend(cfg.programs.epw.args.clone());
     command.extend(["-inp".into(), input.to_string_lossy().into_owned()]);
-    let mut task = native_jobs::prepare_group(
+    let task = native_jobs::prepare_group(
         cfg,
         &format!("{generation}-{number}"),
         method(mode),
         &command,
         &dir,
     )?;
-    native_jobs::group_finalizer(cfg,&mut task)?;
     Ok(Batch {
         mode,
         requests,

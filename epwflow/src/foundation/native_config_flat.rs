@@ -225,6 +225,14 @@ fn phonon_name(d: &Document, flat: bool) -> Result<String> {
 }
 
 pub(super) fn expand(mut d: Document) -> Result<Document> {
+    // 未指定时限制为 500 轮；EPW 与内嵌 Wannier90 使用同一次拟合的迭代数。
+    if let Some(wannier) = d.stages.get_mut("5.wannier90").and_then(Value::as_object_mut) {
+        wannier.entry("num_iter").or_insert(json!(500));
+    }
+    let iterations = d.stages.get("5.wannier90").and_then(|w| w.get("num_iter")).cloned();
+    if let (Some(iterations), Some(epw)) = (iterations, d.stages.get_mut(WANNIER).and_then(Value::as_object_mut)) {
+        epw.entry("num_iter").or_insert(iterations);
+    }
     let ph = phonon_name(&d, true)?;
     let spectra = d
         .stages

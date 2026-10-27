@@ -12,7 +12,13 @@ pub fn atomic_bytes(path:&Path,bytes:&[u8])->Result<()>{
     ensure!(!fs::symlink_metadata(path).is_ok_and(|m|m.file_type().is_symlink()),"input_conflict: 拒绝替换符号链接 {}",path.display());
     let tmp=parent.join(format!(".epw-{}.tmp",token()));
     let mut file=OpenOptions::new().write(true).create_new(true).open(&tmp)?;
-    file.write_all(bytes)?;file.sync_all()?;fs::rename(&tmp,path)?;File::open(parent)?.sync_all()?;Ok(())
+    file.write_all(bytes)?;
+    #[cfg(unix)]
+    if path.extension().is_some_and(|ext| ext == "sh") {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o755))?;
+    }
+    file.sync_all()?;fs::rename(&tmp,path)?;File::open(parent)?.sync_all()?;Ok(())
 }
 pub fn write<T:Serialize>(path:&Path,data:&T)->Result<()> {let mut bytes=serde_json::to_vec_pretty(data)?;bytes.push(b'\n');atomic_bytes(path,&bytes)}
 #[derive(Debug,Clone,Serialize,Deserialize)] #[serde(deny_unknown_fields)]
@@ -149,6 +155,22 @@ pub fn state_root()->Result<PathBuf>{
 #[cfg(test)]
 mod hash_tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn atomic_script_creation_and_replacement_keep_execute_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("epw-script-mode-{}", token()));
+        let script = root.join("science.sh");
+        atomic_bytes(&script, b"#!/bin/sh\nexit 0\n").unwrap();
+        assert_eq!(fs::metadata(&script).unwrap().permissions().mode() & 0o777, 0o755);
+        atomic_bytes(&script, b"#!/bin/sh\nexit 17\n").unwrap();
+        assert_eq!(fs::metadata(&script).unwrap().permissions().mode() & 0o777, 0o755);
+        assert_eq!(std::process::Command::new(&script).status().unwrap().code(), Some(17));
+        let input = root.join("science.in");
+        atomic_bytes(&input, b"input\n").unwrap();
+        assert_eq!(fs::metadata(input).unwrap().permissions().mode() & 0o111, 0);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn streaming_hash_keeps_full_content_and_non_aligned_tail_identity() {
         let path = std::env::temp_dir().join(format!("epw-stream-hash-{}", token()));

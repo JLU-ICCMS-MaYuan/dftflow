@@ -17,7 +17,24 @@ struct Progress {
 }
 
 pub fn advance(config: &Path, target: Step, submit: bool, resume: bool) -> Result<()> {
-    advance_mode(config, target, submit, resume, None)
+    let result = advance_mode(config, target, submit, resume, None);
+    // 原生任务可能在调度归集时已失败，或仍在写日志；诊断不依赖完成回执。
+    if target >= Step::Wannier {
+        if let Ok(cfg) = Config::load(config) {
+            let directory = Step::Wannier.directory(&cfg);
+            let pending_fit = native_jobs::active_task(&cfg).ok().flatten()
+                .is_some_and(|task| task.directory == directory && matches!(task.state.as_str(),
+                    "submitted" | "running" | "submission_pending" | "unknown" | "awaiting_validation"));
+            if (result.is_err() || pending_fit)
+                && directory.join(format!("{}.wout", cfg.qe.prefix)).is_file() {
+                match super::wannier_diagnostics::generate(&cfg) {
+                    Ok(path) => println!("diagnostic_plots: {}", path.display()),
+                    Err(error) => eprintln!("diagnostic_plots: {error:#}"),
+                }
+            }
+        }
+    }
+    result
 }
 
 /// 在目标阶段的同一分配内运行既有阶段循环；父尝试已核对资源和提交身份。
@@ -61,6 +78,7 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
         parallelism::preflight(&cfg, step, false)?;
         if step != Step::Superconductivity {
             native_jobs::check_groups(&cfg)?;
+            workspace::archive_stale(&cfg)?;
         }
         let key = stages::scientific_key(&cfg, step)?;
         let path = cfg

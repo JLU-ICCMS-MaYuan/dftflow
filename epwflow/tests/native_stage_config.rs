@@ -277,3 +277,18 @@ fn wannier_native_path_density_accepts_user_setting_without_qe_point_constraint(
     c.cfg.validate().unwrap();
     assert_eq!(c.cfg.native_value::<u32>(&[WANNIER, "wannier90", "bands_num_points"]).unwrap(), 100);
 }
+
+#[test]
+fn wannier_iterations_default_to_500_and_preserve_explicit_values() {
+    let c=Case::new();
+    let mut document:toml::Value=toml::from_str(&toml::to_string_pretty(&c.cfg).unwrap()).unwrap();
+    for stage in ["5.wannier90", "5.epw-wannier"] {
+        document["stages"][stage].as_table_mut().unwrap().remove("num_iter");
+    }
+    let cfg:Config=toml::from_str(&toml::to_string(&document).unwrap()).unwrap();
+    assert_eq!(cfg.wannier.localization.max_iterations,500);
+    assert_eq!(cfg.native_value::<u32>(&[WANNIER,"epw","INPUTEPW","num_iter"]).unwrap(),500);
+    document["stages"]["5.wannier90"].as_table_mut().unwrap().insert("num_iter".into(),toml::Value::Integer(750));
+    let cfg:Config=toml::from_str(&toml::to_string(&document).unwrap()).unwrap();
+    assert_eq!(cfg.wannier.localization.max_iterations,750);
+}

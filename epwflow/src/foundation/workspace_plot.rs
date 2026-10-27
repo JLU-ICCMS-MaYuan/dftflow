@@ -427,7 +427,7 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
 }
 
 type Band = (Vec<f64>, Vec<f64>);
-fn bands_figure(
+pub(crate) fn bands_figure(
     file: &Path,
     qe: &[Band],
     wan: Option<&[Band]>,
@@ -459,7 +459,9 @@ fn bands_figure(
         area.fill(&WHITE)?;
         let mut chart = ChartBuilder::on(&area)
             .caption(
-                if wan.is_some() {
+                if note.starts_with("UNCONVERGED") {
+                    "UNCONVERGED Wannier fit / QE"
+                } else if wan.is_some() {
                     "QE / EPW electronic bands"
                 } else {
                     "QE electronic bands"

@@ -52,14 +52,7 @@ fn decay_is_published_before_comparison_failure_and_repairs_without_rerunning_sc
     fs::remove_file(result.join("decay-overview.pdf")).unwrap();
     // 模拟分配被终止后的遗留锁：只恢复原作业，错误所有者必须保留。
     let active: Value = store::read(&c.root.join("run/epw-state/active.json")).unwrap();
-    let submission: Value = store::read(
-        &PathBuf::from(active["config"]["path"].as_str().unwrap())
-            .parent()
-            .unwrap()
-            .join("submission.json"),
-    )
-    .unwrap();
-    let job = submission["job"].as_u64().unwrap();
+    let job = active["job"].as_u64().unwrap();
     let locks = [
         native.join("decay/decay-publication.lock"),
         result.join("stage-publication.lock"),
@@ -126,8 +119,8 @@ fn decay_is_published_before_comparison_failure_and_repairs_without_rerunning_sc
     // 原生诊断缺失只报告派生缺项，不能让粗网格科学重新提交。
     fs::remove_file(native.join("decay.H")).unwrap();
     fs::remove_file(native.join("decay.epmatp")).unwrap();
-    success(c.stage_submit("coarse", false));
-    let out = c.stage_execute();
+    let prepared = c.stage_submit("coarse", false);
+    let out = if prepared.status.success() { c.stage_execute() } else { prepared };
     assert!(!out.status.success());
     let error = format!(
         "{}{}",

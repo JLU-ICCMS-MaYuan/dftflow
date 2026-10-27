@@ -143,7 +143,8 @@ fn batch_native_early_stop_requires_explicit_resume_for_missing_temperatures() {
     let c = Case::gap_batch(config::Mode::Iso, vec![20., 30., 40.], None);
     c.put("gap-fault", "unconverged");
     success(c.direct_advance(2, &ARGS, "batch-early-submit"));
-    assert_ne!(c.execute_record(c.method_task("iso")), 0);
+    // 纯原生脚本保留求解器退出码；提前结束由作业外核验拒绝。
+    assert_eq!(c.execute_record(c.method_task("iso")), 0);
     assert!(!c
         .direct_advance(2, &ARGS, "batch-early-collect")
         .status
@@ -182,7 +183,7 @@ fn batch_invalid_gap_data_and_missing_log_ending_remain_distinct() {
         let c = Case::gap_batch(config::Mode::Iso, vec![20.], None);
         c.put("gap-fault", fault);
         success(c.direct_advance(2, &ARGS, "batch-invalid-submit"));
-        assert_eq!(c.execute_record(c.method_task("iso"))==0, execution);
+        assert_eq!(c.execute_record(c.method_task("iso")), 0);
         let result = c.direct_advance(2, &ARGS, "batch-invalid-collect");
         assert_eq!(result.status.success(), execution);
         let run = epwflow::superconductivity::points::Run::load(
@@ -207,6 +208,7 @@ fn batch_wrong_temperature_log_and_active_upstream_change_are_rejected() {
     c.numbered_change(|cfg| cfg.interpolation.spectral_points -= 1);
     assert_eq!(c.execute_record(c.method_task("iso")), 0);
     assert_eq!(c.execute_record(c.method_task("aniso")), 0);
+    success(c.direct_advance(2, &ARGS, "batch-valid-before-log-edit"));
     let iso = c.method_task("iso");
     let log = PathBuf::from(iso["directory"].as_str().unwrap()).join("epw.out");
     let text = fs::read_to_string(&log).unwrap();
@@ -223,7 +225,7 @@ fn batch_wrong_temperature_log_and_active_upstream_change_are_rejected() {
         &c.root.join("run/8.epw-superconductivity/manifest.json"),
     )
     .unwrap();
-    // 作业内已经冻结了有效结果；后来修改原日志必须拒绝复用，不能追认或重算。
+    // 作业外归集已冻结有效结果；后来修改原日志必须拒绝复用，不能追认或重算。
     assert!(run.execution_complete);
     assert!(run
         .attempts

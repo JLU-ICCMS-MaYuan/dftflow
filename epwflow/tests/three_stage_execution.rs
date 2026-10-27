@@ -624,7 +624,7 @@ impl Case {
             .replace("kpoints=[cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]", "kpoints=kpoints if wannier_only else [cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]")
             .replace("qcr=[list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]", "qcr=[[0,0,0]] if wannier_only else [list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]")
             .replace("if coarse:\n        lower=window_min()", "if coarse and not reuse:\n        lower=window_min()")
-            .replace("if not coarse or value('wannierize')=='.true.': Path(prefix+'.wout').write_text(wout)","if not reuse:Path(prefix+'.wout').write_text(wout)\n    if wannier_only:\n        Path(prefix+'.win').write_text('num_wann = '+str(n)+'\\n')\n        Path(prefix+'.chk').write_text('fixture checkpoint')")
+            .replace("if not coarse or value('wannierize')=='.true.': Path(prefix+'.wout').write_text(wout)","if not reuse:Path(prefix+'.wout').write_text(wout)\n    if wannier_only:\n        Path(prefix+'.win').write_text('num_wann = '+str(n)+'\\n'+'\\n'.join(re.findall(r\"(?m)^\\s*wdata\\(\\d+\\)\\s*=\\s*'([^']*)'\",text))+'\\n')\n        Path(prefix+'.chk').write_text('fixture checkpoint')")
             .replace("kept=list(range(8,17));nk=coarse_nk", "kept=list(range(8,17));nk=coarse_nk\n    if wannier_only:\n        Path(prefix+'.bvec').write_text('native bvec\\n'+str(nk)+' 1\\n'+'1 0 0 1\\n'*nk)\n        Path(prefix+'.mmn').write_text('(0,0)\\n'*(9*9*nk))\n    if reuse:\n        assert Path(prefix+'.bvec').read_text().splitlines()[1].split()==[str(nk),'1'], '粗网格缺同一拟合 bvec'\n        assert len(Path(prefix+'.mmn').read_text().splitlines())==9*9*nk, '粗网格缺同一拟合 mmn'")
             .replace("parent/'nscf/out'", "parent/'2.qe-nscf/out'")
             .replace("ROOT/'run/nscf/out'", "ROOT/'run/2.qe-nscf/out'");
@@ -858,20 +858,9 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     assert!(stages::reusable(&cfg,Step::Coarse).unwrap());assert!(!stages::reusable(&cfg,Step::Fine).unwrap());
     c.numbered_change(|cfg|{cfg.resources.mpi=16;cfg.programs.launcher[2]="16".into();cfg.programs.epw.args[2]="16".into();});
     success(c.numbered_cli(2,&["--stage","fine","--check"],None,"fine-resources-exceed-cached-coarse-grid"));
-    // 每个真正计算的叶目录可直接找到提交脚本。
-    for entry in epwflow::qe_data::save::files(&cfg.work_dir).unwrap() {
-        if entry.relative_path.starts_with("epw-state"){continue}
-        let path=cfg.work_dir.join(&entry.relative_path);
-        if path.extension().is_some_and(|e|e=="in") && path.file_name().unwrap()!="elepdos.in" {
-            if path.file_name().unwrap()=="projwfc.in" {
-                assert!(path.parent().unwrap().join("native-checkpoint.json").is_file());
-                assert!(path.parent().unwrap().parent().unwrap().join("submit.sh").is_file(),"投影使用电子 DOS 叶子的父作业");
-                continue;
-            }
-            let reuse=path.parent().unwrap().join("reuse-outcome.json");
-            if reuse.is_file() && store::read::<Value>(&reuse).unwrap()["decision"]=="verified_copy" {continue;}
-            assert!(path.parent().unwrap().join("submit.sh").is_file(),"缺少脚本 {}",path.display());
-        }
+    // 分配内执行不额外生成第 5～8 步包装脚本；原生提交脚本由 direct_submit 覆盖。
+    for (stage, name) in [("5.epw-wannier", "wannier.sh"), ("6.epw-coarse", "coarse.sh"), ("7.epw-fine", "fine.sh")] {
+        assert!(!cfg.work_dir.join(stage).join(name).exists());
     }
 }
 
@@ -1250,7 +1239,7 @@ fn numbered_electronic_receipt_rejects_corrupted_save_and_adopts_verified_old_pw
 fn numbered_electronic_script_change_is_rejected_and_fresh_attempt_recovers() {
     let c=Case::numbered(); c.stage_setup();
     success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"submit-before-edit"));
-    let task:Value=store::read(&c.root.join("run/epw-state/active.json")).unwrap();
+    let task:Value=store::read(&c.root.join("run/epw-state/native-active.json")).unwrap();
     let script=PathBuf::from(task["script"]["path"].as_str().unwrap());
     let original=fs::read(&script).unwrap();
     fs::write(&script,"#!/bin/bash\n# manually edited\nexit 0\n").unwrap();
@@ -1260,9 +1249,9 @@ fn numbered_electronic_script_change_is_rejected_and_fresh_attempt_recovers() {
     fs::write(&script,original).unwrap();
     success(c.stage_execute());
     success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"next-native-task"));
-    let complete:Value=store::read(&c.root.join("run/epw-state/active.json")).unwrap();
+    let complete:Value=store::read(&c.root.join(format!("run/epw-state/native-jobs/{}.json", task["key"].as_str().unwrap()))).unwrap();
     assert_eq!(complete["id"],task["id"]);
-    assert_eq!(complete["state"],"succeeded");
+    assert_eq!(complete["state"],"validated");
 }
 
 #[test]
@@ -1321,7 +1310,7 @@ fn numbered_deleted_wannier_directory_rebuilds_without_repeating_upstream() {
     }
     c.script("sbatch", "#!/bin/sh\nprintf '203\\n'\n");
     success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "deleted-submit"));
-    assert!(c.root.join("run/5.epw-wannier/wannier.sh").is_file());
+    assert!(c.root.join("run/5.epw-wannier/epw_wannier.sh").is_file());
     assert_eq!(before, c.calls(), "提交不能提前执行科学程序");
     c.stage_setup();
     success(c.stage_execute());
@@ -1358,9 +1347,12 @@ fn numbered_missing_checkpoint_rebuilds_but_modified_or_corrupt_evidence_is_reje
 
 #[test]
 fn numbered_deleted_stage_never_bypasses_queued_or_unknown_submission() {
-    let c=Case::numbered(); c.direct_setup();
+    let c=Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(0,&["--stage","electronic","-r"],Some(201),"queued-upstream"));
+    c.direct_setup();c.put("job-201.state","COMPLETED");
     success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"queued-wannier"));
-    let active=c.root.join("run/epw-state/active.json");
+    let active=c.root.join("run/epw-state/native-active.json");
     let before=fs::read(&active).unwrap();
     fs::remove_dir_all(c.root.join("run/5.epw-wannier")).unwrap();
     assert!(!c.numbered_cli(1,&["--stage","wannier","-s"],None,"queued-deleted-stage").status.success());
@@ -1661,3 +1653,48 @@ fn numbered_preparation_keeps_clean_input_and_json_provenance() {
 
 #[path = "support/phonon_import.rs"]
 mod phonon_import_tests;
+
+#[test]
+fn unconverged_wannier_still_draws_bands_without_scientific_completion() {
+    let c=Case::numbered();c.accounting(Some(201));
+    c.numbered_change(|cfg| cfg.set_native(&[epwflow::foundation::native_config::WANNIER,"wannier90","bands_num_points"],json!(7)).unwrap());
+    let file=c.root.join("epw_native_io.py");
+    let body=fs::read_to_string(&file).unwrap().replace(
+        "<<< Wannierisation convergence criteria satisfied >>>",
+        "Wannierisation convergence was not reached");
+    fs::write(&file,body).unwrap();
+    let out=c.numbered_cli(1,&["--stage","wannier","-r"],Some(201),"unconverged-fit");
+    assert!(!out.status.success());
+    let dir=c.root.join("run/5.epw-wannier");
+    assert!(!dir.join("completion.json").exists());
+    assert!(!c.root.join("run/6.epw-coarse").exists());
+    assert!(dir.join("diagnostics/wannier-fit.png").is_file(),"{}",String::from_utf8_lossy(&out.stderr));
+    let report:Value=store::read(&dir.join("diagnostics/diagnostic.json")).unwrap();
+    assert_eq!(report["converged"],false);
+    assert_eq!(report["independent_native_sampling"],true);
+    let csv=fs::read_to_string(dir.join("diagnostics/wannier-fit.csv")).unwrap();
+    assert!(csv.lines().filter(|l|l.starts_with("Wannier,") && l.split(',').nth(3)==Some("0")).count()>csv.lines().filter(|l|l.starts_with("QE,") && l.split(',').nth(3)==Some("0")).count());
+    assert_eq!(report["scientific_completion_published"],false);
+    let calls=c.calls();
+    let input=fs::read(dir.join("epw_wannier.in")).unwrap();
+    success(c.numbered_cli(1,&["--plot"],None,"unconverged-replot"));
+    assert_eq!(calls,c.calls(),"诊断重绘不能执行科学程序");
+    assert_eq!(input,fs::read(dir.join("epw_wannier.in")).unwrap());
+}
+
+#[test]
+fn failed_native_wannier_still_draws_before_scheduler_error_returns() {
+    let c=Case::numbered();c.stage_setup();
+    let file=c.root.join("epw_native_io.py");
+    let body=fs::read_to_string(&file).unwrap();
+    fs::write(file,format!("{body}\nraise SystemExit(17)\n")).unwrap();
+    success(c.stage_submit("wannier",false));
+    let out=c.stage_execute();
+    assert!(!out.status.success());
+    let dir=c.root.join("run/5.epw-wannier");
+    assert!(!dir.join("completion.json").exists());
+    assert!(dir.join("diagnostics/wannier-fit.png").is_file(),"{}",String::from_utf8_lossy(&out.stderr));
+    let report:Value=store::read(&dir.join("diagnostics/diagnostic.json")).unwrap();
+    assert_eq!(report["scientific_completion_published"],false);
+    assert!(!c.root.join("run/6.epw-coarse").exists());
+}

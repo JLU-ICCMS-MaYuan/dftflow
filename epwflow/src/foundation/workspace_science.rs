@@ -630,18 +630,21 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
         )?,
     )?;
     }
-    interpolation::coarse::run_epw(
+    let execution = interpolation::coarse::run_epw(
         &epw,
         &dir,
         "epw_wannier.in",
         &cfg.programs.launcher,
         Backend::Local,
-    )?;
-    let prefix = &cfg.qe.prefix;
-    interpolation::wannier::check_native(
-        &dir.join(format!("{prefix}.wout")),
-        cfg.wannier.num_wann as usize,
-    )?;
+    );
+    if execution.as_ref().is_err_and(super::native_jobs::paused) {
+        return execution;
+    }
+    let result = execution.and_then(|_| -> Result<()> {
+        let prefix = &cfg.qe.prefix;
+        interpolation::wannier::check_native(
+            &dir.join(format!("{prefix}.wout")), cfg.wannier.num_wann as usize,
+        )?;
     epw.check_native_windows(&fs::read_to_string(dir.join(format!("{prefix}.wout")))?)?;
     validate_ukk(&dir.join(format!("{prefix}.ukk")), cfg)?;
     interpolation::restart::velocity_files(&dir, prefix, s.kpoints.len(),
@@ -651,7 +654,14 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
         .map(|suffix| Identity::capture(&dir.join(format!("{prefix}{suffix}"))))
         .collect::<Result<Vec<_>>>()?;
     store::write(&dir.join("embedded-bands.json"),&bands)?;
-    Ok(())
+        Ok(())
+    });
+    if result.is_err() {
+        if let Err(plot_error) = super::wannier_diagnostics::generate(cfg) {
+            eprintln!("Wannier 诊断图：{plot_error:#}");
+        }
+    }
+    result
 }
 
 pub fn validate_ukk(path: &Path, cfg: &Config) -> Result<()> {
