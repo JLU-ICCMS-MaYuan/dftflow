@@ -99,7 +99,7 @@ ecutwfc = 40.0  # 此次 pw.x 独立设置，不从 SCF 继承
 
 完整示例见 [MgB₂ 配置](../examples/MgB2/sugon-amd/run/epwflow/epwinput.toml)，字段和单位见[原生阶段参数说明](../docs/overview/epwflow/native-stage-config.md)。所有科学调用读取对应阶段配置；修改 NSCF 截断能不会改写 SCF。数据交接必须匹配的前缀、粗细网格、Wannier 维数等出现冲突时，执行前列出两处配置和值。顶层 `workflow` 单独保存自动选窗、输入来源、PH 拆分及搜索设置。自动绑定在程序内部登记，无需填写 derived 表；同一目标同时手填和内部推导会被拒绝。多个调用同层分开，例如 `3.qe-bands/3.qe-bands-post/3.qe-dos/3.qe-pdos`。旧多层表达明确拒绝。配置简化及验证见 [0061](../docs/specs/0061-epw-flat-stage-config/spec.md)。
 
-数组使用原生名，例如 `amass`、`temps`，生成 Fortran 索引数组；`ATOMIC_SPECIES` 和 `K_POINTS` 保存原生卡片文本。NSCF 使用完整 `K_POINTS crystal` 点表，不隐藏改写成另一种网格。输入注释、参数对应 JSON 和固定配置共同记录来源；内部算法类型不是另一份用户配置。
+数组使用原生名，例如 `amass`、`temps`，生成 Fortran 索引数组；`ATOMIC_SPECIES` 和 `K_POINTS` 保存原生卡片文本。NSCF 使用完整 `K_POINTS crystal` 点表，不隐藏改写成另一种网格。输入文件不再前置参数来源注释；来源由参数对应 JSON 和固定配置记录（直接准备模式见 `epw-state/parameter-map.json`）；内部算法类型不是另一份用户配置。
 
 ```text
 run/

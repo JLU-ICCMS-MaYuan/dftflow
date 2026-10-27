@@ -98,10 +98,7 @@ impl<'a> QeSettings<'a> {
         let input=qf_input::pw::write_pw_input_with_species(
             &shared, &self.cell, &params, &qe.prefix, &points, 17, &species,
         )?;
-        let mut result=self.config.apply_native(task,&input)?;
-        let comments=format!("! 参数来源 stages.{}（物种卡片及 K 点卡片）；结构卡片来自已绑定 POSCAR{}\n",task.join("."),if reference.is_some(){"；路径来自 KPATH 和本阶段工作流"}else{""});
-        result.insert_str(0,&comments);
-        Ok(result)
+        self.config.apply_native(task,&input)
     }
 
     pub fn scf_input(&self, outdir: &str) -> Result<String> {

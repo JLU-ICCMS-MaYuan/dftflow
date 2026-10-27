@@ -35,3 +35,7 @@ QE `ecutwfc/ecutrho/degauss/conv_thr` 为 Ry；DOS/PROJWFC `degauss` 仍为 Ry�
 无公开 derived 表。outdir、pseudo_dir、结构维数、受控输出名、绑定费米能、EPW 内嵌 Wannier 数据和自动能窗等仅按代码中的有限规则生成；手填同一目标仍报双重定义。用户填写的 Wannier90 能窗不等于手填 EPW 的自动传递目标，二者有明确的不同调用归属。
 
 输入注释与参数回执引用真实平层字段。自动值标为“内部推导规则”；parameter-map.json 保留实际配置位置和内部绑定来源，不要求用户在 TOML 中声明。旧多层输入拒绝，历史冻结现场不自动修改。
+
+## 0062 对输入说明方式的替代
+
+[0062](../../0062-epw-clean-input-headers/spec.md) 删除输入头部批量来源注释；平层来源与内部绑定仅记录在独立 JSON 中，实际输入哈希仍绑定回执。上文输入注释条款保留为原版本记录，不再代表当前生成行为。

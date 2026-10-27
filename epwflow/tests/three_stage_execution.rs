@@ -770,6 +770,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
     for step in [Step::Scf,Step::Nscf,Step::Electronic,Step::Phonon] {assert!(stages::reusable(&cfg,step).unwrap());}
     assert!(c.root.join("run/1.qe-scf/scf.in").is_file());
+    assert!(fs::read_to_string(c.root.join("run/1.qe-scf/scf.in")).unwrap().starts_with("&CONTROL\n"));
     assert!(c.root.join("run/4.qe-phonon-nosplit/save/scf.dvscf_q2").is_file());
     let qe_calls=c.calls().0;
     c.accounting(Some(202));
@@ -1636,3 +1637,22 @@ mod stage_results;
 
 #[path = "support/decay.rs"]
 mod decay;
+
+#[test]
+fn numbered_preparation_keeps_clean_input_and_json_provenance() {
+    let c = Case::numbered();
+    c.accounting(None);
+    let before = c.calls();
+    success(c.numbered_cli(0, &["--stage", "scf", "--prepare-only"], None, "clean-prepare"));
+    let sources: Value = store::read(&c.root.join("run/epw-state/parameter-map.json")).unwrap();
+    assert!(sources["parameters"].as_array().unwrap().iter()
+        .any(|p| p["configuration"] == "stages.1.qe-scf.ecutwfc"));
+    assert!(sources["derived"].get("stages.1.qe-scf.outdir").is_some());
+    let input = c.root.join("run/1.qe-scf/scf.in");
+    assert!(fs::read_to_string(&input).unwrap().starts_with("&CONTROL\n"));
+    let receipt: Value = store::read(&c.root.join("run/epw-state/native-active.json")).unwrap();
+    assert_eq!(receipt["state"], "prepared");
+    assert!(receipt["job"].is_null());
+    assert_eq!(receipt["inputs"][0]["sha256"], store::hash_file(&input).unwrap());
+    assert_eq!(c.calls(), before, "准备输入不能调用科学程序或提交作业");
+}

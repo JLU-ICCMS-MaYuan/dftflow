@@ -6,13 +6,13 @@
 
 ```bash
 source "/data/home/mayuan/code/dftflow/scripts/env.sh"
-export PATH="/data/home/mayuan/code/dftflow/docs/local/0061-native-bin:$PATH"
+export PATH="/data/home/mayuan/code/dftflow/docs/local/0062-native-bin:$PATH"
 cd "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow"
 command -v epw_phonon epw_wannier epw_superconductivity
 epw_phonon -c "epwinput.toml" --check --json
 ```
 
-平层配置使用 `docs/local/0061-native-bin/` 中本次构建并核验的三个程序；0059 的旧程序不读取平层格式。现有八阶段计算结果属于 0059，本轮未重新计算；旧冻结配置未改写。上述历史现场的恢复属于旧格式边界，不能直接用新程序恢复。配置调整见 [0061](../../../../../docs/specs/0061-epw-flat-stage-config/spec.md)。上述 PATH 仅作用于当前会话，默认安装不会随源码自动更新。
+平层配置使用 `docs/local/0062-native-bin/` 中本次构建并核验的三个程序；0059 的旧程序不读取平层格式。0062 的新输入不再前置批量参数来源说明，来源保留在独立 JSON。现有八阶段计算结果属于 0059，本轮未重新计算；旧冻结配置未改写。上述历史现场的恢复属于旧格式边界，不能直接用新程序恢复。配置调整见 [0061](../../../../../docs/specs/0061-epw-flat-stage-config/spec.md)。上述 PATH 仅作用于当前会话，默认安装不会随源码自动更新。
 
 `--check` 只检查配置、文件和并行设置，不提交作业。所有命令读取当前 `epwinput.toml`，结构为 `../POSCAR`，赝势位于上级 `pp/`。当前为 PBE 小网格功能测试，图与数值供人工检查，不代表网格或选窗已经收敛。
 

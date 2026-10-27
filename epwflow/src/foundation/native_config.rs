@@ -297,7 +297,6 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
     let assignment = regex::Regex::new(r"(?i)([a-z_][a-z_0-9]*(?:\s*\(\s*\d+\s*\))?)\s*=")?;
     let sections = regex::Regex::new(r"(?im)^\s*&([a-z_][a-z_0-9]*)\b")?;
     let mut output = String::new();
-    let mut provenance = Vec::new();
     let mut end = 0;
     for section in sections.captures_iter(input) {
         let start = section.get(0).unwrap();
@@ -374,20 +373,16 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
             } else {
                 result.insert(key.to_lowercase(), qf_input::to_qe_value(value));
             }
-            provenance.push(format!("! 参数来源 {}", flat::location(&format!("stages.{stage}.{location}"))));
         }
         for (key, value) in original {
             let base = key.split('(').next().unwrap();
             let location = format!("{task_name}.{name}.{base}");
-            if let Some(rule) = derived.get(&location) {
+            if derived.contains_key(&location) {
                 ensure!(
                     !settings.keys().any(|k| k.eq_ignore_ascii_case(base)),
                     "configuration: stages.{stage}.{location}: 推导与原生值重复"
                 );
                 result.insert(key.clone(), value);
-                provenance.push(format!(
-                    "! 参数来源 内部推导规则 {}: {rule}; {key}", flat::location(&format!("stages.{stage}.{location}"))
-                ));
             } else {
                 ensure!(result.contains_key(&key) || (key == base && settings.contains_key(base)),"configuration: stages.{stage}.{location}: 实际输入包含未配置且未登记推导的科学参数");
             }
@@ -414,13 +409,6 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
     }
     ensure!(end > 0, "data_invalid: 原生输入没有 namelist");
     output.push_str(&input[end..]);
-    provenance.sort();
-    provenance.dedup();
-    let first = sections
-        .find(&output)
-        .context("data_invalid: 缺少输入段")?
-        .start();
-    output.insert_str(first, &(provenance.join("\n") + "\n"));
     Ok(output)
 }
 

@@ -46,9 +46,9 @@ amass、temps 等数组保持原生名字，输入生成 Fortran 下标；nstemp
 
 TOML 无需填写 outdir、pseudo_dir、nat 等自动绑定项或 derived 表。程序内部登记有限规则，按结构、任务目录及核验后的数据生成；手填同一目标仍拒绝双重定义，未配置且未登记的生成参数同样停止。
 
-实际输入注释、parameter-map.json 和后处理参数回执指向平层配置位置；自动值标明“内部推导规则”。内部有效配置供输入、指纹、回执及恢复共用，不构成可公开输入的第二种格式。旧冻结配置与旧结果不会自动改写；格式验证不意味着旧现场已完成迁移。
+科学输入不再前置批量参数来源注释。直接准备模式的 epw-state/parameter-map.json、冻结提交的 parameter-map.json 和后处理参数回执指向平层配置位置并记录内部绑定来源；输入回执绑定实际文件哈希。内部有效配置供输入、指纹、回执及恢复共用，不构成可公开输入的第二种格式。旧冻结配置与旧结果不会自动改写；格式验证不意味着旧现场已完成迁移。
 
-完整示例见 [MgB₂ TOML](../../../examples/MgB2/sugon-amd/run/epwflow/epwinput.toml)，细节见 [0061 契约](../../specs/0061-epw-flat-stage-config/contracts/config.md)与[验收记录](../../specs/0061-epw-flat-stage-config/acceptance.md)。源码、私有构建和默认安装分别核对，旧安装不能据此视为已支持新格式。
+完整示例见 [MgB₂ TOML](../../../examples/MgB2/sugon-amd/run/epwflow/epwinput.toml)，细节见 [0061 契约](../../specs/0061-epw-flat-stage-config/contracts/config.md)与[验收记录](../../specs/0061-epw-flat-stage-config/acceptance.md)。注释移除及来源追溯见 [0062](../../specs/0062-epw-clean-input-headers/origin.md)。源码、私有构建和默认安装分别核对，旧安装不能据此视为已支持新格式。
 
 ## 已有真实验证边界
 

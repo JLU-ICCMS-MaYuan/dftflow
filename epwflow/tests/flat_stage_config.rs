@@ -69,9 +69,9 @@ fn total_and_projected_dos_keep_independent_native_smearing_values() {
         )
         .unwrap();
     assert!(total.contains("degauss = 0.0123"), "{total}");
-    assert!(total.contains("stages.3.qe-dos.degauss"));
+    assert!(total.starts_with("&DOS\n"));
     assert!(!projected.contains("degauss = 0.0123"));
-    assert!(projected.contains("stages.3.qe-pdos.degauss"));
+    assert!(projected.starts_with("&PROJWFC\n"));
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn manual_internal_bindings_and_aliases_are_rejected_with_real_toml_locations() 
 }
 
 #[test]
-fn internal_rules_are_traced_in_generated_input_and_parameter_receipts() {
+fn clean_input_keeps_internal_rules_and_identity_in_parameter_receipts() {
     let root = std::env::temp_dir().join(format!("epw-flat-source-{}", store::token()));
     std::fs::create_dir_all(&root).unwrap();
     let mut cfg = fixture();
@@ -133,14 +133,12 @@ fn internal_rules_are_traced_in_generated_input_and_parameter_receipts() {
     .unwrap();
     cfg.configure_file(&[SCF, "pw"], &input).unwrap();
     let text = std::fs::read_to_string(&input).unwrap();
-    assert!(
-        text.contains("内部推导规则 stages.1.qe-scf.outdir"),
-        "{text}"
-    );
-    assert!(text.contains("stages.1.qe-scf.ecutwfc"));
-    assert!(!text.contains("workflow.derived") && !text.contains("pw.SYSTEM"));
+    assert!(text.starts_with("&control\n"), "{text}");
+    assert!(!text.contains("参数来源") && !text.contains("内部推导规则"));
     let receipt: Value = store::read(&input.with_extension("parameters.json")).unwrap();
     assert_eq!(receipt["configuration"], "stages.1.qe-scf");
+    let identity: store::Identity = serde_json::from_value(receipt["input"].clone()).unwrap();
+    identity.verify().unwrap();
     assert!(receipt["derived"].get("stages.1.qe-scf.nat").is_some());
     cfg.write_parameter_map(&root.join("parameter-map.json"))
         .unwrap();
@@ -169,7 +167,43 @@ fn fine_spectrum_subtasks_are_also_independent_flat_calls() {
         .apply_native(&path, "&inputepw\n degaussq=1\n/\n")
         .unwrap();
     assert!(input.contains("degaussq = 2"));
-    assert!(input.contains("stages.7.epw-fine-smearing-0002.degaussq"));
+    assert!(input.starts_with("&inputepw\n") && !input.contains("参数来源"));
     let text = toml::to_string(&cfg).unwrap();
     assert!(!text.contains(".spectra."));
+}
+
+#[test]
+fn all_native_namelists_keep_titles_and_cards_without_source_headers() {
+    let cfg = fixture();
+    let cases: &[(&[&str], &str)] = &[
+        (&[SCF, "pw"], "CONTROL"),
+        (&["2.qe-nscf", "pw"], "CONTROL"),
+        (&["3.qe-electronic", "qe_eband", "bands"], "BANDS"),
+        (&["3.qe-electronic", "qe_eledos", "dos"], "DOS"),
+        (&["3.qe-electronic", "qe_eledos", "projwfc"], "PROJWFC"),
+        (&["4.qe-phonon-index", "ph"], "INPUTPH"),
+        (&["4.qe-phonon-index", "q2r"], "INPUT"),
+        (&["4.qe-phonon-index", "dispersion", "matdyn"], "INPUT"),
+        (&["4.qe-phonon-index", "dos", "matdyn"], "INPUT"),
+        (&[WANNIER, "epw"], "INPUTEPW"),
+        (&["6.epw-coarse", "epw"], "INPUTEPW"),
+        (&["7.epw-fine", "epw"], "INPUTEPW"),
+        (&["8.epw-superconductivity", "iso", "epw"], "INPUTEPW"),
+        (&["8.epw-superconductivity", "aniso", "epw"], "INPUTEPW"),
+    ];
+    for (task, section) in cases {
+        let original = format!("Native title\n! user note\n&{section}\n/\n0.0 0.0 0.0\n");
+        let clean = cfg.apply_native(task, &original).unwrap();
+        assert!(
+            clean.starts_with("Native title\n! user note\n&"),
+            "{task:?}"
+        );
+        assert!(clean.ends_with("0.0 0.0 0.0\n"), "{task:?}");
+        assert!(!clean.contains("参数来源"), "{task:?}");
+        let legacy = original.replace(
+            &format!("&{section}"),
+            &format!("! 参数来源 stages.old.parameter\n! 参数来源 内部推导规则 old\n&{section}"),
+        );
+        assert_eq!(cfg.apply_native(task, &legacy).unwrap(), clean, "{task:?}");
+    }
 }

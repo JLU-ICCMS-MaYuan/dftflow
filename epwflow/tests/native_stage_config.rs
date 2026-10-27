@@ -96,7 +96,8 @@ fn nscf_system_parameters_are_independent_and_render_native_names_and_units() {
     let input = settings.nscf_input("./out").unwrap();
     assert!(input.contains("ecutwfc = 48"), "{input}");
     assert!(input.contains("degauss = 0.03"), "{input}");
-    assert!(input.contains("stages.2.qe-nscf.ecutwfc"));
+    assert!(input.starts_with("&CONTROL\n"));
+    assert!(!input.contains("参数来源"));
     assert!(!input.contains("ecutwfc_ry"));
 }
 

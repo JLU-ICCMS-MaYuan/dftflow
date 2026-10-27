@@ -41,6 +41,7 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
         &cfg.work_dir.join("epw-state/current-config.toml"),
         toml::to_string_pretty(&cfg)?.as_bytes(),
     )?;
+    cfg.write_parameter_map(&cfg.work_dir.join("epw-state/parameter-map.json"))?;
     for step in target.closure() {
         if step == target || !stages::reusable(&cfg, step)? {
             parallelism::preflight(&cfg, step, false)?;

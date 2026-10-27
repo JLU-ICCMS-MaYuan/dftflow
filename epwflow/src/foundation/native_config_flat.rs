@@ -360,7 +360,7 @@ pub(super) fn flatten(mut d: Document) -> Result<Document> {
     Ok(d)
 }
 
-/// 参数注释、错误与回执均使用同一外部位置映射。
+/// 错误与参数回执使用同一外部位置映射。
 pub(super) fn location(path: &str) -> String {
     for ph in [
         "4.qe-phonon-nosplit",

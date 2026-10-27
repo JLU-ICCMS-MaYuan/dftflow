@@ -733,6 +733,8 @@ fn qe_config_renders_expected_namelists() {
     let reference_in = qe.path_input(out.to_str().unwrap(), &[[0., 0., 0.]]).unwrap();
     assert!(reference_in.contains("calculation = 'bands'"));
     for deck in [&scf_in, &nscf_in, &reference_in] {
+        assert!(deck.starts_with("&CONTROL\n"), "{deck}");
+        assert!(!deck.contains("参数来源"), "{deck}");
         for pseudo in cfg.pseudos.values() {
             assert!(deck.contains(&format!("'{}'", pseudo.parent().unwrap().display())));
             assert!(deck.contains(pseudo.file_name().unwrap().to_str().unwrap()));
@@ -744,6 +746,9 @@ fn qe_config_renders_expected_namelists() {
         .phonon_q_input(out.to_str().unwrap(), &config::PhMode::Index, None, 1)
         .unwrap();
     assert!(q_in.contains("start_q = 1") && q_in.contains("last_q = 1"));
+    for deck in [&init_in, &q_in] {
+        assert!(!deck.contains("参数来源"), "{deck}");
+    }
 }
 
 // ---------- FR-003：SCF 能量解析 ----------
