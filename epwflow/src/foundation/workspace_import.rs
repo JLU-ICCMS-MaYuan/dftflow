@@ -3,7 +3,7 @@ use super::{
     config::Config,
     layout,
     snapshot::RunBinding,
-    stages::{self, Completion, Step},
+    stages::{self, Step},
     store::{self, Identity},
 };
 use crate::qe_data::{manifest::QeManifest, save};
@@ -70,25 +70,18 @@ fn publish(cfg: &Config, t: &Transaction, report: &Path) -> Result<()> {
         }
     }
     t.manifest.verify()?;
-    store::write(
-        &layout::path(&cfg.work_dir, "qe-data/manifest.json"),
-        &t.manifest,
-    )?;
-    store::write(
-        &Step::Phonon.directory(cfg).join("save/manifest.json"),
-        &t.manifest,
-    )?;
     for step in [Step::Scf, Step::Nscf, Step::Phonon] {
-        let c = Completion {
-            schema_version: 1,
-            step,
-            scientific_key: stages::scientific_key(cfg, step)?,
-            upstream: stages::upstream(cfg, step)?,
-            outputs: super::workspace_science::evidence(cfg, step)?,
-            provenance: Some(t.source.clone()),
-        };
-        c.verify()?;
-        store::write(&stages::receipt(&cfg.work_dir, step), &c)?;
+        let version = super::readable_state::current_config(&cfg.work_dir)?;
+        super::readable_state::update(&cfg.work_dir, step, |d| {
+            d.set("阶段", "批次", format!("import-{}", step.name()));
+            d.set(
+                "阶段",
+                "计算配置",
+                super::readable_state::relative(&cfg.work_dir, &version),
+            );
+            Ok(())
+        })?;
+        stages::finish(cfg, step)?;
     }
     t.source.verify()?;
     ensure!(
@@ -97,7 +90,7 @@ fn publish(cfg: &Config, t: &Transaction, report: &Path) -> Result<()> {
     );
     store::write(
         report,
-        &serde_json::json!({"schema_version":1,"source_sha256":t.source.sha256,"source_files":t.source_files,"calculation_dir":t.calculation_dir,"new_manifest":Identity::capture(&layout::path(&cfg.work_dir,"qe-data/manifest.json"))?}),
+        &serde_json::json!({"schema_version":1,"source_sha256":t.source.sha256,"source_files":t.source_files,"calculation_dir":t.calculation_dir,"state":"八阶段可读日志"}),
     )?;
     println!("import_status: complete\nqe_recalculated: false");
     Ok(())
@@ -115,7 +108,11 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     binding.programs.remove("dynmat");
     binding.verify()?;
     let original = Config::load_imported(&source.join("input-init.toml"))?;
-    let state = if source.join("epw-state/workflow.json").is_file() { "epw-state" } else { ".epwflow" };
+    let state = if source.join("epw-state/workflow.json").is_file() {
+        "epw-state"
+    } else {
+        ".epwflow"
+    };
     let record: serde_json::Value = store::read(&source.join(state).join("workflow.json"))?;
     if let Some(job) = record.get("job_id").and_then(|v| v.as_u64()) {
         ensure!(
@@ -140,7 +137,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
         !cfg.work_dir.join("epw-state/active.json").exists(),
         "input_conflict: 先核对已有工作区尝试，再导入旧现场"
     );
-    let report = cfg.work_dir.join("epw-state/legacy-import.json");
+    let report = cfg.work_dir.join("epw-state/imports/legacy-import.json");
     if report.exists() {
         let prior: serde_json::Value = store::read(&report)?;
         ensure!(
@@ -148,7 +145,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
             "input_conflict: 工作区已导入不同来源"
         );
         for step in [Step::Scf, Step::Nscf, Step::Phonon] {
-            let c: Completion = store::read(&stages::receipt(&cfg.work_dir, step))?;
+            let c = stages::completion(&cfg, step)?;
             c.verify()?;
         }
         println!("import_status: reused");
@@ -162,7 +159,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
         );
     }
     layout::initialize(&cfg)?;
-    let journal = cfg.work_dir.join("epw-state/importing.json");
+    let journal = cfg.work_dir.join("epw-state/imports/importing.json");
     if journal.exists() {
         let t: Transaction = store::read(&journal)?;
         ensure!(
@@ -181,8 +178,8 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     let before = save::files(&calc)?;
     let partial = cfg
         .work_dir
-        .join("epw-state")
-        .join(format!("import-{}", store::token()));
+        .join("epw-state/imports")
+        .join(format!("work-{}", store::token()));
     fs::create_dir_all(&partial)?;
     let mut manifest = old.clone();
     manifest.artifact_root = Some(cfg.work_dir.canonicalize()?);
@@ -250,6 +247,13 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
         let from = calc.join("qe-phonon").join(name);
         if from.exists() {
             fs::copy(from, partial.join("1.qe-scf").join(name))?;
+        }
+    }
+    // 新的直接校验同时读取原生日志，旧共享清单未把 NSCF 日志列为交付角色。
+    for name in ["nscf.out", "nscf.exitcode"] {
+        let from = calc.join("nscf").join(name);
+        if from.is_file() {
+            fs::copy(from, partial.join("2.qe-nscf").join(name))?;
         }
     }
     // 布局迁移同时物化已有后处理，避免为了 q2r/matdyn 产物重新启动 PH。

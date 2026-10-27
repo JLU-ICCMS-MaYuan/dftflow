@@ -95,7 +95,7 @@ SCF、NSCF 已完成，且没有其他活动任务占用该工作区时，可单
 epw_phonon --config "epwinput.toml" --stage electronic -s
 ```
 
-该阶段不调用 PH，不需要等待声子导入或 Wannier。也可以由下文的 Wannier 命令补齐；已有兼容任务正在运行时，应先等待该任务结束，避免重复提交。
+该阶段不调用 PH，不需要等待声子导入或 Wannier。也可以由下文的 Wannier 命令补齐；已有兼容任务正在运行时，应先等待该任务结束，避免重复提交。下表记录既有安装和现场的文件位置；0064 源码布局改为八份中文阶段日志与计算目录 `.jobs`，本轮没有转换这个真实现场。
 
 | 位置 | 内容 |
 | --- | --- |
@@ -139,7 +139,7 @@ cd "/data/home/mayuan/code/dftflow/examples/SiP2"
 epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
 ```
 
-正式命令应来自 /data/home/mayuan/code/dftflow/bin/epwflow，不再使用 docs/local 中的验证副本。首次导入自动核验旧电子记录，将旧嵌套 TOML 转为平层格式，保留全部科学参数；原配置、旧回执及接续报告保存在 epw-state/history/flat-import-*，不删除或伪造原记录。
+正式命令应来自 /data/home/mayuan/code/dftflow/bin/epwflow，不再使用 docs/local 中的验证副本。源码中的新导入流程保留用户 TOML 原文，在配置旁生成递增的 0000-config.toml 等版本；旧嵌套配置仅在显式导入路径受控读取，不再改写用户输入或创建历史目录。外部来源与转换信息保存在 epw-state/imports/，续算进度写入八份中文阶段日志。本说明不表示当前安装和已有 SiP₂ 现场已经转换。
 
 来源约 29 GiB，提交前和作业内均需读取完整文件哈希；命令开始后短时间没有新输出通常是在核验大文件。一次提交完成本阶段，无需重复命令推进。可查询：
 
@@ -155,7 +155,7 @@ epw_phonon --config "epwinput.toml" --status --json
 - 4.qe-phonon-nosplit/plots/phdos/phonon_dos.png、总量/逐原子/Si/P 元素 DOS 表格。
 - 4.qe-phonon-nosplit/plots/phonon_combined.jpg。
 - results/4.qe-phonon-nosplit/：供查看和搬运的正式交付。
-- epw-state/qe-data/manifest.json、epw-state/qe-data/external-source.json：来源哈希、转换记录及实际检查范围。
+- epw-state/imports/：外部来源、转换记录及实际检查范围；epw-state/4.qe-phonon-nosplit.log 展示当前导入与后处理状态。各计算目录中的同名 .jobs 文件保存子任务和 Slurm 作业号。
 
 导入核对完整 q 星、结构与原子顺序/质量、扰动基底、响应势有限性/尺寸、当前 SCF/NSCF 的密度及平滑 FFT；来源缺少历史 SCF 赝势、截断能或平滑 FFT 记录时不会声称验证过这些历史信息。历史赝势和截断能一致性由输入准备者负责。旧 ifc.q2r 留在来源目录，新的力常数从动力学矩阵重新计算。
 

@@ -60,6 +60,14 @@ pub struct InterpolationManifest {
 
 impl InterpolationManifest {
     pub fn load(path: &Path) -> Result<Self> {
+        if let Some(root) = crate::qe_data::direct::workspace(path) {
+            let cfg = crate::qe_data::direct::current(&root)?;
+            return if path.starts_with(crate::foundation::stages::Step::Coarse.directory(&cfg)) {
+                super::direct::coarse(&cfg)
+            } else {
+                super::direct::fine(&cfg)
+            };
+        }
         let m: InterpolationManifest = store::read(path)?;
         if m.schema_version != 2 {
             bail!(

@@ -17,7 +17,7 @@ pub struct AdapterBinding {
 /// 校验 F2 来源清单有效并固定程序身份；前置未满足不得放行（FR-003）。
 pub fn bind_f2(f2_path: &Path, cfg: &config::Config) -> Result<AdapterBinding> {
     ensure!(
-        f2_path.exists(),
+        f2_path.exists() || cfg.layout.as_deref() == Some("numbered"),
         "data_invalid: F2 清单缺失 {}",
         f2_path.display()
     );
@@ -63,7 +63,11 @@ pub fn bind_f2(f2_path: &Path, cfg: &config::Config) -> Result<AdapterBinding> {
             && states.eigenvalues.len() == states.kpoints.len(),
         "data_invalid: F2 选窗本征值不完整"
     );
-    let f2_digest = store::hash_file(f2_path)?;
+    let f2_digest = if cfg.layout.as_deref() == Some("numbered") {
+        store::hash_bytes(&serde_json::to_vec(&f2)?)
+    } else {
+        store::hash_file(f2_path)?
+    };
     let mut program_identities = BTreeMap::new();
     program_identities.insert("pw".to_string(), store::hash_file(&cfg.programs.pw.path)?);
     program_identities.insert("ph".to_string(), store::hash_file(&cfg.programs.ph.path)?);

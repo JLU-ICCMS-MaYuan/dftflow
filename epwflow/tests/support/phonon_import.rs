@@ -23,7 +23,7 @@ fn execute_import(c: &Case, job: u64, label: &str) -> Output {
     );
     out
 }
-fn prepared() -> (Case, PathBuf) {
+pub(super) fn prepared() -> (Case, PathBuf) {
     let c = Case::numbered();
     c.numbered_change(|cfg| cfg.phonon.q_grid = [2, 1, 1]);
     c.accounting(Some(201));
@@ -150,8 +150,7 @@ fn external_import_one_job_no_pw_ph_idempotent_and_plot_repair() {
     // 即使来源绑定、报告和 QE 清单都被误删，剩余 PH 回执仍须阻止 PH 回退。
     for path in [
         cfg.work_dir.join("epw-state/imports/phonon-source.json"),
-        cfg.work_dir.join("epw-state/qe-data/external-source.json"),
-        cfg.work_dir.join("epw-state/qe-data/manifest.json"),
+        cfg.work_dir.join("epw-state/imports/external-source.json"),
     ] {
         fs::remove_file(path).unwrap();
     }
@@ -294,10 +293,8 @@ fn external_import_upgrades_nested_config_without_changing_electronic_outputs() 
     let (c, source) = prepared();
     let path = c.root.join("input.toml");
     let cfg = config::Config::load(&path).unwrap();
-    let before = [Step::Scf, Step::Nscf].map(|s| {
-        let c: stages::Completion = store::read(&stages::receipt(&cfg.work_dir, s)).unwrap();
-        c.output_key().unwrap()
-    });
+    let before = ["1.qe-scf/scf.out", "2.qe-nscf/nscf.out"].map(|p| store::Identity::capture(&cfg.work_dir.join(p)).unwrap());
+    let calls=c.calls().0;
     let mut old = serde_json::to_value(&cfg).unwrap();
     old["stages"] = cfg.stage_document().unwrap();
     old.as_object_mut().unwrap().remove("workflow");
@@ -320,54 +317,22 @@ fn external_import_upgrades_nested_config_without_changing_electronic_outputs() 
     remove_null(&mut old);
     let legacy = toml::to_string_pretty(&old).unwrap();
     fs::write(&path, &legacy).unwrap();
-    fs::write(cfg.work_dir.join("epw-state/current-config.toml"), &legacy).unwrap();
+
     success(c.numbered_cli(
         0,
         &["--import-phonon", source.to_str().unwrap()],
         None,
         "import-upgrade-prepare",
     ));
-    let upgraded = config::Config::load(&path).unwrap();
-    assert!(upgraded
-        .native_value::<Value>(&["1.qe-scf", "pw", "SYSTEM"])
-        .is_ok());
-    let after = [Step::Scf, Step::Nscf].map(|s| {
-        let c: stages::Completion = store::read(&stages::receipt(&cfg.work_dir, s)).unwrap();
-        assert!(c.provenance.is_some());
-        c.output_key().unwrap()
-    });
-    assert_eq!(before, after);
-    assert!(!c.root.join("submissions").exists());
-    // 模拟事务写入一半后中断：部分文件已更新，其余仍是旧内容。
-    let journal = cfg.work_dir.join("epw-state/imports/config-upgrade.json");
-    let mut transaction: Value = store::read(&journal).unwrap();
-    transaction["complete"] = json!(false);
-    for w in transaction["writes"].as_array().unwrap().iter().step_by(2) {
-        fs::write(w["path"].as_str().unwrap(), w["before"].as_str().unwrap()).unwrap();
-    }
-    store::write(&journal, &transaction).unwrap();
-    assert!(!c
-        .numbered_cli(
-            0,
-            &["--import-phonon", source.to_str().unwrap(), "--check"],
-            None,
-            "import-upgrade-check-pending"
-        )
-        .status
-        .success());
-    success(c.numbered_cli(
-        0,
-        &["--import-phonon", source.to_str().unwrap()],
-        None,
-        "import-upgrade-recover",
-    ));
-    let recovered: Value = store::read(&journal).unwrap();
-    assert_eq!(recovered["complete"], json!(true));
-    for (step, key) in [Step::Scf, Step::Nscf].into_iter().zip(before) {
-        let completion: stages::Completion =
-            store::read(&stages::receipt(&cfg.work_dir, step)).unwrap();
-        assert_eq!(completion.output_key().unwrap(), key);
-    }
+    assert_eq!(fs::read_to_string(&path).unwrap(),legacy, "导入不能改写用户原始配置");
+    assert!(fs::read_dir(c.root.clone()).unwrap().flatten().any(|e|e.file_name().to_string_lossy().ends_with("-config.toml") && fs::read_to_string(e.path()).ok().as_deref()==Some(legacy.as_str())));
+    assert!(!cfg.work_dir.join("epw-state/imports/config-upgrade.json").exists());
+    success(c.numbered_cli(0,&["--import-phonon",source.to_str().unwrap(),"-s"],None,"nested-import-submit"));
+    c.accounting(Some(201));
+    success(execute_import(&c,201,"nested-import-worker"));
+    for file in before {file.verify().unwrap();}
+    assert_eq!(calls,c.calls().0.lines().filter(|s| ["pw","ph"].contains(s)).map(|s|format!("{s}\n")).collect::<String>());
+
 }
 #[test]
 fn external_import_changed_science_or_electronic_evidence_rejects_rebinding() {

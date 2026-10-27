@@ -296,7 +296,12 @@ fn bound_sources(
 /// 只收集指定粗网格回执绑定的文件；也供只读原生数据出图验证使用。
 pub fn collect(completion_path: &Path, output: &Path) -> Result<()> {
     let completion = Identity::capture(completion_path)?;
-    let receipt: Completion = store::read(completion_path)?;
+    let receipt: Completion = if let Some(root) = crate::qe_data::direct::workspace(completion_path)
+    {
+        stages::completion(&crate::qe_data::direct::current(&root)?, Step::Coarse)?
+    } else {
+        store::read(completion_path)?
+    };
     ensure!(
         receipt.step == Step::Coarse,
         "input_conflict: 衰减来源必须是粗网格回执"
@@ -330,25 +335,29 @@ pub fn collect(completion_path: &Path, output: &Path) -> Result<()> {
     publication::recover(output, MANIFEST)?;
     if output.join(MANIFEST).exists() {
         let (old, manifest) = load(output, false)?;
+        let same = old.completion.sha256 == data.completion.sha256
+            && old.scientific_key == data.scientific_key
+            && old
+                .sources
+                .iter()
+                .zip(&data.sources)
+                .all(|(a, b)| a.sha256 == b.sha256 && a.target == b.target);
+        if same {
+            if manifest
+                .files
+                .iter()
+                .all(|f| output.join(&f.relative_path).exists())
+            {
+                return Ok(());
+            }
+            return redraw_locked(output, &old, manifest.files);
+        }
         ensure!(
-            old.completion.sha256 == data.completion.sha256
-                && old.scientific_key == data.scientific_key
-                && old
-                    .sources
-                    .iter()
-                    .zip(&data.sources)
-                    .all(|(a, b)| a.sha256 == b.sha256 && a.target == b.target),
+            crate::qe_data::direct::workspace(completion_path).is_some(),
             "input_conflict: 衰减图来源改变，保留已有包"
         );
-        if manifest
-            .files
-            .iter()
-            .all(|f| output.join(&f.relative_path).exists())
-        {
-            return Ok(());
-        }
-        return redraw_locked(output, &old, manifest.files);
     }
+
     let stage = output.join(format!(".native-{}", store::token()));
     fs::create_dir(&stage)?;
     for (source, name) in data.sources.iter().zip(NATIVE) {
@@ -396,32 +405,62 @@ pub fn recover_finished(cfg: &Config, job: u64) -> Result<()> {
     Ok(())
 }
 
+/// 新日志协议下从当前任务号表确认遗留发布锁的归属，仍拒绝未知所有者。
+pub fn recover_pending(cfg: &Config) -> Result<()> {
+    let targets = [
+        Step::Coarse.directory(cfg).join("decay/decay-publication"),
+        stage_results::root(cfg).join("6.epw-coarse/decay/stage-publication"),
+        stage_results::root(cfg).join("index"),
+    ];
+    let mut jobs = std::collections::BTreeSet::new();
+    for step in Step::ALL {
+        jobs.extend(crate::foundation::readable_state::jobs(&cfg.work_dir, step)?.into_values());
+    }
+    for target in targets {
+        let owner_path = target.with_extension("lock").join("owner.json");
+        if !owner_path.exists() {
+            continue;
+        }
+        let owner: serde_json::Value = store::read(&owner_path)?;
+        let job = owner["job_id"]
+            .as_u64()
+            .context("scheduler_unknown: 发布锁缺少作业号，保留原锁")?;
+        ensure!(
+            jobs.contains(&job),
+            "scheduler_unknown: 发布锁所属作业 {job} 不在当前任务号表，保留原锁"
+        );
+        store::recover_finished_lock(&target, job)?;
+    }
+    Ok(())
+}
+
 pub fn pending(cfg: &Config) -> Result<bool> {
-    let receipt_path = stages::receipt(&cfg.work_dir, Step::Coarse);
-    let receipt: Completion = store::read(&receipt_path)?;
-    if !bound_sources(&receipt, receipt_path.parent().unwrap())?
-        .1
-        .is_empty()
-    {
+    let receipt = stages::completion(cfg, Step::Coarse)?;
+    let source = Step::Coarse.directory(cfg);
+    if !bound_sources(&receipt, &source)?.1.is_empty() {
         return Ok(true);
     }
-    let dir = Step::Coarse.directory(cfg).join("decay");
-    if !dir.join(MANIFEST).exists() || dir.join(format!(".{MANIFEST}.publish.json")).exists() {
+    let dir = source.join("decay");
+    if !dir.join(MANIFEST).exists() {
         return Ok(true);
     }
     let (data, manifest) = load(&dir, false)?;
-    Ok(
-        data.completion.sha256 != store::hash_file(&stages::receipt(&cfg.work_dir, Step::Coarse))?
-            || manifest
-                .files
-                .iter()
-                .any(|f| !dir.join(&f.relative_path).exists()),
-    )
+    let (sources, _) = bound_sources(&receipt, &source)?;
+    Ok(data.scientific_key != receipt.scientific_key
+        || data
+            .sources
+            .iter()
+            .zip(&sources)
+            .any(|(a, b)| a.sha256 != b.sha256)
+        || manifest
+            .files
+            .iter()
+            .any(|f| !dir.join(&f.relative_path).exists()))
 }
 
 pub fn refresh(cfg: &Config) -> Result<()> {
-    let receipt = stages::receipt(&cfg.work_dir, Step::Coarse);
-    let c: Completion = store::read(&receipt)?;
+    let receipt = Step::Coarse.directory(cfg).join("epw_coarse.in");
+    let c = stages::completion(cfg, Step::Coarse)?;
     ensure!(
         c.scientific_key == stages::scientific_key(cfg, Step::Coarse)?,
         "input_conflict: 粗网格配置来源改变"

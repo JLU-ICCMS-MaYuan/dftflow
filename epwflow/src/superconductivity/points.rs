@@ -33,9 +33,9 @@ pub fn plan(cfg: &Config) -> Result<Vec<Request>> {
         Mode::Aniso => vec![Mode::Aniso],
         Mode::Both => vec![Mode::Iso, Mode::Aniso],
     };
-    let mut requests=Vec::new();
+    let mut requests = Vec::new();
     for mode in modes {
-        let settings=cfg.solver_for(mode)?;
+        let settings = cfg.solver_for(mode)?;
         for &t in &settings.gap_temperatures_k {
             requests.push(Request::from_config(
                 cfg,
@@ -83,18 +83,31 @@ impl Run {
                 "data_invalid: 指定温度计划重复或类型错误"
             );
         }
-        ensure!(r.schema_version == 4 || r.batches.is_empty(), "data_invalid: 旧点清单含新批次");
+        ensure!(
+            r.schema_version == 4 || r.batches.is_empty(),
+            "data_invalid: 旧点清单含新批次"
+        );
         for (i, b) in r.batches.iter().enumerate() {
-            ensure!(!b.requests.is_empty() && b.requests.len()<=50 && b.mode!=Mode::Both
-                && b.task.group.as_deref()==Some(if b.mode==Mode::Iso {"iso"}else{"aniso"})
-                && b.task.directory.parent()==path.parent()
-                && !r.batches[..i].iter().any(|old|old.task.id==b.task.id),
-                "data_invalid: 方法批次身份或目录冲突");
+            ensure!(
+                !b.requests.is_empty()
+                    && b.requests.len() <= 50
+                    && b.mode != Mode::Both
+                    && b.task.group.as_deref()
+                        == Some(if b.mode == Mode::Iso { "iso" } else { "aniso" })
+                    && b.task.directory.parent() == path.parent()
+                    && !r.batches[..i].iter().any(|old| old.task.id == b.task.id),
+                "data_invalid: 方法批次身份或目录冲突"
+            );
             b.executable.verify()?;
-            for (j,q) in b.requests.iter().enumerate() {
-                ensure!(q.mode==b.mode && r.plan.iter().any(|p|same(p,q).unwrap_or(false))
-                    && !b.requests[..j].iter().any(|p|p.temperature_centikelvin==q.temperature_centikelvin),
-                    "data_invalid: 批次请求不属于固定计划或重复");
+            for (j, q) in b.requests.iter().enumerate() {
+                ensure!(
+                    q.mode == b.mode
+                        && r.plan.iter().any(|p| same(p, q).unwrap_or(false))
+                        && !b.requests[..j]
+                            .iter()
+                            .any(|p| p.temperature_centikelvin == q.temperature_centikelvin),
+                    "data_invalid: 批次请求不属于固定计划或重复"
+                );
             }
         }
         for a in &r.attempts {
@@ -118,18 +131,35 @@ impl Run {
                 ensure!(
                     id.path.parent() == Some(a.directory.as_path())
                         && (id.path == a.directory.join("attempt.json")
-                            || (r.schema_version == 4 && id.path.file_name().is_some_and(|n| n.to_string_lossy().starts_with("point-")))),
+                            || (r.schema_version == 4
+                                && id
+                                    .path
+                                    .file_name()
+                                    .is_some_and(|n| n.to_string_lossy().starts_with("point-")))),
                     "data_invalid: 尝试记录路径冲突"
                 );
                 let record = super::verify::record(&id.path)?;
                 if let Some(evidence) = &record.batch {
-                    ensure!(evidence.log.path.parent()==Some(a.directory.as_path())
-                        && evidence.gap_file.as_ref().is_none_or(|f|f.path.parent()==Some(a.directory.as_path()))
-                        && r.batches.iter().any(|b|b.task.directory==a.directory
-                            && b.requests.iter().any(|q|same(q,&a.request).unwrap_or(false))
-                            && b.requests.iter().map(|q|q.temperature_centikelvin).collect::<Vec<_>>()==evidence.temperatures
-                            && b.executable.sha256==record.executable.sha256),
-                        "input_conflict: 点与方法批次证据不符");
+                    ensure!(
+                        evidence.log.path.parent() == Some(a.directory.as_path())
+                            && evidence
+                                .gap_file
+                                .as_ref()
+                                .is_none_or(|f| f.path.parent() == Some(a.directory.as_path()))
+                            && (crate::foundation::layout::enabled(
+                                path.parent().unwrap().parent().unwrap()
+                            ) || r.batches.iter().any(|b| b.task.directory == a.directory
+                                && b.requests
+                                    .iter()
+                                    .any(|q| same(q, &a.request).unwrap_or(false))
+                                && b.requests
+                                    .iter()
+                                    .map(|q| q.temperature_centikelvin)
+                                    .collect::<Vec<_>>()
+                                    == evidence.temperatures
+                                && b.executable.sha256 == record.executable.sha256)),
+                        "input_conflict: 点与方法批次证据不符"
+                    );
                 }
                 ensure!(
                     same(&record.request, &a.request)?
@@ -166,6 +196,11 @@ pub(crate) fn binding(cfg: &Config, input: &NativeInputs, launcher: &[String]) -
     ))?))
 }
 pub fn published(work: &Path, cfg: &Config, run_id: &str) -> Result<Run> {
+    if crate::foundation::layout::enabled(work) {
+        let f3 = crate::interpolation::direct::fine(cfg)?;
+        let source = super::source::bind(work, cfg, &f3)?;
+        return super::batch::current(cfg, &source, run_id);
+    }
     let path = crate::foundation::layout::path(work, "superconductivity/manifest.json");
     let r = Run::load(&path)?;
     let f3 = crate::interpolation::manifest::InterpolationManifest::load(

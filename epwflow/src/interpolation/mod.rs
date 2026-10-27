@@ -3,6 +3,8 @@ pub mod adapter;
 mod attempt;
 pub mod cli;
 pub mod coarse;
+pub mod comparison;
+pub mod electronic_sampling;
 pub mod epw_config;
 pub mod fine;
 pub mod manifest;
@@ -12,8 +14,6 @@ pub mod reuse;
 pub mod scheduler;
 pub mod spectral;
 pub mod wannier;
-pub mod comparison;
-pub mod electronic_sampling;
 
 pub mod comparison_data;
 
@@ -21,5 +21,7 @@ pub mod restart;
 
 pub(crate) mod automatic_comparison;
 
-pub mod differences;
 mod comparison_asr;
+pub mod differences;
+
+pub mod direct;

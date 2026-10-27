@@ -236,7 +236,7 @@ pub fn stage(
 ) -> Result<()> {
     let sources = files(dir, out, prefix, nwann, modes)?;
     ensure!(
-        !target.exists(),
+        crate::foundation::native_jobs::empty_execution_directory(target)?,
         "input_conflict: 细网格目标已存在，保留现场"
     );
     fs::create_dir_all(target.join("out"))?;

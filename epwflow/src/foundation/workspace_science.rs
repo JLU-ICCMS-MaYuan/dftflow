@@ -40,7 +40,13 @@ pub(super) fn post_program(cfg: &Config, name: &str) -> Result<Program> {
         },
     })
 }
-pub(super) fn qe_run(cfg: &Config, dir: &Path, program: &Program, input: &str, stem: &str) -> Result<()> {
+pub(super) fn qe_run(
+    cfg: &Config,
+    dir: &Path,
+    program: &Program,
+    input: &str,
+    stem: &str,
+) -> Result<()> {
     qe_data::execution::run(
         program,
         &dir.join(input),
@@ -63,11 +69,13 @@ struct PostReceipt {
 }
 
 fn post_key(cfg: &Config, step: Step) -> Result<String> {
-    if step==Step::Wannier {
-        let receipt=Step::Wannier.directory(cfg).join("embedded-bands.json");
+    if step == Step::Wannier {
+        let receipt = Step::Wannier.directory(cfg).join("embedded-bands.json");
         if receipt.exists() {
-            let sources:Vec<Identity>=store::read(&receipt)?;
-            for id in sources {id.verify()?;}
+            let sources: Vec<Identity> = store::read(&receipt)?;
+            for id in sources {
+                id.verify()?;
+            }
         }
     }
     let dependencies = if step == Step::Wannier {
@@ -78,7 +86,7 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
     let keys = dependencies
         .iter()
         .map(|s| {
-            let c: stages::Completion = store::read(&stages::receipt(&cfg.work_dir, *s))?;
+            let c = stages::completion(cfg, *s)?;
             c.verify()?;
             c.output_key()
         })
@@ -101,16 +109,37 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
         keys,
         programs,
         cfg.comparison.clone().unwrap_or_default(),
-        if step==Step::Wannier {cfg.native_value::<serde_json::Value>(&[super::native_config::WANNIER,"electron_dos"])?} else {cfg.native_value::<serde_json::Value>(&[super::native_config::COARSE,"comparison"])?},
-        cfg.native_value::<String>(&[super::native_config::COARSE,"workflow","onsite_asr"])? ,
+        if step == Step::Wannier {
+            cfg.native_value::<serde_json::Value>(&[super::native_config::WANNIER, "electron_dos"])?
+        } else {
+            cfg.native_value::<serde_json::Value>(&[super::native_config::COARSE, "comparison"])?
+        },
+        cfg.native_value::<String>(&[super::native_config::COARSE, "workflow", "onsite_asr"])?,
         cfg.kpath
             .as_ref()
             .map(|p| store::hash_file(p))
             .transpose()?,
     ))?))
 }
-fn post_file(cfg: &Config, step: Step) -> PathBuf {
-    step.directory(cfg).join("post-completion.json")
+fn read_post(cfg: &Config, step: Step) -> Result<Option<PostReceipt>> {
+    let Some(outputs) = super::readable_state::completed_files(cfg, step, "派生交付")? else {
+        return Ok(None);
+    };
+    let Some(old) = super::readable_state::checkpoint_config(cfg, step, "派生交付")? else {
+        return Ok(None);
+    };
+    Ok(Some(PostReceipt {
+        key: post_key(&old, step)?,
+        outputs,
+    }))
+}
+fn save_post(cfg: &Config, step: Step, outputs: &[Identity]) -> Result<()> {
+    super::readable_state::complete_files(
+        cfg,
+        step,
+        "派生交付",
+        &outputs.iter().map(|id| id.path.clone()).collect::<Vec<_>>(),
+    )
 }
 
 pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
@@ -120,25 +149,37 @@ pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
     {
         return Ok(true);
     }
-    if super::workspace_qe_plot::pending(cfg, target)? { return Ok(true); }
+    if super::workspace_qe_plot::pending(cfg, target)? {
+        return Ok(true);
+    }
     for step in stages::execution_steps(cfg, target) {
-        if matches!(step,Step::Electronic|Step::Phonon|Step::Wannier|Step::Coarse|Step::Superconductivity)
-            && stages::reusable(cfg,step)? && super::stage_results::pending(cfg,step)? {return Ok(true);}
+        if matches!(
+            step,
+            Step::Electronic
+                | Step::Phonon
+                | Step::Wannier
+                | Step::Coarse
+                | Step::Superconductivity
+        ) && stages::reusable(cfg, step)?
+            && super::stage_results::pending(cfg, step)?
+        {
+            return Ok(true);
+        }
     }
     for step in [Step::Wannier, Step::Coarse] {
         if target < step || !stages::reusable(cfg, step)? {
             continue;
         }
-        let p = post_file(cfg, step);
-        if !p.exists() {
+        let Some(r) = read_post(cfg, step)? else {
             return Ok(true);
-        }
-        let r: PostReceipt = store::read(&p)?;
+        };
         if r.key != post_key(cfg, step)? {
             return Ok(true);
         }
         for id in r.outputs {
-            if !store::identity_available(&id)? { return Ok(true); }
+            if !store::identity_available(&id)? {
+                return Ok(true);
+            }
         }
     }
     Ok(false)
@@ -159,56 +200,59 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
         if target < step {
             continue;
         }
-        let file = post_file(cfg, step);
         let key = post_key(cfg, step)?;
-        if file.exists() {
-            let r: PostReceipt = store::read(&file)?;
+        if let Some(r) = read_post(cfg, step)? {
             if r.key == key {
                 let mut available = true;
                 for id in r.outputs {
-                    if !store::identity_available(&id)? { available = false; }
+                    if !store::identity_available(&id)? {
+                        available = false;
+                    }
                 }
-                if available && !super::stage_results::pending(cfg,step)? { continue; }
+                if available && !super::stage_results::pending(cfg, step)? {
+                    continue;
+                }
             }
         }
         let outputs = if step == Step::Wannier {
             let dir = step.directory(cfg);
             electronic_comparison(cfg, &dir, states(cfg)?.fermi)?;
-            electronic_files().iter().map(|n|Identity::capture(&layout::path(&cfg.work_dir,"comparison-native/electron").join(n))).collect::<Result<Vec<_>>>()?
+            electronic_files()
+                .iter()
+                .map(|n| {
+                    Identity::capture(
+                        &layout::path(&cfg.work_dir, "comparison-native/electron").join(n),
+                    )
+                })
+                .collect::<Result<Vec<_>>>()?
         } else {
-            let path_key = store::hash_bytes(&serde_json::to_vec(&(
-                cfg.native_value::<serde_json::Value>(&[super::native_config::COARSE,"comparison"])?,
-                cfg.native_value::<String>(&[super::native_config::COARSE,"workflow","onsite_asr"])?,
-                cfg.native_value::<u32>(&[super::native_config::COARSE,"workflow","points_per_edge"])?,
-                cfg.kpath
-                    .as_ref()
-                    .map(|p| store::hash_file(p))
-                    .transpose()?,
-            ))?);
-            let path_file = cfg.work_dir.join("epw-state/post/coarse-path.json");
-            if path_file.exists() && store::read::<String>(&path_file)? != path_key {
-                let history = cfg
-                    .work_dir
-                    .join("epw-state/history")
-                    .join(format!("comparison-path-{}", store::token()));
-                fs::create_dir_all(&history)?;
-                for (name, relative) in [
-                    ("native", "comparison-native"),
-                    ("tables", "interpolation/comparison"),
-                    ("results", "results/6.epw-coarse"),
-                ] {
+            let previous = super::readable_state::checkpoint_config(cfg, step, "比较路径")?;
+            let changed = previous
+                .as_ref()
+                .map(|old| {
+                    Ok::<_, anyhow::Error>(
+                        old.native_value::<serde_json::Value>(&[
+                            super::native_config::COARSE,
+                            "comparison",
+                        ])? != cfg.native_value::<serde_json::Value>(&[
+                            super::native_config::COARSE,
+                            "comparison",
+                        ])? || old.kpath != cfg.kpath,
+                    )
+                })
+                .transpose()?
+                .unwrap_or(false);
+            if changed {
+                for relative in ["comparison-native/sources.json", "interpolation/comparison"] {
                     let p = layout::path(&cfg.work_dir, relative);
-                    if p.exists() {
-                        fs::rename(p, history.join(name))?;
+                    if p.is_dir() {
+                        fs::remove_dir_all(p)?;
+                    } else if p.exists() {
+                        fs::remove_file(p)?;
                     }
                 }
-                for label in ["comparison-q2r", "comparison-matdyn", "comparison-phonon", "comparison-epw"] {
-                    let p = layout::path(&cfg.work_dir, "native-attempts")
-                        .join(format!("{label}.json"));
-                    if p.exists() {
-                        fs::rename(p, history.join(format!("{label}.json")))?;
-                    }
-                }
+            }
+            if !layout::path(&cfg.work_dir, "comparison-native/sources.json").exists() {
                 let s = states(cfg)?;
                 let qe = QeSettings::from_config(cfg)?;
                 let epw = EpwConfig::from_config(cfg)?
@@ -225,63 +269,74 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                     true,
                 )?;
             }
-            if !layout::path(&cfg.work_dir,"comparison-native/sources.json").exists() {
-                let s=states(cfg)?;
-                let qe=QeSettings::from_config(cfg)?;
-                let epw=EpwConfig::from_config(cfg)?.with_fermi(s.fermi)?.with_bands(&s.eigenvalues)?.with_species(&qe.cell.elements)?;
-                interpolation::automatic_comparison::run(cfg,&epw,Backend::Local,&cfg.programs.launcher,&cfg.work_dir,&cfg.work_dir,true)?;
-            }
-            store::write(&path_file, &path_key)?;
+            super::readable_state::complete_files(cfg, step, "比较路径", &[])?;
             let old = layout::path(&cfg.work_dir, "comparison-native/sources.json");
             let mut sources: interpolation::comparison::Sources = store::read(&old)?;
             let options = cfg.comparison.clone().unwrap_or_default();
             let output = layout::path(&cfg.work_dir, "interpolation/comparison");
             let results = crate::delivery::comparison::result_dir(&cfg.work_dir);
             sources.epw_bands = interpolation::comparison::SourceFile {
-                path:layout::path(&cfg.work_dir,"comparison-native/electron/band.eig"),
-                sha256:store::hash_file(&layout::path(&cfg.work_dir,"comparison-native/electron/band.eig"))?
+                path: layout::path(&cfg.work_dir, "comparison-native/electron/band.eig"),
+                sha256: store::hash_file(&layout::path(
+                    &cfg.work_dir,
+                    "comparison-native/electron/band.eig",
+                ))?,
             };
-            sources.electronic_stage=Some(interpolation::comparison::ElectronicStage::capture(
-                &layout::path(&cfg.work_dir,"comparison-native/electron"))?);
-            let qe_bands=Step::Electronic.directory(cfg).join(format!("qe_eband/out/{}.save/data-file-schema.xml",cfg.qe.prefix));
-            sources.qe_bands_xml=interpolation::comparison::SourceFile {sha256:store::hash_file(&qe_bands)?,path:qe_bands};
+            sources.electronic_stage = Some(interpolation::comparison::ElectronicStage::capture(
+                &layout::path(&cfg.work_dir, "comparison-native/electron"),
+            )?);
+            let qe_bands = Step::Electronic.directory(cfg).join(format!(
+                "qe_eband/out/{}.save/data-file-schema.xml",
+                cfg.qe.prefix
+            ));
+            sources.qe_bands_xml = interpolation::comparison::SourceFile {
+                sha256: store::hash_file(&qe_bands)?,
+                path: qe_bands,
+            };
             sources.electronic_sigma_ev = options.electronic_sigma_ev;
             sources.phonon_sigma_cm1 = options.phonon_sigma_cm1;
-            let source = cfg.work_dir.join("epw-state/post/coarse-sources.json");
+            let source = layout::path(&cfg.work_dir, "comparison-native/plot-sources.json");
             store::write(&source, &sources)?;
             let current = interpolation::comparison_data::load(&output)?;
             if current.manifest.upstream_digest != store::hash_file(&source)? {
-                let history = cfg
-                    .work_dir
-                    .join("epw-state/history")
-                    .join(format!("plots-{}", store::token()));
-                fs::create_dir_all(&history)?;
-                for (name, p) in [("tables", &output), ("results", &results)] {
-                    if p.exists() {
-                        fs::rename(p, history.join(name))?;
+                for p in [&output, &results] {
+                    if p.is_dir() {
+                        fs::remove_dir_all(p)?;
                     }
                 }
                 interpolation::comparison::export(&source, &output)?;
                 crate::delivery::comparison::collect(&cfg.work_dir, None)?;
             }
-            crate::delivery::comparison::collect(&cfg.work_dir,None)?;
+            crate::delivery::comparison::collect(&cfg.work_dir, None)?;
             crate::delivery::comparison_plot::plot(
                 &results,
                 None,
                 &["png".into(), "svg".into(), "pdf".into()],
             )?;
-            super::stage_results::tree(cfg,Step::Coarse,"",&results,json!({"kind":"qe_epw_comparison","source":Identity::capture(&source)?}))?;
+            super::stage_results::tree(
+                cfg,
+                Step::Coarse,
+                "",
+                &results,
+                json!({"kind":"qe_epw_comparison","source":Identity::capture(&source)?}),
+            )?;
             vec![
                 Identity::capture(&output.join("manifest.json"))?,
                 Identity::capture(&results.join("comparison/manifest.json"))?,
             ]
         };
-        store::write(&file, &PostReceipt { key, outputs })?;
+        save_post(cfg, step, &outputs)?;
     }
-    if target==Step::Superconductivity && stages::reusable(cfg,Step::Superconductivity)? {
-        let result=Step::Superconductivity.directory(cfg).join("results");
-        crate::delivery::finalize_to(&cfg.work_dir,Some(&result))?;
-        super::stage_results::tree(cfg,Step::Superconductivity,"",&result,json!({"kind":"native_superconductivity"}))?;
+    if target == Step::Superconductivity && stages::reusable(cfg, Step::Superconductivity)? {
+        let result = Step::Superconductivity.directory(cfg).join("results");
+        crate::delivery::finalize_to(&cfg.work_dir, Some(&result))?;
+        super::stage_results::tree(
+            cfg,
+            Step::Superconductivity,
+            "",
+            &result,
+            json!({"kind":"native_superconductivity"}),
+        )?;
     }
 
     Ok(())
@@ -295,19 +350,6 @@ pub fn generate(cfg: &Config, target: Step) -> Result<()> {
         }
         let dir = step.directory(cfg);
         fs::create_dir_all(&dir)?;
-        let request = cfg
-            .work_dir
-            .join("epw-state/requests")
-            .join(format!("{}.json", step.name()));
-        if request.is_file()
-            && store::read::<String>(&request)? == stages::scientific_key(cfg, step)?
-            && dir.join(match step { Step::Scf => "scf.in", Step::Nscf => "nscf.in", Step::Wannier => "epw_wannier.in", _ => "submit.sh" }).is_file()
-        {
-            if step == Step::Electronic {
-                super::workspace_electronic::inputs(cfg, &qe)?;
-            }
-            continue;
-        }
         match step {
             Step::Scf => fs::write(dir.join("scf.in"), qe.scf_input("./out")?)?,
             Step::Nscf => fs::write(dir.join("nscf.in"), qe.nscf_input("./out")?)?,
@@ -414,59 +456,33 @@ pub fn run(cfg: &Config, step: Step) -> Result<()> {
                 root,
                 Some(&Step::Superconductivity.directory(cfg).join("results")),
             )?;
-            super::stage_results::tree(cfg,Step::Superconductivity,"",&Step::Superconductivity.directory(cfg).join("results"),json!({"kind":"native_superconductivity"}))?;
+            super::stage_results::tree(
+                cfg,
+                Step::Superconductivity,
+                "",
+                &Step::Superconductivity.directory(cfg).join("results"),
+                json!({"kind":"native_superconductivity"}),
+            )?;
         }
     }
     Ok(())
 }
 
-/// PH 与 NSCF 是分支；更换 NSCF 后只重建组合交付，不重复计算 PH。
+/// 仅从实际 PH 保存树重建内存数据，不读取历史清单。
 fn refresh_qe_manifest(cfg: &Config) -> Result<()> {
-    let root = &cfg.work_dir;
-    let path = layout::path(root, "qe-data/manifest.json");
-    let mut m: qe_data::manifest::QeManifest = store::read(&path)?;
-    let ph: stages::Completion = store::read(&stages::receipt(root, Step::Phonon))?;
-    ph.verify()?;
-    m.states = Some(states(cfg)?);
-    m.artifacts.retain(|a| {
-        !matches!(a.producer_stage.as_str(), "scf" | "nscf") || a.role == "scf_snapshot_identity"
-    });
-    m.artifacts.push(qe_data::manifest::nscf_input_artifact(root)?);
-    for (stage, dir) in [
-        ("scf", layout::path(root, "scf/snapshot")),
-        ("nscf", layout::path(root, "nscf/out")),
-    ] {
-        for f in save::files(&dir)? {
-            m.artifacts.push(qe_data::manifest::Artifact {
-                role: format!("{stage}_{}", f.relative_path.display()),
-                relative_path: dir.join(&f.relative_path).strip_prefix(root)?.into(),
-                byte_size: f.byte_size,
-                sha256: f.sha256,
-                producer_stage: stage.into(),
-                input_digest: String::new(),
-                format_version: "qe7.4.1-portable".into(),
-            });
-        }
-    }
-    m.verify()?;
-    store::write(&path, &m)
+    qe_data::direct::load(cfg).map(|_| ())
 }
-
-/// PH 归集已完成而后处理失败时，严格清单本身就是可重验的检查点。
 pub(super) fn partial_phonon(cfg: &Config) -> Result<Option<qe_data::manifest::QeManifest>> {
-    let path = layout::path(&cfg.work_dir, "qe-data/manifest.json");
-    if !path.is_file() { return Ok(None); }
-    let m: qe_data::manifest::QeManifest = store::read(&path)?;
-    if super::phonon_import::bound(cfg) && !m.artifacts.iter().any(|a| a.role == "external_source") { return Ok(None); }
-    if m.run_id != stages::scientific_key(cfg, Step::Phonon)? { return Ok(None); }
-    m.verify()?;
-    ensure!(m.artifact_root.as_ref() == Some(&cfg.work_dir.canonicalize()?),
-        "input_conflict: PH 检查点不属于当前工作区");
-    Ok(Some(m))
+    if !Step::Phonon.directory(cfg).join("save").is_dir() {
+        return Ok(None);
+    }
+    qe_data::direct::load(cfg).map(Some)
 }
 
 fn collect_phonon(cfg: &Config, qe: &QeSettings) -> Result<qe_data::manifest::QeManifest> {
-    if super::phonon_import::bound(cfg) { return super::phonon_import::collect(cfg, qe); }
+    if super::phonon_import::bound(cfg) {
+        return super::phonon_import::collect(cfg, qe);
+    }
     let root = &cfg.work_dir;
     let (points, responses) = if cfg.phonon.mode == PhMode::Nosplit {
         qe_data::phonon::run_nosplit(qe, root, &cfg.programs.launcher, Backend::Local)?
@@ -523,15 +539,27 @@ fn collect_phonon(cfg: &Config, qe: &QeSettings) -> Result<qe_data::manifest::Qe
 
 fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
     let manifest = match partial_phonon(cfg)? {
-        Some(m) => { println!("reuse: PH 响应与 save 清单；继续 q2r/matdyn 后处理"); m }
+        Some(m) => {
+            println!("reuse: PH 响应与 save 清单；继续 q2r/matdyn 后处理");
+            m
+        }
         None => collect_phonon(cfg, qe)?,
     };
     let dir = Step::Phonon.directory(cfg);
     // q2r 消费严格归集的同一组 XML；coords 局部编号已在 save 中规范化。
     fs::create_dir_all(&dir)?;
-    let dyn0_source = manifest.artifact_root.as_ref().context("data_invalid: PH 缺根目录")?.join(
-        &manifest.artifacts.iter().find(|a| a.role == "dyn0")
-            .context("data_invalid: PH 缺归集 dyn0")?.relative_path);
+    let dyn0_source = manifest
+        .artifact_root
+        .as_ref()
+        .context("data_invalid: PH 缺根目录")?
+        .join(
+            &manifest
+                .artifacts
+                .iter()
+                .find(|a| a.role == "dyn0")
+                .context("data_invalid: PH 缺归集 dyn0")?
+                .relative_path,
+        );
     let dyn0_target = dir.join(format!("{}.dyn0", cfg.qe.prefix));
     if !dyn0_target.exists() || dyn0_source.canonicalize()? != dyn0_target.canonicalize()? {
         fs::copy(&dyn0_source, &dyn0_target)?;
@@ -554,7 +582,14 @@ fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
         .qe_phonon
         .phband
         .insert("kpath_file".into(), json!(cfg.kpath));
-    shared.qe_phonon.phband.insert("kpath_points".into(),cfg.native_value::<serde_json::Value>(&[&cfg.phonon_stage(),"workflow","points_per_edge"])?);
+    shared.qe_phonon.phband.insert(
+        "kpath_points".into(),
+        cfg.native_value::<serde_json::Value>(&[
+            &cfg.phonon_stage(),
+            "workflow",
+            "points_per_edge",
+        ])?,
+    );
     qf_input::q2r::write_q2r_input(dir.to_str().unwrap(), &shared, &cfg.qe.prefix)?;
     qf_input::matdyn::write_matdyn_phband_input(
         dir.to_str().unwrap(),
@@ -563,47 +598,38 @@ fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
         qe.cell.lattice,
     )?;
     qf_input::matdyn::write_matdyn_phdos_input(dir.to_str().unwrap(), &shared, &cfg.qe.prefix)?;
-    let stage=cfg.phonon_stage();
-    cfg.configure_file(&[&stage,"q2r"],&dir.join("q2r.in"))?;
-    cfg.configure_file(&[&stage,"dispersion","matdyn"],&dir.join("matdyn_phband.in"))?;
-    cfg.configure_file(&[&stage,"dos","matdyn"],&dir.join("matdyn_phdos.in"))?;
+    let stage = cfg.phonon_stage();
+    cfg.configure_file(&[&stage, "q2r"], &dir.join("q2r.in"))?;
+    cfg.configure_file(
+        &[&stage, "dispersion", "matdyn"],
+        &dir.join("matdyn_phband.in"),
+    )?;
+    cfg.configure_file(&[&stage, "dos", "matdyn"], &dir.join("matdyn_phdos.in"))?;
     let tasks = [
         ("q2r", "q2r.in", "q2r"),
         ("matdyn", "matdyn_phband.in", "matdyn_phband"),
         ("matdyn", "matdyn_phdos.in", "matdyn_phdos"),
     ];
-    let inputs = tasks.iter().map(|(program, input, _)| {
-        Ok((
-            Identity::capture(&dir.join(input))?,
-            store::hash_file(&post_program(cfg, program)?.path)?,
-        ))
-    }).collect::<Result<Vec<_>>>()?;
-    let key = store::hash_bytes(&serde_json::to_vec(&(1, &manifest, inputs))?);
-    let checkpoint = dir.join("qe-post-completion.json");
-    let mut complete = false;
-    if checkpoint.is_file() {
-        let r: PostReceipt = store::read(&checkpoint)?;
-        if r.key == key {
-            complete = !r.outputs.is_empty();
-            for id in r.outputs {
-                if !store::identity_available(&id)? { complete = false; }
-            }
-        }
+    for (program, input, stem) in tasks {
+        let output = match stem {
+            "q2r" => dir.join(format!("{}.fc.xml", cfg.qe.prefix)),
+            "matdyn_phband" => dir.join(format!("{}.phband.freq", cfg.qe.prefix)),
+            _ => dir.join(format!("{}.phdos.dat", cfg.qe.prefix)),
+        };
+        super::native_jobs::require_outputs(cfg, &dir, stem, &[output])?;
+        qe_run(cfg, &dir, &post_program(cfg, program)?, input, stem)?;
     }
-    if !complete {
-        for (program, input, stem) in tasks {
-            qe_run(cfg, &dir, &post_program(cfg, program)?, input, stem)?;
-        }
-        let outputs = [
-            format!("{}.fc.xml", cfg.qe.prefix),
-            format!("{}.phband.freq", cfg.qe.prefix),
-            format!("{}_band.labelinfo.dat", cfg.qe.prefix),
-            format!("{}.phdos.dat", cfg.qe.prefix),
-        ].iter().map(|n| Identity::capture(&dir.join(n))).collect::<Result<Vec<_>>>()?;
-        store::write(&checkpoint, &PostReceipt { key, outputs })?;
-    }
-    store::write(&dir.join("save/manifest.json"), &manifest)?;
-    super::workspace_qe_plot::phonon(cfg)
+    let outputs = [
+        format!("{}.fc.xml", cfg.qe.prefix),
+        format!("{}.phband.freq", cfg.qe.prefix),
+        format!("{}_band.labelinfo.dat", cfg.qe.prefix),
+        format!("{}.phdos.dat", cfg.qe.prefix),
+    ]
+    .iter()
+    .map(|n| dir.join(n))
+    .collect::<Vec<_>>();
+    super::readable_state::complete_files(cfg, Step::Phonon, "声子后处理", &outputs)?;
+    Ok(())
 }
 
 fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
@@ -614,21 +640,24 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
         .with_bands(&s.eigenvalues)?
         .with_species(&qe.cell.elements)?;
     if !super::native_jobs::continuing(&dir, "epw")? {
-    store::write(&dir.join("embedded-sampling-decision.json"),&json!({
-        "program":"epw.x","path_format":"high_symmetry_endpoints","reason":"本次拟合的 wdata 只声明真实高对称端点；从内嵌 Wannier90 的原生 kpt 和 labelinfo 读取路径，DOS 沿用 postw90，不另运行 Wannier90/PW。",
-        "nscf":Identity::capture(&interpolation::electronic_sampling::xml(cfg))?,
-        "sampling":interpolation::electronic_sampling::plan(cfg)?
-    }))?;
-    save::copy_tree(&layout::path(&cfg.work_dir, "nscf/out"), &dir.join("out"))?;
-    fs::write(
-        dir.join("epw_wannier.in"),
-        epw.native_input(
-            NativeStage::WannierOnly,
-            "./out",
-            "./save",
-            cfg.interpolation.phonon_smearings_mev[0],
-        )?,
-    )?;
+        store::write(
+            &dir.join("embedded-sampling-decision.json"),
+            &json!({
+                "program":"epw.x","path_format":"high_symmetry_endpoints","reason":"本次拟合的 wdata 只声明真实高对称端点；从内嵌 Wannier90 的原生 kpt 和 labelinfo 读取路径，DOS 沿用 postw90，不另运行 Wannier90/PW。",
+                "nscf":Identity::capture(&interpolation::electronic_sampling::xml(cfg))?,
+                "sampling":interpolation::electronic_sampling::plan(cfg)?
+            }),
+        )?;
+        save::copy_tree(&layout::path(&cfg.work_dir, "nscf/out"), &dir.join("out"))?;
+        fs::write(
+            dir.join("epw_wannier.in"),
+            epw.native_input(
+                NativeStage::WannierOnly,
+                "./out",
+                "./save",
+                cfg.interpolation.phonon_smearings_mev[0],
+            )?,
+        )?;
     }
     let execution = interpolation::coarse::run_epw(
         &epw,
@@ -643,17 +672,23 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
     let result = execution.and_then(|_| -> Result<()> {
         let prefix = &cfg.qe.prefix;
         interpolation::wannier::check_native(
-            &dir.join(format!("{prefix}.wout")), cfg.wannier.num_wann as usize,
+            &dir.join(format!("{prefix}.wout")),
+            cfg.wannier.num_wann as usize,
         )?;
-    epw.check_native_windows(&fs::read_to_string(dir.join(format!("{prefix}.wout")))?)?;
-    validate_ukk(&dir.join(format!("{prefix}.ukk")), cfg)?;
-    interpolation::restart::velocity_files(&dir, prefix, s.kpoints.len(),
-        cfg.qe.nscf.nbnd as usize - cfg.wannier.exclude_bands.len())?;
+        epw.check_native_windows(&fs::read_to_string(dir.join(format!("{prefix}.wout")))?)?;
+        validate_ukk(&dir.join(format!("{prefix}.ukk")), cfg)?;
+        interpolation::restart::velocity_files(
+            &dir,
+            prefix,
+            s.kpoints.len(),
+            cfg.qe.nscf.nbnd as usize - cfg.wannier.exclude_bands.len(),
+        )?;
 
-    let bands=["_band.dat","_band.kpt","_band.labelinfo.dat"].iter()
-        .map(|suffix| Identity::capture(&dir.join(format!("{prefix}{suffix}"))))
-        .collect::<Result<Vec<_>>>()?;
-    store::write(&dir.join("embedded-bands.json"),&bands)?;
+        let bands = ["_band.dat", "_band.kpt", "_band.labelinfo.dat"]
+            .iter()
+            .map(|suffix| Identity::capture(&dir.join(format!("{prefix}{suffix}"))))
+            .collect::<Result<Vec<_>>>()?;
+        store::write(&dir.join("embedded-bands.json"), &bands)?;
         Ok(())
     });
     if result.is_err() {
@@ -717,15 +752,27 @@ fn standalone_inputs(cfg: &Config, original: &str) -> Result<(String, String)> {
     for block in ["unit_cell_cart", "atoms_cart", "atoms_frac", "kpoints"] {
         content = regex::Regex::new(&format!(
             r"(?ims)^\s*begin\s+{block}\s*$.*?^\s*end\s+{block}\s*$"
-        ))?.replace_all(&content, "").into_owned();
+        ))?
+        .replace_all(&content, "")
+        .into_owned();
     }
     // 旧生成器误把 W90 内部变量作为输入关键字；恢复自己的旧 win 时清除。
     content = regex::Regex::new(r"(?m)^\s*dos_smr_index\s*=[^\n]*\n?")?
-        .replace_all(&content, "").into_owned();
-    content = wannier90flow::post::update_win_content(&content, &[
-        ("num_bands".into(), json!(s.nbnd - cfg.wannier.exclude_bands.len())),
-        ("mp_grid".into(), json!(format!("{} {} {}", s.k_grid[0], s.k_grid[1], s.k_grid[2]))),
-    ]);
+        .replace_all(&content, "")
+        .into_owned();
+    content = wannier90flow::post::update_win_content(
+        &content,
+        &[
+            (
+                "num_bands".into(),
+                json!(s.nbnd - cfg.wannier.exclude_bands.len()),
+            ),
+            (
+                "mp_grid".into(),
+                json!(format!("{} {} {}", s.k_grid[0], s.k_grid[1], s.k_grid[2])),
+            ),
+        ],
+    );
     content.push_str("\nbegin unit_cell_cart\nAng\n");
     for row in geometry.lattice {
         let [x, y, z] = row.map(|v| v * qe_data::xml::BOHR_ANGSTROM);
@@ -745,7 +792,9 @@ fn standalone_inputs(cfg: &Config, original: &str) -> Result<(String, String)> {
     // 独立程序读取排除后的紧凑带编号，能量沿用 NSCF 的绝对 eV。
     let mut eigenvalues = String::new();
     for (k, energies) in s.eigenvalues.iter().enumerate() {
-        let kept = energies.iter().enumerate()
+        let kept = energies
+            .iter()
+            .enumerate()
             .filter(|(b, _)| !cfg.wannier.exclude_bands.contains(&((*b + 1) as u32)));
         for (b, (_, energy)) in kept.enumerate() {
             eigenvalues.push_str(&format!("{} {} {energy:.16e}\n", b + 1, k + 1));
@@ -755,7 +804,10 @@ fn standalone_inputs(cfg: &Config, original: &str) -> Result<(String, String)> {
 }
 
 fn check_wannier_post(
-    report: &super::process::ExecutionReport, dir: &Path, prefix: &str, label: &str,
+    report: &super::process::ExecutionReport,
+    dir: &Path,
+    prefix: &str,
+    label: &str,
 ) -> Result<()> {
     let stdout = fs::read_to_string(&report.stdout_path)?;
     let stderr = if report.stdout_path == report.stderr_path {
@@ -764,31 +816,59 @@ fn check_wannier_post(
         fs::read_to_string(&report.stderr_path)?
     };
     let error_file = dir.join(format!("{prefix}.werr"));
-    let error = if error_file.exists() { fs::read_to_string(error_file)? } else { String::new() };
+    let error = if error_file.exists() {
+        fs::read_to_string(error_file)?
+    } else {
+        String::new()
+    };
     let text = format!("{error}\n{stdout}\n{stderr}");
     let failed = regex::Regex::new(r"(?im)^\s*(?:error\b|exiting\.+)")?;
     let detail = if error.trim().is_empty() {
-        text.lines().find(|line| failed.is_match(line)).unwrap_or("").trim()
+        text.lines()
+            .find(|line| failed.is_match(line))
+            .unwrap_or("")
+            .trim()
     } else {
         error.trim()
     };
-    ensure!(report.exit_status == Some(0) && error.is_empty() && detail.is_empty(),
-        "execution_failed: {label} 退出状态 {:?}；{detail}（检查 {prefix}.werr 和原生日志）", report.exit_status);
+    ensure!(
+        report.exit_status == Some(0) && error.is_empty() && detail.is_empty(),
+        "execution_failed: {label} 退出状态 {:?}；{detail}（检查 {prefix}.werr 和原生日志）",
+        report.exit_status
+    );
     Ok(())
 }
 
-fn electronic_files() -> [&'static str;17] {
-    ["electronic-bands.png","electronic-bands.csv","electronic-dos.png","electronic-dos.csv",
-    "electronic-bands.plot.json","electronic-dos.plot.json","electronic-dos-normalization.json",
-    "sampling.json","metrics.json","band.eig","dos-completion.json","band-origin.json",
-    "electronic-bands-valence.png","electronic-bands-valence.plot.json",
-    "electronic-dos-valence.png","electronic-dos-valence.plot.json","electronic-display.json"]
+fn electronic_files() -> [&'static str; 16] {
+    [
+        "electronic-bands.png",
+        "electronic-bands.csv",
+        "electronic-dos.png",
+        "electronic-dos.csv",
+        "electronic-bands.plot.json",
+        "electronic-dos.plot.json",
+        "electronic-dos-normalization.json",
+        "sampling.json",
+        "metrics.json",
+        "band.eig",
+        "band-origin.json",
+        "electronic-bands-valence.png",
+        "electronic-bands-valence.plot.json",
+        "electronic-dos-valence.png",
+        "electronic-dos-valence.plot.json",
+        "electronic-display.json",
+    ]
 }
 
-pub(crate) fn verify_electronic_comparison(cfg:&Config)->Result<()> {
-    let r:PostReceipt=store::read(&post_file(cfg,Step::Wannier))?;
-    ensure!(r.key==post_key(cfg,Step::Wannier)?,"input_conflict: 第 5 步电子比较参数已变化");
-    for id in r.outputs {id.verify()?;}
+pub(crate) fn verify_electronic_comparison(cfg: &Config) -> Result<()> {
+    let r = read_post(cfg, Step::Wannier)?.context("data_invalid: 电子比较尚未完成")?;
+    ensure!(
+        r.key == post_key(cfg, Step::Wannier)?,
+        "input_conflict: 第 5 步电子比较参数已变化"
+    );
+    for id in r.outputs {
+        id.verify()?;
+    }
     Ok(())
 }
 
@@ -799,7 +879,7 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     for ext in ["win", "wout", "chk", "mmn", "amn", "nnkp"] {
         let name = format!("{}.{ext}", cfg.qe.prefix);
         if dir.join(&name).exists() {
-            let source=Identity::capture(&dir.join(&name))?;
+            let source = Identity::capture(&dir.join(&name))?;
             if !post.join(&name).exists() || store::hash_file(&post.join(&name))? != source.sha256 {
                 fs::copy(&source.path, post.join(&name))?;
                 source.verify()?;
@@ -807,36 +887,59 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         }
     }
     if dir.join("embedded-bands.json").exists() {
-    let embedded:Vec<Identity>=store::read(&dir.join("embedded-bands.json"))
-        .context("required: 旧模型缺少内嵌能带来源回执；保留科学模型，不能因迁移重新拟合")?;
-    for id in embedded {id.verify()?;}
-    for suffix in ["_band.dat", "_band.kpt", "_band.labelinfo.dat"] {
-        let name=format!("{}{suffix}",cfg.qe.prefix);
-        let source=dir.join(&name);
-        ensure!(source.is_file(),
+        let embedded: Vec<Identity> = store::read(&dir.join("embedded-bands.json"))
+            .context("required: 旧模型缺少内嵌能带来源回执；保留科学模型，不能因迁移重新拟合")?;
+        for id in embedded {
+            id.verify()?;
+        }
+        for suffix in ["_band.dat", "_band.kpt", "_band.labelinfo.dat"] {
+            let name = format!("{}{suffix}", cfg.qe.prefix);
+            let source = dir.join(&name);
+            ensure!(source.is_file(),
             "required: 已有拟合缺少 EPW 内嵌能带输出 {}；保留模型，不因目录迁移重算，请核对原始 EPW 输出",source.display());
-        fs::copy(&source,post.join(&name))?;
-    }
-    interpolation::electronic_sampling::extract(cfg, &post)?;
+            fs::copy(&source, post.join(&name))?;
+        }
+        interpolation::electronic_sampling::extract(cfg, &post)?;
     } else {
-        interpolation::electronic_sampling::legacy(cfg,&post)?;
+        interpolation::electronic_sampling::legacy(cfg, &post)?;
     }
-    electronic_comparison_inner(cfg,&post,fermi)?;
-    for name in ["electronic-bands.png","electronic-bands.csv","electronic-dos.png","electronic-dos.csv","electronic-dos-normalization.json"] {
-        fs::copy(post.join(name),dir.join(name))?;
+    electronic_comparison_inner(cfg, &post, fermi)?;
+    for name in [
+        "electronic-bands.png",
+        "electronic-bands.csv",
+        "electronic-dos.png",
+        "electronic-dos.csv",
+        "electronic-dos-normalization.json",
+    ] {
+        fs::copy(post.join(name), dir.join(name))?;
     }
-    let names=electronic_files().map(str::to_owned);
-    let provenance = [interpolation::electronic_sampling::xml(cfg),
-        Step::Electronic.directory(cfg).join(format!("qe_eband/out/{}.save/data-file-schema.xml",cfg.qe.prefix)),
-        dir.join(format!("{}.chk",cfg.qe.prefix)),dir.join(format!("{}.wout",cfg.qe.prefix))]
-        .iter().map(|p|Identity::capture(p)).collect::<Result<Vec<_>>>()?;
-    let log=fs::read_to_string(dir.join(format!("{}.wout",cfg.qe.prefix)))?;
-    super::stage_results::publish(cfg,Step::Wannier,"",&post,&names,
+    let names = electronic_files().map(str::to_owned);
+    let provenance = [
+        interpolation::electronic_sampling::xml(cfg),
+        Step::Electronic.directory(cfg).join(format!(
+            "qe_eband/out/{}.save/data-file-schema.xml",
+            cfg.qe.prefix
+        )),
+        dir.join(format!("{}.chk", cfg.qe.prefix)),
+        dir.join(format!("{}.wout", cfg.qe.prefix)),
+    ]
+    .iter()
+    .map(|p| Identity::capture(p))
+    .collect::<Result<Vec<_>>>()?;
+    let log = fs::read_to_string(dir.join(format!("{}.wout", cfg.qe.prefix)))?;
+    super::stage_results::publish(
+        cfg,
+        Step::Wannier,
+        "",
+        &post,
+        &names,
         json!({"band_driver":"epw.x/wdata","dos_driver":"postw90",
             "fermi_ev":fermi,"outer_window_ev":interpolation::comparison::parse_outer_window(&log)?,
             "frozen_window_ev":interpolation::comparison::parse_frozen_window(&log)?,
             "mesh":cfg.qe.nscf.k_grid,"mesh_weight":1.0/cfg.qe.nscf.k_grid.iter().product::<u32>() as f64,
-            "spin_degeneracy":2,"electronic_sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev}),provenance)
+            "spin_degeneracy":2,"electronic_sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev}),
+        provenance,
+    )
 }
 
 fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
@@ -844,60 +947,183 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
     let win = dir.join(format!("{prefix}.win"));
     let (original, eigenvalues) = standalone_inputs(cfg, &fs::read_to_string(&win)?)?;
     let options = cfg.comparison.clone().unwrap_or_default();
-    let window = interpolation::comparison::parse_outer_window(&fs::read_to_string(dir.join(format!("{prefix}.wout")))?)?;
-    let mut parameters:serde_json::Map<String,serde_json::Value>=cfg.native_value(&[super::native_config::WANNIER,"electron_dos","postw90"])?;
-    for (key,value) in [("dos_energy_min",window[0]),("dos_energy_max",window[1]),("fermi_energy",fermi)] {
-        ensure!(!parameters.contains_key(key),"configuration: stages.5.epw-wannier.electron_dos.postw90.{key}: 与实际模型派生值重复");
-        parameters.insert(key.into(),json!(value));
+    let window = interpolation::comparison::parse_outer_window(&fs::read_to_string(
+        dir.join(format!("{prefix}.wout")),
+    )?)?;
+    let mut parameters: serde_json::Map<String, serde_json::Value> =
+        cfg.native_value(&[super::native_config::WANNIER, "electron_dos", "postw90"])?;
+    for (key, value) in [
+        ("dos_energy_min", window[0]),
+        ("dos_energy_max", window[1]),
+        ("fermi_energy", fermi),
+    ] {
+        ensure!(
+            !parameters.contains_key(key),
+            "configuration: stages.5.epw-wannier.electron_dos.postw90.{key}: 与实际模型派生值重复"
+        );
+        parameters.insert(key.into(), json!(value));
     }
-    let updated = wannier90flow::post::update_win_content(&original,&parameters.into_iter().collect::<Vec<_>>());
-    let updated=regex::Regex::new(r"(?m)^\s*restart\s*=[^\n]*\n?")?.replace_all(&updated,"").into_owned();
-    let program=cfg.programs.postw90.clone().unwrap_or(post_program(cfg,"postw90")?);
-    let dos=PathBuf::from(wannier90flow::post::resolve_dos_output(dir.to_str().unwrap(),prefix));
-    let key=store::hash_bytes(&serde_json::to_vec(&(2,&updated,&eigenvalues,
-        store::hash_file(&dir.join(format!("{prefix}.chk")))?,store::hash_file(&program.path)?,&program.args))?);
-    let receipt=dir.join("dos-completion.json");
-    let reusable=if receipt.exists() {
-        let r:PostReceipt=store::read(&receipt)?;
-        if r.key==key {
-            let mut available=true;
-            for id in r.outputs {if !store::identity_available(&id)? {available=false;}}
-            available
-        }else{false}
-    }else{false};
-    fs::write(&win,&updated)?;
-    store::write(&dir.join("postw90.parameters.json"),&json!({
-        "schema_version":1,"configuration":"stages.5.epw-wannier.electron_dos.postw90",
-        "input":Identity::capture(&win)?,
-        "configured":cfg.native_value::<serde_json::Value>(&[super::native_config::WANNIER,"electron_dos","postw90"])?,
-        "derived": {"dos_energy_min":window[0],"dos_energy_max":window[1],"fermi_energy":fermi,
-            "model":"同次 Wannier 模型；晶格、结构、mp_grid、kpoints 和 num_bands 来自已绑定 NSCF"}
-    }))?;
+    let updated = wannier90flow::post::update_win_content(
+        &original,
+        &parameters.into_iter().collect::<Vec<_>>(),
+    );
+    let updated = regex::Regex::new(r"(?m)^\s*restart\s*=[^\n]*\n?")?
+        .replace_all(&updated, "")
+        .into_owned();
+    let program = cfg
+        .programs
+        .postw90
+        .clone()
+        .unwrap_or(post_program(cfg, "postw90")?);
+    let dos = PathBuf::from(wannier90flow::post::resolve_dos_output(
+        dir.to_str().unwrap(),
+        prefix,
+    ));
+    let reusable =
+        super::readable_state::completed_files(cfg, Step::Wannier, "电子子步骤 · postw90")?
+            .is_some()
+            && super::readable_state::checkpoint_config(
+                cfg,
+                Step::Wannier,
+                "电子子步骤 · postw90",
+            )?
+            .is_some_and(|old| {
+                old.native_value::<serde_json::Value>(&[
+                    super::native_config::WANNIER,
+                    "electron_dos",
+                    "postw90",
+                ])
+                .ok()
+                    == cfg
+                        .native_value::<serde_json::Value>(&[
+                            super::native_config::WANNIER,
+                            "electron_dos",
+                            "postw90",
+                        ])
+                        .ok()
+            });
+    fs::write(&win, &updated)?;
     if !reusable {
-        let reason=json!({"schema_version":1,"decision":"necessary_postprocessing",
+        let reason = json!({"schema_version":1,"decision":"necessary_postprocessing",
             "reason":"已有电子模型未提供相容的 postw90 DOS；只求现有均匀网格总 DOS，不重新拟合",
             "program":program.path,"model":Identity::capture(&dir.join(format!("{prefix}.chk")))?,
             "mesh":cfg.qe.nscf.k_grid,"sigma_ev":options.electronic_sigma_ev,"expected_output":dos});
-        store::write(&dir.join("dos-decision.json"),&reason)?;
-        if !super::native_jobs::continuing(dir,"postw90")? {
-            let error=dir.join(format!("{prefix}.werr"));
-            if error.exists() {fs::rename(&error,dir.join(format!("failed-{}.werr",store::token())))?;}
-            fs::write(&win,&updated)?;
-            fs::write(dir.join(format!("{prefix}.eig")),eigenvalues)?;
+        store::write(&dir.join("dos-decision.json"), &reason)?;
+        if !super::native_jobs::continuing(dir, "postw90")? {
+            let error = dir.join(format!("{prefix}.werr"));
+            if error.exists() {
+                fs::remove_file(&error)?;
+            }
+            fs::write(&win, &updated)?;
+            fs::write(dir.join(format!("{prefix}.eig")), eigenvalues)?;
         }
-        let mut argv=vec![program.path.to_string_lossy().into_owned()];
+        let mut argv = vec![program.path.to_string_lossy().into_owned()];
         argv.extend(program.args);
         argv.push(prefix.clone());
-        let report=super::process::run_report_named(&argv,dir,"postw90")?;
-        report.copy_logs(dir,"postw90")?;
-        check_wannier_post(&report,dir,prefix,"postw90 DOS")?;
-        let actual=PathBuf::from(wannier90flow::post::resolve_dos_output(dir.to_str().unwrap(),prefix));
-        store::write(&receipt,&PostReceipt {key,outputs:vec![Identity::capture(&actual)?,
-            Identity::capture(&dir.join(format!("{prefix}.wpout")))?]})?;
+        let report = super::process::run_report_named(&argv, dir, "postw90")?;
+        report.copy_logs(dir, "postw90")?;
+        check_wannier_post(&report, dir, prefix, "postw90 DOS")?;
+        let actual = PathBuf::from(wannier90flow::post::resolve_dos_output(
+            dir.to_str().unwrap(),
+            prefix,
+        ));
+        super::readable_state::complete_files(
+            cfg,
+            Step::Wannier,
+            "电子子步骤 · postw90",
+            &[actual, dir.join(format!("{prefix}.wpout"))],
+        )?;
     }
-    let actual=PathBuf::from(wannier90flow::post::resolve_dos_output(dir.to_str().unwrap(),prefix));
-    super::workspace_plot::bands(cfg,dir,&dir.join("band.eig"),fermi)?;
-    super::workspace_plot::dos(cfg,dir,&actual,fermi)?;
+    let actual = PathBuf::from(wannier90flow::post::resolve_dos_output(
+        dir.to_str().unwrap(),
+        prefix,
+    ));
+    super::workspace_plot::bands(cfg, dir, &dir.join("band.eig"), fermi)?;
+    super::workspace_plot::dos(cfg, dir, &actual, fermi)?;
+    Ok(())
+}
+
+/// 科学完成与调度完成分开：每次复用均检查原生文件。
+pub fn validate(cfg: &Config, step: Step) -> Result<()> {
+    let dir = step.directory(cfg);
+    match step {
+        Step::Scf => {
+            let output = dir.join("scf.out");
+            qf_io::qe_completion::checked_log(&output, true)?;
+            save::verify_snapshot(&cfg.work_dir)?;
+            let energy = qe_data::scf::parse_scf_energy(&fs::read_to_string(output)?)?;
+            qe_data::xml::validate_save(
+                &dir.join("snapshot"),
+                &cfg.qe.prefix,
+                &QeSettings::from_config(cfg)?,
+                Some(energy),
+            )?;
+        }
+        Step::Nscf => {
+            qf_io::qe_completion::checked_log(&dir.join("nscf.out"), false)?;
+            states(cfg)?;
+        }
+        Step::Electronic => {
+            ensure!(
+                super::workspace_electronic::completed(cfg)?,
+                "data_invalid: 电子参考子任务尚未完整通过检查"
+            );
+        }
+        Step::Phonon => {
+            qe_data::direct::load(cfg)?;
+            for stem in ["q2r", "matdyn_phband", "matdyn_phdos"] {
+                qf_io::qe_completion::checked_log(&dir.join(format!("{stem}.out")), false)?;
+            }
+            for name in [
+                format!("{}.fc.xml", cfg.qe.prefix),
+                format!("{}.phband.freq", cfg.qe.prefix),
+                format!("{}.phdos.dat", cfg.qe.prefix),
+            ] {
+                save::nonempty(&dir.join(name))?;
+            }
+            let modes = QeSettings::from_config(cfg)?.cell.positions.len() * 3;
+            let frequencies = qf_io::read_band_frequencies(
+                &fs::read_to_string(dir.join(format!("{}.phband.freq", cfg.qe.prefix)))?,
+                modes,
+            )?;
+            ensure!(!frequencies.is_empty(), "data_invalid: 声子频率输出为空");
+        }
+        Step::Wannier => {
+            let result = interpolation::wannier::check_native(
+                &dir.join(format!("{}.wout", cfg.qe.prefix)),
+                cfg.wannier.num_wann as usize,
+            )?;
+            ensure!(result.converged, "data_invalid: Wannier 未收敛");
+            validate_ukk(&dir.join(format!("{}.ukk", cfg.qe.prefix)), cfg)
+                .context("data_invalid: Wannier UKK 格式无效")?;
+            save::nonempty(&dir.join(format!("{}.chk", cfg.qe.prefix)))?;
+            let states = states(cfg)?;
+            interpolation::restart::velocity_files(
+                &dir,
+                &cfg.qe.prefix,
+                states.kpoints.len(),
+                cfg.qe.nscf.nbnd as usize - cfg.wannier.exclude_bands.len(),
+            )?;
+        }
+        Step::Coarse => {
+            interpolation::scheduler::verify_coarse(cfg, &cfg.work_dir)?;
+        }
+        Step::Fine => {
+            let manifest = interpolation::manifest::InterpolationManifest::load(&layout::path(
+                &cfg.work_dir,
+                "interpolation/manifest.json",
+            ))?;
+            ensure!(
+                manifest.fine.is_some() && manifest.validation.all_passed(),
+                "data_invalid: 细网格结果不完整"
+            );
+        }
+        Step::Superconductivity => {
+            let fine = interpolation::direct::fine(cfg)?;
+            crate::superconductivity::verify::complete(&cfg.work_dir, cfg, &fine.run_id)?;
+            crate::delivery::native::check(&dir.join("results"))?;
+        }
+    }
     Ok(())
 }
 
@@ -906,12 +1132,16 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
         states(cfg)?;
     }
     let dir = step.directory(cfg);
-    let mut ids = save::files(&dir)?
+    let ids = save::files(&dir)?
         .iter()
         .filter(|f| {
             let name = f.relative_path.file_name().unwrap().to_string_lossy();
             let rel = f.relative_path.to_string_lossy();
-            if f.relative_path.components().any(|p| p.as_os_str() == "plots") || name == "qe-post-completion.json" {
+            if f.relative_path
+                .components()
+                .any(|p| p.as_os_str() == "plots")
+                || name == "qe-post-completion.json"
+            {
                 return false;
             }
             if step == Step::Wannier
@@ -938,8 +1168,9 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
             {
                 return false;
             }
-            if matches!(step,Step::Coarse|Step::Superconductivity)
-                && (rel.starts_with("batch-finalization.lock/") || rel.starts_with("comparison/")
+            if matches!(step, Step::Coarse | Step::Superconductivity)
+                && (rel.starts_with("batch-finalization.lock/")
+                    || rel.starts_with("comparison/")
                     || rel.starts_with("decay/")
                     || rel.starts_with("results/")
                     || rel.starts_with("comparison-native/"))
@@ -950,6 +1181,7 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
                 && name != "post-completion.json"
                 && !rel.starts_with("receipts/")
                 && !name.ends_with(".sh")
+                && !name.ends_with(".jobs")
                 && !name.starts_with("submit-")
                 && !super::native_jobs::is_log(&f.relative_path)
                 && !name.starts_with("slurm-")
@@ -958,61 +1190,8 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
         })
         .map(|f| Identity::capture(&dir.join(&f.relative_path)))
         .collect::<Result<Vec<_>>>()?;
-    if step == Step::Phonon && super::phonon_import::bound(cfg) {
-        ids.push(Identity::capture(&layout::path(&cfg.work_dir, "qe-data/external-source.json"))?);
-    }
-    if step == Step::Coarse {
-        ids.push(Identity::capture(&layout::path(
-            &cfg.work_dir,
-            "wannier/manifest.json",
-        ))?);
-    }
-    if step == Step::Fine {
-        ids.push(Identity::capture(&layout::path(
-            &cfg.work_dir,
-            "interpolation/manifest.json",
-        ))?);
-    }
     ensure!(!ids.is_empty(), "data_invalid: 阶段没有科学证据");
     Ok(ids)
-}
-
-pub fn invalidate(cfg: &Config, step: Step, history: &Path) -> Result<()> {
-    let root = &cfg.work_dir;
-    let mut paths = vec![];
-    match step {
-        Step::Phonon => paths.push(layout::path(root, "qe-data")),
-        Step::Coarse => {
-            paths.push(layout::path(root, "wannier"));
-            paths.push(root.join("results/6.epw-coarse"));
-            // 新科学请求重新建立常规比较来源；资源变更通过阶段缓存复用。
-            paths.push(root.join("comparison-native"));
-            paths.push(crate::foundation::layout::path(&root, "native-attempts"));
-        }
-        Step::Fine => {
-            paths.push(layout::path(root, "interpolation"));
-            if crate::foundation::layout::path(&root, "native-attempts").is_dir() {
-                for e in fs::read_dir(crate::foundation::layout::path(&root, "native-attempts"))? {
-                    let p = e?.path();
-                    if p.file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .starts_with("fine-")
-                    {
-                        paths.push(p);
-                    }
-                }
-            }
-        }
-        _ => (),
-    }
-    for (n, p) in paths.iter().enumerate() {
-        if p.exists() {
-            fs::create_dir_all(history)?;
-            fs::rename(p, history.join(format!("metadata-{n}")))?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1021,12 +1200,24 @@ mod post_program_tests {
 
     #[test]
     fn pencil_is_limited_to_electronic_postprocessing_without_inherited_pools() {
-        let mut cfg: Config = toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
+        let mut cfg: Config =
+            toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
         cfg.programs.pw.path = PathBuf::from("/qe with spaces/bin/pw.x");
         cfg.programs.pw.args = vec!["-nk".into(), "8".into()];
-        for name in ["bands", "dos", "projwfc", "q2r", "matdyn", "wannier90", "postw90"] {
+        for name in [
+            "bands",
+            "dos",
+            "projwfc",
+            "q2r",
+            "matdyn",
+            "wannier90",
+            "postw90",
+        ] {
             let p = post_program(&cfg, name).unwrap();
-            assert_eq!(p.path, PathBuf::from(format!("/qe with spaces/bin/{name}.x")));
+            assert_eq!(
+                p.path,
+                PathBuf::from(format!("/qe with spaces/bin/{name}.x"))
+            );
             let expected = if matches!(name, "bands" | "dos" | "projwfc") {
                 vec!["-pd".to_string(), ".true.".to_string()]
             } else {

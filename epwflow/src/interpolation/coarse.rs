@@ -20,7 +20,13 @@ pub struct CoarseResult {
 pub fn stage_f2(f2: &QeManifest, work: &Path) -> Result<()> {
     f2.verify()?;
     let dir = crate::foundation::layout::path(&work, "coarse");
-    ensure!(!dir.exists() || (crate::foundation::layout::enabled(work) && !dir.join("out").exists() && !dir.join("epw.out").exists()), "input_conflict: 粗网格目标已存在，保留现场");
+    ensure!(
+        crate::foundation::native_jobs::empty_execution_directory(&dir)?
+            || (crate::foundation::layout::enabled(work)
+                && !dir.join("out").exists()
+                && !dir.join("epw.out").exists()),
+        "input_conflict: 粗网格目标已存在，保留现场"
+    );
     let states = f2.states.as_ref().context("data_invalid: 缺少 F2 NSCF")?;
     save::copy_tree(
         states
@@ -38,21 +44,34 @@ pub fn stage_f2(f2: &QeManifest, work: &Path) -> Result<()> {
         .context("data_invalid: PH 缺父目录")?;
     save::copy_tree(ph_dir, &dir.join("save"))?;
     if crate::foundation::layout::enabled(work) {
-        let source=work.join("5.epw-wannier");
-        let completion:crate::foundation::stages::Completion=store::read(&crate::foundation::stages::receipt(work,crate::foundation::stages::Step::Wannier))?;
+        let source = work.join("5.epw-wannier");
+        let completion = crate::foundation::stages::completion(
+            &crate::qe_data::direct::current(work)?,
+            crate::foundation::stages::Step::Wannier,
+        )?;
         completion.verify()?;
-        let prefix=states.wavefunctions.file_stem().context("data_invalid: NSCF 无前缀")?.to_string_lossy();
-        for suffix in ["ukk","wout","bvec","mmn"] {
-            let name=format!("{prefix}.{suffix}");
-            let identity=completion.outputs.iter().find(|id| id.path==source.join(&name))
-                .with_context(|| format!("input_conflict: Wannier 收据未绑定 {name}，须通过公开命令重建第 5 步"))?;
+        let prefix = states
+            .wavefunctions
+            .file_stem()
+            .context("data_invalid: NSCF 无前缀")?
+            .to_string_lossy();
+        for suffix in ["ukk", "wout", "bvec", "mmn"] {
+            let name = format!("{prefix}.{suffix}");
+            let identity = completion
+                .outputs
+                .iter()
+                .find(|id| id.path == source.join(&name))
+                .with_context(|| {
+                    format!("input_conflict: Wannier 收据未绑定 {name}，须通过公开命令重建第 5 步")
+                })?;
             identity.verify()?;
             save::nonempty(&source.join(&name))?;
-            fs::copy(source.join(&name),dir.join(&name))?;
-            ensure!(store::hash_file(&dir.join(&name))?==identity.sha256,
-                "data_invalid: Wannier 配套文件复制后身份不符：{name}");
+            fs::copy(source.join(&name), dir.join(&name))?;
+            ensure!(
+                store::hash_file(&dir.join(&name))? == identity.sha256,
+                "data_invalid: Wannier 配套文件复制后身份不符：{name}"
+            );
         }
-        store::write(&dir.join("wannier-source.json"),&completion)?;
     }
     f2.verify()
 }
@@ -69,7 +88,15 @@ pub fn run_epw(
         "allocation: EPW 须在 F1 已登记分配内同步运行"
     );
     let program = &epw_cfg.cfg.programs.epw;
-    crate::foundation::workspace::native_script(program,&dir.join(input_name),dir,launcher,"epw",false,false)?;
+    crate::foundation::workspace::native_script(
+        program,
+        &dir.join(input_name),
+        dir,
+        launcher,
+        "epw",
+        false,
+        false,
+    )?;
     let mut cmd = launcher.to_vec();
     cmd.push(program.path.to_string_lossy().into_owned());
     cmd.extend(program.args.clone());
@@ -101,11 +128,17 @@ pub fn run_coarse(
     backend: Backend,
 ) -> Result<CoarseResult> {
     prepare_coarse(epw_cfg, work)?;
-    let dir=crate::foundation::layout::path(work,"coarse");
+    let dir = crate::foundation::layout::path(work, "coarse");
     if !crate::foundation::layout::enabled(work) {
-        run_epw(epw_cfg,&dir,"epw_wannier.in",launcher,backend)?;
+        run_epw(epw_cfg, &dir, "epw_wannier.in", launcher, backend)?;
     }
-    run_epw(epw_cfg, &crate::foundation::layout::path(&work, "coarse"), "epw_coarse.in", launcher, backend)?;
+    run_epw(
+        epw_cfg,
+        &crate::foundation::layout::path(&work, "coarse"),
+        "epw_coarse.in",
+        launcher,
+        backend,
+    )?;
     collect_coarse(work, epw_cfg)
 }
 
@@ -125,17 +158,34 @@ pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
     )?;
     epw_cfg.require_window_support()?;
     if !crate::foundation::layout::enabled(work) {
-        fs::write(dir.join("epw_wannier.in"),epw_cfg.native_input(super::epw_config::NativeStage::WannierOnly,"./out","./save",epw_cfg.cfg.interpolation.phonon_smearings_mev[0])?)?;
+        fs::write(
+            dir.join("epw_wannier.in"),
+            epw_cfg.native_input(
+                super::epw_config::NativeStage::WannierOnly,
+                "./out",
+                "./save",
+                epw_cfg.cfg.interpolation.phonon_smearings_mev[0],
+            )?,
+        )?;
     }
     fs::write(
         dir.join("epw_coarse.in"),
-        epw_cfg.native_input(super::epw_config::NativeStage::ReuseWannier,"./out","./save",epw_cfg.cfg.interpolation.phonon_smearings_mev[0])?,
+        epw_cfg.native_input(
+            super::epw_config::NativeStage::ReuseWannier,
+            "./out",
+            "./save",
+            epw_cfg.cfg.interpolation.phonon_smearings_mev[0],
+        )?,
     )?;
     Ok(())
 }
 
 pub fn collect_coarse(work: &Path, epw_cfg: &EpwConfig) -> Result<CoarseResult> {
     let dir = crate::foundation::layout::path(&work, "coarse");
+    let expected = epw_cfg.native_input(super::epw_config::NativeStage::ReuseWannier, "./out", "./save", epw_cfg.cfg.interpolation.phonon_smearings_mev[0])?;
+    let normalize = |text: &str| text.lines().map(|line| line.split('!').next().unwrap_or("")).flat_map(str::split_whitespace).collect::<Vec<_>>().join(" ");
+    ensure!(normalize(&fs::read_to_string(dir.join("epw_coarse.in"))?) == normalize(&expected),
+        "input_conflict: 粗网格实际输入与当前参数不符");
     super::native::checked_log(&fs::read_to_string(dir.join("epw.out"))?, 0)?;
     let cfg = epw_cfg.cfg;
     let structure = crate::qe_data::qe_config::QeSettings::from_config(cfg)?;

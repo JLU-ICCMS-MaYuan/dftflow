@@ -14,9 +14,12 @@ impl ExecutionReport {
     /// 新原生任务的两路路径相同，只归集一份 .out；旧执行器保留分离日志。
     pub fn log_files(&self) -> impl Iterator<Item = (&Path, &'static str)> {
         let merged = self.stdout_path == self.stderr_path;
-        [(self.stdout_path.as_path(), "out"), (self.stderr_path.as_path(), "err")]
-            .into_iter()
-            .filter(move |(_, suffix)| !merged || *suffix == "out")
+        [
+            (self.stdout_path.as_path(), "out"),
+            (self.stderr_path.as_path(), "err"),
+        ]
+        .into_iter()
+        .filter(move |(_, suffix)| !merged || *suffix == "out")
     }
 
     /// 直接重定向已写入目标文件；旧执行器的独立日志仍按原方式归集。
@@ -53,7 +56,7 @@ pub fn run_report_named(command: &[String], work: &Path, stem: &str) -> Result<E
         return super::native_jobs::execute(command, work, stem);
     }
     ensure!(!command.is_empty(), "execution_failed: 空命令");
-    let dir = work.join("epw-state").join("logs");
+    let dir = work.join("process-logs");
     fs::create_dir_all(&dir)?;
     let stdout_path = dir.join(format!("out-{}.log", store_token()));
     let stderr_path = dir.join(format!("err-{}.log", store_token()));

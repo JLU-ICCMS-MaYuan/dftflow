@@ -135,20 +135,8 @@ fn clean_input_keeps_internal_rules_and_identity_in_parameter_receipts() {
     let text = std::fs::read_to_string(&input).unwrap();
     assert!(text.starts_with("&control\n"), "{text}");
     assert!(!text.contains("参数来源") && !text.contains("内部推导规则"));
-    let receipt: Value = store::read(&input.with_extension("parameters.json")).unwrap();
-    assert_eq!(receipt["configuration"], "stages.1.qe-scf");
-    let identity: store::Identity = serde_json::from_value(receipt["input"].clone()).unwrap();
-    identity.verify().unwrap();
-    assert!(receipt["derived"].get("stages.1.qe-scf.nat").is_some());
-    cfg.write_parameter_map(&root.join("parameter-map.json"))
-        .unwrap();
-    let map: Value = store::read(&root.join("parameter-map.json")).unwrap();
-    assert!(map["parameters"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|v| v["configuration"] == "stages.1.qe-scf.ecutwfc"));
-    assert!(map["derived"].get("stages.1.qe-scf.outdir").is_some());
+    assert!(!input.with_extension("parameters.json").exists());
+    assert!(!root.join("parameter-map.json").exists());
     std::fs::remove_dir_all(root).unwrap();
 }
 

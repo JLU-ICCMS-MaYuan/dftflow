@@ -28,6 +28,9 @@ pub fn paused(e: &anyhow::Error) -> bool {
     e.downcast_ref::<Paused>().is_some()
 }
 pub(crate) fn is_log(path: &Path) -> bool {
+    if super::workspace::slurm_log(path) {
+        return true;
+    }
     if path
         .file_name()
         .and_then(|n| n.to_str())
@@ -45,6 +48,18 @@ pub(crate) fn is_log(path: &Path) -> bool {
                 && job.bytes().all(|c| c.is_ascii_digit())
                 && matches!(ext, "out" | "err")
         })
+}
+pub(crate) fn empty_execution_directory(path: &Path) -> Result<bool> {
+    if !path.exists() {
+        return Ok(true);
+    }
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        if !is_log(&entry.path()) && !entry.path().extension().is_some_and(|e| e == "jobs") {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +93,7 @@ struct Session {
     generation: String,
     submit: bool,
     resume: bool,
-    consumed: Vec<PathBuf>,
+    consumed: Vec<(PathBuf, String)>,
     allocated: bool,
 }
 thread_local! { static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) }; }
@@ -99,11 +114,23 @@ pub fn scoped<T>(
 }
 
 /// 声子整阶段已登记一个分配，子调用不再提交或预留资源。
-pub fn scoped_allocated<T>(cfg: &Config, generation: &str, resume: bool, run: impl FnOnce() -> Result<T>) -> Result<T> {
+pub fn scoped_allocated<T>(
+    cfg: &Config,
+    generation: &str,
+    resume: bool,
+    run: impl FnOnce() -> Result<T>,
+) -> Result<T> {
     scoped_mode(cfg, generation, false, resume, true, run)
 }
 
-fn scoped_mode<T>(cfg: &Config, generation: &str, submit: bool, resume: bool, allocated: bool, run: impl FnOnce() -> Result<T>) -> Result<T> {
+fn scoped_mode<T>(
+    cfg: &Config,
+    generation: &str,
+    submit: bool,
+    resume: bool,
+    allocated: bool,
+    run: impl FnOnce() -> Result<T>,
+) -> Result<T> {
     ensure!(!enabled(), "input_conflict: 原生执行上下文不能嵌套");
     struct Guard;
     impl Drop for Guard {
@@ -128,150 +155,328 @@ fn scoped_mode<T>(cfg: &Config, generation: &str, submit: bool, resume: bool, al
     }
     result
 }
-fn directory(cfg: &Config) -> PathBuf {
-    cfg.work_dir.join("epw-state/native-jobs")
+fn task_step(cfg: &Config, directory: &Path) -> Result<super::stages::Step> {
+    super::stages::Step::ALL
+        .into_iter()
+        .find(|s| directory.starts_with(s.directory(cfg)))
+        .context("configuration: 原生任务不属于八阶段计算目录")
 }
-fn active(cfg: &Config) -> PathBuf {
-    cfg.work_dir.join("epw-state/native-active.json")
-}
-fn persist(cfg: &Config, task: &Task) -> Result<()> {
-    store::write(&directory(cfg).join(format!("{}.json", task.key)), task)?;
-    store::write(
-        &directory(cfg)
-            .join("history")
-            .join(format!("{}.json", task.id)),
-        task,
-    )?;
-    store::write(&group_path(cfg, task.group.as_deref()), task)
-}
-fn group_path(cfg: &Config, group: Option<&str>) -> PathBuf {
-    match group {
-        Some(name) => cfg.work_dir.join(format!("epw-state/native-active-{name}.json")),
-        None => active(cfg),
+fn task_label(cfg: &Config, task: &Task) -> String {
+    if let Some(group) = &task.group {
+        format!("方法 · {group}")
+    } else {
+        format!(
+            "任务 · {} / {}",
+            super::readable_state::relative(&cfg.work_dir, &task.directory),
+            task.stem
+        )
     }
 }
-pub fn group_task(cfg: &Config, group: &str) -> Result<Option<Task>> {
-    ensure!(matches!(group, "iso" | "aniso"), "configuration: 无效原生方法分组");
-    let path = group_path(cfg, Some(group));
-    if path.is_file() { Ok(Some(store::read(&path)?)) } else { Ok(None) }
+fn state_text(state: &str) -> &str {
+    match state {
+        "prepared" => "已准备",
+        "submission_pending" => "提交中",
+        "submitted" => "已提交",
+        "unknown" => "提交未知",
+        "running" => "运行中",
+        "awaiting_validation" => "待检查",
+        "validated" => "已完成",
+        "failed" => "失败",
+        s => s,
+    }
 }
-/// 其他科学阶段不能改写两方法仍在使用的上游数据。
+fn state_code(state: &str) -> &str {
+    match state {
+        "已准备" => "prepared",
+        "提交中" => "submission_pending",
+        "已提交" => "submitted",
+        "提交未知" => "unknown",
+        "运行中" => "running",
+        "待检查" => "awaiting_validation",
+        "已完成" => "validated",
+        "失败" => "failed",
+        s => s,
+    }
+}
+fn optional_identity(path: &Path) -> Identity {
+    Identity::capture(path).unwrap_or_else(|_| Identity {
+        path: path.into(),
+        target: path.into(),
+        sha256: String::new(),
+        bytes: 0,
+    })
+}
+fn persist(cfg: &Config, task: &Task) -> Result<()> {
+    use super::readable_state as log;
+    let step = task_step(cfg, &task.directory)?;
+    let label = task_label(cfg, task);
+    log::set_job(&cfg.work_dir, step, &label, task.job)?;
+    log::update(&cfg.work_dir, step, |doc| {
+        if task.group.is_none() {
+            doc.remove(&label);
+        } else {
+            for key in ["退出码", "预算关联"] {
+                if let Some(fields) = doc.sections.get_mut(&label) {
+                    fields.remove(key);
+                }
+            }
+        }
+        for (key, value) in [
+            ("提交标识", task.id.clone()),
+            ("批次", task.generation.clone()),
+            ("状态", state_text(&task.state).into()),
+            ("计算目录", log::relative(&cfg.work_dir, &task.directory)),
+            ("脚本", log::relative(&cfg.work_dir, &task.script.path)),
+            ("输出名称", task.stem.clone()),
+            (
+                "运行命令",
+                task.command
+                    .iter()
+                    .map(|s| shell_words::quote(s))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            ),
+            ("用时秒", format!("{:.3}", task.duration_secs)),
+            ("预算已关联", task.attached.to_string()),
+        ] {
+            doc.set(&label, key, value);
+        }
+        if let Some(token) = &task.reservation {
+            doc.set(&label, "预算关联", token);
+        }
+        if let Some(exit) = task.exit_status {
+            doc.set(&label, "退出码", exit);
+        }
+        for (i, input) in task.inputs.iter().enumerate() {
+            doc.set(
+                &label,
+                &format!("科学输入{}", i + 1),
+                log::relative(&cfg.work_dir, &input.path),
+            );
+        }
+        doc.set(
+            &label,
+            "科学输出",
+            log::relative(
+                &cfg.work_dir,
+                &task.directory.join(format!("{}.out", task.stem)),
+            ),
+        );
+        Ok(())
+    })
+}
+/// 从阶段日志和任务号表重建当前任务，不读取独立任务仓库。
+pub fn tasks(cfg: &Config) -> Result<Vec<Task>> {
+    use super::{readable_state as log, stages::Step};
+    let mut result = Vec::new();
+    for step in Step::ALL {
+        let doc = log::read(&cfg.work_dir, step)?;
+        let jobs = log::jobs(&cfg.work_dir, step)?;
+        for (name, fields) in &doc.sections {
+            if !(name.starts_with("任务 · ") || name.starts_with("方法 · ")) {
+                continue;
+            }
+            let field = |key: &str| {
+                fields.get(key).map(String::as_str).with_context(|| {
+                    format!(
+                        "data_invalid: {} 缺少 {key}",
+                        log::path(&cfg.work_dir, step).unwrap().display()
+                    )
+                })
+            };
+            let directory = log::resolve(&cfg.work_dir, field("计算目录")?);
+            let stem = field("输出名称")?.to_owned();
+            let output = directory.join(format!("{stem}.out"));
+            let state = state_code(field("状态")?);
+            let job = jobs.get(name).copied();
+            let state = if state == "submission_pending" && job.is_some() {
+                "submitted"
+            } else {
+                state
+            };
+            let id = field("提交标识")?.to_owned();
+            let inputs = fields
+                .iter()
+                .filter(|(k, _)| k.starts_with("科学输入"))
+                .map(|(_, v)| optional_identity(&log::resolve(&cfg.work_dir, v)))
+                .collect();
+            result.push(Task {
+                schema_version: 3,
+                group: name.strip_prefix("方法 · ").map(str::to_owned),
+                key: id.clone(),
+                id,
+                generation: field("批次")?.into(),
+                directory,
+                command: shell_words::split(field("运行命令")?)?,
+                stem,
+                script: optional_identity(&log::resolve(&cfg.work_dir, field("脚本")?)),
+                inputs,
+                sources: Vec::new(),
+                state: state.into(),
+                job,
+                reservation: fields.get("预算关联").cloned(),
+                attached: fields.get("预算已关联").is_some_and(|v| v == "true"),
+                exit_status: fields.get("退出码").map(|v| v.parse()).transpose()?,
+                duration_secs: field("用时秒")?.parse()?,
+                stdout: output.is_file().then(|| optional_identity(&output)),
+                stderr: output.is_file().then(|| optional_identity(&output)),
+            });
+        }
+    }
+    Ok(result)
+}
+pub fn group_task(cfg: &Config, group: &str) -> Result<Option<Task>> {
+    Ok(tasks(cfg)?
+        .into_iter()
+        .find(|t| t.group.as_deref() == Some(group)))
+}
+pub fn active_task(cfg: &Config) -> Result<Option<Task>> {
+    Ok(tasks(cfg)?
+        .into_iter()
+        .filter(|t| t.group.is_none())
+        .max_by(|a, b| a.id.cmp(&b.id)))
+}
 pub fn check_groups(cfg: &Config) -> Result<()> {
     for group in ["iso", "aniso"] {
         if let Some(task) = group_task(cfg, group)? {
-            let state = task_status(&task)?;
+            let status = task_status(&task)?;
             ensure!(
-                !matches!(state["state"].as_str(), Some("running" | "unknown")),
+                !matches!(status["state"].as_str(), Some("running" | "unknown")),
                 "scheduler_unknown: {group} 原生作业仍活动或提交未知"
             );
         }
     }
     Ok(())
 }
-pub fn groups_status(cfg: &Config) -> Result<serde_json::Value> {
-    let mut result = serde_json::Map::new();
-    for group in ["iso", "aniso"] {
-        if let Some(task) = group_task(cfg, group)? {
-            result.insert(group.into(), task_status(&task)?);
-        }
-    }
-    Ok(result.into())
-}
-pub fn active_task(cfg: &Config) -> Result<Option<Task>> {
-    if active(cfg).exists() {
-        Ok(Some(store::read(&active(cfg))?))
-    } else {
-        Ok(None)
-    }
-}
-pub fn reject(cfg: &Config, generation: &str) -> Result<()> {
-    if let Some(mut task) = active_task(cfg)? {
-        if task.generation == generation && task.state == "awaiting_validation" {
-            task.state = "failed".into();
-            persist(cfg, &task)?;
+/// 日志丢失不等于作业退出：任务号表仍须通过调度器确认终态。
+pub(crate) fn check_orphan_jobs(cfg: &Config) -> Result<()> {
+    use super::{readable_state as log, stages::Step};
+    for step in Step::ALL {
+        let doc = log::read(&cfg.work_dir, step)?;
+        let jobs_path = log::jobs_path(&cfg.work_dir, step)?;
+        for (name, job) in log::jobs(&cfg.work_dir, step)? {
+            if doc.get(&name, "状态").is_some() {
+                continue;
+            }
+            let accounting = slurm::accounting(job).with_context(|| {
+                format!(
+                    "scheduler_unknown: {} 中作业 {job} 的阶段记录缺失，无法确认终态，禁止覆盖",
+                    jobs_path.display()
+                )
+            })?;
+            ensure!(
+                accounting.terminal,
+                "scheduler_unknown: {} 中作业 {job} 的阶段记录缺失且作业仍活动，禁止覆盖",
+                jobs_path.display()
+            );
+            log::set_job(&cfg.work_dir, step, &name, None)?;
         }
     }
     Ok(())
 }
+/// 分配内执行也必须确认其他原生作业已经退出，不能覆盖另一份活动现场。
+pub fn check_other_allocations(cfg: &Config) -> Result<()> {
+    let own = std::env::var("SLURM_JOB_ID")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok());
+    for task in tasks(cfg)?.into_iter().filter(|t| t.group.is_none()) {
+        if own.is_some() && task.job == own {
+            continue;
+        }
+        let status = task_status(&task)?;
+        ensure!(
+            !matches!(status["state"].as_str(), Some("running" | "unknown")),
+            "scheduler_unknown: {} 的原生作业仍活动或提交未知，禁止覆盖",
+            task.directory.display()
+        );
+    }
+    Ok(())
+}
+pub fn groups_status(cfg: &Config) -> Result<serde_json::Value> {
+    let mut value = serde_json::Map::new();
+    for group in ["iso", "aniso"] {
+        if let Some(t) = group_task(cfg, group)? {
+            value.insert(group.into(), task_status(&t)?);
+        }
+    }
+    Ok(value.into())
+}
+pub fn reject(cfg: &Config, generation: &str) -> Result<()> {
+    for mut t in tasks(cfg)? {
+        if t.generation == generation && t.state == "awaiting_validation" {
+            t.state = "failed".into();
+            persist(cfg, &t)?;
+        }
+    }
+    Ok(())
+}
+/// 科学程序退出后仍需核对它应交付的文件；显式恢复只补缺少的子任务。
+pub(crate) fn require_outputs(
+    cfg: &Config,
+    dir: &Path,
+    stem: &str,
+    outputs: &[PathBuf],
+) -> Result<()> {
+    if outputs.iter().all(|p| p.is_file()) {
+        return Ok(());
+    }
+    if let Some(mut task) = tasks(cfg)?.into_iter().find(|t| {
+        t.directory == dir
+            && t.stem == stem
+            && matches!(t.state.as_str(), "validated" | "awaiting_validation")
+    }) {
+        ensure!(
+            retry_enabled(),
+            "data_invalid: {stem} 缺少科学输出；请使用 --resume 恢复此阶段"
+        );
+        task.state = "failed".into();
+        persist(cfg, &task)?;
+    }
+    Ok(())
+}
 pub fn accept(cfg: &Config, generation: &str) -> Result<()> {
-    if let Some(mut task) = active_task(cfg)? {
-        if task.generation == generation && task.state == "awaiting_validation" {
-            task.state = "validated".into();
-            persist(cfg, &task)?;
+    for mut t in tasks(cfg)? {
+        if t.generation == generation && t.state == "awaiting_validation" {
+            t.state = "validated".into();
+            persist(cfg, &t)?;
         }
     }
     Ok(())
 }
 fn verify(task: &Task) -> Result<()> {
-    ensure!(
-        matches!(task.schema_version, 1 | 2 | 3),
-        "unsupported_version: 原生任务记录"
-    );
-    ensure!(task.group.as_deref().is_none_or(|name| matches!(name, "iso" | "aniso")), "data_invalid: 原生方法分组无效");
-    // 新格式的终态只依赖科学证据，固定名称脚本可供下一次计算覆盖。
-    if task.schema_version == 1
-        || matches!(
-            task.state.as_str(),
-            "prepared" | "submission_pending" | "submitted" | "unknown"
-        )
-    {
-        task.script
-            .verify()
-            .context("input_conflict: 脚本已手工修改；独立调试不属于正式交付")?;
-    }
-    for id in task.inputs.iter().chain(&task.sources) {
-        id.verify()?;
-    }
-    if task.schema_version == 3 {
-        let output = task.directory.join(format!("{}.out", task.stem));
-        for id in task.stdout.iter().chain(&task.stderr) {
-            ensure!(id.path == output, "data_invalid: 合并日志身份必须指向科学输出");
+    if task.state == "prepared" {
+        ensure!(
+            task.script.path.is_file(),
+            "data_invalid: 缺少待提交脚本 {}",
+            task.script.path.display()
+        );
+        for input in &task.inputs {
+            ensure!(
+                input.path.is_file(),
+                "data_invalid: 缺少本次科学输入 {}",
+                input.path.display()
+            );
         }
     }
     Ok(())
 }
-
-/// 按记录版本读取日志；不能用文件是否存在猜测旧任务的日志契约。
 fn log_paths(task: &Task) -> Result<(PathBuf, PathBuf)> {
-    let stdout = task.directory.join(format!("{}.out", task.stem));
-    match task.schema_version {
-        1 => {
-            let job = task.job.context("data_invalid: 旧原生日志缺少作业号")?;
-            Ok((
-                task.directory.join(format!("native-{}-{job}.out", task.id)),
-                task.directory.join(format!("native-{}-{job}.err", task.id)),
-            ))
-        }
-        2 => Ok((stdout, task.directory.join(format!("{}.err", task.stem)))),
-        3 => Ok((stdout.clone(), stdout)),
-        _ => anyhow::bail!("unsupported_version: 原生任务记录"),
-    }
+    let p = task.directory.join(format!("{}.out", task.stem));
+    Ok((p.clone(), p))
 }
-
 fn capture_logs(task: &mut Task) -> Result<()> {
-    let (stdout, stderr) = log_paths(task)?;
-    let output = Identity::capture(&stdout).context("data_invalid: 缺少原生 stdout")?;
-    let error = if stdout == stderr {
-        output.clone()
-    } else {
-        Identity::capture(&stderr).context("data_invalid: 缺少原生 stderr")?
-    };
-    task.stdout = Some(output);
-    task.stderr = Some(error);
+    let (out, err) = log_paths(task)?;
+    task.stdout = Some(Identity::capture(&out)?);
+    task.stderr = Some(Identity::capture(&err)?);
     Ok(())
 }
-
-/// 状态查询不修改记录；终态只表示可以在下一次公开命令中进行科学校验。
 pub fn status(cfg: &Config) -> Result<Option<serde_json::Value>> {
-    let Some(task) = active_task(cfg)? else {
-        return Ok(None);
-    };
-    Ok(Some(task_status(&task)?))
+    active_task(cfg)?.as_ref().map(task_status).transpose()
 }
 pub fn task_status(task: &Task) -> Result<serde_json::Value> {
     let state = if matches!(
         task.state.as_str(),
-        "submitted" | "submission_pending" | "unknown"
+        "submitted" | "submission_pending" | "unknown" | "running"
     ) {
         if let Some(job) = task.job {
             match slurm::accounting(job) {
@@ -291,246 +496,39 @@ pub fn task_status(task: &Task) -> Result<serde_json::Value> {
     } else {
         &task.state
     };
-    Ok(serde_json::json!({"state":state,"job":task.job,"script":task.script.path,"directory":task.directory}))
+    Ok(
+        serde_json::json!({"state":state,"job":task.job,"script":task.script.path,"directory":task.directory}),
+    )
 }
-
-/// 只在登录端采纳自己提交的终态。手工 sbatch 没有登记回执，不能进入此处。
 pub fn reconcile(cfg: &Config, resume: bool) -> Result<()> {
-    let Some(mut task) = active_task(cfg)? else {
-        return Ok(());
-    };
-    if resume && recover_archived_wannier(cfg, &task)? {
-        return Ok(());
-    }
-    reconcile_task(cfg, resume, &mut task)
-}
-
-/// 只接续旧版本已归档却未撤下的失败 Wannier 指针，不复用失败模型。
-fn recover_archived_wannier(cfg: &Config, task: &Task) -> Result<bool> {
-    use super::stages::Step;
-    if task.state != "failed" || task.directory != Step::Wannier.directory(cfg) {
-        return Ok(false);
-    }
-    let mut missing = false;
-    for id in &task.inputs {
-        match fs::symlink_metadata(&id.path) {
-            Ok(_) => id.verify()?,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => missing = true,
-            Err(e) => return Err(e.into()),
+    for mut task in tasks(cfg)?.into_iter().filter(|t| t.group.is_none()) {
+        if matches!(
+            task.state.as_str(),
+            "submitted" | "submission_pending" | "unknown" | "running"
+        ) {
+            reconcile_task(cfg, resume, &mut task)?;
         }
-    }
-    if !missing { return Ok(false); }
-    let path = cfg.work_dir.join("epw-state/native-progress/wannier.json");
-    let progress: serde_json::Value = store::read(&path)?;
-    ensure!(progress["state"] == "failed"
-        && progress["generation"].as_str().is_some_and(|g| !g.is_empty() && g != task.generation),
-        "input_conflict: 旧输入缺失但没有另一代失败 Wannier 进度，拒绝推断归档");
-    let mut matches = Vec::new();
-    for entry in fs::read_dir(cfg.work_dir.join("epw-state/history"))? {
-        let entry = entry?;
-        if entry.file_name().to_string_lossy().starts_with("wannier-")
-            && entry.file_type()?.is_dir()
-            && archived_wannier_matches(task, &entry.path())?
-        {
-            matches.push(entry.path());
-        }
-    }
-    ensure!(matches.len() == 1,
-        "input_conflict: 失败 Wannier 输入已移走，但完整匹配的归档有 {} 份；保留原记录，拒绝自动接续", matches.len());
-    retire_archived_wannier(cfg, task, &matches[0])?;
-    println!("recovered: 已核验并保留旧失败 Wannier 活动记录于 {}", matches[0].display());
-    Ok(true)
-}
-
-fn archived_wannier_matches(task: &Task, history: &Path) -> Result<bool> {
-    ensure!(matches!(task.schema_version, 1 | 2 | 3) && task.group.is_none()
-        && task.state == "failed" && task.exit_status.is_some() && !task.inputs.is_empty(),
-        "input_conflict: 只有明确退出且输入身份完整的失败 Wannier 任务可交接归档");
-    let stdout = task.stdout.as_ref().context("input_conflict: 失败任务缺少 stdout 身份")?;
-    let stderr = task.stderr.as_ref().context("input_conflict: 失败任务缺少 stderr 身份")?;
-    let expected = log_paths(task)?;
-    ensure!(stdout.path == expected.0 && stderr.path == expected.1,
-        "input_conflict: 归档日志不符合原任务版本契约");
-    let calculation = history.join("calculation");
-    if !calculation.is_dir() { return Ok(false); }
-    ensure!(!fs::symlink_metadata(&calculation)?.file_type().is_symlink(),
-        "input_conflict: 归档计算目录不能是符号链接");
-    for id in task.inputs.iter().chain(std::iter::once(&task.script))
-        .chain([stdout, stderr]).chain(&task.sources)
-    {
-        if let Ok(relative) = id.path.strip_prefix(&task.directory) {
-            ensure!(relative.components().all(|c| matches!(c, std::path::Component::Normal(_)))
-                && id.path == id.target, "input_conflict: 归档输入身份含链接或越界路径");
-            let archived = calculation.join(relative);
-            let metadata = match fs::symlink_metadata(&archived) {
-                Ok(metadata) => metadata,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-                Err(e) => return Err(e.into()),
-            };
-            ensure!(metadata.is_file() && !metadata.file_type().is_symlink()
-                && fs::canonicalize(&archived)?.starts_with(fs::canonicalize(&calculation)?),
-                "input_conflict: 归档证据不是独立普通文件 {}", archived.display());
-            if metadata.len() != id.bytes || store::hash_file(&archived)? != id.sha256 {
-                return Ok(false);
-            }
-        } else {
-            id.verify()?;
-        }
-    }
-    Ok(true)
-}
-
-fn retire_archived_wannier(cfg: &Config, task: &Task, history: &Path) -> Result<()> {
-    let record = active(cfg);
-    let bytes = fs::read(&record)?;
-    let current: Task = serde_json::from_slice(&bytes)?;
-    ensure!(current.id == task.id && current.key == task.key && current.generation == task.generation
-        && current.state == "failed", "input_conflict: 归档期间活动任务已改变");
-    let destination = history.join("native-active-retired.json");
-    ensure!(!destination.try_exists()?, "input_conflict: 原任务归档记录已存在，拒绝覆盖");
-    store::write(&history.join("native-archive-binding.json"), &serde_json::json!({
-        "schema_version":1,"stage":"wannier","task_id":task.id,"generation":task.generation,
-        "original_directory":task.directory,"calculation":history.join("calculation"),
-        "record_sha256":store::hash_bytes(&bytes),"reason":"失败任务原样归档，不复用旧模型；后续按当前配置准备新任务"
-    }))?;
-    fs::rename(record, destination)?;
-    Ok(())
-}
-
-/// 新的归档立即交接失败任务；旧版本遗留指针由显式恢复入口有界接续。
-pub(super) fn archive_failed_wannier(cfg: &Config, history: &Path) -> Result<()> {
-    let Some(task) = active_task(cfg)? else { return Ok(()); };
-    if task.state == "failed" && task.directory == super::stages::Step::Wannier.directory(cfg) {
-        ensure!(archived_wannier_matches(&task, history)?,
-            "input_conflict: 失败 Wannier 归档与原任务身份不一致，保留活动记录");
-        retire_archived_wannier(cfg, &task, history)?;
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod archived_wannier_tests {
-    use super::*;
-    struct Fixture { cfg: Config, history: PathBuf }
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            if !std::thread::panicking() { let _ = fs::remove_dir_all(&self.cfg.work_dir); }
-        }
-    }
-    impl Fixture {
-        fn new() -> Self {
-            let mut cfg: Config = toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
-            cfg.work_dir = std::env::temp_dir().join(format!("archived-wannier-{}", store::token()));
-            cfg.layout = Some("numbered".into());
-            let work = super::super::stages::Step::Wannier.directory(&cfg);
-            fs::create_dir_all(&work).unwrap();
-            fs::write(work.join("epw_wannier.in"), "old input\n").unwrap();
-            fs::write(work.join("epw_wannier.sh"), "#!/bin/sh\n").unwrap();
-            fs::write(work.join("epw.out"), "old output\n").unwrap();
-            let source = cfg.work_dir.join("source.txt");
-            fs::write(&source, "frozen source\n").unwrap();
-            let log = Identity::capture(&work.join("epw.out")).unwrap();
-            let task = Task {
-                schema_version: 3, group: None, id: "old-task".into(), key: "old-key".into(),
-                generation: "old-generation".into(), directory: work.clone(), command: vec!["stub".into()],
-                stem: "epw".into(), script: Identity::capture(&work.join("epw_wannier.sh")).unwrap(),
-                inputs: vec![Identity::capture(&work.join("epw_wannier.in")).unwrap()],
-                sources: vec![Identity::capture(&source).unwrap()], state: "failed".into(),
-                job: None, reservation: None, attached: false, exit_status: Some(0), duration_secs: 1.,
-                stdout: Some(log.clone()), stderr: Some(log),
-            };
-            persist(&cfg, &task).unwrap();
-            let history = cfg.work_dir.join("epw-state/history/wannier-old");
-            fs::create_dir_all(history.join("calculation")).unwrap();
-            for name in ["epw_wannier.in", "epw_wannier.sh", "epw.out"] {
-                fs::rename(work.join(name), history.join("calculation").join(name)).unwrap();
-            }
-            store::write(&cfg.work_dir.join("epw-state/native-progress/wannier.json"),
-                &serde_json::json!({"key":"new-key","generation":"new-generation","state":"failed"})).unwrap();
-            Self { cfg, history }
-        }
-    }
-    #[test]
-    fn explicit_resume_preserves_verified_archived_record_and_is_idempotent() {
-        let f = Fixture::new();
-        let original = fs::read(active(&f.cfg)).unwrap();
-        assert!(reconcile(&f.cfg, false).is_err());
-        assert_eq!(fs::read(active(&f.cfg)).unwrap(), original);
-        reconcile(&f.cfg, true).unwrap();
-        assert!(!active(&f.cfg).exists());
-        assert_eq!(fs::read(f.history.join("native-active-retired.json")).unwrap(), original);
-        let binding: serde_json::Value = store::read(&f.history.join("native-archive-binding.json")).unwrap();
-        assert_eq!(binding["record_sha256"], store::hash_bytes(&original));
-        reconcile(&f.cfg, true).unwrap();
-        assert!(!super::super::stages::Step::Wannier.directory(&f.cfg).join("epw_wannier.in").exists());
-    }
-    #[test]
-    fn damaged_ambiguous_or_unproven_archives_never_retire_active_record() {
-        for case in ["input", "script", "output", "source", "missing", "duplicate", "progress", "same-generation", "running", "unknown", "exit", "current-input"] {
-            let f = Fixture::new();
-            let progress = f.cfg.work_dir.join("epw-state/native-progress/wannier.json");
-            match case {
-                "input" => fs::write(f.history.join("calculation/epw_wannier.in"), "bad").unwrap(),
-                "script" => fs::write(f.history.join("calculation/epw_wannier.sh"), "bad").unwrap(),
-                "output" => fs::write(f.history.join("calculation/epw.out"), "bad").unwrap(),
-                "source" => fs::write(f.cfg.work_dir.join("source.txt"), "bad").unwrap(),
-                "missing" => fs::remove_file(f.history.join("calculation/epw_wannier.in")).unwrap(),
-                "duplicate" => {
-                    let other = f.cfg.work_dir.join("epw-state/history/wannier-duplicate/calculation");
-                    fs::create_dir_all(&other).unwrap();
-                    for name in ["epw_wannier.in", "epw_wannier.sh", "epw.out"] {
-                        fs::copy(f.history.join("calculation").join(name), other.join(name)).unwrap();
-                    }
-                }
-                "progress" => fs::remove_file(&progress).unwrap(),
-                "same-generation" | "running" => store::write(&progress, &serde_json::json!({
-                    "key":"new-key","generation":if case == "same-generation" {"old-generation"} else {"new-generation"},
-                    "state":if case == "running" {"running"} else {"failed"}
-                })).unwrap(),
-                "unknown" | "exit" => {
-                    let mut task = active_task(&f.cfg).unwrap().unwrap();
-                    if case == "unknown" { task.state = "unknown".into(); } else { task.exit_status = None; }
-                    persist(&f.cfg, &task).unwrap();
-                }
-                "current-input" => fs::write(super::super::stages::Step::Wannier.directory(&f.cfg).join("epw_wannier.in"), "unexpected new input").unwrap(),
-                _ => unreachable!(),
-            }
-            let before = fs::read(active(&f.cfg)).unwrap();
-            assert!(reconcile(&f.cfg, true).is_err(), "case={case}");
-            assert_eq!(fs::read(active(&f.cfg)).unwrap(), before, "case={case}");
-            assert!(!f.history.join("native-active-retired.json").exists(), "case={case}");
-        }
-    }
-}
-pub fn reconcile_task(cfg: &Config, resume: bool, task: &mut Task) -> Result<()> {
-    if task.state != "validated" {
-        verify(task)?;
-    }
-    if matches!(task.state.as_str(), "unknown" | "submission_pending") {
-        anyhow::bail!("scheduler_unknown: 提交回执未知，保留预算预留，禁止重提");
-    }
-    if task.state == "submitted" {
-        let job = task.job.context("scheduler_unknown: 缺少作业号")?;
-        if !task.attached {
-            budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
-                budget::attach_once(
-                    l,
-                    task.reservation
-                        .as_deref()
-                        .context("data_invalid: 缺预算预留")?,
-                    job,
-                )
-            })?;
-            task.attached = true;
-            persist(cfg, task)?;
-        }
-        let a = slurm::accounting(job)?;
-        ensure!(
-            a.terminal,
-            "scheduler_unknown: 原生任务 {job} 仍为 {}，禁止重复提交",
-            a.state
+pub fn reconcile_task(cfg: &Config, _resume: bool, task: &mut Task) -> Result<()> {
+    if matches!(task.state.as_str(), "unknown" | "submission_pending") && task.job.is_none() {
+        anyhow::bail!(
+            "scheduler_unknown: {} 提交回执未知；请核对 Slurm 后恢复",
+            task.directory.display()
         );
-        // allocation 行的 ExitCode 必须明确为 code:signal；不能从 COMPLETED 猜测退出码。
+    }
+    if matches!(
+        task.state.as_str(),
+        "submitted" | "submission_pending" | "unknown" | "running"
+    ) {
+        let job = task.job.context("scheduler_unknown: 缺少 Slurm 作业号")?;
+        let accounting = slurm::accounting(job)?;
+        ensure!(
+            accounting.terminal,
+            "scheduler_unknown: 原生任务 {job} 仍为 {}，禁止重复提交",
+            accounting.state
+        );
         let out = Command::new("sacct")
             .args([
                 "--noheader",
@@ -542,7 +540,7 @@ pub fn reconcile_task(cfg: &Config, resume: bool, task: &mut Task) -> Result<()>
             .output()?;
         ensure!(
             out.status.success(),
-            "scheduler_unknown: 无法查询原生退出码"
+            "scheduler_unknown: 无法查询任务 {job} 退出码"
         );
         let text = String::from_utf8(out.stdout)?;
         let rows: Vec<_> = text
@@ -550,225 +548,247 @@ pub fn reconcile_task(cfg: &Config, resume: bool, task: &mut Task) -> Result<()>
             .filter_map(|l| l.trim().split_once('|'))
             .filter(|(id, _)| *id == job.to_string())
             .collect();
-        ensure!(rows.len() == 1, "scheduler_unknown: 原生退出码缺失或不唯一");
-        let code = rows[0]
+        ensure!(
+            rows.len() == 1,
+            "scheduler_unknown: 任务 {job} 退出码缺失或不唯一"
+        );
+        let (code, signal) = rows[0]
             .1
             .trim_end_matches('|')
             .split_once(':')
             .context("scheduler_unknown: ExitCode 格式无效")?;
-        let exit: i32 = code.0.parse()?;
-        let signal: u32 = code.1.parse()?;
-        ensure!(exit >= 0, "scheduler_unknown: ExitCode 为负");
-        task.exit_status = Some(if signal == 0 {
-            exit
-        } else {
-            128 + signal as i32
-        });
-        task.duration_secs = a.node_seconds as f64 / a.nodes.max(1) as f64;
-        budget::with_ledger(
-            &cfg.budget.ledger,
-            &cfg.budget.campaign_id,
-            budget::reconcile,
-        )?;
-        task.state = if a.state == "COMPLETED" && task.exit_status == Some(0) {
+        let code: i32 = code.parse()?;
+        let signal: i32 = signal.parse()?;
+        ensure!(code >= 0 && signal >= 0, "scheduler_unknown: ExitCode 为负");
+        task.exit_status = Some(if signal == 0 { code } else { 128 + signal });
+        task.duration_secs = accounting.node_seconds as f64 / accounting.nodes.max(1) as f64;
+        if let Some(token) = &task.reservation {
+            budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
+                // 另一方法的结算可能已同时结算本任务；不能重新消费已撤下的 token。
+                if l.has_unsettled_token(token) {
+                    budget::attach_once(l, token, job)?;
+                }
+                budget::reconcile(l)
+            })?;
+            task.attached = true;
+        }
+        task.state = if accounting.state == "COMPLETED" && task.exit_status == Some(0) {
             "awaiting_validation"
         } else {
             "failed"
         }
         .into();
-        let (stdout, stderr) = log_paths(task)?;
-        // 方法作业可能在打开输出前被取消；保留空日志证明该批没有完成点。
-        if task.group.is_some() && task.state == "failed" {
-            for path in [&stdout, &stderr] {
-                if !path.exists() { store::atomic_bytes(path, b"")?; }
-            }
+        let output = task.directory.join(format!("{}.out", task.stem));
+        if output.is_file() {
+            capture_logs(task)?;
+        } else {
+            task.state = "failed".into();
         }
-        capture_logs(task)?;
-        if task.schema_version == 1 {
-            for (source, suffix) in [(&stdout, "out"), (&stderr, "err")] {
-                fs::copy(
-                    source,
-                    task.directory.join(format!("{}.{suffix}", task.stem)),
-                )?;
-            }
+        if task.directory.is_dir() {
+            store::atomic_bytes(
+                &task.directory.join(format!("{}.exitcode", task.stem)),
+                task.exit_status.unwrap().to_string().as_bytes(),
+            )?;
         }
-        store::atomic_bytes(
-            &task.directory.join(format!("{}.exitcode", task.stem)),
-            task.exit_status.unwrap().to_string().as_bytes(),
-        )?;
         persist(cfg, task)?;
     }
-    if task.state == "running" && task.job.is_none() {
-        // 父分配已由入口确认终态；进程可能在写失败回执前被超时／取消终止。
-        ensure!(resume, "execution_failed: 声子分配中断；确认终态后显式 --resume -s");
-        task.state = "failed".into();
-        persist(cfg, task)?;
-    }
-    ensure!(
-        task.state != "failed" || resume,
-        "execution_failed: 上一原生任务失败；修复后显式 --resume -s，保留旧证据"
-    );
     Ok(())
 }
-
-fn task_key(generation: &str, work: &Path, command: &[String], stem: &str) -> Result<String> {
-    Ok(store::hash_bytes(&serde_json::to_vec(&(
-        generation, work, command, stem,
-    ))?))
+fn task_key(generation: &str, work: &Path, _command: &[String], stem: &str) -> Result<String> {
+    Ok(format!("{generation}:{}:{stem}", work.display()))
 }
-/// 在重新进入归集函数时禁止覆盖这个原生调用的准备现场。
 pub fn continuing(work: &Path, stem: &str) -> Result<bool> {
     SESSION.with(|s| {
-        let session = s.borrow();
-        let Some(s) = session.as_ref() else {
+        let s = s.borrow();
+        let Some(s) = s.as_ref() else {
             return Ok(false);
         };
-        if !directory(&s.cfg).exists() {
+        Ok(tasks(&s.cfg)?.iter().any(|t| {
+            t.generation == s.generation
+                && t.directory == work
+                && t.stem == stem
+                && t.state != "failed"
+                && (!matches!(t.state.as_str(), "validated" | "awaiting_validation")
+                    || (t.inputs.iter().all(|i| i.path.is_file())
+                        && work.join(format!("{stem}.out")).is_file()))
+        }))
+    })
+}
+pub fn continuing_directory(work: &Path) -> Result<bool> {
+    SESSION.with(|s| {
+        let s = s.borrow();
+        let Some(s) = s.as_ref() else {
             return Ok(false);
-        }
-        for entry in fs::read_dir(directory(&s.cfg))? {
-            let path = entry?.path();
-            if path.extension().is_some_and(|e| e == "json") {
-                let task: Task = store::read(&path)?;
-                if task.generation == s.generation
-                    && task.directory == work
-                    && task.stem == stem
-                    && task.state != "failed"
-                {
-                    verify(&task)?;
-                    return Ok(true);
-                }
-            }
-        }
-        Ok(false)
+        };
+        Ok(tasks(&s.cfg)?.iter().any(|t| {
+            t.generation == s.generation
+                && t.directory == work
+                && t.state != "failed"
+                && t.inputs.iter().all(|i| i.path.is_file())
+        }))
     })
 }
 pub fn failed(work: &Path) -> Result<bool> {
     SESSION.with(|s| {
-        let session = s.borrow();
-        let Some(s) = session.as_ref() else {
+        let s = s.borrow();
+        let Some(s) = s.as_ref() else {
             return Ok(false);
         };
-        Ok(active_task(&s.cfg)?.is_some_and(|t| {
-            t.generation == s.generation && t.directory == work && t.state == "failed"
-        }))
+        Ok(tasks(&s.cfg)?
+            .iter()
+            .any(|t| t.generation == s.generation && t.directory == work && t.state == "failed"))
     })
 }
 pub fn retire(work: &Path) -> Result<()> {
     SESSION.with(|s| {
-        let session = s.borrow();
-        let Some(s) = session.as_ref() else {
-            return Ok(());
-        };
-        if !directory(&s.cfg).exists() {
-            return Ok(());
+        let s = s.borrow();
+        let Some(s) = s.as_ref() else { return Ok(()) };
+        for t in tasks(&s.cfg)?
+            .into_iter()
+            .filter(|t| t.directory.starts_with(work))
+        {
+            let step = task_step(&s.cfg, &t.directory)?;
+            let label = task_label(&s.cfg, &t);
+            super::readable_state::set_job(&s.cfg.work_dir, step, &label, None)?;
+            super::readable_state::update(&s.cfg.work_dir, step, |d| {
+                d.remove(&label);
+                Ok(())
+            })?;
         }
-        for entry in fs::read_dir(directory(&s.cfg))? {
-            let path = entry?.path();
-            if path.extension().is_some_and(|e| e == "json") {
-                let t: Task = store::read(&path)?;
-                if t.generation == s.generation && t.directory.starts_with(work) {
-                    fs::remove_file(path)?;
+        Ok(())
+    })
+}
+pub fn retire_stage(cfg: &Config, step: super::stages::Step) -> Result<()> {
+    for name in super::readable_state::jobs(&cfg.work_dir, step)?
+        .keys()
+        .filter(|name| name.as_str() != "阶段分配")
+    {
+        super::readable_state::set_job(&cfg.work_dir, step, name, None)?;
+    }
+    for t in tasks(cfg)?
+        .into_iter()
+        .filter(|t| t.directory.starts_with(step.directory(cfg)))
+    {
+        let label = task_label(cfg, &t);
+        super::readable_state::set_job(&cfg.work_dir, step, &label, None)?;
+        super::readable_state::update(&cfg.work_dir, step, |d| {
+            d.remove(&label);
+            Ok(())
+        })?;
+    }
+    Ok(())
+}
+fn validate_consumed() -> Result<()> {
+    let consumed = SESSION.with(|s| {
+        s.borrow_mut()
+            .as_mut()
+            .map(|s| (s.cfg.clone(), std::mem::take(&mut s.consumed)))
+    });
+    if let Some((cfg, consumed)) = consumed {
+        for (directory, stem) in consumed {
+            for mut t in tasks(&cfg)?
+                .into_iter()
+                .filter(|t| t.directory == directory && t.stem == stem)
+            {
+                if t.exit_status == Some(0) {
+                    t.state = "validated".into();
+                    persist(&cfg, &t)?;
                 }
             }
         }
-        Ok(())
-    })
+    }
+    Ok(())
 }
-fn validate_consumed() -> Result<()> {
-    SESSION.with(|s| {
-        let mut session = s.borrow_mut();
-        let Some(s) = session.as_mut() else {
-            return Ok(());
-        };
-        for path in s.consumed.drain(..) {
-            let mut task: Task = store::read(&path)?;
-            task.state = "validated".into();
-            // 不把已经准备的下一任务从 active 指针中覆盖掉。
-            store::write(&path, &task)?;
-            store::write(
-                &directory(&s.cfg)
-                    .join("history")
-                    .join(format!("{}.json", task.id)),
-                &task,
-            )?;
-            if active_task(&s.cfg)?.is_some_and(|a| a.id == task.id) {
-                store::write(&active(&s.cfg), &task)?;
-            }
-        }
-        Ok(())
-    })
-}
-
 pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionReport> {
     ensure!(!command.is_empty(), "configuration: 空原生命令");
     let (cfg, generation, submit, allocated) = SESSION.with(|s| {
         let s = s.borrow();
-        let s = s.as_ref().expect("原生上下文必须存在");
+        let s = s.as_ref().expect("原生上下文");
         (s.cfg.clone(), s.generation.clone(), s.submit, s.allocated)
     });
-    let key = task_key(&generation, work, command, stem)?;
-    let file = directory(&cfg).join(format!("{key}.json"));
-    let previous: Option<Task> = if file.exists() {
-        Some(store::read(&file)?)
-    } else {
-        None
-    };
-    if let Some(task) = &previous {
-        verify(task)?;
-        if matches!(task.state.as_str(), "awaiting_validation" | "validated") {
-            let stdout = task
-                .stdout
-                .as_ref()
-                .context("data_invalid: 无原生日志身份")?;
-            let stderr = task
-                .stderr
-                .as_ref()
-                .context("data_invalid: 无原生日志身份")?;
-            stdout.verify()?;
-            stderr.verify()?;
-            SESSION.with(|s| s.borrow_mut().as_mut().unwrap().consumed.push(file));
+    let previous = tasks(&cfg)?
+        .into_iter()
+        .find(|t| t.generation == generation && t.directory == work && t.stem == stem);
+    if let Some(t) = &previous {
+        ensure!(
+            t.state != "failed" || retry_enabled(),
+            "execution_failed: {} / {stem} 上次失败；修复后使用 --resume -s",
+            work.display()
+        );
+        if matches!(t.state.as_str(), "validated" | "awaiting_validation")
+            && t.exit_status == Some(0)
+            && t.directory.join(format!("{stem}.out")).is_file()
+        {
+            SESSION.with(|s| {
+                s.borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .consumed
+                    .push((work.into(), stem.into()))
+            });
+            let (stdout_path, stderr_path) = log_paths(t)?;
             return Ok(ExecutionReport {
-                exit_status: task.exit_status,
-                stdout_path: stdout.path.clone(),
-                stderr_path: stderr.path.clone(),
-                duration_secs: task.duration_secs,
+                exit_status: t.exit_status,
+                stdout_path,
+                stderr_path,
+                duration_secs: t.duration_secs,
             });
         }
         ensure!(
             !matches!(
-                task.state.as_str(),
-                "submitted" | "unknown" | "submission_pending"
+                t.state.as_str(),
+                "submitted" | "submission_pending" | "unknown" | "running"
             ),
-            "scheduler_unknown: 原生调用已有未完成提交"
+            "scheduler_unknown: {} / {stem} 已有活动或未知提交",
+            work.display()
         );
     }
     validate_consumed()?;
+    let key = task_key(&generation, work, command, stem)?;
     let mut task = match previous.filter(|t| t.state == "prepared") {
-        Some(task) => task,
+        Some(t) => t,
         None => prepare(&cfg, &generation, &key, command, work, stem)?,
     };
     if allocated {
-        // 运行相同的可读科学脚本；父尝试负责唯一分配和预算。
+        task.job = Some(
+            std::env::var("SLURM_JOB_ID")
+                .context("allocation: 分配内子任务缺 Slurm 作业号")?
+                .parse()?,
+        );
         task.state = "running".into();
         persist(&cfg, &task)?;
         let start = std::time::Instant::now();
         let status = Command::new("/bin/bash")
             .arg(&task.script.path)
             .current_dir(work)
-            .status()
-            .context("execution_failed: 无法执行声子子任务脚本")?;
+            .status()?;
         task.duration_secs = start.elapsed().as_secs_f64();
         task.exit_status = status.code();
-        capture_logs(&mut task)?;
-        store::atomic_bytes(&work.join(format!("{stem}.exitcode")), task.exit_status.unwrap_or(128).to_string().as_bytes())?;
-        task.state = if status.success() { "awaiting_validation" } else { "failed" }.into();
+        let capture = capture_logs(&mut task);
+        task.state = if status.success() && capture.is_ok() {
+            "awaiting_validation"
+        } else {
+            "failed"
+        }
+        .into();
+        store::atomic_bytes(
+            &work.join(format!("{stem}.exitcode")),
+            task.exit_status.unwrap_or(128).to_string().as_bytes(),
+        )?;
         persist(&cfg, &task)?;
-        SESSION.with(|s| s.borrow_mut().as_mut().unwrap().consumed.push(file));
+        capture?;
+        SESSION.with(|s| {
+            s.borrow_mut()
+                .as_mut()
+                .unwrap()
+                .consumed
+                .push((work.into(), stem.into()))
+        });
+        let (stdout_path, stderr_path) = log_paths(&task)?;
         return Ok(ExecutionReport {
             exit_status: task.exit_status,
-            stdout_path: task.stdout.unwrap().path,
-            stderr_path: task.stderr.unwrap().path,
+            stdout_path,
+            stderr_path,
             duration_secs: task.duration_secs,
         });
     }
@@ -776,27 +796,28 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
         submit_task(&cfg, &mut task)?;
     }
     println!(
-        "script: {}\ndirectory: {}\nworkflow_status: {}\nnext: {}",
+        "script: {}\ndirectory: {}\nworkflow_status: {}",
         task.script.path.display(),
         work.display(),
-        task.state,
-        if stem == "scf" {
-            "作业结束后执行 --stage scf -s（不带 --resume）归集；--resume -s 会重新计算"
-        } else {
-            "作业结束后再次执行同一公开命令 -s"
-        }
+        task.state
     );
     Err(Paused.into())
 }
 
 /// 两个独立方法与旧逐任务入口共用同一提交／预算边界。
 pub fn submit_task(cfg: &Config, task: &mut Task) -> Result<()> {
-    ensure!(task.state == "prepared", "scheduler_unknown: 任务已提交或提交状态未知");
+    ensure!(
+        task.state == "prepared",
+        "scheduler_unknown: 任务已提交或提交状态未知"
+    );
     verify(task)?;
     task.reservation = Some(budget::with_ledger(
         &cfg.budget.ledger,
         &cfg.budget.campaign_id,
-        |l| budget::reserve_workflow(l, &format!("0026:{}", task.id), &cfg.resources),
+        |l| {
+            budget::reconcile(l)?;
+            budget::reserve_workflow(l, &format!("native:{}", task.id), &cfg.resources)
+        },
     )?);
     task.state = "submission_pending".into();
     persist(cfg, task)?;
@@ -842,20 +863,60 @@ pub fn finish_group(cfg: &Config, task: &mut Task, complete: bool) -> Result<()>
 }
 
 /// 方法作业自己交回已退出的原生进程；分配仍运行，不能伪造调度器终态。
-pub fn allocated_group_exit(cfg:&Config,task:&mut Task,exit:i32)->Result<()> {
+pub fn allocated_group_exit(cfg: &Config, task: &mut Task, exit: i32) -> Result<()> {
     verify(task)?;
-    let job:u64=std::env::var("SLURM_JOB_ID").context("allocation: 方法收尾需要作业分配")?.parse()?;
-    ensure!(task.group.is_some() && task.job.is_none_or(|j|j==job),"input_conflict: 方法收尾作业身份不同");
-    task.job=Some(job);
-    task.exit_status=Some(exit);
+    let job: u64 = std::env::var("SLURM_JOB_ID")
+        .context("allocation: 方法收尾需要作业分配")?
+        .parse()?;
+    ensure!(
+        task.group.is_some() && task.job.is_none_or(|j| j == job),
+        "input_conflict: 方法收尾作业身份不同"
+    );
+    task.job = Some(job);
+    task.exit_status = Some(exit);
     capture_logs(task)?;
-    task.state=if exit==0 {"awaiting_validation"}else{"failed"}.into();
-    store::atomic_bytes(&task.directory.join("epw.exitcode"),exit.to_string().as_bytes())?;
-    persist(cfg,task)
+    task.state = if exit == 0 {
+        "awaiting_validation"
+    } else {
+        "failed"
+    }
+    .into();
+    store::atomic_bytes(
+        &task.directory.join("epw.exitcode"),
+        exit.to_string().as_bytes(),
+    )?;
+    persist(cfg, task)
 }
 
-pub fn prepare_group(cfg: &Config, generation: &str, group: &str, command: &[String], work: &Path) -> Result<Task> {
-    ensure!(matches!(group, "iso" | "aniso"), "configuration: 无效方法分组");
+/// 手动 -r 已处在一个分配中，方法脚本在本分配顺序执行，不额外提交。
+pub fn execute_group(cfg: &Config, task: &mut Task) -> Result<()> {
+    ensure!(
+        task.state == "prepared",
+        "scheduler_unknown: 方法尚未处于可执行状态"
+    );
+    task.job = Some(std::env::var("SLURM_JOB_ID")?.parse()?);
+    task.state = "running".into();
+    persist(cfg, task)?;
+    let start = std::time::Instant::now();
+    let status = Command::new("/bin/bash")
+        .arg(&task.script.path)
+        .current_dir(&task.directory)
+        .status()?;
+    task.duration_secs = start.elapsed().as_secs_f64();
+    allocated_group_exit(cfg, task, status.code().unwrap_or(128))
+}
+
+pub fn prepare_group(
+    cfg: &Config,
+    generation: &str,
+    group: &str,
+    command: &[String],
+    work: &Path,
+) -> Result<Task> {
+    ensure!(
+        matches!(group, "iso" | "aniso"),
+        "configuration: 无效方法分组"
+    );
     let key = task_key(generation, work, command, "epw")?;
     prepare_mode(cfg, generation, &key, command, work, "epw", Some(group))
 }
@@ -895,8 +956,13 @@ fn prepare(
     prepare_mode(cfg, generation, key, command, work, stem, None)
 }
 fn prepare_mode(
-    cfg: &Config, generation: &str, key: &str, command: &[String], work: &Path,
-    stem: &str, group: Option<&str>,
+    cfg: &Config,
+    generation: &str,
+    _key: &str,
+    command: &[String],
+    work: &Path,
+    stem: &str,
+    group: Option<&str>,
 ) -> Result<Task> {
     // 历史任务键／argv 保持原样，仅新脚本使用运行环境中的启动器。
     let invocation = qf_runner::plain_scientific_argv(command);
@@ -997,8 +1063,8 @@ fn prepare_mode(
     let task = Task {
         schema_version: 3,
         group: group.map(str::to_owned),
+        key: id.clone(),
         id,
-        key: key.into(),
         generation: generation.into(),
         directory: work.into(),
         command: invocation,

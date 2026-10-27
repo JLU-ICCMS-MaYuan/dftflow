@@ -76,29 +76,56 @@ pub fn run_registered(
 
 /// 公开第一阶段直接复用 qeflow；严格均匀 NSCF 与清单仍由 EPW 拥有。
 pub fn run_qeflow_registered(
-    binding: &snapshot::RunBinding, cfg: &config::Config, qe: &QeSettings,
-    backend: Backend, launcher: &[String], work: &Path,
+    binding: &snapshot::RunBinding,
+    cfg: &config::Config,
+    qe: &QeSettings,
+    backend: Backend,
+    launcher: &[String],
+    work: &Path,
 ) -> Result<QeManifest> {
-    ensure!(!crate::foundation::layout::path(&work, "qe-data/manifest.json").exists(), "input_conflict: QE 数据已发布，请复用完成记录");
+    ensure!(
+        !crate::foundation::layout::path(&work, "qe-data/manifest.json").exists(),
+        "input_conflict: QE 数据已发布，请复用完成记录"
+    );
     binding.verify()?;
     for role in ["q2r", "matdyn"] {
-        let id = binding.programs.get(role).with_context(|| format!("environment: 缺少固定的 {role}.x；请用完整 QE 目录建立新运行"))?;
+        let id = binding.programs.get(role).with_context(|| {
+            format!("environment: 缺少固定的 {role}.x；请用完整 QE 目录建立新运行")
+        })?;
         id.verify()?;
     }
-    let path = cfg.kpath.as_ref().context("required: 缺少 kpath 或 KPATH.in")?;
-    ensure!(binding.kpath.as_ref().is_some_and(|id| store::hash_file(path).ok().as_ref() == Some(&id.sha256)), "input_conflict: 路径未绑定或发生变化");
+    let path = cfg
+        .kpath
+        .as_ref()
+        .context("required: 缺少 kpath 或 KPATH.in")?;
+    ensure!(
+        binding
+            .kpath
+            .as_ref()
+            .is_some_and(|id| store::hash_file(path).ok().as_ref() == Some(&id.sha256)),
+        "input_conflict: 路径未绑定或发生变化"
+    );
     let (scf_res, qpoints, responses) = super::qeflow::run(cfg, qe, backend, launcher, work)?;
     // 失败的 NSCF 保存树不能与新尝试合并；保留原现场后重新从 SCF 快照启动。
     let nscf_dir = crate::foundation::layout::path(&work, "nscf");
-    if nscf_dir.exists() { std::fs::rename(&nscf_dir, work.join(format!("nscf-failed-{}", store::token())))?; }
+    if nscf_dir.exists() {
+        std::fs::rename(
+            &nscf_dir,
+            work.join(format!("nscf-failed-{}", store::token())),
+        )?;
+    }
     let states = nscf::run_nscf(qe, work, launcher, backend)?;
     publish(binding, qe, work, scf_res, states, qpoints, responses)
 }
 
 pub(crate) fn publish(
-    binding: &snapshot::RunBinding, qe: &QeSettings, work: &Path,
-    scf_res: scf::ScfResult, states: super::manifest::ElectronicStates,
-    qpoints: Vec<super::manifest::QPoint>, responses: Vec<super::manifest::PhResponse>,
+    binding: &snapshot::RunBinding,
+    qe: &QeSettings,
+    work: &Path,
+    scf_res: scf::ScfResult,
+    states: super::manifest::ElectronicStates,
+    qpoints: Vec<super::manifest::QPoint>,
+    responses: Vec<super::manifest::PhResponse>,
 ) -> Result<QeManifest> {
     let fingerprints = Fingerprints {
         structure_sha256: binding.structure.sha256.clone(),
@@ -113,13 +140,27 @@ pub(crate) fn publish(
             .map(|(k, v)| (k.clone(), v.sha256.clone()))
             .collect(),
     };
-    publish_data(&binding.run_id, fingerprints, qe, work, scf_res, states, qpoints, responses)
+    publish_data(
+        &binding.run_id,
+        fingerprints,
+        qe,
+        work,
+        scf_res,
+        states,
+        qpoints,
+        responses,
+    )
 }
 
 pub(crate) fn publish_data(
-    run_id: &str, fingerprints: Fingerprints, qe: &QeSettings, work: &Path,
-    scf_res: scf::ScfResult, states: super::manifest::ElectronicStates,
-    qpoints: Vec<super::manifest::QPoint>, responses: Vec<super::manifest::PhResponse>,
+    run_id: &str,
+    fingerprints: Fingerprints,
+    qe: &QeSettings,
+    work: &Path,
+    scf_res: scf::ScfResult,
+    states: super::manifest::ElectronicStates,
+    qpoints: Vec<super::manifest::QPoint>,
+    responses: Vec<super::manifest::PhResponse>,
 ) -> Result<QeManifest> {
     // 5. 响应数据完整归集。
     let collected = collect_ph::collect(
@@ -185,12 +226,28 @@ pub(crate) fn publish_data(
     artifacts.push(super::manifest::nscf_input_artifact(work)?);
     let shared = crate::foundation::layout::path(&work, "qe-phonon");
     if shared.exists() && !crate::foundation::layout::enabled(work) {
-        for name in ["shared-source-identities.json", "shared-request.json", "scf-checkpoint.json", "input.qeflow.toml", "input-init.toml", "scf.in", "ph.in", "q2r.in", "matdyn_phband.in", "matdyn_phdos.in", "save/manifest.json"] {
+        for name in [
+            "shared-source-identities.json",
+            "shared-request.json",
+            "scf-checkpoint.json",
+            "input.qeflow.toml",
+            "input-init.toml",
+            "scf.in",
+            "ph.in",
+            "q2r.in",
+            "matdyn_phband.in",
+            "matdyn_phdos.in",
+            "save/manifest.json",
+        ] {
             let path = shared.join(name);
             artifacts.push(super::manifest::Artifact {
-                role: format!("qeflow_{name}"), relative_path: path.strip_prefix(work)?.into(),
-                byte_size: std::fs::metadata(&path)?.len(), sha256: store::hash_file(&path)?,
-                producer_stage: "qeflow".into(), input_digest: String::new(), format_version: "1".into(),
+                role: format!("qeflow_{name}"),
+                relative_path: path.strip_prefix(work)?.into(),
+                byte_size: std::fs::metadata(&path)?.len(),
+                sha256: store::hash_file(&path)?,
+                producer_stage: "qeflow".into(),
+                input_digest: String::new(),
+                format_version: "1".into(),
             });
         }
     }
@@ -238,7 +295,9 @@ pub(crate) fn publish_data(
     if manifest.validation.all_passed() {
         manifest.verify()?;
         let out = crate::foundation::layout::path(&work, "qe-data").join("manifest.json");
-        store::write(&out, &manifest)?;
+        if !crate::foundation::layout::enabled(work) {
+            store::write(&out, &manifest)?;
+        }
     } else {
         for c in &manifest.validation.checks {
             eprintln!("qe-data validation failed: {} = {}", c.name, c.passed);
@@ -283,5 +342,8 @@ pub fn record_acceptance(work: &Path, record: &qe_acceptance::AcceptanceRecord) 
         record.require_evidence().is_ok(),
         "data_invalid: 验收记录缺少真实证据，拒绝落盘冒充"
     );
-    qe_acceptance::write(&crate::foundation::layout::path(&work, "qe-data").join("acceptance.json"), record)
+    qe_acceptance::write(
+        &crate::foundation::layout::path(&work, "qe-data").join("acceptance.json"),
+        record,
+    )
 }

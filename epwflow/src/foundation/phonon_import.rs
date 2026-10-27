@@ -2,9 +2,8 @@
 use super::{
     config::Config,
     layout, native_config,
-    stages::{self, Completion, Step},
-    store::{self, Identity},
-    workspace,
+    stages::{self, Step},
+    store, workspace,
 };
 use crate::qe_data::{
     self,
@@ -14,7 +13,7 @@ use crate::qe_data::{
 };
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -33,44 +32,10 @@ pub fn binding(cfg: &Config) -> PathBuf {
     cfg.work_dir.join("epw-state/imports/phonon-source.json")
 }
 pub fn bound(cfg: &Config) -> bool {
-    if binding(cfg).is_file()
-        || layout::path(&cfg.work_dir, "qe-data")
-            .join("external-source.json")
-            .is_file()
-    {
-        return true;
-    }
-    // 标记被删除也不能使历史导入退回 PH：从仍存的正式交付反查。
-    for path in [
-        layout::path(&cfg.work_dir, "qe-data/manifest.json"),
-        stages::receipt(&cfg.work_dir, Step::Phonon),
-    ] {
-        if path.exists() {
-            let value = match fs::read(&path)
-                .ok()
-                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-            {
-                Some(v) => v,
-                None => return true, // 损坏的交付必须拒绝，不能触发科学重算。
-            };
-            if value["artifacts"]
-                .as_array()
-                .is_some_and(|a| a.iter().any(|a| a["role"] == "external_source"))
-                || value["outputs"].as_array().is_some_and(|a| {
-                    a.iter().any(|a| {
-                        a["path"].as_str().is_some_and(|p| {
-                            Path::new(p)
-                                .file_name()
-                                .is_some_and(|n| n == "external-source.json")
-                        })
-                    })
-                })
-            {
-                return true;
-            }
-        }
-    }
-    false
+    binding(cfg).is_file()
+        || super::readable_state::read(&cfg.work_dir, Step::Phonon)
+            .ok()
+            .is_some_and(|d| d.get("工作区", "外部声子来源").is_some())
 }
 
 fn load_config(path: &Path) -> Result<(Config, bool)> {
@@ -86,204 +51,58 @@ fn load_config(path: &Path) -> Result<(Config, bool)> {
         Ok((Config::load(path)?, false))
     }
 }
-fn without_explanations(mut v: Value) -> Value {
-    if let Some(w) = v
-        .get_mut("native")
-        .and_then(|n| n.get_mut("workflow"))
-        .and_then(Value::as_object_mut)
-    {
-        w.remove("derived");
+fn upgrade(path: &Path, cfg: &Config, _nested: bool, check: bool) -> Result<Config> {
+    if !check {
+        let version = super::readable_state::backup_config(path)?;
+        super::readable_state::register_config(cfg, path, &version)?;
     }
-    v
-}
-
-#[derive(Serialize, Deserialize)]
-struct Rewrite {
-    path: PathBuf,
-    before: String,
-    after: String,
-}
-#[derive(Serialize, Deserialize)]
-struct Migration {
-    complete: bool,
-    config: String,
-    writes: Vec<Rewrite>,
-}
-fn rewrite(path: &Path, after: String) -> Result<Rewrite> {
-    Ok(Rewrite {
-        path: fs::canonicalize(path)?,
-        before: fs::read_to_string(path)?,
-        after,
-    })
-}
-fn finish_migration(journal: &Path, plan: &mut Migration, cfg: &Config) -> Result<()> {
-    workspace::check_active(cfg, None)?;
-    super::native_jobs::check_groups(cfg)?;
-    for w in &plan.writes {
-        let actual = fs::read_to_string(&w.path)?;
-        ensure!(
-            actual == w.before || actual == w.after,
-            "input_conflict: 配置接续事务期间文件被修改 {}",
-            w.path.display()
-        );
-    }
-    for s in [Step::Scf, Step::Nscf] {
-        let w = plan
-            .writes
-            .iter()
-            .find(|w| w.path == stages::receipt(&cfg.work_dir, s))
-            .context("data_invalid: 接续事务缺回执")?;
-        let c: Completion = serde_json::from_str(&w.after)?;
-        c.verify()?;
-        ensure!(
-            c.scientific_key == stages::scientific_key(cfg, s)?,
-            "input_conflict: 事务绑定的科学来源已变化"
-        );
-        c.provenance.context("data_invalid: 接续缺追溯")?.verify()?;
-    }
-    for w in &plan.writes {
-        store::atomic_bytes(&w.path, w.after.as_bytes())?;
-    }
-    plan.complete = true;
-    store::write(journal, plan)
-}
-
-/// 先核验旧绑定，再创建新绑定。原记录保存在独立事务目录，科学文件不改写。
-fn upgrade(path: &Path, cfg: &Config, nested: bool, check: bool) -> Result<Config> {
-    let journal = cfg.work_dir.join("epw-state/imports/config-upgrade.json");
-    if journal.is_file() {
-        let mut plan: Migration = store::read(&journal)?;
-        if !plan.complete {
-            ensure!(
-                !check,
-                "required: 配置接续事务未完成；请使用同一导入命令恢复，--check 不推进事务"
-            );
-            let mut fixed: Config = toml::from_str(&plan.config)?;
-            fixed.validate()?;
-            fixed.resolve(fs::canonicalize(path)?.parent().unwrap())?;
-            finish_migration(&journal, &mut plan, &fixed)?;
-            return Ok(fixed);
-        }
-    }
-    let text = toml::to_string_pretty(cfg)?;
-    let mut next: Config = toml::from_str(&text)?;
-    next.validate()?;
-    next.resolve(&fs::canonicalize(path)?.parent().unwrap())?;
-    if [Step::Scf, Step::Nscf]
-        .into_iter()
-        .all(|s| stages::reusable(&next, s).unwrap_or(false))
-        && !nested
-    {
-        return Ok(next);
-    }
-    let old_path = cfg.work_dir.join("epw-state/current-config.toml");
-    let (previous, _) =
-        load_config(&old_path).context("input_conflict: 配置升级缺少原始 current-config.toml")?;
-    for step in [Step::Scf, Step::Nscf] {
-        ensure!(
-            stages::reusable(&previous, step)? || stages::reusable(&next, step)?,
-            "input_conflict: 原 {} 完成回执/保存树无法验证，禁止重绑定或重算",
-            step.name()
-        );
-        ensure!(
-            without_explanations(stages::parameters(&previous, step)?)
-                == without_explanations(stages::parameters(&next, step)?),
-            "input_conflict: {} 科学参数发生变化，禁止借格式升级复用",
-            step.name()
-        );
-        let input = step
-            .directory(&previous)
-            .join(format!("{}.in", step.name()));
-        let c: Completion = store::read(&stages::receipt(&previous.work_dir, step))?;
-        ensure!(
-            c.outputs.iter().any(|id| id.path == input),
-            "data_invalid: {} 回执未绑定实际输入",
-            step.name()
-        );
-    }
-    qe_data::nscf::verified_states(&next, &next.work_dir)?;
-    save::verify_snapshot(&next.work_dir)?;
-    if check {
-        println!("configuration_upgrade: 已核验，可受控接续（只读，未改配置或回执）");
-        return Ok(next);
-    }
-    workspace::check_active(&next, None)?;
-    super::native_jobs::check_groups(&next)?;
-    let history = next
-        .work_dir
-        .join("epw-state/history")
-        .join(format!("flat-import-{}", store::token()));
-    fs::create_dir_all(&history)?;
-    fs::copy(path, history.join("original-config.toml"))?;
-    fs::copy(&old_path, history.join("current-config.toml"))?;
-    let report = history.join("migration.json");
-    store::write(
-        &report,
-        &json!({"schema_version":1,"reason":"显式外部声子导入；仅配置表示与派生说明变化","config":Identity::capture(path)?,"previous":Identity::capture(&old_path)?,"checked":["old_completion","actual_inputs","xml","full_save_trees","unchanged_scf_nscf_parameters"],"new_config_sha256":store::hash_bytes(text.as_bytes())}),
-    )?;
-    let mut plan = Migration {
-        complete: false,
-        config: text.clone(),
-        writes: vec![],
-    };
-    let scf: Completion = store::read(&stages::receipt(&next.work_dir, Step::Scf))?;
-    for step in [Step::Scf, Step::Nscf] {
-        let receipt = stages::receipt(&next.work_dir, step);
-        fs::copy(
-            &receipt,
-            history.join(format!("{}.completion.json", step.name())),
-        )?;
-        let mut c: Completion = store::read(&receipt)?;
-        c.scientific_key = stages::scientific_key(&next, step)?;
-        c.upstream = if step == Step::Scf {
-            BTreeMap::new()
-        } else {
-            [("scf".into(), scf.output_key()?)].into()
-        };
-        c.provenance = Some(Identity::capture(&report)?);
-        c.verify()?;
-        plan.writes
-            .push(rewrite(&receipt, serde_json::to_string_pretty(&c)? + "\n")?);
-        for leaf in [
-            format!("requests/{}.json", step.name()),
-            format!("native-progress/{}.json", step.name()),
-        ] {
-            let p = next.work_dir.join("epw-state").join(&leaf);
-            if p.is_file() {
-                fs::copy(&p, history.join(leaf.replace('/', "-")))?;
-                let mut v: Value = store::read(&p)?;
-                if v.is_string() {
-                    v = json!(c.scientific_key);
-                } else {
-                    v["key"] = json!(c.scientific_key);
-                }
-                plan.writes
-                    .push(rewrite(&p, serde_json::to_string_pretty(&v)? + "\n")?);
-            }
-        }
-    }
-    plan.writes.push(rewrite(path, text.clone())?);
-    plan.writes.push(rewrite(&old_path, text)?);
-    store::write(&journal, &plan)?;
-    finish_migration(&journal, &mut plan, &next)?;
-    println!(
-        "configuration_upgrade: {}；旧配置及回执 {}",
-        path.display(),
-        history.display()
-    );
-    Ok(next)
+    Ok(cfg.clone())
 }
 
 pub fn require_electronic(cfg: &Config) -> Result<()> {
     for s in [Step::Scf, Step::Nscf] {
-        ensure!(
-            stages::reusable(cfg, s)?,
-            "required: 导入需要已完成且可验证的 {}；本路径不会调用 PW/PH，请先单独解决电子数据",
-            s.name()
-        );
+        if !stages::reusable(cfg, s)? {
+            let differences = super::readable_state::computation_config(&cfg.work_dir, s)
+                .and_then(|p| super::readable_state::load_config(&p))
+                .and_then(|old| {
+                    Ok(parameter_differences(
+                        "",
+                        &stages::parameters(&old, s)?,
+                        &stages::parameters(cfg, s)?,
+                    ))
+                })
+                .unwrap_or_default();
+            anyhow::bail!("required: 导入需要已完成且可验证的 {}；本路径不会调用 PW/PH，请先单独解决电子数据。参数差异：{}",s.name(),if differences.is_empty(){"未发现配置差异，请检查科学输出".into()}else{differences.join("、")});
+        }
     }
     qe_data::nscf::verified_states(cfg, &cfg.work_dir)?;
     Ok(())
+}
+fn parameter_differences(
+    prefix: &str,
+    a: &serde_json::Value,
+    b: &serde_json::Value,
+) -> Vec<String> {
+    if a == b {
+        return vec![];
+    }
+    if let (Some(a), Some(b)) = (a.as_object(), b.as_object()) {
+        let keys = a
+            .keys()
+            .chain(b.keys())
+            .collect::<std::collections::BTreeSet<_>>();
+        keys.into_iter()
+            .flat_map(|key| {
+                parameter_differences(
+                    &format!("{prefix}.{key}"),
+                    a.get(key).unwrap_or(&serde_json::Value::Null),
+                    b.get(key).unwrap_or(&serde_json::Value::Null),
+                )
+            })
+            .collect()
+    } else {
+        vec![prefix.trim_start_matches('.').into()]
+    }
 }
 fn source(root: &Path) -> Result<Source> {
     let root = fs::canonicalize(root)?;
@@ -430,12 +249,12 @@ pub fn command(config: &Path, root: &Path, check: bool, submit: bool, resume: bo
         None
     } else {
         Some(store::Lock::acquire(
-            &old.work_dir.join("epw-state/import-control.json"),
+            &old.work_dir.join("epw-state/imports/control"),
         )?)
     };
     let cfg = upgrade(config, &old, nested, check)?;
     if check && !stages::reusable(&cfg, Step::Nscf)? {
-        require_electronic(&load_config(&cfg.work_dir.join("epw-state/current-config.toml"))?.0)?;
+        require_electronic(&crate::qe_data::direct::current(&cfg.work_dir)?)?;
     } else {
         require_electronic(&cfg)?;
     }
@@ -460,6 +279,10 @@ pub fn command(config: &Path, root: &Path, check: bool, submit: bool, resume: bo
     workspace::check_active(&cfg, None)?;
     super::native_jobs::check_groups(&cfg)?;
     store::write(&binding(&cfg), &s)?;
+    super::readable_state::update(&cfg.work_dir, Step::Phonon, |d| {
+        d.set("工作区", "外部声子来源", s.root.display());
+        Ok(())
+    })?;
     workspace::prepare_stage(config, Step::Phonon, resume, submit)
 }
 
@@ -664,7 +487,7 @@ pub(crate) fn collect(cfg: &Config, qe: &qe_data::qe_config::QeSettings) -> Resu
         s == source(&s.root)?,
         "input_conflict: 导入期间来源集合或内容改变"
     );
-    let report = layout::path(&cfg.work_dir, "qe-data").join("external-source.json");
+    let report = cfg.work_dir.join("epw-state/imports/external-source.json");
     store::write(
         &report,
         &json!({"schema_version":1,"source":s,"conversion":"QE text to io_dyn_mat XML; complete q stars; Fortran column-major complex matrices; AMU_RY to amu","not_checked":["historical SCF pseudopotentials","historical SCF cutoffs","historical smooth FFT dimensions absent in source"],"fft_check":"current SCF/NSCF dense and smooth grids agree; dvscf byte count agrees with current dense FFT and perturbation count"}),
@@ -679,7 +502,7 @@ pub(crate) fn collect(cfg: &Config, qe: &qe_data::qe_config::QeSettings) -> Resu
         format_version: "1".into(),
     });
     m.verify()?;
-    store::write(&layout::path(&cfg.work_dir, "qe-data/manifest.json"), &m)?;
+
     Ok(m)
 }
 
@@ -692,13 +515,14 @@ mod tests {
         let path = PathBuf::from(std::env::var("EPWFLOW_IMPORT_DIAGNOSTIC").unwrap());
         let cfg = Config::load_nested(&path).unwrap();
         for s in [Step::Scf, Step::Nscf] {
-            let c: Completion = store::read(&stages::receipt(&cfg.work_dir, s)).unwrap();
+            let c = super::super::readable_state::read(&cfg.work_dir, s).unwrap();
             eprintln!(
-                "{} receipt={} current={} reusable={:?} params={}",
+                "{} log={:?} current={} reusable={:?} validate={:?} params={}",
                 s.name(),
-                c.scientific_key,
+                c,
                 stages::scientific_key(&cfg, s).unwrap(),
                 stages::reusable(&cfg, s),
+                super::super::workspace_science::validate(&cfg, s),
                 stages::parameters(&cfg, s).unwrap()
             );
         }

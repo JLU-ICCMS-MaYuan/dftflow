@@ -191,7 +191,10 @@ pub fn verify(response: &PhResponse, q: &QPoint, geometry: &Geometry) -> Result<
         .context("data_invalid: PH 响应尺寸溢出")?;
     ensure!(
         fs::metadata(dv)?.len() == expected,
-        "data_invalid: PH dvscf 截断或 FFT／扰动数不符"
+        "data_invalid: PH dvscf 截断或 FFT／扰动数不符：{}（需要 {} 字节，实际 {} 字节）",
+        dv.display(),
+        expected,
+        fs::metadata(dv)?.len()
     );
     // 逐块检查复数 REAL(8)，不把任意等长文件当作有效响应。
     use std::io::Read;
@@ -201,7 +204,8 @@ pub fn verify(response: &PhResponse, q: &QPoint, geometry: &Geometry) -> Result<
         reader.read_exact(&mut bytes)?;
         ensure!(
             f64::from_le_bytes(bytes).is_finite(),
-            "data_invalid: PH dvscf 含非有限值"
+            "data_invalid: PH dvscf 含非有限值：{}",
+            dv.display()
         );
     }
     Ok(())

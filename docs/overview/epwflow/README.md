@@ -10,15 +10,15 @@
 
 当前编号工作区的原生提交使用 `<功能>.sh` 和 `slurm-<功能>.log`，标准输出与错误共用同一 Slurm 日志并覆盖写入。公开命令在计算目录调用 sbatch；脚本仅用 `#SBATCH --chdir=绝对目标目录`，无正文 cd 或重复命令行目录参数。手工可从其他目录通过绝对脚本路径提交，WorkDir 和相对日志均在目标目录；SLURM_SUBMIT_DIR 仍为原提交目录，直接 bash 的分配执行由调用方设置工作目录。新原生任务的科学命令使用 `> xxx.out 2>&1`，两路输出实时写入同一 `.out`，Slurm 日志设置保持原样。旧冻结脚本及历史执行路径保留原格式，见 [0046 验收](../../specs/0046-epw-submit-simplification/acceptance.md)。
 
-0053 原生任务版本 3 的 stdout／stderr 身份均绑定同一科学 `.out`；完成检查、电子回执、超导尝试和方法收尾不要求独立 `.err`。版本 1／2 仍按原分离日志契约严格读取，缺失旧 `.err` 不会自动降级；普通本地执行器保持原日志行为。非零退出、脚本／输入／科学日志篡改仍拒绝。历史脚本保持原字节，新任务生成新格式。2026-10-23 后续已更新仓库及默认安装的三个 EPW 程序，并在原 MgB₂ 工作区实际完成一次新格式 SCF，证据见 [0053 验收](../../specs/0053-epw-merged-program-output/acceptance.md)。
+当前原生程序使用合并科学 `.out`，不要求单独 `.err`。旧状态转换先检查作业终态，再检查科学结果，不要求已归档的旧输入仍存在。早期日志格式及 2026-10-23 的安装／真实 SCF 证据见 [0053 验收](../../specs/0053-epw-merged-program-output/acceptance.md)；这些历史证据不表示 0064 已安装。
 
-显式 `epw_phonon -c "epwinput.toml" --stage scf --resume -s` 每次强制启动新的 SCF 批次，即使已有成功结果；无需手动删除 `1.qe-scf` 或回执。公共阶段归档保留编号工作目录本身的 inode，只把旧脚本、结果和快照等内容移入 `epw-state/history/`，再在原目录生成新输入；已进入目录的终端无需重新 cd。当前 Slurm 日志留在原位，历史入口与原文件保持硬链接，打开的句柄继续写入；归档失败停止新计算。运行中或提交未知时仍拒绝重复提交。作业结束后用不带 `--resume` 的 `--stage scf -s` 归集和复用；其他目标的 SCF 依赖及恢复规则不变。依据见 [0056](../../specs/0056-epw-stable-workdir/acceptance.md)。
+显式 `epw_phonon -c "epwinput.toml" --stage scf --resume -s` 强制覆盖已退出的 SCF 并启动新批次。保留编号目录 inode、脚本和打开的 Slurm 日志，不再保存旧计算历史。活动或提交未知时拒绝覆盖；普通 `--stage scf -s` 检查并复用相容结果。
 
-DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。新生成的 EPW 脚本和提交参数不添加时长限制；`resources.wall_seconds`、`resources.storage_bytes` 及 `--wall-seconds`、`--storage-bytes` 两个 CLI 选项已删除。配置或冻结快照仍含旧字段时明确拒绝，应清理源配置并生成新尝试，不手改带哈希的冻结快照。历史账本保留用量和原额度，状态仅将原并发限制作为有效额度；活动、未知任务及来源保护继续有效。已有脚本和默认安装不会随源码修改自动更新。见 [0058 验收](../../specs/0058-epw-remove-resource-limits/acceptance.md)。
+DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。新生成的 EPW 脚本和提交参数不添加时长限制；`resources.wall_seconds`、`resources.storage_bytes` 及 `--wall-seconds`、`--storage-bytes` 两个 CLI 选项已删除。配置仍含旧字段时明确拒绝，应清理用户源配置并重新运行 CLI 保存新版本，不手改已保存的编号版本。历史账本保留用量和原额度，状态仅将原并发限制作为有效额度；活动、未知任务及来源保护继续有效。已有脚本和默认安装不会随源码修改自动更新。见 [0058 验收](../../specs/0058-epw-remove-resource-limits/acceptance.md)。
 
 ## 历史清理
 
-独立维护命令 [epw_clear](epw_clear.md) 默认预览，`--yes` 清空阶段搬迁、失败尝试和原生作业的三处 history；保留现用计算、结果、任务记录及预算。`--work` 默认当前目录，不要求完整科学配置。现用引用、活动／未知任务或链接祖先会在删除前拒绝，历史内部链接不跟随。清理与其他写入命令顺序执行。实际安装和清理证据见 [0057](../../specs/0057-epw-clear-history/acceptance.md)。
+独立维护命令 [epw_clear](epw_clear.md) 对八日志布局报告无需清理；旧 `layout.json` 工作区仍可预览和清空三处历史。保留现用计算、结果、配置版本及预算。
 
 ## 编号工作区的原生任务提交
 
@@ -26,15 +26,15 @@ DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由
 
 指定温度 gap 目标按下文 0049 一次提交所选方法的全部批次。第 5～8 步的 `-s` 直接提交就绪的原生任务，任务结束后重复同一公开命令，在作业外核验并推进；Tc 沿用原温度和初值求解规则，逐次准备原生求解。第 1／2 步保留单原生任务，第 3／4 步保留已实现的阶段分配。
 
-原生脚本位于实际科学目录，新 QE／EPW 命令通过 `< 输入.in > 输出.out 2>&1` 直接读写，postw90 保留种子参数接口。环境脚本直接 `source "路径" --force`，没有 if 包装、失败后缀或自动严格选项；普通安全参数直接显示，特殊参数使用必要双引号和转义。第 5～8 步脚本禁止调用 `epw_wannier`、`epw_superconductivity` 及内部执行／批次收尾入口；科学退出与后续作业外交付核验分别记录。EPW 生成的 `.sh` 在原子创建和覆盖时均设置 `0755`，普通输入文件不增加执行权限。2026-10-27 修复源码与活动旧作业、默认安装的边界见 [0026 回退验收](../../specs/0026-epw-direct-native-submit/acceptance.md)。
+原生脚本位于实际科学目录，新 QE／EPW 命令通过 `< 输入.in > 输出.out 2>&1` 直接读写，postw90 保留种子参数接口。环境脚本使用 `source "路径" --force`，加载失败显式传播退出码，不自动开启严格 shell 选项；普通安全参数直接显示，特殊参数使用必要双引号和转义。第 5～8 步原生提交脚本禁止调用 `epw_wannier`、`epw_superconductivity` 及内部执行／批次收尾入口；科学退出与后续作业外交付核验分别记录。EPW 生成的 `.sh` 在原子创建和覆盖时均设置 `0755`，普通输入文件不增加执行权限。2026-10-27 修复源码与活动旧作业、默认安装的边界见 [0026 回退验收](../../specs/0026-epw-direct-native-submit/acceptance.md)。
 
-输入、程序身份、预算及作业回执由 `epw-state/native-jobs/` 保存。新任务记录为版本 3，读取合并输出；版本 1／2 历史任务继续读取原日志。准备和活动任务仍校验脚本，新格式终态的复用不依赖可覆盖脚本或 Slurm 日志，科学输入／来源／输出仍校验。能带在 EPW 内嵌 Wannier90 的 wdata 路线输出，只有 DOS 调用 postw90；派生目录为 `5.epw-wannier/comparison-native/electron/`，拟合来源只读。
+任务状态和续算信息进入对应阶段日志，Slurm 作业号放在计算目录同名 `.jobs`。原生科学输出使用合并的 `.out`；复用直接检查实际科学文件。能带在 EPW 内嵌 Wannier90 的 wdata 路线输出，只有 DOS 调用 postw90，派生目录为 `5.epw-wannier/comparison-native/electron/`。
 
-正常工作区入口及阶段执行不再获取／恢复 `epw-state/control.lock`、`epw-state/execution.lock` 或阶段 `execution.lock`，旧残留无需删除且不会因此拒绝命令；不提供这些锁原先的同时写入互斥。顺序重复命令仍检查已有作业，活动或提交回执未知时禁止重提，失败须显式恢复。预算账本／注册表及其锁、迁移专用保护、快照与结果／出图等其他锁维持原行为。
+工作区推进与日志合并使用稳定目录 inode 的系统锁，不生成永久工作流锁文件。进程结束释放锁；提交中断仍从日志和 `.jobs` 识别未知回执，不能重复提交。预算账本、注册表及结果发布锁各自保留。
 
-声子分配脚本为本阶段 `phonon.sh`，Slurm 日志为 `slurm-phonon.log`；原生子调用生成可读脚本，新任务的两路科学输出合并到 `.out`，在既有分配内同步执行，不嵌套提交或重复预留预算。失败停止并保留有效检查点，修复后一次 `--resume -s` 自动完成余项；没有通过归集校验的 PH 现场先归档重建，已验证 PH／q2r／matdyn 继续复用。只缺图时只补图，完整阶段再次调用不提交新科学任务。固定快照副本路径变化不导致相同内容的图像失效。
+声子分配脚本为本阶段 `phonon.sh`，Slurm 日志为 `slurm-phonon.log`；原生子调用生成可读脚本，新任务的两路科学输出合并到 `.out`，在既有分配内同步执行，不嵌套提交或重复预留预算。失败停止并保留有效检查点，修复后一次 `--resume -s` 自动完成余项；没有通过归集校验的 PH 现场在明确重算时覆盖重建，已验证 PH／q2r／matdyn 继续复用。只缺图时只补图，完整阶段再次调用不提交新科学任务。派生图从直接来源与阶段日志检查是否需要更新。
 
-编号工作区 `--all` 仍只准备下一就绪脚本和 `native-plan.json`。只读状态区分运行中、待核验、失败与已核验；手工 debug 不自动登记为正式交付。旧非编号布局新 `-s` 提示显式导入；历史封存和默认安装不自动变化，`-r` 保留既有分配语义。
+编号工作区 `--all` 准备下一就绪任务；计划与推进位置在阶段日志中。状态查询区分运行中、待核验、失败与已核验，配置变化会保存原文版本；手工 debug 不自动登记为正式交付。旧非编号布局新 `-s` 提示显式导入；历史封存和默认安装不自动变化，`-r` 保留既有分配语义。
 
 公开进程契约覆盖逐任务 QE／Wannier／粗细网格、两模式 Tc 与指定温度能隙，以及声子单分配自动完成、恢复、顺序防重复和未知回执，不代表新增真实科学验收。逐任务设计见 [0026](../../specs/0026-epw-direct-native-submit/plan.md)，声子目标按 [0048 快速说明](../../specs/0048-epw-phonon-stage-chain/quickstart.md)执行。以下历史自动串联说明不适用于新的编号工作区 `-s`。
 
@@ -80,7 +80,7 @@ LDA 历史 40³/20³ EPC 已有 λ_integral=0.6853853、λ_sum=0.6853511，iso �
 
 ## 编号工作区与当前配置续算
 
-新工作区设置 `layout="numbered"`，默认配置为根 `input.toml`，采用八个实际计算目录：SCF、NSCF、`qe_eband/qe_eledos`、三种 PH 模式之一、Wannier、粗 EPC、细 EPC、iso/aniso。实际计算的输入、功能脚本与日志共目录；依赖上游数值的子任务在执行到该步时生成。各编号阶段的 `completion.json` 保存完成回执，第 3 步原生回执位于 `3.qe-electronic/receipts/`，第 5／6 步后处理回执为本阶段 `post-completion.json`；可见的 `epw-state/` 保存共享状态、尝试、交付清单和历史，不以链接伪装计算目录。
+新工作区设置 `layout="numbered"`，采用八个实际计算目录。原生输入、脚本和输出共目录；`epw-state/` 恰好保存八份中文阶段日志，目录例外只有 `imports/`。每次 CLI 观察到输入原文变化时，在输入旁保存递增的 `NNNN-config.toml`，阶段日志指向当前及计算使用的版本。子任务、后处理、绘图和各温度的续算均进入日志，不另外保存阶段 completion、receipts、请求、共享 manifest、尝试或历史。
 
 三个公开程序保持，`epw_wannier --stage wannier|coarse` 和 `epw_superconductivity --stage fine|superconductivity` 分离科学边界；默认分别到第 6、8 步。`epw_phonon --stage scf|nscf|electronic|phonon` 管理第 1～4 步，默认到 phonon，复用共享 qeflow/qf 输入、执行和后处理组件。PH 使用独立 SCF 快照，不额外做 SCF；nosplit、coords、index 均校验后交付 `save/`。
 
@@ -96,7 +96,7 @@ LDA 历史 40³/20³ EPC 已有 λ_integral=0.6853853、λ_sum=0.6853511，iso �
 
 当前源码的普通运行路径不再建立或读取 `.epwflow/`。阶段目录或必要产物缺失时，复用检查返回 `update`，正常生成／提交重建所需阶段并撤下过期下游回执，完整相容上游继续复用；内容被修改、损坏记录和活动／未知任务仍阻断。`--status` 保持只读，不迁移文件或提交任务。
 
-旧编号工作区提供显式 `epw_wannier --migrate-state`：核对原作业与锁，保留原隐藏目录及预算账本，复制完整历史至 `epw-state/history/legacy-state/`，接入不依赖隐藏路径的完整上游。绑定旧隐藏路径的粗／细交付、过期阶段及冻结脚本只作历史保存，输出明确列出 `reuse`／`rebuild`，后续由公开命令重建；不重新捕获哈希冒充原交付。未完成迁移会阻止正常运行，允许显式接续。旧非编号工作区使用 `--import-work` 导入新编号目录。
+旧隐藏编号布局通过显式 `epw_wannier --migrate-state` 转换，先检查旧任务和未决执行，再直接核验现用科学文件。支持的旧状态一次性撤下，不保留旧隐藏树或复制历史；外部来源放在 `imports/`，预算不重置。未知旧内容明确列出并保留现场，转换可重试。旧非编号工作区使用 `--import-work` 导入新的编号目录。
 
 全局预算注册表默认改为可见的 `~/epwflow-state/`，首次写入承接旧默认注册表的 campaign 绑定，显式环境覆盖继续有效。实际账本仍由原配置指定；消费及未结算预留不因迁移清零。迁移本身不提交作业、不结算或改写账本。
 
@@ -104,7 +104,7 @@ LDA 历史 40³/20³ EPC 已有 λ_integral=0.6853853、λ_sum=0.6853511，iso �
 
 ## 编号声子后处理与作业日志
 
-编号 PH 在归集成功后若 q2r／matdyn 失败，恢复会重验严格 QE 交付清单、科学身份、原生 q 映射及逐文件哈希，复用完整 PH 响应，从后处理继续。q2r 的 dyn0 从清单绑定的归集副本物化，避免编号目录映射后复制到自身而截断；损坏的 save 仍拒绝执行。阶段归档对当前 Slurm 作业日志保留同 inode 的目录入口，后续写入仍可在阶段目录看到。协议依据见 [0028](../../specs/0028-phonon-postprocess-checkpoint/acceptance.md) 与 [0029](../../specs/0029-active-slurm-log-archive/acceptance.md)，真实链路状态见 [0027](../../specs/0027-mgb2-epwflow-example-debug/acceptance.md)。
+编号 PH 在归集成功后若 q2r／matdyn 失败，恢复直接重验第 4 步 save 的原生 q 映射、响应势尺寸、扰动模式和 SCF／NSCF 接续，复用完整 PH 响应，从后处理继续。q2r 的 dyn0 从已核验的归集副本物化，避免复制到自身而截断；损坏的 save 仍拒绝执行。重算保留阶段根目录及当前 Slurm 日志 inode，后续写入仍可在阶段目录看到，不新建历史。历史协议依据见 [0028](../../specs/0028-phonon-postprocess-checkpoint/acceptance.md) 与 [0029](../../specs/0029-active-slurm-log-archive/acceptance.md)，当前状态布局见 [0064](../../specs/0064-epw-readable-state-logs/acceptance.md)。
 
 ## 历史固定工作区与兼容行为
 
@@ -115,7 +115,7 @@ EPW 仅构建 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个独�
 
 epw_phonon 直接调用 qeflow 的 nosplit Rust 库（[说明](../qeflow/qe_phonon_nosplit.md)），执行 SCF→PH→q2r→matdyn 和声子图，启用 EPW 原始数据归档。SCF 完成、PH 之前保存独立快照，再由 EPW 准备完整均匀 NSCF 和严格数据清单。固定 KPATH、q2r／matdyn、显式原子质量及 SCF 网格位移均传递并校验；后处理失败恢复会重验请求、脚本和 SCF 检查点，复用已完成 SCF／PH。该恢复行为已由独立进程回归验证；新的真实链已有 SCF／PH／q2r 完成证据，第一阶段整体仍未验收。
 
-粗／细原生尝试在 native-attempts 保存固定请求、物化输入和成功输出指纹。显式恢复可重验归集完整输出，或将失败现场归档后按原参数重试；成功展宽不重复执行。最大差值仅展示；来源或证据变化仍拒绝恢复。阶段清单已发布但工作流完成状态未登记时，可重验后补登记。恢复回归使用独立进程测试替身，不替代真实科学验收。
+粗／细网格、比较与多个展宽的当前检查点进入所属阶段日志，科学文件留在实际计算目录。成功子项直接重验复用；明确失败后使用当前配置 `--resume -s` 接续，不另存失败历史。科学数据损坏与不可解析结果仍说明具体原因；差值大小供用户判断。
 
 失败且尚未交付 Wannier 的单 image 运行支持 `epw_wannier --resume -w WORK --mpi N -s`：同步调整 MPI、pool、Slurm 任务数和预算请求，pool 不超过完整粗 k 点数。并行设置保存在尝试记录，原固定输入和 QE 数据保持；后续阶段恢复继承该设置，状态显示 `effective_mpi`／`mpi_override`。活动／未知作业、已交付粗网格后的布局变化及不相容科学输入拒绝。独立进程回归已验证失败粗阶段恢复和旧来源不变；第二阶段尚未完成的比较路径 NSCF 等仍会补算，不代表重复第一阶段。见 [0008 T051](../../specs/0008-epwflow-foundation/three-programs.md#仅修改-mpi-的失败粗阶段恢复t051)。
 
@@ -133,7 +133,7 @@ F4 已发布合法 partial 清单时，公开显式恢复会重验固定来源�
 
 ## 编号工作区的电子后处理续算
 
-第 3 步分别为 PW 能带、`bands.x` 和 `dos.x` 保存原生输入、上游产物与输出哈希记录，位于 `3.qe-electronic/receipts/`。相容请求的后处理失败后保留成功 PW 数据，仅重试未完成任务；损坏证据会阻断。`bands.x` 和 `dos.x` 均使用当前 MPI 数及各自的 `-pd .true.`，避免读取保存数据时 FFT 空进程；不继承 PW／EPW pool，其他程序参数保持独立。
+第 3 步将 PW 能带、`bands.x`、`dos.x` 及投影的当前进度合并到 `epw-state/3.qe-electronic.log`，原生文件留在实际计算目录，不保存 `receipts/`。相容请求的后处理失败后保留成功 PW 数据，仅重试未完成任务；原生输入、XML、波函数和数值表仍直接核验。`bands.x` 和 `dos.x` 均使用当前 MPI 数及各自的 `-pd .true.`，避免读取保存数据时 FFT 空进程；不继承 PW／EPW pool，其他程序参数保持独立。
 
 已有 0018 PW 能带结果须经终态冻结来源、原生输入、零退出码、日志、XML、路径点和全部 portable 波函数校验后接入。更改过的冻结提交脚本仍被拒绝，使用公开命令生成新尝试。已绑定作业的旧脚本不能在新作业重用，冲突提示包含两个作业号和公开恢复命令；再次执行公开 `-s`（可加 `--resume`）生成独立冻结尝试并复用成功 PW／bands。真实 MgB₂ 的 bands 已在用户作业 1307064 完成，DOS 同类 FFT 错误后经 0021 修复；DOS 已在后续用户作业完成；0023 当时作业 1311765 只完成拟合；0027 后续公开作业 1314551 已完成独立电子后处理、图像和产物核验，不能据此宣称粗／细网格质量通过。协议与科学验收边界见 [0020](../../specs/0020-qe-electronic-postprocess-resume/acceptance.md)、[0021](../../specs/0021-qe-dos-pencil-resume/acceptance.md)。
 
@@ -156,9 +156,9 @@ Wannier 配置支持可选布尔值 `guiding_centres`，显式透传原生中心
 | `epw_phonon` | 直接复用 qeflow nosplit 完整声子链，保留 EPW 数据；独立 SCF 快照、完整均匀 NSCF 和严格交付 |
 | `epw_wannier` | 第 5／6 步：原生 Wannier／粗网格、来源核验和常规比较；不执行细网格或 α²F |
 | `epw_superconductivity` | 第三阶段边界：细网格 EPC／谱、原生两模式求解与结果包；要求前两阶段完成证据 |
-| [epw_clear](epw_clear.md) | 历史维护工具；默认预览，`--work` 指定工作区，`--yes` 清空三处 history，无需完整科学配置 |
+| [epw_clear](epw_clear.md) | 新布局无需清理；旧布局默认预览，`--yes` 清空三处 history，无需完整科学配置 |
 | `epw_phonon --all` | 只生成三份阶段脚本及总提交脚本；运行后用 afterok 串联，持久化逐次回执，未知或部分提交不自动重试 |
-| 默认调用 | 固定输入，生成 `epw-state/generated/` 下的阶段脚本；可手工 sbatch，运行时验证脚本及程序身份、前置和预算 |
+| 默认调用 | 准备当前就绪任务，在实际计算目录生成原生脚本；状态进入八份阶段日志 |
 | `--check [-w W] [--json]` | 无 -w 时检查配置／文件，运行版本为 unverified；有 -w 时核查本阶段数据或原生质量来源 |
 | `--prepare-only` | 只固定输入和身份，不执行或提交 |
 | `-s`／`-r` | 提交一个阶段分配，或在已登记分配中同步执行；回执不能替代数值完成 |
@@ -174,7 +174,7 @@ Wannier 配置支持可选布尔值 `guiding_centres`，显式透传原生中心
 | `--budget status/reserve/attach/reconcile` | 兼容原验收账本；只读不改写，成功写入保留完整历史、消费和存储基线，未结算或不一致拒绝。原时间和存储上限仅保留为历史数据，不参与准入；原并发限制与身份保护继续有效 |
 | `--probe -s/-r` | 仍明确报未接入／分配要求，不把帮助输出当作版本探测证据 |
 
-执行数据位于 `W/calculations/<尝试号>/`，恢复沿用原科学目录；共享工作流记录每个阶段的清单与产物哈希。内部 `epw-state/slurm/` 脚本属于登记尝试，不能手工重提；可手工提交的是 `generated/` 下的用户脚本。安装与打包脚本已迁移到八个程序、54 个入口；0027 已更新仓库 bin/epwflow 三程序，其余产品哈希保持。
+编号工作区直接使用第 1～8 步目录，阶段原生脚本在实际计算目录生成，任务号和当前日志说明能否继续。旧非编号执行数据仅作为显式导入来源，不把旧执行器状态当作新布局续算依据。
 
 下列早期科学和接口记录保留历史语境。抽样质量门已由 0043 完全删除，当前对比行为以本文“常规对比与最大差值”及最新验收为准；原生求解行为见[原生适配](native-superconductivity.md)。
 
@@ -312,9 +312,9 @@ EPW 的 `wannier.selection_mode = "energy_only"` 使用共享 Rust 纯能量选�
 
 公开第二阶段使用已冻结 KPATH 展开同路径点，DOS 采用 F2 的完整均匀 NSCF 网格。程序从 SCF 副本生成常规 bands 路径数据，在原始 PH 副本上施加同源 Γ onsite 与 QE Hermitian 平均后运行 q2r／matdyn，再隔离重读原 EPW 粗网格；不重做 SCF／已有 PH，不提前执行细网格 EPC。实际原子顺序用于校验 3N，缺投影继续明确标记。
 
-电子来源和后处理保存在 `5.epw-wannier/comparison-native/electron/`；声子比较保存在 `6.epw-coarse/comparison-native/{phonon,epw}/`，比较表位于第 6 步 `comparison/`，按阶段交付到工作区根 `results/`。科学回执与派生发布分开；最大差值仅展示；来源和产物完整时发布粗阶段标记，没有质量评级或告警。可选 `[comparison]` 固定每边区间数和两种高斯核宽，缺省为 20、0.1 eV 和 10 cm⁻¹，见[模块手册](../../../epwflow/README.md)。
+电子来源和后处理保存在 `5.epw-wannier/comparison-native/electron/`；比较声子的 q2r／matdyn 位于第 4 步 `comparison/`，EPW 重读位于 `6.epw-coarse/comparison-native/epw/`，比较表位于第 6 步 `comparison/`，按阶段交付到工作区根 `results/`。科学检查与派生发布分开；最大差值仅展示；来源和产物完整时发布粗阶段标记，没有质量评级或告警。原生配置分别设置路径点数和两种高斯核宽，见[模块手册](../../../epwflow/README.md)。
 
-成功任务显式恢复时重验复用，只归档重试失败任务。单格式重绘保留同源且哈希有效的其他已登记格式；比较图使用共享发布日志，检查拒绝半写状态，绘图先校验并恢复。F1 只回收已确认终态且归属原作业的比较锁。独立进程回归覆盖成功、大差值、失败任务恢复、来源篡改、半写发布和移动重绘；现有 PBE 文件只验证了总脚本生成，没有新增科学作业或 Tc 证据。
+成功任务显式恢复时重验复用，失败子任务直接替换，不新建归档。单格式重绘保留同源且哈希有效的其他已登记格式；比较图使用共享发布日志，检查拒绝半写状态，绘图先校验并恢复。只回收当前任务号表中已确认终态且归属原作业的比较锁。独立进程回归覆盖成功、大差值、失败任务恢复、来源篡改、半写发布和移动重绘；这些回归不增加真实科学作业或 Tc 证据。
 
 配置中的显式绝对赝势身份保持不变；SCF／完整 NSCF／常规 bands 使用共同 pseudo_dir 与带引号的短相对文件名，避免 Fortran 读卡片的斜杠终止语义和 atom_pfile 的 80 字节限制。目录须不超过 255 字节，无法表达时生成前拒绝。共享 q2r 完成检查接受成功日志配合非空文本或 XML 力常数；matdyn 失败后的恢复不重复已核验 SCF／PH／q2r，已由独立进程和真实 14 份文件指纹验证。
 
@@ -322,7 +322,7 @@ EPW 的 `wannier.selection_mode = "energy_only"` 使用共享 Rust 纯能量选�
 
 派生 PH 文件只在常规比较 q2r 的消费边界使用 QE 复数矩阵分行序列化，保留同源 Γ onsite 修正，不生成直接 PH 或 dynmat 抽样数据。
 单 q 坐标 PH 的响应势按 QE 强制关闭 lqdir 的行为映射到 out/_ph0 根目录，非 Γ 点也如此；网格模式的非 Γ 点继续使用 prefix.q_N。映射不跨目录回退猜选，仍校验物理 q、扰动基底、FFT 尺寸和有限性。三模式交接与完整公开进程链已回归通过；原生单 q 计算正常而归集失败的结果由显式恢复重验归集。
-显式声子路径使用专用 matdyn 解析：QE 7.4.1 的未使用第四列可未初始化，按固定宽度跳过该列，坐标、全部频率和点序仍严格核验；普通加权格式保持有限非负权重检查。编号自动比较的原 CLI 身份仅作历史追溯，升级后复用完整科学来源与成功原生子任务，冻结请求保持不变。依据见 [0037](../../specs/0037-matdyn-path-unused-weight/acceptance.md)、[0038](../../specs/0038-comparison-orchestrator-upgrade/acceptance.md)。
+显式声子路径使用专用 matdyn 解析：QE 7.4.1 的未使用第四列可未初始化，按固定宽度跳过该列，坐标、全部频率和点序仍严格核验；普通加权格式保持有限非负权重检查。编号自动比较直接读取科学来源，q2r／matdyn 子任务从第 4 步日志接续，EPW 比较重读从第 6 步日志接续，不生成冻结请求。历史依据见 [0037](../../specs/0037-matdyn-path-unused-weight/acceptance.md)、[0038](../../specs/0038-comparison-orchestrator-upgrade/acceptance.md)，当前布局见 [0064](../../specs/0064-epw-readable-state-logs/acceptance.md)。
 
 共用比较渲染器将 G/GAMMA 显示为 Γ，在屏幕上分组合并拥挤的相邻端点文字；所有原竖线和科学曲线坐标保持。独立图与总览均使用该规则，显式 --plot 可离线重绘既有结果，见 [0039](../../specs/0039-comparison-path-labels/acceptance.md)。
 
@@ -343,7 +343,7 @@ EPW 的 `wannier.selection_mode = "energy_only"` 使用共享 Rust 纯能量选�
 
 第 5 步完成后立即发布 QE／EPW 电子能带和总 DOS 叠图，不依赖声子。第 6 步声子谱继续比较 QE／EPW，声子 DOS 的独立图与总览仅比较 TDOS，不展示元素曲线或元素投影缺失占位。第 3／4 步的单独图保留。第 3 步已提供 QE 元素电子 PDOS；EPW 元素／轨道 PDOS 及插值侧元素声子投影仍未提供。
 
-`-r` 在该子任务结束时绘图。第 3／4 步的 `-s` 保留 0050 作业内后处理和发布；2026-10-27 起第 5～8 步恢复原生任务提交，需要再次公开调用在作业外核验、补齐后处理并发布。重执行原有推进命令可补缺图，失败恢复沿用 `--resume`。`plots/completion.json` 管理派生图，科学完成身份排除图片；声子数值后处理另存 `qe-post-completion.json`，绘图失败恢复不重复成功的 PH／q2r／matdyn。只读状态命令不补图。
+`-r` 在该子任务结束时绘图。第 3／4 步的 `-s` 在一个阶段分配内推进；第 5～8 步直接提交原生任务，再次执行公开命令检查、补齐后处理并发布。派生图与科学子任务的续算统一进入阶段日志；不再生成 `plots/completion.json`、`post-completion.json` 或 `qe-post-completion.json`。状态查询不补图，配置内容变化时仍保存原文版本。
 
 实现与隔离进程／真实数据只读出图证据见 [0047 验收](../../specs/0047-qe-stage-plots/acceptance.md)。初次源码交付未部署或新增科学作业；后续真实 PBE 八阶段及 iso／aniso 三温度 gap 已完成，具体版本与安装边界见 [联合验收](../../specs/0050-epw-stage-results/real-chain-validation.md)。
 

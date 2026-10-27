@@ -46,7 +46,7 @@ fn decimal(t: i64) -> String {
     (t as f64 / 100.0).to_string()
 }
 pub fn directory_name(cfg: &Config, mode: Mode) -> String {
-    let settings=cfg.solver_for(mode).expect("配置已在公开入口校验");
+    let settings = cfg.solver_for(mode).expect("配置已在公开入口校验");
     let ts = &settings.gap_temperatures_k;
     format!(
         "{}-mu{}-{}-{}",
@@ -90,7 +90,11 @@ pub fn render(requests: &[Request], source: &NativeInputs) -> Result<String> {
     }
     ensure!(text.contains(&single), "data_invalid: 原生温度输入模板缺失");
     text = text.replacen(&single, &temperatures, 1);
-    attempt::configured(&requests[0],source,&text.replacen("single-temperature solve", "multi-temperature solve", 1))
+    attempt::configured(
+        &requests[0],
+        source,
+        &text.replacen("single-temperature solve", "multi-temperature solve", 1),
+    )
 }
 
 /// 真实 itemp／温度先与固定批次核对；随后只把索引归一化交给既有单段解析器。
@@ -254,16 +258,7 @@ fn prepare(
         .directory(cfg)
         .join(directory_name(cfg, mode));
     fs::create_dir_all(&dir)?;
-    // 每次覆盖主输入之前保存旧文件；逐点记录只依赖已收集的不可变快照。
-    for name in ["epw.in", "epw.out", "epw.err", "epw.exitcode"] {
-        let path = dir.join(name);
-        if path.is_file() {
-            let archive = dir.join(format!("previous-{number:04}-{name}"));
-            if !archive.exists() {
-                fs::copy(&path, archive)?;
-            }
-        }
-    }
+    // 仅覆盖本轮仍需计算温度的数据；成功温度保留当前科学结果。
     for request in &requests {
         let old = dir.join(format!(
             "{}.imag_{}_{:06.2}",
@@ -272,12 +267,7 @@ fn prepare(
             request.temperature_centikelvin as f64 / 100.0
         ));
         if old.is_file() {
-            let archive = dir.join(format!(
-                "previous-{number:04}-{}",
-                old.file_name().unwrap().to_string_lossy()
-            ));
-            ensure!(!archive.exists(), "input_conflict: 失败温度归档已存在");
-            fs::rename(&old, archive)?;
+            fs::remove_file(old)?;
         }
     }
     let input = dir.join("epw.in");
@@ -314,36 +304,16 @@ fn prepare(
     })
 }
 
-fn collect(run: &mut Run, index: usize, source: &NativeInputs) -> Result<()> {
+fn collect(cfg: &Config, run: &mut Run, index: usize, source: &NativeInputs) -> Result<()> {
     let batch = run.batches[index].clone();
     let dir = &batch.task.directory;
-    let number = index + 1;
-    let mut artifacts = vec![];
-    let mut log = None;
-    for suffix in ["in", "out", "err"] {
-        if suffix == "err" && batch.task.schema_version == 3 {
-            continue;
-        }
-        let path = dir.join(format!("epw.{suffix}"));
-        if path.is_file() {
-            let snapshot = dir.join(format!("epw-attempt-{number:04}.{suffix}"));
-            if snapshot.exists() {
-                ensure!(
-                    store::hash_file(&snapshot)? == store::hash_file(&path)?,
-                    "input_conflict: 批次快照已存在且不同"
-                );
-            } else {
-                fs::copy(path, &snapshot)?;
-            }
-            let id = Identity::capture(&snapshot)?;
-            if suffix == "out" {
-                log = Some(id.clone());
-            }
-            artifacts.push(id);
-        }
-    }
-    let log = log.context("data_invalid: 批次缺少原生日志")?;
+    let raw = dir.join("epw.out");
     for request in &batch.requests {
+        let temperature = decimal(request.temperature_centikelvin);
+        let point_log = dir.join(format!("point-{temperature}.out"));
+        if raw.is_file() {
+            fs::copy(&raw, &point_log)?;
+        }
         let canonical = dir.join(format!(
             "{}.imag_{}_{:06.2}",
             source.prefix,
@@ -351,17 +321,11 @@ fn collect(run: &mut Run, index: usize, source: &NativeInputs) -> Result<()> {
             request.temperature_centikelvin as f64 / 100.0
         ));
         let gap_file = if canonical.is_file() {
-            let snapshot = dir.join(format!(
-                "gap-attempt-{number:04}-{}.dat",
-                decimal(request.temperature_centikelvin)
-            ));
-            if !snapshot.exists() {
-                fs::copy(&canonical, &snapshot)?;
-            }
-            Some(Identity::capture(&snapshot)?)
+            Some(Identity::capture(&canonical)?)
         } else {
             None
         };
+        let log = Identity::capture(&point_log)?;
         let mut record = AttemptResult {
             schema_version: 2,
             batch: Some(Evidence {
@@ -381,14 +345,13 @@ fn collect(run: &mut Run, index: usize, source: &NativeInputs) -> Result<()> {
             reason: None,
             exit_status: batch.task.exit_status,
             duration_secs: Some(batch.task.duration_secs),
-            artifacts: artifacts.clone(),
+            artifacts: vec![log],
             evidence: None,
             gap: None,
             gap_status: None,
         };
         record.artifacts.extend(gap_file);
-        let result = inspect(&record);
-        match result {
+        match inspect(&record) {
             Ok((status, evidence, gap)) => {
                 record.status = if !status.execution_complete {
                     "failed"
@@ -403,66 +366,134 @@ fn collect(run: &mut Run, index: usize, source: &NativeInputs) -> Result<()> {
                 record.evidence = evidence;
                 record.gap = gap;
             }
-            Err(error) => {
-                record.reason = Some(format!("{error:#}"));
-            }
+            Err(e) => record.reason = Some(format!("{e:#}")),
         }
-        let path = dir.join(format!(
-            "point-{}-attempt-{number:04}.json",
-            decimal(request.temperature_centikelvin)
-        ));
+        let path = dir.join(format!("point-{temperature}.json"));
         store::write(&path, &record)?;
-        let entry = run
-            .attempts
-            .iter_mut()
-            .rev()
-            .find(|a| {
-                a.request.mode == request.mode
-                    && a.request.temperature_centikelvin == request.temperature_centikelvin
-                    && a.status == "running"
-            })
-            .context("data_invalid: 批次缺点记录")?;
-        println!(
-            "method: {}\ntemperature_k: {}\nexecution_status: {}\nreason: {}",
-            method(request.mode),
-            decimal(request.temperature_centikelvin),
-            record.status,
-            record.reason.as_deref().unwrap_or("无")
-        );
-        entry.status = record.status;
-        entry.reason = record.reason;
-        entry.record = Some(Identity::capture(&path)?);
+        let entry = Entry {
+            request: request.clone(),
+            directory: dir.clone(),
+            record: Some(Identity::capture(&path)?),
+            status: record.status.clone(),
+            reason: record.reason.clone(),
+            job_id: None,
+        };
+        run.attempts.retain(|e| {
+            !(e.request.mode == request.mode
+                && e.request.temperature_centikelvin == request.temperature_centikelvin)
+        });
+        run.attempts.push(entry);
+        crate::foundation::readable_state::update(&cfg.work_dir, Step::Superconductivity, |doc| {
+            let label = format!("温度 · {} · {temperature} K", method(batch.mode));
+            doc.set(
+                &label,
+                "状态",
+                match record.status.as_str() {
+                    "valid" => "已完成，能隙数据有效",
+                    "completed" => "求解已结束，能隙数据无效",
+                    "failed" => "失败",
+                    _ => "待检查",
+                },
+            );
+            doc.set(
+                &label,
+                "科学结果",
+                crate::foundation::readable_state::relative(&cfg.work_dir, &path),
+            );
+            if let Some(status) = &record.gap_status {
+                doc.set(
+                    &label,
+                    "收敛",
+                    match status.converged {
+                        Some(true) => "是",
+                        Some(false) => "否",
+                        None => "尚未确认",
+                    },
+                );
+                doc.set(&label, "数据状态", &status.data_status);
+            }
+            if let Some(reason) = &record.reason {
+                doc.set(&label, "原因", reason);
+            }
+            Ok(())
+        })?;
     }
     run.batches[index].collected = true;
     run.refresh();
     Ok(())
 }
+
+/// 工作流事实只从第八步日志读取，结果文件仅用于重新检查科学数值。
+pub(crate) fn current(cfg: &Config, source: &NativeInputs, run_id: &str) -> Result<Run> {
+    let mut run = Run {
+        schema_version: 4,
+        task: "gap".into(),
+        run_id: run_id.into(),
+        interpolation_digest: source.interpolation_digest.clone(),
+        binding_digest: super::points::binding(cfg, source, &cfg.programs.launcher)?,
+        plan: super::points::plan(cfg)?,
+        attempts: vec![],
+        batches: vec![],
+        execution_complete: false,
+        data_complete: false,
+    };
+    let doc = crate::foundation::readable_state::read(&cfg.work_dir, Step::Superconductivity)?;
+    for request in &run.plan {
+        let label = format!(
+            "温度 · {} · {} K",
+            method(request.mode),
+            decimal(request.temperature_centikelvin)
+        );
+        let Some(path) = doc.get(&label, "科学结果") else {
+            continue;
+        };
+        let path = crate::foundation::readable_state::resolve(&cfg.work_dir, path);
+        if !path.is_file() {
+            continue;
+        }
+        let record = super::verify::record(&path)?;
+        ensure!(
+            serde_json::to_value(&record.request)? == serde_json::to_value(request)?,
+            "input_conflict: 温度结果参数与当前计划不符"
+        );
+        run.attempts.push(Entry {
+            request: request.clone(),
+            directory: path.parent().unwrap().into(),
+            record: Some(Identity::capture(&path)?),
+            status: record.status,
+            reason: record.reason,
+            job_id: None,
+        });
+    }
+    run.refresh();
+    Ok(run)
+}
+fn publish_science(cfg: &Config, run: &Run) -> Result<()> {
+    let mut science = run.clone();
+    science.batches.clear();
+    store::write(
+        &Step::Superconductivity.directory(cfg).join("manifest.json"),
+        &science,
+    )
+}
+
 pub fn run(cfg: &Config, generation: &str, submit: bool, resume: bool) -> Result<()> {
+    run_mode(cfg, generation, submit, resume, false)
+}
+pub(crate) fn run_mode(
+    cfg: &Config,
+    generation: &str,
+    submit: bool,
+    resume: bool,
+    allocated: bool,
+) -> Result<()> {
+    use crate::foundation::readable_state as log;
     let root = Step::Superconductivity.directory(cfg);
     fs::create_dir_all(&root)?;
-    let _publication=crate::foundation::store::Lock::acquire(&root.join("batch-finalization"))?;
-    let path = root.join("manifest.json");
-    let f3 = crate::interpolation::manifest::InterpolationManifest::load(
-        &crate::foundation::layout::path(&cfg.work_dir, "interpolation/manifest.json"),
-    )?;
-    ensure!(f3.validation.all_passed(), "data_invalid: 细网格数据无效");
+    let _guard = log::DirectoryGuard::acquire(&root)?;
+    let f3 = crate::interpolation::direct::fine(cfg)?;
     let source = super::source::bind(&cfg.work_dir, cfg, &f3)?;
-    let mut run = if path.is_file() {
-        super::points::published(&cfg.work_dir, cfg, &f3.run_id)?
-    } else {
-        Run {
-            schema_version: 4,
-            task: "gap".into(),
-            run_id: f3.run_id,
-            interpolation_digest: source.interpolation_digest.clone(),
-            binding_digest: super::points::binding(cfg, &source, &cfg.programs.launcher)?,
-            plan: super::points::plan(cfg)?,
-            attempts: vec![],
-            batches: vec![],
-            execution_complete: false,
-            data_complete: false,
-        }
-    };
+    let mut run = current(cfg, &source, &f3.run_id)?;
     let mut pending = false;
     let mut errors = vec![];
     for mode in [Mode::Iso, Mode::Aniso] {
@@ -470,47 +501,82 @@ pub fn run(cfg: &Config, generation: &str, submit: bool, resume: bool) -> Result
             continue;
         }
         let result = (|| -> Result<()> {
-            if let Some(index) = run
-                .batches
-                .iter()
-                .rposition(|b| b.mode == mode && !b.collected)
-            {
-                if let Some(task) = native_jobs::group_task(cfg, method(mode))? {
+            let label = format!("方法 · {}", method(mode));
+            if let Some(mut task) = native_jobs::group_task(cfg, method(mode))? {
+                let doc = log::read(&cfg.work_dir, Step::Superconductivity)?;
+                let already = doc.get(&label, "已归集提交") == Some(task.id.as_str());
+                if !already {
+                    let temperatures = doc
+                        .get(&label, "本轮温度")
+                        .context("data_invalid: 方法日志缺少本轮温度")?;
+                    let temperatures = temperatures
+                        .split(',')
+                        .map(|s| {
+                            crate::foundation::config::temperature(
+                                s.trim().trim_end_matches('K').trim().parse()?,
+                                "batch temperature",
+                            )
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    let requests = temperatures
+                        .iter()
+                        .map(|t| {
+                            run.plan
+                                .iter()
+                                .find(|q| q.mode == mode && q.temperature_centikelvin == *t)
+                                .cloned()
+                                .context("input_conflict: 批次温度不属于当前计划")
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    let state = native_jobs::task_status(&task)?;
                     ensure!(
-                        task.key == run.batches[index].task.key,
-                        "input_conflict: 方法批次作业指针冲突"
+                        !matches!(
+                            state["state"].as_str(),
+                            Some("unknown" | "submission_pending")
+                        ),
+                        "scheduler_unknown: 方法 {} 提交状态未知",
+                        method(mode)
                     );
-                    run.batches[index].task = task;
-                }
-                let task = &mut run.batches[index].task;
-                let state = native_jobs::task_status(task)?;
-                if state["state"] == "running" {
-                    pending = true;
-                    return Ok(());
-                }
-                if matches!(
-                    state["state"].as_str(),
-                    Some("unknown" | "submission_pending")
-                ) {
-                    anyhow::bail!("scheduler_unknown: {} 提交回执未知，禁止重提", method(mode));
-                }
-                if task.state == "prepared" {
-                    if submit {
-                        native_jobs::submit_task(cfg, task)?;
+                    if state["state"] == "running" {
+                        pending = true;
+                        return Ok(());
                     }
-                    pending = true;
-                    return Ok(());
+                    if task.state == "prepared" && allocated {
+                        native_jobs::execute_group(cfg, &mut task)?;
+                    } else if task.state == "prepared" {
+                        if submit {
+                            native_jobs::submit_task(cfg, &mut task)?;
+                        }
+                        pending = true;
+                        return Ok(());
+                    }
+                    if !allocated {
+                        native_jobs::reconcile_task(cfg, true, &mut task)?;
+                    }
+                    run.batches.push(Batch {
+                        mode,
+                        requests,
+                        executable: Identity::capture(&cfg.programs.epw.path)?,
+                        task,
+                        collected: false,
+                    });
+                    let index = run.batches.len() - 1;
+                    if run.batches[index].task.directory.join("epw.out").is_file() {
+                        collect(cfg, &mut run, index, &source)?;
+                    }
+                    let complete = run.batches[index].requests.iter().all(|q| {
+                        run.latest(q)
+                            .is_some_and(|a| matches!(a.status.as_str(), "valid" | "completed"))
+                    });
+                    native_jobs::finish_group(cfg, &mut run.batches[index].task, complete)?;
+                    let id = run.batches[index].task.id.clone();
+                    log::update(&cfg.work_dir, Step::Superconductivity, |d| {
+                        d.set(&label, "已归集提交", id);
+                        Ok(())
+                    })?;
                 }
-                native_jobs::reconcile_task(cfg, true, task)?;
-                collect(&mut run, index, &source)?;
-                let complete = run.batches[index].requests.iter().all(|q| {
-                    run.latest(q)
-                        .is_some_and(|a| matches!(a.status.as_str(), "valid" | "completed"))
-                });
-                native_jobs::finish_group(cfg, &mut run.batches[index].task, complete)?;
-                store::write(&path, &run)?;
             }
-            let requests: Vec<_> = run
+            let requests = run
                 .plan
                 .iter()
                 .filter(|q| {
@@ -520,102 +586,78 @@ pub fn run(cfg: &Config, generation: &str, submit: bool, resume: bool) -> Result
                             .is_some_and(|a| matches!(a.status.as_str(), "valid" | "completed"))
                 })
                 .cloned()
-                .collect();
+                .collect::<Vec<_>>();
             if requests.is_empty() {
                 return Ok(());
             }
             ensure!(
                 resume || requests.iter().all(|q| run.latest(q).is_none()),
-                "execution_failed: {} 有未完成点；保留现场，使用 --resume -s",
+                "execution_failed: {} 尚有失败温度，修复后使用 --resume -s",
                 method(mode)
             );
-            // 切换版本只影响新批次；已有历史点记录原样保留。
-            run.schema_version = 4;
-            let batch = prepare(cfg, generation, &source, requests, run.batches.len() + 1)?;
-            for request in &batch.requests {
-                run.attempts.push(Entry {
-                    request: request.clone(),
-                    directory: batch.task.directory.clone(),
-                    record: None,
-                    status: "running".into(),
-                    reason: None,
-                    job_id: None,
+            let mut batch = prepare(cfg, generation, &source, requests, run.attempts.len() + 1)?;
+            log::update(&cfg.work_dir, Step::Superconductivity, |d| {
+                d.set(
+                    &label,
+                    "本轮温度",
+                    batch
+                        .requests
+                        .iter()
+                        .map(|q| format!("{} K", decimal(q.temperature_centikelvin)))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
+                Ok(())
+            })?;
+            if allocated {
+                native_jobs::execute_group(cfg, &mut batch.task)?;
+                run.batches.push(batch);
+                let index = run.batches.len() - 1;
+                collect(cfg, &mut run, index, &source)?;
+                let complete = run.batches[index].requests.iter().all(|q| {
+                    run.latest(q)
+                        .is_some_and(|a| matches!(a.status.as_str(), "valid" | "completed"))
                 });
-            }
-            run.batches.push(batch);
-            run.refresh();
-            store::write(&path, &run)?;
-            let batch = run.batches.last_mut().unwrap();
-            if submit {
+                native_jobs::finish_group(cfg, &mut run.batches[index].task, complete)?;
+                log::update(&cfg.work_dir, Step::Superconductivity, |d| {
+                    d.set(&label, "已归集提交", &run.batches[index].task.id);
+                    Ok(())
+                })?;
+                ensure!(
+                    complete,
+                    "execution_failed: {} 尚有未完成温度，请修复后 --resume -r",
+                    method(mode)
+                );
+            } else if submit {
                 native_jobs::submit_task(cfg, &mut batch.task)?;
             }
-            println!(
-                "method: {}\ndirectory: {}\nscript: {}\nworkflow_status: {}",
-                method(mode),
-                batch.task.directory.display(),
-                batch.task.script.path.display(),
-                batch.task.state
-            );
-            pending = true;
+            pending |= !allocated;
             Ok(())
         })();
-        if let Err(error) = result {
-            errors.push(format!("{}: {error:#}", method(mode)));
+        if let Err(e) = result {
+            errors.push(format!("{}：{e:#}", method(mode)));
         }
-        run.refresh();
-        store::write(&path, &run)?;
     }
+    run.refresh();
+    publish_science(cfg, &run)?;
     if !errors.is_empty() {
-        anyhow::bail!("execution_failed: {}", errors.join("; "));
+        anyhow::bail!("execution_failed: {}", errors.join("；"));
     }
     if pending {
         return Err(native_jobs::Paused.into());
     }
-    ensure!(run.execution_complete, "partial: 指定温度尚未执行完成");
+    ensure!(run.execution_complete, "partial: 指定温度尚未全部完成");
     crate::delivery::finalize_to(&cfg.work_dir, Some(&root.join("results")))?;
-    crate::foundation::stage_results::tree(cfg,Step::Superconductivity,"",&root.join("results"),serde_json::json!({"kind":"native_superconductivity"}))?;
+    crate::foundation::stage_results::tree(
+        cfg,
+        Step::Superconductivity,
+        "",
+        &root.join("results"),
+        serde_json::json!({"kind":"native_superconductivity"}),
+    )?;
     Ok(())
 }
 
-/// 每个方法结束后归集自身证据；最后完成的方法发布整阶段既有图。
-pub fn allocated_finish(config:&std::path::Path,group:&str,exit:i32)->Result<()> {
-    let cfg=Config::load(config)?;
-    let root=Step::Superconductivity.directory(&cfg);
-    let start=std::time::Instant::now();
-    let _lock=loop {
-        match store::Lock::acquire(&root.join("batch-finalization")) {
-            Ok(lock)=>break lock,
-            Err(e) if start.elapsed()<std::time::Duration::from_secs(30)=>{
-                let _=e;std::thread::sleep(std::time::Duration::from_millis(50));
-            },
-            Err(e)=>return Err(e),
-        }
-    };
-    let path=root.join("manifest.json");
-    let mut run:Run=store::read(&path)?;
-    let mut task=native_jobs::group_task(&cfg,group)?.context("data_invalid: 方法收尾缺任务身份")?;
-    native_jobs::allocated_group_exit(&cfg,&mut task,exit)?;
-    let index=run.batches.iter().position(|b|b.task.key==task.key).context("input_conflict: 方法任务不属于当前批次")?;
-    let f3=crate::interpolation::manifest::InterpolationManifest::load(&crate::foundation::layout::path(&cfg.work_dir,"interpolation/manifest.json"))?;
-    let source=super::source::bind(&cfg.work_dir,&cfg,&f3)?;
-    run.batches[index].task=task;
-    if !run.batches[index].collected {collect(&mut run,index,&source)?;}
-    let complete=run.batches[index].requests.iter().all(|q|run.latest(q).is_some_and(|a|matches!(a.status.as_str(),"valid"|"completed")));
-    native_jobs::finish_group(&cfg,&mut run.batches[index].task,complete)?;
-    run.refresh();store::write(&path,&run)?;
-    ensure!(exit==0,"execution_failed: 方法原生退出 {exit}，成功点已保留");
-    ensure!(complete,"partial: 方法有无效温度数据，原生证据已保留");
-    if run.execution_complete {
-        crate::delivery::finalize_to(&cfg.work_dir,Some(&root.join("results")))?;
-        crate::foundation::stage_results::tree(&cfg,Step::Superconductivity,"",&root.join("results"),serde_json::json!({"kind":"native_superconductivity"}))?;
-        let completion=crate::foundation::stages::Completion {
-            schema_version:1,step:Step::Superconductivity,
-            scientific_key:crate::foundation::stages::scientific_key(&cfg,Step::Superconductivity)?,
-            upstream:crate::foundation::stages::upstream(&cfg,Step::Superconductivity)?,
-            outputs:crate::foundation::workspace_science::evidence(&cfg,Step::Superconductivity)?,provenance:None
-        };
-        completion.verify()?;
-        store::write(&crate::foundation::stages::receipt(&cfg.work_dir,Step::Superconductivity),&completion)?;
-    }
-    Ok(())
+pub fn allocated_finish(_config: &std::path::Path, _group: &str, _exit: i32) -> Result<()> {
+    anyhow::bail!("unsupported_version: 旧收尾脚本已停用；请使用当前配置的公开命令归集方法结果")
 }

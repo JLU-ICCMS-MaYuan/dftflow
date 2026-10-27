@@ -35,6 +35,7 @@ regex = { workspace = true }
 roxmltree = { workspace = true }
 sha2 = "0.10"
 libc = "0.2"
+shell-words = "1"
 qf-config = { path = "../crates/qf-config" }
 qf-crystal = { path = "../crates/qf-crystal" }
 qf-input = { path = "../crates/qf-input" }

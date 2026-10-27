@@ -53,6 +53,12 @@ pub struct BudgetLedger {
 }
 
 impl BudgetLedger {
+    /// 已结算的 token 不再关联任务，避免双方法同时结束时重复结算。
+    pub fn has_unsettled_token(&self, token: &str) -> bool {
+        self.reservations.iter().any(|r| r.id == token)
+            || self.allocations.iter().any(|a| a.reservation_id == token)
+    }
+
     /// 核对当前分配已经登记，不检查时间／存储额度或创建第二份预留。
     pub fn require_allocation(&self, job: u64, resources: &super::config::Resources) -> Result<String> {
         let allocation = self

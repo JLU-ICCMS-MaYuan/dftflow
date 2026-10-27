@@ -1,4 +1,8 @@
-# epw_clear：清理历史计算
+# epw_clear：旧历史清理与新布局兼容
+
+八日志工作区不再生成历史目录。`epw_clear` 检测到新布局时报告无需清理并正常退出，不删除八份日志、`.jobs`、计算结果、配置版本或 `imports/`，也不要求完整科学配置。
+
+以下清理规则仅用于仍采用旧 `layout.json` 的工作区。
 
 `epw_clear` 清空编号工作区的三处历史：`epw-state/history/`、`epw-state/native-attempts/history/`、`epw-state/native-jobs/history/`。保留现用计算、`results/`、现用任务记录及预算，不另建备份。
 

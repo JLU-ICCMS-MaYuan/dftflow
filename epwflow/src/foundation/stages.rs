@@ -94,8 +94,11 @@ impl Step {
 }
 
 pub fn execution_steps(cfg: &Config, target: Step) -> Vec<Step> {
-    if target == Step::Phonon && super::phonon_import::bound(cfg) { vec![Step::Phonon] }
-    else { target.closure() }
+    if target == Step::Phonon && super::phonon_import::bound(cfg) {
+        vec![Step::Phonon]
+    } else {
+        target.closure()
+    }
 }
 
 fn program(path: &Path) -> Result<Value> {
@@ -105,7 +108,7 @@ fn program(path: &Path) -> Result<Value> {
 /// 参数所有权保持局部：尤其 Wannier 不读取 PH 网格，粗网格不读取细网格。
 pub fn parameters(cfg: &Config, step: Step) -> Result<Value> {
     let qe = &cfg.qe;
-    let mut value=match step {
+    let mut value = match step {
         Step::Scf => json!({"structure":store::hash_file(&cfg.structure)?,
             "pseudos":cfg.pseudos.iter().map(|(el,p)| Ok((el.clone(),store::hash_file(p)?))).collect::<Result<BTreeMap<_,_>>>()?,
             "pw":program(&cfg.programs.pw.path)?,"prefix":qe.prefix,"ecutwfc":qe.ecutwfc_ry,"ecutrho":qe.ecutrho_ry,
@@ -129,26 +132,39 @@ pub fn parameters(cfg: &Config, step: Step) -> Result<Value> {
             json!({"solver":cfg.superconductivity,"epw":program(&cfg.programs.epw.path)?})
         }
     };
-    let name=match step {
-        Step::Scf=>super::native_config::SCF.to_owned(),Step::Nscf=>super::native_config::NSCF.to_owned(),
-        Step::Electronic=>super::native_config::ELECTRONIC.to_owned(),Step::Phonon=>cfg.phonon_stage(),
-        Step::Wannier=>super::native_config::WANNIER.to_owned(),Step::Coarse=>super::native_config::COARSE.to_owned(),
-        Step::Fine=>super::native_config::FINE.to_owned(),Step::Superconductivity=>super::native_config::SUPER.to_owned(),
+    let name = match step {
+        Step::Scf => super::native_config::SCF.to_owned(),
+        Step::Nscf => super::native_config::NSCF.to_owned(),
+        Step::Electronic => super::native_config::ELECTRONIC.to_owned(),
+        Step::Phonon => cfg.phonon_stage(),
+        Step::Wannier => super::native_config::WANNIER.to_owned(),
+        Step::Coarse => super::native_config::COARSE.to_owned(),
+        Step::Fine => super::native_config::FINE.to_owned(),
+        Step::Superconductivity => super::native_config::SUPER.to_owned(),
     };
-    let mut native:Value=cfg.native_value(&[&name])?;
-    if step==Step::Wannier {native.as_object_mut().unwrap().remove("electron_dos");}
-    if step==Step::Coarse {native.as_object_mut().unwrap().remove("comparison");}
-    if let Some(workflow)=native.get_mut("workflow").and_then(Value::as_object_mut) {
+    let mut native: Value = cfg.native_value(&[&name])?;
+    if step == Step::Wannier {
+        native.as_object_mut().unwrap().remove("electron_dos");
+    }
+    if step == Step::Coarse {
+        native.as_object_mut().unwrap().remove("comparison");
+    }
+    if let Some(workflow) = native.get_mut("workflow").and_then(Value::as_object_mut) {
         workflow.remove("phonon_sigma_cm1");
-        if step==Step::Coarse {workflow.remove("onsite_asr");}
-        if let Some(derived)=workflow.get_mut("derived").and_then(Value::as_object_mut) {
-            derived.retain(|key,_|!(step==Step::Wannier&&key.starts_with("electron_dos.")) && !(step==Step::Coarse&&key.starts_with("comparison.")));
+        if step == Step::Coarse {
+            workflow.remove("onsite_asr");
+        }
+        if let Some(derived) = workflow.get_mut("derived").and_then(Value::as_object_mut) {
+            derived.retain(|key, _| {
+                !(step == Step::Wannier && key.starts_with("electron_dos."))
+                    && !(step == Step::Coarse && key.starts_with("comparison."))
+            });
         }
     }
     if step == Step::Phonon && super::phonon_import::bound(cfg) {
         value["external_phonon"] = json!(store::hash_file(&super::phonon_import::binding(cfg))?);
     }
-    value["native"]=native;
+    value["native"] = native;
     Ok(value)
 }
 
@@ -203,14 +219,17 @@ fn verify_outputs(
 ) -> Result<bool> {
     std::thread::scope(|scope| {
         let check = &check;
-        let workers: Vec<_> = outputs.chunks(outputs.len().div_ceil(8).max(1))
+        let workers: Vec<_> = outputs
+            .chunks(outputs.len().div_ceil(8).max(1))
             .map(|part| scope.spawn(move || part.iter().map(check).collect::<Result<Vec<_>>>()))
             .collect();
         // 先归集所有线程，再传播错误；缺失不能掩盖另一份产物损坏。
         let results: Vec<_> = workers.into_iter().map(|worker| worker.join()).collect();
         let mut available = true;
         for result in results {
-            for valid in result.map_err(|_| anyhow::anyhow!("execution_failed: 产物核验线程失败"))?? {
+            for valid in
+                result.map_err(|_| anyhow::anyhow!("execution_failed: 产物核验线程失败"))??
+            {
                 available &= valid;
             }
         }
@@ -224,7 +243,10 @@ impl Completion {
     }
     /// 缺失可以重建；已存在文件仍逐项严格检查，不掩盖篡改或读取错误。
     pub fn available(&self) -> Result<bool> {
-        ensure!(self.schema_version == 1 && !self.outputs.is_empty(), "data_invalid: 阶段清单缺证据");
+        ensure!(
+            self.schema_version == 1 && !self.outputs.is_empty(),
+            "data_invalid: 阶段清单缺证据"
+        );
         // 缺少诊断文件由派生交付报告，不为补图重跑科学；存在但损坏仍拒绝。
         verify_outputs(&self.outputs, |id| {
             store::identity_available(id).map(|available| available || self.decay_diagnostic(id))
@@ -256,52 +278,98 @@ impl Completion {
     }
 }
 
+pub fn completion(cfg: &Config, step: Step) -> Result<Completion> {
+    let config = super::readable_state::computation_config(&cfg.work_dir, step)?;
+    let previous = super::readable_state::load_config(&config)?;
+    Ok(Completion {
+        schema_version: 1,
+        step,
+        scientific_key: scientific_key(&previous, step)?,
+        upstream: BTreeMap::new(),
+        outputs: super::workspace_science::evidence(cfg, step)?,
+        provenance: None,
+    })
+}
 pub fn upstream(cfg: &Config, step: Step) -> Result<BTreeMap<String, String>> {
     step.dependencies()
         .iter()
-        .map(|&d| {
-            let c: Completion = store::read(&receipt(&cfg.work_dir, d))?;
-            c.verify()?;
-            ensure!(
-                c.scientific_key == scientific_key(cfg, d)?,
-                "input_conflict: 上游 {} 需要更新",
-                d.name()
-            );
-            Ok((d.name().into(), c.output_key()?))
+        .map(|&s| {
+            Ok((
+                s.name().into(),
+                super::readable_state::read(&cfg.work_dir, s)?
+                    .get("阶段", "批次")
+                    .unwrap_or("现有科学结果")
+                    .into(),
+            ))
         })
         .collect()
 }
-
 pub fn reusable(cfg: &Config, step: Step) -> Result<bool> {
-    let path = receipt(&cfg.work_dir, step);
-    if !path.exists() {
+    use super::readable_state as log;
+    let doc = log::read(&cfg.work_dir, step)?;
+    if doc.get("阶段", "科学状态") != Some("已完成") {
         return Ok(false);
     }
-    let c: Completion = store::read(&path)?;
-    if c.step != step || c.scientific_key != scientific_key(cfg, step)? {
+    let previous = match log::computation_config(&cfg.work_dir, step)
+        .and_then(|p| super::readable_state::load_config(&p))
+    {
+        Ok(c) => c,
+        Err(_) => return Ok(false),
+    };
+    if parameters(cfg, step)? != parameters(&previous, step)? {
         return Ok(false);
     }
-    for &d in step.dependencies() {
-        if !reusable(cfg, d)? {
+    for &dependency in step.dependencies() {
+        if !reusable(cfg, dependency)? {
+            return Ok(false);
+        }
+        let upstream = log::read(&cfg.work_dir, dependency)?;
+        if doc.get("依赖", &format!("{} 批次", dependency.name())) != upstream.get("阶段", "批次")
+        {
             return Ok(false);
         }
     }
-    if !c.available()? { return Ok(false); }
-    if step == Step::Wannier && ["bvec", "mmn"].iter().any(|suffix| {
-        let path = step.directory(cfg).join(format!("{}.{suffix}", cfg.qe.prefix));
-        !c.outputs.iter().any(|id| id.path == path)
-    }) {
-        // 旧收据没有绑定速度矩阵依赖，不能事后把未绑定文件补认成原始产物。
-        return Ok(false);
+    // 文件和原生语义直接核验；缺失旧现场只意味着需要更新。
+    match super::workspace_science::validate(cfg, step) {
+        Ok(()) => Ok(true),
+        Err(e) => {
+            if e.chain().any(|e| {
+                e.downcast_ref::<std::io::Error>()
+                    .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+            }) {
+                Ok(false)
+            } else {
+                Err(e)
+            }
+        }
     }
-    if c.upstream != upstream(cfg, step)? { return Ok(false); }
-    if step == Step::Nscf {
-        crate::qe_data::nscf::verified_states(cfg, &cfg.work_dir)?;
-    }
-    if step == Step::Electronic {
-        return super::workspace_electronic::completed(cfg);
-    }
-    Ok(true)
+}
+pub fn finish(cfg: &Config, step: Step) -> Result<()> {
+    super::workspace_science::validate(cfg, step)?;
+    let scientific_valid = if step == Step::Superconductivity
+        && cfg.superconductivity.task == super::config::SuperconductivityTask::Gap
+    {
+        let fine = crate::interpolation::direct::fine(cfg)?;
+        crate::superconductivity::points::published(&cfg.work_dir, cfg, &fine.run_id)?.data_complete
+    } else {
+        true
+    };
+    let upstream = upstream(cfg, step)?;
+    super::readable_state::update(&cfg.work_dir, step, |d| {
+        let state = if scientific_valid {
+            "已完成"
+        } else {
+            "求解已结束，能隙数据无效"
+        };
+        d.set("阶段", "科学状态", state);
+        d.set("阶段", "状态", state);
+        d.remove("依赖");
+        for (name, batch) in upstream {
+            d.set("依赖", &format!("{name} 批次"), batch);
+        }
+        d.remove("问题");
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -326,20 +394,31 @@ mod tests {
     #[test]
     fn output_verification_never_hides_damage_behind_missing_files_or_previous_calls() {
         let (cfg, root) = cfg();
-        let paths: Vec<_> = (0..17).map(|i| root.join(format!("artifact-{i}"))).collect();
-        for path in &paths { std::fs::write(path, "original").unwrap(); }
+        let paths: Vec<_> = (0..17)
+            .map(|i| root.join(format!("artifact-{i}")))
+            .collect();
+        for path in &paths {
+            std::fs::write(path, "original").unwrap();
+        }
         let completion = Completion {
-            schema_version: 1, step: Step::Scf,
+            schema_version: 1,
+            step: Step::Scf,
             scientific_key: scientific_key(&cfg, Step::Scf).unwrap(),
             upstream: BTreeMap::new(),
-            outputs: paths.iter().map(|p| store::Identity::capture(p).unwrap()).collect(),
+            outputs: paths
+                .iter()
+                .map(|p| store::Identity::capture(p).unwrap())
+                .collect(),
             provenance: None,
         };
         assert!(completion.available().unwrap());
         completion.verify().unwrap();
         std::fs::remove_file(&paths[0]).unwrap();
         std::fs::write(&paths[16], "damaged").unwrap();
-        assert!(completion.available().is_err(), "先发现缺失也必须拒绝另一产物损坏");
+        assert!(
+            completion.available().is_err(),
+            "先发现缺失也必须拒绝另一产物损坏"
+        );
         assert!(completion.verify().is_err());
         std::fs::write(&paths[16], "original").unwrap();
         assert!(!completion.available().unwrap());
@@ -396,11 +475,12 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn corrupted_reusable_outputs_are_rejected_and_stale_requests_do_not_block_recalculation() {
-        let (mut cfg, root) = cfg();
+    fn legacy_receipt_never_controls_new_logs_and_missing_science_is_pending() {
+        let (cfg, root) = cfg();
+        super::super::readable_state::initialize(&cfg).unwrap();
         let output = root.join("output");
-        std::fs::write(&output, "scientific output").unwrap();
-        let completion = Completion {
+        std::fs::write(&output, "unrelated output").unwrap();
+        let c = Completion {
             schema_version: 1,
             step: Step::Scf,
             scientific_key: scientific_key(&cfg, Step::Scf).unwrap(),
@@ -408,12 +488,11 @@ mod tests {
             outputs: vec![store::Identity::capture(&output).unwrap()],
             provenance: None,
         };
-        store::write(&receipt(&root, Step::Scf), &completion).unwrap();
-        assert!(reusable(&cfg, Step::Scf).unwrap());
-        std::fs::write(output, "damaged").unwrap();
-        assert!(reusable(&cfg, Step::Scf).is_err());
-        cfg.qe.ecutwfc_ry += 1.;
-        assert!(!reusable(&cfg, Step::Scf).unwrap());
+        store::write(&receipt(&root, Step::Scf), &c).unwrap();
+        assert!(
+            !reusable(&cfg, Step::Scf).unwrap(),
+            "旧 JSON 不能取代阶段日志和实际 SCF 输出"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 }

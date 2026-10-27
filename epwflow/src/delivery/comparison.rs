@@ -19,7 +19,11 @@ pub fn summary(data: &Dataset) -> serde_json::Value {
 }
 
 pub fn result_dir(work: &Path) -> PathBuf {
-    if crate::foundation::layout::enabled(work) {work.join("results/6.epw-coarse")} else {crate::foundation::layout::path(work,"results")}
+    if crate::foundation::layout::enabled(work) {
+        work.join("results/6.epw-coarse")
+    } else {
+        crate::foundation::layout::path(work, "results")
+    }
 }
 
 pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
@@ -30,6 +34,22 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
         .unwrap_or_else(|| result_dir(work));
     fs::create_dir_all(&output)?;
     let _lock = store::Lock::acquire(&output.join("comparison"))?;
+    if crate::foundation::layout::enabled(work)
+        && output == result_dir(work)
+        && output.join("comparison").is_dir()
+        && store::hash_file(&source.join("manifest.json"))?
+            != store::hash_file(&output.join("comparison/manifest.json"))?
+    {
+        fs::remove_dir_all(output.join("comparison"))?;
+        let figures = output.join("figures");
+        if figures.is_dir() {
+            fs::remove_dir_all(figures)?;
+        }
+        let summary = output.join("comparison-summary.json");
+        if summary.is_file() {
+            fs::remove_file(summary)?;
+        }
+    }
     if output.join("comparison").is_dir() {
         ensure!(
             store::hash_file(&source.join("manifest.json"))?
@@ -37,13 +57,15 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
             "input_conflict: 结果绑定其他来源；请使用新的 --output"
         );
         for file in &data.manifest.files {
-            let target=output.join("comparison").join(&file.relative_path);
-            if !target.exists() {fs::copy(source.join(&file.relative_path),&target)?;}
+            let target = output.join("comparison").join(&file.relative_path);
+            if !target.exists() {
+                fs::copy(source.join(&file.relative_path), &target)?;
+            }
             file.verify(&output.join("comparison"))?;
         }
         load(&output.join("comparison"))?;
         if !output.join("comparison-summary.json").exists() {
-            store::write(&output.join("comparison-summary.json"),&summary(&data))?;
+            store::write(&output.join("comparison-summary.json"), &summary(&data))?;
         }
         return Ok(output);
     }

@@ -65,18 +65,103 @@ impl NativeReceipt {
     }
 }
 
-fn receipt_path(cfg: &Config, task: &str) -> PathBuf {
-    cfg.work_dir
-        .join("3.qe-electronic/receipts")
-        .join(format!("{task}.json"))
-}
 fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
-    let path = receipt_path(cfg, task);
-    if path.is_file() {
-        Ok(Some(store::read(&path)?))
-    } else {
-        Ok(None)
+    let label = format!("电子子步骤 · {task}");
+    let Some(outputs) = super::readable_state::completed_files(cfg, Step::Electronic, &label)?
+    else {
+        return Ok(None);
+    };
+    let Some(previous) = super::readable_state::checkpoint_config(cfg, Step::Electronic, &label)?
+    else {
+        return Ok(None);
+    };
+    if key(&previous, task)? != key(cfg, task)? {
+        return Ok(None);
     }
+    let dir = Step::Electronic.directory(cfg).join(if task == "dos" {
+        "qe_eledos"
+    } else {
+        "qe_eband"
+    });
+    let input = dir.join(match task {
+        "pw-bands" => "eband.in",
+        "bands" => "elebanddata.in",
+        _ => "eletdos.in",
+    });
+    if !input.is_file() {
+        return Ok(None);
+    }
+    let r = NativeReceipt {
+        version: 1,
+        key: key(cfg, task)?,
+        input: Identity::capture(&input)?,
+        outputs,
+        save_root: if task == "bands" {
+            None
+        } else {
+            Some(dir.join(format!("out/{}.save", cfg.qe.prefix)))
+        },
+        provenance: vec![],
+    };
+    r.verify()?;
+    match task {
+        "pw-bands" => validate_pw(cfg)?,
+        "bands" => {
+            qf_io::qe_completion::checked_log(&dir.join("bands.out"), false)?;
+            save::nonempty(&dir.join(format!("{}_band", cfg.qe.prefix)))?;
+            validate_table(&dir.join(format!("{}_band.gnu", cfg.qe.prefix)), false)?;
+        }
+        "dos" => {
+            qf_io::qe_completion::checked_log(&dir.join("dos.out"), false)?;
+            validate_table(&dir.join(format!("{}.tdos", cfg.qe.prefix)), true)?;
+            ensure!(
+                save::files(&super::layout::path(&cfg.work_dir, "nscf/out"))?
+                    == save::files(&dir.join("out"))?,
+                "data_invalid: DOS 数据与当前 NSCF 不一致"
+            );
+        }
+        _ => unreachable!(),
+    }
+    Ok(Some(r))
+}
+fn validate_table(path: &Path, increasing: bool) -> Result<()> {
+    let mut previous = None;
+    let mut count = 0;
+    for line in fs::read_to_string(path)?
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
+    {
+        let row = line
+            .split_whitespace()
+            .map(str::parse::<f64>)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        ensure!(
+            row.len() >= 2 && row.iter().all(|v| v.is_finite()),
+            "data_invalid: 非法电子数据 {}",
+            path.display()
+        );
+        if increasing {
+            ensure!(
+                previous.is_none_or(|p| row[0] > p),
+                "data_invalid: DOS 能量轴未递增"
+            );
+        }
+        previous = Some(row[0]);
+        count += 1;
+    }
+    ensure!(count > 1, "data_invalid: 电子数据为空 {}", path.display());
+    Ok(())
+}
+fn persist_receipt(cfg: &Config, task: &str, r: &NativeReceipt) -> Result<()> {
+    super::readable_state::complete_files(
+        cfg,
+        Step::Electronic,
+        &format!("电子子步骤 · {task}"),
+        &r.outputs
+            .iter()
+            .map(|id| id.path.clone())
+            .collect::<Vec<_>>(),
+    )
 }
 
 /// 只剔除已支持的 QE 资源参数；其余原生选项参与 PW 任务身份。
@@ -138,7 +223,13 @@ fn key(cfg: &Config, task: &str) -> Result<String> {
             post_program(cfg, "dos")?,
             format!(
                 "sigma_ry={:.15}",
-                cfg.native_value::<f64>(&[super::native_config::ELECTRONIC,"qe_eledos","dos","DOS","degauss"])?
+                cfg.native_value::<f64>(&[
+                    super::native_config::ELECTRONIC,
+                    "qe_eledos",
+                    "dos",
+                    "DOS",
+                    "degauss"
+                ])?
             ),
             json!(stages::upstream(cfg, Step::Electronic)?),
         ),
@@ -148,11 +239,25 @@ fn key(cfg: &Config, task: &str) -> Result<String> {
         1,
         task,
         cfg.native_value::<serde_json::Value>(&match task {
-            "pw-bands" => vec![super::native_config::ELECTRONIC,"qe_eband","pw"],
-            "bands" => vec![super::native_config::ELECTRONIC,"qe_eband","bands"],
-            _ => vec![super::native_config::ELECTRONIC,"qe_eledos","dos"],
+            "pw-bands" => vec![super::native_config::ELECTRONIC, "qe_eband", "pw"],
+            "bands" => vec![super::native_config::ELECTRONIC, "qe_eband", "bands"],
+            _ => vec![super::native_config::ELECTRONIC, "qe_eledos", "dos"],
         })?,
-        if task == "pw-bands" {Some((cfg.native_value::<u32>(&[super::native_config::ELECTRONIC,"workflow","points_per_edge"])?,cfg.kpath.as_ref().map(|p|store::hash_file(p)).transpose()?))} else {None},
+        if task == "pw-bands" {
+            Some((
+                cfg.native_value::<u32>(&[
+                    super::native_config::ELECTRONIC,
+                    "workflow",
+                    "points_per_edge",
+                ])?,
+                cfg.kpath
+                    .as_ref()
+                    .map(|p| store::hash_file(p))
+                    .transpose()?,
+            ))
+        } else {
+            None
+        },
         upstream,
         store::hash_file(&program.path)?,
         if task == "pw-bands" {
@@ -168,16 +273,24 @@ fn reusable(cfg: &Config, task: &str) -> Result<bool> {
     let Some(receipt) = read_receipt(cfg, task)? else {
         return Ok(false);
     };
-    if !receipt.input.path.try_exists()? { return Ok(false); }
+    if !receipt.input.path.try_exists()? {
+        return Ok(false);
+    }
     if receipt.key != key(cfg, task)? {
         return Ok(false);
     }
-    if !store::identity_available(&receipt.input)? { return Ok(false); }
+    if !store::identity_available(&receipt.input)? {
+        return Ok(false);
+    }
     let mut available = true;
     for id in receipt.outputs.iter().chain(&receipt.provenance) {
-        if !store::identity_available(id)? { available = false; }
+        if !store::identity_available(id)? {
+            available = false;
+        }
     }
-    if !available { return Ok(false); }
+    if !available {
+        return Ok(false);
+    }
     receipt.verify()?;
     Ok(true)
 }
@@ -191,29 +304,6 @@ pub(super) fn completed(cfg: &Config) -> Result<bool> {
     Ok(true)
 }
 
-pub(super) fn compatible_partial(cfg: &Config) -> Result<bool> {
-    if let Some(receipt) = read_receipt(cfg, "pw-bands")? {
-        if receipt.key != key(cfg, "pw-bands")? {
-            return Ok(false);
-        }
-        if !store::identity_available(&receipt.input)? { return Ok(false); }
-        for id in &receipt.outputs {
-            if !store::identity_available(id)? { return Ok(false); }
-        }
-        receipt.verify()?;
-    }
-    Ok(true)
-}
-
-pub(super) fn archive(cfg: &Config, history: &Path) -> Result<()> {
-    let path = cfg.work_dir.join("3.qe-electronic/receipts");
-    if path.exists() {
-        fs::create_dir_all(history)?;
-        fs::rename(path, history.join("native-receipts"))?;
-    }
-    Ok(())
-}
-
 fn capture(
     cfg: &Config,
     task: &str,
@@ -225,7 +315,9 @@ fn capture(
     // 新原生任务只绑定合并的 .out；旧收据和非原生执行仍要求独立 .err。
     let merged_stderr = if super::native_jobs::enabled() {
         super::native_jobs::active_task(cfg)?
-            .filter(|task| task.schema_version == 3 && Some(task.directory.as_path()) == input.parent())
+            .filter(|task| {
+                task.schema_version == 3 && Some(task.directory.as_path()) == input.parent()
+            })
             .map(|task| task.directory.join(format!("{}.err", task.stem)))
     } else {
         None
@@ -259,22 +351,13 @@ fn logs(dir: &Path, stem: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-/// 重试只归档该原生任务日志及输出；不触碰成功 PW 的保存树。
-fn archive_task(cfg: &Config, task: &str, paths: &[PathBuf]) -> Result<()> {
-    let history = cfg
-        .work_dir
-        .join("epw-state/history")
-        .join(format!("electronic-{task}-{}", store::token()));
-    for path in paths
-        .iter()
-        .chain(std::iter::once(&receipt_path(cfg, task)))
-    {
-        if path.exists() {
-            fs::create_dir_all(&history)?;
-            fs::rename(
-                path,
-                history.join(path.file_name().context("data_invalid: 缺归档文件名")?),
-            )?;
+/// 重试只覆盖该原生任务日志及输出；不触碰成功 PW 的保存树。
+fn archive_task(_cfg: &Config, _task: &str, paths: &[PathBuf]) -> Result<()> {
+    for p in paths {
+        if p.is_dir() {
+            fs::remove_dir_all(p)?;
+        } else if p.exists() {
+            fs::remove_file(p)?;
         }
     }
     Ok(())
@@ -296,11 +379,33 @@ fn validate_pw(cfg: &Config) -> Result<()> {
     );
     qf_io::qe_completion::checked_log(&dir.join("eband.out"), false)?;
     let qe = QeSettings::from_config(cfg)?;
+    let normalize = |text: &str| {
+        text.lines()
+            .map(|line| line.split('!').next().unwrap_or(""))
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<String>()
+    };
+    ensure!(
+        normalize(&fs::read_to_string(dir.join("eband.in"))?)
+            == normalize(&qe.path_input("./out", &path_points(cfg)?)?),
+        "input_conflict: 已有 PW 能带输入与当前配置不符"
+    );
     let geo = crate::qe_data::xml::validate_save(&dir.join("out"), &cfg.qe.prefix, &qe, None)?;
     let states = crate::qe_data::nscf::parse_xml(
         &dir.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix)),
     )?;
     let points: Vec<[f64; 3]> = store::read(&dir.join("path-points.json"))?;
+    let expected = path_points(cfg)?;
+    ensure!(
+        points.len() == expected.len()
+            && points
+                .iter()
+                .flatten()
+                .zip(expected.iter().flatten())
+                .all(|(a, b)| (a - b).abs() < 1e-10),
+        "input_conflict: 已有 PW 能带路径与当前 KPATH 不符，请重新计算电子阶段"
+    );
     ensure!(
         states.nbnd == cfg.qe.nscf.nbnd as usize && states.kpoints.len() == points.len(),
         "data_invalid: PW 能带带数或 k 点数不符"
@@ -317,74 +422,12 @@ fn validate_pw(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
-#[derive(Deserialize)]
-struct LegacyAttempt {
-    config: Identity,
-    sources: Vec<Identity>,
-    state: String,
-    job: Option<u64>,
-}
-
-/// 只读核验旧 PW 结果，供现场核验及正常入口的一次性接入共用。
+/// 只读检查现有原生 PW 结果，不通过历史尝试或请求目录追溯。
 pub fn inspect_legacy(cfg: &Config) -> Result<NativeReceipt> {
-    let request: String = store::read(&cfg.work_dir.join("epw-state/requests/electronic.json"))?;
-    ensure!(
-        request == stages::scientific_key(cfg, Step::Electronic)?,
-        "input_conflict: 旧电子请求与当前科学参数不相容"
-    );
-    stages::upstream(cfg, Step::Electronic)?;
-    let dir = Step::Electronic.directory(cfg).join("qe_eband");
-    let input = fs::read_to_string(dir.join("eband.in"))?;
-    let points: Vec<[f64; 3]> = store::read(&dir.join("path-points.json"))?;
-    let mut provenance = None;
-    for entry in fs::read_dir(cfg.work_dir.join("epw-state/attempts"))? {
-        let file = entry?.path().join("attempt.json");
-        let Ok(attempt) = store::read::<LegacyAttempt>(&file) else {
-            continue;
-        };
-        if attempt.job.is_none() || !["failed", "succeeded"].contains(&attempt.state.as_str()) {
-            continue;
-        }
-        attempt.config.verify()?;
-        let old = Config::load(&attempt.config.path)?;
-        if old.work_dir != cfg.work_dir
-            || stages::scientific_key(&old, Step::Electronic)? != request
-            || scientific_args(&old.programs.pw) != scientific_args(&cfg.programs.pw)
-        {
-            continue;
-        }
-        let expected = QeSettings::from_config(&old)?
-            .path_input("./out", &points)?;
-        if input != expected {
-            continue;
-        }
-        let mut ids = vec![attempt.config];
-        for path in std::iter::once(&old.structure)
-            .chain(old.pseudos.values())
-            .chain(old.kpath.iter())
-            .chain(std::iter::once(&old.programs.pw.path))
-        {
-            let id = attempt
-                .sources
-                .iter()
-                .find(|id| &id.path == path)
-                .context("data_invalid: 旧尝试缺科学来源身份")?;
-            id.verify()?;
-            ids.push(id.clone());
-        }
-        // 点表本身必须与原冻结 KPATH 生成结果一致，不能信任手工修改的辅助 JSON。
-        ensure!(
-            points == path_points(&old)?,
-            "input_conflict: 旧 PW 路径点表不符"
-        );
-        provenance = Some(ids);
-        break;
-    }
-    let provenance = provenance.context(
-        "data_invalid: 旧 PW 能带缺匹配的终态冻结来源；保留现场并停止，不能自动重算成功 PW",
-    )?;
     validate_pw(cfg)?;
+    let dir = Step::Electronic.directory(cfg).join("qe_eband");
     let mut paths = logs(&dir, "eband");
+    paths.retain(|p| p.exists());
     paths.push(dir.join("path-points.json"));
     capture(
         cfg,
@@ -392,7 +435,7 @@ pub fn inspect_legacy(cfg: &Config) -> Result<NativeReceipt> {
         &dir.join("eband.in"),
         &paths,
         Some(dir.join(format!("out/{}.save", cfg.qe.prefix))),
-        provenance,
+        vec![],
     )
 }
 
@@ -411,7 +454,7 @@ fn prepare_pw(cfg: &Config) -> Result<()> {
         && qf_io::qe_completion::checked_log(&dir.join("eband.out"), false).is_ok();
     if successful || done {
         let receipt = inspect_legacy(cfg)?;
-        store::write(&receipt_path(cfg, "pw-bands"), &receipt)?;
+        persist_receipt(cfg, "pw-bands", &receipt)?;
         println!("reuse: electronic/pw-bands（旧冻结来源已校验）");
     }
     Ok(())
@@ -443,10 +486,12 @@ pub(super) fn inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
     fs::create_dir_all(&bands)?;
     fs::create_dir_all(&dos)?;
     let points = path_points(cfg)?;
-    let input = qe
-        .path_input("./out", &points)?;
-    if !super::native_jobs::enabled() { prepare_pw(cfg)?; }
-    if !receipt_path(cfg, "pw-bands").is_file() && !super::native_jobs::continuing(&bands, "eband")? {
+    let input = qe.path_input("./out", &points)?;
+    if !super::native_jobs::enabled() {
+        prepare_pw(cfg)?;
+    }
+    if read_receipt(cfg, "pw-bands")?.is_none() && !super::native_jobs::continuing(&bands, "eband")?
+    {
         fs::write(bands.join("eband.in"), input)?;
         store::write(&bands.join("path-points.json"), &points)?;
     }
@@ -457,7 +502,10 @@ pub(super) fn inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
             cfg.qe.prefix, cfg.qe.prefix
         ),
     )?;
-    cfg.configure_file(&[super::native_config::ELECTRONIC,"qe_eband","bands"],&bands.join("elebanddata.in"))?;
+    cfg.configure_file(
+        &[super::native_config::ELECTRONIC, "qe_eband", "bands"],
+        &bands.join("elebanddata.in"),
+    )?;
     dos_inputs(cfg)?;
     Ok(())
 }
@@ -471,12 +519,21 @@ fn dos_inputs(cfg: &Config) -> Result<()> {
     qf_input::electronic::write_eledos_inputs(dos.to_str().unwrap(), &shared, &cfg.qe.prefix)?;
     let file = dos.join("eletdos.in");
     let text = fs::read_to_string(&file)?;
-    let sigma: f64 = cfg.native_value(&[super::native_config::ELECTRONIC,"qe_eledos","dos","DOS","degauss"])?;
+    let sigma: f64 = cfg.native_value(&[
+        super::native_config::ELECTRONIC,
+        "qe_eledos",
+        "dos",
+        "DOS",
+        "degauss",
+    ])?;
     fs::write(
         file,
         text.replacen("&dos", &format!("&dos\n ngauss=0, degauss={sigma:.15},"), 1),
     )?;
-    cfg.configure_file(&[super::native_config::ELECTRONIC,"qe_eledos","dos"],&dos.join("eletdos.in"))?;
+    cfg.configure_file(
+        &[super::native_config::ELECTRONIC, "qe_eledos", "dos"],
+        &dos.join("eletdos.in"),
+    )?;
     Ok(())
 }
 
@@ -506,7 +563,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                     Some(dir.join(format!("out/{}.save", cfg.qe.prefix))),
                     vec![],
                 )?;
-                store::write(&receipt_path(cfg, "pw-bands"), &receipt)?;
+                persist_receipt(cfg, "pw-bands", &receipt)?;
             }
             if reusable(cfg, "bands")? {
                 println!("reuse: electronic/bands");
@@ -516,7 +573,9 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                     dir.join(format!("{}_band", cfg.qe.prefix)),
                     dir.join(format!("{}_band.gnu", cfg.qe.prefix)),
                 ]);
-                if !super::native_jobs::continuing(&dir, "bands")? { archive_task(cfg, "bands", &paths)?; }
+                if !super::native_jobs::continuing(&dir, "bands")? {
+                    archive_task(cfg, "bands", &paths)?;
+                }
                 qe_run(
                     cfg,
                     &dir,
@@ -541,7 +600,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                     None,
                     vec![],
                 )?;
-                store::write(&receipt_path(cfg, "bands"), &receipt)?;
+                persist_receipt(cfg, "bands", &receipt)?;
             }
         }
         "qe_eledos" => {
@@ -552,7 +611,9 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             }
             let mut paths = logs(&dir, "dos");
             paths.push(dir.join(format!("{}.tdos", cfg.qe.prefix)));
-            if !super::native_jobs::continuing(&dir, "dos")? { archive_task(cfg, "dos", &paths)?; }
+            if !super::native_jobs::continuing(&dir, "dos")? {
+                archive_task(cfg, "dos", &paths)?;
+            }
             let source = super::layout::path(&cfg.work_dir, "nscf/out");
             let out = dir.join("out");
             if !out.exists() {
@@ -572,7 +633,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                 Some(out.join(format!("{}.save", cfg.qe.prefix))),
                 vec![],
             )?;
-            store::write(&receipt_path(cfg, "dos"), &receipt)?;
+            persist_receipt(cfg, "dos", &receipt)?;
         }
         _ => anyhow::bail!("configuration: 未知电子子阶段 {name}"),
     }

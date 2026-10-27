@@ -277,6 +277,19 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
     let f3_path = crate::foundation::layout::path(&work, "interpolation/manifest.json");
     let f4_path = crate::foundation::layout::path(&work, "superconductivity/manifest.json");
     let f3 = InterpolationManifest::load(&f3_path)?;
+    let f3_path = if crate::foundation::layout::enabled(work) {
+        let artifact = f3
+            .fine
+            .as_ref()
+            .context("data_invalid: 缺细网格")?
+            .artifacts
+            .iter()
+            .find(|a| a.role == "fine_log")
+            .context("data_invalid: 缺细网格日志")?;
+        crate::superconductivity::source::artifact_path(work, artifact)?
+    } else {
+        f3_path
+    };
     if store::read::<serde_json::Value>(&f4_path)?
         .get("task")
         .and_then(|v| v.as_str())
@@ -391,11 +404,12 @@ fn publish(
         }
         // 同一运行的 partial 交付可在原来源更新后重建；不能偷换绑定。
         ensure!(
-            old.run_id == data.run_id
-                && old
-                    .sources
-                    .first()
-                    .is_some_and(|x| x.sha256 == sources[0].sha256),
+            crate::foundation::layout::enabled(work)
+                || (old.run_id == data.run_id
+                    && old
+                        .sources
+                        .first()
+                        .is_some_and(|x| x.sha256 == sources[0].sha256)),
             "input_conflict: 结果绑定其他运行，请使用新的 --output"
         );
     }

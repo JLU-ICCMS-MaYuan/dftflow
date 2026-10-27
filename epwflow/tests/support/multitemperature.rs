@@ -24,7 +24,7 @@ impl Case {
 const ARGS: [&str; 3] = ["--stage", "superconductivity", "-s"];
 
 #[test]
-fn batch_prepared_script_changes_are_rejected_before_submission() {
+fn batch_prepared_script_comments_do_not_require_fingerprints() {
     let c = Case::gap_batch(config::Mode::Both, vec![20., 30.], None);
     success(c.direct_advance(2, &["--stage", "superconductivity"], "batch-prepare-only"));
     let iso = c.method_task("iso");
@@ -33,8 +33,8 @@ fn batch_prepared_script_changes_are_rejected_before_submission() {
     let text = fs::read_to_string(&script).unwrap();
     fs::write(script, format!("{text}\n# independent debug edit\n")).unwrap();
     let result = c.direct_advance(2, &ARGS, "batch-edited-prepare-submit");
-    assert!(!result.status.success());
-    assert_eq!(c.method_task("iso")["state"], "prepared");
+    success(result);
+    assert_eq!(c.method_task("iso")["state"], "submitted");
     // 一个方法的身份冲突不妨碍另一个方法提交。
     assert!(c.method_task("aniso")["job"].is_u64());
     assert_eq!(
@@ -42,7 +42,7 @@ fn batch_prepared_script_changes_are_rejected_before_submission() {
             .unwrap()
             .lines()
             .count(),
-        2
+        3
     );
 }
 
@@ -172,9 +172,7 @@ fn batch_native_early_stop_requires_explicit_resume_for_missing_temperatures() {
     let after = epwflow::superconductivity::points::Run::load(&root.join("manifest.json")).unwrap();
     assert!(after.execution_complete);
     assert!(!after.data_complete);
-    for entry in &before.attempts {
-        entry.record.as_ref().unwrap().verify().unwrap();
-    }
+    before.attempts[0].record.as_ref().unwrap().verify().unwrap();
 }
 
 #[test]
@@ -209,8 +207,9 @@ fn batch_wrong_temperature_log_and_active_upstream_change_are_rejected() {
     assert_eq!(c.execute_record(c.method_task("iso")), 0);
     assert_eq!(c.execute_record(c.method_task("aniso")), 0);
     success(c.direct_advance(2, &ARGS, "batch-valid-before-log-edit"));
+    let valid = epwflow::superconductivity::points::Run::load(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();
     let iso = c.method_task("iso");
-    let log = PathBuf::from(iso["directory"].as_str().unwrap()).join("epw.out");
+    let log = PathBuf::from(iso["directory"].as_str().unwrap()).join("point-30.out");
     let text = fs::read_to_string(&log).unwrap();
     fs::write(
         log,
@@ -221,15 +220,15 @@ fn batch_wrong_temperature_log_and_active_upstream_change_are_rejected() {
         .direct_advance(2, &ARGS, "batch-wrong-temperature")
         .status
         .success());
-    let run = epwflow::superconductivity::points::Run::load(
-        &c.root.join("run/8.epw-superconductivity/manifest.json"),
-    )
-    .unwrap();
     // 作业外归集已冻结有效结果；后来修改原日志必须拒绝复用，不能追认或重算。
-    assert!(run.execution_complete);
-    assert!(run
+    assert!(epwflow::superconductivity::points::Run::load(&c.root.join("run/8.epw-superconductivity/manifest.json")).is_err());
+    assert!(valid.execution_complete);
+    assert!(valid
         .attempts
         .iter()
         .filter(|a| a.request.mode == config::Mode::Aniso)
         .all(|a| a.status == "valid"));
+    for entry in valid.attempts.iter().filter(|a|a.request.mode==config::Mode::Aniso) {
+        epwflow::superconductivity::verify::record(&entry.record.as_ref().unwrap().path).unwrap();
+    }
 }

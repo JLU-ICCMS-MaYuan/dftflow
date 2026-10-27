@@ -20,7 +20,7 @@ fn decay_is_published_before_comparison_failure_and_repairs_without_rerunning_sc
     c.put("comparison-failure", "matdyn");
     success(c.stage_submit("coarse", false));
     assert!(!c.stage_execute().status.success());
-    let science = c.root.join("run/6.epw-coarse/completion.json");
+    let science = c.root.join("run/6.epw-coarse/epwdata.fmt");
     let receipt = fs::read(&science).unwrap();
     let native = c.root.join("run/6.epw-coarse");
     let result = c.root.join("run/results/6.epw-coarse/decay");
@@ -51,8 +51,7 @@ fn decay_is_published_before_comparison_failure_and_repairs_without_rerunning_sc
     fs::remove_file(native.join("decay/decay-H.png")).unwrap();
     fs::remove_file(result.join("decay-overview.pdf")).unwrap();
     // 模拟分配被终止后的遗留锁：只恢复原作业，错误所有者必须保留。
-    let active: Value = store::read(&c.root.join("run/epw-state/active.json")).unwrap();
-    let job = active["job"].as_u64().unwrap();
+    let job = c.direct_task()["job"].as_u64().unwrap();
     let locks = [
         native.join("decay/decay-publication.lock"),
         result.join("stage-publication.lock"),

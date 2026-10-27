@@ -85,14 +85,6 @@ fn public_nscf_grid_reuse_rejects_previously_unchecked_output() {
         .unwrap()
         .replace("<nks>36</nks>", "<nks>40</nks>");
     fs::write(&xml, text).unwrap();
-    let path = stages::receipt(&cfg.work_dir, Step::Nscf);
-    let mut completion: stages::Completion = store::read(&path).unwrap();
-    for identity in &mut completion.outputs {
-        if identity.path == xml {
-            *identity = store::Identity::capture(&xml).unwrap();
-        }
-    }
-    store::write(&path, &completion).unwrap();
     let error = format!("{:#}", stages::reusable(&cfg, Step::Nscf).unwrap_err());
     assert!(
         error.contains("nks=40") && error.contains("calculation='bands'"),

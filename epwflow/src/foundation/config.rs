@@ -119,8 +119,6 @@ impl Config {
         let mut c:Self=toml::from_str(&raw).with_context(||format!("configuration: {}: TOML 字段/类型错误",path.display()))?;
         c.validate()?;
         c.resolve(path.parent().context("configuration: 配置缺少父目录")?)?;
-        let marker=c.work_dir.join("epw-state/layout.json");
-        if marker.is_file(){let layout:super::layout::Layout=super::store::read(&marker)?;ensure!(layout.schema_version==1,"unsupported_version: 工作区布局版本");}
         Ok(c)
     }
     pub fn validate(&self)->Result<()>{

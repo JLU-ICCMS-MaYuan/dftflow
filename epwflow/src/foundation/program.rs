@@ -54,16 +54,20 @@ struct Options {
     /// 导入已有 PH save；仅执行 q2r、matdyn 和绘图。
     #[arg(long, value_name = "SAVE", conflicts_with_all = ["import_work", "migrate_state", "all", "run", "status", "probe", "import", "collect", "plot", "results_check", "budget", "export_comparison", "submit_chain"])]
     import_phonon: Option<PathBuf>,
-    /// 一次性迁移旧编号工作区的隐藏状态；保留历史与预算，不提交计算。
+    /// 一次性迁移旧编号工作区的隐藏状态；保留现用科学结果与预算，不提交计算。
     #[arg(long, conflicts_with_all = ["submit", "run", "status", "check", "import_work", "all", "resume"])]
     migrate_state: bool,
     #[arg(long, hide = true)]
     workspace_attempt: Option<PathBuf>,
     #[arg(long, hide = true)]
     workspace_task: Option<PathBuf>,
-    #[arg(long,hide=true)]
+    #[arg(long, hide = true)]
+    allocated_stage: Option<super::stages::Step>,
+    #[arg(long, hide = true)]
+    allocation_id: Option<String>,
+    #[arg(long, hide = true)]
     batch_finish: Option<String>,
-    #[arg(long,hide=true)]
+    #[arg(long, hide = true)]
     batch_exit: Option<i32>,
     #[arg(short = 'w', long)]
     work: Option<PathBuf>,
@@ -73,7 +77,7 @@ struct Options {
     /// 在已经登记的 Slurm 分配内运行本阶段。
     #[arg(short = 'r', long)]
     run: bool,
-    /// 恢复失败阶段；显式 --stage scf --resume -s 归档旧结果并强制重算，须搭配 -s 或 -r。
+    /// 恢复失败阶段；显式 --stage scf --resume -s 覆盖旧结果并强制重算，须搭配 -s 或 -r。
     #[arg(long)]
     resume: bool,
     /// 检查配置；结合 -w 检查本阶段数据。
@@ -142,56 +146,176 @@ pub fn run(phase: Phase) {
 }
 
 fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
-    if o.config==PathBuf::from("input.toml") && !o.config.exists() && PathBuf::from("inputepw.toml").is_file(){o.config=PathBuf::from("inputepw.toml");}
-    if let Some(group)=&o.batch_finish {return crate::superconductivity::batch::allocated_finish(&o.config,group,o.batch_exit.context("required: 方法原生退出码")?);}
-    if let Some(path)=&o.workspace_attempt { return super::workspace::execute(path); }
-    if let Some(path)=&o.workspace_task { return super::workspace::execute_task(path); }
+    if let Some(stage) = o.allocated_stage {
+        return super::workspace::allocated(
+            &o.config,
+            stage,
+            o.resume,
+            o.allocation_id
+                .as_deref()
+                .context("allocation: 缺少阶段分配标识")?,
+        );
+    }
+    if o.config == PathBuf::from("input.toml")
+        && !o.config.exists()
+        && PathBuf::from("inputepw.toml").is_file()
+    {
+        o.config = PathBuf::from("inputepw.toml");
+    }
+    if !o.config.is_file() {
+        if let Some(work) = &o.work {
+            if work.join("epw-state/1.qe-scf.log").is_file() {
+                o.config = super::readable_state::current_config(work)?;
+            }
+        }
+    }
+    if o.config.is_file()
+        && o.workspace_attempt.is_none()
+        && o.workspace_task.is_none()
+        && o.batch_finish.is_none()
+    {
+        let version = super::readable_state::backup_config(&o.config)?;
+        if let Ok(cfg) = super::config::Config::load(&o.config) {
+            if cfg.layout.as_deref() == Some("numbered") {
+                if !cfg.work_dir.join(".epwflow").exists() {
+                    super::readable_state::register_config(&cfg, &o.config, &version)?;
+                }
+            }
+        }
+    }
+    if let Some(group) = &o.batch_finish {
+        return crate::superconductivity::batch::allocated_finish(
+            &o.config,
+            group,
+            o.batch_exit.context("required: 方法原生退出码")?,
+        );
+    }
+    ensure!(
+        o.workspace_attempt.is_none() && o.workspace_task.is_none(),
+        "unsupported_version: 旧尝试脚本已经停用，请使用当前配置的公开命令重新生成"
+    );
     if let Some(source) = &o.import_phonon {
-        ensure!(phase == Phase::Phonon && o.stage.is_none_or(|s| s == super::stages::Step::Phonon),
-            "configuration: --import-phonon 仅属于 epw_phonon 的 phonon 阶段");
-        ensure!(!o.check || (!o.submit && !o.resume), "configuration: --check 为只读操作");
+        ensure!(
+            phase == Phase::Phonon && o.stage.is_none_or(|s| s == super::stages::Step::Phonon),
+            "configuration: --import-phonon 仅属于 epw_phonon 的 phonon 阶段"
+        );
+        ensure!(
+            !o.check || (!o.submit && !o.resume),
+            "configuration: --check 为只读操作"
+        );
         return super::phonon_import::command(&o.config, source, o.check, o.submit, o.resume);
     }
-    if let Some(source)=&o.import_work { return super::workspace::import_legacy(&o.config,source); }
-    if o.migrate_state { return super::run_state::migrate(&super::config::Config::load(&o.config)?); }
-    if let Some(work) = &o.work { super::run_state::ready(work)?; }
-    let numbered = if o.config.is_file() && o.work.as_ref().is_none_or(|w|super::layout::enabled(w)) {
-        super::config::Config::load(&o.config)?.layout.as_deref()==Some("numbered")
-    } else {false};
+    if let Some(source) = &o.import_work {
+        return super::workspace::import_legacy(&o.config, source);
+    }
+    if o.migrate_state {
+        return super::run_state::migrate(&super::config::Config::load(&o.config)?, &o.config);
+    }
+    if let Some(work) = &o.work {
+        super::run_state::ready(work)?;
+    }
+    let numbered =
+        if o.config.is_file() && o.work.as_ref().is_none_or(|w| super::layout::enabled(w)) {
+            super::config::Config::load(&o.config)?.layout.as_deref() == Some("numbered")
+        } else {
+            false
+        };
     if numbered && o.plot && o.results.is_none() {
-        ensure!(phase == Phase::Wannier, "input_conflict: 当前现场诊断图使用 epw_wannier --plot；结果包重绘使用 --results");
-        let cfg=super::config::Config::load(&o.config)?;
-        let path=super::wannier_diagnostics::generate(&cfg)?;
-        println!("diagnostic_plots: {}",path.display());
+        ensure!(
+            phase == Phase::Wannier,
+            "input_conflict: 当前现场诊断图使用 epw_wannier --plot；结果包重绘使用 --results"
+        );
+        let cfg = super::config::Config::load(&o.config)?;
+        let path = super::wannier_diagnostics::generate(&cfg)?;
+        println!("diagnostic_plots: {}", path.display());
         return Ok(());
     }
-    if numbered && !o.probe && o.budget.is_none() && o.import.is_none() && !o.collect && !o.plot && !o.results_check && o.export_comparison.is_none() {
+    if numbered
+        && !o.probe
+        && o.budget.is_none()
+        && o.import.is_none()
+        && !o.collect
+        && !o.plot
+        && !o.results_check
+        && o.export_comparison.is_none()
+    {
         use super::stages::Step;
-        ensure!(!o.all || phase == Phase::Phonon, "input_conflict: --all 仅由 epw_phonon 管理");
-        ensure!(!o.resume || o.submit || o.run, "required: --resume 需要 -s 或 -r");
-        let target=match (phase,o.stage) {
-            (Phase::Phonon,None)=>Step::Phonon,
-            (Phase::Phonon,Some(s @ (Step::Scf|Step::Nscf|Step::Electronic|Step::Phonon)))=>s,
-            (Phase::Wannier,None)=>Step::Coarse,
-            (Phase::Wannier,Some(s @ (Step::Wannier|Step::Coarse)))=>s,
-            (Phase::Superconductivity,None)=>Step::Superconductivity,
-            (Phase::Superconductivity,Some(s @ (Step::Fine|Step::Superconductivity)))=>s,
-            _=>anyhow::bail!("input_conflict: --stage 不属于当前程序"),
+        ensure!(
+            !o.all || phase == Phase::Phonon,
+            "input_conflict: --all 仅由 epw_phonon 管理"
+        );
+        ensure!(
+            !o.resume || o.submit || o.run,
+            "required: --resume 需要 -s 或 -r"
+        );
+        let target = match (phase, o.stage) {
+            (Phase::Phonon, None) => Step::Phonon,
+            (
+                Phase::Phonon,
+                Some(s @ (Step::Scf | Step::Nscf | Step::Electronic | Step::Phonon)),
+            ) => s,
+            (Phase::Wannier, None) => Step::Coarse,
+            (Phase::Wannier, Some(s @ (Step::Wannier | Step::Coarse))) => s,
+            (Phase::Superconductivity, None) => Step::Superconductivity,
+            (Phase::Superconductivity, Some(s @ (Step::Fine | Step::Superconductivity))) => s,
+            _ => anyhow::bail!("input_conflict: --stage 不属于当前程序"),
         };
-        ensure!(o.mpi.is_none(),"configuration: 编号工作区请修改 input.toml 的资源及启动器/pool");
-        let cfg=super::config::Config::load(&o.config)?;
+        ensure!(
+            o.mpi.is_none(),
+            "configuration: 编号工作区请修改 input.toml 的资源及启动器/pool"
+        );
+        let cfg = super::config::Config::load(&o.config)?;
         super::run_state::ready(&cfg.work_dir)?;
-        if o.status {if o.json{status::print_json(&super::workspace::report(&cfg)?);return Ok(())}return super::workspace::status(&cfg)}
-        if o.check {for s in target.closure(){if s==target || !super::stages::reusable(&cfg,s)?{super::parallelism::preflight(&cfg,s,false)?;}} if o.json{status::print_json(&serde_json::json!({"operation_status":"ok","workflow_status":"configured","workflow_complete":false,"checks":["configuration","input_files","program_paths","mpi_pool_image"]}));}else{println!("operation_status: ok\nworkflow_status: configured");}return Ok(())}
-        if o.submit {
-            if matches!(target,Step::Electronic|Step::Phonon) { return super::workspace::start_stage(&o.config, target, o.resume); }
-            return super::native_workspace::advance(&o.config,target,true,o.resume)
+        if o.status {
+            if o.json {
+                status::print_json(&super::workspace::report(&cfg)?);
+                return Ok(());
+            }
+            return super::workspace::status(&cfg);
         }
-        if o.run {return super::workspace::start(&o.config,target,false)}
-        super::native_workspace::advance(&o.config,if o.all {Step::Superconductivity}else{target},false,false)?;
-        return Ok(())
+        if o.check {
+            for s in target.closure() {
+                if s == target || !super::stages::reusable(&cfg, s)? {
+                    super::parallelism::preflight(&cfg, s, false)?;
+                }
+            }
+            if o.json {
+                status::print_json(
+                    &serde_json::json!({"operation_status":"ok","workflow_status":"configured","workflow_complete":false,"checks":["configuration","input_files","program_paths","mpi_pool_image"]}),
+                );
+            } else {
+                println!("operation_status: ok\nworkflow_status: configured");
+            }
+            return Ok(());
+        }
+        if o.submit {
+            if matches!(target, Step::Electronic | Step::Phonon) {
+                return super::workspace::start_stage(&o.config, target, o.resume);
+            }
+            return super::native_workspace::advance(&o.config, target, true, o.resume);
+        }
+        if o.run {
+            return super::workspace::start_allocated(&o.config, target, o.resume);
+        }
+        if matches!(target, Step::Electronic | Step::Phonon) && !o.all {
+            return super::workspace::prepare_stage(&o.config, target, false, false);
+        }
+        super::native_workspace::advance(
+            &o.config,
+            if o.all {
+                Step::Superconductivity
+            } else {
+                target
+            },
+            false,
+            false,
+        )?;
+        return Ok(());
     }
-    ensure!(o.stage.is_none(),"input_conflict: --stage 需要 layout='numbered' 的当前配置");
+    ensure!(
+        o.stage.is_none(),
+        "input_conflict: --stage 需要 layout='numbered' 的当前配置"
+    );
     if o.submit && !o.probe && o.budget.is_none() && o.work.is_none() {
         super::config::Config::load(&o.config)?;
     }
@@ -200,8 +324,13 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
     let work = || o.work.clone().context("required: 此操作需要 -w/--work");
     let results = || o.results.clone().context("required: 此操作需要 --results");
     if o.all || o.submit_chain {
-        ensure!(phase == Phase::Phonon, "input_conflict: 总脚本仅由 epw_phonon 管理");
-        if o.submit_chain { return super::chain::submit(&work()?); }
+        ensure!(
+            phase == Phase::Phonon,
+            "input_conflict: 总脚本仅由 epw_phonon 管理"
+        );
+        if o.submit_chain {
+            return super::chain::submit(&work()?);
+        }
         let path = super::chain::generate(&o.config)?;
         println!("script: {}\nworkflow_complete: false", path.display());
         return Ok(());
@@ -220,8 +349,10 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         "input_conflict: 只读、导入或准备操作不能同时执行/提交/恢复"
     );
     ensure!(!o.refresh || o.status, "required: --refresh 需要 --status");
-    ensure!(o.mpi.is_none() || o.budget.is_some() || (o.resume && phase == Phase::Wannier),
-        "input_conflict: --mpi 仅用于预算操作或 epw_wannier --resume");
+    ensure!(
+        o.mpi.is_none() || o.budget.is_some() || (o.resume && phase == Phase::Wannier),
+        "input_conflict: --mpi 仅用于预算操作或 epw_wannier --resume"
+    );
     ensure!(
         !o.resume || o.submit || o.run,
         "required: --resume 需要 -s 或 -r"
@@ -355,7 +486,13 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         }
     } else {
         if o.resume {
-            return workflow::resume_phase_with_mpi(&work()?, phase.boundary(), o.submit, o.run, o.mpi);
+            return workflow::resume_phase_with_mpi(
+                &work()?,
+                phase.boundary(),
+                o.submit,
+                o.run,
+                o.mpi,
+            );
         }
         if o.submit || o.run {
             return workflow::start_phase(&o.config, phase.boundary(), o.submit);

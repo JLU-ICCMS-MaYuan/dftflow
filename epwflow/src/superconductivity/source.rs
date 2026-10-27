@@ -42,7 +42,19 @@ pub fn bind(work: &Path, cfg: &Config, f3: &InterpolationManifest) -> Result<Nat
         .fine
         .as_ref()
         .context("data_invalid: F3 缺少细网格数据")?;
-    let evidence = Identity::capture(&crate::foundation::layout::path(&work, "interpolation/manifest.json"))?;
+    let evidence = if crate::foundation::layout::enabled(work) {
+        let file = fine
+            .artifacts
+            .iter()
+            .find(|a| a.role == "fine_log")
+            .context("data_invalid: 缺原生细网格日志")?;
+        Identity::capture(&artifact_path(work, file)?)?
+    } else {
+        Identity::capture(&crate::foundation::layout::path(
+            work,
+            "interpolation/manifest.json",
+        ))?
+    };
     bind_native_roles(work, cfg, fine, &f3.spectra, &evidence)
 }
 
@@ -135,7 +147,9 @@ pub fn bind_native_roles(
         .collect::<Result<Vec<_>>>()?;
     evidence.verify()?;
     Ok(NativeInputs {
-        configured_stages: Some(serde_json::json!({"8.epw-superconductivity":cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::SUPER])?})),
+        configured_stages: Some(
+            serde_json::json!({"8.epw-superconductivity":cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::SUPER])?}),
+        ),
         interpolation_digest: evidence.sha256.clone(),
         prefix: cfg.qe.prefix.clone(),
         k_grid: cfg.interpolation.k_grid,

@@ -29,6 +29,9 @@ fn execute(
     std::fs::create_dir_all(dir)?;
     let file = dir.join(format!("{name}.in"));
     if !crate::foundation::native_jobs::continuing(dir, name)? {
+        if crate::foundation::native_jobs::retry_enabled() && dir.join("out").exists() {
+            std::fs::remove_dir_all(dir.join("out"))?;
+        }
         save::stage_scf(work, &dir.join("out"), &qe.config.qe.prefix)?;
         std::fs::write(&file, input)?;
     }

@@ -34,9 +34,18 @@ fn source_ids(cfg: &Config) -> Result<Vec<Identity>> {
         .collect()
 }
 fn input(cfg: &Config) -> Result<String> {
-    let sigma:f64=cfg.native_value(&[super::native_config::ELECTRONIC,"qe_eledos","projwfc","PROJWFC","degauss"])?;
+    let sigma: f64 = cfg.native_value(&[
+        super::native_config::ELECTRONIC,
+        "qe_eledos",
+        "projwfc",
+        "PROJWFC",
+        "degauss",
+    ])?;
     let text=format!("&projwfc\n prefix='{}', outdir='./out', filpdos='{}.pdos',\n ngauss=0, degauss={sigma:.15}, Emin=-100, Emax=100, DeltaE=0.01,\n/\n",cfg.qe.prefix,cfg.qe.prefix);
-    cfg.apply_native(&[super::native_config::ELECTRONIC,"qe_eledos","projwfc"],&text)
+    cfg.apply_native(
+        &[super::native_config::ELECTRONIC, "qe_eledos", "projwfc"],
+        &text,
+    )
 }
 fn key(cfg: &Config, ids: &[Identity]) -> Result<String> {
     let program = post_program(cfg, "projwfc")?;
@@ -49,23 +58,26 @@ fn key(cfg: &Config, ids: &[Identity]) -> Result<String> {
     ))?))
 }
 pub fn files(cfg: &Config) -> Result<Vec<PathBuf>> {
-    let root = dir(cfg);
-    if !root.join("completion.json").is_file() {
+    let Some(ids) = super::readable_state::completed_files(
+        cfg,
+        super::stages::Step::Electronic,
+        "电子子步骤 · projwfc",
+    )?
+    else {
+        return Ok(vec![]);
+    };
+    let Some(old) = super::readable_state::checkpoint_config(
+        cfg,
+        super::stages::Step::Electronic,
+        "电子子步骤 · projwfc",
+    )?
+    else {
+        return Ok(vec![]);
+    };
+    if input(&old)? != input(cfg)? {
         return Ok(vec![]);
     }
-    let r: Receipt = store::read(&root.join("completion.json"))?;
-    for i in r.outputs.iter().chain(&r.sources) {
-        i.verify()?;
-    }
-    let ids = source_ids(cfg)?;
-    if r.key != key(cfg, &ids)? {
-        return Ok(vec![]);
-    }
-    Ok(r.outputs
-        .iter()
-        .map(|i| i.path.clone())
-        .chain(std::iter::once(root.join("completion.json")))
-        .collect())
+    Ok(ids.into_iter().map(|id| id.path).collect())
 }
 pub fn run(cfg: &Config) -> Result<()> {
     if !files(cfg)?.is_empty() {
@@ -73,18 +85,6 @@ pub fn run(cfg: &Config) -> Result<()> {
         return Ok(());
     }
     let root = dir(cfg);
-    if root.join("completion.json").is_file()
-        || (root.join("request.json").is_file()
-            && store::read::<String>(&root.join("request.json"))? != key(cfg, &source_ids(cfg)?)?)
-    {
-        // files 已核验旧投影身份；配置展宽等变化只生成新的最小投影后处理。
-        let history = cfg
-            .work_dir
-            .join("epw-state/history")
-            .join(format!("pdos-{}", store::token()));
-        fs::create_dir_all(history.parent().unwrap())?;
-        fs::rename(&root, &history)?;
-    }
     fs::create_dir_all(&root)?;
     let ids = source_ids(cfg)?;
 
@@ -106,29 +106,12 @@ pub fn run(cfg: &Config) -> Result<()> {
                 .is_some_and(|t| matches!(t.trim(), "true" | ".true." | "T"))),
         "unsupported: 元素 PDOS 当前只支持非磁标量态"
     );
-    let request_key = key(cfg, &ids)?;
-    let request = root.join("request.json");
-    if request.is_file() {
-        let previous: String = store::read(&request)?;
-        ensure!(
-            previous == request_key,
-            "input_conflict: 已有 projwfc 原生请求与当前来源／参数不相容"
-        );
-    }
-    let checkpoint = root.join("native-checkpoint.json");
-    let native_complete = if checkpoint.is_file() {
-        let r: Receipt = store::read(&checkpoint)?;
-        ensure!(
-            r.key == request_key,
-            "input_conflict: 原生投影检查点身份不相容"
-        );
-        for id in r.outputs.iter().chain(&r.sources) {
-            id.verify()?;
-        }
-        true
-    } else {
-        false
-    };
+    let native_complete = super::readable_state::completed_files(
+        cfg,
+        super::stages::Step::Electronic,
+        "电子原生子步骤 · projwfc",
+    )?
+    .is_some();
     let continuing = super::native_jobs::continuing(&root, "projwfc")?;
 
     if !continuing && !native_complete {
@@ -151,7 +134,6 @@ pub fn run(cfg: &Config) -> Result<()> {
             );
         }
         fs::write(root.join("projwfc.in"), input(cfg)?)?;
-        store::write(&request, &request_key)?;
     }
     ensure!(
         fs::read_to_string(root.join("projwfc.in"))? == input(cfg)?,
@@ -177,7 +159,6 @@ pub fn run(cfg: &Config) -> Result<()> {
         root.join("projwfc.in"),
         root.join("projwfc.out"),
         root.join("decision.json"),
-        root.join("request.json"),
     ]);
     let receipt = Receipt {
         key: key(cfg, &ids)?,
@@ -189,10 +170,24 @@ pub fn run(cfg: &Config) -> Result<()> {
     };
     // 科学执行检查点先保存；解析失败或派生收据缺失可以重验，不能重新执行成功投影。
     if !native_complete {
-        store::write(&checkpoint, &receipt)?;
+        super::readable_state::complete_files(
+            cfg,
+            super::stages::Step::Electronic,
+            "电子原生子步骤 · projwfc",
+            &outputs,
+        )?;
     }
     aggregate(cfg, &paths, 0., &projected_total(cfg, 0.)?)?;
-    store::write(&root.join("completion.json"), &receipt)
+    super::readable_state::complete_files(
+        cfg,
+        super::stages::Step::Electronic,
+        "电子子步骤 · projwfc",
+        &receipt
+            .outputs
+            .iter()
+            .map(|id| id.path.clone())
+            .collect::<Vec<_>>(),
+    )
 }
 fn raw_files(cfg: &Config) -> Result<Vec<PathBuf>> {
     let mut paths = fs::read_dir(dir(cfg))?

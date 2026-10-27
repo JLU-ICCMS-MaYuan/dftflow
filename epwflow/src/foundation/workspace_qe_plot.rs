@@ -3,25 +3,18 @@ use super::{
     config::Config,
     layout,
     stages::{self, Step},
-    store::{self, Identity},
+    store::Identity,
     workspace_plot,
 };
 use crate::qe_data::{nscf, qe_config::QeSettings};
 use anyhow::{ensure, Context, Result};
-use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
-
-#[derive(Serialize, Deserialize)]
-struct Receipt {
-    key: String,
-    outputs: Vec<Identity>,
-}
 
 struct Request {
     dir: PathBuf,
-    key: String,
     outputs: Vec<PathBuf>,
     sources: Vec<Identity>,
+    renderer: String,
 }
 impl Request {
     fn new(
@@ -34,31 +27,59 @@ impl Request {
             .iter()
             .map(|p| Identity::capture(p))
             .collect::<Result<Vec<_>>>()?;
-        // 固定快照会复制结构／路径文件；相同内容不因副本路径变化要求重绘。
-        let contents: Vec<_> = identities.iter().map(|i| (&i.sha256, i.bytes)).collect();
-        let key = store::hash_bytes(&serde_json::to_vec(&(2, contents, parameters))?);
         let outputs = files.iter().map(|p| dir.join(p)).collect();
-        Ok(Self { dir, key, outputs, sources:identities })
+        Ok(Self {
+            dir,
+            outputs,
+            sources: identities,
+            renderer: parameters
+                .get("renderer_version")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "1".into()),
+        })
+    }
+    fn location(&self) -> Result<(Config, Step, String)> {
+        let root = crate::qe_data::direct::workspace(&self.dir)
+            .context("configuration: 绘图目录不属于编号工作区")?;
+        let cfg = crate::qe_data::direct::current(&root)?;
+        let step = Step::ALL
+            .into_iter()
+            .find(|s| self.dir.starts_with(s.directory(&cfg)))
+            .context("configuration: 绘图阶段未知")?;
+        let label = format!(
+            "绘图 · {}",
+            super::readable_state::relative(&root, &self.dir)
+        );
+        Ok((cfg, step, label))
     }
     fn complete(&self) -> Result<bool> {
-        let file = self.dir.join("completion.json");
-        if !file.is_file() {
+        let (cfg, step, label) = self.location()?;
+        if super::readable_state::completed_files(&cfg, step, &label)?.is_none() {
             return Ok(false);
         }
-        let r: Receipt = store::read(&file)?;
-        if r.key != self.key
-            || r.outputs.iter().map(|i| &i.path).collect::<Vec<_>>()
-                != self.outputs.iter().collect::<Vec<_>>()
+        if super::readable_state::read(&cfg.work_dir, step)?.get(&label, "绘图版本")
+            != Some(self.renderer.as_str())
         {
             return Ok(false);
         }
-        let mut available = true;
-        for id in r.outputs {
-            if !store::identity_available(&id)? {
-                available = false;
+        let Some(old) = super::readable_state::checkpoint_config(&cfg, step, &label)? else {
+            return Ok(false);
+        };
+        if serde_json::to_value(&old.comparison)? != serde_json::to_value(&cfg.comparison)? {
+            return Ok(false);
+        }
+        for output in &self.outputs {
+            if !output.is_file() {
+                return Ok(false);
+            }
+            let modified = fs::metadata(output)?.modified()?;
+            for source in &self.sources {
+                if fs::metadata(&source.path)?.modified()? > modified {
+                    return Ok(false);
+                }
             }
         }
-        Ok(available)
+        Ok(true)
     }
     fn run(&self, render: impl FnOnce() -> Result<()>) -> Result<()> {
         if self.complete()? {
@@ -71,18 +92,12 @@ impl Request {
                 self.dir.display()
             )
         })?;
-        let outputs = self
-            .outputs
-            .iter()
-            .map(|p| Identity::capture(p))
-            .collect::<Result<Vec<_>>>()?;
-        store::write(
-            &self.dir.join("completion.json"),
-            &Receipt {
-                key: self.key.clone(),
-                outputs,
-            },
-        )?;
+        let (cfg, step, label) = self.location()?;
+        super::readable_state::complete_files(&cfg, step, &label, &self.outputs)?;
+        super::readable_state::update(&cfg.work_dir, step, |doc| {
+            doc.set(&label, "绘图版本", &self.renderer);
+            Ok(())
+        })?;
         println!("QE plots: {}", self.dir.display());
         Ok(())
     }
@@ -102,12 +117,28 @@ fn electronic_request(cfg: &Config, leaf: &str) -> Result<Request> {
                 dir.join("path-points.json"),
                 cfg.kpath.clone().context("required: 电子绘图需要 KPATH")?,
             ]);
-            &["electronic-bands.png", "electronic-bands.csv", "electronic-bands.plot.json", "electronic-bands-valence.png", "electronic-bands-valence.plot.json", "electronic-display.json"]
+            &[
+                "electronic-bands.png",
+                "electronic-bands.csv",
+                "electronic-bands.plot.json",
+                "electronic-bands-valence.png",
+                "electronic-bands-valence.plot.json",
+                "electronic-display.json",
+            ]
         }
         "qe_eledos" => {
             inputs.push(dir.join(format!("{}.tdos", cfg.qe.prefix)));
             inputs.extend(super::workspace_pdos::files(cfg)?);
-            &["electronic-dos.png", "electronic-dos.csv", "electronic-dos.plot.json", "electronic-dos-valence.png", "electronic-dos-valence.plot.json", "electronic-display.json", "electronic-pdos.csv", "electronic-pdos.json"]
+            &[
+                "electronic-dos.png",
+                "electronic-dos.csv",
+                "electronic-dos.plot.json",
+                "electronic-dos-valence.png",
+                "electronic-dos-valence.plot.json",
+                "electronic-display.json",
+                "electronic-pdos.csv",
+                "electronic-pdos.json",
+            ]
         }
         _ => anyhow::bail!("configuration: 未知 QE 绘图任务 {leaf}"),
     };
@@ -120,20 +151,40 @@ fn electronic_request(cfg: &Config, leaf: &str) -> Result<Request> {
 }
 
 pub fn electronic(cfg: &Config, leaf: &str) -> Result<()> {
-    let pdos = if leaf=="qe_eledos" {super::workspace_pdos::run(cfg)} else {Ok(())};
-    if pdos.as_ref().err().is_some_and(super::native_jobs::paused) {return pdos;}
+    let pdos = if leaf == "qe_eledos" {
+        super::workspace_pdos::run(cfg)
+    } else {
+        Ok(())
+    };
+    if pdos.as_ref().err().is_some_and(super::native_jobs::paused) {
+        return pdos;
+    }
     let request = electronic_request(cfg, leaf)?;
     request.run(|| {
         let fermi = nscf::parse_xml(&nscf_xml(cfg))?.fermi;
         match leaf {
             "qe_eband" => workspace_plot::qe_bands(cfg, &request.dir, fermi),
-            "qe_eledos" => {workspace_plot::qe_dos(cfg, &request.dir, fermi)?; super::workspace_pdos::export(cfg,&request.dir,fermi)},
+            "qe_eledos" => {
+                workspace_plot::qe_dos(cfg, &request.dir, fermi)?;
+                super::workspace_pdos::export(cfg, &request.dir, fermi)
+            }
             _ => unreachable!(),
         }
     })?;
-    let names=request.outputs.iter().map(|p|p.file_name().unwrap().to_string_lossy().into_owned()).collect::<Vec<_>>();
-    super::stage_results::publish(cfg,Step::Electronic,leaf,&request.dir,&names,
-        serde_json::json!({"kind":leaf,"fermi_source":"NSCF","fermi_ev":nscf::parse_xml(&nscf_xml(cfg))?.fermi,"sigma_ev":cfg.native_value::<f64>(&[super::native_config::ELECTRONIC,"qe_eledos","dos","DOS","degauss"])?*13.605693122994}),request.sources)?;
+    let names = request
+        .outputs
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    super::stage_results::publish(
+        cfg,
+        Step::Electronic,
+        leaf,
+        &request.dir,
+        &names,
+        serde_json::json!({"kind":leaf,"fermi_source":"NSCF","fermi_ev":nscf::parse_xml(&nscf_xml(cfg))?.fermi,"sigma_ev":cfg.native_value::<f64>(&[super::native_config::ELECTRONIC,"qe_eledos","dos","DOS","degauss"])?*13.605693122994}),
+        request.sources,
+    )?;
     pdos
 }
 
@@ -244,9 +295,14 @@ pub fn phonon(cfg: &Config) -> Result<()> {
         )?;
         Ok(())
     })?;
-    let qe=QeSettings::from_config(cfg)?;
-    super::stage_results::tree(cfg,Step::Phonon,"",&request.dir,
-        serde_json::json!({"sources":request.sources,"kind":"qe_phonon","prefix":cfg.qe.prefix,"elements":qe.cell.elements,"counts":qe.cell.counts,"sigma_cm1":cfg.comparison.clone().unwrap_or_default().phonon_sigma_cm1}))
+    let qe = QeSettings::from_config(cfg)?;
+    super::stage_results::tree(
+        cfg,
+        Step::Phonon,
+        "",
+        &request.dir,
+        serde_json::json!({"sources":request.sources,"kind":"qe_phonon","prefix":cfg.qe.prefix,"elements":qe.cell.elements,"counts":qe.cell.counts,"sigma_cm1":cfg.comparison.clone().unwrap_or_default().phonon_sigma_cm1}),
+    )
 }
 
 pub fn refresh(cfg: &Config, step: Step) -> Result<()> {
@@ -265,7 +321,9 @@ pub fn pending(cfg: &Config, target: Step) -> Result<bool> {
         if !matches!(step, Step::Electronic | Step::Phonon) || !stages::reusable(cfg, step)? {
             continue;
         }
-        if step==Step::Electronic && super::workspace_pdos::files(cfg)?.is_empty() {return Ok(true);}
+        if step == Step::Electronic && super::workspace_pdos::files(cfg)?.is_empty() {
+            return Ok(true);
+        }
         let requests = if step == Step::Electronic {
             vec![
                 electronic_request(cfg, "qe_eband")?,
@@ -274,7 +332,9 @@ pub fn pending(cfg: &Config, target: Step) -> Result<bool> {
         } else {
             vec![phonon_request(cfg)?]
         };
-        if super::stage_results::pending(cfg,step)? {return Ok(true);}
+        if super::stage_results::pending(cfg, step)? {
+            return Ok(true);
+        }
         for request in requests {
             if !request.complete()? {
                 return Ok(true);

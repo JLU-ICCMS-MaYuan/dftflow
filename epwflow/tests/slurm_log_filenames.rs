@@ -1,6 +1,6 @@
 //! 0022：实际生成与提交入口的日志目录契约；调度器为隔离替身，不提交科学作业。
 #![cfg(unix)]
-use epwflow::foundation::{config::Config, slurm, stages::Step, store, workflow, workspace};
+use epwflow::foundation::{config::Config, slurm, store, workflow};
 use serde_json::Value;
 use std::{
     fs,
@@ -29,7 +29,15 @@ impl Case {
         for name in ["Mg.upf", "B.upf"] {
             fs::write(c.root.join(name), "fixture").unwrap();
         }
-        for name in ["pw.x", "ph.x", "epw.x", "bands.x", "dos.x", "projwfc.x", "launcher"] {
+        for name in [
+            "pw.x",
+            "ph.x",
+            "epw.x",
+            "bands.x",
+            "dos.x",
+            "projwfc.x",
+            "launcher",
+        ] {
             c.executable(name, "#!/bin/sh\nexit 91\n");
         }
         c.executable("sbatch", include_str!("fixtures/sbatch_log_paths.py"));
@@ -132,14 +140,13 @@ fn check_row(row: &Value, job_placeholder: bool, merged: bool) {
 #[test]
 fn numbered_scripts_keep_logs_local_when_submitted_from_other_directories() {
     let c = Case::new(true);
-    workspace::generate(&c.config(), Step::Electronic).unwrap();
-    let scripts = [
-        "1.qe-scf/submit.sh",
-        "2.qe-nscf/submit.sh",
-        "3.qe-electronic/submit.sh",
-        "3.qe-electronic/qe_eband/submit.sh",
-        "3.qe-electronic/qe_eledos/submit.sh",
-    ];
+    success(
+        c.command(PHONON)
+            .args(["-c", c.config().to_str().unwrap(), "--stage", "electronic"])
+            .output()
+            .unwrap(),
+    );
+    let scripts = ["3.qe-electronic/electronic.sh"];
     let identities: Vec<_> = scripts
         .iter()
         .map(|name| store::Identity::capture(&c.work.join(name)).unwrap())
@@ -152,7 +159,7 @@ fn numbered_scripts_keep_logs_local_when_submitted_from_other_directories() {
     assert_eq!(rows.len(), scripts.len());
     for row in rows {
         assert_eq!(row["cwd"], "/");
-        check_row(&row, true, false);
+        check_row(&row, false, true);
     }
 }
 
@@ -217,11 +224,21 @@ fn public_submission_uses_short_names_and_refuses_duplicate_queued_jobs() {
     assert_eq!(rows.len(), 1);
     check_row(&rows[0], false, true);
     assert_eq!(rows[0]["options"]["output"], "slurm-scf.log");
-    assert_eq!(rows[0]["options"]["chdir"], c.work.join("1.qe-scf").to_str().unwrap());
-    assert!(!rows[0]["argv"].as_array().unwrap().iter().any(|v| v.as_str().unwrap().starts_with("--chdir")));
+    assert_eq!(
+        rows[0]["options"]["chdir"],
+        c.work.join("1.qe-scf").to_str().unwrap()
+    );
+    assert!(!rows[0]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v.as_str().unwrap().starts_with("--chdir")));
     let script = Path::new(rows[0]["script"].as_str().unwrap());
     assert_eq!(script.file_name().unwrap(), "scf.sh");
-    assert_eq!(Path::new(rows[0]["cwd"].as_str().unwrap()), script.parent().unwrap());
+    assert_eq!(
+        Path::new(rows[0]["cwd"].as_str().unwrap()),
+        script.parent().unwrap()
+    );
     let identity =
         store::Identity::capture(Path::new(rows[0]["script"].as_str().unwrap())).unwrap();
     let _ = c
@@ -232,19 +249,28 @@ fn public_submission_uses_short_names_and_refuses_duplicate_queued_jobs() {
     assert_eq!(c.rows().len(), 1, "排队中的任务不能重复提交");
     identity.verify().unwrap();
     let body = fs::read_to_string(script).unwrap();
-    assert!(!body.lines().any(|line| line.starts_with("cd ") || line.starts_with("if ! cd ")));
+    assert!(!body
+        .lines()
+        .any(|line| line.starts_with("cd ") || line.starts_with("if ! cd ")));
     // 从其他目录手工 sbatch；替身按 --chdir 启动实际 Bash，科学输出仍在目标目录。
-    success(c.command(c.root.join("sbatch"))
-        .arg(script)
-        .env("DFTFLOW_SLURM_TEST_EXECUTE", "1")
-        .current_dir("/")
-        .output().unwrap());
+    success(
+        c.command(c.root.join("sbatch"))
+            .arg(script)
+            .env("DFTFLOW_SLURM_TEST_EXECUTE", "1")
+            .current_dir("/")
+            .output()
+            .unwrap(),
+    );
     let rows = c.rows();
     assert_eq!(rows[1]["cwd"], "/");
     assert_eq!(rows[1]["exit_code"], 0);
     check_row(&rows[1], false, true);
-    assert_eq!(fs::read_to_string(script.parent().unwrap().join("scf.out")).unwrap().trim(),
-        script.parent().unwrap().to_str().unwrap());
+    assert_eq!(
+        fs::read_to_string(script.parent().unwrap().join("scf.out"))
+            .unwrap()
+            .trim(),
+        script.parent().unwrap().to_str().unwrap()
+    );
 }
 
 #[test]

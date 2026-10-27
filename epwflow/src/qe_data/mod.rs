@@ -1,18 +1,20 @@
 pub mod cli;
 pub mod collect_ph;
-pub(crate) mod execution;
 pub mod compare;
-pub mod manifest;
-pub mod nscf;
-pub mod native_ph;
 pub mod dynmat_text;
+pub(crate) mod execution;
+pub mod manifest;
+pub mod native_ph;
+pub mod nscf;
 pub mod phonon;
 pub mod qe_acceptance;
 pub mod qe_config;
+mod qeflow;
 pub mod qmap;
 pub mod reuse;
+pub mod save;
 pub mod scf;
 pub mod scheduler;
-pub mod save;
 pub mod xml;
-mod qeflow;
+
+pub mod direct;

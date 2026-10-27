@@ -50,7 +50,14 @@ pub fn run_with_retry(
             })?;
         }
         ensure!(
-            store::hash_file(&path)? == input.interpolation_digest,
+            (if crate::foundation::layout::enabled(&work) {
+                input.a2f.verify()?;
+                input.crystal.verify()?;
+                input.matrix_files.iter().try_for_each(|id| id.verify())?;
+                input.interpolation_digest.clone()
+            } else {
+                store::hash_file(&path)?
+            }) == input.interpolation_digest,
             "input_conflict: F3 清单改变"
         );
         Ok(())

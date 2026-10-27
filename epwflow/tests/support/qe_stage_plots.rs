@@ -109,7 +109,7 @@ fn phonon_plots_include_elements_and_repair_without_scientific_calls() {
     }
     assert!(!c.root.join("run/5.epw-wannier").exists());
     let calls = c.calls();
-    let science = fs::read(c.root.join("run/4.qe-phonon-nosplit/completion.json")).unwrap();
+    let science = fs::read(c.root.join("run/4.qe-phonon-nosplit/save/scf.dvscf_q2")).unwrap();
     fs::remove_file(
         c.root
             .join("run/4.qe-phonon-nosplit/plots/phdos/phonon_dos.png"),
@@ -121,7 +121,7 @@ fn phonon_plots_include_elements_and_repair_without_scientific_calls() {
     assert_eq!(calls, c.calls());
     assert_eq!(
         science,
-        fs::read(c.root.join("run/4.qe-phonon-nosplit/completion.json")).unwrap()
+        fs::read(c.root.join("run/4.qe-phonon-nosplit/save/scf.dvscf_q2")).unwrap()
     );
 }
 
@@ -140,14 +140,8 @@ fn incomplete_atomic_projection_is_rejected_without_fake_element_plots() {
         "{}",
         String::from_utf8_lossy(&o.stderr)
     );
-    assert!(c
-        .root
-        .join("run/4.qe-phonon-nosplit/qe-post-completion.json")
-        .is_file());
-    assert!(!c
-        .root
-        .join("run/4.qe-phonon-nosplit/plots/completion.json")
-        .exists());
+    assert!(!c.root.join("run/4.qe-phonon-nosplit/qe-post-completion.json").exists());
+    assert!(!c.root.join("run/4.qe-phonon-nosplit/plots/completion.json").exists());
     assert!(!c
         .root
         .join("run/4.qe-phonon-nosplit/plots/phdos/phonon_dos.png")
@@ -187,15 +181,16 @@ fn element_pdos_failure_preserves_tdos_and_bands_and_resumes_without_pw_or_dos()
     let c=Case::numbered();c.stage_setup();c.put("fail-pdos","controlled projection failure");
     success(c.stage_submit("electronic",false));assert!(!c.stage_execute().status.success());
     let root=c.root.join("run");
-    let dos=fs::read(root.join("3.qe-electronic/receipts/dos.json")).unwrap();
+    let dos=fs::read(root.join("3.qe-electronic/qe_eledos/scf.tdos")).unwrap();
     assert!(root.join("results/3.qe-electronic/qe_eband/electronic-bands-valence.png").is_file());
     let incomplete:Value=store::read(&root.join("results/3.qe-electronic/qe_eledos/electronic-pdos.json")).unwrap();
     assert_eq!(incomplete["complete"],false);
     let calls=c.calls();fs::remove_file(c.root.join("fail-pdos")).unwrap();
     success(c.stage_submit("electronic",true));success(c.stage_execute());
-    assert_eq!(dos,fs::read(root.join("3.qe-electronic/receipts/dos.json")).unwrap());assert_eq!(calls,c.calls());
+    assert_eq!(dos,fs::read(root.join("3.qe-electronic/qe_eledos/scf.tdos")).unwrap());assert_eq!(calls,c.calls());
     let pdos=c.root.join("pdos-calls");let native=fs::read(&pdos).unwrap();
-    fs::remove_file(root.join("3.qe-electronic/qe_eledos/pdos/completion.json")).unwrap();
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    epwflow::foundation::readable_state::update(&cfg.work_dir, epwflow::foundation::stages::Step::Electronic, |d| { d.remove("电子投影"); Ok(()) }).unwrap();
     fs::remove_file(root.join("results/3.qe-electronic/qe_eledos/electronic-dos-valence.png")).unwrap();
     success(c.stage_submit("electronic",false));success(c.stage_execute());
     assert_eq!(native,fs::read(pdos).unwrap(),"已完成原生投影不得因派生收据丢失重算");

@@ -201,14 +201,14 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 ## QE／EPW 编号工作区
 
 新 EPW 配置使用 `layout = "numbered"`、`work_dir = "."` 和根 `input.toml`。
-阶段重算保留编号工作目录本身，只将旧内容归档到 `epw-state/history/`；已经进入目录的终端无需重新 `cd`，当前 Slurm 日志持续可读。
-在工作区根执行 `epw_clear --dry-run` 预览三类历史，`epw_clear --yes` 全部清空；现用计算与结果保留。详见 [清理用法](docs/overview/epwflow/epw_clear.md)。
+阶段重算覆盖旧内容，保留编号目录 inode 和当前打开的 Slurm 日志，不生成历史。`epw-state/` 只有八份中文阶段日志及按需保留的 `imports/`；作业号保存在各计算目录同名 `.jobs`。输入原文变化时，在输入旁增加 `NNNN-config.toml` 版本。
+八日志布局执行 `epw_clear` 会报告无需清理；旧布局仍支持预览并清空三类历史。详见 [清理用法](docs/overview/epwflow/epw_clear.md)。
 EPW 的 `[resources]` 不再接受 `wall_seconds`、`storage_bytes`，新脚本和提交命令不增加时长限制，旧时间／存储预算不再阻断任务；集群自身规则仍由 Slurm 管理。源配置应删除旧字段，冻结快照不手工改写，详见 [资源说明](epwflow/README.md#计算时长与存储)。
 修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。
 `--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
 第 3 步 QE 子任务完成即发布单侧图；第 5 步完成电子能带／总 DOS 对比，第 6 步完成声子谱／TDOS 对比及总览，图片、数据和来源按阶段保存在工作区根 `results/`。
-新版阶段作业内自动完成后处理和发布，正常完成后无需再次执行公开命令触发出图；第 5 步不等待声子。详见[阶段结果说明](docs/specs/0050-epw-stage-results/quickstart.md)。
-输入、`submit.sh` 和日志位于各实际计算目录，空 pool 在生成、提交及脚本启动时阻断。
+第 3／4 步在阶段分配内完成后处理；第 5～8 步直接提交原生任务，作业结束后再次执行相同公开命令核验和推进；第 5 步不等待声子。详见[阶段结果说明](docs/specs/0050-epw-stage-results/quickstart.md)。
+输入、按目的命名的 `.sh` 和科学输出位于各实际计算目录，空 pool 在生成、提交及脚本启动时阻断。
 旧工作区可只读核验后一次性导入，不为目录改版重跑 QE。
 详见 [模块手册](epwflow/README.md) 和 [MgB₂ 直接操作说明](examples/MgB2/sugon-amd/run/README.md)。
 更新三个 EPW 阶段程序及清理工具可使用 `bash scripts/build-native.sh build --release --locked -p epwflow --bins`。

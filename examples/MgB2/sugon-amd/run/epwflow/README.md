@@ -128,13 +128,13 @@ epw_superconductivity --results-check --results "results" --json
 
 当前科学命令使用 `> xxx.out 2>&1`，例如 SCF 的正常输出和错误都在 `1.qe-scf/scf.out`，Slurm 日志单独保留。程序、输入和完成回执均以本轮新生成记录核验。
 
-需要重跑 SCF 并重新生成 `scf.sh` 时，无需删除 `1.qe-scf` 或 `completion.json`：
+需要重跑 SCF 并重新生成 `scf.sh` 时，直接使用公开命令：
 
 ```bash
 epw_phonon -c "epwinput.toml" --stage scf --resume -s
 ```
 
-每次执行都会强制开始新批次，旧脚本及结果完整归档到 `epw-state/history/`；运行中或状态未知时拒绝重提。作业结束后，去掉 `--resume` 归集结果并保留后续复用：
+每次执行都会强制开始新批次，直接覆盖本阶段旧计算内容，保留阶段根目录及打开的 Slurm 日志；运行中或状态未知时拒绝重提。续算信息集中在 `epw-state/` 的八份中文阶段日志，任务号位于计算目录的同名 `.jobs`。配置原文内容变化时在输入旁新增 `NNNN-config.toml`。作业结束后，去掉 `--resume` 归集结果并保留后续复用：
 
 ```bash
 epw_phonon -c "epwinput.toml" --stage scf -s

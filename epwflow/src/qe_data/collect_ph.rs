@@ -60,7 +60,7 @@ pub fn collect(
     let dest = crate::foundation::layout::path(&work, "qe-data/save");
     let importing = work.join("epw-state/imports/phonon-source.json").is_file();
     ensure!(
-        !dest.exists() || importing,
+        !dest.exists() || importing || crate::foundation::layout::enabled(work),
         "input_conflict: PH 交付目录已存在，保留原现场"
     );
     let phsave = dest.join(format!("{prefix}.phsave"));

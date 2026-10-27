@@ -13,9 +13,15 @@ use std::path::Path;
 
 pub fn record(path: &Path) -> Result<AttemptResult> {
     let r: AttemptResult = store::read(path)?;
-    ensure!(matches!(r.schema_version, 1 | 2), "unsupported_version: 尝试版本");
-    ensure!((r.schema_version == 2) == r.batch.is_some()
-        && (r.batch.is_none() || r.request.kind == SolveKind::Gap), "data_invalid: 批次证据版本冲突");
+    ensure!(
+        matches!(r.schema_version, 1 | 2),
+        "unsupported_version: 尝试版本"
+    );
+    ensure!(
+        (r.schema_version == 2) == r.batch.is_some()
+            && (r.batch.is_none() || r.request.kind == SolveKind::Gap),
+        "data_invalid: 批次证据版本冲突"
+    );
     r.request.validate()?;
     r.executable.verify()?;
     r.source.verify(r.request.mode)?;
@@ -255,10 +261,15 @@ fn published(
         "data_invalid: 原生超导完成状态与验证冲突"
     );
     ensure!(
-        store::hash_file(&crate::foundation::layout::path(
-            &work,
-            "interpolation/manifest.json"
-        ))? == m.interpolation_digest,
+        (if crate::foundation::layout::enabled(work) {
+            let f3 = crate::interpolation::direct::fine(cfg)?;
+            super::source::bind(work, cfg, &f3)?.interpolation_digest
+        } else {
+            store::hash_file(&crate::foundation::layout::path(
+                work,
+                "interpolation/manifest.json",
+            ))?
+        }) == m.interpolation_digest,
         "input_conflict: 当前 F3 改变"
     );
     let expected = match cfg.superconductivity.mode {
@@ -291,7 +302,7 @@ fn published(
             .unwrap()
             .join(if r.mode == Mode::Iso { "iso" } else { "aniso" });
         ensure!(
-            root.join("search.json").is_file(),
+            crate::foundation::layout::enabled(work) || root.join("search.json").is_file(),
             "data_invalid: 缺少已发布搜索记录"
         );
         let current =

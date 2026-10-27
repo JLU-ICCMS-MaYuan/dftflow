@@ -394,8 +394,7 @@ fn automatic_comparison_resume_only_retries_failed_native_task_and_rejects_tampe
     assert_eq!(qe_before.lines().filter(|l|*l=="pw"||l.starts_with("ph")).collect::<Vec<_>>(),
         qe_after.lines().filter(|l|*l=="pw"||l.starts_with("ph")).collect::<Vec<_>>());
     assert_eq!(calls(&c).lines().count(),3);
-    assert!(work.join("native-attempts/history").read_dir().unwrap().any(|e|
-        e.unwrap().file_name().to_string_lossy().starts_with("comparison-matdyn-")));
+    assert!(!work.join("native-attempts").exists());
     assert_eq!(qe_before.lines().filter(|l|*l=="q2r").count(),qe_after.lines().filter(|l|*l=="q2r").count());
     fs::write(work.join("comparison-native/electron/reference.out"),"tampered").unwrap();
     assert!(interpolation::scheduler::run_coarse_with_retry(&c.cfg,Backend::Local,&[],work,work,true).is_err());
@@ -422,7 +421,7 @@ fn automatic_comparison_large_differences_allow_fine_without_quality_decisions()
 }
 
 #[test]
-fn failed_coarse_requires_explicit_retry_and_archives_evidence() {
+fn failed_coarse_requires_explicit_retry_and_overwrites_failed_outputs() {
     let c = case("coarse-truncated");
     assert!(run(&c).is_err());
     let log = calls(&c);
@@ -435,10 +434,7 @@ fn failed_coarse_requires_explicit_retry_and_archives_evidence() {
     source.verify().unwrap();
     assert_eq!(fs::read_to_string(c.root.join("scientific-calls")).unwrap(), qe_calls);
     assert_eq!(calls(&c).lines().count(), 4);
-    let history = c.cfg.work_dir.join("native-attempts/history");
-    let archives: Vec<_> = fs::read_dir(history).unwrap().map(|e| e.unwrap().path()).filter(|p| p.is_dir()).collect();
-    assert_eq!(archives.len(), 1);
-    assert_eq!(fs::read(archives[0].join("out/scf.epmatwp")).unwrap(), b"broken");
+    assert!(!c.cfg.work_dir.join("native-attempts").exists());
     assert!(!c.cfg.work_dir.join("fine").exists());
     assert!(!c.cfg.budget.ledger.exists());
 }
@@ -450,16 +446,13 @@ fn second_smearing_retry_keeps_first_and_coarse_unchanged() {
     assert_eq!(calls(&c).lines().count(), 4);
     let coarse = store::Identity::capture(&c.cfg.work_dir.join("wannier/manifest.json")).unwrap();
     let first = store::Identity::capture(&c.cfg.work_dir.join("fine/smearing-0001/scf.a2f")).unwrap();
-    let checkpoint = store::Identity::capture(&c.cfg.work_dir.join("native-attempts/fine-smearing-0001.json")).unwrap();
     fs::write(c.root.join("epw-failure"), "").unwrap();
     let m = retry_fine(&c).unwrap();
-    coarse.verify().unwrap(); first.verify().unwrap(); checkpoint.verify().unwrap();
+    coarse.verify().unwrap(); first.verify().unwrap();
     assert_eq!(calls(&c).lines().count(), 5);
     assert_eq!(calls(&c).matches("smearing-0001").count(), 1);
     epwflow::superconductivity::source::bind(&c.cfg.work_dir, &c.cfg, &m).unwrap().verify(config::Mode::Aniso).unwrap();
-    let archives: Vec<_> = fs::read_dir(c.cfg.work_dir.join("native-attempts/history")).unwrap().map(|e| e.unwrap().path()).filter(|p| p.is_dir()).collect();
-    assert_eq!(archives.len(), 1);
-    assert!(fs::read_to_string(archives[0].join("epw.out")).unwrap().contains("fine failed evidence"));
+    assert!(!c.cfg.work_dir.join("native-attempts").exists());
 }
 
 #[test]
@@ -470,10 +463,6 @@ fn completed_native_attempt_recovers_publication_interruption_without_execution(
     // 模拟已写完原生成功输出，但尚未写检查点与清单发布完成的崩溃窗口。
     fs::remove_file(c.cfg.work_dir.join("wannier/manifest.json")).unwrap();
     fs::remove_file(c.cfg.work_dir.join("interpolation/manifest.json")).unwrap();
-    let path = c.cfg.work_dir.join("native-attempts/coarse.json");
-    let mut checkpoint: serde_json::Value = store::read(&path).unwrap();
-    checkpoint["state"] = "running".into(); checkpoint["outputs"] = serde_json::json!([]);
-    store::write(&path, &checkpoint).unwrap();
     retry_coarse(&c).unwrap();
     retry_fine(&c).unwrap();
     assert_eq!(calls(&c), log);
@@ -482,7 +471,7 @@ fn completed_native_attempt_recovers_publication_interruption_without_execution(
 
 #[test]
 fn retry_rejects_tampered_complete_or_running_inputs_and_unknown_directories() {
-    for kind in ["input", "output", "running-input", "request", "unknown", "empty-receipt"] {
+    for kind in ["input", "output", "running-input", "request", "unknown"] {
         let mut c = case(if kind == "running-input" { "coarse-truncated" } else { "" });
         if kind == "unknown" {
             fs::create_dir(c.cfg.work_dir.join("coarse")).unwrap();
@@ -497,16 +486,10 @@ fn retry_rejects_tampered_complete_or_running_inputs_and_unknown_directories() {
         match kind {
             "input" | "running-input" => fs::write(c.cfg.work_dir.join("coarse/epw_coarse.in"), "changed").unwrap(),
             "output" => fs::write(c.cfg.work_dir.join("coarse/epwdata.fmt"), "changed").unwrap(),
-            "request" => c.cfg.wannier.outer_window_ev = Some([1.4, 5.]),
-            "empty-receipt" => {
-                let path = c.cfg.work_dir.join("native-attempts/coarse.json");
-                let mut receipt: serde_json::Value = store::read(&path).unwrap();
-                receipt["inputs"] = serde_json::json!([]);
-                store::write(&path, &receipt).unwrap();
-            },
+            "request" => {c.cfg.wannier.outer_window_ev = Some([1.4, 5.]);c.cfg.set_native(&["6.epw-coarse","epw","INPUTEPW","dis_win_min"],serde_json::json!(1.4)).unwrap();},
             _ => unreachable!(),
         }
-        assert!(retry_coarse(&c).is_err(), "{kind}");
+        assert!(interpolation::scheduler::run_coarse_registered(&c.cfg, Backend::Local, &[], &c.cfg.work_dir, &c.cfg.work_dir).is_err(), "{kind}");
         assert_eq!(calls(&c), log, "{kind}");
         assert!(!c.cfg.work_dir.join("native-attempts/history").exists());
     }

@@ -1,0 +1,20 @@
+# 实施任务：八阶段可读日志
+
+输入：[Spec](spec.md)、[Plan](plan.md)、[研究](research.md)、[数据模型](data-model.md)、[文件契约](contracts/files.md)。用户授权：“开始落地”。
+
+- [x] T001 更新本项原话／确认记录并核对需求覆盖，保存无关脏工作基线。
+- [x] T002 [US1] 在 `foundation/readable_state.rs` 实现八日志读写、合并、任务号表和原子更新；新增相应回归。
+- [x] T003 [US4] 实现原文配置版本与公开入口备份；验证 A/A/B/A、编号冲突和旧版读取。
+- [x] T004 [US1] 改造 `foundation/layout.rs` 与配置加载，退出 layout/current-config/parameter-map。
+- [x] T005 [US2] 改造 `native_jobs.rs` 的持久化、当前任务查询与 Slurm 回执；不再保存三套任务对象。
+- [x] T006 [US3] 改造 `native_workspace.rs` 的阶段进度、复用与覆盖，不产生 requests/progress/history。
+- [x] T007 [US3] 改造 `workspace.rs` 和公开入口的第 3／4 步分配脚本，不引用 attempts。
+- [x] T008 [US3] 将电子、投影、PH 与后处理检查点收敛到阶段日志，保留成功子任务续算。
+- [x] T009 [US3] 改造粗／细／比较／超导读取与原生尝试，不再读写共享清单或 native-attempts。
+- [x] T010 [US5] 改造 `phonon_import.rs`，保留 imports 与外部来源只读接续。
+- [x] T011 [US2] 验证直接覆盖与上下游失效，不新建历史；保留无关上游。
+- [x] T012 改造旧状态退出及 `epw_clear`，验证活动／未知／悬空记录／转换中断。
+- [x] T013 运行新旧公开入口、续算与结果发布回归；记录实际通过／失败与未满足 SC。
+- [x] T014 按已验证事实更新 Overview、模块及示例文档，核对根 README，隔离提交本任务。
+
+顺序：T001→T002/T003→T004→T005→T006/T007→T008/T009/T010→T011/T012→T013→T014。同一文件串行修改，不创建分支，不推送，不提交真实科学作业。

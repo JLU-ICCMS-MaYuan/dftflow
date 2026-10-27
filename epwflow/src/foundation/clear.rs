@@ -409,6 +409,14 @@ fn remove_contents(root: &Path) -> Vec<String> {
 
 pub fn clear(path: &Path, delete: bool) -> Result<()> {
     let work = fs::canonicalize(path).context("configuration: 工作区不存在或不可读")?;
+    if work.join("epw-state/1.qe-scf.log").is_file() && !work.join("epw-state/layout.json").exists()
+    {
+        println!(
+            "{}：八阶段日志布局不再生成历史目录，无需清理。",
+            work.display()
+        );
+        return Ok(());
+    }
     let roots = validate_roots(&work)?;
     let layout: Layout = store::read(&work.join("epw-state/layout.json"))?;
     ensure!(

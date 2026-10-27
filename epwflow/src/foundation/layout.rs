@@ -1,6 +1,6 @@
 //! 编号工作区的唯一目录映射；旧工作区不改变原有物理路径。
 use super::config::{Config, PhMode};
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -12,25 +12,10 @@ pub struct Layout {
 }
 
 pub fn enabled(root: &Path) -> bool {
-    root.join("epw-state/layout.json").is_file()
+    root.join("epw-state/1.qe-scf.log").is_file() || root.join("epw-state/layout.json").is_file()
 }
-
 pub fn initialize(cfg: &Config) -> Result<()> {
-    let file = cfg.work_dir.join("epw-state/layout.json");
-    if file.exists() {
-        let old: Layout = super::store::read(&file)?;
-        ensure!(
-            old.schema_version == 1,
-            "unsupported_version: 工作区布局版本"
-        );
-    }
-    super::store::write(
-        &file,
-        &Layout {
-            schema_version: 1,
-            phonon: cfg.phonon.mode,
-        },
-    )
+    super::readable_state::initialize(cfg)
 }
 
 pub fn phonon_name(mode: PhMode) -> &'static str {
@@ -42,36 +27,39 @@ pub fn phonon_name(mode: PhMode) -> &'static str {
 }
 
 pub fn path(root: &Path, relative: &str) -> PathBuf {
-    let file = root.join("epw-state/layout.json");
-    if !file.is_file() {
+    if !enabled(root) {
         return root.join(relative);
     }
-    // 调用方先校验布局；损坏布局不能静默退回旧路径。
-    let layout: Layout = super::store::read(&file).expect("工作区布局必须在入口验证");
+    let mode = super::readable_state::mode_in(root).expect("工作区声子模式已在入口初始化");
     let (head, tail) = relative.split_once('/').unwrap_or((relative, ""));
-    let ph = phonon_name(layout.phonon);
+    let ph = format!("4.qe-phonon-{mode}");
     let base = match head {
         "scf" => root.join("1.qe-scf"),
         "nscf" => root.join("2.qe-nscf"),
-        "qe-phonon" | "ph_nosplit" => root.join(ph),
-        "ph_init" => root.join(ph).join("init"),
-        "ph" => root.join(ph).join("q"),
+        "qe-phonon" | "ph_nosplit" => root.join(&ph),
+        "ph_init" => root.join(&ph).join("init"),
+        "ph" => root.join(&ph).join("q"),
         "coarse" => root.join("6.epw-coarse"),
         "results" => root.join("results"),
         "fine" => root.join("7.epw-fine"),
-        "wannier" => root.join("epw-state/coarse"),
+        "wannier" => root.join("6.epw-coarse"),
         "qe-data" if tail == "save" || tail.starts_with("save/") => {
-            return root.join(ph).join(tail);
+            return root.join(&ph).join(tail);
         }
-        "qe-data" => root.join("epw-state/qe-data"),
+        "qe-data" => root.join(&ph),
         "interpolation" if tail == "comparison" || tail.starts_with("comparison/") => {
             return root.join("6.epw-coarse").join(tail);
         }
-        "interpolation" => root.join("epw-state/interpolation"),
+        "interpolation" => root.join("7.epw-fine"),
         "superconductivity" => root.join("8.epw-superconductivity"),
-        "native-attempts" => root.join("epw-state/native-attempts"),
         "comparison-native" if tail == "electron" || tail.starts_with("electron/") => {
             return root.join("5.epw-wannier/comparison-native").join(tail);
+        }
+        "comparison-native" if tail == "phonon" || tail.starts_with("phonon/") => {
+            return root
+                .join(&ph)
+                .join("comparison")
+                .join(tail.strip_prefix("phonon").unwrap().trim_start_matches('/'));
         }
         "comparison-native" => root.join("6.epw-coarse").join(head),
         _ => root.join(head),

@@ -434,31 +434,6 @@ impl Config {
         Ok(cfg)
     }
 
-    pub fn write_parameter_map(&self, path: &std::path::Path) -> Result<()> {
-        fn flatten(value: &Value, path: String, rows: &mut Vec<Value>) {
-            if let Some(object) = value.as_object() {
-                for (key, value) in object {
-                    flatten(value, format!("{path}.{key}"), rows);
-                }
-            } else {
-                rows.push(json!({"configuration":path,"value":value}));
-            }
-        }
-        let mut rows = vec![];
-        let public = flat::flatten(self.document()?)?;
-        flatten(&serde_json::to_value(&public.stages)?, "stages".into(), &mut rows);
-        flatten(&serde_json::to_value(&public.workflow)?, "workflow".into(), &mut rows);
-        let mut derived = BTreeMap::new();
-        for (stage, values) in self.stage_document()?.as_object().context("内部阶段表缺失")? {
-            for (target, rule) in values["workflow"]["derived"].as_object().context("内部绑定表缺失")? {
-                derived.insert(flat::location(&format!("stages.{stage}.{target}")), rule.clone());
-            }
-        }
-        super::store::write(
-            path,
-            &json!({"schema_version":2,"parameters":rows,"derived":derived,"units":"各原生程序的单位，见配置注释和参数契约","structure":super::store::Identity::capture(&self.structure)?}),
-        )
-    }
     pub fn apply_native(&self, task: &[&str], input: &str) -> Result<String> {
         apply(&self.stage_document()?, task, input)
     }
@@ -466,10 +441,7 @@ impl Config {
         let input = std::fs::read_to_string(path)?;
         let text = self.apply_native(task, &input)?;
         std::fs::write(path, &text)?;
-        super::store::write(
-            &path.with_extension("parameters.json"),
-            &json!({"schema_version":1,"configuration":flat::location(&format!("stages.{}",task.join("."))),"input":super::store::Identity::capture(path)?,"configured":at(&self.stage_document()?,task)?,"derived":flat::bindings(&self.stage_document()?,task)?}),
-        )
+        Ok(())
     }
 }
 fn decode(d: &Document) -> Result<RuntimeConfig> {

@@ -18,10 +18,13 @@ pub struct Artifact {
 pub fn nscf_input_artifact(work: &Path) -> anyhow::Result<Artifact> {
     let path = crate::foundation::layout::path(work, "nscf/nscf.in");
     Ok(Artifact {
-        role: "nscf_input".into(), relative_path: path.strip_prefix(work)?.into(),
+        role: "nscf_input".into(),
+        relative_path: path.strip_prefix(work)?.into(),
         byte_size: std::fs::metadata(&path)?.len(),
         sha256: crate::foundation::store::hash_file(&path)?,
-        producer_stage: "nscf".into(), input_digest: String::new(), format_version: "kmesh-0060".into(),
+        producer_stage: "nscf".into(),
+        input_digest: String::new(),
+        format_version: "kmesh-0060".into(),
     })
 }
 
@@ -121,6 +124,9 @@ pub struct ScfRecord {
 
 impl QeManifest {
     pub fn load(path: &Path) -> anyhow::Result<Self> {
+        if let Some(root) = super::direct::workspace(path) {
+            return super::direct::load(&super::direct::current(&root)?);
+        }
         let m: Self = super::super::foundation::store::read(path)?;
         anyhow::ensure!(
             matches!(m.schema_version, 1 | 2),
@@ -202,8 +208,13 @@ impl QeManifest {
         let geometry = super::xml::Geometry::read(&scf_xml)?;
         let input = self.artifacts.iter().find(|a| a.role == "nscf_input")
             .context("data_invalid: QE 清单缺 nscf_input，无法证明输入与输出一致；请用当前程序重新登记交付，保留原 PH 数据")?;
-        let mut actual_states = super::nscf::verify_files(&root.join(&input.relative_path), &scf_xml,
-            &states.wavefunctions.join("data-file-schema.xml"), states.k_grid, states.nbnd)?;
+        let mut actual_states = super::nscf::verify_files(
+            &root.join(&input.relative_path),
+            &scf_xml,
+            &states.wavefunctions.join("data-file-schema.xml"),
+            states.k_grid,
+            states.nbnd,
+        )?;
         actual_states.k_grid = states.k_grid;
         ensure!(
             serde_json::to_value(&actual_states)? == serde_json::to_value(states)?,
@@ -228,7 +239,10 @@ impl QeManifest {
             let declared = self
                 .artifacts
                 .iter()
-                .filter(|a| a.producer_stage == stage && !["scf_snapshot_identity", "nscf_input"].contains(&a.role.as_str()))
+                .filter(|a| {
+                    a.producer_stage == stage
+                        && !["scf_snapshot_identity", "nscf_input"].contains(&a.role.as_str())
+                })
                 .map(|a| root.join(&a.relative_path))
                 .collect::<std::collections::BTreeSet<_>>();
             ensure!(

@@ -418,17 +418,3 @@ pub(super) fn message(text: &str) -> String {
     re.replace_all(text, |c: &regex::Captures<'_>| location(&c[0]))
         .replace("workflow.derived", "内部推导规则")
 }
-
-pub(super) fn bindings(values: &Value, task: &[&str]) -> Result<BTreeMap<String, Value>> {
-    let derived = at(values, &[task[0], "workflow", "derived"])?
-        .as_object()
-        .context("内部绑定表缺失")?;
-    let prefix = format!("{}.", task[1..].join("."));
-    let mut bindings = BTreeMap::new();
-    for (key, rule) in derived {
-        if key.starts_with(&prefix) {
-            bindings.insert(location(&format!("stages.{}.{key}", task[0])), rule.clone());
-        }
-    }
-    Ok(bindings)
-}
