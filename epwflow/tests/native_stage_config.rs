@@ -269,3 +269,11 @@ fn selecting_aniso_does_not_replace_the_iso_section() {
     assert_eq!(c.cfg.solver_for(epwflow::foundation::config::Mode::Iso).unwrap().gap_temperatures_k,vec![5.,10.,15.]);
     assert_eq!(c.cfg.solver_for(epwflow::foundation::config::Mode::Aniso).unwrap().gap_temperatures_k,vec![12.,24.]);
 }
+
+#[test]
+fn wannier_native_path_density_accepts_user_setting_without_qe_point_constraint() {
+    let mut c = Case::new();
+    c.cfg.set_native(&[WANNIER, "wannier90", "bands_num_points"], json!(100)).unwrap();
+    c.cfg.validate().unwrap();
+    assert_eq!(c.cfg.native_value::<u32>(&[WANNIER, "wannier90", "bands_num_points"]).unwrap(), 100);
+}

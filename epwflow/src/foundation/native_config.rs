@@ -954,11 +954,6 @@ impl Config {
             "当前电子比较交付契约",
         )?;
         same(
-            &[WANNIER, "wannier90", "bands_num_points"],
-            json!(1),
-            "共同点位路径校准规则",
-        )?;
-        same(
             &[NSCF, "pw", "CONTROL", "prefix"],
             json!(prefix),
             &format!("stages.{SCF}.pw.CONTROL.prefix"),

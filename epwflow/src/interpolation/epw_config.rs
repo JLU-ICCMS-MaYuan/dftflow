@@ -311,7 +311,23 @@ impl<'a> EpwConfig<'a> {
                     ]);
                 }
                 if wannier_only && self.cfg.kpath.is_some() {
-                    data.extend(super::electronic_sampling::wdata(&super::electronic_sampling::plan(self.cfg)?, self.cfg.native_value(&[crate::foundation::native_config::WANNIER,"wannier90","bands_plot"])?, self.cfg.native_value(&[crate::foundation::native_config::WANNIER,"wannier90","bands_num_points"])?)?);
+                    data.extend(super::electronic_sampling::wdata(
+                        self.cfg.kpath.as_ref().context("required: 缺少 KPATH.in")?,
+                        self.cfg.native_value(&[
+                            crate::foundation::native_config::WANNIER,
+                            "wannier90",
+                            "bands_plot",
+                        ])?,
+                        self.cfg.native_value(&[
+                            crate::foundation::native_config::WANNIER,
+                            "wannier90",
+                            "bands_num_points",
+                        ])?,
+                        &crate::qe_data::xml::Geometry::read(&super::electronic_sampling::xml(
+                            self.cfg,
+                        ))?
+                        .reciprocal,
+                    )?);
                 }
                 ensure!(data.len() <= 200 && data.iter().all(|line| line.len() <= 256),
                     "configuration: 内嵌 Wannier90 的 wdata 超过 200 条或单条 256 字节；保留已有 QE 数据，请缩短路径配置");

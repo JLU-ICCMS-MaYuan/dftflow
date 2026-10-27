@@ -120,6 +120,7 @@ fn cart(point: [f64; 3], reciprocal: &[[f64; 3]; 3]) -> [f64; 3] {
     std::array::from_fn(|j| (0..3).map(|i| point[i] * reciprocal[i][j]).sum())
 }
 
+#[cfg(test)]
 fn same_sampling(
     sampling: &super::electronic_sampling::Sampling,
     path: &[comparison::PathPoint],
@@ -345,7 +346,9 @@ pub(crate) fn run(
     ];
     if numbered {
         let sampling = super::electronic_sampling::plan(cfg)?;
-        ensure!(same_sampling(&sampling, &path, &mesh, &geometry.reciprocal), "input_conflict: 第 5/6 步采样坐标不同");
+        ensure!(sampling.mesh.len() == mesh.len() && sampling.mesh.iter().zip(&mesh)
+            .all(|(a,b)| a.iter().zip(b).all(|(x,y)| (x-y).abs() < 1e-7)),
+            "input_conflict: 第 5/6 步参考网格不同");
         crate::foundation::workspace_science::verify_electronic_comparison(cfg)?;
     } else {
     attempt::run_with_inputs(
@@ -593,6 +596,7 @@ pub(crate) fn run(
         qe_bands_xml: file(&electron_xml)?,
         qe_mesh_xml: file(&states.wavefunctions.join("data-file-schema.xml"))?,
         epw_bands: file(&if numbered {electron.join("band.eig")} else {epw_dir.join("band.eig")})?,
+        electronic_stage: if numbered {Some(comparison::ElectronicStage::capture(&electron)?)} else {None},
         qe_phonon_bands: file(&frequency.join("reference.freq"))?,
         epw_phonon_bands: file(&epw_dir.join("phband.freq"))?,
         epw_log: file(&epw_dir.join("epw.out"))?,

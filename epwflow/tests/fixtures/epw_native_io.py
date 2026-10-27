@@ -38,20 +38,26 @@ def embedded_bands(bg):
     if 'bands_plot = true' not in data:return
     rows=data[data.index('begin kpoint_path')+1:data.index('end kpoint_path')]
     def length(a,b):return math.sqrt(sum(sum((b[i]-a[i])*bg[i][j] for i in range(3))**2 for j in range(3)))
-    coords=[];axis=[];reference=None;distance=0.
+    density=int(next(row.split('=',1)[1] for row in data if row.startswith('bands_num_points =')))
+    coords=[];axis=[];labels=[];reference=None;distance=0.;previous=None
     for row in rows:
         v=row.split();a=list(map(float,v[1:4]));b=list(map(float,v[5:8]))
         size=length(a,b)
         if reference is None:reference=size
-        count=int(math.floor(size/reference+0.5))
+        count=int(math.floor(density*size/reference+0.5))
         assert count>0,'W90 路径分段取成零点'
-        for i in range(count+1):
+        fresh=previous is None or previous[0]!=v[0] or sum((previous[1][j]-a[j])**2 for j in range(3))>1.e-6
+        if fresh:
+            coords.append(a);axis.append(distance)
+            labels.append((v[0],len(coords),distance,a))
+        for i in range(1,count+1):
             coords.append([a[j]+(b[j]-a[j])*i/count for j in range(3)])
             axis.append(distance+size*i/count)
         distance+=size
+        labels.append((v[4],len(coords),distance,b));previous=(v[4],b)
     Path(prefix+'_band.kpt').write_text(str(len(coords))+'\n'+''.join(' '.join(f'{x:.6f}' for x in p)+' 1.0\n' for p in coords))
     Path(prefix+'_band.dat').write_text(''.join(''.join(f'{x:.12f} {HA*.01*b:.12f}\n' for x in axis)+'\n' for b in range(8,8+n)))
-    Path(prefix+'_band.labelinfo.dat').write_text('P0 1 0\nQ0 2 1\n')
+    Path(prefix+'_band.labelinfo.dat').write_text(''.join(f'{label} {index} {x} '+ ' '.join(map(str,p))+'\n' for label,index,x,p in labels))
 if coarse or reread:
     if coarse and value('elph')=='.true.':
         # 原生 EPW 在粗网格到实空间变换时写出这四份诊断。

@@ -96,7 +96,7 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
         }
     }
     Ok(store::hash_bytes(&serde_json::to_vec(&(
-        if step == Step::Coarse { 6 } else { 5 },
+        if step == Step::Coarse { 7 } else { 6 },
         super::electronic_style::RENDERER_VERSION,
         keys,
         programs,
@@ -241,6 +241,8 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                 path:layout::path(&cfg.work_dir,"comparison-native/electron/band.eig"),
                 sha256:store::hash_file(&layout::path(&cfg.work_dir,"comparison-native/electron/band.eig"))?
             };
+            sources.electronic_stage=Some(interpolation::comparison::ElectronicStage::capture(
+                &layout::path(&cfg.work_dir,"comparison-native/electron"))?);
             let qe_bands=Step::Electronic.directory(cfg).join(format!("qe_eband/out/{}.save/data-file-schema.xml",cfg.qe.prefix));
             sources.qe_bands_xml=interpolation::comparison::SourceFile {sha256:store::hash_file(&qe_bands)?,path:qe_bands};
             sources.electronic_sigma_ev = options.electronic_sigma_ev;
@@ -613,7 +615,7 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
         .with_species(&qe.cell.elements)?;
     if !super::native_jobs::continuing(&dir, "epw")? {
     store::write(&dir.join("embedded-sampling-decision.json"),&json!({
-        "program":"epw.x","reason":"首次拟合尚无模型的路径及均匀网格采样；在本次拟合的 wdata 中一次输出，后续从真实 kpt 坐标提取，不另运行 Wannier90/PW。",
+        "program":"epw.x","path_format":"high_symmetry_endpoints","reason":"本次拟合的 wdata 只声明真实高对称端点；从内嵌 Wannier90 的原生 kpt 和 labelinfo 读取路径，DOS 沿用 postw90，不另运行 Wannier90/PW。",
         "nscf":Identity::capture(&interpolation::electronic_sampling::xml(cfg))?,
         "sampling":interpolation::electronic_sampling::plan(cfg)?
     }))?;

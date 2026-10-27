@@ -151,10 +151,13 @@ where
         2 => &differences.phonon_path,
         _ => &differences.phonon_mesh,
     };
+    if data.metadata.electronic_independent_sampling && kind < 2 && stats.maximum.is_none() {
+        return chart(area, curves, data, kind, projection);
+    }
     let (_, height) = area.dim_in_pixel();
     let (main, footer) = area.split_vertically(height.saturating_sub(125));
     chart(&main, curves, data, kind, projection)?;
-    let text = if let Some(m) = &stats.maximum {
+    let mut text = if let Some(m) = &stats.maximum {
         let position = m
             .crystal
             .iter()
@@ -206,6 +209,9 @@ where
             ),
         ]
     };
+    if data.metadata.electronic_independent_sampling && kind < 2 {
+        text.retain(|line| !line.starts_with("Energy/frequency pairs:") && !line.starts_with("Pairs:"));
+    }
     for (i, line) in text.into_iter().enumerate() {
         footer.draw(&Text::new(
             line,

@@ -104,6 +104,7 @@ fn fixture(root: &Path) -> PathBuf {
         window_ev: [-0.5, 0.5],
         disentanglement_window_ev: Some([6.5, 7.5]),
         frozen_window_ev: Some([6.5, 7.2]),
+        electronic_independent_sampling: false,
         electronic_ticks: ticks(),
         phonon_ticks: ticks(),
         electronic_energy_unit: "eV_relative_fermi".into(),
@@ -790,6 +791,7 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
         qe_bands_xml: file("qe-path.xml"),
         qe_mesh_xml: file("qe-mesh.xml"),
         epw_bands: file("epw-path.eig"),
+        electronic_stage: None,
         qe_phonon_bands: file("qe-path.freq"),
         epw_phonon_bands: file("epw-path.freq"),
         epw_log: file("epw.out"),
@@ -1055,4 +1057,35 @@ fn frozen_window_rejects_invalid_records_and_metadata_without_inventing_legacy_b
     assert!(svg.contains("Frozen window not recorded"));
     assert!(!svg.contains("dis_froz_min:"));
     assert!(svg.contains("dis_win_min:"));
+}
+
+
+#[test]
+fn independent_electronic_axes_require_explicit_metadata_and_preserve_phonon_checks() {
+    let root = temp();
+    let work = fixture(&root);
+    let dir = work.join("interpolation/comparison");
+    let file = dir.join("electronic_bands.csv");
+    let text = fs::read_to_string(&file).unwrap();
+    // 只删 EPW 内部奇数点；两侧完整原生端点不变。
+    let reduced = text.lines().filter(|line| {
+        let c: Vec<_> = line.split(',').collect();
+        c[0] != "epw" || c[2].parse::<usize>().unwrap() % 2 == 0
+    }).collect::<Vec<_>>().join("\n") + "\n";
+    fs::write(&file, reduced).unwrap();
+    rehash(&dir);
+    assert!(epwflow::interpolation::comparison_data::load(&dir).is_err());
+    let mut meta: Metadata = store::read(&dir.join("metadata.json")).unwrap();
+    meta.electronic_independent_sampling = true;
+    store::write(&dir.join("metadata.json"), &meta).unwrap();
+    rehash(&dir);
+    let data = epwflow::interpolation::comparison_data::load(&dir).unwrap();
+    assert!(data.electronic.iter().any(|curve| curve.method == "qe" && curve.points.len() == 101));
+    assert!(data.electronic.iter().any(|curve| curve.method == "epw" && curve.points.len() == 51));
+    let file = dir.join("phonon_bands.csv");
+    let text = fs::read_to_string(&file).unwrap().replace("epw,epw,0,1,0.01,", "epw,epw,0,1,0.015,");
+    fs::write(&file, text).unwrap();
+    rehash(&dir);
+    assert!(epwflow::interpolation::comparison_data::load(&dir).is_err());
+    fs::remove_dir_all(root).unwrap();
 }

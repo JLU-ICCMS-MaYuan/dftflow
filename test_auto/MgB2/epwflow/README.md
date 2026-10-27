@@ -84,3 +84,29 @@ CARGO_PROFILE_RELEASE_DEBUG=0 bash scripts/build-native.sh test --release --lock
 ```
 
 按构建日志给出的测试程序路径，在已登记的 Slurm 分配内调用上述 Bash 脚本；新输出目录须位于 `test_auto/MgB2/local_run/`。恢复仅允许未完成现场，需显式设置 `DFTFLOW_0055_RESUME=1`；已完成现场拒绝覆盖。没有相容旧投影时该测试会实际运行 projwfc，不能在登录节点调用。重画已有包直接使用 `epw_wannier --plot --results <结果目录>`，不运行此真实后处理测试。
+
+
+## 高对称端点路径
+
+第 5 步沿用只写高对称端点对的 `KPATH.in`，例如：
+
+```text
+0 0 0 G
+0.5 0 0 M
+
+0.5 0 0 M
+0.3333333333 0.3333333333 0 K
+```
+
+生成的 `wdata` 每条真实边只有一行，不列中间点或 NSCF 网格：
+
+```text
+begin kpoint_path
+G 0 0 0 M 0.5 0 0
+M 0.5 0 0 K 0.3333333333 0.3333333333 0
+end kpoint_path
+```
+
+`5.epw-wannier.bands_num_points` 控制 Wannier90 首段间隔数，可按需要设置为 `100` 等正整数；后续段按实际长度比例取整，短段被舍入为零时提前报错。两侧能带保留完整原生点，仅实际同坐标才计算能量差，不注明共同点覆盖率；DOS 继续使用 postw90 均匀网格。第 6 步直接复用第 5 步电子表格。
+
+以上说明新版源码行为；已有冻结脚本及计算不会自动改写。本轮只执行隔离替身回归，未切换安装或启动真实科学程序。详见 [0063 验收](../../../docs/specs/0063-epw-high-symmetry-path/acceptance.md)。

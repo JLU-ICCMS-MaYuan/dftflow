@@ -322,7 +322,17 @@ fn registered_legacy_electronic_samples_migrate_without_refitting_or_changing_sc
     let old = c.root.join("run/6.epw-coarse/comparison-native");
     fs::create_dir_all(old.join("epw")).unwrap();
     let band = old.join("epw/band.eig");
-    fs::copy(post.join("band.eig"), &band).unwrap();
+    // 旧协议必须包含路径及网格；新版仅路径输出不能冒充旧采样。
+    let native = epwflow::interpolation::native::parse_bands(
+        &fs::read_to_string(post.join("band.eig")).unwrap()).unwrap();
+    let energies = native.values[0].iter().map(|v|v.to_string()).collect::<Vec<_>>().join(" ");
+    let mut legacy = format!(" &plot nbnd= {}, nks= {} /\n", native.values[0].len(),
+        sampling.path.len()+sampling.mesh.len());
+    for point in sampling.path.iter().map(|p|p.crystal).chain(sampling.mesh.iter().copied()) {
+        let cart = epwflow::interpolation::electronic_sampling::cart(point,&sampling.reciprocal);
+        legacy.push_str(&format!("{} {} {}\n{energies}\n",cart[0],cart[1],cart[2]));
+    }
+    fs::write(&band,legacy).unwrap();
     let source = |p: PathBuf| json!({"sha256":store::hash_file(&p).unwrap(),"path":p});
     let xml = cfg
         .work_dir
@@ -367,4 +377,38 @@ fn registered_legacy_electronic_samples_migrate_without_refitting_or_changing_sc
     );
     let origin: Value = store::read(&post.join("band-origin.json")).unwrap();
     assert_eq!(origin["driver"], "legacy_epw_readonly");
+}
+
+#[test]
+fn sparse_high_symmetry_path_preserves_unequal_native_sampling_and_dos() {
+    let c=Case::numbered(); c.stage_setup();
+    c.put("KPATH.in","0 0 0 G\n0.5 0 0 X\n0.5 0 0 X\n0.5 0.25 0 M\n0 0 0.5 A\n0.25 0 0.5 L\n");
+    success(c.stage_submit("wannier",false)); success(c.stage_execute());
+    let dir=c.root.join("run/5.epw-wannier");
+    let input=fs::read_to_string(dir.join("epw_wannier.in")).unwrap();
+    assert!(input.contains("G 0 0 0 X 0.5 0 0"));
+    assert!(input.contains("X 0.5 0 0 M 0.5 0.25 0"));
+    assert!(input.contains("A 0 0 0.5 L 0.25 0 0.5"));
+    assert!(!input.contains("P0 ") && !input.contains("Q0 "));
+    let result=c.root.join("run/results/5.epw-wannier");
+    let csv=fs::read_to_string(result.join("electronic-bands.csv")).unwrap();
+    let qe=csv.lines().filter(|l|l.starts_with("qe,")).count();
+    let epw=csv.lines().filter(|l|l.starts_with("epw,")).count();
+    assert!(qe>epw && epw>0,"两侧应保留不同数量的原生点");
+    let metrics:Value=store::read(&result.join("metrics.json")).unwrap();
+    assert_eq!(metrics["independent_electronic_sampling"],true);
+    assert!(metrics["electronic_path"]["paired_states"].as_u64().unwrap()>0);
+    assert_eq!(metrics["electronic_mesh"]["points"],0);
+    assert!(!fs::read_to_string(result.join("electronic-bands.plot.json")).unwrap().contains("coverage"));
+    assert!(result.join("electronic-dos.png").exists());
+    assert_eq!(c.post_calls(),"postw90\n");
+    let bands_hash = store::hash_file(&result.join("electronic-bands.csv")).unwrap();
+    success(c.stage_submit("coarse",false));
+    success(c.stage_execute());
+    let comparison = c.root.join("run/6.epw-coarse/comparison");
+    assert_eq!(store::hash_file(&comparison.join("electronic_bands.csv")).unwrap(), bands_hash);
+    let metadata:Value = store::read(&comparison.join("metadata.json")).unwrap();
+    assert_eq!(metadata["electronic_independent_sampling"], true);
+    assert_eq!(c.post_calls(),"postw90\n");
+    epwflow::foundation::stage_results::check(&c.root.join("run/results")).unwrap();
 }

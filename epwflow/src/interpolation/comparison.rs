@@ -2,9 +2,7 @@
 use super::{differences::MEV_CM1, native};
 use crate::{
     foundation::store,
-    interpolation::comparison_data::{
-        Artifact, Manifest, Metadata, Tick, TABLES,
-    },
+    interpolation::comparison_data::{Artifact, Manifest, Metadata, Tick, TABLES},
     qe_data::nscf,
 };
 use anyhow::{ensure, Context, Result};
@@ -52,6 +50,8 @@ pub struct Sources {
     pub qe_bands_xml: SourceFile,
     pub qe_mesh_xml: SourceFile,
     pub epw_bands: SourceFile,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub electronic_stage: Option<ElectronicStage>,
     pub qe_phonon_bands: SourceFile,
     pub epw_phonon_bands: SourceFile,
     pub epw_log: SourceFile,
@@ -68,6 +68,75 @@ pub struct Sources {
     pub wannier_wout: Option<SourceFile>,
     pub electronic_sigma_ev: f64,
     pub phonon_sigma_cm1: f64,
+}
+
+/// 第 6 步只消费第 5 步已完成的电子表格，不强迫电子取点服从声子取点。
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ElectronicStage {
+    pub bands: SourceFile,
+    pub dos: SourceFile,
+    pub metrics: SourceFile,
+    pub sampling: SourceFile,
+}
+impl ElectronicStage {
+    pub(crate) fn capture(dir: &Path) -> Result<Self> {
+        let file = |name: &str| -> Result<SourceFile> {
+            let path = dir.join(name).canonicalize()?;
+            Ok(SourceFile {
+                sha256: store::hash_file(&path)?,
+                path,
+            })
+        };
+        Ok(Self {
+            bands: file("electronic-bands.csv")?,
+            dos: file("electronic-dos.csv")?,
+            metrics: file("metrics.json")?,
+            sampling: file("sampling.json")?,
+        })
+    }
+    fn load(
+        &self,
+        base: &Path,
+    ) -> Result<(
+        String,
+        String,
+        serde_json::Value,
+        super::electronic_sampling::Sampling,
+    )> {
+        let bands = fs::read_to_string(self.bands.checked_path(base)?)?;
+        ensure!(
+            bands.lines().next() == Some("method,segment_id,point_id,distance,band,energy_ev"),
+            "data_invalid: 第 5 步电子能带表头无效"
+        );
+        let dos = fs::read_to_string(self.dos.checked_path(base)?)?;
+        ensure!(
+            dos.lines().next() == Some("source,energy_minus_fermi_ev,states_per_ev_cell"),
+            "data_invalid: 第 5 步电子 DOS 表头无效"
+        );
+        let mut converted =
+            String::from("method,energy_ev,projection_kind,element,orbital,density\n");
+        for line in dos.lines().skip(1).filter(|l| !l.trim().is_empty()) {
+            let cells: Vec<_> = line.split(',').collect();
+            ensure!(
+                cells.len() == 3 && matches!(cells[0], "QE" | "EPW"),
+                "data_invalid: 第 5 步 DOS 行无效"
+            );
+            let e: f64 = cells[1].parse()?;
+            let d: f64 = cells[2].parse()?;
+            ensure!(
+                e.is_finite() && d.is_finite(),
+                "data_invalid: 第 5 步 DOS 非有限"
+            );
+            converted.push_str(&format!(
+                "{},{e},total,,,{d}\n",
+                cells[0].to_ascii_lowercase()
+            ));
+        }
+        let metrics = store::read(&self.metrics.checked_path(base)?)?;
+        let sampling = store::read(&self.sampling.checked_path(base)?)?;
+        Ok((bands, converted, metrics, sampling))
+    }
 }
 
 fn parse_window(text: &str, name: &str) -> Result<Option<[f64; 2]>> {
@@ -197,18 +266,23 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     let qe = nscf::parse_xml(&s.qe_bands_xml.checked_path(base)?)?;
     let mesh = nscf::parse_xml(&s.qe_mesh_xml.checked_path(base)?)?;
     let epw = native::parse_bands(&fs::read_to_string(s.epw_bands.checked_path(base)?)?)?;
-    let qph = native::parse_matdyn_path(&fs::read_to_string(s.qe_phonon_bands.checked_path(base)?)?)
-        .context("data_invalid: QE matdyn 频率文件")?;
+    let qph =
+        native::parse_matdyn_path(&fs::read_to_string(s.qe_phonon_bands.checked_path(base)?)?)
+            .context("data_invalid: QE matdyn 频率文件")?;
     let eph = native::parse_bands(&fs::read_to_string(s.epw_phonon_bands.checked_path(base)?)?)?;
     native::checked_log(&fs::read_to_string(s.epw_log.checked_path(base)?)?, 0)?;
     for p in &s.provenance {
         p.checked_path(base)?;
     }
+    let electronic_stage = s
+        .electronic_stage
+        .as_ref()
+        .map(|files| files.load(base))
+        .transpose()?;
     let n = s.path.len();
     let total = n + s.mesh.len();
     ensure!(
-        qe.kpoints.len() == n
-            && epw.values.len() == total
+        (electronic_stage.is_some() || (qe.kpoints.len() == n && epw.values.len() == total))
             && qph.values.len() == total
             && eph.values.len() == total
             && mesh.kpoints.len() == s.mesh.len(),
@@ -250,12 +324,12 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     {
         let expected = cart(p, &s.reciprocal);
         ensure!(
-            same(&expected, &epw.points_cartesian[i])
+            (electronic_stage.is_some() || same(&expected, &epw.points_cartesian[i]))
                 && same(&expected, &qph.points_cartesian[i])
                 && same(&expected, &eph.points_cartesian[i]),
             "data_invalid: QE／EPW 路径或网格坐标不符，点 {i}"
         );
-        if i < n {
+        if i < n && electronic_stage.is_none() {
             ensure!(
                 same(&expected, &qe.kpoints[i]),
                 "data_invalid: QE 电子路径坐标不符"
@@ -275,7 +349,9 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     // 总量比较按实际原子顺序验证 3N；缺少算符时不推断元素／轨道投影。
     let qe_text = fs::read_to_string(s.qe_mesh_xml.checked_path(base)?)?;
     let doc = roxmltree::Document::parse(&qe_text)?;
-    let output_structure = doc.descendants().find(|n| n.has_tag_name("output"))
+    let output_structure = doc
+        .descendants()
+        .find(|n| n.has_tag_name("output"))
         .context("data_invalid: 缺少 QE output 结构")?;
     let atoms: Vec<_> = output_structure
         .descendants()
@@ -292,24 +368,40 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     let path_text = fs::read_to_string(s.qe_bands_xml.checked_path(base)?)?;
     let path_doc = roxmltree::Document::parse(&path_text)?;
     let positions = |root: roxmltree::Node<'_, '_>| -> Result<Vec<(String, [f64; 3])>> {
-        root.descendants().find(|n| n.has_tag_name("output"))
+        root.descendants()
+            .find(|n| n.has_tag_name("output"))
             .context("data_invalid: 缺少 QE output")?
-            .descendants().find(|n| n.has_tag_name("atomic_positions"))
-            .context("data_invalid: 缺少原子位置")?.children().filter(|n| n.has_tag_name("atom"))
-            .map(|n| Ok((n.attribute("name").context("data_invalid: 缺少元素名")?.into(),
-                crate::qe_data::xml::vector(n.text().context("data_invalid: 缺少原子坐标")?)?)))
+            .descendants()
+            .find(|n| n.has_tag_name("atomic_positions"))
+            .context("data_invalid: 缺少原子位置")?
+            .children()
+            .filter(|n| n.has_tag_name("atom"))
+            .map(|n| {
+                Ok((
+                    n.attribute("name")
+                        .context("data_invalid: 缺少元素名")?
+                        .into(),
+                    crate::qe_data::xml::vector(n.text().context("data_invalid: 缺少原子坐标")?)?,
+                ))
+            })
             .collect()
     };
-    ensure!(positions(path_doc.root_element())? == positions(doc.root_element())?,
-        "input_conflict: 路径与 DOS 网格原子位置或顺序不同");
+    ensure!(
+        positions(path_doc.root_element())? == positions(doc.root_element())?,
+        "input_conflict: 路径与 DOS 网格原子位置或顺序不同"
+    );
     let mut elements = Vec::new();
     for atom in &atoms {
-        if !elements.iter().any(|e| e == atom) { elements.push(*atom); }
+        if !elements.iter().any(|e| e == atom) {
+            elements.push(*atom);
+        }
     }
     // 旧 MgB2 包保留已请求但不可用的轨道标签；其他体系不能猜测轨道集合。
     let orbitals = if atoms == ["Mg", "B", "B"] {
         vec!["Mg:s".into(), "Mg:p".into(), "B:s".into(), "B:p".into()]
-    } else { vec![] };
+    } else {
+        vec![]
+    };
     ensure!(
         s.window_ev.iter().all(|v| v.is_finite()) && s.window_ev[0] < s.window_ev[1],
         "data_invalid: 共同能窗不足"
@@ -325,14 +417,16 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
             vec![s.path[i].segment_id]
         };
         for segment in segments {
-            for (method, values) in [("qe", &qe.eigenvalues[i]), ("epw", &epw.values[i])] {
-                for (b, e) in values.iter().enumerate() {
-                    electronic.push_str(&format!(
-                        "{method},{segment},{i},{},{},{}\n",
-                        s.path[i].distance,
-                        b + 1,
-                        e - fermi
-                    ));
+            if electronic_stage.is_none() {
+                for (method, values) in [("qe", &qe.eigenvalues[i]), ("epw", &epw.values[i])] {
+                    for (b, e) in values.iter().enumerate() {
+                        electronic.push_str(&format!(
+                            "{method},{segment},{i},{},{},{}\n",
+                            s.path[i].distance,
+                            b + 1,
+                            e - fermi
+                        ));
+                    }
                 }
             }
             for (method, kind, values, factor) in [
@@ -371,16 +465,24 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
                 .collect::<Vec<_>>(),
         );
     }
-    let epw_mesh: Vec<Vec<f64>> = epw.values[n..]
-        .iter()
-        .map(|r| r.iter().map(|v| v - fermi).collect())
-        .collect();
+    let epw_mesh: Vec<Vec<f64>> = if electronic_stage.is_some() {
+        vec![]
+    } else {
+        epw.values[n..]
+            .iter()
+            .map(|r| r.iter().map(|v| v - fermi).collect())
+            .collect()
+    };
     let weights = vec![2.0 / s.mesh.len() as f64; s.mesh.len()];
     let ex = axis(s.window_ev[0], s.window_ev[1], 501);
-    let edos = [
-        gaussian_dos(&ex, &qe_mesh, &weights, s.electronic_sigma_ev)?,
-        gaussian_dos(&ex, &epw_mesh, &weights, s.electronic_sigma_ev)?,
-    ];
+    let edos = if electronic_stage.is_some() {
+        [Vec::new(), Vec::new()]
+    } else {
+        [
+            gaussian_dos(&ex, &qe_mesh, &weights, s.electronic_sigma_ev)?,
+            gaussian_dos(&ex, &epw_mesh, &weights, s.electronic_sigma_ev)?,
+        ]
+    };
     let epw_freq: Vec<Vec<f64>> = eph.values[n..]
         .iter()
         .map(|r| r.iter().map(|v| v * MEV_CM1).collect())
@@ -428,29 +530,58 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         .zip(&pdos[1])
         .map(|(a, b)| (a - b).abs())
         .collect();
-    let distances: Vec<_> = s.path.iter().map(|p|p.distance).collect();
-    let path_coordinates: Vec<_> = s.path.iter().map(|p|p.crystal).collect();
+    let distances: Vec<_> = s.path.iter().map(|p| p.distance).collect();
+    let path_coordinates: Vec<_> = s.path.iter().map(|p| p.crystal).collect();
     let differences = super::differences::Differences {
-        electronic_path: super::differences::electronic(&path_coordinates, Some(&distances),
-            &qe.eigenvalues, &epw.values[..n], fermi, s.window_ev)?,
-        electronic_mesh: super::differences::electronic(&s.mesh, None,
-            &qe_mesh, &epw_mesh, 0.0, s.window_ev)?,
-        phonon_path: super::differences::phonon(&path_coordinates, Some(&distances),
-            &qph.values[..n], &eph.values[..n], modes)?,
-        phonon_mesh: super::differences::phonon(&s.mesh, None,
-            &qph.values[n..], &eph.values[n..], modes)?,
+        electronic_path: if let Some((_, _, metrics, _)) = &electronic_stage {
+            serde_json::from_value(metrics["electronic_path"].clone())?
+        } else {
+            super::differences::electronic(
+                &path_coordinates,
+                Some(&distances),
+                &qe.eigenvalues,
+                &epw.values[..n],
+                fermi,
+                s.window_ev,
+            )?
+        },
+        electronic_mesh: if let Some((_, _, metrics, _)) = &electronic_stage {
+            serde_json::from_value(metrics["electronic_mesh"].clone())?
+        } else {
+            super::differences::electronic(&s.mesh, None, &qe_mesh, &epw_mesh, 0.0, s.window_ev)?
+        },
+        phonon_path: super::differences::phonon(
+            &path_coordinates,
+            Some(&distances),
+            &qph.values[..n],
+            &eph.values[..n],
+            modes,
+        )?,
+        phonon_mesh: super::differences::phonon(
+            &s.mesh,
+            None,
+            &qph.values[n..],
+            &eph.values[n..],
+            modes,
+        )?,
     };
     differences.validate()?;
     differences.print();
-    let metrics = serde_json::json!({"schema_version":2,"differences":differences,"electronic_matching":"ordered_minimum_squared_energy_pairs","electronic_dos":{"qe_integral":integral(&ex,&edos[0]),"epw_integral":integral(&ex,&edos[1]),"absolute_l1":integral(&ex,&delta),"normalized_l1":(integral(&ex,&edos[0])>0.0).then(||integral(&ex,&delta)/integral(&ex,&edos[0]))},"phonon_dos":{"qe_integral":integral(&px,&pdos[0]),"epw_integral":integral(&px,&pdos[1]),"expected_integral":modes,"absolute_l1":integral(&px,&pdelta),"normalized_l1":(integral(&px,&pdos[0])>0.0).then(||integral(&px,&pdelta)/integral(&px,&pdos[0]))},"kernel":"exp[-(x/sigma)^2]/(sigma*sqrt(pi))","electronic_sigma_ev":s.electronic_sigma_ev,"phonon_sigma_cm1":s.phonon_sigma_cm1,"source_manifest_sha256":store::hash_file(source)?});
+    let mut metrics = serde_json::json!({"schema_version":2,"differences":differences,"electronic_matching":"ordered_minimum_squared_energy_pairs","electronic_dos":{"qe_integral":integral(&ex,&edos[0]),"epw_integral":integral(&ex,&edos[1]),"absolute_l1":integral(&ex,&delta),"normalized_l1":(integral(&ex,&edos[0])>0.0).then(||integral(&ex,&delta)/integral(&ex,&edos[0]))},"phonon_dos":{"qe_integral":integral(&px,&pdos[0]),"epw_integral":integral(&px,&pdos[1]),"expected_integral":modes,"absolute_l1":integral(&px,&pdelta),"normalized_l1":(integral(&px,&pdos[0])>0.0).then(||integral(&px,&pdelta)/integral(&px,&pdos[0]))},"kernel":"exp[-(x/sigma)^2]/(sigma*sqrt(pi))","electronic_sigma_ev":s.electronic_sigma_ev,"phonon_sigma_cm1":s.phonon_sigma_cm1,"source_manifest_sha256":store::hash_file(source)?});
+    if let Some((bands, dos, _, _)) = &electronic_stage {
+        electronic = bands.clone();
+        e_csv = dos.clone();
+        // DOS 直接复用原生表格，不以占位网格造出差值或归一化结论。
+        metrics.as_object_mut().unwrap().remove("electronic_dos");
+    }
     let metadata = Metadata {
         title: format!("{} QE / EPW diagnostic", atoms.join(" ")),
         fermi_ev: fermi,
         window_ev: s.window_ev,
         disentanglement_window_ev,
         frozen_window_ev,
-        electronic_ticks: s
-            .ticks
+        electronic_independent_sampling: electronic_stage.is_some(),
+        electronic_ticks: electronic_stage.as_ref().map(|(_,_,_,sampling)|&sampling.ticks).unwrap_or(&s.ticks)
             .iter()
             .map(|t| Tick {
                 distance: t.distance,

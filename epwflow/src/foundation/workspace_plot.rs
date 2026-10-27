@@ -275,7 +275,13 @@ fn dos_figure(
 }
 
 pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
-    let sampling = crate::interpolation::electronic_sampling::plan(cfg)?;
+    let reference_sampling = crate::interpolation::electronic_sampling::plan(cfg)?;
+    let independent = crate::interpolation::electronic_sampling::independent_sampling(dir)?;
+    let sampling: crate::interpolation::electronic_sampling::Sampling = if independent {
+        super::store::read(&dir.join("sampling.json"))?
+    } else {
+        crate::interpolation::electronic_sampling::plan(cfg)?
+    };
     let qe_xml = cfg
         .work_dir
         .join("3.qe-electronic/qe_eband/out")
@@ -286,37 +292,45 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
     let native = crate::interpolation::native::parse_bands(&fs::read_to_string(wannier)?)?;
     let n = sampling.path.len();
     ensure!(
-        states.kpoints.len() == n && native.values.len() == n + sampling.mesh.len(),
+        states.kpoints.len() == reference_sampling.path.len()
+            && native.values.len()
+                == if independent {
+                    n
+                } else {
+                    n + sampling.mesh.len()
+                },
         "data_invalid: 电子比较路径或网格点数不符"
     );
-    let x: Vec<_> = sampling.path.iter().map(|p| p.distance).collect();
-    for (i, p) in sampling.path.iter().enumerate() {
-        let cart = crate::interpolation::electronic_sampling::cart(p.crystal, &sampling.reciprocal);
-        ensure!(
-            cart.iter()
-                .zip(&states.kpoints[i])
-                .all(|(a, b)| (a - b).abs() < 1e-7)
-                && cart
+    for (path, coords) in [
+        (&reference_sampling.path, &states.kpoints),
+        (&sampling.path, &native.points_cartesian),
+    ] {
+        for (i, p) in path.iter().enumerate() {
+            let expected =
+                crate::interpolation::electronic_sampling::cart(p.crystal, &sampling.reciprocal);
+            ensure!(
+                expected
                     .iter()
-                    .zip(&native.points_cartesian[i])
+                    .zip(&coords[i])
                     .all(|(a, b)| (a - b).abs() < 1e-7),
-            "input_conflict: 两侧电子真实坐标不符，点 {i}"
-        );
+                "input_conflict: 电子原生坐标与路径不同，点 {i}"
+            );
+        }
     }
-    let to_bands = |rows: &[Vec<f64>]| -> Result<Vec<Band>> {
+    let to_bands = |path: &[crate::interpolation::comparison::PathPoint],
+                    rows: &[Vec<f64>]|
+     -> Result<Vec<Band>> {
         ensure!(
             !rows.is_empty() && rows.iter().all(|r| r.len() == rows[0].len()),
             "data_invalid: 电子带数变化"
         );
         let mut curves = vec![];
-        for segment in sampling
-            .path
+        for segment in path
             .iter()
             .map(|p| p.segment_id)
             .collect::<std::collections::BTreeSet<_>>()
         {
-            let indices = sampling
-                .path
+            let indices = path
                 .iter()
                 .enumerate()
                 .filter(|(_, p)| p.segment_id == segment)
@@ -324,15 +338,15 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
                 .collect::<Vec<_>>();
             for b in 0..rows[0].len() {
                 curves.push((
-                    indices.iter().map(|&i| x[i]).collect(),
+                    indices.iter().map(|&i| path[i].distance).collect(),
                     indices.iter().map(|&i| rows[i][b] - fermi).collect(),
                 ));
             }
         }
         Ok(curves)
     };
-    let qe = to_bands(&states.eigenvalues)?;
-    let wan = to_bands(&native.values[..n])?;
+    let qe = to_bands(&reference_sampling.path, &states.eigenvalues)?;
+    let wan = to_bands(&sampling.path, &native.values[..n])?;
     let window = windows(cfg, dir, fermi)?;
     let bounds = [window[0].0, window[1].0];
     let labels = path_labels(
@@ -345,11 +359,11 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
             .join("\n"),
     )?;
     let mut csv = String::from("method,segment_id,point_id,distance,band,energy_ev\n");
-    for (method, rows) in [
-        ("qe", &states.eigenvalues[..]),
-        ("epw", &native.values[..n]),
+    for (method, path, rows) in [
+        ("qe", &reference_sampling.path, &states.eigenvalues[..]),
+        ("epw", &sampling.path, &native.values[..n]),
     ] {
-        for (p, row) in sampling.path.iter().zip(rows) {
+        for (p, row) in path.iter().zip(rows) {
             for (b, e) in row.iter().enumerate() {
                 csv.push_str(&format!(
                     "{method},{},{},{:.15},{},{:.15}\n",
@@ -363,28 +377,32 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
         }
     }
     fs::write(dir.join("electronic-bands.csv"), csv)?;
-    let coords = sampling.path.iter().map(|p| p.crystal).collect::<Vec<_>>();
-    let path = crate::interpolation::differences::electronic(
-        &coords,
-        Some(&x),
+    let path = crate::interpolation::electronic_sampling::common_difference(
+        &reference_sampling.path,
         &states.eigenvalues,
+        &sampling.path,
         &native.values[..n],
         fermi,
         bounds,
     )?;
-    let mesh =
-        crate::qe_data::nscf::parse_xml(&crate::interpolation::electronic_sampling::xml(cfg))?;
-    let mesh_stats = crate::interpolation::differences::electronic(
-        &sampling.mesh,
-        None,
-        &mesh.eigenvalues,
-        &native.values[n..],
-        fermi,
-        bounds,
-    )?;
+    let mesh_stats = if independent {
+        crate::interpolation::differences::electronic(&[], None, &[], &[], fermi, bounds)?
+    } else {
+        let mesh =
+            crate::qe_data::nscf::parse_xml(&crate::interpolation::electronic_sampling::xml(cfg))?;
+        crate::interpolation::differences::electronic(
+            &sampling.mesh,
+            None,
+            &mesh.eigenvalues,
+            &native.values[n..],
+            fermi,
+            bounds,
+        )?
+    };
     super::store::write(
         &dir.join("metrics.json"),
         &serde_json::json!({"schema_version":2,
+        "independent_electronic_sampling":independent,
         "electronic_path":path,"electronic_mesh":mesh_stats,"matching":"ordered_minimum_squared_energy_pairs",
         "note":"Energy pairs do not establish eigenstate identity"}),
     )?;
@@ -994,6 +1012,11 @@ fn metrics_note(dir: &Path, kind: &str) -> Result<String> {
     let data: serde_json::Value = super::store::read(&dir.join("metrics.json"))?;
     let stats: crate::interpolation::differences::Statistics =
         serde_json::from_value(data[kind].clone())?;
+    if data["independent_electronic_sampling"] == true {
+        return Ok(stats.maximum.map_or_else(String::new, |m| {
+            format!("Max |dE| = {:.6} eV", m.absolute_difference)
+        }));
+    }
     Ok(format!(
         "{}; paired {}; unmatched QE {}, EPW {}. Energy pairing only.",
         stats.maximum.map_or_else(
