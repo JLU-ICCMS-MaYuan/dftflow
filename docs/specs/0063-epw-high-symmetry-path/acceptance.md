@@ -46,3 +46,38 @@ CARGO_PROFILE_TEST_DEBUG=0 bash "scripts/build-native.sh" test -p epwflow --test
 根 README 的公开入口与导航没有变化，无需修改。采用原有 Rust/Bash 生产链及 Python 进程协议替身，不新增依赖或第二套求值器；路径声明、原生采样与比较发布分别保留既有职责。
 
 本轮没有执行真实 QE／EPW／Wannier／postw90、提交 Slurm、修改用户科学现场、切换安装、推送或操作线上 Issue。测试替身不证明真实拟合质量；图像和数值仍供用户人工判断。线上 Gitee 及远程链接仍由用户管理；图片原件仅聊天预览，PDF 核查记录保留该限制。
+
+## 自定义文件头回归修复（2026-10-27）
+
+### 原因与原样复现
+
+用户恢复 SiP₂ 时在第 1 行报错。真实文件头是 `SiP2 Pbam; historical Wannier path`、`20`、`Line-Mode`、`Reciprocal`。初次测试只覆盖固定 VASPKIT 标题和裸端点；新严格解析器限定标题前缀，漏掉了现有自定义标题。这是本项实现及测试遗漏，不是 Wannier 投影或局域化收敛失败。
+
+将真实 SiP₂ 路径逐字节复制为受控 fixture `epwflow/tests/fixtures/sip2-kpath.txt`，先在旧解析器运行新增回归，明确复现 `KPATH.in:1 应为 kx ky kz label`，退出 101，1 失败。证据：`docs/local/0063-header-debug/red.log`。
+
+### 修复与受控验证
+
+完整识别四行文件头后允许任意标题，不再逐条宽泛跳过正文中的数字或关键字；保留端点严格校验和原始物理行号。生产变更仅在 `high_symmetry_edges`，不改用户 KPATH、共享 QE／声子解析器、科学参数、哈希规则或回执。
+
+从 `0cfc1b126520bfc87d423052c0c140a1af89a6a4` 归档创建 `/tmp/dftflow-0063-header-debug-20261027`，只叠加本任务源码、测试和 fixture；排除无关脏改动 `native_config.rs`。本机依赖环境沿用既有配置，不修改系统依赖。源码身份见 `docs/local/0063-header-debug/source-manifest.json`。
+
+- 库测试 56 通过、3 个显式真实数据测试默认跳过；配置测试 14 通过；比较绘图 10 通过。完整进程套件包含无关超导批处理，主动停止并保留记录，不把未完成套件记为通过或回归失败。证据：`green.log`、`full-suite-interrupted.json`。
+- 第 5、6 步相关交付、坏坐标拒绝、历史读取、局部恢复及不同原生采样测试 7 通过，见 `stage-results.log`。
+- SiP₂ 完整 12 段路径的公开 CLI 测试 1 通过：在带空格的独立目录先完成替身拟合，再改为 500 次显式恢复；仅拟合重跑，SCF／NSCF／PH／电子参考调用不增加，路径与电子回执哈希不变，阶段交付完整。见 `sip2-cli-resume.log`。
+- 显式使用当前 `examples/SiP2/epwinput.toml`，从 SiP₂ 目录执行既有只读真实数据测试 1 通过：244 个 QE 路径点、36 个 NSCF 网格点，`wdata` 共 17 行（12 条真实边及块设置），完整原生输入生成成功。没有调用科学程序或调度器。见 `sip2-readonly.log`。
+
+以上合计 89 个不同测试通过；默认跳过的 3 项中，真实配置只读测试已单独执行，另 2 项不计通过。FR-011／SC-007 由新增三项解析／生成测试、公开 CLI 恢复和真实配置只读输入生成共同覆盖。
+
+### 编译与安装
+
+隔离源码执行 `bash scripts/build-native.sh build --release -p epwflow --bins --locked` 成功，4 个 CLI 的已打包制品经现有安装器覆盖正式 `bin/epwflow/`。安装器逐入口检查启动和活动引用；正式文件与已验证隔离制品及发布清单的 SHA-256 全部一致，证据：`release.log`、`install.log`、`published.json`。
+
+加载 `scripts/env.sh` 后，实际入口为 `/data/home/mayuan/code/dftflow/bin/epwflow/epw_wannier`，发布 SHA-256 为 `0b23530eb35693c4c71363d6b4096e5d716389bea6159be791ca3ca1e57d5fab`。
+
+安装后另用正式 CLI 从 `/tmp` 调用带空格的受控 fixture 配置，3 次公开调用完成恢复拟合、原生 DOS 和最终交付。此项仅将替身配置从 500 改为 501 触发新拟合，不修改真实 SiP₂ 配置；保留 SiP₂ 原样路径，前置科学调用及路径、电子回执哈希不变。所有调度和科学程序均为 fixture 替身，不触达真实 Slurm。证据：`installed_cli_replay.py`、`installed-cli-calls.json`、`installed-cli-result.json`；这是正式安装入口验证，不属于真实拟合验收。
+
+### 数据保护与验收边界
+
+真实 SiP₂ 的 KPATH、TOML、结构、已有阶段回执及 SCF／NSCF XML 共 10 份选定输入证据哈希保持不变，受控 fixture 与真实 KPATH 逐字节一致，见 `baseline.json`、`checks.json`。本轮未对全部大型响应文件重做哈希核验，不能把上述检查描述为完整来源重验。
+
+本轮更新正式 CLI，但没有向真实 Slurm 提交计算，没有重算真实 SCF／NSCF／PH 或 Wannier，没有放宽收敛检查。新拟合质量及收敛仍待用户运行当前 500 次配置后判断。未推送，也未操作或关闭线上 Gitee Issue。

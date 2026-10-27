@@ -441,3 +441,32 @@ fn sparse_high_symmetry_path_preserves_unequal_native_sampling_and_dos() {
     assert_eq!(c.post_calls(),"postw90\n");
     epwflow::foundation::stage_results::check(&c.root.join("run/results")).unwrap();
 }
+
+#[test]
+fn sip2_titled_path_survives_wannier_resume_without_recomputing_references() {
+    let c = Case::numbered();
+    c.stage_setup();
+    c.put("KPATH.in", include_str!("../fixtures/sip2-kpath.txt"));
+    let path = c.root.join("KPATH.in");
+    let path_hash = store::hash_file(&path).unwrap();
+    success(c.stage_submit("wannier", false));
+    success(c.stage_execute());
+    let input = fs::read_to_string(c.root.join("run/5.epw-wannier/epw_wannier.in")).unwrap();
+    assert!(input.contains("Y 0 0.5 0 T 0 0.5 0.5"));
+    assert!(input.contains("U 0.5 0 0.5 X 0.5 0 0"));
+    assert!(input.contains("S 0.5 0.5 0 R 0.5 0.5 0.5"));
+    let references = c.calls().0;
+    let electronic = c.root.join("run/3.qe-electronic/completion.json");
+    let electronic_hash = store::hash_file(&electronic).unwrap();
+    c.numbered_change(|cfg| cfg.wannier.localization.max_iterations = 500);
+    success(c.stage_submit("wannier", true));
+    success(c.stage_execute());
+    assert_eq!(c.calls().0, references, "恢复拟合不得重算 SCF/NSCF/PH/电子参考");
+    assert!(!references.lines().any(|line| line == "ph"));
+    assert_eq!(store::hash_file(&path).unwrap(), path_hash);
+    assert_eq!(store::hash_file(&electronic).unwrap(), electronic_hash);
+    assert_eq!(c.calls().1.lines().filter(|line| line.starts_with("wannier ")).count(), 2);
+    assert!(fs::read_to_string(c.root.join("run/5.epw-wannier/epw_wannier.in")).unwrap().contains("num_iter = 500"));
+    assert!(c.root.join("run/5.epw-wannier/completion.json").is_file());
+    assert!(c.root.join("run/results/5.epw-wannier/stage-manifest.json").is_file());
+}

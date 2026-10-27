@@ -135,22 +135,27 @@ pub(crate) struct PathEdge {
 pub(crate) fn high_symmetry_edges(path: &Path) -> Result<Vec<PathEdge>> {
     let text = fs::read_to_string(path)
         .with_context(|| format!("required: 无法读取 {}", path.display()))?;
+    let lines: Vec<_> = text
+        .lines()
+        .enumerate()
+        .filter_map(|(i, raw)| {
+            let line = raw.split('#').next().unwrap_or("").trim();
+            (!line.is_empty()).then_some((i, line))
+        })
+        .collect();
+    // 标题可以自定义；完整四行结构才是文件头，不能静默跳过正文错误。
+    let header_len = if lines.len() >= 4
+        && lines[1].1.parse::<u32>().is_ok_and(|n| n > 0)
+        && lines[2].1.eq_ignore_ascii_case("Line-Mode")
+        && lines[3].1.eq_ignore_ascii_case("Reciprocal")
+    {
+        4
+    } else {
+        0
+    };
     let mut endpoints = Vec::new();
-    for (i, raw) in text.lines().enumerate() {
-        let line = raw.split('#').next().unwrap_or("").trim();
-        if line.is_empty() {
-            continue;
-        }
+    for (i, line) in lines.into_iter().skip(header_len) {
         let cells: Vec<_> = line.split_whitespace().collect();
-        // 兼容现有 VASPKIT 四行文件头；正文错误不能被静默跳过。
-        if endpoints.is_empty()
-            && (line.starts_with("K-Path ")
-                || line.eq_ignore_ascii_case("Line-Mode")
-                || line.eq_ignore_ascii_case("Reciprocal")
-                || (cells.len() == 1 && cells[0].parse::<u32>().is_ok()))
-        {
-            continue;
-        }
         ensure!(
             cells.len() == 4,
             "data_invalid: {}:{} 应为 kx ky kz label",
@@ -609,6 +614,53 @@ mod tests {
             [0, 0, 1]
         );
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+    #[test]
+    fn custom_titled_header_preserves_bare_path_and_source_lines() {
+        let bare = path_file("0 0 0 G\n0.5 0 0 X\n");
+        let expected = wdata(&bare, true, 20, &RECIPROCAL).unwrap();
+        for title in ["SiP2 Pbam; historical Wannier path", "自定义路径标题", "0 0 0 G"] {
+            let text = format!("# preamble\n\n{title} # title\n 20\n line-mode\n reciprocal # coordinates\n\n0 0 0 G\n0.5 0 0 X\n");
+            let path = path_file(&text);
+            assert_eq!(wdata(&path, true, 20, &RECIPROCAL).unwrap(), expected);
+            assert_eq!(high_symmetry_edges(&path).unwrap()[0].line, 8);
+            assert_eq!(fs::read_to_string(&path).unwrap(), text);
+            fs::remove_dir_all(path.parent().unwrap()).unwrap();
+        }
+        fs::remove_dir_all(bare.parent().unwrap()).unwrap();
+    }
+    #[test]
+    fn sip2_original_path_generates_twelve_real_edges() {
+        let text = include_str!("../../tests/fixtures/sip2-kpath.txt");
+        let path = path_file(text);
+        let data = wdata(&path, true, 1, &RECIPROCAL).unwrap();
+        assert_eq!(data.len(), 17);
+        assert_eq!(data[4], "G 0 0 0 X 0.5 0 0");
+        assert_eq!(data[13], "Y 0 0.5 0 T 0 0.5 0.5");
+        assert_eq!(data[14], "U 0.5 0 0.5 X 0.5 0 0");
+        assert_eq!(data[15], "S 0.5 0.5 0 R 0.5 0.5 0.5");
+        assert_eq!(fs::read_to_string(&path).unwrap(), text);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+    #[test]
+    fn malformed_headers_and_body_lines_are_never_silently_skipped() {
+        for (text, line) in [
+            ("custom title\n0 0 0 G\n0.5 0 0 X\n", 1),
+            ("custom title\n20\nReciprocal\n0 0 0 G\n0.5 0 0 X\n", 1),
+            ("custom title\n20\nLine-Mode\nCartesian\n0 0 0 G\n0.5 0 0 X\n", 1),
+            ("custom title\n0\nLine-Mode\nReciprocal\n0 0 0 G\n0.5 0 0 X\n", 1),
+            ("custom title\n20\nLine-Mode\nReciprocal\n0 0 0 G\n20\n0.5 0 0 X\n", 6),
+            ("custom title\n20\nLine-Mode\nReciprocal\n0 0 0 G\nLine-Mode\n0.5 0 0 X\n", 6),
+            ("custom title\n20\nLine-Mode\nReciprocal\nK-Path bogus\n0 0 0 G\n0.5 0 0 X\n", 5),
+            ("custom title\n20\nLine-Mode\nReciprocal\n0 0 0 G\nNaN 0 0 X\n", 6),
+            ("custom title\n20\nLine-Mode\nReciprocal\n0 0 0 G\n0 bad 0 X\n", 6),
+            ("custom title\n20\nLine-Mode\nReciprocal\n0 0 0 G\n0.5 0 X\n", 6),
+        ] {
+            let path = path_file(text);
+            let error = format!("{:#}", wdata(&path, true, 20, &RECIPROCAL).unwrap_err());
+            assert!(error.contains(&format!("{}:{line} ", path.display())), "{error}");
+            fs::remove_dir_all(path.parent().unwrap()).unwrap();
+        }
     }
     #[test]
     fn malformed_paths_fail_with_file_and_location() {
