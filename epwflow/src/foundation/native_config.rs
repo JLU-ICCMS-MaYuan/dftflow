@@ -9,6 +9,9 @@ use std::{
     path::PathBuf,
 };
 
+#[path = "native_config_flat.rs"]
+mod flat;
+
 pub const SCF: &str = "1.qe-scf";
 pub const NSCF: &str = "2.qe-nscf";
 pub const ELECTRONIC: &str = "3.qe-electronic";
@@ -16,6 +19,10 @@ pub const WANNIER: &str = "5.epw-wannier";
 pub const COARSE: &str = "6.epw-coarse";
 pub const FINE: &str = "7.epw-fine";
 pub const SUPER: &str = "8.epw-superconductivity";
+
+pub(crate) fn configuration_error(error: anyhow::Error) -> anyhow::Error {
+    anyhow::anyhow!(flat::message(&format!("{error:#}")))
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -33,6 +40,8 @@ pub struct Document {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kpath: Option<PathBuf>,
     pub stages: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub workflow: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,13 +64,14 @@ impl<'de> Deserialize<'de> for Config {
     fn deserialize<D: Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
         let document = Document::deserialize(d)?;
         ensure_version(document.schema_version).map_err(serde::de::Error::custom)?;
-        let runtime = decode(&document).map_err(serde::de::Error::custom)?;
+        let document = flat::expand(document).map_err(serde::de::Error::custom)?;
+        let runtime = decode(&document).map_err(|e| serde::de::Error::custom(flat::message(&format!("{e:#}"))))?;
         Ok(Self { runtime, document })
     }
 }
 impl Serialize for Config {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
-        self.document()
+        self.document().and_then(flat::flatten)
             .map_err(serde::ser::Error::custom)?
             .serialize(s)
     }
@@ -266,6 +276,9 @@ fn solver(
 
 /// 已由原生格式生成器产生的数据与文件路径，只能通过已登记的推导规则进入输入。
 pub fn apply(v: &Value, task: &[&str], input: &str) -> Result<String> {
+    apply_impl(v, task, input).map_err(configuration_error)
+}
+fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
     let clean = input
         .lines()
         .filter(|line| !line.starts_with("! 参数来源 "))
@@ -361,7 +374,7 @@ pub fn apply(v: &Value, task: &[&str], input: &str) -> Result<String> {
             } else {
                 result.insert(key.to_lowercase(), qf_input::to_qe_value(value));
             }
-            provenance.push(format!("! 参数来源 stages.{stage}.{location}"));
+            provenance.push(format!("! 参数来源 {}", flat::location(&format!("stages.{stage}.{location}"))));
         }
         for (key, value) in original {
             let base = key.split('(').next().unwrap();
@@ -373,7 +386,7 @@ pub fn apply(v: &Value, task: &[&str], input: &str) -> Result<String> {
                 );
                 result.insert(key.clone(), value);
                 provenance.push(format!(
-                    "! 参数来源 stages.{stage}.workflow.derived.{location}: {rule}; {key}"
+                    "! 参数来源 内部推导规则 {}: {rule}; {key}", flat::location(&format!("stages.{stage}.{location}"))
                 ));
             } else {
                 ensure!(result.contains_key(&key) || (key == base && settings.contains_key(base)),"configuration: stages.{stage}.{location}: 实际输入包含未配置且未登记推导的科学参数");
@@ -423,10 +436,18 @@ impl Config {
             }
         }
         let mut rows = vec![];
-        flatten(&self.stage_document()?, "stages".into(), &mut rows);
+        let public = flat::flatten(self.document()?)?;
+        flatten(&serde_json::to_value(&public.stages)?, "stages".into(), &mut rows);
+        flatten(&serde_json::to_value(&public.workflow)?, "workflow".into(), &mut rows);
+        let mut derived = BTreeMap::new();
+        for (stage, values) in self.stage_document()?.as_object().context("内部阶段表缺失")? {
+            for (target, rule) in values["workflow"]["derived"].as_object().context("内部绑定表缺失")? {
+                derived.insert(flat::location(&format!("stages.{stage}.{target}")), rule.clone());
+            }
+        }
         super::store::write(
             path,
-            &json!({"schema_version":2,"parameters":rows,"units":"各原生程序的单位，见配置注释和参数契约","structure":super::store::Identity::capture(&self.structure)?}),
+            &json!({"schema_version":2,"parameters":rows,"derived":derived,"units":"各原生程序的单位，见配置注释和参数契约","structure":super::store::Identity::capture(&self.structure)?}),
         )
     }
     pub fn apply_native(&self, task: &[&str], input: &str) -> Result<String> {
@@ -438,7 +459,7 @@ impl Config {
         std::fs::write(path, &text)?;
         super::store::write(
             &path.with_extension("parameters.json"),
-            &json!({"schema_version":1,"configuration":format!("stages.{}",task.join(".")),"input":super::store::Identity::capture(path)?,"configured":at(&self.stage_document()?,task)?,"derived":at(&self.stage_document()?,&[task[0],"workflow","derived"])?}),
+            &json!({"schema_version":1,"configuration":flat::location(&format!("stages.{}",task.join("."))),"input":super::store::Identity::capture(path)?,"configured":at(&self.stage_document()?,task)?,"derived":flat::bindings(&self.stage_document()?,task)?}),
         )
     }
 }
@@ -599,7 +620,22 @@ fn validate_node(node: &Value, path: &str) -> Result<()> {
     let object = node
         .as_object()
         .with_context(|| format!("configuration: {path}: 需要配置表"))?;
-    let allowed=match path.rsplit('.').next().unwrap_or("") {
+    let allowed=section_parameters(path.rsplit('.').next().unwrap_or(""));
+    if let Some(allowed) = allowed {
+        for (key, value) in object {
+            ensure!(
+                allowed.split_whitespace().any(|k| k == key),
+                "configuration: {path}.{key}: 未知或当前流程不支持的原生参数"
+            );
+            validate_parameter(key, value, &format!("{path}.{key}"))?;
+        }
+        return Ok(());
+    }
+    validate_task_node(node, path)
+}
+
+fn section_parameters(section: &str) -> Option<&'static str> {
+    match section {
         "CONTROL"=>Some("calculation prefix outdir pseudo_dir verbosity tstress tprnfor disk_io restart_mode wf_collect nstep"),
         "SYSTEM"=>Some("ibrav nat ntyp nbnd ecutwfc ecutrho occupations smearing degauss nosym noinv force_symmorphic use_all_frac"),
         "ELECTRONS"=>Some("conv_thr electron_maxstep mixing_beta mixing_ndim mixing_mode diagonalization diago_thr_init diago_david_ndim startingpot startingwfc scf_must_converge"),
@@ -612,17 +648,11 @@ fn validate_node(node: &Value, path: &str) -> Result<()> {
         "wannier90"=>Some("num_wann num_iter conv_tol conv_window dis_num_iter dis_conv_tol dis_conv_window guiding_centres projections exclude_bands bands_plot bands_num_points dis_proj_min dis_proj_max dis_froz_proj dis_win_min dis_win_max dis_froz_min dis_froz_max"),
         "postw90"=>Some("write_hr write_bvec bands_plot dos num_elec_per_state dos_kmesh dos_energy_min dos_energy_max dos_energy_step dos_adpt_smr dos_smr_fixed_en_width dos_smr_type fermi_energy"),
         _=>None,
-    };
-    if let Some(allowed) = allowed {
-        for (key, value) in object {
-            ensure!(
-                allowed.split_whitespace().any(|k| k == key),
-                "configuration: {path}.{key}: 未知或当前流程不支持的原生参数"
-            );
-            validate_parameter(key, value, &format!("{path}.{key}"))?;
-        }
-        return Ok(());
     }
+}
+
+fn validate_task_node(node: &Value, path: &str) -> Result<()> {
+    let object = node.as_object().context("configuration: 需要配置表")?;
     if path.ends_with(".spectra") {
         for (name, task) in object {
             ensure!(
@@ -759,6 +789,9 @@ fn validate_parameter(key: &str, value: &Value, path: &str) -> Result<()> {
 
 impl Config {
     pub fn validate_native(&self) -> Result<()> {
+        self.validate_native_impl().map_err(|e| anyhow::anyhow!(flat::message(&format!("{e:#}"))))
+    }
+    fn validate_native_impl(&self) -> Result<()> {
         ensure_version(self.schema_version)?;
         let v = self.stage_document()?;
         let ph = self.phonon_stage();
@@ -866,7 +899,7 @@ impl Config {
                         break;
                     }
                 }
-                ensure!(!present,"configuration: stages.{name}.{target}: 手填与 stages.{name}.workflow.derived.{target} 双重定义");
+                ensure!(!present,"configuration: stages.{name}.{target}: 手填与内部推导规则双重定义");
             }
         }
         let prefix: String = get(&v, &[SCF, "pw", "CONTROL", "prefix"])?;
@@ -1176,7 +1209,7 @@ impl Config {
         let mut v = stages(&d);
         put(&mut v, path, value);
         d.stages = serde_json::from_value(v)?;
-        let runtime = decode(&d)?;
+        let runtime = decode(&d).map_err(configuration_error)?;
         self.document = d;
         self.runtime = runtime;
         Ok(())

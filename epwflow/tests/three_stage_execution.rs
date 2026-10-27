@@ -833,7 +833,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     let changed_path=c.numbered_cli(1,&["--stage","coarse","--check"],None,"numbered-path-density");
     assert!(!changed_path.status.success());
     let error=String::from_utf8_lossy(&changed_path.stderr);
-    assert!(error.contains("stages.6.epw-coarse.workflow.points_per_edge") && error.contains("stages.3.qe-electronic.workflow.points_per_edge"),"{error}");
+    assert!(error.contains("workflow.6.epw-coarse.points_per_edge") && error.contains("workflow.3.qe-bands.points_per_edge"),"{error}");
     assert_eq!(coarse_calls,c.calls().1.matches("coarse ").count(),"冲突检查不能重算 EPC");
     assert_eq!(c.calls().1.matches("wannier ").count(),1);
     assert!(stages::reusable(&original,Step::Fine).unwrap());

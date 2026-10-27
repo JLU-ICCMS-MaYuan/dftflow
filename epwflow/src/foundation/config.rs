@@ -124,6 +124,9 @@ impl Config {
         Ok(c)
     }
     pub fn validate(&self)->Result<()>{
+        self.validate_impl().map_err(super::native_config::configuration_error)
+    }
+    fn validate_impl(&self)->Result<()>{
         self.validate_native()?;
         let ph=self.phonon_stage();
         let owner=if self.superconductivity.mode==Mode::Aniso {"aniso"}else{"iso"};

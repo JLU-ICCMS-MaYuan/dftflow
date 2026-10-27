@@ -1,26 +1,26 @@
 # MgB₂ EPW 手动测试
 
-本目录采用按阶段填写原生参数的版本 2 配置，实施与本轮重算证据见 [0059 验收记录](../../../../../docs/specs/0059-epw-native-stage-config/acceptance.md)。旧计算已按授权范围清除且未备份归档；本轮已从 SCF 完成八阶段重算，iso／aniso 的 20／30／40 K 均收敛且数据有效，结果与图表已发布；这不是 Tc 或网格收敛验收。
+本目录采用按阶段填写原生参数的版本 2 配置。0059 历史重算证据见 [0059 验收记录](../../../../../docs/specs/0059-epw-native-stage-config/acceptance.md)。旧计算已按授权范围清除且未备份归档；0059 已从 SCF 完成八阶段重算，iso／aniso 的 20／30／40 K 均收敛且数据有效，结果与图表已发布；这不是 Tc 或网格收敛验收。
 
 ## 开始前检查
 
 ```bash
 source "/data/home/mayuan/code/dftflow/scripts/env.sh"
-export PATH="/data/home/mayuan/code/dftflow/docs/local/0059-native-bin:$PATH"
+export PATH="/data/home/mayuan/code/dftflow/docs/local/0061-native-bin:$PATH"
 cd "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow"
 command -v epw_phonon epw_wannier epw_superconductivity
 epw_phonon -c "epwinput.toml" --check --json
 ```
 
-本轮使用 `docs/local/0059-native-bin/` 中冻结并核验的三个程序；上述 PATH 仅作用于当前会话，默认安装不会随源码自动更新。
+平层配置使用 `docs/local/0061-native-bin/` 中本次构建并核验的三个程序；0059 的旧程序不读取平层格式。现有八阶段计算结果属于 0059，本轮未重新计算；旧冻结配置未改写。上述历史现场的恢复属于旧格式边界，不能直接用新程序恢复。配置调整见 [0061](../../../../../docs/specs/0061-epw-flat-stage-config/spec.md)。上述 PATH 仅作用于当前会话，默认安装不会随源码自动更新。
 
 `--check` 只检查配置、文件和并行设置，不提交作业。所有命令读取当前 `epwinput.toml`，结构为 `../POSCAR`，赝势位于上级 `pp/`。当前为 PBE 小网格功能测试，图与数值供人工检查，不代表网格或选窗已经收敛。
 
 ## 按阶段修改配置
 
-当前 `epwinput.toml` 仅使用 `schema_version = 2`。例如 SCF 的截断能在 `stages."1.qe-scf".pw.SYSTEM.ecutwfc`，NSCF 在 `stages."2.qe-nscf".pw.SYSTEM.ecutwfc`；两处分别填写，单位均为 Ry。PH 初始化和逐 q 计算、电子后处理以及两个超导方法也分别配置。第 7 步 `temps=[20]` K 独立于第 8 步的 20／30／40 K。
+当前 `epwinput.toml` 仅使用 `schema_version = 2`。例如 SCF 的截断能在 `stages."1.qe-scf".ecutwfc`，NSCF 在 `stages."2.qe-nscf".ecutwfc`；两处分别填写，单位均为 Ry。PH 初始化和逐 q 计算、电子后处理以及两个超导方法也分别配置。第 7 步 `temps=[20]` K 独立于第 8 步的 20／30／40 K。
 
-自动选窗、输入来源及调度保持在工作流配置；科学输入里的数组和卡片保留原生名称，不能再填写旧别名。完整对应关系见[参数说明](../../../../../docs/overview/epwflow/native-stage-config.md)。
+科学段内不再细分 pw、SYSTEM 或 ELECTRONS。能带 PW、bands.x、DOS、PDOS 分别使用 `3.qe-bands/3.qe-bands-post/3.qe-dos/3.qe-pdos`。自动绑定项不写入 TOML，由程序内部检查。自动选窗、输入来源及调度保持在独立工作流配置；科学输入里的数组和卡片保留原生名称，不能再填写旧别名。完整对应关系见[参数说明](../../../../../docs/overview/epwflow/native-stage-config.md)。
 
 ## 八阶段操作
 
@@ -112,7 +112,7 @@ epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
 
 **第 3～7 步**各提交一次即可，阶段脚本在作业内完成必要后处理、核验、绘图及发布。第 3 步能带和 DOS 各自完成即可出图；第 7 步没有另加独立最终图，已有谱在第 8 步结果包展示。无需再次调用公开命令触发绘图。
 
-**第 8 步**当前工作流 `task="gap"`、`mode="both"`；`iso.epw.INPUTEPW` 与 `aniso.epw.INPUTEPW` 分别显式设置 `muc=0.05`、`nstemp=3`、`temps=[20,30,40]` K；执行一次命令提交两个独立方法作业，每个方法一次 EPW 处理全部温度。输出目录为 `iso-mu0.05-20-40/` 与 `aniso-mu0.05-20-40/`，全部有效温度齐备后在作业内发布最终结果。当前任务计算指定温度的能隙，不搜索 Tc。
+**第 8 步**当前工作流 `task="gap"`、`mode="both"`；`stages."8.epw-iso"` 与 `stages."8.epw-aniso"` 分别显式设置 `muc=0.05`、`nstemp=3`、`temps=[20,30,40]` K；执行一次命令提交两个独立方法作业，每个方法一次 EPW 处理全部温度。输出目录为 `iso-mu0.05-20-40/` 与 `aniso-mu0.05-20-40/`，全部有效温度齐备后在作业内发布最终结果。当前任务计算指定温度的能隙，不搜索 Tc。
 
 为了尽早检查选窗，也可按 **1 → 2 → 3 → 5 → 4 → 6 → 7 → 8** 执行。第 5 步不依赖声子；能带由 EPW 内嵌 Wannier90 的 wdata 输出，只有电子 DOS 调用 postw90。图中四个窗口边界取实际拟合日志。第 6 步复用第 5 步电子数据，只新增必要的声子求值；声子比较只画 TDOS，元素 DOS 在第 4 步单独交付。
 

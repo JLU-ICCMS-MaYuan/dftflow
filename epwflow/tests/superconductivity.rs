@@ -78,11 +78,21 @@ args = []
 path = "{pw2}"
 args = []
 
-[stages."1.qe-scf".pw]
+
+[stages."1.qe-scf"]
 K_POINTS = "automatic\n2 2 2 0 0 0"
 ATOMIC_SPECIES = "Si 28.0855 {structure}"
 
-[stages."2.qe-nscf".pw]
+calculation = "scf"
+prefix = "scf"
+
+ecutwfc = 30.0
+ecutrho = 240.0
+occupations = "fixed"
+
+conv_thr = 1e-8
+
+[stages."2.qe-nscf"]
 K_POINTS = '''crystal
 8
 0 0 0 0.125
@@ -95,19 +105,31 @@ K_POINTS = '''crystal
 0.5 0.5 0.5 0.125'''
 ATOMIC_SPECIES = "Si 28.0855 {structure}"
 
-[stages."3.qe-electronic".workflow]
+calculation = "nscf"
+prefix = "scf"
+
+ecutwfc = 30.0
+ecutrho = 240.0
+occupations = "fixed"
+nbnd = 4
+nosym = false
+noinv = false
+
+conv_thr = 1e-8
+
+[workflow."3.qe-bands"]
 points_per_edge = 20
 
-[stages."4.qe-phonon-index".workflow]
+[workflow."4.qe-phonon-index"]
 phonon_sigma_cm1 = 10.0
 points_per_edge = 100
 
-[stages."5.epw-wannier".workflow]
+[workflow."5.epw-wannier"]
 points_per_edge = 20
 fermi_source = "f2"
 selection_mode = "fixed_plus_projectability"
 
-[stages."5.epw-wannier".wannier90]
+[stages."5.wannier90"]
 bands_plot = true
 bands_num_points = 1
 dis_proj_min = 0.01
@@ -123,92 +145,36 @@ num_iter = 100
 conv_tol = 1e-6
 conv_window = 10
 
-[stages."6.epw-coarse".workflow]
+[workflow."6.epw-coarse"]
 points_per_edge = 20
 fermi_source = "f2"
 onsite_asr = "gamma_hermitian"
 
-[stages."7.epw-fine".workflow]
+[workflow."7.epw-fine"]
 fermi_source = "f2"
 
-[stages."8.epw-superconductivity".workflow]
+[workflow."8.epw-superconductivity"]
 task = "tc"
 mode = "iso"
 spectrum_index = 0
 initial_gaps = [ 0.0005, 0.0015,]
 
-[stages."1.qe-scf".workflow.derived]
-"pw.CONTROL.outdir" = "当前阶段工作目录和已绑定赝势源"
-"pw.CONTROL.pseudo_dir" = "当前阶段工作目录和已绑定赝势源"
-"pw.SYSTEM.ibrav" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
-"pw.SYSTEM.nat" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
-"pw.SYSTEM.ntyp" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
+[stages."3.qe-bands"]
+ATOMIC_SPECIES = "Si 28.0855 {structure}"
 
-[stages."1.qe-scf".pw.CONTROL]
-calculation = "scf"
+calculation = "bands"
 prefix = "scf"
 
-[stages."1.qe-scf".pw.SYSTEM]
-ecutwfc = 30.0
-ecutrho = 240.0
-occupations = "fixed"
-
-[stages."1.qe-scf".pw.ELECTRONS]
-conv_thr = 1e-8
-
-[stages."2.qe-nscf".workflow.derived]
-"pw.CONTROL.outdir" = "当前阶段工作目录和已绑定赝势源"
-"pw.CONTROL.pseudo_dir" = "当前阶段工作目录和已绑定赝势源"
-"pw.SYSTEM.ibrav" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
-"pw.SYSTEM.nat" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
-"pw.SYSTEM.ntyp" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
-
-[stages."2.qe-nscf".pw.CONTROL]
-calculation = "nscf"
-prefix = "scf"
-
-[stages."2.qe-nscf".pw.SYSTEM]
 ecutwfc = 30.0
 ecutrho = 240.0
 occupations = "fixed"
 nbnd = 4
-nosym = false
-noinv = false
+nosym = true
+noinv = true
 
-[stages."2.qe-nscf".pw.ELECTRONS]
 conv_thr = 1e-8
 
-[stages."3.qe-electronic".workflow.derived]
-"qe_eband.pw.CONTROL.outdir" = "当前阶段工作目录和已绑定赝势源"
-"qe_eband.pw.CONTROL.pseudo_dir" = "当前阶段工作目录和已绑定赝势源"
-"qe_eband.pw.SYSTEM.ibrav" = "已绑定 POSCAR"
-"qe_eband.pw.SYSTEM.nat" = "已绑定 POSCAR"
-"qe_eband.pw.SYSTEM.ntyp" = "已绑定 POSCAR"
-"qe_eband.bands.BANDS.outdir" = "当前子任务工作目录和输出文件名"
-"qe_eband.bands.BANDS.filband" = "当前子任务工作目录和输出文件名"
-"qe_eledos.dos.DOS.outdir" = "当前子任务工作目录和输出文件名"
-"qe_eledos.dos.DOS.fildos" = "当前子任务工作目录和输出文件名"
-"qe_eledos.projwfc.PROJWFC.outdir" = "当前子任务工作目录和输出文件名"
-"qe_eledos.projwfc.PROJWFC.filpdos" = "当前子任务工作目录和输出文件名"
-
-[stages."3.qe-electronic".qe_eband.pw]
-ATOMIC_SPECIES = "Si 28.0855 {structure}"
-
-[stages."4.qe-phonon-index".workflow.derived]
-"ph.INPUTPH.outdir" = "已核验 SCF 快照和当前动力学矩阵文件名"
-"ph.INPUTPH.fildyn" = "已核验 SCF 快照和当前动力学矩阵文件名"
-"q.ph.INPUTPH.outdir" = "当前已核验 q 点和响应目录"
-"q.ph.INPUTPH.fildyn" = "当前已核验 q 点和响应目录"
-"q.ph.INPUTPH.start_q" = "当前已核验 q 点和响应目录"
-"q.ph.INPUTPH.last_q" = "当前已核验 q 点和响应目录"
-"q2r.INPUT.fildyn" = "本阶段已归集的动力学矩阵和力常数文件名"
-"q2r.INPUT.flfrc" = "本阶段已归集的动力学矩阵和力常数文件名"
-"dispersion.matdyn.INPUT.flfrc" = "本阶段已核验力常数和色散输出名"
-"dispersion.matdyn.INPUT.flfrq" = "本阶段已核验力常数和色散输出名"
-"dos.matdyn.INPUT.flfrc" = "本阶段已核验力常数和 DOS 输出名"
-"dos.matdyn.INPUT.fldos" = "本阶段已核验力常数和 DOS 输出名"
-
-[stages."4.qe-phonon-index".ph.INPUTPH]
+[stages."4.qe-phonon-index"]
 prefix = "scf"
 tr2_ph = 1e-12
 ldisp = true
@@ -221,25 +187,10 @@ nq1 = 2
 nq2 = 2
 nq3 = 2
 
-[stages."4.qe-phonon-index".q2r.INPUT]
+[stages."4.qe-q2r"]
 zasr = "simple"
 
-[stages."5.epw-wannier".workflow.derived]
-"epw.INPUTEPW.outdir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.dvscf_dir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.fermi_energy" = "已绑定第二步 NSCF XML 的费米能，eV"
-"epw.INPUTEPW.proj" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.bands_skipped" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.wdata" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.dis_win_min" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.dis_win_max" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.dis_froz_min" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.dis_froz_max" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"electron_dos.postw90.dos_energy_min" = "实际 Wannier 外窗和绑定 NSCF 费米能，绝对 eV"
-"electron_dos.postw90.dos_energy_max" = "实际 Wannier 外窗和绑定 NSCF 费米能，绝对 eV"
-"electron_dos.postw90.fermi_energy" = "实际 Wannier 外窗和绑定 NSCF 费米能，绝对 eV"
-
-[stages."5.epw-wannier".epw.INPUTEPW]
+[stages."5.epw-wannier"]
 prefix = "scf"
 ep_coupling = true
 elph = false
@@ -272,7 +223,7 @@ eliashberg = false
 band_plot = false
 num_iter = 100
 
-[stages."5.epw-wannier".electron_dos.postw90]
+[stages."5.postw90-dos"]
 write_hr = false
 write_bvec = false
 bands_plot = false
@@ -284,19 +235,7 @@ dos_adpt_smr = false
 dos_smr_fixed_en_width = 0.1
 dos_smr_type = "gauss"
 
-[stages."6.epw-coarse".workflow.derived]
-"epw.INPUTEPW.outdir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.dvscf_dir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.fermi_energy" = "已绑定第二步 NSCF XML 的费米能，eV"
-"comparison.q2r.INPUT.fildyn" = "本阶段 Γ onsite 修正后的动力学矩阵及力常数"
-"comparison.q2r.INPUT.flfrc" = "本阶段 Γ onsite 修正后的动力学矩阵及力常数"
-"comparison.matdyn.INPUT.flfrc" = "本阶段比较力常数及频率输出"
-"comparison.matdyn.INPUT.flfrq" = "本阶段比较力常数及频率输出"
-"comparison.epw.INPUTEPW.outdir" = "本阶段已核验粗网格数据和绑定 NSCF 费米能"
-"comparison.epw.INPUTEPW.dvscf_dir" = "本阶段已核验粗网格数据和绑定 NSCF 费米能"
-"comparison.epw.INPUTEPW.fermi_energy" = "本阶段已核验粗网格数据和绑定 NSCF 费米能"
-
-[stages."6.epw-coarse".epw.INPUTEPW]
+[stages."6.epw-coarse"]
 prefix = "scf"
 ep_coupling = true
 elph = true
@@ -334,12 +273,7 @@ nqf1 = 2
 nqf2 = 2
 nqf3 = 2
 
-[stages."7.epw-fine".workflow.derived]
-"epw.INPUTEPW.outdir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.dvscf_dir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.fermi_energy" = "已绑定第二步 NSCF XML 的费米能，eV"
-
-[stages."7.epw-fine".epw.INPUTEPW]
+[stages."7.epw-fine"]
 prefix = "scf"
 ep_coupling = true
 elph = true
@@ -381,17 +315,7 @@ nqf1 = 2
 nqf2 = 2
 nqf3 = 2
 
-[stages."8.epw-superconductivity".workflow.derived]
-"iso.epw.INPUTEPW.gap_edge" = "当前 Tc 搜索的已固定温度及初值请求"
-"iso.epw.INPUTEPW.tc_linear" = "当前 Tc 搜索的已固定温度及初值请求"
-"iso.epw.INPUTEPW.outdir" = "本次尝试已核验矩阵目录和谱副本"
-"iso.epw.INPUTEPW.fila2f" = "本次尝试已核验矩阵目录和谱副本"
-"aniso.epw.INPUTEPW.gap_edge" = "当前 Tc 搜索的已固定温度及初值请求"
-"aniso.epw.INPUTEPW.tc_linear" = "当前 Tc 搜索的已固定温度及初值请求"
-"aniso.epw.INPUTEPW.outdir" = "本次尝试已核验矩阵目录和谱副本"
-"aniso.epw.INPUTEPW.fila2f" = "本次尝试已核验矩阵目录和谱副本"
-
-[stages."8.epw-superconductivity".workflow.iso]
+[workflow."8.epw-superconductivity".iso]
 min_k = 1.0
 max_k = 10.0
 precision_k = 0.1
@@ -400,26 +324,11 @@ eigen_margin = 1e-6
 normal_gap_mev = 0.1
 super_gap_mev = 2.0
 
-[stages."3.qe-electronic".qe_eband.pw.CONTROL]
-calculation = "bands"
-prefix = "scf"
-
-[stages."3.qe-electronic".qe_eband.pw.SYSTEM]
-ecutwfc = 30.0
-ecutrho = 240.0
-occupations = "fixed"
-nbnd = 4
-nosym = true
-noinv = true
-
-[stages."3.qe-electronic".qe_eband.pw.ELECTRONS]
-conv_thr = 1e-8
-
-[stages."3.qe-electronic".qe_eband.bands.BANDS]
+[stages."3.qe-bands-post"]
 prefix = "scf"
 lsym = false
 
-[stages."3.qe-electronic".qe_eledos.dos.DOS]
+[stages."3.qe-dos"]
 prefix = "scf"
 ngauss = 0
 degauss = 0.007349864435130998
@@ -427,7 +336,7 @@ Emin = -100.0
 Emax = 100.0
 DeltaE = 0.01
 
-[stages."3.qe-electronic".qe_eledos.projwfc.PROJWFC]
+[stages."3.qe-pdos"]
 prefix = "scf"
 ngauss = 0
 degauss = 0.007349864435130998
@@ -435,12 +344,12 @@ Emin = -100.0
 Emax = 100.0
 DeltaE = 0.01
 
-[stages."4.qe-phonon-index".dispersion.matdyn.INPUT]
+[stages."4.qe-dispersion"]
 asr = "simple"
 q_in_cryst_coord = true
 q_in_band_form = true
 
-[stages."4.qe-phonon-index".dos.matdyn.INPUT]
+[stages."4.qe-phdos"]
 asr = "simple"
 dos = true
 ndos = 200
@@ -448,7 +357,7 @@ nk1 = 8
 nk2 = 8
 nk3 = 8
 
-[stages."4.qe-phonon-index".q.ph.INPUTPH]
+[stages."4.qe-phonon-index-q"]
 prefix = "scf"
 tr2_ph = 1e-12
 ldisp = true
@@ -461,16 +370,16 @@ nq1 = 2
 nq2 = 2
 nq3 = 2
 
-[stages."6.epw-coarse".comparison.q2r.INPUT]
+[stages."6.qe-q2r"]
 zasr = "no"
 
-[stages."6.epw-coarse".comparison.matdyn.INPUT]
+[stages."6.qe-matdyn"]
 asr = "no"
 q_in_cryst_coord = false
 q_in_band_form = false
 amass = [ 28.0855,]
 
-[stages."6.epw-coarse".comparison.epw.INPUTEPW]
+[stages."6.epw-comparison"]
 prefix = "scf"
 ep_coupling = true
 elph = true
@@ -506,7 +415,7 @@ selecqread = true
 filkf = "kpoints.dat"
 filqf = "qpoints.dat"
 
-[stages."8.epw-superconductivity".iso.epw.INPUTEPW]
+[stages."8.epw-iso"]
 prefix = "scf"
 epwread = true
 epbread = false
@@ -547,7 +456,7 @@ nqf1 = 2
 nqf2 = 2
 nqf3 = 2
 
-[stages."8.epw-superconductivity".aniso.epw.INPUTEPW]
+[stages."8.epw-aniso"]
 prefix = "scf"
 epwread = true
 epbread = false
@@ -1692,16 +1601,14 @@ fn gap_task_config_has_no_tc_or_dual_seed_requirement() {
     std::fs::create_dir_all(&root).unwrap();
     let path = make_config(&root);
     let mut value: toml::Value = std::fs::read_to_string(&path).unwrap().parse().unwrap();
-    let stage=&mut value["stages"]["8.epw-superconductivity"];
-    let sc=stage["workflow"].as_table_mut().unwrap();
+    let sc=value["workflow"]["8.epw-superconductivity"].as_table_mut().unwrap();
     sc.insert("task".into(),"gap".into());sc.insert("mode".into(),"both".into());
     for name in ["iso","aniso","initial_gaps"]{sc.remove(name);}
     for method in ["iso","aniso"] {
-        let epw=stage[method]["epw"]["INPUTEPW"].as_table_mut().unwrap();
+        let epw=value["stages"][format!("8.epw-{method}")].as_table_mut().unwrap();
         epw.insert("temps".into(),toml::Value::Array(vec![20.into(),30.into(),40.into()]));
         epw.insert("nstemp".into(),3.into());epw.insert("broyden_beta".into(),(-0.3).into());
         epw.insert("gap_edge".into(),0.01.into());epw.insert("tc_linear".into(),false.into());
-        for key in ["gap_edge","tc_linear"]{stage["workflow"]["derived"].as_table_mut().unwrap().remove(&format!("{method}.epw.INPUTEPW.{key}"));}
     }
     std::fs::write(&path,toml::to_string(&value).unwrap()).unwrap();
     let cfg=config::Config::load(&path).unwrap();

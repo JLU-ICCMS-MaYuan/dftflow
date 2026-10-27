@@ -96,7 +96,7 @@ fn nscf_system_parameters_are_independent_and_render_native_names_and_units() {
     let input = settings.nscf_input("./out").unwrap();
     assert!(input.contains("ecutwfc = 48"), "{input}");
     assert!(input.contains("degauss = 0.03"), "{input}");
-    assert!(input.contains("stages.2.qe-nscf.pw.SYSTEM.ecutwfc"));
+    assert!(input.contains("stages.2.qe-nscf.ecutwfc"));
     assert!(!input.contains("ecutwfc_ry"));
 }
 
@@ -108,7 +108,7 @@ fn conflicting_coarse_mesh_identifies_both_configuration_locations() {
         .unwrap();
     let error = format!("{:#}", c.cfg.validate().unwrap_err());
     assert!(
-        error.contains("6.epw-coarse.epw.INPUTEPW.nk1") && error.contains("2.qe-nscf.pw.K_POINTS"),
+        error.contains("6.epw-coarse.nk1") && error.contains("2.qe-nscf.K_POINTS"),
         "{error}"
     );
 }
@@ -200,7 +200,7 @@ fn manual_and_derived_definitions_are_rejected_before_execution() {
         .unwrap();
     let error = format!("{:#}", c.cfg.validate().unwrap_err());
     assert!(
-        error.contains("1.qe-scf.pw.CONTROL.outdir") && error.contains("双重定义"),
+        error.contains("1.qe-scf.outdir") && error.contains("双重定义"),
         "{error}"
     );
 }
@@ -218,7 +218,7 @@ fn native_boolean_and_array_types_and_temperature_lengths_are_checked() {
         let mut c = Case::new();
         c.cfg.set_native(&path, value).unwrap();
         let error = format!("{:#}", c.cfg.validate().unwrap_err());
-        assert!(error.contains(&path.join(".")), "{error}");
+        assert!(error.contains(&format!("{}.{}", path[0], path.last().unwrap())), "{error}");
     }
 }
 
@@ -243,7 +243,7 @@ fn crystal_card_is_preserved_and_incomplete_mesh_is_rejected() {
         .cfg
         .set_native(&[NSCF, "pw", "K_POINTS"], json!(lines.join("\n")))
         .unwrap_err();
-    assert!(format!("{error:#}").contains("2.qe-nscf.pw.K_POINTS"));
+    assert!(format!("{error:#}").contains("2.qe-nscf.K_POINTS"));
 }
 
 #[test]

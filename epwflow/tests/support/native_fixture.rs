@@ -9,6 +9,7 @@ use serde_json::json;
 pub fn matrix(cfg: &mut Config) {
     let mut v = serde_json::to_value(&*cfg).unwrap();
     let stages = &mut v["stages"];
+    let mut workflow = serde_json::to_value(&*cfg).unwrap()["workflow"].clone();
     let ph = cfg.phonon_stage();
     let prefix = cfg.qe.prefix.clone();
     let species = cfg
@@ -24,36 +25,36 @@ pub fn matrix(cfg: &mut Config) {
         .collect::<Vec<_>>()
         .join("\n");
     for path in [
-        vec![SCF, "pw"],
-        vec![NSCF, "pw"],
-        vec![ELECTRONIC, "qe_eband", "pw"],
+        vec![SCF],
+        vec![NSCF],
+        vec!["3.qe-bands"],
     ] {
         let mut node = &mut *stages;
         for part in &path {
             node = &mut node[*part];
         }
-        node["CONTROL"]["prefix"] = json!(prefix);
+        node["prefix"] = json!(prefix);
         node["ATOMIC_SPECIES"] = json!(species);
-        node["SYSTEM"]["ecutwfc"] = json!(cfg.qe.ecutwfc_ry);
-        node["SYSTEM"]["ecutrho"] = json!(cfg.qe.ecutrho_ry);
-        node["SYSTEM"]["occupations"] = json!(cfg.qe.occupations);
+        node["ecutwfc"] = json!(cfg.qe.ecutwfc_ry);
+        node["ecutrho"] = json!(cfg.qe.ecutrho_ry);
+        node["occupations"] = json!(cfg.qe.occupations);
         for (name, val) in [
             ("smearing", json!(cfg.qe.smearing)),
             ("degauss", json!(cfg.qe.degauss_ry)),
         ] {
             if val.is_null() {
-                node["SYSTEM"].as_object_mut().unwrap().remove(name);
+                node.as_object_mut().unwrap().remove(name);
             } else {
-                node["SYSTEM"][name] = val;
+                node[name] = val;
             }
         }
     }
-    stages[&ph]["ph"]["INPUTPH"]["prefix"] = json!(prefix);
-    stages[&ph]["ph"]["INPUTPH"]["only_init"] = json!(cfg.phonon.mode != PhMode::Nosplit);
+    stages[&ph]["prefix"] = json!(prefix);
+    stages[&ph]["only_init"] = json!(cfg.phonon.mode != PhMode::Nosplit);
     if cfg.phonon.mode == PhMode::Nosplit {
-        stages[&ph].as_object_mut().unwrap().remove("q");
+        stages.as_object_mut().unwrap().remove(&format!("{ph}-q"));
     } else {
-        let mut q = stages[&ph]["ph"]["INPUTPH"].clone();
+        let mut q = stages[&ph].clone();
         q["only_init"] = json!(false);
         if cfg.phonon.mode == PhMode::Coords {
             q["ldisp"] = json!(false);
@@ -61,23 +62,10 @@ pub fn matrix(cfg: &mut Config) {
                 q.as_object_mut().unwrap().remove(k);
             }
         }
-        stages[&ph]["q"] = json!({"ph":{"INPUTPH":q}});
-        let derived = &mut stages[&ph]["workflow"]["derived"];
-        for k in ["start_q", "last_q"] {
-            let name = format!("q.ph.INPUTPH.{k}");
-            if cfg.phonon.mode == PhMode::Index {
-                derived[&name] = json!("测试 q 点序号");
-            } else {
-                derived.as_object_mut().unwrap().remove(&name);
-            }
-        }
+        stages[format!("{ph}-q")] = q;
     }
-    for task in [
-        ["qe_eband", "bands", "BANDS"],
-        ["qe_eledos", "dos", "DOS"],
-        ["qe_eledos", "projwfc", "PROJWFC"],
-    ] {
-        stages[ELECTRONIC][task[0]][task[1]][task[2]]["prefix"] = json!(prefix);
+    for name in ["3.qe-bands-post", "3.qe-dos", "3.qe-pdos"] {
+        stages[name]["prefix"] = json!(prefix);
     }
     let order = if cfg.pseudos.contains_key("Mg") && cfg.pseudos.contains_key("B") {
         vec!["Mg".to_owned(), "B".to_owned()]
@@ -89,10 +77,10 @@ pub fn matrix(cfg: &mut Config) {
         .map(|e| qf_input::species::get_atomic_mass(e, cfg.atomic_masses.get(e).copied()))
         .collect::<Vec<_>>();
     for path in [
-        vec![WANNIER, "epw", "INPUTEPW"],
-        vec![COARSE, "epw", "INPUTEPW"],
-        vec![COARSE, "comparison", "epw", "INPUTEPW"],
-        vec![FINE, "epw", "INPUTEPW"],
+        vec![WANNIER],
+        vec![COARSE],
+        vec!["6.epw-comparison"],
+        vec![FINE],
     ] {
         let mut node = &mut *stages;
         for p in path {
@@ -112,24 +100,24 @@ pub fn matrix(cfg: &mut Config) {
     }
     for (base, grid) in [("nkf", cfg.qe.nscf.k_grid), ("nqf", cfg.phonon.q_grid)] {
         for (i, n) in grid.into_iter().enumerate() {
-            stages[COARSE]["epw"]["INPUTEPW"][format!("{base}{}", i + 1)] = json!(n);
+            stages[COARSE][format!("{base}{}", i + 1)] = json!(n);
         }
     }
-    stages[COARSE]["comparison"]["matdyn"]["INPUT"]["amass"] = json!(masses);
+    stages["6.qe-matdyn"]["amass"] = json!(masses);
     for stage in [WANNIER, COARSE] {
-        stages[stage]["workflow"]["points_per_edge"] =
+        workflow[stage]["points_per_edge"] =
             json!(cfg.comparison.clone().unwrap_or_default().points_per_edge);
     }
-    stages[WANNIER]["epw"]["INPUTEPW"]["num_iter"] = json!(cfg.wannier.localization.max_iterations);
+    stages[WANNIER]["num_iter"] = json!(cfg.wannier.localization.max_iterations);
     let owner = if cfg.superconductivity.mode == epwflow::foundation::config::Mode::Aniso {
         "aniso"
     } else {
         "iso"
     };
-    let solver = stages[SUPER][owner]["epw"]["INPUTEPW"].clone();
+    let solver = stages[format!("8.epw-{owner}")].clone();
     for method in ["iso", "aniso"] {
-        stages[SUPER][method]["epw"]["INPUTEPW"] = solver.clone();
-        let node = &mut stages[SUPER][method]["epw"]["INPUTEPW"];
+        stages[format!("8.epw-{method}")] = solver.clone();
+        let node = &mut stages[format!("8.epw-{method}")];
         node["prefix"] = json!(prefix);
         node["liso"] = json!(method == "iso");
         node["laniso"] = json!(method == "aniso");
@@ -142,18 +130,10 @@ pub fn matrix(cfg: &mut Config) {
                 node[format!("{base}{}", i + 1)] = json!(n);
             }
         }
-        let derived = &mut stages[SUPER]["workflow"]["derived"];
-        for key in ["gap_edge", "tc_linear"] {
-            let name = format!("{method}.epw.INPUTEPW.{key}");
-            if cfg.superconductivity.task == epwflow::foundation::config::SuperconductivityTask::Gap
-            {
-                derived.as_object_mut().unwrap().remove(&name);
-            } else {
-                derived[&name] = json!("当前测试搜索请求");
-            }
-        }
         if cfg.superconductivity.task == epwflow::foundation::config::SuperconductivityTask::Gap {
-            stages[SUPER][method]["epw"]["INPUTEPW"]["tc_linear"] = json!(false);
+            stages[format!("8.epw-{method}")]["tc_linear"] = json!(false);
+        } else {
+            for key in ["gap_edge", "tc_linear"] { stages[format!("8.epw-{method}")].as_object_mut().unwrap().remove(key); }
         }
     }
     if cfg.interpolation.phonon_smearings_mev.len() > 1 {
@@ -165,21 +145,12 @@ pub fn matrix(cfg: &mut Config) {
             .skip(1)
         {
             let name = format!("smearing-{:04}", index + 1);
-            let mut native = stages[FINE]["epw"]["INPUTEPW"].clone();
+            let mut native = stages[FINE].clone();
             native["degaussq"] = json!(smearing);
-            stages[FINE]["spectra"][&name] = json!({"epw":{"INPUTEPW":native}});
-            let derived = stages[FINE]["workflow"]["derived"]
-                .as_object()
-                .unwrap()
-                .clone();
-            for (key, rule) in derived {
-                if let Some(suffix) = key.strip_prefix("epw.") {
-                    stages[FINE]["workflow"]["derived"][format!("spectra.{name}.epw.{suffix}")] =
-                        rule;
-                }
-            }
+            stages[format!("{FINE}-{name}")] = native;
         }
     }
+    v["workflow"] = workflow;
     *cfg = serde_json::from_value::<Config>(v).unwrap();
 }
 pub fn phonon(cfg: &mut Config, mode: PhMode) {

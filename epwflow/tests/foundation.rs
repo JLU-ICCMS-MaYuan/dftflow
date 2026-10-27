@@ -172,9 +172,9 @@ fn rejects_unknown_nonfinite_range_and_incompatible_inputs() {
         ("min_k = 1.0","min_k = 0.0","min_k"),
         ("min_k = 1.0","min_k = 1.001","min_k"),
         ("mode = \"both\"","mode = \"wrong\"","mode"),
-        ("nkf1 = 8","nkf1 = 7","stages.7.epw-fine.epw.INPUTEPW.nkf1"),
-        ("dis_froz_min = -2.0","dis_froz_min = -20.0","stages.5.epw-wannier.wannier90.dis_froz_min"),
-        ("[stages.\"1.qe-scf\".pw.SYSTEM]","[stages.\"1.qe-scf\".pw.SYSTEM]\nnoncolin = true","noncolin"),
+        ("nkf1 = 8","nkf1 = 7","stages.7.epw-fine.nkf1"),
+        ("dis_froz_min = -2.0","dis_froz_min = -20.0","stages.5.wannier90.dis_froz_min"),
+        ("[stages.\"1.qe-scf\"]","[stages.\"1.qe-scf\"]\nnoncolin = true","noncolin"),
     ] {
         let c=Case::new();c.edit(from,to);fail(c.run(&["check","-c","input.toml"]),field);assert!(!c.root.join("run").exists());
     }

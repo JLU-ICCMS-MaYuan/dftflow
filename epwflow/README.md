@@ -76,7 +76,7 @@ epw_clear --work "/path/to/epwflow" --dry-run
 
 ## 输入与布局
 
-仅支持 `schema_version = 2`，科学参数按八个编号阶段、子任务、程序和原生输入段分别填写；旧版不兼容，也不提供迁移工具。相对路径按 TOML 所在目录解释，`work_dir = "."` 表示当前工作区。
+仅支持 `schema_version = 2`，科学参数按实际调用使用同层独立配置段，段内直接填写原生参数，程序内部识别输入段；旧版不兼容，也不提供迁移工具。相对路径按 TOML 所在目录解释，`work_dir = "."` 表示当前工作区。
 
 ```toml
 schema_version = 2
@@ -85,19 +85,19 @@ work_dir = "."
 structure = "POSCAR"
 kpath = "KPATH.in"
 
-[stages."1.qe-scf".pw.SYSTEM]
+[stages."1.qe-scf"]
 ecutwfc = 40.0  # Ry
 ecutrho = 320.0 # Ry
 occupations = "smearing"
 smearing = "gaussian"
 degauss = 0.02  # Ry
 
-[stages."2.qe-nscf".pw.SYSTEM]
+[stages."2.qe-nscf"]
 ecutwfc = 40.0  # 此次 pw.x 独立设置，不从 SCF 继承
 # 其余科学参数也须分别填写；本片段不是完整配置。
 ```
 
-完整示例见 [MgB₂ 配置](../examples/MgB2/sugon-amd/run/epwflow/epwinput.toml)，字段和单位见[原生阶段参数说明](../docs/overview/epwflow/native-stage-config.md)。所有科学调用读取对应阶段配置；修改 NSCF 截断能不会改写 SCF。数据交接必须匹配的前缀、粗细网格、Wannier 维数等出现冲突时，执行前列出两处配置和值。`workflow` 单独保存自动选窗、输入来源、PH 拆分及搜索设置；`workflow.derived` 明确列出推导目标与来源。同一目标同时手填和推导会被拒绝。
+完整示例见 [MgB₂ 配置](../examples/MgB2/sugon-amd/run/epwflow/epwinput.toml)，字段和单位见[原生阶段参数说明](../docs/overview/epwflow/native-stage-config.md)。所有科学调用读取对应阶段配置；修改 NSCF 截断能不会改写 SCF。数据交接必须匹配的前缀、粗细网格、Wannier 维数等出现冲突时，执行前列出两处配置和值。顶层 `workflow` 单独保存自动选窗、输入来源、PH 拆分及搜索设置。自动绑定在程序内部登记，无需填写 derived 表；同一目标同时手填和内部推导会被拒绝。多个调用同层分开，例如 `3.qe-bands/3.qe-bands-post/3.qe-dos/3.qe-pdos`。旧多层表达明确拒绝。配置简化及验证见 [0061](../docs/specs/0061-epw-flat-stage-config/spec.md)。
 
 数组使用原生名，例如 `amass`、`temps`，生成 Fortran 索引数组；`ATOMIC_SPECIES` 和 `K_POINTS` 保存原生卡片文本。NSCF 使用完整 `K_POINTS crystal` 点表，不隐藏改写成另一种网格。输入注释、参数对应 JSON 和固定配置共同记录来源；内部算法类型不是另一份用户配置。
 
@@ -184,14 +184,14 @@ epw_wannier --stage wannier --resume -s
 task = "gap"
 mode = "both"
 
-[stages."8.epw-superconductivity".iso.epw.INPUTEPW]
+[stages."8.epw-iso"]
 muc = 0.13
 nstemp = 3
 temps = [20.0, 30.0, 40.0] # K
 gap_edge = 0.01           # eV
 broyden_beta = -0.3
 
-[stages."8.epw-superconductivity".aniso.epw.INPUTEPW]
+[stages."8.epw-aniso"]
 muc = 0.13
 nstemp = 3
 temps = [20.0, 30.0, 40.0] # K
