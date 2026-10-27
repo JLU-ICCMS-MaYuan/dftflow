@@ -51,6 +51,9 @@ struct Options {
     /// 一次性校验并导入旧 epwflow/work，保留原来源。
     #[arg(long)]
     import_work: Option<PathBuf>,
+    /// 导入已有 PH save；仅执行 q2r、matdyn 和绘图。
+    #[arg(long, value_name = "SAVE", conflicts_with_all = ["import_work", "migrate_state", "all", "run", "status", "probe", "import", "collect", "plot", "results_check", "budget", "export_comparison", "submit_chain"])]
+    import_phonon: Option<PathBuf>,
     /// 一次性迁移旧编号工作区的隐藏状态；保留历史与预算，不提交计算。
     #[arg(long, conflicts_with_all = ["submit", "run", "status", "check", "import_work", "all", "resume"])]
     migrate_state: bool,
@@ -143,6 +146,12 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
     if let Some(group)=&o.batch_finish {return crate::superconductivity::batch::allocated_finish(&o.config,group,o.batch_exit.context("required: 方法原生退出码")?);}
     if let Some(path)=&o.workspace_attempt { return super::workspace::execute(path); }
     if let Some(path)=&o.workspace_task { return super::workspace::execute_task(path); }
+    if let Some(source) = &o.import_phonon {
+        ensure!(phase == Phase::Phonon && o.stage.is_none_or(|s| s == super::stages::Step::Phonon),
+            "configuration: --import-phonon 仅属于 epw_phonon 的 phonon 阶段");
+        ensure!(!o.check || (!o.submit && !o.resume), "configuration: --check 为只读操作");
+        return super::phonon_import::command(&o.config, source, o.check, o.submit, o.resume);
+    }
     if let Some(source)=&o.import_work { return super::workspace::import_legacy(&o.config,source); }
     if o.migrate_state { return super::run_state::migrate(&super::config::Config::load(&o.config)?); }
     if let Some(work) = &o.work { super::run_state::ready(work)?; }

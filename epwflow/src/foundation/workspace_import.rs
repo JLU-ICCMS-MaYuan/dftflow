@@ -278,7 +278,10 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     }
     let qe = crate::qe_data::qe_config::QeSettings::from_config(&cfg)?;
     fs::write(partial.join("1.qe-scf/scf.in"), qe.scf_input("./out")?)?;
-    fs::write(partial.join("2.qe-nscf/nscf.in"), qe.nscf_input("./out")?)?;
+    // 0060 已绑定的实际 NSCF 输入随产物原样复制，不用迁移后的路径重写原始证据。
+    if !manifest.artifacts.iter().any(|a| a.role == "nscf_input") {
+        fs::write(partial.join("2.qe-nscf/nscf.in"), qe.nscf_input("./out")?)?;
+    }
     if let Some(s) = &mut manifest.scf {
         s.snapshot_dir = relocate(&cfg, &s.snapshot_dir, &calc)?;
     }

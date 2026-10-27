@@ -46,3 +46,8 @@ CARGO_PROFILE_TEST_DEBUG=0 bash "scripts/build-native.sh" test -p epwflow --lib 
 ## 工程原则
 
 复用单份共享网格生成器及单份 NSCF 文件核验器；新执行、阶段复用和清单交付复用同一规则，避免三套检查漂移。FFT 只增加明确三元组与实际 XML 对比，不增加自动猜测、重试或外部 Perl 生产依赖。
+
+
+## 2026-10-27 后续整合
+
+0010 外部声子导入补充按用户明确授权整合待提交的 0060 适配与已提交的 0061 平层格式，相关源代码及回归随本次任务提交，不再受此前 0059 基线未落档的限制。当前公开字段为 `stages."2.qe-nscf".K_POINTS` 和 `.calculation`；错误提示同步推荐平层 `calculation='bands'`，仍使用 pw.x。正式 release 发布和真实 SiP₂ 导入的证据见 [0010 验收](../0010-epwflow-qe-data/acceptance.md)，前文“未安装、尚无原始导入”的限制仅描述 0060 初次实施时的状态。

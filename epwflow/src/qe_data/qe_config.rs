@@ -77,7 +77,7 @@ impl<'a> QeSettings<'a> {
                 for p in points { text.push_str(&format!("{:.17e} {:.17e} {:.17e} {:.17e}\n",
                     p[0], p[1], p[2], 1.0 / points.len() as f64)); }
                 text
-            } else { format!("K_POINTS {}\n",self.config.native_value::<String>(&[NSCF,"pw","K_POINTS"])?) }
+            } else { qf_input::pw::uniform_kpoints_text(qe.nscf.k_grid.map(i64::from), true)? }
         } else {
             format!("K_POINTS {}\n",self.config.native_value::<String>(&[SCF,"pw","K_POINTS"])?)
         };

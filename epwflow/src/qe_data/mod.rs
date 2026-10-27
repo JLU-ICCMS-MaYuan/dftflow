@@ -5,6 +5,7 @@ pub mod compare;
 pub mod manifest;
 pub mod nscf;
 pub mod native_ph;
+pub mod dynmat_text;
 pub mod phonon;
 pub mod qe_acceptance;
 pub mod qe_config;

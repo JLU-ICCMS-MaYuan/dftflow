@@ -182,6 +182,7 @@ pub(crate) fn publish_data(
     );
 
     let mut artifacts = collected.artifacts;
+    artifacts.push(super::manifest::nscf_input_artifact(work)?);
     let shared = crate::foundation::layout::path(&work, "qe-phonon");
     if shared.exists() && !crate::foundation::layout::enabled(work) {
         for name in ["shared-source-identities.json", "shared-request.json", "scf-checkpoint.json", "input.qeflow.toml", "input-init.toml", "scf.in", "ph.in", "q2r.in", "matdyn_phband.in", "matdyn_phdos.in", "save/manifest.json"] {

@@ -81,7 +81,9 @@ pub fn parse_xml(xml_path: &Path) -> Result<ElectronicStates> {
     }
     ensure!(
         kpoints.len() == nks as usize,
-        "data_invalid: XML k 点数不完整"
+        "data_invalid: XML 声明 nks={}，实际 ks_energies={}，k 点数不完整",
+        nks,
+        kpoints.len()
     );
     Ok(ElectronicStates {
         k_grid: [0; 3],
@@ -123,20 +125,101 @@ pub fn run_nscf(
         false,
     )?;
     super::save::verify_snapshot(work)?;
+    let states = verified_states(&qe.config, work)?;
     super::xml::validate_save(&outdir, &qe.config.qe.prefix, qe, None)?;
-    let xml = outdir
-        .join(format!("{}.save", qe.config.qe.prefix))
-        .join("data-file-schema.xml");
-    let mut states = parse_xml(&xml)?;
-    states.k_grid = qe.config.qe.nscf.k_grid;
-    validate_grid(
-        &states,
-        qe.config.qe.nscf.k_grid,
-        qe.config.qe.nscf.nbnd as usize,
-        &super::xml::Geometry::read(&xml)?,
-    )?;
-    states.wavefunctions = xml.parent().unwrap().into();
     Ok(states)
+}
+
+/// 新执行和编号工作区复用共用实际输入、不可变 SCF 来源及输出核验。
+pub fn verified_states(
+    cfg: &crate::foundation::config::Config,
+    work: &Path,
+) -> Result<ElectronicStates> {
+    let dir = crate::foundation::layout::path(work, "nscf");
+    let relative = format!("{}.save/data-file-schema.xml", cfg.qe.prefix);
+    verify_files(
+        &dir.join("nscf.in"),
+        &crate::foundation::layout::path(work, "scf/snapshot").join(&relative),
+        &dir.join("out").join(&relative),
+        cfg.qe.nscf.k_grid,
+        cfg.qe.nscf.nbnd as usize,
+    )
+}
+
+/// 核验实际输入而非仅使用配置乘积；保留原始 XML，出错时不自动换模式或重试。
+pub fn verify_files(
+    input: &Path,
+    scf_xml: &Path,
+    xml: &Path,
+    grid: [u32; 3],
+    bands: usize,
+) -> Result<ElectronicStates> {
+    let result = (|| -> Result<ElectronicStates> {
+        let raw = std::fs::read_to_string(input)?;
+        let points = input_points(&raw)?;
+        let expected = input_points(&qf_input::pw::uniform_kpoints_text(grid.map(i64::from), true)?)?;
+        anyhow::ensure!(points == expected,
+            "data_invalid: NSCF 实际输入点表与配置网格 {grid:?} 的 kmesh.pl 结果不一致；输入行数={}，要求={}", points.len(), expected.len());
+        let mut states = parse_xml(xml).with_context(|| format!("NSCF 输入点数={}", points.len()))?;
+        anyhow::ensure!(points.len() == states.kpoints.len(),
+            "data_invalid: NSCF 输入点数={}，输出 nks/ks_energies={}，数量不一致", points.len(), states.kpoints.len());
+        let geometry = super::xml::Geometry::read(xml)?;
+        states.k_grid = grid;
+        validate_grid(&states, grid, bands, &geometry)?;
+        for (i, (p, out)) in points.iter().zip(&states.kpoints).enumerate() {
+            let c = geometry.crystal(*out);
+            anyhow::ensure!((0..3).all(|a| {
+                let delta = c[a] - p[a];
+                delta.is_finite() && (delta - delta.round()).abs() <= 1e-8
+            }), "data_invalid: NSCF 第 {} 个点的输出坐标／顺序与实际输入不一致", i + 1);
+        }
+        Ok(states)
+    })().with_context(|| format!(
+        "NSCF 输入/输出核验失败：输入 {}；输出 {}。请检查数量、点序及权重；若 pw.x 在 nscf 模式添加或改变 k 点，建议显式设置 stages.\"2.qe-nscf\".calculation='bands' 后按恢复流程重算 NSCF，仍调用 pw.x；bands.x 是后处理程序",
+        input.display(), xml.display()))?;
+    super::xml::verify_fft(scf_xml, xml)?;
+    Ok(result)
+}
+
+fn input_points(raw: &str) -> Result<Vec<[f64; 4]>> {
+    use anyhow::ensure;
+    let lines: Vec<_> = raw
+        .lines()
+        .map(|l| l.split('!').next().unwrap().trim())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let cards: Vec<_> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.to_ascii_uppercase().starts_with("K_POINTS"))
+        .collect();
+    ensure!(
+        cards.len() == 1,
+        "data_invalid: NSCF 必须只有一份 K_POINTS 卡片"
+    );
+    let (start, header) = cards[0];
+    ensure!(
+        header.eq_ignore_ascii_case("K_POINTS crystal"),
+        "data_invalid: NSCF 需要 K_POINTS crystal"
+    );
+    let count: usize = lines
+        .get(start + 1)
+        .context("data_invalid: NSCF 缺输入声明点数")?
+        .parse()?;
+    let points = lines[start + 2..]
+        .iter()
+        .map(|line| -> Result<[f64; 4]> {
+            super::xml::numbers(line)?
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("data_invalid: NSCF 输入每点需要三维坐标及权重"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    ensure!(
+        count > 0 && points.len() == count && points.iter().all(|p| p[3] > 0.),
+        "data_invalid: NSCF 输入声明点数={count}，实际坐标行数={}；权重须为正",
+        points.len()
+    );
+    Ok(points)
 }
 
 /// 验证实际完整 Γ 中心网格及等权重，保留 XML 原始笛卡尔坐标约定。
@@ -148,7 +231,7 @@ pub fn validate_grid(
 ) -> Result<()> {
     use anyhow::ensure;
     use std::collections::BTreeSet;
-    let count = grid.iter().map(|&n| n as usize).product::<usize>();
+    let count = qf_input::pw::uniform_kpoint_count(grid.map(i64::from))?;
     ensure!(
         states.nbnd == bands
             && states.kpoints.len() == count
@@ -163,7 +246,7 @@ pub fn validate_grid(
             && states
                 .weights
                 .iter()
-                .all(|w| (w / sum - 1.0 / count as f64).abs() < 1e-9),
+                .all(|w| w.is_finite() && *w > 0. && (w / sum * count as f64 - 1.0).abs() < 1e-6),
         "data_invalid: NSCF 权重不等或非有限"
     );
     let mut indices = BTreeSet::new();
@@ -173,7 +256,9 @@ pub fn validate_grid(
         for a in 0..3 {
             let t = c[a] * grid[a] as f64;
             ensure!(
-                (t - t.round()).abs() < 1e-8,
+                t.is_finite()
+                    && (t - t.round()).abs() / (grid[a] as f64)
+                        <= 1e-8_f64.min(0.25 / grid[a] as f64),
                 "data_invalid: NSCF k 点不在固定均匀网格上"
             );
             index[a] = (t.round() as i64).rem_euclid(grid[a] as i64) as u32;

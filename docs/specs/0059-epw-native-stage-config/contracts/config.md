@@ -63,3 +63,7 @@
 - 实际 namelist 逐参数注释指向 TOML 路径或推导规则；提交快照的 `parameter-map.json` 列出配置值和来源。后处理输入另有 `*.parameters.json`，绑定实际输入哈希。
 
 `programs`、`resources`、`budget` 与每阶段 `workflow` 为调度、记账、来源、拆分、选窗或搜索设置。它们不是另一组科学参数默认值。原共享消费记录保留；0058 独立取消的时间和存储限制不在本项恢复。
+
+## 0060 对 NSCF 点表契约的替代
+
+上述 NSCF 完整点表是 0059 的历史设计。用户随后要求简写，现行契约由 [0060](../../0060-epw-nscf-grid-contract/spec.md) 替代：`stages."2.qe-nscf".K_POINTS = [A, B, C]`（层级已由 0061 平层格式接续），实际原生卡片由 Rust 展开，SCF 同维度且零位移。NSCF 同时支持 `nscf` 与 `bands`，仍由 pw.x 计算；SYSTEM 允许完整正整数密度／平滑 FFT 三元组。其他阶段独立配置原则保留。

@@ -44,3 +44,24 @@ PH 格式标识 qe7.4.1-ph-xml-c16，当前限定非磁性标量、portable 波�
 import 只接受经过原生重验的版本 2 来源，按清单角色复制目录成员并重验，保存重新定位的独立 imported/qe-data/manifest.json；不自动运行科学程序。把来源根目录或其子目录用作导入目标时拒绝。导入报告本身不代表 F1 已完成后续阶段恢复。
 
 配置中的显式绝对赝势路径通过共同 pseudo_dir 与带引号的短相对文件名定位，SCF／完整 NSCF／参考 NSCF 一致；相对名最多 80 字节，目录最多 255 字节，无法合法表达时输入适配前拒绝。保留原路径与 SHA-256 身份，不重选或改名源文件；不能用未引用斜杠、超长文件名或替身忽略卡片的行为证明有效输入。
+
+
+## 原始 save 显式导入补充（0060/0061 后）
+
+当前本轮使用 `schema_version = 2` 平层配置；本文前述 schema 1 为历史接口记录。既有 `--import-workspace` 等清单导入仍保留；新增原始来源接口不要求先有人手编写 manifest。
+
+```bash
+epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" --check
+epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save"
+epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
+# 失败后显式恢复
+epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" --resume -s
+```
+
+SAVE 相对配置目录解析，支持空格和跨目录调用。`--check` 不保存绑定、不迁移、不提交；无 `-s` 只准备；`--resume` 必须与 `-s` 配合。仅 `epw_phonon` 的 phonon 阶段接受该参数，互斥操作在解析阶段拒绝。
+
+源可为 `prefix.dyn_qN`/`prefix.dynN` 文本或带 `.xml` 的 QE XML，每个编号仅一种；`prefix.phsave/control_ph.xml` 提供网格和不可约 q 顺序；`patterns.N.xml` 与 `prefix.dvscf_qN` 须完整对应。存在 dyn0 时必须与 control 的网格/物理 q 一致；缺失时生成派生 dyn0。重复、越界或不能组成完整粗网格的 q 星拒绝。
+
+导入来源使用绝对规范目录及全文件 `{path,bytes,sha256}` 身份，禁止符号链接、路径穿越和目标冲突。规范 XML、响应势及 phsave 写入工作流独立目录，不用链接。导入报告声明实际检查和历史信息例外，并由现有版本 2 QE manifest 绑定。后续 Wannier 直接消费相同交付。
+
+当前 SCF/NSCF、来源或当前 FFT 不通过时返回非零；无 PW/PH 自动回退。作业失败保留现场，普通重复请求拒绝推进，显式恢复只补未完成步骤；仅缺图无需重算 q2r/matdyn。`--status` 只读，不能用于推进。

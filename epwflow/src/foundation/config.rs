@@ -204,7 +204,7 @@ impl Config {
         }
         Ok(())
     }
-    fn resolve(&mut self,base:&Path)->Result<()>{
+    pub(crate) fn resolve(&mut self,base:&Path)->Result<()>{
         self.work_dir=paths::destination(&paths::absolute(base,&self.work_dir)?)?;
         self.outdir=paths::destination(&paths::absolute(base,&self.outdir)?)?;
         self.structure=paths::existing(base,&self.structure,"structure",false)?;

@@ -58,8 +58,9 @@ pub fn collect(
         }
     }
     let dest = crate::foundation::layout::path(&work, "qe-data/save");
+    let importing = work.join("epw-state/imports/phonon-source.json").is_file();
     ensure!(
-        !dest.exists(),
+        !dest.exists() || importing,
         "input_conflict: PH 交付目录已存在，保留原现场"
     );
     let phsave = dest.join(format!("{prefix}.phsave"));
@@ -67,17 +68,17 @@ pub fn collect(
     let mut paths = BTreeMap::new();
     let mut output = vec![];
     let dyn0 = dest.join(format!("{prefix}.dyn0.xml"));
-    fs::copy(&qpoints[0].source_dyn0, &dyn0)?;
+    independent_copy(&qpoints[0].source_dyn0, &dyn0)?;
     paths.insert("dyn0".to_string(), dyn0);
     let control = phsave.join("control_ph.xml");
-    fs::copy(&responses[0].control_metadata, &control)?;
+    independent_copy(&responses[0].control_metadata, &control)?;
     paths.insert("phsave_control".into(), control.clone());
     for q in qpoints {
         let r = by_q[&q.global_index];
         let dyn_file = dest.join(format!("{prefix}.dyn_q{}.xml", q.global_index));
         let dvscf = dest.join(format!("{prefix}.dvscf_q{}", q.global_index));
-        fs::copy(&r.dyn_file, &dyn_file)?;
-        fs::copy(r.dvscf.as_ref().unwrap(), &dvscf)?;
+        independent_copy(&r.dyn_file, &dyn_file)?;
+        independent_copy(r.dvscf.as_ref().unwrap(), &dvscf)?;
         let patterns = phsave.join(format!("patterns.{}.xml", q.global_index));
         let original = fs::read_to_string(&r.patterns)?;
         let doc = roxmltree::Document::parse(&original)?;
@@ -93,7 +94,14 @@ pub fn collect(
             q.global_index,
             &original[range.end..]
         );
-        fs::write(&patterns, normalized)?;
+        if patterns.exists() {
+            ensure!(
+                fs::read_to_string(&patterns)? == normalized,
+                "input_conflict: 归集 patterns 内容改变"
+            );
+        } else {
+            store::atomic_bytes(&patterns, normalized.as_bytes())?;
+        }
         native_ph::patterns(&patterns, q.global_index, geometry.atoms.len() * 3)?;
         for (role, p) in [
             ("dyn", &dyn_file),
@@ -139,6 +147,37 @@ pub fn collect(
     })
 }
 
+/// 部分导入可恢复；存在的目标必须逐字相同，不覆盖损坏或冲突证据。
+pub(crate) fn independent_copy(source: &Path, target: &Path) -> Result<()> {
+    if target.exists() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            ensure!(
+                fs::metadata(target)?.nlink() == 1,
+                "input_conflict: 独立归集目标不能是硬链接 {}",
+                target.display()
+            );
+        }
+        ensure!(
+            !fs::symlink_metadata(target)?.file_type().is_symlink()
+                && fs::metadata(source)?.len() == fs::metadata(target)?.len()
+                && store::hash_file(source)? == store::hash_file(target)?,
+            "input_conflict: 独立归集目标损坏或冲突 {}",
+            target.display()
+        );
+        return Ok(());
+    }
+    let temporary = target.with_extension(format!("copy-{}", store::token()));
+    fs::copy(source, &temporary)?;
+    ensure!(
+        store::hash_file(source)? == store::hash_file(&temporary)?,
+        "input_conflict: 复制时来源变化"
+    );
+    fs::rename(temporary, target)?;
+    Ok(())
+}
+
 /// 把 q 点映射落盘为可定位 JSON（FR-008 的 q_index_map.json）。
 pub fn write_q_index_map(work: &Path, qpoints: &[QPoint]) -> Result<()> {
     let path = crate::foundation::layout::path(&work, "qe-data").join("q_index_map.json");
@@ -158,4 +197,29 @@ pub fn write_q_index_map(work: &Path, qpoints: &[QPoint]) -> Result<()> {
         .collect();
     store::write(&path, &map)?;
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    #[test]
+    fn independent_import_copy_rejects_links_and_conflicting_partial_files() {
+        let root = std::env::temp_dir().join(format!("ph-copy-{}", store::token()));
+        fs::create_dir(&root).unwrap();
+        let source = root.join("source");
+        let target = root.join("target");
+        fs::write(&source, b"verified response").unwrap();
+        independent_copy(&source, &target).unwrap();
+        independent_copy(&source, &target).unwrap();
+        fs::write(&target, b"damaged").unwrap();
+        assert!(independent_copy(&source, &target).is_err());
+        fs::remove_file(&target).unwrap();
+        fs::hard_link(&source, &target).unwrap();
+        assert!(independent_copy(&source, &target).is_err());
+        fs::remove_file(&target).unwrap();
+        std::os::unix::fs::symlink(&source, &target).unwrap();
+        assert!(independent_copy(&source, &target).is_err());
+        assert_eq!(fs::read(&source).unwrap(), b"verified response");
+        fs::remove_dir_all(root).unwrap();
+    }
 }

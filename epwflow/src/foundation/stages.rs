@@ -93,6 +93,11 @@ impl Step {
     }
 }
 
+pub fn execution_steps(cfg: &Config, target: Step) -> Vec<Step> {
+    if target == Step::Phonon && super::phonon_import::bound(cfg) { vec![Step::Phonon] }
+    else { target.closure() }
+}
+
 fn program(path: &Path) -> Result<Value> {
     Ok(json!({"sha256":store::hash_file(path)?}))
 }
@@ -139,6 +144,9 @@ pub fn parameters(cfg: &Config, step: Step) -> Result<Value> {
         if let Some(derived)=workflow.get_mut("derived").and_then(Value::as_object_mut) {
             derived.retain(|key,_|!(step==Step::Wannier&&key.starts_with("electron_dos.")) && !(step==Step::Coarse&&key.starts_with("comparison.")));
         }
+    }
+    if step == Step::Phonon && super::phonon_import::bound(cfg) {
+        value["external_phonon"] = json!(store::hash_file(&super::phonon_import::binding(cfg))?);
     }
     value["native"]=native;
     Ok(value)
@@ -287,6 +295,9 @@ pub fn reusable(cfg: &Config, step: Step) -> Result<bool> {
         return Ok(false);
     }
     if c.upstream != upstream(cfg, step)? { return Ok(false); }
+    if step == Step::Nscf {
+        crate::qe_data::nscf::verified_states(cfg, &cfg.work_dir)?;
+    }
     if step == Step::Electronic {
         return super::workspace_electronic::completed(cfg);
     }

@@ -102,6 +102,13 @@ if kind=='pw':
         points=[list(map(float,l.split())) for l in block.group(2).splitlines()[:int(block.group(1))]]
         bands=int(value('nbnd'))
         if mode=='duplicate_k':points[-1]=points[0]
+        if mode=='extra_k':points += [[.125,.125,i/16,points[0][3]] for i in range(4)]
+        if mode=='missing_k':points.pop()
+        if mode=='reorder_k':points[0],points[1]=points[1],points[0]
+        if mode=='unequal_weight':points[-1][3] *= 2
+        if mode=='off_grid':points[-1][0] += .01
+    elif (ROOT/'scf-k-count').exists():
+        points=[[0.,0.,0.,1/16]]*16
     save.mkdir(parents=True,exist_ok=True)
     root=ET.Element('espresso'); output=ET.SubElement(root,'output')
     conv=ET.SubElement(output,'convergence_info');ET.SubElement(conv,'convergence_achieved').text='true'
@@ -110,12 +117,16 @@ if kind=='pw':
     for name,xyz in atoms:ET.SubElement(pos,'atom',name=name).text=s(xyz)
     lat=ET.SubElement(structure,'cell')
     for i,row in enumerate(lattice,1):ET.SubElement(lat,'a'+str(i)).text=s(row)
-    basis=ET.SubElement(output,'basis_set');ET.SubElement(basis,'fft_grid',nr1='2',nr2='2',nr3='2');rec=ET.SubElement(basis,'reciprocal_lattice')
+    basis=ET.SubElement(output,'basis_set');dense=ET.SubElement(basis,'fft_grid',nr1='2',nr2='2',nr3='2');smooth=ET.SubElement(basis,'fft_smooth',nr1='2',nr2='2',nr3='2');rec=ET.SubElement(basis,'reciprocal_lattice')
+    if nscf and mode=='fft_dense':dense.set('nr2','3')
+    if nscf and mode=='fft_smooth':smooth.set('nr2','3')
+    if nscf and mode=='missing_fft_smooth':basis.remove(smooth)
     for i,row in enumerate(bg,1):ET.SubElement(rec,'b'+str(i)).text=s(row)
     energy=ET.SubElement(output,'total_energy');ET.SubElement(energy,'etot').text='-4' if mode=='energy' else '-5'
     band=ET.SubElement(output,'band_structure')
     for flag in ['lsda','noncolin','spinorbit']:ET.SubElement(band,flag).text='false'
     for name,v in [('nbnd',bands),('nks',len(points)),('fermi_energy',.1)]:ET.SubElement(band,name).text=str(v)
+    if nscf and mode=='inconsistent_nks':band.find('nks').text=str(len(points)+1)
     for i,(x,y,z,w) in enumerate(points,1):
         cart=[x*bg[0][j]+y*bg[1][j]+z*bg[2][j] for j in range(3)]
         ks=ET.SubElement(band,'ks_energies');ET.SubElement(ks,'k_point',weight=str(w)).text=s(cart)

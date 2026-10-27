@@ -115,16 +115,7 @@ occupations = "fixed"
 conv_thr = 1e-8
 
 [stages."2.qe-nscf"]
-K_POINTS = '''crystal
-8
-0 0 0 0.125
-0 0 0.5 0.125
-0 0.5 0 0.125
-0 0.5 0.5 0.125
-0.5 0 0 0.125
-0.5 0 0.5 0.125
-0.5 0.5 0 0.125
-0.5 0.5 0.5 0.125'''
+K_POINTS = [2, 2, 2]
 ATOMIC_SPECIES = "Si 28.0855 {structure}"
 
 calculation = "nscf"
@@ -1025,14 +1016,14 @@ fn shared_case() -> (Case, config::Config, snapshot::RunBinding) {
     }
     let mut cfg = config::Config::load(&case.config_path).unwrap();
     cfg.atomic_masses.insert("Si".into(), 29.1234);
-    cfg.qe.scf.k_shift = [1, 0, 1];
+    cfg.qe.scf.k_shift = [0; 3];
     native_fixture::matrix(&mut cfg);
     let binding = snapshot::prepare(&cfg, &case.config_path).unwrap();
     (case, cfg, binding)
 }
 
 #[test]
-fn shared_qeflow_nosplit_preserves_mass_shift_checkpoint_and_complete_delivery() {
+fn shared_qeflow_nosplit_preserves_mass_zero_shift_checkpoint_and_complete_delivery() {
     let (case, cfg, binding) = shared_case();
     let qe = QeSettings::from_config(&cfg).unwrap();
     let m = scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).unwrap();
@@ -1044,7 +1035,7 @@ fn shared_qeflow_nosplit_preserves_mass_shift_checkpoint_and_complete_delivery()
     let shared = cfg.work_dir.join("qe-phonon");
     let input = std::fs::read_to_string(shared.join("scf.in")).unwrap();
     assert!(input.contains("29.1234"));
-    assert!(input.contains("2 2 2 1 0 1"));
+    assert!(input.contains("2 2 2 0 0 0"));
     assert!(!cfg.work_dir.join("scf/snapshot/actual_prefix.save/stage-local-marker").exists());
     assert!(shared.join("out/actual_prefix.save/stage-local-marker").is_file());
     assert!(shared.join("save/manifest.json").is_file());

@@ -1,6 +1,6 @@
 # epwflow
 
-仅支持按八阶段填写原生参数的 `schema_version=2`；名称、单位与实际输入对应关系见[参数说明](../docs/overview/epwflow/native-stage-config.md)。本轮固定私有构建已完成 PBE MgB₂ 八阶段及 iso／aniso 的 20／30／40 K 六点能隙验收，默认安装未切换，Tc 与网格收敛不在本次结论中。
+仅支持按八阶段填写原生参数的 `schema_version=2`；名称、单位与实际输入对应关系见[参数说明](../docs/overview/epwflow/native-stage-config.md)。2026-10-26 的固定私有构建完成 PBE MgB₂ 八阶段及 iso／aniso 的 20／30／40 K 六点能隙验收；2026-10-27 原始声子导入版本已发布至正式入口，具体构建和 SiP₂ 验收见 [0010](../docs/specs/0010-epwflow-qe-data/acceptance.md)。Tc 与网格收敛不在这些结论中。
 
 编号工作区新原生脚本使用 `<功能>.sh`（如 `scf.sh`、`bands.sh`、`epw_wannier.sh`），Slurm 两路日志合并到 `slurm-<功能>.log` 并覆盖写入。公开命令在实际计算目录调用 sbatch；脚本仅用 `#SBATCH --chdir=绝对目标目录`，正文没有 cd，也不重复传命令行 --chdir。手工可从其他目录通过脚本绝对路径提交，科学输出和相对 Slurm 日志仍在目标目录；`squeue -o "%i %j %Z"` 可查看 WorkDir。SLURM_SUBMIT_DIR 仍表示调用 sbatch 的原目录。直接 bash 执行不会解释 #SBATCH，需由调用方指定工作目录。历史冻结脚本保持原字节，细节见 [0046 验收](../docs/specs/0046-epw-submit-simplification/acceptance.md)。
 
@@ -76,7 +76,7 @@ epw_clear --work "/path/to/epwflow" --dry-run
 
 ## 输入与布局
 
-仅支持 `schema_version = 2`，科学参数按实际调用使用同层独立配置段，段内直接填写原生参数，程序内部识别输入段；旧版不兼容，也不提供迁移工具。相对路径按 TOML 所在目录解释，`work_dir = "."` 表示当前工作区。
+仅支持 `schema_version = 2`，科学参数按实际调用使用同层独立配置段，段内直接填写原生参数，程序内部识别输入段；普通入口不接受旧多层格式；显式 `--import-phonon` 可在严格核验旧 SCF/NSCF 后受控接续嵌套的版本 2 配置。相对路径按 TOML 所在目录解释，`work_dir = "."` 表示当前工作区。
 
 ```toml
 schema_version = 2
@@ -99,7 +99,7 @@ ecutwfc = 40.0  # 此次 pw.x 独立设置，不从 SCF 继承
 
 完整示例见 [MgB₂ 配置](../examples/MgB2/sugon-amd/run/epwflow/epwinput.toml)，字段和单位见[原生阶段参数说明](../docs/overview/epwflow/native-stage-config.md)。所有科学调用读取对应阶段配置；修改 NSCF 截断能不会改写 SCF。数据交接必须匹配的前缀、粗细网格、Wannier 维数等出现冲突时，执行前列出两处配置和值。顶层 `workflow` 单独保存自动选窗、输入来源、PH 拆分及搜索设置。自动绑定在程序内部登记，无需填写 derived 表；同一目标同时手填和内部推导会被拒绝。多个调用同层分开，例如 `3.qe-bands/3.qe-bands-post/3.qe-dos/3.qe-pdos`。旧多层表达明确拒绝。配置简化及验证见 [0061](../docs/specs/0061-epw-flat-stage-config/spec.md)。
 
-数组使用原生名，例如 `amass`、`temps`，生成 Fortran 索引数组；`ATOMIC_SPECIES` 和 `K_POINTS` 保存原生卡片文本。NSCF 使用完整 `K_POINTS crystal` 点表，不隐藏改写成另一种网格。输入文件不再前置参数来源注释；来源由参数对应 JSON 和固定配置记录（直接准备模式见 `epw-state/parameter-map.json`）；内部算法类型不是另一份用户配置。
+数组使用原生名，例如 `amass`、`temps`，生成 Fortran 索引数组；`ATOMIC_SPECIES` 保存原生卡片文本；SCF 的 `K_POINTS` 保存类型及正文，NSCF 的 `K_POINTS = [A, B, C]` 仅填写三个正整数。Rust 按官方 `kmesh.pl` 的公式、顺序及精度展开到实际 `nscf.in`，配置中不保存长点表。SCF 与 NSCF 必须同维度、零位移。输入文件不再前置参数来源注释；来源由参数对应 JSON 和固定配置记录（直接准备模式见 `epw-state/parameter-map.json`）；内部算法类型不是另一份用户配置。
 
 ```text
 run/
@@ -368,3 +368,27 @@ QE 参考曲线统一使用深灰实线，涵盖能带、DOS、声子比较及�
 第 3 步 DOS 同图画 TDOS＋Mg／B 等真实元素 PDOS，第 5 步仍只比较 TDOS。投影缺失时，在已核验 NSCF 波函数的独立副本内运行必要 `projwfc -pd .true.`，不重算 PW／PH／Wannier／EPW；程序默认从 pw.x 同目录解析。TDOS 读取同次 projwfc `.pdos_tot` 的 DOS 列，保证与 PDOS 原生同网格；原 dos.x 表保留。逐 atom/wfc 的 LDOS 只累加一次，保留投影残差，不强制归一。当前仅支持非磁标量投影，缺波函数或不支持的自旋明确报错，不自动重算 NSCF。
 
 投影失败时已成功的能带及 TDOS 图保留并注明缺项；修复后恢复只接续投影和派生产物。投影程序已成功而解析或发布失败时复用 `native-checkpoint.json`。独立重绘只读取包内 `.plot.json`，不调用原生程序。设计、调用证据和验证入口见 [0055 验收](../docs/specs/0055-electronic-plot-windows-pdos/acceptance.md)。
+
+## NSCF 完整网格与 FFT 接续（0060）
+
+NSCF 完成及复用时，程序核对实际 `nscf.in` 的声明点数和坐标行数、输出 XML 的 `nks` 和电子态记录数，并检查点序、重复点、坐标与权重。SCF 的对称约化数量可以不同：SCF 16 点、NSCF 输入及输出各 36 点属于合法场景。清单包含带哈希的实际 NSCF 输入，导入交付后同样重验。
+
+若 NSCF 添加或改变 k 点，程序中断，不发布完成记录。按错误提示将 `stages."2.qe-nscf".calculation` 显式改为 `"bands"`，按既有失败恢复流程只重新运行 NSCF。仍调用 `pw.x`；`bands.x` 是后处理程序。程序不自动改模式或重试。
+
+SCF、NSCF 的 `SYSTEM` 支持 `nr1/nr2/nr3`（密度 FFT）与 `nr1s/nr2s/nr3s`（平滑 FFT）；每套独立设置，但必须写全三个正整数。不填时由 QE 决定，阶段间不静默复制。程序对照两份实际 XML 的密度和平滑 FFT，任一不同即停止并报告来源和尺寸；PH 响应继续按绑定 SCF 来源、文件身份及尺寸核验。k 点网格和实空间 FFT 是两种网格。
+
+0060 最初只修改源码和受控测试；后续 0010 已整合发布正式 CLI 并完成 SiP₂ 声子导入出图，未重算 PH，见本页外部导入说明及验收记录。配置与恢复示例见 [0060 操作说明](../docs/specs/0060-epw-nscf-grid-contract/quickstart.md)。
+
+## 外部声子 save 单命令导入（0010）
+
+已完成当前 SCF/NSCF 时，可直接使用独立历史 PH save：
+
+```bash
+epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
+```
+
+一个阶段作业自动完成内容识别、完整 q 星/扰动/响应势/FFT 校验、文本到 QE XML 转换、独立归集、q2r、色散及 DOS matdyn、元素 DOS/声子谱绘图和完成登记；来源只读，不调用 SCF/NSCF/PH，不在失败时回退重算。旧 ifc 不复用。SAVE 相对配置目录解析。
+
+`--check` 只读，无 `-s` 只准备；失败后相同命令加 `--resume`。重复完成请求不重提，只缺图时只补图；来源变化或产物损坏拒绝。显式导入可受控升级旧嵌套版本 2 TOML，保留原配置、回执和电子产物身份，迁移日志可恢复。历史赝势/截断能记录按用户例外不设门槛，报告明确未核验范围。
+
+声子交付成功后使用 `epw_wannier --config "epwinput.toml" --stage wannier -s`，可补缺失的第三阶段电子参考，已有 SCF/NSCF/PH 复用。实际结果和路径见 [SiP₂ 说明](../examples/SiP2/README.md) 与 [0010 验收](../docs/specs/0010-epwflow-qe-data/acceptance.md)。

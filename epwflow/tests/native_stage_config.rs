@@ -224,26 +224,13 @@ fn native_boolean_and_array_types_and_temperature_lengths_are_checked() {
 }
 
 #[test]
-fn crystal_card_is_preserved_and_incomplete_mesh_is_rejected() {
+fn compact_grid_is_expanded_and_full_card_config_is_rejected() {
     let mut c = Case::new();
-    let card: String = c.cfg.native_value(&[NSCF, "pw", "K_POINTS"]).unwrap();
-    let mut reordered = card.lines().collect::<Vec<_>>();
-    reordered.swap(2, 3);
-    let card = reordered.join("\n");
-    c.cfg
-        .set_native(&[NSCF, "pw", "K_POINTS"], json!(card))
-        .unwrap();
-    let actual = QeSettings::from_config(&c.cfg)
-        .unwrap()
-        .nscf_input("./out")
-        .unwrap();
-    assert!(actual.contains(&format!("K_POINTS {card}")), "{actual}");
-    let mut lines = card.lines().collect::<Vec<_>>();
-    lines.pop();
-    let error = c
-        .cfg
-        .set_native(&[NSCF, "pw", "K_POINTS"], json!(lines.join("\n")))
-        .unwrap_err();
+    let grid: [u32; 3] = c.cfg.native_value(&[NSCF, "pw", "K_POINTS"]).unwrap();
+    let actual = QeSettings::from_config(&c.cfg).unwrap().nscf_input("./out").unwrap();
+    let expected = qf_input::pw::uniform_kpoints_text(grid.map(i64::from), true).unwrap();
+    assert!(actual.contains(&expected), "{actual}");
+    let error = c.cfg.set_native(&[NSCF, "pw", "K_POINTS"], json!("crystal\n1\n0 0 0 1")).unwrap_err();
     assert!(format!("{error:#}").contains("2.qe-nscf.K_POINTS"));
 }
 

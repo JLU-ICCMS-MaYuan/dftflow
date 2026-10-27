@@ -1,39 +1,21 @@
-# SiP₂ / Pbam / 22.2 GPa；schema_version = 2，需要支持 0059/0060 的程序。
-# 历史电子输入来源：
-# /data/home/mayuan/work/SiP2/data/Pbam/exp_8K_relax_2026-09-29/SiP2_22.2GPa/epw_2x3x6_sugon_amd
-# 外部声子来源（只记录位置；当前尚未实现原始 save/ 导入）：
-# /data/home/mayuan/work/SiP2/data/Pbam/exp_8K_relax_2026-09-29/SiP2_22.2GPa/qe_phonon_2x3x6_inspur/epw_phonon_extract/save
-# 当前操作范围：重新计算 SCF、NSCF；请显式指定 --stage scf 或 --stage nscf。
-# 不要运行默认声子入口、--stage phonon 或全流程提交；第 4 阶段仅满足配置完整性，执行它会重算声子。
-# 后续阶段须等待外部声子导入与兼容性核验完成。本文件本身不代表声子已经导入。
-# 细网格 k=8×12×24、q=4×6×12、μ*=0.1、温度 5/10/20 K 为用户确认的起始值，待收敛验证。
-# PW 截断能和展宽单位为 Ry；EPW fsthick/degaussw/wscut/gap_edge 为 eV；degaussq 为 meV；temps 为 K。
-# 结构、赝势、粗网格、96 带/96 个 Wannier 函数及 sp3 投影沿用历史输入。
-# 费米能从新 NSCF 推导；不沿用旧值。数值迭代/后处理参数采用当前流程起始设置，尚未科学验收。
-
-work_dir = "."
-structure = "POSCAR"
-layout = "numbered"
-kpath = "KPATH.in"
 schema_version = 2
-outdir = "scratch"
+work_dir = "/data/home/mayuan/code/dftflow/examples/SiP2"
+outdir = "/data/home/mayuan/code/dftflow/examples/SiP2/scratch"
+structure = "/data/home/mayuan/code/dftflow/examples/SiP2/POSCAR"
+layout = "numbered"
+kpath = "/data/home/mayuan/code/dftflow/examples/SiP2/KPATH.in"
 
 [pseudos]
-Si = "/data/home/mayuan/work/SiP2/data/Pbam/exp_8K_relax_2026-09-29/SiP2_22.2GPa/epw_2x3x6_sugon_amd/pp/si_pbe_v1.uspp.F.UPF"
 P = "/data/home/mayuan/work/SiP2/data/Pbam/exp_8K_relax_2026-09-29/SiP2_22.2GPa/epw_2x3x6_sugon_amd/pp/p_pbe_v1.5.uspp.F.UPF"
+Si = "/data/home/mayuan/work/SiP2/data/Pbam/exp_8K_relax_2026-09-29/SiP2_22.2GPa/epw_2x3x6_sugon_amd/pp/si_pbe_v1.uspp.F.UPF"
 
 [programs]
-launcher = [ "mpirun", "-np", "36",]
+launcher = [
+    "mpirun",
+    "-np",
+    "36",
+]
 environment_script = "/data/home/mayuan/intel-2024/oneapi/intel2024_setvars.sh"
-
-[resources]
-partition = "amd7513"
-nodes = 1
-mpi = 36
-
-[budget]
-campaign_id = "epic-0007"
-ledger = "/data/home/mayuan/code/dftflow/docs/local/epwflow-campaign.json"
 
 [programs.pw]
 path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/pw.x"
@@ -45,7 +27,10 @@ args = []
 
 [programs.epw]
 path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/EPW/src/epw.x"
-args = [ "-nk", "36",]
+args = [
+    "-nk",
+    "36",
+]
 
 [programs.wannier90]
 path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/wannier90.x"
@@ -55,18 +40,18 @@ args = []
 path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/postw90.x"
 args = []
 
-[stages."1.qe-scf".pw]
-K_POINTS = '''automatic
-2 3 6 0 0 0'''
-ATOMIC_SPECIES = '''Si 28.0855 si_pbe_v1.uspp.F.UPF
-P 30.973762 p_pbe_v1.5.uspp.F.UPF'''
+[resources]
+partition = "amd7513"
+nodes = 1
+mpi = 36
 
-[stages."1.qe-scf".pw.CONTROL]
+[budget]
+campaign_id = "epic-0007"
+ledger = "/data/home/mayuan/code/dftflow/docs/local/epwflow-campaign.json"
+
+[stages."1.qe-scf"]
 calculation = "scf"
 prefix = "Si8P16"
-
-# FFT 显式沿用历史 SCF/PH：密度 216×128×60，平滑 120×72×32。
-[stages."1.qe-scf".pw.SYSTEM]
 ecutwfc = 60.0
 ecutrho = 720.0
 occupations = "smearing"
@@ -78,31 +63,19 @@ nr3 = 60
 nr1s = 120
 nr2s = 72
 nr3s = 32
-
-[stages."1.qe-scf".pw.ELECTRONS]
-conv_thr = 1e-9
+conv_thr = 0.000000001
 mixing_beta = 0.7
 electron_maxstep = 200
+K_POINTS = """
+automatic
+2 3 6 0 0 0"""
+ATOMIC_SPECIES = """
+Si 28.0855 si_pbe_v1.uspp.F.UPF
+P 30.973762 p_pbe_v1.5.uspp.F.UPF"""
 
-[stages."1.qe-scf".workflow.derived]
-"pw.CONTROL.outdir" = "当前阶段工作目录和已绑定赝势源"
-"pw.CONTROL.pseudo_dir" = "当前阶段工作目录和已绑定赝势源"
-"pw.SYSTEM.ibrav" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
-"pw.SYSTEM.nat" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
-"pw.SYSTEM.ntyp" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
-
-# 仅写网格整数；Rust 按 kmesh.pl 方法展开 36 点到 nscf.in，并核对实际输入/输出点数。
-[stages."2.qe-nscf".pw]
-K_POINTS = [2, 3, 6]
-ATOMIC_SPECIES = '''Si 28.0855 si_pbe_v1.uspp.F.UPF
-P 30.973762 p_pbe_v1.5.uspp.F.UPF'''
-
-[stages."2.qe-nscf".pw.CONTROL]
+[stages."2.qe-nscf"]
 calculation = "nscf"
 prefix = "Si8P16"
-
-# 固定为与 SCF 相同的 FFT，避免历史 NSCF 自动选择 216×125×60。
-[stages."2.qe-nscf".pw.SYSTEM]
 ecutwfc = 60.0
 ecutrho = 720.0
 occupations = "smearing"
@@ -117,44 +90,21 @@ nr3 = 60
 nr1s = 120
 nr2s = 72
 nr3s = 32
-
-[stages."2.qe-nscf".pw.ELECTRONS]
-conv_thr = 1e-10
+conv_thr = 0.0000000001
 mixing_beta = 0.7
 electron_maxstep = 200
+K_POINTS = [
+    2,
+    3,
+    6,
+]
+ATOMIC_SPECIES = """
+Si 28.0855 si_pbe_v1.uspp.F.UPF
+P 30.973762 p_pbe_v1.5.uspp.F.UPF"""
 
-[stages."2.qe-nscf".workflow.derived]
-"pw.CONTROL.outdir" = "当前阶段工作目录和已绑定赝势源"
-"pw.CONTROL.pseudo_dir" = "当前阶段工作目录和已绑定赝势源"
-"pw.SYSTEM.ibrav" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
-"pw.SYSTEM.nat" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
-"pw.SYSTEM.ntyp" = "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS"
-
-[stages."3.qe-electronic".workflow]
-points_per_edge = 20
-
-[stages."3.qe-electronic".workflow.derived]
-"qe_eband.pw.CONTROL.outdir" = "当前阶段工作目录和已绑定赝势源"
-"qe_eband.pw.CONTROL.pseudo_dir" = "当前阶段工作目录和已绑定赝势源"
-"qe_eband.pw.SYSTEM.ibrav" = "已绑定 POSCAR"
-"qe_eband.pw.SYSTEM.nat" = "已绑定 POSCAR"
-"qe_eband.pw.SYSTEM.ntyp" = "已绑定 POSCAR"
-"qe_eband.bands.BANDS.outdir" = "当前子任务工作目录和输出文件名"
-"qe_eband.bands.BANDS.filband" = "当前子任务工作目录和输出文件名"
-"qe_eledos.dos.DOS.outdir" = "当前子任务工作目录和输出文件名"
-"qe_eledos.dos.DOS.fildos" = "当前子任务工作目录和输出文件名"
-"qe_eledos.projwfc.PROJWFC.outdir" = "当前子任务工作目录和输出文件名"
-"qe_eledos.projwfc.PROJWFC.filpdos" = "当前子任务工作目录和输出文件名"
-
-[stages."3.qe-electronic".qe_eband.pw]
-ATOMIC_SPECIES = '''Si 28.0855 si_pbe_v1.uspp.F.UPF
-P 30.973762 p_pbe_v1.5.uspp.F.UPF'''
-
-[stages."3.qe-electronic".qe_eband.pw.CONTROL]
+[stages."3.qe-bands"]
 calculation = "bands"
 prefix = "Si8P16"
-
-[stages."3.qe-electronic".qe_eband.pw.SYSTEM]
 ecutwfc = 60.0
 ecutrho = 720.0
 occupations = "smearing"
@@ -169,17 +119,18 @@ nr3 = 60
 nr1s = 120
 nr2s = 72
 nr3s = 32
-
-[stages."3.qe-electronic".qe_eband.pw.ELECTRONS]
-conv_thr = 1e-10
+conv_thr = 0.0000000001
 mixing_beta = 0.7
 electron_maxstep = 200
+ATOMIC_SPECIES = """
+Si 28.0855 si_pbe_v1.uspp.F.UPF
+P 30.973762 p_pbe_v1.5.uspp.F.UPF"""
 
-[stages."3.qe-electronic".qe_eband.bands.BANDS]
+[stages."3.qe-bands-post"]
 prefix = "Si8P16"
 lsym = false
 
-[stages."3.qe-electronic".qe_eledos.dos.DOS]
+[stages."3.qe-dos"]
 prefix = "Si8P16"
 ngauss = 0
 degauss = 0.007349864435130998
@@ -187,7 +138,7 @@ Emin = -100.0
 Emax = 100.0
 DeltaE = 0.01
 
-[stages."3.qe-electronic".qe_eledos.projwfc.PROJWFC]
+[stages."3.qe-pdos"]
 prefix = "Si8P16"
 ngauss = 0
 degauss = 0.007349864435130998
@@ -195,24 +146,22 @@ Emin = -100.0
 Emax = 100.0
 DeltaE = 0.01
 
-# 配置占位：当前不得执行本阶段，以免重算昂贵的声子。
-[stages."4.qe-phonon-nosplit".workflow]
-phonon_sigma_cm1 = 10.0
-points_per_edge = 100
+[stages."4.qe-dispersion"]
+asr = "simple"
+q_in_cryst_coord = true
+q_in_band_form = true
 
-[stages."4.qe-phonon-nosplit".workflow.derived]
-"ph.INPUTPH.outdir" = "已核验 SCF 快照和当前动力学矩阵文件名"
-"ph.INPUTPH.fildyn" = "已核验 SCF 快照和当前动力学矩阵文件名"
-"q2r.INPUT.fildyn" = "本阶段已归集的动力学矩阵和力常数文件名"
-"q2r.INPUT.flfrc" = "本阶段已归集的动力学矩阵和力常数文件名"
-"dispersion.matdyn.INPUT.flfrc" = "本阶段已核验力常数和色散输出名"
-"dispersion.matdyn.INPUT.flfrq" = "本阶段已核验力常数和色散输出名"
-"dos.matdyn.INPUT.flfrc" = "本阶段已核验力常数和 DOS 输出名"
-"dos.matdyn.INPUT.fldos" = "本阶段已核验力常数和 DOS 输出名"
+[stages."4.qe-phdos"]
+asr = "simple"
+dos = true
+ndos = 200
+nk1 = 8
+nk2 = 12
+nk3 = 24
 
-[stages."4.qe-phonon-nosplit".ph.INPUTPH]
+[stages."4.qe-phonon-nosplit"]
 prefix = "Si8P16"
-tr2_ph = 1e-12
+tr2_ph = 0.000000000001
 ldisp = true
 only_init = false
 lqdir = true
@@ -223,65 +172,20 @@ nq1 = 2
 nq2 = 3
 nq3 = 6
 
-[stages."4.qe-phonon-nosplit".q2r.INPUT]
+[stages."4.qe-q2r"]
 zasr = "simple"
 
-[stages."4.qe-phonon-nosplit".dispersion.matdyn.INPUT]
-asr = "simple"
-q_in_cryst_coord = true
-q_in_band_form = true
-
-[stages."4.qe-phonon-nosplit".dos.matdyn.INPUT]
-asr = "simple"
-dos = true
-ndos = 200
-nk1 = 8
-nk2 = 12
-nk3 = 24
-
-[stages."5.epw-wannier".workflow]
-points_per_edge = 20
-fermi_source = "f2"
-selection_mode = "energy_only"
-
-# 历史迭代上限为 500；此处用当前流程 5000 上限和收敛检查，历史结果未据此验收。
-[stages."5.epw-wannier".wannier90]
-bands_plot = true
-bands_num_points = 1
-num_wann = 96
-projections = [ "Si:sp3", "P:sp3",]
-exclude_bands = []
-num_iter = 5000
-conv_tol = 1e-8
-conv_window = 5
-guiding_centres = true
-dis_num_iter = 500
-dis_conv_tol = 1e-8
-dis_conv_window = 5
-
-[stages."5.epw-wannier".workflow.derived]
-"epw.INPUTEPW.outdir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.dvscf_dir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.fermi_energy" = "已绑定第二步 NSCF XML 的费米能，eV"
-"epw.INPUTEPW.proj" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.bands_skipped" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.wdata" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.dis_win_min" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.dis_win_max" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.dis_froz_min" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"epw.INPUTEPW.dis_froz_max" = "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库"
-"electron_dos.postw90.dos_energy_min" = "实际 Wannier 外窗和绑定 NSCF 费米能，绝对 eV"
-"electron_dos.postw90.dos_energy_max" = "实际 Wannier 外窗和绑定 NSCF 费米能，绝对 eV"
-"electron_dos.postw90.fermi_energy" = "实际 Wannier 外窗和绑定 NSCF 费米能，绝对 eV"
-
-[stages."5.epw-wannier".epw.INPUTEPW]
+[stages."5.epw-wannier"]
 prefix = "Si8P16"
 ep_coupling = true
 elph = false
 etf_mem = 1
 nbndsub = 96
 iverbosity = 2
-amass = [ 28.0855, 30.973762,]
+amass = [
+    28.0855,
+    30.973762,
+]
 fsthick = 1.0
 degaussw = 0.1
 degaussq = 0.5
@@ -307,43 +211,50 @@ eliashberg = false
 band_plot = false
 num_iter = 5000
 
-[stages."5.epw-wannier".electron_dos.postw90]
+[stages."5.postw90-dos"]
 write_hr = false
 write_bvec = false
 bands_plot = false
 dos = true
 num_elec_per_state = 2
-dos_kmesh = [ 8, 12, 24,]
+dos_kmesh = [
+    8,
+    12,
+    24,
+]
 dos_energy_step = 0.01
 dos_adpt_smr = false
 dos_smr_fixed_en_width = 0.1
 dos_smr_type = "gauss"
 
-[stages."6.epw-coarse".workflow]
-points_per_edge = 20
-fermi_source = "f2"
-onsite_asr = "gamma_hermitian"
+[stages."5.wannier90"]
+bands_plot = true
+bands_num_points = 1
+num_wann = 96
+projections = [
+    "Si:sp3",
+    "P:sp3",
+]
+exclude_bands = []
+num_iter = 5000
+conv_tol = 0.00000001
+conv_window = 5
+guiding_centres = true
+dis_num_iter = 500
+dis_conv_tol = 0.00000001
+dis_conv_window = 5
 
-[stages."6.epw-coarse".workflow.derived]
-"epw.INPUTEPW.outdir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.dvscf_dir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.fermi_energy" = "已绑定第二步 NSCF XML 的费米能，eV"
-"comparison.q2r.INPUT.fildyn" = "本阶段 Γ onsite 修正后的动力学矩阵及力常数"
-"comparison.q2r.INPUT.flfrc" = "本阶段 Γ onsite 修正后的动力学矩阵及力常数"
-"comparison.matdyn.INPUT.flfrc" = "本阶段比较力常数及频率输出"
-"comparison.matdyn.INPUT.flfrq" = "本阶段比较力常数及频率输出"
-"comparison.epw.INPUTEPW.outdir" = "本阶段已核验粗网格数据和绑定 NSCF 费米能"
-"comparison.epw.INPUTEPW.dvscf_dir" = "本阶段已核验粗网格数据和绑定 NSCF 费米能"
-"comparison.epw.INPUTEPW.fermi_energy" = "本阶段已核验粗网格数据和绑定 NSCF 费米能"
-
-[stages."6.epw-coarse".epw.INPUTEPW]
+[stages."6.epw-coarse"]
 prefix = "Si8P16"
 ep_coupling = true
 elph = true
 etf_mem = 1
 nbndsub = 96
 iverbosity = 2
-amass = [ 28.0855, 30.973762,]
+amass = [
+    28.0855,
+    30.973762,
+]
 fsthick = 1.0
 degaussw = 0.1
 degaussq = 0.5
@@ -374,23 +285,17 @@ nqf1 = 2
 nqf2 = 3
 nqf3 = 6
 
-[stages."6.epw-coarse".comparison.q2r.INPUT]
-zasr = "no"
-
-[stages."6.epw-coarse".comparison.matdyn.INPUT]
-asr = "no"
-q_in_cryst_coord = false
-q_in_band_form = false
-amass = [ 28.0855, 30.973762,]
-
-[stages."6.epw-coarse".comparison.epw.INPUTEPW]
+[stages."6.epw-comparison"]
 prefix = "Si8P16"
 ep_coupling = true
 elph = true
 etf_mem = 1
 nbndsub = 96
 iverbosity = 2
-amass = [ 28.0855, 30.973762,]
+amass = [
+    28.0855,
+    30.973762,
+]
 fsthick = 1.0
 degaussw = 0.1
 degaussq = 0.5
@@ -419,23 +324,29 @@ selecqread = true
 filkf = "kpoints.dat"
 filqf = "qpoints.dat"
 
-[stages."7.epw-fine".workflow]
-fermi_source = "f2"
+[stages."6.qe-matdyn"]
+asr = "no"
+q_in_cryst_coord = false
+q_in_band_form = false
+amass = [
+    28.0855,
+    30.973762,
+]
 
-[stages."7.epw-fine".workflow.derived]
-"epw.INPUTEPW.outdir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.dvscf_dir" = "当前原生任务已绑定的数据副本"
-"epw.INPUTEPW.fermi_energy" = "已绑定第二步 NSCF XML 的费米能，eV"
+[stages."6.qe-q2r"]
+zasr = "no"
 
-# 用户确认的细网格起始值；尚未完成网格与展宽收敛。
-[stages."7.epw-fine".epw.INPUTEPW]
+[stages."7.epw-fine"]
 prefix = "Si8P16"
 ep_coupling = true
 elph = true
 etf_mem = 1
 nbndsub = 96
 iverbosity = 2
-amass = [ 28.0855, 30.973762,]
+amass = [
+    28.0855,
+    30.973762,
+]
 fsthick = 1.0
 degaussw = 0.1
 degaussq = 0.5
@@ -462,7 +373,11 @@ liso = false
 laniso = false
 mp_mesh_k = true
 nstemp = 3
-temps = [ 5.0, 10.0, 20.0,]
+temps = [
+    5.0,
+    10.0,
+    20.0,
+]
 nkf1 = 8
 nkf2 = 12
 nkf3 = 24
@@ -470,62 +385,7 @@ nqf1 = 4
 nqf2 = 6
 nqf3 = 12
 
-# iso/aniso 均使用 μ*=0.1、5/10/20 K；固定温度能隙计算，不是已收敛 Tc 搜索。
-[stages."8.epw-superconductivity".workflow]
-task = "gap"
-mode = "both"
-spectrum_index = 0
-
-[stages."8.epw-superconductivity".workflow.derived]
-"iso.epw.INPUTEPW.outdir" = "本次尝试已核验矩阵目录和谱副本"
-"iso.epw.INPUTEPW.fila2f" = "本次尝试已核验矩阵目录和谱副本"
-"aniso.epw.INPUTEPW.outdir" = "本次尝试已核验矩阵目录和谱副本"
-"aniso.epw.INPUTEPW.fila2f" = "本次尝试已核验矩阵目录和谱副本"
-
-[stages."8.epw-superconductivity".iso.epw.INPUTEPW]
-prefix = "Si8P16"
-epwread = true
-epbread = false
-epwwrite = false
-wannierize = false
-ep_coupling = false
-elph = false
-eliashberg = true
-liso = true
-laniso = false
-tc_linear_solver = "lapack"
-limag = true
-lreal = false
-lpade = false
-lacon = false
-imag_read = false
-fbw = false
-positive_matsu = true
-gridsamp = 0
-nswi = 0
-nstemp = 3
-temps = [ 5.0, 10.0, 20.0,]
-muc = 0.1
-wscut = 0.5
-nsiter = 1000
-conv_thr_iaxis = 1e-8
-broyden_beta = -0.3
-broyden_ndim = 8
-a_gap0 = 1.0
-nqstep = 500
-iverbosity = 2
-eps_acoustic = 2.0
-mp_mesh_k = true
-nkf1 = 8
-nkf2 = 12
-nkf3 = 24
-nqf1 = 4
-nqf2 = 6
-nqf3 = 12
-gap_edge = 0.01
-tc_linear = false
-
-[stages."8.epw-superconductivity".aniso.epw.INPUTEPW]
+[stages."8.epw-aniso"]
 prefix = "Si8P16"
 epwread = true
 epbread = false
@@ -547,11 +407,15 @@ positive_matsu = true
 gridsamp = 0
 nswi = 0
 nstemp = 3
-temps = [ 5.0, 10.0, 20.0,]
+temps = [
+    5.0,
+    10.0,
+    20.0,
+]
 muc = 0.1
 wscut = 0.5
 nsiter = 1000
-conv_thr_iaxis = 1e-8
+conv_thr_iaxis = 0.00000001
 broyden_beta = -0.3
 broyden_ndim = 8
 a_gap0 = 1.0
@@ -567,3 +431,75 @@ nqf2 = 6
 nqf3 = 12
 gap_edge = 0.01
 tc_linear = false
+
+[stages."8.epw-iso"]
+prefix = "Si8P16"
+epwread = true
+epbread = false
+epwwrite = false
+wannierize = false
+ep_coupling = false
+elph = false
+eliashberg = true
+liso = true
+laniso = false
+tc_linear_solver = "lapack"
+limag = true
+lreal = false
+lpade = false
+lacon = false
+imag_read = false
+fbw = false
+positive_matsu = true
+gridsamp = 0
+nswi = 0
+nstemp = 3
+temps = [
+    5.0,
+    10.0,
+    20.0,
+]
+muc = 0.1
+wscut = 0.5
+nsiter = 1000
+conv_thr_iaxis = 0.00000001
+broyden_beta = -0.3
+broyden_ndim = 8
+a_gap0 = 1.0
+nqstep = 500
+iverbosity = 2
+eps_acoustic = 2.0
+mp_mesh_k = true
+nkf1 = 8
+nkf2 = 12
+nkf3 = 24
+nqf1 = 4
+nqf2 = 6
+nqf3 = 12
+gap_edge = 0.01
+tc_linear = false
+
+[workflow."3.qe-bands"]
+points_per_edge = 20
+
+[workflow."4.qe-phonon-nosplit"]
+phonon_sigma_cm1 = 10.0
+points_per_edge = 100
+
+[workflow."5.epw-wannier"]
+points_per_edge = 20
+fermi_source = "f2"
+selection_mode = "energy_only"
+
+[workflow."6.epw-coarse"]
+points_per_edge = 20
+fermi_source = "f2"
+onsite_asr = "gamma_hermitian"
+
+[workflow."7.epw-fine"]
+fermi_source = "f2"
+
+[workflow."8.epw-superconductivity"]
+task = "gap"
+mode = "both"
+spectrum_index = 0

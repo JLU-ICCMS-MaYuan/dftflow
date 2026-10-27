@@ -261,7 +261,7 @@ pub fn refresh(cfg: &Config, step: Step) -> Result<()> {
 }
 
 pub fn pending(cfg: &Config, target: Step) -> Result<bool> {
-    for step in target.closure() {
+    for step in stages::execution_steps(cfg, target) {
         if !matches!(step, Step::Electronic | Step::Phonon) || !stages::reusable(cfg, step)? {
             continue;
         }

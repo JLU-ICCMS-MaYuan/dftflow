@@ -2,6 +2,8 @@
 #![cfg(unix)]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
+#[path = "support/nscf_grid_contract.rs"]
+mod nscf_grid_contract;
 use epwflow::foundation::{config, slurm::shell_quote, store};
 use serde_json::{json, Value};
 use std::{
@@ -932,7 +934,7 @@ fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
     let c = Case::numbered();
     c.script("launcher", "#!/bin/sh\nshift 2\nexec \"$@\"\n");
     c.numbered_change(|cfg| {
-        cfg.qe.nscf.k_grid=[4,4,2]; cfg.resources.mpi=64;
+        cfg.qe.scf.k_grid=[4,4,2]; cfg.qe.nscf.k_grid=[4,4,2]; cfg.resources.mpi=64;
         cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"64".into()];
         cfg.programs.epw.args=vec!["--io-contract".into(),"-nk".into(),"64".into()];
     });
@@ -1186,7 +1188,7 @@ fn numbered_electronic_retry_preserves_pw_with_32_mpi_and_then_changed_resources
     let c=Case::numbered();c.fail_bands();
     c.script("launcher", "#!/bin/sh\n[ \"$1\" = -np ] || exit 11\n[ \"$2\" = \"$SLURM_NTASKS\" ] || exit 12\nshift 2\nexec \"$@\"\n");
     c.numbered_change(|cfg|{
-        cfg.qe.nscf.k_grid=[4,4,2]; cfg.resources.mpi=32;
+        cfg.qe.scf.k_grid=[4,4,2]; cfg.qe.nscf.k_grid=[4,4,2]; cfg.resources.mpi=32;
         cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"32".into()];
         cfg.programs.epw.args[2]="32".into();
     });
@@ -1656,3 +1658,6 @@ fn numbered_preparation_keeps_clean_input_and_json_provenance() {
     assert_eq!(receipt["inputs"][0]["sha256"], store::hash_file(&input).unwrap());
     assert_eq!(c.calls(), before, "准备输入不能调用科学程序或提交作业");
 }
+
+#[path = "support/phonon_import.rs"]
+mod phonon_import_tests;

@@ -38,6 +38,16 @@ DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由
 
 公开进程契约覆盖逐任务 QE／Wannier／粗细网格、两模式 Tc 与指定温度能隙，以及声子单分配自动完成、恢复、顺序防重复和未知回执，不代表新增真实科学验收。逐任务设计见 [0026](../../specs/0026-epw-direct-native-submit/plan.md)，声子目标按 [0048 快速说明](../../specs/0048-epw-phonon-stage-chain/quickstart.md)执行。以下历史自动串联说明不适用于新的编号工作区 `-s`。
 
+## 外部原始声子接续（0010）
+
+当前 `epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s` 一次提交一个阶段作业，读取历史原始 save，核验/转换/独立归集后自动完成 q2r、色散及 DOS matdyn、QE 声子图与元素 DOS 和阶段发布。来源相对配置目录解析。导入只验证现有 SCF/NSCF，不执行 PW、PH 或 PH 初始化，失败也不回退重算。
+
+文本动力学矩阵按内容转为 QE XML，保留完整 q 星、复矩阵、原子顺序/质量、频率和振型；control 可重建缺失 dyn0。检查全部 q 星网格覆盖、扰动基底、响应势长度/有限性及当前电子 FFT。历史 SCF 赝势/截断能记录按用户例外不设门槛；缺少历史 smooth FFT 证据时明确注明未验证。旧 ifc 保留但不用于新后处理。
+
+来源清单参与 PH 复用身份；重复完成请求不重提，只缺图只补图。失败保留现场，必须用相同导入命令加 `--resume -s`；来源改变或证据损坏拒绝。`--check` 只读，不带执行选项只准备。显式导入可严格验证并事务化接续旧嵌套版本 2 配置，保留原配置、旧回执及迁移报告，科学产物不改写；普通配置入口仍拒绝旧格式。
+
+交付仍使用现有 QE manifest、声子回执和 results；成功后直接执行 `epw_wannier --config "epwinput.toml" --stage wannier -s`，其缺失的第三阶段电子参考按原依赖补齐。实现与公开进程回归、真实 SiP₂ 证据分别记录在 [0010 验收](../../specs/0010-epwflow-qe-data/acceptance.md)，操作见 [SiP₂ 示例](../../../examples/SiP2/README.md)。
+
 ## 指定温度超导能隙（0049）
 
 `stages."8.epw-superconductivity".workflow.task="gap"` 配合 `mode="iso"|"aniso"|"both"` 分组，每种方法一次原生 EPW 多温度执行。两个方法的 `epw.INPUTEPW` 各自显式填写 `muc`、`gap_edge`、`nstemp`、`temps` 和求解参数；后续温度遵循原生 EPW 能隙续接，不运行 Tc 搜索。选择 `task="tc"` 时保留既有搜索能力。
@@ -139,7 +149,7 @@ Wannier 配置支持可选布尔值 `guiding_centres`，显式透传原生中心
 
 ## 公开程序及选项
 
-三个阶段程序的外部配置默认 `input.toml`，缺失时兼容读取 `inputepw.toml`，也可由 `-c/--config` 指定；仅支持 `schema_version = 2` 的八阶段原生参数协议，旧版不兼容，不提供迁移。字段、单位、独立设置和推导追溯见[原生阶段配置](native-stage-config.md)，不能与 qeflow 配置自动混用。完整流程图和命令见[模块手册](../../../epwflow/README.md)。
+三个阶段程序的外部配置默认 `input.toml`，缺失时兼容读取 `inputepw.toml`，也可由 `-c/--config` 指定；仅支持 `schema_version = 2` 的八阶段原生参数协议，普通入口不接受旧多层格式；显式原始声子导入可受控接续嵌套的版本 2 配置，见下文。字段、单位、独立设置和推导追溯见[原生阶段配置](native-stage-config.md)，不能与 qeflow 配置自动混用。完整流程图和命令见[模块手册](../../../epwflow/README.md)。
 
 | 程序或选项 | 实际行为与限制 |
 | --- | --- |
@@ -155,7 +165,8 @@ Wannier 配置支持可选布尔值 `guiding_centres`，显式透传原生中心
 | `--status -w W [--refresh] [--json]` | 查询记录，refresh 读取 allocation 并结算；未知预算不退款 |
 | `--resume -w W -s/-r` | 固定快照恢复，重验完成证据；失败现场保留，活动或未知任务不重提；粗／细检查点重验完整输出、归档失败尝试并复用成功展宽 |
 | `--migrate-state` | 显式迁移旧编号隐藏状态，保留历史与预算，不提交作业 |
-| `--import M` | 核查、隔离并登记本阶段既有清单；不自动识别任意旧声子目录 |
+| `--import M` | 核查、隔离并登记本阶段既有清单 |
+| `--import-phonon SAVE` | 仅 epw_phonon；核验原始 PH save 并自动完成 QE 声子后处理，既有 SCF/NSCF 必须有效；支持只读检查、准备和显式恢复 |
 | `--export-comparison S --output D` | 仅 epw_wannier，从既有带哈希来源导出原生比较数据 |
 | `--collect -w W` | 后两程序收集已有比较／超导数据；不生成缺失科学输出 |
 | `--plot --results R` | 四类比较图／总览或原生超导图，默认 PNG／SVG／PDF；可以移动结果包后独立重绘 |

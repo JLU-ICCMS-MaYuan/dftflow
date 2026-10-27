@@ -5,6 +5,55 @@ use std::path::Path;
 
 pub const BOHR_ANGSTROM: f64 = 0.529177210903;
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct FftGrids {
+    pub dense: [usize; 3],
+    pub smooth: [usize; 3],
+}
+
+/// 只使用实际输出，不将输入参数或响应文件字节数当成三维 FFT 身份。
+pub fn fft_grids(xml: &Path) -> Result<FftGrids> {
+    let raw = std::fs::read_to_string(xml)?;
+    let doc = roxmltree::Document::parse(&raw)?;
+    let out = doc
+        .descendants()
+        .find(|n| n.has_tag_name("output"))
+        .context("data_invalid: XML 缺 output")?;
+    let read = |tag: &str| -> Result<[usize; 3]> {
+        let node = out
+            .descendants()
+            .find(|n| n.has_tag_name(tag))
+            .with_context(|| format!("data_invalid: {} 缺 {tag}", xml.display()))?;
+        let mut dims = [0; 3];
+        for (i, dim) in dims.iter_mut().enumerate() {
+            let name = format!("nr{}", i + 1);
+            *dim = node
+                .attribute(name.as_str())
+                .with_context(|| format!("data_invalid: {} 缺 {tag}.{name}", xml.display()))?
+                .parse()?;
+            ensure!(
+                *dim > 0,
+                "data_invalid: {} 的 {tag}.{name} 必须为正",
+                xml.display()
+            );
+        }
+        Ok(dims)
+    };
+    Ok(FftGrids {
+        dense: read("fft_grid")?,
+        smooth: read("fft_smooth")?,
+    })
+}
+
+pub fn verify_fft(scf_xml: &Path, nscf_xml: &Path) -> Result<()> {
+    let scf = fft_grids(scf_xml)?;
+    let nscf = fft_grids(nscf_xml)?;
+    ensure!(scf == nscf,
+        "data_invalid: SCF/NSCF FFT 不一致；SCF {}: 密度 {:?}, 平滑 {:?}；NSCF {}: 密度 {:?}, 平滑 {:?}。请核对各阶段 SYSTEM 的 nr1/nr2/nr3 与 nr1s/nr2s/nr3s，以及 PH 来源；禁止继续接续响应数据",
+        scf_xml.display(), scf.dense, scf.smooth, nscf_xml.display(), nscf.dense, nscf.smooth);
+    Ok(())
+}
+
 pub fn numbers(text: &str) -> Result<Vec<f64>> {
     let values = text
         .split_whitespace()

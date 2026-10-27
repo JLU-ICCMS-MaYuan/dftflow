@@ -18,7 +18,7 @@ conv_thr = 1e-6 # Ry
 | 配置段名称 | 实际调用或设置 |
 | --- | --- |
 | `1.qe-scf` | SCF PW |
-| `2.qe-nscf` | NSCF PW，显式完整 K_POINTS 卡片 |
+| `2.qe-nscf` | NSCF PW，0060 的 `K_POINTS=[A,B,C]` 简写网格 |
 | `3.qe-bands` | 能带 PW |
 | `3.qe-bands-post` | bands.x 后处理 |
 | `3.qe-dos/3.qe-pdos` | dos.x 总 DOS、projwfc.x 投影 DOS |
@@ -38,7 +38,7 @@ conv_thr = 1e-6 # Ry
 
 QE 的 ecutwfc/ecutrho/degauss/conv_thr 使用 Ry；DOS/PROJWFC 的 Emin/Emax/DeltaE 使用 eV，其 degauss 仍为 Ry。EPW fsthick/degaussw/wscut/gap_edge 为 eV，degaussq 为 meV，eps_acoustic 为 cm⁻¹，temps 为 K。Wannier90 能窗为绝对 eV，conv_tol 为 Å²。单位写在注释，不加字段别名。
 
-amass、temps 等数组保持原生名字，输入生成 Fortran 下标；nstemp 必须与自身 temps 长度一致。ATOMIC_SPECIES 保存卡片正文；SCF 的 K_POINTS 保存类型及正文。NSCF 的 K_POINTS 保存完整 crystal 卡片；0060 简写网格接续属于独立变更。
+amass、temps 等数组保持原生名字，输入生成 Fortran 下标；nstemp 必须与自身 temps 长度一致。ATOMIC_SPECIES 保存卡片正文；SCF 的 K_POINTS 保存类型及正文。NSCF 沿用 0060 三整数网格，由 Rust 展开，要求与 SCF 同维度且零位移，完成及复用时核对实际输入和输出，详见 [NSCF 网格与 FFT](nscf-grid.md)。
 
 ## 工作流与自动绑定
 

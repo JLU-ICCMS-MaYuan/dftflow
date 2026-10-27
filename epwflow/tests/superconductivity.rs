@@ -93,16 +93,7 @@ occupations = "fixed"
 conv_thr = 1e-8
 
 [stages."2.qe-nscf"]
-K_POINTS = '''crystal
-8
-0 0 0 0.125
-0 0 0.5 0.125
-0 0.5 0 0.125
-0 0.5 0.5 0.125
-0.5 0 0 0.125
-0.5 0 0.5 0.125
-0.5 0.5 0 0.125
-0.5 0.5 0.5 0.125'''
+K_POINTS = [2, 2, 2]
 ATOMIC_SPECIES = "Si 28.0855 {structure}"
 
 calculation = "nscf"

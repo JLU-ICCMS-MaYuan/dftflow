@@ -25,3 +25,23 @@ epwflow status -w run --refresh --json
 ## 验收输出
 
 按 tasks 覆盖全部 FR/SC，实际证据存 docs/local/epwflow-acceptance/；先记录未运行，不能通过脚本存在或帮助输出完成数值验收。共享预算耗尽时停止追加并保留现场。
+
+
+## 2026-10-27 外部声子导入
+
+本轮已批准需求、澄清与实施边界见 [完整补充](external-phonon-request.md)。沿用 0010，整合 0048、0060、0061；真实验证及发布证据在本轮完成后追加。
+
+
+### 原始 save 的单命令接续
+
+先准备当前已完成且可验证的 SCF/NSCF、独立的外部 save 和配置，再使用正式入口：
+
+```bash
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+cd "/data/home/mayuan/code/dftflow/examples/SiP2"
+epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
+```
+
+该命令在一个作业内完成原始声子导入、QE 声子谱/DOS/绘图及完成登记，不运行 SCF/NSCF/PH。旧嵌套配置自动受控升级并备份。用 `epw_phonon --config "epwinput.toml" --stage phonon --status` 只读查看完成状态；声子阶段回执、QE manifest 和结果目录须完整。失败用同一导入命令追加 `--resume`；不要删除回执。
+
+完成后执行 `epw_wannier --config "epwinput.toml" --stage wannier -s`。它可补第三阶段电子参考，复用现有 SCF/NSCF/PH；本轮不继续 EPC 或超导。位置和完成判断详见 [SiP₂ 操作说明](../../../examples/SiP2/README.md)。

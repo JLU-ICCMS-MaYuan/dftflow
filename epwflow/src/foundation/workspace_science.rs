@@ -22,17 +22,7 @@ use std::{
 };
 
 fn states(cfg: &Config) -> Result<qe_data::manifest::ElectronicStates> {
-    let path = layout::path(&cfg.work_dir, "nscf/out")
-        .join(format!("{}.save/data-file-schema.xml", cfg.qe.prefix));
-    let mut s = qe_data::nscf::parse_xml(&path)?;
-    s.k_grid = cfg.qe.nscf.k_grid;
-    qe_data::nscf::validate_grid(
-        &s,
-        cfg.qe.nscf.k_grid,
-        cfg.qe.nscf.nbnd as usize,
-        &qe_data::xml::Geometry::read(&path)?,
-    )?;
-    Ok(s)
+    qe_data::nscf::verified_states(cfg, &cfg.work_dir)
 }
 pub(super) fn post_program(cfg: &Config, name: &str) -> Result<Program> {
     Ok(Program {
@@ -131,7 +121,7 @@ pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
         return Ok(true);
     }
     if super::workspace_qe_plot::pending(cfg, target)? { return Ok(true); }
-    for step in target.closure() {
+    for step in stages::execution_steps(cfg, target) {
         if matches!(step,Step::Electronic|Step::Phonon|Step::Wannier|Step::Coarse|Step::Superconductivity)
             && stages::reusable(cfg,step)? && super::stage_results::pending(cfg,step)? {return Ok(true);}
     }
@@ -160,7 +150,7 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
     if target >= Step::Coarse && stages::reusable(cfg, Step::Coarse)? {
         crate::delivery::decay::refresh(cfg)?;
     }
-    for step in target.closure() {
+    for step in stages::execution_steps(cfg, target) {
         if matches!(step, Step::Electronic | Step::Phonon) && stages::reusable(cfg, step)? {
             super::workspace_qe_plot::refresh(cfg, step)?;
         }
@@ -297,7 +287,7 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
 
 pub fn generate(cfg: &Config, target: Step) -> Result<()> {
     let qe = QeSettings::from_config(cfg)?;
-    for step in target.closure() {
+    for step in stages::execution_steps(cfg, target) {
         if stages::reusable(cfg, step)? {
             continue;
         }
@@ -439,6 +429,7 @@ fn refresh_qe_manifest(cfg: &Config) -> Result<()> {
     m.artifacts.retain(|a| {
         !matches!(a.producer_stage.as_str(), "scf" | "nscf") || a.role == "scf_snapshot_identity"
     });
+    m.artifacts.push(qe_data::manifest::nscf_input_artifact(root)?);
     for (stage, dir) in [
         ("scf", layout::path(root, "scf/snapshot")),
         ("nscf", layout::path(root, "nscf/out")),
@@ -464,6 +455,7 @@ pub(super) fn partial_phonon(cfg: &Config) -> Result<Option<qe_data::manifest::Q
     let path = layout::path(&cfg.work_dir, "qe-data/manifest.json");
     if !path.is_file() { return Ok(None); }
     let m: qe_data::manifest::QeManifest = store::read(&path)?;
+    if super::phonon_import::bound(cfg) && !m.artifacts.iter().any(|a| a.role == "external_source") { return Ok(None); }
     if m.run_id != stages::scientific_key(cfg, Step::Phonon)? { return Ok(None); }
     m.verify()?;
     ensure!(m.artifact_root.as_ref() == Some(&cfg.work_dir.canonicalize()?),
@@ -472,6 +464,7 @@ pub(super) fn partial_phonon(cfg: &Config) -> Result<Option<qe_data::manifest::Q
 }
 
 fn collect_phonon(cfg: &Config, qe: &QeSettings) -> Result<qe_data::manifest::QeManifest> {
+    if super::phonon_import::bound(cfg) { return super::phonon_import::collect(cfg, qe); }
     let root = &cfg.work_dir;
     let (points, responses) = if cfg.phonon.mode == PhMode::Nosplit {
         qe_data::phonon::run_nosplit(qe, root, &cfg.programs.launcher, Backend::Local)?
@@ -897,6 +890,9 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
 }
 
 pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
+    if step == Step::Nscf {
+        states(cfg)?;
+    }
     let dir = step.directory(cfg);
     let mut ids = save::files(&dir)?
         .iter()
@@ -950,6 +946,9 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
         })
         .map(|f| Identity::capture(&dir.join(&f.relative_path)))
         .collect::<Result<Vec<_>>>()?;
+    if step == Step::Phonon && super::phonon_import::bound(cfg) {
+        ids.push(Identity::capture(&layout::path(&cfg.work_dir, "qe-data/external-source.json"))?);
+    }
     if step == Step::Coarse {
         ids.push(Identity::capture(&layout::path(
             &cfg.work_dir,

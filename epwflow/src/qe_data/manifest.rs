@@ -14,6 +14,17 @@ pub struct Artifact {
     pub format_version: String,
 }
 
+/// 将实际 NSCF 点表作为交付的一部分，导入后仍能核对输入与输出。
+pub fn nscf_input_artifact(work: &Path) -> anyhow::Result<Artifact> {
+    let path = crate::foundation::layout::path(work, "nscf/nscf.in");
+    Ok(Artifact {
+        role: "nscf_input".into(), relative_path: path.strip_prefix(work)?.into(),
+        byte_size: std::fs::metadata(&path)?.len(),
+        sha256: crate::foundation::store::hash_file(&path)?,
+        producer_stage: "nscf".into(), input_digest: String::new(), format_version: "kmesh-0060".into(),
+    })
+}
+
 /// 校验结论：状态、逐项检查、单位、阈值与证据；未通过不发布。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -189,8 +200,10 @@ impl QeManifest {
             )
             .join("data-file-schema.xml");
         let geometry = super::xml::Geometry::read(&scf_xml)?;
-        let mut actual_states =
-            super::nscf::parse_xml(&states.wavefunctions.join("data-file-schema.xml"))?;
+        let input = self.artifacts.iter().find(|a| a.role == "nscf_input")
+            .context("data_invalid: QE 清单缺 nscf_input，无法证明输入与输出一致；请用当前程序重新登记交付，保留原 PH 数据")?;
+        let mut actual_states = super::nscf::verify_files(&root.join(&input.relative_path), &scf_xml,
+            &states.wavefunctions.join("data-file-schema.xml"), states.k_grid, states.nbnd)?;
         actual_states.k_grid = states.k_grid;
         ensure!(
             serde_json::to_value(&actual_states)? == serde_json::to_value(states)?,
@@ -215,7 +228,7 @@ impl QeManifest {
             let declared = self
                 .artifacts
                 .iter()
-                .filter(|a| a.producer_stage == stage && a.role != "scf_snapshot_identity")
+                .filter(|a| a.producer_stage == stage && !["scf_snapshot_identity", "nscf_input"].contains(&a.role.as_str()))
                 .map(|a| root.join(&a.relative_path))
                 .collect::<std::collections::BTreeSet<_>>();
             ensure!(

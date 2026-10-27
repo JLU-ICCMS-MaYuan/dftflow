@@ -110,3 +110,23 @@ spec.md、plan.md、research.md、data-model.md、contracts/interface.md、tasks
 适配层映射既有绝对赝势路径时使用共享 QE 字符串序列化，避免 Fortran 列表定向 READ 将斜杠解释为输入终止符。SCF／完整及参考 NSCF 走同一适配方法，不重选文件、复制其他赝势或改变物理身份；严格原生 IO fixture 在科学执行入口核验引用。
 
 T102 的实际输入使用共同 pseudo_dir 加短相对文件名，保留引号与来源身份；单独引用超长绝对名仍会被 QE atom_pfile 截断。原生字段长度检查及不同子目录／超长名拒绝纳入契约回归，不调整赝势物理内容或默认选择。
+
+
+## 2026-10-27 外部声子导入
+
+本轮已批准需求、澄清与实施边界见 [完整补充](external-phonon-request.md)。沿用 0010，整合 0048、0060、0061；真实验证及发布证据在本轮完成后追加。
+
+
+### 原始声子导入的实现与恢复
+
+`foundation/phonon_import` 拥有显式导入及一次性配置接续，复用 `workspace` 调度和 0048 单阶段自动链；`qe_data/dynmat_text` 只负责内容转换，`native_ph`/`qmap` 核验科学身份，`collect_ph`/`scheduler::publish_data` 负责独立交付。导入分支的执行步骤限定为 Phonon；当前 SCF/NSCF 仅校验，不进入电子参考或 PH 执行分支。随后 Wannier 可按既有依赖生成尚缺的第三阶段电子参考。
+
+执行顺序为：完整来源清单及 prefix → 电子绑定/参数核验和可恢复配置迁移 → 来源绑定 → 一个阶段作业 → 从 control 重建 dyn0、按内容转换/验证完整星 → 独立归集并发布 QE manifest → q2r → 色散 matdyn → DOS matdyn → 元素投影及绘图 → 回执和结果包。只有完成登记成功才表示阶段完成。
+
+文本转换遵循 QE `io_dyn_mat` 的列主序复矩阵、原子质量单位、频率和振型格式。非零 ibrav 由相同晶格约定恢复后与当前 XML 比较；极性张量必须完整保留。源 phsave 全部独立复制，规范化后的 patterns 只更改派生的全局编号。旧 ifc 仅保存在原目录。响应数据按当前稠密 FFT 与 3N 扰动验证大小和有限性；未得到历史 smooth FFT 的独立证据，报告不得声称已检查它。
+
+事务日志 `epw-state/imports/config-upgrade.json` 保存所有待写文件的前后内容；每个文件只能等于其中之一。先检查电子文件和迁移报告身份，再原子替换配置、回执、请求、进度；旧版本存于 `epw-state/history/flat-import-*`。完成后的新回执绑定新的参数表示与迁移报告，电子输出列表完全不变。该兼容仅在显式导入开放，不放宽普通 Config::load。
+
+来源清单位于 `epw-state/imports/phonon-source.json`，参与 PH 科学键；报告 `epw-state/qe-data/external-source.json` 加入 QE manifest。存在任一导入标记都禁止掉回 PH 分支。部分复制允许复用内容相同的已有目标，冲突或损坏拒绝；后处理恢复及补图沿用既有阶段证据。状态查询保持只读。
+
+对应 FR-013～017、SC-009～011，技术任务为 T103～07，验证由文本转换测试、公开 CLI 进程回归、0060/0061 回归及 SiP₂ 正式安装实测共同提供，不把替身执行当作科学验收。

@@ -152,6 +152,13 @@ fn ph_name(d: &Document) -> Result<String> {
     Ok(names[0].clone())
 }
 fn pw_grid(v: &Value, stage: &str) -> Result<([u32; 3], [u32; 3])> {
+    if stage == NSCF {
+        let grid: [u32; 3] = get(v, &[stage, "pw", "K_POINTS"])
+            .context("configuration: stages.2.qe-nscf.pw.K_POINTS: 需要三个正整数 [A, B, C]，不再接受完整点表")?;
+        qf_input::pw::uniform_kpoint_count(grid.map(i64::from))
+            .context("configuration: stages.2.qe-nscf.pw.K_POINTS: 非法网格")?;
+        return Ok((grid, [0; 3]));
+    }
     let text: String = get(v, &[stage, "pw", "K_POINTS"])?;
     let mut rows = text.lines().filter(|row| !row.trim().is_empty());
     let kind = rows
@@ -413,6 +420,20 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
 }
 
 impl Config {
+    /// 仅供显式导入升级；普通配置入口继续拒绝嵌套格式。
+    pub(crate) fn load_nested(path: &std::path::Path) -> Result<Self> {
+        let path = std::fs::canonicalize(path)?;
+        let document: Document = toml::from_str(&std::fs::read_to_string(&path)?)?;
+        ensure_version(document.schema_version)?;
+        ensure!(document.stages.get(SCF).is_some_and(|v| v.get("pw").is_some()),
+            "configuration: 受控升级只接受旧嵌套版本 2");
+        let runtime = decode(&document)?;
+        let mut cfg = Self { runtime, document };
+        cfg.validate()?;
+        cfg.resolve(path.parent().unwrap())?;
+        Ok(cfg)
+    }
+
     pub fn write_parameter_map(&self, path: &std::path::Path) -> Result<()> {
         fn flatten(value: &Value, path: String, rows: &mut Vec<Value>) {
             if let Some(object) = value.as_object() {
@@ -625,7 +646,7 @@ fn validate_node(node: &Value, path: &str) -> Result<()> {
 fn section_parameters(section: &str) -> Option<&'static str> {
     match section {
         "CONTROL"=>Some("calculation prefix outdir pseudo_dir verbosity tstress tprnfor disk_io restart_mode wf_collect nstep"),
-        "SYSTEM"=>Some("ibrav nat ntyp nbnd ecutwfc ecutrho occupations smearing degauss nosym noinv force_symmorphic use_all_frac"),
+        "SYSTEM"=>Some("ibrav nat ntyp nbnd ecutwfc ecutrho occupations smearing degauss nosym noinv force_symmorphic use_all_frac nr1 nr2 nr3 nr1s nr2s nr3s"),
         "ELECTRONS"=>Some("conv_thr electron_maxstep mixing_beta mixing_ndim mixing_mode diagonalization diago_thr_init diago_david_ndim startingpot startingwfc scf_must_converge"),
         "INPUTPH"=>Some("prefix outdir tr2_ph ldisp only_init lqdir recover only_wfc fildyn fildvscf nq1 nq2 nq3 start_q last_q alpha_mix nmix_ph niter_ph trans epsil amass verbosity"),
         "BANDS"=>Some("prefix outdir filband lsym no_overlap lp plot_2d"),
@@ -694,7 +715,7 @@ fn validate_task_node(node: &Value, path: &str) -> Result<()> {
             }
         } else if key == "K_POINTS" || key == "ATOMIC_SPECIES" {
             ensure!(
-                path.ends_with(".pw") && value.is_string(),
+                path.ends_with(".pw") && (value.is_string() || (key == "K_POINTS" && path == format!("stages.{NSCF}.pw") && value.is_array())),
                 "configuration: {path}.{key}: 需要 PW 原生卡片文本"
             );
         } else {
@@ -741,7 +762,7 @@ fn validate_task_node(node: &Value, path: &str) -> Result<()> {
 fn validate_parameter(key: &str, value: &Value, path: &str) -> Result<()> {
     let booleans = "tstress tprnfor wf_collect nosym noinv force_symmorphic use_all_frac scf_must_converge ldisp only_init lqdir recover only_wfc trans epsil lsym no_overlap lp plot_2d pawproj lwrite_overlaps diag_basis kresolveddos q_in_cryst_coord q_in_band_form dos loto_2d write_lr read_lr ep_coupling elph elecselfen phonselfen a2f efermi_read epwread epwwrite epbread wannierize ephwrite eliashberg band_plot selecqread liso laniso mp_mesh_k tc_linear limag lreal lpade lacon imag_read fbw positive_matsu guiding_centres dis_froz_proj write_hr write_bvec bands_plot dos_adpt_smr";
     let strings = "calculation prefix outdir pseudo_dir verbosity disk_io restart_mode occupations smearing mixing_mode diagonalization startingpot startingwfc fildyn fildvscf filband fildos bz_sum filpdos filproj flfrc zasr asr flfrq fldos dvscf_dir bands_skipped filkf filqf fila2f dos_smr_type tc_linear_solver";
-    let integers = "nstep ibrav nat ntyp nbnd electron_maxstep mixing_ndim diago_david_ndim nq1 nq2 nq3 start_q last_q nmix_ph niter_ph ngauss ndos nk1 nk2 nk3 etf_mem nbndsub iverbosity nkf1 nkf2 nkf3 nqf1 nqf2 nqf3 nqstep nqsmear ngaussw num_iter nstemp gridsamp nswi nsiter broyden_ndim num_wann conv_window dis_num_iter dis_conv_window num_elec_per_state bands_num_points";
+    let integers = "nr1 nr2 nr3 nr1s nr2s nr3s nstep ibrav nat ntyp nbnd electron_maxstep mixing_ndim diago_david_ndim nq1 nq2 nq3 start_q last_q nmix_ph niter_ph ngauss ndos nk1 nk2 nk3 etf_mem nbndsub iverbosity nkf1 nkf2 nkf3 nqf1 nqf2 nqf3 nqstep nqsmear ngaussw num_iter nstemp gridsamp nswi nsiter broyden_ndim num_wann conv_window dis_num_iter dis_conv_window num_elec_per_state bands_num_points";
     let is = |list: &str| list.split_whitespace().any(|s| s == key);
     let valid = if is(booleans) {
         value.is_boolean()
@@ -838,7 +859,7 @@ impl Config {
         for stage in [SCF, NSCF] {
             let calculation: String = get(&v, &[stage, "pw", "CONTROL", "calculation"])?;
             ensure!(
-                calculation == if stage == SCF { "scf" } else { "nscf" },
+                if stage == SCF { calculation == "scf" } else { ["nscf", "bands"].contains(&calculation.as_str()) },
                 "configuration: stages.{stage}.pw.CONTROL.calculation: 与阶段定义不符"
             );
             let cut: f64 = get(&v, &[stage, "pw", "SYSTEM", "ecutwfc"])?;
@@ -847,6 +868,18 @@ impl Config {
                 cut > 0. && rho >= cut,
                 "configuration: stages.{stage}.pw.SYSTEM.ecutwfc/ecutrho: 非法截断能"
             );
+        }
+        let (scf_grid, shift) = pw_grid(&v, SCF)?;
+        let (nscf_grid, _) = pw_grid(&v, NSCF)?;
+        ensure!(scf_grid == nscf_grid && shift == [0; 3],
+            "configuration: stages.{SCF}.pw.K_POINTS={scf_grid:?}, shift={shift:?} 与 stages.{NSCF}.pw.K_POINTS={nscf_grid:?}: 必须使用相同的零位移网格");
+        for task in [vec![SCF, "pw"], vec![NSCF, "pw"], vec![ELECTRONIC, "qe_eband", "pw"]] {
+            let system = at(&v, &[task.as_slice(), &["SYSTEM"]].concat())?;
+            for keys in [["nr1", "nr2", "nr3"], ["nr1s", "nr2s", "nr3s"]] {
+                let present = keys.iter().filter(|k| system.get(**k).is_some()).count();
+                ensure!(present == 0 || (present == 3 && keys.iter().all(|k| system[*k].as_u64().is_some_and(|n| n > 0 && n <= i32::MAX as u64))),
+                    "configuration: stages.{}.SYSTEM.{keys:?}: FFT 必须是完整的三个正整数", task.join("."));
+            }
         }
         // 重复参数只做约束检查，不把上游值写入下游配置。
         for task in [
@@ -1268,14 +1301,12 @@ impl Config {
         ] {
             if pw_grid(&v, stage)? != (g, shift) {
                 let card = if stage == NSCF {
-                    qf_input::pw::uniform_kpoints_text(g.map(i64::from), true)?
-                        .trim_start_matches("K_POINTS ")
-                        .to_owned()
+                    json!(g)
                 } else {
-                    format!(
+                    json!(format!(
                         "automatic\n{} {} {} {} {} {}",
                         g[0], g[1], g[2], shift[0], shift[1], shift[2]
-                    )
+                    ))
                 };
                 put(&mut v, &[stage, "pw", "K_POINTS"], json!(card));
             }

@@ -27,6 +27,9 @@ pub(super) fn allocated(config: &Path, target: Step, resume: bool, attempt: &str
 
 fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Option<&str>) -> Result<()> {
     let cfg = Config::load(config)?;
+    if target == Step::Phonon && super::phonon_import::bound(&cfg) {
+        super::phonon_import::require_electronic(&cfg)?;
+    }
     super::run_state::ready(&cfg.work_dir)?;
     workspace::check_active(&cfg, own)?;
     if own.is_none() {
@@ -42,12 +45,12 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
         toml::to_string_pretty(&cfg)?.as_bytes(),
     )?;
     cfg.write_parameter_map(&cfg.work_dir.join("epw-state/parameter-map.json"))?;
-    for step in target.closure() {
+    for step in stages::execution_steps(&cfg, target) {
         if step == target || !stages::reusable(&cfg, step)? {
             parallelism::preflight(&cfg, step, false)?;
         }
     }
-    for step in target.closure() {
+    for step in stages::execution_steps(&cfg, target) {
         // 显式 SCF 恢复提交开启新批次；依赖阶段及分配内接续仍按完成记录复用。
         let restart_scf = own.is_none() && submit && resume && target == Step::Scf;
         if !restart_scf && stages::reusable(&cfg, step)? {
@@ -81,7 +84,7 @@ fn advance_mode(config: &Path, target: Step, submit: bool, resume: bool, own: Op
                 if resume
                     && (p.state == "failed" || native_failed)
                     && (matches!(step, Step::Scf | Step::Nscf | Step::Wannier)
-                        || (step == Step::Phonon && workspace_science::partial_phonon(&cfg)?.is_none()))
+                        || (step == Step::Phonon && !super::phonon_import::bound(&cfg) && workspace_science::partial_phonon(&cfg)?.is_none()))
                 {
                     workspace::archive_step(&cfg, step)?;
                     Progress {

@@ -130,7 +130,7 @@ pub fn report(cfg: &Config) -> Result<serde_json::Value> {
         }
     }
     let complete = if task.as_ref().is_some_and(|a| a.phonon_chain) {
-        task.as_ref().unwrap().target.closure().iter().all(|s| steps[s.name()] == "reuse")
+        stages::execution_steps(cfg, task.as_ref().unwrap().target).iter().all(|s| steps[s.name()] == "reuse")
             && !super::workspace_science::post_pending(cfg, task.as_ref().unwrap().target)?
             && task.as_ref().is_some_and(|a| a.state == "succeeded")
     } else { steps.values().all(|v|v=="reuse") };
@@ -205,7 +205,7 @@ fn freeze(cfg: &Config, target: Step) -> Result<(PathBuf, Attempt)> {
     {
         sources.push(Identity::capture(&p.path)?);
     }
-    if target.closure().contains(&Step::Electronic) {
+    if stages::execution_steps(cfg, target).contains(&Step::Electronic) {
         for name in ["bands", "dos", "projwfc"] {
             sources.push(Identity::capture(&super::workspace_science::post_program(&fixed, name)?.path)?);
         }
@@ -217,6 +217,9 @@ fn freeze(cfg: &Config, target: Step) -> Result<(PathBuf, Attempt)> {
     }
     if let Some(p) = &fixed.programs.environment_script {
         sources.push(Identity::capture(p)?);
+    }
+    if super::phonon_import::bound(cfg) {
+        sources.push(Identity::capture(&super::phonon_import::binding(cfg))?);
     }
     let a = Attempt {
         schema_version: 1,
@@ -284,13 +287,13 @@ fn generate_current(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf
         &cfg.work_dir.join("epw-state/current-config.toml"),
         toml::to_string_pretty(&cfg)?.as_bytes(),
     )?;
-    for step in target.closure() {
+    for step in stages::execution_steps(&cfg, target) {
         if step == target || !stages::reusable(&cfg, step)? {
             parallelism::preflight(&cfg, step, false)?;
         }
     }
     // 在生成新输入前保留过期的科学现场，避免用新请求覆盖旧输入。
-    for step in target.closure() {
+    for step in stages::execution_steps(&cfg, target) {
         if stages::reusable(cfg, step)? {
             continue;
         }
@@ -307,7 +310,7 @@ fn generate_current(config: &Path, target: Step, cfg: &Config) -> Result<PathBuf
     }
     super::workspace_science::generate(&cfg, target)?;
     let mut last = None;
-    for step in target.closure() {
+    for step in stages::execution_steps(&cfg, target) {
         let (_, mut a) = freeze(&cfg, step)?;
         let p = script(&cfg, &step.directory(&cfg), &a)?;
         a.script = Some(Identity::capture(&p)?);
@@ -373,6 +376,10 @@ pub fn start_phonon(config: &Path, resume: bool) -> Result<()> {
 }
 
 pub fn start_stage(config: &Path, target: Step, resume: bool) -> Result<()> {
+    prepare_stage(config, target, resume, true)
+}
+
+pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: bool) -> Result<()> {
     let cfg = Config::load(config)?;
     super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, None)?;
@@ -391,7 +398,7 @@ pub fn start_stage(config: &Path, target: Step, resume: bool) -> Result<()> {
     layout::initialize(&cfg)?;
     archive_stale(&cfg)?;
     let mut pending = false;
-    for step in target.closure() {
+    for step in stages::execution_steps(&cfg, target) {
         if !stages::reusable(&cfg, step)? {
             parallelism::preflight(&cfg, step, false)?;
             pending = true;
@@ -418,6 +425,11 @@ pub fn start_stage(config: &Path, target: Step, resume: bool) -> Result<()> {
     store::atomic_bytes(&script, body.as_bytes())?;
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
     a.script = Some(Identity::capture(&script)?);
+    if !submit {
+        store::write(&attempt_path(&cfg.work_dir, &a.id), &a)?;
+        println!("workflow_status: prepared\nscript: {}\n未提交；请使用同一导入命令 -s", script.display());
+        return Ok(());
+    }
     a.reservation = Some(budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
         budget::reconcile(l)?;
         budget::reserve_workflow(l, &format!("stage:{}", a.id), &cfg.resources)
@@ -465,7 +477,7 @@ pub fn start(config: &Path, target: Step, submit: bool) -> Result<()> {
         println!("workflow_status: complete（全部复用）");
         return Ok(());
     }
-    for step in target.closure() {
+    for step in stages::execution_steps(&cfg, target) {
         if step == target || !stages::reusable(&cfg, step)? {
             parallelism::preflight(&cfg, step, false)?;
         }
@@ -555,7 +567,7 @@ pub fn execute(path: &Path) -> Result<()> {
     let job = std::env::var("SLURM_JOB_ID")
         .context("allocation: 需要 Slurm 分配")?
         .parse::<u64>()?;
-    for step in a.target.closure() {
+    for step in stages::execution_steps(&cfg, a.target) {
         if step == a.target || !stages::reusable(&cfg, step)? {
             parallelism::preflight(&cfg, step, true)?;
         }
@@ -608,7 +620,7 @@ pub fn execute(path: &Path) -> Result<()> {
         if a.phonon_chain {
             return super::native_workspace::allocated(&a.config.path, a.target, a.retry_failed, &a.id);
         }
-        for step in a.target.closure() {
+        for step in stages::execution_steps(&cfg, a.target) {
             if stages::reusable(&cfg, step)? {
                 println!("reuse: {}", step.name());
                 super::workspace_science::refresh_post(&cfg, step)?;
