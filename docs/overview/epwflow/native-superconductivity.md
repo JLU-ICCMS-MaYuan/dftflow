@@ -88,4 +88,6 @@ F3 当前路径将每个展宽写入 fine/smearing-NNNN，F4 使用 spectrum_ind
 
 ## 本轮 PBE 指定温度能隙
 
+2026-10-28，主 workspace 与独立 dyn0 工具均已 release 构建发布。指定 MgB₂ 工作区清除旧计算、状态和结果后，使用默认 `bin/epwflow/` 新 CLI 从 SCF 完成八阶段；iso／aniso 的 20／30／40 K 六点均收敛且数据有效，原生结果、来源及图表检查通过。八日志、各阶段 `.jobs` 和原文配置单份备份均经过真实运行核对。重复上游核验仍明显偏慢，当前小网格比较仍有较大偏差；本次不是 Tc 或网格收敛验收。见 [0064 验收](../../specs/0064-epw-readable-state-logs/acceptance.md)。
+
 2026-10-26，按版本 2 配置清理后完成 PBE MgB₂ 小网格八阶段重算；iso／aniso 的 20／30／40 K 六点均收敛且数据有效，结果包来源和图表检查通过。使用本轮固定的私有构建，默认安装未切换；该结果不构成 Tc 或网格收敛验收。见 [0059 验收](../../specs/0059-epw-native-stage-config/acceptance.md)。

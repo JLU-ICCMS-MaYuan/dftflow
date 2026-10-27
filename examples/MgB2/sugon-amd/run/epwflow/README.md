@@ -1,18 +1,19 @@
 # MgB₂ EPW 手动测试
 
-本目录采用按阶段填写原生参数的版本 2 配置。0059 历史重算证据见 [0059 验收记录](../../../../../docs/specs/0059-epw-native-stage-config/acceptance.md)。旧计算已按授权范围清除且未备份归档；0059 已从 SCF 完成八阶段重算，iso／aniso 的 20／30／40 K 均收敛且数据有效，结果与图表已发布；这不是 Tc 或网格收敛验收。
+本目录采用按阶段填写原生参数的版本 2 配置。2026-10-28 已用全仓库重新编译发布的新 CLI，清空旧计算／状态／结果后，从 SCF 完成八阶段重算；iso／aniso 的 20／30／40 K 六点均收敛且数据有效，结果来源与图表检查通过。当前结果属于 [0064 验收](../../../../../docs/specs/0064-epw-readable-state-logs/acceptance.md)；旧现场未归档保留，[0059 验收](../../../../../docs/specs/0059-epw-native-stage-config/acceptance.md) 仅作历史证据。
+
+当前为小网格功能测试，比较图仍有明显数值偏差，不是 Tc 或网格收敛验收。公开命令重复核验上游数据仍较慢：本轮完整流程约 49 分钟，科学分配合计仅 228 节点秒，具体限制见 0064。
 
 ## 开始前检查
 
 ```bash
 source "/data/home/mayuan/code/dftflow/scripts/env.sh"
-export PATH="/data/home/mayuan/code/dftflow/docs/local/0062-native-bin:$PATH"
 cd "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow"
 command -v epw_phonon epw_wannier epw_superconductivity
 epw_phonon -c "epwinput.toml" --check --json
 ```
 
-平层配置使用 `docs/local/0062-native-bin/` 中本次构建并核验的三个程序；0059 的旧程序不读取平层格式。0062 的新输入不再前置批量参数来源说明，来源保留在独立 JSON。现有八阶段计算结果属于 0059，本轮未重新计算；旧冻结配置未改写。上述历史现场的恢复属于旧格式边界，不能直接用新程序恢复。配置调整见 [0061](../../../../../docs/specs/0061-epw-flat-stage-config/spec.md)。上述 PATH 仅作用于当前会话，默认安装不会随源码自动更新。
+2026-10-28 已通过全工作区 release 构建发布当前 CLI，`scripts/env.sh` 指向仓库 `bin/`。0064 的真实重算与八阶段日志验收见 [0064 验收记录](../../../../../docs/specs/0064-epw-readable-state-logs/acceptance.md)。配置原文在内容变化后的首次 CLI 调用保存为下一份 `NNNN-config.toml`，不再生成参数来源 JSON。配置格式见 [0061](../../../../../docs/specs/0061-epw-flat-stage-config/spec.md)。
 
 `--check` 只检查配置、文件和并行设置，不提交作业。所有命令读取当前 `epwinput.toml`，结构为 `../POSCAR`，赝势位于上级 `pp/`。当前为 PBE 小网格功能测试，图与数值供人工检查，不代表网格或选窗已经收敛。
 
@@ -110,9 +111,9 @@ epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
 
 **第 1／2 步**作业完成后，再执行相同命令核验完成记录；已完成的科学计算不会重跑。
 
-**第 3～7 步**各提交一次即可，阶段脚本在作业内完成必要后处理、核验、绘图及发布。第 3 步能带和 DOS 各自完成即可出图；第 7 步没有另加独立最终图，已有谱在第 8 步结果包展示。无需再次调用公开命令触发绘图。
+**第 3／4 步**在阶段作业内完成计算、后处理和发布；结束后重复相同命令核验并复用。**第 5～7 步**需要在作业结束后重复相同公开命令，核验科学输出并推进必要后处理与发布；如果又提交了后处理作业，待其结束再重复，直到提示阶段完成。第 7 步没有另加独立最终图，已有谱在第 8 步结果包展示。
 
-**第 8 步**当前工作流 `task="gap"`、`mode="both"`；`stages."8.epw-iso"` 与 `stages."8.epw-aniso"` 分别显式设置 `muc=0.05`、`nstemp=3`、`temps=[20,30,40]` K；执行一次命令提交两个独立方法作业，每个方法一次 EPW 处理全部温度。输出目录为 `iso-mu0.05-20-40/` 与 `aniso-mu0.05-20-40/`，全部有效温度齐备后在作业内发布最终结果。当前任务计算指定温度的能隙，不搜索 Tc。
+**第 8 步**当前工作流 `task="gap"`、`mode="both"`；`stages."8.epw-iso"` 与 `stages."8.epw-aniso"` 分别显式设置 `muc=0.05`、`nstemp=3`、`temps=[20,30,40]` K；执行一次命令提交两个独立方法作业，每个方法一次 EPW 处理全部温度。输出目录为 `iso-mu0.05-20-40/` 与 `aniso-mu0.05-20-40/`，两个作业结束后重复同一公开命令，检查全部温度并发布最终结果。当前任务计算指定温度的能隙，不搜索 Tc。
 
 为了尽早检查选窗，也可按 **1 → 2 → 3 → 5 → 4 → 6 → 7 → 8** 执行。第 5 步不依赖声子；能带由 EPW 内嵌 Wannier90 的 wdata 输出，只有电子 DOS 调用 postw90。图中四个窗口边界取实际拟合日志。第 6 步复用第 5 步电子数据，只新增必要的声子求值；声子比较只画 TDOS，元素 DOS 在第 4 步单独交付。
 
@@ -140,7 +141,7 @@ epw_phonon -c "epwinput.toml" --stage scf --resume -s
 epw_phonon -c "epwinput.toml" --stage scf -s
 ```
 
-失败后先看日志，修正原因，再对同一目标加 `--resume -s`。成功科学检查点与相容后处理会复用；缺图或发布失败只补派生结果。活动或终态未知的作业拒绝重复提交，不手删状态规避核验。必要计算原因在比较目录的 `reuse-decision.json`／`dos-decision.json` 中。
+失败后先看日志，修正原因，再对同一目标加 `--resume -s`。成功科学检查点与相容后处理会复用；缺图或发布失败只补派生结果。活动或终态未知的作业拒绝重复提交，不手删状态规避核验。必要计算原因在比较目录的 `reuse-decision.json`／`dos-decision.json` 中；续算子任务写入所属阶段日志，任务号从各阶段 `.jobs` 读取。
 
 ## 重新绘制已有图片
 
@@ -177,7 +178,7 @@ results/3.qe-electronic/
 
 阶段数据在本目录按 `1.qe-scf/` 至 `8.epw-superconductivity/` 生成，阶段状态在 `epw-state/`，最终图片与对应数据按阶段发布到同级 `results/`。原生科学文件继续保留在各阶段，续算时不要删除。
 
-共享账本沿用 `docs/local/epwflow-campaign.json`，保留历史消费与最多两个作业的登记约束；时间和存储旧额度不再约束新任务。DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。源配置须删除 `resources.wall_seconds`、`resources.storage_bytes`；含旧字段会明确报错。旧冻结快照和已提交脚本不自动改写，当前安装不随源码自动更新，见 [0058 验收](../../../../../docs/specs/0058-epw-remove-resource-limits/acceptance.md)。
+共享账本沿用 `docs/local/epwflow-campaign.json`，保留历史消费与最多两个作业的登记约束；时间和存储旧额度不再约束新任务。DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。源配置须删除 `resources.wall_seconds`、`resources.storage_bytes`；含旧字段会明确报错。旧冻结快照和已提交脚本不自动改写；本次已明确执行构建发布，平时修改源码后仍需重新构建，见 [0058 验收](../../../../../docs/specs/0058-epw-remove-resource-limits/acceptance.md)。
 
 [图片与数据导航](results/index.json) · [测试脚本与复现](../../../../../test_auto/MgB2/epwflow/README.md) · [EPW 手册](../../../../../epwflow/README.md)
 
