@@ -108,9 +108,8 @@ test -s "2.qe-nscf/completion.json"
   test -d "$PH_SOURCE"
   mkdir -p "$PH_COPY"
 
-  # 复制完整目录，保留文件名与相对结构；来源只读。
-  # 若传输中断，保留副本，重新执行相同命令继续复制。
-  rsync -a --info=progress2 -- "$PH_SOURCE/" "$PH_COPY/"
+  # 本地复制全部内容（包括隐藏文件），保留目录结构、权限和时间；来源只读。
+  cp -a -- "$PH_SOURCE/." "$PH_COPY/"
 
   # 只读比较源和副本的文件内容；会完整读取两边的大文件。
   # 正常应无差异输出；-n 表示只预览，不改写任何文件。
