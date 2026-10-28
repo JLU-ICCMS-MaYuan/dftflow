@@ -113,7 +113,7 @@
 - SiP₂ 配置已升级为平层版本 2，SCF/NSCF 输出身份不变。原配置、旧回执及迁移证据位于 `epw-state/history/flat-import-18e2511ad6af6d3d-16af37-2/`。新键为 SCF d55d18ee9ced723fec53aa10a01e72a8f5f157dfa0cc0e5c9373f71c958ac22a、NSCF 0bdc98631b9c0b8d3e7e2d1f6ff81b043d94e663b325159f23f71c151229d89d；这是核验后的新绑定，旧回执保留，并未直接伪改原键。
 - 实际查看 `plots/phband/phonon_band.png`、`plots/phdos/phonon_dos.png`、`plots/phonon_combined.jpg`，包含声子谱、TDOS、Si/P 元素 DOS。元素表 200 行，Si+P 与 TDOS 最大绝对差约 5×10⁻⁶（表格打印精度）；不以图像重合或投影和代替网格收敛验收。正式图表及表格在 `results/4.qe-phonon-nosplit/`。
 - matdyn 原始日志保留了非厄米差及缺 Z* 的提示；没有修剪原始数据或把本次导入称为动力学稳定性、EPC/超导及网格收敛验收。历史赝势/截断能及缺失的历史 smooth FFT 仍列为未核验。
-- 首次实测安装版本随后只增加路径重叠/独立文件复制加固；作业结束后完整发布最终 release，制品、帮助、env PATH 和源码逐文件清单再次核验。两次构建及发布身份均保留，真实声子交付未因更新而重算。最终正式 epw_phonon SHA256 为 71c42f9f18ba0b73a444f77a702943c11d2e63b89f77415e7fda04fa3dfc7464，epw_wannier 为 8b0d40ded57cb8cf6a2db7c47dcdfcffd57a41d367b6823f1e649be97c0da073。
+- 首次实测安装版本随后只增加路径重叠/独立文件复制加固；声子作业结束后发布第二版 release，制品、帮助、env PATH 和源码逐文件清单再次核验。前两次构建及发布身份均保留，真实声子交付未因更新而重算。第二版 epw_phonon SHA256 为 71c42f9f18ba0b73a444f77a702943c11d2e63b89f77415e7fda04fa3dfc7464，epw_wannier 为 8b0d40ded57cb8cf6a2db7c47dcdfcffd57a41d367b6823f1e649be97c0da073。
 
 
 ### 实现节点提交时的未完成边界
@@ -129,3 +129,21 @@
 作业 1379339 最终 FAILED/1，37 分 15 秒。244 点 PW 路径参考（33 分 26.44 秒）、bands、dos、projwfc 均 JOB DONE，第三阶段完成回执和图已发布；PW 原始本征值未收敛警告保留。随后内嵌采样 wdata 超过 200 条，被生产检查拒绝，**EPW/Wannier 尚未启动**，不能记录为 Wannier 收敛失败或成功。对此补齐保持全部目标坐标的端点打包，独立测试验证不丢点、非正交情况、零采样段保护及容量；正式恢复将复用全部已有电子参考，只尝试首次拟合，不扫描参数。
 
 端点打包回归：3 项单元测试通过；显式使用当前 SiP₂ 平层配置的只读原生输入检查 1 项通过，保留 244 个路径点和 36 个均匀点，采样 wdata 为 139 条，包含窗口/收敛设置的完整输入也通过原有 200 条检查。日志为 `wdata-tests.log`、`wdata-sip2-readonly.log`，没有调用科学程序。
+
+### 最终 CLI 覆盖与显式恢复
+
+在 1379339 终态确认后，基于 ca4875383affcd5d7cae0dfd919badc35f5170ab 与逐文件记录的当前编译源码发布第三版 release，纳入来源标记丢失保护、平层 NSCF 错误建议及完整坐标采样容量修复。原有未提交的 native_config 纯格式差异保留在工作区，构建来源按实际字节记录，不伪称干净源码树。构建后 245 份源码身份均未变化，四份 source/published SHA256 与制品一致；加载 scripts/env.sh 后两个命令均指向正式 bin/epwflow，帮助包含导入入口。最终发布 SHA256：epw_phonon `3f60c8cba6305bf2ae8e818c09a46609886662204816dc883e3aacfaf4af8d4b`；epw_wannier `5ca2c1f60f60b4207af413ff488a25a47c499ee7e464bded4b76e2afec4d352e`。
+
+随后从 SiP₂ 目录实际执行正式 `epw_wannier --config "epwinput.toml" --stage wannier --resume -s`，保持原配置和全部电子参考，继续首次真实拟合。最终科学状态另行记录，不以提交或正常退出等同收敛。
+
+正式恢复作业为 **1380018**；命令提交成功，任务在计算节点运行。1379339 的失败现场和已完成电子阶段均保留；真实拟合最终结果待该作业终态核验。
+
+### 单次真实 Wannier 验收结论：未收敛，拒绝交付
+
+正式恢复作业 **1380018 FAILED/1，34 分 12 秒**。日志明确复用 scf、nscf、electronic 和 electronic/projwfc，未调用新 SCF/NSCF/PH/PH 初始化；只启动首次真实 EPW/Wannier 拟合。实际 36 个完整 k 点、96 条能带/96 个 Wannier 函数，AMN/MMN 成功；完整实际 wdata 为 146 条（采样 139 条），容量修复在真实程序生效，没有减少目标点或改拟合参数。
+
+Wannier 达到原配置 5000 轮，原生 `Wannierisation convergence criteria satisfied` 标记缺失。末轮总展宽 448.0202876148 Å²、变化 −0.000109 Å²、梯度 0.5873916785，96 个最终函数最大展宽 24.95871447 Å²；仍未通过 1e-8/窗口 5 的局域化标准。EPW 子进程 COMPLETED/0，原生 W90 `All done` 只证明正常退出；父工作流正确报 `data_invalid: 缺少原生 Wannier 局域化收敛证据`，`workflow_complete=false`，未生成 `5.epw-wannier/completion.json`，不发布有效 Wannier 阶段清单。日志、模型及原生派生文件保留在现场；没有放宽判据、重试拟合或自动扫描参数。
+
+本轮导入实现、正式安装、QE 图表与单次真实验收执行完成，T109 按“执行并记录失败结论”收尾；**Wannier 科学验收没有通过**，粗网格 EPC、细网格、超导和外部双 FFT 缺陷均未纳入执行或成功声明，不关闭整体 0010。未收敛的后续科学设置需另行研究，不能靠重复原命令或删除回执绕过。
+
+真实拟合终态后再次独立读取全部来源和电子科学产物：1074 个来源文件（30,854,600,669 字节）的文件集合/大小/SHA256 均未改变；SCF 46、NSCF 80 共 126 项输出记录与测试前完全一致，逐文件大小/哈希再次通过。证据为 `sip2-identities-after-wannier.json`，不是只比较修改时间或回执存在。

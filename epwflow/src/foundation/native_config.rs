@@ -1074,26 +1074,11 @@ impl Config {
                 "aniso"
             };
             let s = self.solver_for(mode)?;
-            for (key, expected) in [
-                ("epwread", true),
-                ("wannierize", false),
-                ("elph", false),
-                ("eliashberg", true),
-                ("limag", true),
-                ("lreal", false),
-            ] {
-                same(
-                    &[SUPER, name, "epw", "INPUTEPW", key],
-                    json!(expected),
-                    "当前虚频轴求解的阶段契约",
-                )?;
+            for (key,expected) in [("epwread",true),("wannierize",false),("elph",false),("eliashberg",true),("limag",true),("lreal",false)] {
+                same(&[SUPER,name,"epw","INPUTEPW",key],json!(expected),"当前虚频轴求解的阶段契约")?;
             }
             if s.task == config::SuperconductivityTask::Gap {
-                same(
-                    &[SUPER, name, "epw", "INPUTEPW", "tc_linear"],
-                    json!(false),
-                    "指定温度非线性能隙任务",
-                )?;
+                same(&[SUPER,name,"epw","INPUTEPW","tc_linear"],json!(false),"指定温度非线性能隙任务")?;
             }
             let n: u32 = get(&v, &[SUPER, name, "epw", "INPUTEPW", "nstemp"])?;
             ensure!(

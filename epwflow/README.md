@@ -133,7 +133,7 @@ run/
 
 第 1～4 步复用 qeflow／共享输入、执行及后处理组件，SCF 只做一次并保留独立快照。NSCF 为 EPW 所需的完整均匀网格。`qe_eband` 使用 `pw.x bands` 和 `bands.x`，`qe_eledos` 使用 `dos.x`。PH 三种模式都严格校验 q 点、动力学矩阵、dvscf 和 phsave 后归集到第 4 步 `save/`。
 
-第 5 步由 EPW 内嵌 Wannier90 拟合并通过 `wdata` 输出能带，按真实 `*_band.kpt` 核对共同点位；不再执行独立 `wannier90.x restart=plot`。只有电子 DOS 使用 `[programs.postw90]`，缺省为 `pw.x` 同目录的 postw90；读取同次拟合模型，不重新拟合。QE 路径参考读取第 3 步，DOS 参考读取第 2 步均匀网格；两侧保持相同网格、Fermi 零点、Gaussian 核宽及非磁标量每态两电子计数。实际四个能窗、路径分段、最大差和未配对态同时保留。图和来源发布到 `results/5.epw-wannier/`，原始模型留在第 5 步。
+第 5 步由 EPW 内嵌 Wannier90 拟合并通过 `wdata` 输出能带，按真实 `*_band.kpt` 核对共同点位；不同晶格方向导致直线段不能有效合并时，采用完整目标坐标的端点配对压缩输入，再按坐标恢复原路径，不减少路径/网格目标点，也不取消原有容量检查；不再执行独立 `wannier90.x restart=plot`。只有电子 DOS 使用 `[programs.postw90]`，缺省为 `pw.x` 同目录的 postw90；读取同次拟合模型，不重新拟合。QE 路径参考读取第 3 步，DOS 参考读取第 2 步均匀网格；两侧保持相同网格、Fermi 零点、Gaussian 核宽及非磁标量每态两电子计数。实际四个能窗、路径分段、最大差和未配对态同时保留。图和来源发布到 `results/5.epw-wannier/`，原始模型留在第 5 步。
 
 独立拟合输入不声明粗网格插值使用的 `filkf/filqf`。后处理自动从校验后的同一 NSCF 提取晶格、原子、网格、原 k 点顺序及排除后的能带，补齐 DOS 所需 postw90 的 `.win/.eig`；无需用户维护另一份输入。原生 DOS 使用 `dos_smr_type = gauss`。除退出码外，还检查本次日志和 `.werr`，避免 Fortran 报错却零退出时错误放行。后处理失败保留拟合 `.wout/.chk/.ukk`，进度归第 5 步日志；下次公开命令只重试缺失后处理，直接替换失败产物，保留打开的 Slurm 日志，不创建归档。历史依据见 [0023 验收](../docs/specs/0023-epw-wannier-native-start/acceptance.md)，当前状态布局见 [0064](../docs/specs/0064-epw-readable-state-logs/acceptance.md)。
 

@@ -188,3 +188,7 @@
 ### 本轮文档影响与实施状态
 
 沿用 `type:feature` 的 0010，用户已批准本轮计划；线上 Issue、类型和远程 Spec 链接由用户管理，未操作线上或关闭整体 Issue。新增 FR-013～017、SC-009～011，设计/接口/快速说明/任务同步；Overview 及模块/SiP₂ README 说明实际导入命令、检查范围、配置接续和恢复。代码与正式安装已通过相关回归及制品核验，真实 SiP₂ 导入和 Wannier 结果以本项 acceptance 的后续记录为准。Documentation Impact 的发布与科学事实不可由代码回归替代。
+
+### 本轮交付与科学验收结论
+
+单命令导入、受控平层接续、0060 网格/FFT 契约整合和正式 CLI 覆盖已完成；SiP₂ 单作业 1379059 完成 QE 声子谱、TDOS、Si/P 元素 DOS、组合图及表格。首次 Wannier 作业的采样容量阻断已修复，正式恢复 1380018 实际拟合 5000 轮仍未收敛，流程正确拒绝发布有效交付。T103～109 的本轮实现/验收执行已收尾，科学未通过和保留现场见 [验收记录](acceptance.md#单次真实-wannier-验收结论未收敛拒绝交付)。不重算已有 SCF/NSCF/PH，不扫描参数，不关闭整体 0010，不操作线上 Gitee 或推送。Documentation Impact 已覆盖 Spec、Plan、Tasks、研究、接口、Quickstart、验收、模块/示例 README 与 Overview。
