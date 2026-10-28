@@ -6,6 +6,9 @@ use super::{
 use anyhow::{ensure, Context, Result};
 use std::collections::BTreeMap;
 
+#[path = "native_config_groups.rs"]
+mod groups;
+
 struct Call {
     name: String,
     path: Vec<String>,
@@ -225,6 +228,18 @@ fn phonon_name(d: &Document, flat: bool) -> Result<String> {
 }
 
 pub(super) fn expand(mut d: Document) -> Result<Document> {
+    d.eight_stages = d.stages.contains_key(ELECTRONIC) || d.stages.contains_key(SUPER);
+    let grouped = d.eight_stages;
+    let ph = phonon_name(&d, false).unwrap_or_default();
+    let result = if grouped { groups::ungroup(d).and_then(expand_calls) } else { expand_calls(d) };
+    if grouped {
+        result.map_err(|e| anyhow::anyhow!(groups::message(&format!("{e:#}"), &ph)))
+    } else {
+        result
+    }
+}
+
+fn expand_calls(mut d: Document) -> Result<Document> {
     // 未指定时限制为 500 轮；EPW 与内嵌 Wannier90 使用同一次拟合的迭代数。
     if let Some(wannier) = d.stages.get_mut("5.wannier90").and_then(Value::as_object_mut) {
         wannier.entry("num_iter").or_insert(json!(500));
@@ -365,7 +380,7 @@ pub(super) fn flatten(mut d: Document) -> Result<Document> {
         }
     }
     d.stages = flat;
-    Ok(d)
+    if d.eight_stages { groups::group(d) } else { Ok(d) }
 }
 
 /// 错误与参数回执使用同一外部位置映射。
@@ -417,4 +432,9 @@ pub(super) fn message(text: &str) -> String {
     let re = regex::Regex::new(r"stages\.[A-Za-z0-9_.-]+").expect("固定位置表达式");
     re.replace_all(text, |c: &regex::Captures<'_>| location(&c[0]))
         .replace("workflow.derived", "内部推导规则")
+}
+
+pub(super) fn format_message(text: &str, grouped: bool, ph: &str) -> String {
+    let text = message(text);
+    if grouped { groups::message(&text, ph) } else { text }
 }

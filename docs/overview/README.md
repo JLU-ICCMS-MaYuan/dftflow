@@ -24,7 +24,7 @@ DFTFlow 为第一性原理计算准备输入、组织外部求解器和调度任
 - [三种声子模式、dyn0 来源、目录和一次提交链（0006）](qeflow/phonon-workflow.md)。
 - [只用 QE 初始化生成 dyn0](qeflow/qe_ph_nosplit.md) 与 [独立 Rust dyn0 工具](tools/qf-gen-dyn0.md)。 初始化输入和日志的位置见 [文件问答](qeflow/phonon-workflow.md#dyn0-初始化文件问答)。
 - [Rust 架构、平台构建与安装](dftflow-rust.md)。
-- [EPW 原生阶段参数](epwflow/native-stage-config.md)：科学设置按实际调用使用同层独立配置段，保留原生名称与单位，自动绑定由程序内部确认。
+- [EPW 原生阶段参数](epwflow/native-stage-config.md)：科学设置归入八个主阶段及用途子段，保留原生名称与独立数值；历史平层版本兼容，自动绑定由程序内部确认。
 - [外部原始声子单命令接续](epwflow/README.md#外部原始声子接续0010)：复用已有 SCF/NSCF 和 PH save，核验后生成 QE 声子谱、DOS 与正式交付，失败不回退重算。
 - [EPW 资源与作业登记](epwflow/README.md)：程序不再额外限制计算时长和存储空间；保留历史、身份与原有并发检查，集群规则仍由 Slurm 管理。
 - [声子绘图旧入口](qe-phonon-plot.md)、[scflow 旧入口](scflow.md)：保留链接，具体用法由家族页面维护。

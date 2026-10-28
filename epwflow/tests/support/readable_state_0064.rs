@@ -29,6 +29,56 @@ fn eight(c: &Case) {
         );
     }
 }
+
+#[test]
+fn grouped_stage_configuration_runs_and_resumes_wannier_without_rebuilding_upstream() {
+    let c = Case::numbered();
+    c.stage_setup();
+    let path = c.root.join("input.toml");
+    let cfg = config::Config::load(&path).unwrap();
+    fs::write(&path, cfg.to_stage_toml().unwrap()).unwrap();
+    success(c.stage_submit("wannier", false));
+    success(c.stage_execute());
+    eight(&c);
+    let before = c.calls();
+    let cfg = config::Config::load(&path).unwrap();
+    assert!(epwflow::foundation::stages::reusable(&cfg, Step::Wannier).unwrap());
+    let mut value = serde_json::to_value(&cfg).unwrap();
+    value["stages"]["5.epw-wannier"]["num_iter"] = json!(501);
+    value["stages"]["5.epw-wannier"]["wannier90"]["num_iter"] = json!(501);
+    let changed: config::Config = serde_json::from_value(value).unwrap();
+    fs::write(&path, toml::to_string_pretty(&changed).unwrap()).unwrap();
+    success(c.stage_submit("wannier", true));
+    success(c.stage_execute());
+    let after = c.calls();
+    assert_eq!(before.0, after.0, "SCF/NSCF/电子/PH 不得重算");
+    assert_eq!(after.1.lines().filter(|line| line.starts_with("wannier ")).count(),
+        before.1.lines().filter(|line| line.starts_with("wannier ")).count() + 1);
+    let current = config::Config::load(&path).unwrap();
+    assert!(epwflow::foundation::stages::reusable(&current, Step::Wannier).unwrap());
+    assert_eq!(serde_json::to_value(current).unwrap()["stages"].as_object().unwrap().len(), 8);
+    eight(&c);
+}
+
+#[test]
+fn grouped_stage_cli_migrates_legacy_state_without_scientific_or_submit_calls() {
+    let c = Case::numbered();
+    c.direct_setup();
+    let path = c.root.join("input.toml");
+    let cfg = config::Config::load(&path).unwrap();
+    let original = cfg.to_stage_toml().unwrap();
+    fs::write(&path, &original).unwrap();
+    store::write(&c.root.join("run/epw-state/layout.json"), &json!({"schema_version":1,"phonon":"nosplit"})).unwrap();
+    store::write(&c.root.join("run/epw-state/native-active.json"),
+        &json!({"state":"failed","inputs":[{"path":"/missing/old/epw_wannier.in"}]})).unwrap();
+    let before = c.calls();
+    success(c.numbered_cli(1, &["--migrate-state"], None, "grouped-legacy-migration"));
+    assert_eq!(before, c.calls());
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    eight(&c);
+    assert!(!c.root.join("run/epw-state/native-active.json").exists());
+    assert!(!c.root.join("run/epw-state/layout.json").exists());
+}
 #[test]
 fn readable_0064_versions_preserve_raw_text_and_old_missing_input_never_blocks_prepare() {
     let c = Case::numbered();

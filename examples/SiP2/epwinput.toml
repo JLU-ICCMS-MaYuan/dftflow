@@ -102,7 +102,7 @@ ATOMIC_SPECIES = """
 Si 28.0855 si_pbe_v1.uspp.F.UPF
 P 30.973762 p_pbe_v1.5.uspp.F.UPF"""
 
-[stages."3.qe-bands"]
+[stages."3.qe-electronic"]
 calculation = "bands"
 prefix = "Si8P16"
 ecutwfc = 60.0
@@ -126,11 +126,11 @@ ATOMIC_SPECIES = """
 Si 28.0855 si_pbe_v1.uspp.F.UPF
 P 30.973762 p_pbe_v1.5.uspp.F.UPF"""
 
-[stages."3.qe-bands-post"]
+[stages."3.qe-electronic".bands]
 prefix = "Si8P16"
 lsym = false
 
-[stages."3.qe-dos"]
+[stages."3.qe-electronic".dos]
 prefix = "Si8P16"
 ngauss = 0
 degauss = 0.007349864435130998
@@ -138,7 +138,7 @@ Emin = -100.0
 Emax = 100.0
 DeltaE = 0.01
 
-[stages."3.qe-pdos"]
+[stages."3.qe-electronic".projwfc]
 prefix = "Si8P16"
 ngauss = 0
 degauss = 0.007349864435130998
@@ -146,12 +146,12 @@ Emin = -100.0
 Emax = 100.0
 DeltaE = 0.01
 
-[stages."4.qe-dispersion"]
+[stages."4.qe-phonon-nosplit".dispersion]
 asr = "simple"
 q_in_cryst_coord = true
 q_in_band_form = true
 
-[stages."4.qe-phdos"]
+[stages."4.qe-phonon-nosplit".dos]
 asr = "simple"
 dos = true
 ndos = 200
@@ -172,7 +172,7 @@ nq1 = 2
 nq2 = 3
 nq3 = 6
 
-[stages."4.qe-q2r"]
+[stages."4.qe-phonon-nosplit".q2r]
 zasr = "simple"
 
 [stages."5.epw-wannier"]
@@ -211,7 +211,7 @@ eliashberg = false
 band_plot = false
 num_iter = 500
 
-[stages."5.postw90-dos"]
+[stages."5.epw-wannier".postw90]
 write_hr = false
 write_bvec = false
 bands_plot = false
@@ -227,7 +227,7 @@ dos_adpt_smr = false
 dos_smr_fixed_en_width = 0.1
 dos_smr_type = "gauss"
 
-[stages."5.wannier90"]
+[stages."5.epw-wannier".wannier90]
 bands_plot = true
 bands_num_points = 1
 num_wann = 96
@@ -285,7 +285,7 @@ nqf1 = 2
 nqf2 = 3
 nqf3 = 6
 
-[stages."6.epw-comparison"]
+[stages."6.epw-coarse".comparison]
 prefix = "Si8P16"
 ep_coupling = true
 elph = true
@@ -324,7 +324,7 @@ selecqread = true
 filkf = "kpoints.dat"
 filqf = "qpoints.dat"
 
-[stages."6.qe-matdyn"]
+[stages."6.epw-coarse".matdyn]
 asr = "no"
 q_in_cryst_coord = false
 q_in_band_form = false
@@ -333,7 +333,7 @@ amass = [
     30.973762,
 ]
 
-[stages."6.qe-q2r"]
+[stages."6.epw-coarse".q2r]
 zasr = "no"
 
 [stages."7.epw-fine"]
@@ -385,7 +385,7 @@ nqf1 = 4
 nqf2 = 6
 nqf3 = 12
 
-[stages."8.epw-aniso"]
+[stages."8.epw-superconductivity".aniso]
 prefix = "Si8P16"
 epwread = true
 epbread = false
@@ -432,7 +432,7 @@ nqf3 = 12
 gap_edge = 0.01
 tc_linear = false
 
-[stages."8.epw-iso"]
+[stages."8.epw-superconductivity".iso]
 prefix = "Si8P16"
 epwread = true
 epbread = false
@@ -479,7 +479,7 @@ nqf3 = 12
 gap_edge = 0.01
 tc_linear = false
 
-[workflow."3.qe-bands"]
+[workflow."3.qe-electronic"]
 points_per_edge = 20
 
 [workflow."4.qe-phonon-nosplit"]

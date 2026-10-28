@@ -27,6 +27,9 @@ pub(crate) fn configuration_error(error: anyhow::Error) -> anyhow::Error {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Document {
+    // 仅记录外部展示方式，不参与科学参数、序列化或阶段身份。
+    #[serde(skip)]
+    pub(crate) eight_stages: bool,
     pub schema_version: u32,
     pub work_dir: PathBuf,
     pub outdir: PathBuf,
@@ -65,7 +68,7 @@ impl<'de> Deserialize<'de> for Config {
         let document = Document::deserialize(d)?;
         ensure_version(document.schema_version).map_err(serde::de::Error::custom)?;
         let document = flat::expand(document).map_err(serde::de::Error::custom)?;
-        let runtime = decode(&document).map_err(|e| serde::de::Error::custom(flat::message(&format!("{e:#}"))))?;
+        let runtime = decode(&document).map_err(|e| serde::de::Error::custom(flat::format_message(&format!("{e:#}"), document.eight_stages, &ph_name(&document).unwrap_or_default())))?;
         Ok(Self { runtime, document })
     }
 }
@@ -420,6 +423,17 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
 }
 
 impl Config {
+    pub(crate) fn config_error(&self, error: anyhow::Error) -> anyhow::Error {
+        anyhow::anyhow!(flat::format_message(&format!("{error:#}"), self.document.eight_stages, &self.phonon_stage()))
+    }
+
+    /// 导出八主阶段表达，不修改运行参数、旧配置版本或计算现场。
+    pub fn to_stage_toml(&self) -> Result<String> {
+        let mut document = self.document()?;
+        document.eight_stages = true;
+        Ok(toml::to_string_pretty(&flat::flatten(document)?)?)
+    }
+
     /// 仅供显式导入升级；普通配置入口继续拒绝嵌套格式。
     pub(crate) fn load_nested(path: &std::path::Path) -> Result<Self> {
         let path = std::fs::canonicalize(path)?;
@@ -435,7 +449,7 @@ impl Config {
     }
 
     pub fn apply_native(&self, task: &[&str], input: &str) -> Result<String> {
-        apply(&self.stage_document()?, task, input)
+        apply(&self.stage_document()?, task, input).map_err(|e| self.config_error(e))
     }
     pub fn configure_file(&self, task: &[&str], path: &std::path::Path) -> Result<()> {
         let input = std::fs::read_to_string(path)?;
@@ -770,7 +784,7 @@ fn validate_parameter(key: &str, value: &Value, path: &str) -> Result<()> {
 
 impl Config {
     pub fn validate_native(&self) -> Result<()> {
-        self.validate_native_impl().map_err(|e| anyhow::anyhow!(flat::message(&format!("{e:#}"))))
+        self.validate_native_impl().map_err(|e| self.config_error(e))
     }
     fn validate_native_impl(&self) -> Result<()> {
         ensure_version(self.schema_version)?;
@@ -1182,7 +1196,7 @@ impl Config {
         let mut v = stages(&d);
         put(&mut v, path, value);
         d.stages = serde_json::from_value(v)?;
-        let runtime = decode(&d).map_err(configuration_error)?;
+        let runtime = decode(&d).map_err(|e| self.config_error(e))?;
         self.document = d;
         self.runtime = runtime;
         Ok(())

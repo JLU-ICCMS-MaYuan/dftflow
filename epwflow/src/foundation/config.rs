@@ -122,7 +122,7 @@ impl Config {
         Ok(c)
     }
     pub fn validate(&self)->Result<()>{
-        self.validate_impl().map_err(super::native_config::configuration_error)
+        self.validate_impl().map_err(|e| self.config_error(e))
     }
     fn validate_impl(&self)->Result<()>{
         self.validate_native()?;

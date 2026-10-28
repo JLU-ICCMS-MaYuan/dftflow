@@ -1,6 +1,6 @@
 # SiP₂：单命令导入历史声子并接续 Wannier
 
-`epwinput.toml` 使用 schema 2 平层配置，与整合 0060/0061 的正式程序配套。`POSCAR` 从历史 SCF 输入保留原始晶格和 24 个原子的分数坐标；`KPATH.in` 沿用历史 Wannier 的 12 段路径。赝势使用配置中已有文件的绝对路径。
+`epwinput.toml` 使用 schema 2 八主阶段配置，与整合 0060/0061 的正式程序配套。`POSCAR` 从历史 SCF 输入保留原始晶格和 24 个原子的分数坐标；`KPATH.in` 沿用历史 Wannier 的 12 段路径。赝势使用配置中已有文件的绝对路径。
 
 | 参数 | 当前设置 |
 | --- | --- |
@@ -364,3 +364,25 @@ epw_wannier --config "epwinput.toml" --stage wannier --resume -s
 ```bash
 epw_wannier --config "epwinput.toml" --stage wannier -s
 ```
+
+## 配置段与八个计算阶段对应（0061）
+
+当前 `epwinput.toml` 的 `stages` 只有八个主阶段：`1.qe-scf`、`2.qe-nscf`、`3.qe-electronic`、`4.qe-phonon-nosplit`、`5.epw-wannier`、`6.epw-coarse`、`7.epw-fine`、`8.epw-superconductivity`。本例保留已导入声子的 `nosplit` 模式；`coords` 和 `index` 是其他声子模式的名称，不因整理配置而切换。
+
+主段直接填写该阶段主程序的原生参数；同一阶段的其他调用放在用途子段。以下展示已有字段的位置，不能替代完整配置：
+
+```toml
+[stages."5.epw-wannier"]
+num_iter = 500                 # EPW 驱动内嵌 Wannier90 的迭代上限
+
+[stages."5.epw-wannier".wannier90]
+num_iter = 500                 # 必须与上面的 num_iter 一致
+bands_plot = true             # Wannier 能带
+
+[stages."5.epw-wannier".postw90]
+bands_plot = false            # 本调用只做 DOS
+```
+
+不再有独立的 `[stages."5.wannier90"]`。能带 PW 的展宽在 `[stages."3.qe-electronic"]`，电子总 DOS 与投影 DOS 分别在 `.dos` 和 `.projwfc`；粗网格主计算与比较分别在 `[stages."6.epw-coarse"]` 和其 `.comparison`；超导两种方法分别在 `[stages."8.epw-superconductivity".iso]`、`.aniso`。同名字段分别作用于各自调用。
+
+本次仅改配置表头和参数归属位置，保留全部科学值，包括 96 个 Wannier 函数、Si/P 的 s,p 初始投影和 500 次迭代上限。历史平层版本仍可读取，已有编号配置副本不改写；仅此格式调整不改变科学复用标识。整理配置本身不转换 `epw-state`；需要转换时执行上节的 `--migrate-state`。

@@ -76,7 +76,7 @@ epw_clear --work "/path/to/epwflow" --dry-run
 
 ## 输入与布局
 
-仅支持 `schema_version = 2`，科学参数按实际调用使用同层独立配置段，段内直接填写原生参数，程序内部识别输入段；普通入口不接受旧多层格式；显式 `--import-phonon` 可在严格核验旧 SCF/NSCF 后受控接续嵌套的版本 2 配置。相对路径按 TOML 所在目录解释，`work_dir = "."` 表示当前工作区。
+配置使用 `schema_version = 2`，以八个计算目录名为主阶段。主段直接填写主调用的原生参数，其他调用放在用途子段，例如 `[stages."5.epw-wannier".wannier90]` 与 `.postw90`。程序内部识别输入段；历史同层独立调用的版本 2 仍可读取，并保持原格式序列化；普通入口不接受早期程序／namelist 多层格式；显式 `--import-phonon` 可在严格核验旧 SCF/NSCF 后受控接续嵌套的版本 2 配置。相对路径按 TOML 所在目录解释，`work_dir = "."` 表示当前工作区。
 
 ```toml
 schema_version = 2
@@ -97,7 +97,7 @@ ecutwfc = 40.0  # 此次 pw.x 独立设置，不从 SCF 继承
 # 其余科学参数也须分别填写；本片段不是完整配置。
 ```
 
-完整示例见 [MgB₂ 配置](../examples/MgB2/sugon-amd/run/epwflow/epwinput.toml)，字段和单位见[原生阶段参数说明](../docs/overview/epwflow/native-stage-config.md)。所有科学调用读取对应阶段配置；修改 NSCF 截断能不会改写 SCF。数据交接必须匹配的前缀、粗细网格、Wannier 维数等出现冲突时，执行前列出两处配置和值。顶层 `workflow` 单独保存自动选窗、输入来源、PH 拆分及搜索设置。自动绑定在程序内部登记，无需填写 derived 表；同一目标同时手填和内部推导会被拒绝。多个调用同层分开，例如 `3.qe-bands/3.qe-bands-post/3.qe-dos/3.qe-pdos`。旧多层表达明确拒绝。配置简化及验证见 [0061](../docs/specs/0061-epw-flat-stage-config/spec.md)。
+八主阶段完整示例见 [SiP₂ 配置](../examples/SiP2/epwinput.toml)，历史平层示例见 [MgB₂ 配置](../examples/MgB2/sugon-amd/run/epwflow/epwinput.toml)，字段和单位见[原生阶段参数说明](../docs/overview/epwflow/native-stage-config.md)。所有科学调用读取对应阶段配置；修改 NSCF 截断能不会改写 SCF。数据交接必须匹配的前缀、粗细网格、Wannier 维数等出现冲突时，执行前列出两处配置和值。顶层 `workflow` 单独保存自动选窗、输入来源、PH 拆分及搜索设置。自动绑定在程序内部登记，无需填写 derived 表；同一目标同时手填和内部推导会被拒绝。第 3 步使用 `3.qe-electronic` 主段及 `.bands/.dos/.projwfc` 子段，第 5 步使用 `5.epw-wannier` 主段及 `.wannier90/.postw90` 子段。新旧主段不能混写，未知用途、程序／namelist 的额外嵌套明确拒绝。配置简化及验证见 [0061](../docs/specs/0061-epw-flat-stage-config/spec.md)。
 
 数组使用原生名，例如 `amass`、`temps`，生成 Fortran 索引数组；`ATOMIC_SPECIES` 保存原生卡片文本；SCF 的 `K_POINTS` 保存类型及正文，NSCF 的 `K_POINTS = [A, B, C]` 仅填写三个正整数。Rust 按官方 `kmesh.pl` 的公式、顺序及精度展开到实际 `nscf.in`，配置中不保存长点表。SCF 与 NSCF 必须同维度、零位移。输入文件不再前置参数来源注释；原文配置使用编号版本保存，当前及计算使用的版本由阶段日志说明；内部算法类型不是另一份用户配置。
 

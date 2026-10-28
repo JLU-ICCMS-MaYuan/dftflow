@@ -1,5 +1,7 @@
 # 平层配置契约
 
+说明：前部保留最初平层版本的需求及验收记录；2026-10-28 已确认的八主阶段方案见本文后部追加章节，旧的“所有段禁止子表”限制已由该方案替代。
+
 根字段继续使用 `schema_version=2`、work_dir、outdir、structure、pseudos、programs、resources、budget、可选 layout/kpath；科学字段仅允许放在下表对应的同层段内。
 
 | 科学配置段 | 实际调用或设置 |
@@ -39,3 +41,9 @@ QE `ecutwfc/ecutrho/degauss/conv_thr` 为 Ry；DOS/PROJWFC `degauss` 仍为 Ry�
 ## 0062 对输入说明方式的替代
 
 [0062](../../0062-epw-clean-input-headers/spec.md) 删除输入头部批量来源注释；平层来源与内部绑定仅记录在独立 JSON 中，实际输入哈希仍绑定回执。上文输入注释条款保留为原版本记录，不再代表当前生成行为。
+
+## 八主阶段契约（替代上文的无子表展示限制）
+
+新配置只用八个主阶段名。SCF/NSCF 保持平铺；3.qe-electronic 父表为能带 PW，子段为 bands、dos、projwfc。PH 父表为主 PH，子段为 q、q2r、dispersion、dos；nosplit 不设置 q。5.epw-wannier 父表为 EPW，子段为 wannier90、postw90。6.epw-coarse 父表为 EPW，子段为 q2r、matdyn、comparison。7.epw-fine 父表为 EPW，可选 spectra.名称。8.epw-superconductivity 使用 iso、aniso 子段。
+
+子段内仍直接填写原生参数，不再嵌套 pw/CONTROL/SYSTEM/INPUTEPW 等层级。workflow 使用八阶段主名，第 3 步为 3.qe-electronic。历史版本 2 平层调用配置继续读取并保留原格式序列化；新旧段或 workflow 名混写拒绝。科学视图、原生参数数值及身份不随展示格式变化。
