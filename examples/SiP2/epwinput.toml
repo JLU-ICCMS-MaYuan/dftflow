@@ -1,3 +1,6 @@
+# SiP₂：schema 2，八个主阶段名与计算目录一致。
+# 主段填写主调用的原生参数，其他调用使用用途子段。
+# QE 截断能与 degauss 的单位为 Ry；EPW degaussq 为 meV，temps 为 K。
 schema_version = 2
 work_dir = "/data/home/mayuan/code/dftflow/examples/SiP2"
 outdir = "/data/home/mayuan/code/dftflow/examples/SiP2/scratch"
@@ -49,6 +52,7 @@ mpi = 36
 campaign_id = "epic-0007"
 ledger = "/data/home/mayuan/code/dftflow/docs/local/epwflow-campaign.json"
 
+# 第 1 步：QE SCF。SCF 与 NSCF 均使用 2×3×6、零位移网格。
 [stages."1.qe-scf"]
 calculation = "scf"
 prefix = "Si8P16"
@@ -73,6 +77,7 @@ ATOMIC_SPECIES = """
 Si 28.0855 si_pbe_v1.uspp.F.UPF
 P 30.973762 p_pbe_v1.5.uspp.F.UPF"""
 
+# 第 2 步：QE NSCF。K_POINTS 只填三个整数，由 Rust 展开完整均匀网格。
 [stages."2.qe-nscf"]
 calculation = "nscf"
 prefix = "Si8P16"
@@ -93,15 +98,12 @@ nr3s = 32
 conv_thr = 0.0000000001
 mixing_beta = 0.7
 electron_maxstep = 200
-K_POINTS = [
-    2,
-    3,
-    6,
-]
+K_POINTS = [2, 3, 6]
 ATOMIC_SPECIES = """
 Si 28.0855 si_pbe_v1.uspp.F.UPF
 P 30.973762 p_pbe_v1.5.uspp.F.UPF"""
 
+# 第 3 步：主段为 PW 能带；bands、dos、projwfc 分别配置对应后处理。
 [stages."3.qe-electronic"]
 calculation = "bands"
 prefix = "Si8P16"
@@ -146,19 +148,8 @@ Emin = -100.0
 Emax = 100.0
 DeltaE = 0.01
 
-[stages."4.qe-phonon-nosplit".dispersion]
-asr = "simple"
-q_in_cryst_coord = true
-q_in_band_form = true
-
-[stages."4.qe-phonon-nosplit".dos]
-asr = "simple"
-dos = true
-ndos = 200
-nk1 = 8
-nk2 = 12
-nk3 = 24
-
+# 第 4 步：保留已有声子的 nosplit 模式及 2×3×6 q 网格。
+# q2r、dispersion、dos 分别用于力常数、声子谱和声子 DOS。
 [stages."4.qe-phonon-nosplit"]
 prefix = "Si8P16"
 tr2_ph = 0.000000000001
@@ -175,6 +166,21 @@ nq3 = 6
 [stages."4.qe-phonon-nosplit".q2r]
 zasr = "simple"
 
+[stages."4.qe-phonon-nosplit".dispersion]
+asr = "simple"
+q_in_cryst_coord = true
+q_in_band_form = true
+
+[stages."4.qe-phonon-nosplit".dos]
+asr = "simple"
+dos = true
+ndos = 200
+nk1 = 8
+nk2 = 12
+nk3 = 24
+
+# 第 5 步：EPW 主调用及 Wannier90 拟合；postw90 单独用于电子 DOS。
+# 本例为 96 个 Wannier 函数，Si/P 的 s,p 投影，迭代上限 500。
 [stages."5.epw-wannier"]
 prefix = "Si8P16"
 ep_coupling = true
@@ -182,10 +188,7 @@ elph = false
 etf_mem = 1
 nbndsub = 96
 iverbosity = 2
-amass = [
-    28.0855,
-    30.973762,
-]
+amass = [28.0855, 30.973762]
 fsthick = 1.0
 degaussw = 0.1
 degaussq = 0.5
@@ -209,23 +212,7 @@ wannierize = true
 ephwrite = false
 eliashberg = false
 band_plot = false
-num_iter = 500
-
-[stages."5.epw-wannier".postw90]
-write_hr = false
-write_bvec = false
-bands_plot = false
-dos = true
-num_elec_per_state = 2
-dos_kmesh = [
-    8,
-    12,
-    24,
-]
-dos_energy_step = 0.01
-dos_adpt_smr = false
-dos_smr_fixed_en_width = 0.1
-dos_smr_type = "gauss"
+num_iter = 500 # 与下方 wannier90.num_iter 保持一致
 
 [stages."5.epw-wannier".wannier90]
 bands_plot = true
@@ -236,7 +223,7 @@ projections = [
     "P:s,p",
 ]
 exclude_bands = []
-num_iter = 500
+num_iter = 500 # 与上方 EPW 主段的 num_iter 保持一致
 conv_tol = 0.00000001
 conv_window = 5
 guiding_centres = true
@@ -244,6 +231,19 @@ dis_num_iter = 500
 dis_conv_tol = 0.00000001
 dis_conv_window = 5
 
+[stages."5.epw-wannier".postw90]
+write_hr = false
+write_bvec = false
+bands_plot = false
+dos = true
+num_elec_per_state = 2
+dos_kmesh = [8, 12, 24]
+dos_energy_step = 0.01
+dos_adpt_smr = false
+dos_smr_fixed_en_width = 0.1
+dos_smr_type = "gauss"
+
+# 第 6 步：粗网格 EPC；comparison 为独立的插值比较调用。
 [stages."6.epw-coarse"]
 prefix = "Si8P16"
 ep_coupling = true
@@ -251,10 +251,7 @@ elph = true
 etf_mem = 1
 nbndsub = 96
 iverbosity = 2
-amass = [
-    28.0855,
-    30.973762,
-]
+amass = [28.0855, 30.973762]
 fsthick = 1.0
 degaussw = 0.1
 degaussq = 0.5
@@ -285,6 +282,15 @@ nqf1 = 2
 nqf2 = 3
 nqf3 = 6
 
+[stages."6.epw-coarse".q2r]
+zasr = "no"
+
+[stages."6.epw-coarse".matdyn]
+asr = "no"
+q_in_cryst_coord = false
+q_in_band_form = false
+amass = [28.0855, 30.973762]
+
 [stages."6.epw-coarse".comparison]
 prefix = "Si8P16"
 ep_coupling = true
@@ -292,10 +298,7 @@ elph = true
 etf_mem = 1
 nbndsub = 96
 iverbosity = 2
-amass = [
-    28.0855,
-    30.973762,
-]
+amass = [28.0855, 30.973762]
 fsthick = 1.0
 degaussw = 0.1
 degaussq = 0.5
@@ -324,18 +327,7 @@ selecqread = true
 filkf = "kpoints.dat"
 filqf = "qpoints.dat"
 
-[stages."6.epw-coarse".matdyn]
-asr = "no"
-q_in_cryst_coord = false
-q_in_band_form = false
-amass = [
-    28.0855,
-    30.973762,
-]
-
-[stages."6.epw-coarse".q2r]
-zasr = "no"
-
+# 第 7 步：起始细网格（电子 8×12×24，声子 4×6×12），仍需收敛验证。
 [stages."7.epw-fine"]
 prefix = "Si8P16"
 ep_coupling = true
@@ -343,10 +335,7 @@ elph = true
 etf_mem = 1
 nbndsub = 96
 iverbosity = 2
-amass = [
-    28.0855,
-    30.973762,
-]
+amass = [28.0855, 30.973762]
 fsthick = 1.0
 degaussw = 0.1
 degaussq = 0.5
@@ -373,11 +362,7 @@ liso = false
 laniso = false
 mp_mesh_k = true
 nstemp = 3
-temps = [
-    5.0,
-    10.0,
-    20.0,
-]
+temps = [5.0, 10.0, 20.0]
 nkf1 = 8
 nkf2 = 12
 nkf3 = 24
@@ -385,52 +370,8 @@ nqf1 = 4
 nqf2 = 6
 nqf3 = 12
 
-[stages."8.epw-superconductivity".aniso]
-prefix = "Si8P16"
-epwread = true
-epbread = false
-epwwrite = false
-wannierize = false
-ep_coupling = false
-elph = false
-eliashberg = true
-liso = false
-laniso = true
-tc_linear_solver = "lapack"
-limag = true
-lreal = false
-lpade = false
-lacon = false
-imag_read = false
-fbw = false
-positive_matsu = true
-gridsamp = 0
-nswi = 0
-nstemp = 3
-temps = [
-    5.0,
-    10.0,
-    20.0,
-]
-muc = 0.1
-wscut = 0.5
-nsiter = 1000
-conv_thr_iaxis = 0.00000001
-broyden_beta = -0.3
-broyden_ndim = 8
-a_gap0 = 1.0
-nqstep = 500
-iverbosity = 2
-eps_acoustic = 2.0
-mp_mesh_k = true
-nkf1 = 8
-nkf2 = 12
-nkf3 = 24
-nqf1 = 4
-nqf2 = 6
-nqf3 = 12
-gap_edge = 0.01
-tc_linear = false
+# 第 8 步：iso 与 aniso 各自配置，保留 μ*=0.1、5/10/20 K 的起始值。
+[stages."8.epw-superconductivity"]
 
 [stages."8.epw-superconductivity".iso]
 prefix = "Si8P16"
@@ -454,11 +395,7 @@ positive_matsu = true
 gridsamp = 0
 nswi = 0
 nstemp = 3
-temps = [
-    5.0,
-    10.0,
-    20.0,
-]
+temps = [5.0, 10.0, 20.0]
 muc = 0.1
 wscut = 0.5
 nsiter = 1000
@@ -479,6 +416,50 @@ nqf3 = 12
 gap_edge = 0.01
 tc_linear = false
 
+[stages."8.epw-superconductivity".aniso]
+prefix = "Si8P16"
+epwread = true
+epbread = false
+epwwrite = false
+wannierize = false
+ep_coupling = false
+elph = false
+eliashberg = true
+liso = false
+laniso = true
+tc_linear_solver = "lapack"
+limag = true
+lreal = false
+lpade = false
+lacon = false
+imag_read = false
+fbw = false
+positive_matsu = true
+gridsamp = 0
+nswi = 0
+nstemp = 3
+temps = [5.0, 10.0, 20.0]
+muc = 0.1
+wscut = 0.5
+nsiter = 1000
+conv_thr_iaxis = 0.00000001
+broyden_beta = -0.3
+broyden_ndim = 8
+a_gap0 = 1.0
+nqstep = 500
+iverbosity = 2
+eps_acoustic = 2.0
+mp_mesh_k = true
+nkf1 = 8
+nkf2 = 12
+nkf3 = 24
+nqf1 = 4
+nqf2 = 6
+nqf3 = 12
+gap_edge = 0.01
+tc_linear = false
+
+# 工作流设置：路径、选窗与求解目标；不放入上述原生科学参数段。
 [workflow."3.qe-electronic"]
 points_per_edge = 20
 
