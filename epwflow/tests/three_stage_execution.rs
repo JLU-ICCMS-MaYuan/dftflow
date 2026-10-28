@@ -1359,6 +1359,13 @@ impl Case {
             let file=logs::path(&cfg.work_dir,step).unwrap();
             if file.exists(){fs::remove_file(file).unwrap();}
         }
+        // 历史布局的编号原文位于输入旁；不能把新格式快照伪造成旧隐藏状态内容。
+        for entry in fs::read_dir(cfg.work_dir.join("epw-state")).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_name().to_string_lossy().ends_with("-config.toml") {
+                fs::rename(entry.path(), self.root.join(entry.file_name())).unwrap();
+            }
+        }
         store::write(&cfg.work_dir.join("epw-state/layout.json"), &json!({"schema_version":3,"phonon_mode":"nosplit"})).unwrap();
         fs::write(cfg.work_dir.join("epw-state/current-config.toml"),fs::read(self.root.join("input.toml")).unwrap()).unwrap();
         store::write(&cfg.work_dir.join("epw-state/active.json"),&json!({"job":201,"state":"succeeded"})).unwrap();
@@ -1628,7 +1635,7 @@ fn numbered_preparation_keeps_clean_input_and_json_provenance() {
     let before = c.calls();
     success(c.numbered_cli(0, &["--stage", "scf", "--prepare-only"], None, "clean-prepare"));
     assert!(!c.root.join("run/epw-state/parameter-map.json").exists());
-    assert!(c.root.join("0000-config.toml").is_file());
+    assert!(c.root.join("run/epw-state/0000-config.toml").is_file());
     let input = c.root.join("run/1.qe-scf/scf.in");
     assert!(fs::read_to_string(&input).unwrap().starts_with("&CONTROL\n"));
     let receipt = c.direct_task();

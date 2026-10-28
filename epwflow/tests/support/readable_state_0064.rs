@@ -18,9 +18,9 @@ fn eight(c: &Case) {
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect::<Vec<_>>();
-    assert_eq!(names.len(), 8, "{names:?}");
-    for name in names {
-        assert!(name.ends_with(".log"));
+    assert_eq!(names.iter().filter(|n| n.ends_with(".log")).count(), 8, "{names:?}");
+    assert!(names.iter().all(|n| n.ends_with(".log") || n.ends_with("-config.toml")));
+    for name in names.into_iter().filter(|n| n.ends_with(".log")) {
         let text = fs::read_to_string(root.join(name)).unwrap();
         assert!(
             text.contains("【阶段】")
@@ -28,6 +28,51 @@ fn eight(c: &Case) {
                 && !text.contains("schema_version")
         );
     }
+}
+
+#[test]
+fn state_snapshots_keep_relative_paths_and_queued_configuration_across_directories() {
+    let c = Case::numbered();
+    c.stage_setup();
+    let input = c.root.join("input.toml");
+    let cfg = config::Config::load(&input).unwrap();
+    let mut value = serde_json::to_value(&cfg).unwrap();
+    value["work_dir"] = json!("run");
+    value["structure"] = json!("POSCAR");
+    value["kpath"] = json!("KPATH.in");
+    value["pseudos"]["Si"] = json!("POSCAR");
+    value["budget"]["ledger"] = json!("budget.json");
+    for p in value["programs"].as_object_mut().unwrap().values_mut() {
+        if let Some(path) = p.get("path").and_then(Value::as_str) {
+            if let Ok(relative) = std::path::Path::new(path).strip_prefix(&c.root) {
+                p["path"] = json!(relative);
+            }
+        }
+    }
+    let relative: config::Config = serde_json::from_value(value).unwrap();
+    let raw = toml::to_string_pretty(&relative).unwrap();
+    fs::write(&input, &raw).unwrap();
+    let mut cmd = Command::new(BINS[0]);
+    c.environment(&mut cmd, None);
+    cmd.current_dir(c.root.parent().unwrap()).args(["--config", input.to_str().unwrap(), "--check"]);
+    success(cmd.output().unwrap());
+    let frozen = c.root.join("run/epw-state/0000-config.toml");
+    assert_eq!(fs::read_to_string(&frozen).unwrap(), raw);
+    let saved = config::Config::load(&frozen).unwrap();
+    assert_eq!(saved.work_dir, c.root.join("run"));
+    assert_eq!(saved.structure, c.root.join("POSCAR"));
+    assert_eq!(saved.pseudos["Si"], c.root.join("POSCAR"));
+    assert_eq!(saved.budget.ledger, c.root.join("budget.json"));
+    assert_eq!(saved.programs.pw.path, c.root.join("pw.x"));
+    success(c.stage_submit("electronic", false));
+    c.numbered_change(|cfg| cfg.comparison.as_mut().unwrap().points_per_edge = 3);
+    success(c.numbered_cli(0, &["--check"], None, "relative-edited"));
+    success(c.stage_execute());
+    let points: Vec<[f64; 3]> = store::read(&c.root.join("run/3.qe-electronic/qe_eband/path-points.json")).unwrap();
+    assert_eq!(points.len(), 3, "排队任务必须继续使用旧的相对路径快照");
+    assert!(!c.root.join("0000-config.toml").exists());
+    assert!(!c.root.join("run/epw-state/0002-config.toml").exists());
+    eight(&c);
 }
 
 #[test]
@@ -164,10 +209,10 @@ fn readable_0064_versions_preserve_raw_text_and_old_missing_input_never_blocks_p
     success(c.numbered_cli(0, &["--check"], None, "readable-check-b"));
     fs::write(&p, &original).unwrap();
     success(c.numbered_cli(0, &["--check"], None, "readable-check-a2"));
-    assert_eq!(fs::read(c.root.join("0000-config.toml")).unwrap(), original);
-    assert_eq!(fs::read(c.root.join("0001-config.toml")).unwrap(), changed);
-    assert_eq!(fs::read(c.root.join("0002-config.toml")).unwrap(), original);
-    assert!(!c.root.join("0003-config.toml").exists());
+    assert_eq!(fs::read(c.root.join("run/epw-state/0000-config.toml")).unwrap(), original);
+    assert_eq!(fs::read(c.root.join("run/epw-state/0001-config.toml")).unwrap(), changed);
+    assert_eq!(fs::read(c.root.join("run/epw-state/0002-config.toml")).unwrap(), original);
+    assert!(!c.root.join("run/epw-state/0003-config.toml").exists());
     eight(&c);
     let root = c.root.join("run");
     store::write(
@@ -191,6 +236,11 @@ fn readable_0064_versions_preserve_raw_text_and_old_missing_input_never_blocks_p
     let t = task(&c, None);
     assert_eq!(t["state"], "submitted");
     assert!(root.join("1.qe-scf/1.qe-scf.jobs").is_file());
+    for n in 0..=2 {
+        let frozen = root.join(format!("epw-state/{n:04}-config.toml"));
+        assert_eq!(config::Config::load(&frozen).unwrap().work_dir, root,
+            "SCF 重算必须保留全部配置来源记录");
+    }
 }
 #[test]
 fn readable_0064_phonon_chain_and_fine_use_only_logs_jobs_and_scientific_outputs() {
@@ -509,7 +559,8 @@ fn readable_0064_external_phonon_import_keeps_only_imports_and_never_runs_pw_or_
     assert!(epwflow::foundation::stages::reusable(&cfg, Step::Phonon).unwrap());
     let state = cfg.work_dir.join("epw-state");
     assert!(state.join("imports/phonon-source.json").is_file());
-    assert_eq!(fs::read_dir(state).unwrap().count(), 9);
+    let versions = fs::read_dir(&state).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().ends_with("-config.toml")).count();
+    assert_eq!(fs::read_dir(state).unwrap().count(), 9 + versions);
 }
 
 #[test]
@@ -522,13 +573,13 @@ fn readable_0064_queued_allocation_keeps_its_raw_version_after_user_edits() {
         None,
         "readable-pinned-submit",
     ));
-    let original = fs::read(c.root.join("0000-config.toml")).unwrap();
+    let original = fs::read(c.root.join("run/epw-state/0000-config.toml")).unwrap();
     c.numbered_change(|cfg| cfg.comparison.as_mut().unwrap().points_per_edge = 3);
     success(c.numbered_cli(0, &["--check"], None, "readable-pinned-edit"));
-    let updated = fs::read(c.root.join("0001-config.toml")).unwrap();
+    let updated = fs::read(c.root.join("run/epw-state/0001-config.toml")).unwrap();
     assert_ne!(original, updated);
     success(c.stage_execute());
-    assert!(!c.root.join("0002-config.toml").exists());
+    assert!(!c.root.join("run/epw-state/0002-config.toml").exists());
     use epwflow::foundation::readable_state as logs;
     let doc = logs::read(&c.root.join("run"), Step::Electronic).unwrap();
     assert!(doc

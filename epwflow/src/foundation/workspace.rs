@@ -337,6 +337,7 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
                 if affected == step {
                     d.sections.retain(|name, _| {
                         matches!(name.as_str(), "工作区" | "阶段" | "阶段分配" | "下一步")
+                            || name.starts_with("配置快照 · ")
                     });
                 }
                 d.set("阶段", "科学状态", "待计算");

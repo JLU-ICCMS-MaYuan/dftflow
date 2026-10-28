@@ -201,7 +201,7 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 ## QE／EPW 编号工作区
 
 新 EPW 配置使用 `layout = "numbered"`、`work_dir = "."` 和根 `input.toml`。
-阶段重算覆盖旧内容，保留编号目录 inode 和当前打开的 Slurm 日志，不生成历史。`epw-state/` 只有八份中文阶段日志及按需保留的 `imports/`；作业号保存在各计算目录同名 `.jobs`。输入原文变化时，在输入旁增加 `NNNN-config.toml` 版本。
+阶段重算覆盖旧内容，保留编号目录 inode 和当前打开的 Slurm 日志，不生成历史。`epw-state/` 保存八份中文阶段日志、编号原文配置及按需保留的 `imports/`；作业号保存在各计算目录同名 `.jobs`。输入原文变化时，在工作区 `epw-state/` 增加 `NNNN-config.toml` 版本。
 八日志布局执行 `epw_clear` 会报告无需清理；旧布局仍支持预览并清空三类历史。详见 [清理用法](docs/overview/epwflow/epw_clear.md)。
 EPW 的 `[resources]` 不再接受 `wall_seconds`、`storage_bytes`，新脚本和提交命令不增加时长限制，旧时间／存储预算不再阻断任务；集群自身规则仍由 Slurm 管理。源配置应删除旧字段，冻结快照不手工改写，详见 [资源说明](epwflow/README.md#计算时长与存储)。
 修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。

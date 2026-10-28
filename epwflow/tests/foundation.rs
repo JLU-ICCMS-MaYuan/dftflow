@@ -158,7 +158,13 @@ fn readonly_check_all_modes_and_cross_directory() {
         let b=c.cmd(&["check","-c",c.root.join("input.toml").to_str().unwrap(),"--json"]).current_dir("/").output().unwrap();
         assert!(b.status.success()); assert_eq!(a,serde_json::from_slice::<serde_json::Value>(&b.stdout).unwrap());
         assert_eq!(a["environment"]["runtime_version"],"unverified");
-        assert!(!c.root.join("run").exists());assert!(!c.root.join("state").exists());assert!(!c.root.join("calls").exists());
+        let state=c.root.join("run/epw-state");
+        assert_eq!(fs::read_dir(c.root.join("run")).unwrap().count(),1);
+        assert_eq!(fs::read_dir(&state).unwrap().count(),2,"检查仅保存原文与来源记录");
+        assert_eq!(fs::read(state.join("0000-config.toml")).unwrap(),fs::read(c.root.join("input.toml")).unwrap());
+        assert!(state.join("1.qe-scf.log").is_file());
+        assert!(!epwflow::foundation::layout::enabled(&c.root.join("run")));
+        assert!(!c.root.join("state").exists());assert!(!c.root.join("calls").exists());
     }}
 }
 #[test]

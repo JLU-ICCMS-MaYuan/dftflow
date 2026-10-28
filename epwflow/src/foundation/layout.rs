@@ -12,7 +12,9 @@ pub struct Layout {
 }
 
 pub fn enabled(root: &Path) -> bool {
-    root.join("epw-state/1.qe-scf.log").is_file() || root.join("epw-state/layout.json").is_file()
+    root.join("epw-state/layout.json").is_file()
+        || super::readable_state::read(root, super::stages::Step::Scf)
+            .is_ok_and(|doc| doc.get("工作区", "布局") == Some("八阶段编号目录"))
 }
 pub fn initialize(cfg: &Config) -> Result<()> {
     super::readable_state::initialize(cfg)

@@ -35,6 +35,7 @@ pub mod native_config;
 pub mod phonon_import;
 
 pub mod readable_state;
+pub(crate) mod config_versions;
 pub mod wannier_diagnostics;
 
 pub mod legacy_state;

@@ -164,7 +164,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
     }
     if !o.config.is_file() {
         if let Some(work) = &o.work {
-            if work.join("epw-state/1.qe-scf.log").is_file() {
+            if super::layout::enabled(work) {
                 o.config = super::readable_state::current_config(work)?;
             }
         }
@@ -173,13 +173,26 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         && o.workspace_attempt.is_none()
         && o.workspace_task.is_none()
         && o.batch_finish.is_none()
+        && o.work.as_ref().is_none_or(|work| super::layout::enabled(work))
     {
-        let version = super::readable_state::backup_config(&o.config)?;
-        if let Ok(cfg) = super::config::Config::load(&o.config) {
-            if cfg.layout.as_deref() == Some("numbered") {
-                if !cfg.work_dir.join(".epwflow").exists() {
-                    super::readable_state::register_config(&cfg, &o.config, &version)?;
+        let (cfg, ordinary) = super::config::Config::load(&o.config)
+            .map(|cfg| (cfg, true))
+            .or_else(|error| {
+                if o.import_phonon.is_some() {
+                    super::config::Config::load_nested(&o.config).map(|cfg| (cfg, false))
+                } else {
+                    Err(error)
                 }
+            })?;
+        if cfg.layout.as_deref() == Some("numbered") && cfg.work_dir.join(".epwflow").exists() {
+            if !o.migrate_state {
+                super::run_state::ready(&cfg.work_dir)?;
+            }
+            // 显式迁移在旧任务与锁确认后保存原文，阻断时不提前创建新状态。
+        } else {
+            let version = super::readable_state::backup_config(&o.config)?;
+            if ordinary && cfg.layout.as_deref() == Some("numbered") {
+                super::readable_state::register_config(&cfg, &o.config, &version)?;
             }
         }
     }

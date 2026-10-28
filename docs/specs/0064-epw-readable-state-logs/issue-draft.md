@@ -186,3 +186,11 @@ epw_wannier --config "epwinput.toml" --migrate-state
 本次修复沿用 0064：旧能带输入只因赝势目录迁移而不匹配时，必须核对保存树中的实际赝势内容和完整输入，允许已有结果继续使用。赝势内容、其他科学参数、路径或证据不符仍拒绝；保留原始输入和 XML，不调用科学程序或提交重算。显式迁移命令可以重新核验此前转换失败的电子阶段，核验成功后才登记完成。
 
 本地修复已验证并安装：SiP₂ 第 3 步通过正式 `--migrate-state` 重新核验，保留批次 `converted-electronic` 和历史科学文件，清除旧输入冲突。Documentation Impact：SiP₂ README 和 Quickstart 已补重验命令，Overview 已说明路径与内容的区别；源码、受控回归、安装哈希和真实边界见 [验收](acceptance.md)。线上 Issue 仍由用户管理，本次不操作线上或推送。
+
+## 原始需求记录追加：编号配置统一存入状态目录
+
+> 我希望你能把0000-config.toml ，0001-config.toml都放在 epw-state目录里面，每次执行之前都对比 --config 指定的和最后一个编号的 toml 是不是相同，如果不同就保留到 epw-state里面一个新的。使用 issue 和 spec 完成。
+
+采用本条最新要求，替代原先配置同目录的保存位置：在工作区 epw-state 中保存原文编号快照，每次公开 CLI 执行前按字节比较最后一份，变化才递增；保留已有编号、内容和计算绑定。旧快照核对后迁入并更新阶段引用，科学输入输出不改写、不重算，活动／未知旧任务期间不移动其冻结配置。
+
+本条追加需求已实现并完成本地回归、正式 CLI 覆盖发布及 SiP₂ 无计算迁移验收；两份快照编号与字节不变，八日志绑定迁入后保持科学状态，重复调用不新增版本。Documentation Impact：Spec／Plan／Tasks／模型／契约／Quickstart／验收、相关 Overview、根及模块 README 和 SiP₂ README 均同步；详见 [本项验收](acceptance.md)。不操作线上 Issue，不推送。

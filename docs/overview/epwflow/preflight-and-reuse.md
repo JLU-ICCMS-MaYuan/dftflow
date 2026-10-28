@@ -47,7 +47,7 @@ epw_superconductivity -c "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd
 ## 从输入命令到开始计算
 
 1. 读取本次 `-c` 指定的配置，检查原生参数、结构、赝势、程序位置和 MPI／pool 设置。
-2. 比较最近一次配置版本。原文变了就在输入旁增加下一份 `0000-config.toml`、`0001-config.toml`；连续相同不重复保存，旧版不覆盖。
+2. 比较最近一次配置版本。原文变了就在解析后的 `work_dir/epw-state/` 增加下一份 `0000-config.toml`、`0001-config.toml`；连续相同不重复保存，旧版不覆盖。
 3. 读取对应阶段日志和计算目录中的 `.jobs`，向 Slurm 查询当前任务。活动或提交回执未知时拒绝覆盖和重复提交。
 4. 从编号计算目录解析真实结果：SCF／NSCF XML、PH 响应势、Wannier 模型、粗／细矩阵和原生谱。科学完成还需通过对应解析器检查，Slurm 的 COMPLETED 本身不足以证明成功。
 5. 已成功且相容的阶段和子任务跳过；缺失项生成或接续。明确重算覆盖本阶段的可替换内容，保留阶段目录本身和打开的 Slurm 日志。

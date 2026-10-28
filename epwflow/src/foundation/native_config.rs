@@ -436,7 +436,7 @@ impl Config {
 
     /// 仅供显式导入升级；普通配置入口继续拒绝嵌套格式。
     pub(crate) fn load_nested(path: &std::path::Path) -> Result<Self> {
-        let path = std::fs::canonicalize(path)?;
+        let path = super::paths::absolute(&std::env::current_dir()?, path)?;
         let document: Document = toml::from_str(&std::fs::read_to_string(&path)?)?;
         ensure_version(document.schema_version)?;
         ensure!(document.stages.get(SCF).is_some_and(|v| v.get("pw").is_some()),
@@ -444,7 +444,7 @@ impl Config {
         let runtime = decode(&document)?;
         let mut cfg = Self { runtime, document };
         cfg.validate()?;
-        cfg.resolve(path.parent().unwrap())?;
+        cfg.resolve(&super::config_versions::base(&path)?)?;
         Ok(cfg)
     }
 

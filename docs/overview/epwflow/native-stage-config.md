@@ -44,7 +44,11 @@ amass、temps 等数组保持原生名字，输入生成 Fortran 下标；nstemp
 
 TOML 无需填写 outdir、pseudo_dir、nat 等自动绑定项或 derived 表。程序内部登记有限规则，按结构、任务目录及核验后的数据生成；手填同一目标仍拒绝双重定义，未配置且未登记的生成参数同样停止。
 
-科学输入不再前置批量参数来源注释，也不再保存 `parameter-map.json` 或展开后的固定配置。每次配置驱动 CLI 比较原文字节，变化后在输入旁保存递增的 `NNNN-config.toml`；阶段日志分别指向当前输入版本和本阶段实际计算使用的版本。内部有效配置仅作为解析原文和生成原生输入的内存对象。
+科学输入不再前置批量参数来源注释，也不再保存 `parameter-map.json` 或展开后的固定配置。每次配置驱动 CLI 比较原文字节，变化后在解析后的 `work_dir/epw-state/` 保存递增的 `NNNN-config.toml`；阶段日志分别指向当前输入版本和本阶段实际计算使用的版本。内部有效配置仅作为解析原文和生成原生输入的内存对象。
+
+快照按最大编号原文字节比较，相同不新增；恢复历史内容仍保存下一编号。原始目录和 SHA-256 随每版写入第 1 步日志的 `配置快照` 小节，重跑 SCF 保留这些记录；读取快照时，结构、赝势、程序和工作区等相对路径仍按原输入目录解析，排队任务继续读取其冻结版本。
+
+原输入旁的旧编号快照会先核验工作区归属、目标内容及旧任务终态，独立写入状态目录、更新日志引用后才移除旧位置文件。冲突、缺来源记录或活动／未知旧任务时保留原文件并明确报错，不覆盖科学输入，不自动重算；迁移中断可重试。细节与验收见 [0064](../../specs/0064-epw-readable-state-logs/acceptance.md)。
 
 八主阶段示例见 [SiP₂ TOML](../../../examples/SiP2/epwinput.toml)，历史平层示例见 [MgB₂ TOML](../../../examples/MgB2/sugon-amd/run/epwflow/epwinput.toml)，细节见 [0061 契约](../../specs/0061-epw-flat-stage-config/contracts/config.md)与[验收记录](../../specs/0061-epw-flat-stage-config/acceptance.md)。注释移除及来源追溯见 [0062](../../specs/0062-epw-clean-input-headers/origin.md)。源码、私有构建和默认安装分别核对，旧安装不能据此视为已支持新格式。
 

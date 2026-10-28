@@ -3,8 +3,7 @@ use super::{config::Config, stages::Step, store};
 use anyhow::{ensure, Context, Result};
 use std::{
     collections::BTreeMap,
-    fs::{self, File, OpenOptions},
-    io::Write,
+    fs::{self, File},
     os::fd::AsRawFd,
     path::{Path, PathBuf},
 };
@@ -405,44 +404,7 @@ pub fn set_job(root: &Path, step: Step, name: &str, job: Option<u64>) -> Result<
 }
 
 pub fn backup_config(input: &Path) -> Result<PathBuf> {
-    let input = fs::canonicalize(input)
-        .with_context(|| format!("configuration: 无法读取 {}", input.display()))?;
-    let parent = input.parent().context("configuration: 输入缺父目录")?;
-    let _guard = DirectoryGuard::acquire(parent)?;
-    let bytes = fs::read(&input)?;
-    let mut versions = Vec::new();
-    for entry in fs::read_dir(parent)? {
-        let path = entry?.path();
-        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if let Some(number) = name
-            .strip_suffix("-config.toml")
-            .filter(|s| s.len() >= 4 && s.bytes().all(|c| c.is_ascii_digit()))
-        {
-            versions.push((number.parse::<u64>()?, path));
-        }
-    }
-    versions.sort_by_key(|(n, _)| *n);
-    if let Some((_, path)) = versions.last() {
-        if fs::read(path)? == bytes {
-            return Ok(path.clone());
-        }
-    }
-    let number = versions
-        .last()
-        .map(|(n, _)| n.checked_add(1).context("data_invalid: 配置版本编号溢出"))
-        .transpose()?
-        .unwrap_or(0);
-    let output = parent.join(format!("{number:04}-config.toml"));
-    let mut f = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&output)?;
-    f.write_all(&bytes)?;
-    f.sync_all()?;
-    File::open(parent)?.sync_all()?;
-    Ok(output)
+    super::config_versions::backup(input)
 }
 
 pub fn register_config(cfg: &Config, input: &Path, version: &Path) -> Result<()> {

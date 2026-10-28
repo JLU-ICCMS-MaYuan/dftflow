@@ -257,7 +257,7 @@ sbatch 5.epw-wannier/submit.sh
 
 路径点数改变补齐相应路径参考，不改变已有 Wannier 变换。受影响的派生现场直接更新，不创建历史。成功子任务重验复用，失败子任务在显式恢复后覆盖重试。格式、维度和来源相容性仍检查；差值供用户判断。
 
-每次配置驱动 CLI 检查原文；变化后在输入旁保存下一份 `NNNN-config.toml`，连续相同不重复。阶段提交脚本引用该原文版本，排队期间编辑当前输入不会改变该分配使用的参数。日志区分当前输入和计算使用的版本；不再保存展开配置、attempts 或请求指纹。预算消费不重置。
+每次配置驱动 CLI 检查原文；变化后在工作区 `epw-state/` 保存下一份 `NNNN-config.toml`，连续相同不重复。阶段提交脚本引用该原文版本，排队期间编辑当前输入不会改变该分配使用的参数。日志区分当前输入和计算使用的版本；不再保存展开配置、attempts 或请求指纹。预算消费不重置。
 
 ## 并行预检
 
@@ -304,6 +304,8 @@ bash scripts/build-native.sh test -p epwflow -p qeflow --locked
 6.epw-coarse.log
 7.epw-fine.log
 8.epw-superconductivity.log
+0000-config.toml         # 首次读取的配置原文
+0001-config.toml         # 与上一版不同才新增
 imports/                 # 外部声子导入时保留
 ```
 

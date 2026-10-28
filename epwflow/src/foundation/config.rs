@@ -118,7 +118,7 @@ impl Config {
         let raw=fs::read_to_string(&path).with_context(||format!("configuration: 无法读取 {}",path.display()))?;
         let mut c:Self=toml::from_str(&raw).with_context(||format!("configuration: {}: TOML 字段/类型错误",path.display()))?;
         c.validate()?;
-        c.resolve(path.parent().context("configuration: 配置缺少父目录")?)?;
+        c.resolve(&super::config_versions::base(&path)?)?;
         Ok(c)
     }
     pub fn validate(&self)->Result<()>{

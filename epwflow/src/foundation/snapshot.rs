@@ -85,7 +85,8 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
     fixed.structure = work.join(&init_name);
     fixed.kpath = config.kpath.as_ref().map(|_| work.join("KPATH-init"));
     let bytes = toml::to_string_pretty(&fixed)?.into_bytes();
-    if work.exists() {
+    let versions_only = super::config_versions::only_versions(&work)?;
+    if work.exists() && !versions_only {
         let existing = RunBinding::load(&work)?;
         existing.verify()?;
         ensure!(
@@ -162,7 +163,19 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
         };
         store::atomic_bytes(&staging.join("input-init.toml"), &bytes)?;
         store::write(&staging.join("run-binding.json"), &binding)?;
-        fs::rename(&staging, &work)?;
+        if versions_only {
+            // 原文版本已经位于目标；保留状态目录 inode，仅发布新初始化文件，绑定最后落盘。
+            let mut names = vec![init_name.as_str(), "input-init.toml"];
+            if fixed.kpath.is_some() { names.push("KPATH-init"); }
+            names.push("run-binding.json");
+            for name in names {
+                ensure!(!work.join(name).exists(), "input_conflict: 初始化目标已存在 {}", work.join(name).display());
+                fs::rename(staging.join(name), work.join(name))?;
+            }
+            fs::remove_dir(&staging)?;
+        } else {
+            fs::rename(&staging, &work)?;
+        }
         Ok(binding)
     })();
     if result.is_err() {

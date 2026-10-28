@@ -1,6 +1,6 @@
 # SiP₂：单命令导入历史声子并接续 Wannier
 
-`epwinput.toml` 使用 schema 2 八主阶段配置，与整合 0060/0061 的正式程序配套。`POSCAR` 从历史 SCF 输入保留原始晶格和 24 个原子的分数坐标；`KPATH.in` 沿用历史 Wannier 的 12 段路径。赝势使用配置中已有文件的绝对路径。
+`epwinput.toml` 使用 schema 2 八主阶段配置，与整合 0060/0061/0064 的正式程序配套。`POSCAR` 从历史 SCF 输入保留原始晶格和 24 个原子的分数坐标；`KPATH.in` 沿用历史 Wannier 的 12 段路径。赝势使用配置中已有文件的绝对路径。
 
 | 参数 | 当前设置 |
 | --- | --- |
@@ -95,7 +95,7 @@ SCF、NSCF 已完成，且没有其他活动任务占用该工作区时，可单
 epw_phonon --config "epwinput.toml" --stage electronic -s
 ```
 
-该阶段不调用 PH，不需要等待声子导入或 Wannier。也可以由下文的 Wannier 命令补齐；已有兼容任务正在运行时，应先等待该任务结束，避免重复提交。下表记录既有安装和现场的文件位置；0064 源码布局改为八份中文阶段日志与计算目录 `.jobs`，本轮没有转换这个真实现场。
+该阶段不调用 PH，不需要等待声子导入或 Wannier。也可以由下文的 Wannier 命令补齐；已有兼容任务正在运行时，应先等待该任务结束，避免重复提交。下表保留转换前的历史文件位置；当前 0064 布局、转换命令和验收见下文对应章节，续算以八份阶段日志与计算目录 `.jobs` 为准。
 
 | 位置 | 内容 |
 | --- | --- |
@@ -141,7 +141,7 @@ cd "/data/home/mayuan/code/dftflow/examples/SiP2"
 epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
 ```
 
-正式命令应来自 /data/home/mayuan/code/dftflow/bin/epwflow，不再使用 docs/local 中的验证副本。源码中的新导入流程保留用户 TOML 原文，在配置旁生成递增的 0000-config.toml 等版本；旧嵌套配置仅在显式导入路径受控读取，不再改写用户输入或创建历史目录。外部来源与转换信息保存在 epw-state/imports/，续算进度写入八份中文阶段日志。本说明不表示当前安装和已有 SiP₂ 现场已经转换。
+正式命令应来自 /data/home/mayuan/code/dftflow/bin/epwflow，不再使用 docs/local 中的验证副本。源码中的新导入流程保留用户 TOML 原文，在工作区 epw-state/ 内生成递增的 0000-config.toml 等版本；旧嵌套配置仅在显式导入路径受控读取，不再改写用户输入或创建历史目录。外部来源与转换信息保存在 epw-state/imports/，续算进度写入八份中文阶段日志。当前安装和 SiP₂ 转换验收见下文配置版本集中存放章节及 [0064 验收](../../docs/specs/0064-epw-readable-state-logs/acceptance.md)。
 
 来源约 29 GiB，提交前和作业内均需读取完整文件哈希；命令开始后短时间没有新输出通常是在核验大文件。一次提交完成本阶段，无需重复命令推进。可查询：
 
@@ -337,7 +337,7 @@ source "/data/home/mayuan/code/dftflow/scripts/env.sh"
 epw_wannier --config "epwinput.toml" --migrate-state
 ```
 
-这条命令不加 `-s`、`-r` 或 `--resume`，不提交新计算。程序先确认旧作业已退出，核验相容的现有科学结果，把当前状态转换为八份中文阶段日志，并保留外部声子的 `epw-state/imports/`。配置原文按 `0000-config.toml` 起递增保存到输入文件同目录。
+这条命令不加 `-s`、`-r` 或 `--resume`，不提交新计算。程序先确认旧作业已退出，核验相容的现有科学结果，把当前状态转换为八份中文阶段日志，并保留外部声子的 `epw-state/imports/`。配置原文按 `0000-config.toml` 起递增保存到工作区 `epw-state/`。
 
 **“撤下旧状态”就是删除，不是移动或备份。** 转换会删除固定范围内的旧 JSON、`history/`、`attempts/`、`native-jobs/`、`native-progress/`、`requests/`、`qe-data/` 等旧状态，以及被新日志替代的阶段完成回执和电子子步骤回执。`history/` 内若含旧拟合计算副本，也会随该历史目录一起删除；若仍需留存，应在转换前另存。当前八个编号计算目录、当前科学输入输出、`results/`、`external-phonon/save/` 与 `imports/` 导入资料保留。
 
@@ -349,7 +349,7 @@ cat "epw-state/5.epw-wannier.log"
 cat "epw-state/4.qe-phonon-nosplit.log"
 ```
 
-本例第 4 步仍为已导入声子的 `nosplit` 模式；其他算例按实际模式使用 `4.qe-phonon-coords.log` 或 `4.qe-phonon-index.log`。应有八份阶段 `.log` 和保留的 `imports/`，旧状态子目录不再作为续算依据。任务号查看各计算目录内同名 `.jobs`；已有终态旧作业不一定保留为当前新任务。
+本例第 4 步仍为已导入声子的 `nosplit` 模式；其他算例按实际模式使用 `4.qe-phonon-coords.log` 或 `4.qe-phonon-index.log`。应有八份阶段 `.log`、编号的 `NNNN-config.toml` 和保留的 `imports/`，旧状态子目录不再作为续算依据。任务号查看各计算目录内同名 `.jobs`；已有终态旧作业不一定保留为当前新任务。
 
 若出现活动作业、查询失败、无法确认的提交状态或未知文件，停止并保留报错，不要手工删除状态或日志。检查大文件可能耗时，转换期间不要同时运行其他 EPW 操作。某阶段显示“旧结果需要检查”时，按该日志中的具体原因处理，不能手工改为完成。
 
@@ -364,6 +364,22 @@ epw_wannier --config "epwinput.toml" --stage wannier --resume -s
 ```bash
 epw_wannier --config "epwinput.toml" --stage wannier -s
 ```
+
+## 配置版本集中在 epw-state（0064）
+
+继续编辑根目录的 `epwinput.toml`。每次公开 CLI 读取 `--config` 时，会和 `epw-state/` 中最大编号的 `NNNN-config.toml` 逐字节比较：相同不新增，不同保存下一编号，注释和排版原样保留。恢复为历史内容也会生成新版本。例如 A、A、B、A 依次调用后只生成三份快照。
+
+更新后的 CLI 会自动核验并迁入输入旁的旧编号版本，更新阶段和子任务的配置引用，确认完成后移除旧位置文件；编号和内容不变。无需手工移动，也不要删除状态。只迁移、不启动科学任务时运行：
+
+```bash
+cd "/data/home/mayuan/code/dftflow/examples/SiP2"
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+epw_wannier --config "epwinput.toml" --migrate-state
+```
+
+完成后应在 `epw-state/` 看到 `0000-config.toml`、`0001-config.toml` 等，根目录继续保留可编辑输入。每版原始目录和原文 SHA-256 登记于 `epw-state/1.qe-scf.log` 的 `配置快照` 小节；快照中的相对路径仍按原输入目录解析。不要手工修改快照或来源记录。活动／未知旧作业、目标冲突会阻断迁移并保留原文件；核实原因后重试同一命令，不能通过删除记录绕过。
+
+2026-10-28 已使用正式 CLI 在本例完成上述迁入：两份快照编号、字节不变，阶段科学状态及批次保留；重复同一命令不新增版本。输入和科学文件身份核对及发布哈希见 [0064 验收](../../docs/specs/0064-epw-readable-state-logs/acceptance.md)。
 
 ## 配置段与八个计算阶段对应（0061）
 

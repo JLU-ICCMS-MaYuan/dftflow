@@ -125,7 +125,8 @@ pub fn prepare_at(cfg: &Config, state: &Path) -> Result<Option<Conversion>> {
         let name = entry.file_name();
         let name = name.to_string_lossy();
         ensure!(
-            OLD.contains(&name.as_ref()) || name == "imports" || name.ends_with(".log"),
+            OLD.contains(&name.as_ref()) || name == "imports" || name.ends_with(".log")
+                || super::config_versions::number(&entry.path()).is_some(),
             "input_conflict: 旧状态存在尚未识别的内容 {}；保留现场，请先核对",
             entry.path().display()
         );
