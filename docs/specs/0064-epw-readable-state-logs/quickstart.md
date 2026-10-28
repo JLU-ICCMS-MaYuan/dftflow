@@ -44,3 +44,15 @@ cat "4.qe-phonon-nosplit/4.qe-phonon-nosplit.jobs"
 验证使用 `CARGO_PROFILE_TEST_DEBUG=0 bash scripts/build-native.sh test -p epwflow`，先运行新可读状态／配置／提交恢复用例，再运行已有相关公开入口回归。新二进制固定后才运行进程测试，不在执行中重新编译覆盖。
 
 本次真实重算只覆盖用户指定的 MgB₂ 工作区，SiP₂ 现场保持不动。安装、受控回归与真实数值分别记录，不以源码回归代替科学结果。
+
+## 已有 SiP₂ 的旧状态转换
+
+已发布 CLI 可用以下命令退出旧状态，不提交科学计算：
+
+```bash
+cd "/data/home/mayuan/code/dftflow/examples/SiP2"
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+epw_wannier --config "epwinput.toml" --migrate-state
+```
+
+旧可见 epw-state 在公开入口先自动转换；命令末尾可能提示已采用八阶段日志。检查实际 `epw-state/` 应为八份日志及保留的 imports。旧 JSON、旧历史和旧回执直接删除，不搬移、不备份；历史内计算副本也随历史删除。当前计算目录、results 和外部声子资料保留。需要的历史须预先另存，未知或活动任务阻断时不能手工删状态。完整说明见 [SiP₂ README](../../../examples/SiP2/README.md#旧-epw-state-转换为八份阶段日志0064)。本轮只追加操作文档，未转换真实现场。

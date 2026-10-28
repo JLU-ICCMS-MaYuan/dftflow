@@ -372,3 +372,34 @@ aniso     1370002
 ## 最终草案确认
 
 用户在本版草案落档及范围说明后明确答复“开始落地”，据此确认当前需求并授权实施；两项具体选择保留原文。当前不再等待重复批准。实施与验证见 [Plan](plan.md)、[Tasks](tasks.md) 和 [检查表](checklists/requirements.md)；线上链接待核验不等于本地实施未授权。
+
+## 2026-10-28 追加批注与实施授权
+
+用户选择的原说明：
+
+> 应看到八份阶段 .log，以及保留的 imports/；旧的 history/、native-jobs/、native-progress/ 等应已撤下。
+
+用户批注：
+
+> 撤到哪里了？是被删除了，还是被移动到别的地方了？
+
+用户选择的命令：
+
+```bash
+cd "/data/home/mayuan/code/dftflow/examples/SiP2"
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+
+epw_wannier --config "epwinput.toml" --migrate-state
+```
+
+用户批注：
+
+> 这个命令追加写到/data/home/mayuan/code/dftflow/examples/SiP2/README.md里面。这很重要
+
+用户选择的配置段：`[stages."5.epw-wannier"]`。用户批注：
+
+> 我挺喜欢这个名字的，我不希望 5.wannier90的名字。我原本就还是希望你能用1.qe-scf          4.qe-phonon-coords  7.epw-fine  2.qe-nscf         5.epw-wannier       8.epw-superconductivity 3.qe-electronic     6.epw-coarse      来标记 epwinput.toml里面的状态的
+
+> 开始。
+
+本项补充迁移文档：明确“撤下”为删除固定旧状态及其历史内容，不移动、不备份；当前计算目录、结果和 imports 保留。在 SiP₂ README 追加正式入口、无提交转换命令、检查及失败处理，不能把写入文档视为已转换真实 SiP₂。配置阶段命名调整由 [0061](../0061-epw-flat-stage-config/spec.md) 统筹。

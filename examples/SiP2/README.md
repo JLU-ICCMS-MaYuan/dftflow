@@ -324,3 +324,43 @@ iso/aniso 是两个独立原生方法作业；结束后继续执行同一命令�
 ```
 
 `external-phonon/save/` 专用于这份独立副本。校验有差异时先处理复制问题，不把数据移动到生产阶段目录，不重命名原始文件，也不把 `dvscf` 转成软链接冒充独立副本。上述比较覆盖来源中的文件，不会删除副本目录中额外存在的文件。
+
+## 旧 epw-state 转换为八份阶段日志（0064）
+
+本节用于仍有 `layout.json`、`native-active.json`、`history/` 等旧状态的工作区，替代上文用旧 JSON 回执判断当前状态的操作。不要先清空 `epw-state/`，也不要为整理目录重新计算 SCF、NSCF 或声子。
+
+使用已发布的新版 CLI，在本例目录执行：
+
+```bash
+cd "/data/home/mayuan/code/dftflow/examples/SiP2"
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+epw_wannier --config "epwinput.toml" --migrate-state
+```
+
+这条命令不加 `-s`、`-r` 或 `--resume`，不提交新计算。程序先确认旧作业已退出，核验相容的现有科学结果，把当前状态转换为八份中文阶段日志，并保留外部声子的 `epw-state/imports/`。配置原文按 `0000-config.toml` 起递增保存到输入文件同目录。
+
+**“撤下旧状态”就是删除，不是移动或备份。** 转换会删除固定范围内的旧 JSON、`history/`、`attempts/`、`native-jobs/`、`native-progress/`、`requests/`、`qe-data/` 等旧状态，以及被新日志替代的阶段完成回执和电子子步骤回执。`history/` 内若含旧拟合计算副本，也会随该历史目录一起删除；若仍需留存，应在转换前另存。当前八个编号计算目录、当前科学输入输出、`results/`、`external-phonon/save/` 与 `imports/` 导入资料保留。
+
+旧可见状态在命令入口自动转换，因此结尾可能提示“状态已采用八阶段日志，无需转换”。完成后查看实际文件：
+
+```bash
+ls -1 "epw-state"
+cat "epw-state/5.epw-wannier.log"
+cat "epw-state/4.qe-phonon-nosplit.log"
+```
+
+本例第 4 步仍为已导入声子的 `nosplit` 模式；其他算例按实际模式使用 `4.qe-phonon-coords.log` 或 `4.qe-phonon-index.log`。应有八份阶段 `.log` 和保留的 `imports/`，旧状态子目录不再作为续算依据。任务号查看各计算目录内同名 `.jobs`；已有终态旧作业不一定保留为当前新任务。
+
+若出现活动作业、查询失败、无法确认的提交状态或未知文件，停止并保留报错，不要手工删除状态或日志。检查大文件可能耗时，转换期间不要同时运行其他 EPW 操作。某阶段显示“旧结果需要检查”时，按该日志中的具体原因处理，不能手工改为完成。
+
+仅转换和查看状态不会重新拟合。需要调整拟合时修改当前 `epwinput.toml`，再显式恢复：
+
+```bash
+epw_wannier --config "epwinput.toml" --stage wannier --resume -s
+```
+
+作业结束后用普通命令核验和推进后处理：
+
+```bash
+epw_wannier --config "epwinput.toml" --stage wannier -s
+```

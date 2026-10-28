@@ -47,3 +47,38 @@
 ## 非目标
 
 不新增物理参数、科学计算或迁移命令，不清理现有结果，不改变默认安装，不把格式测试当作新的 Tc 或科学验收。
+
+## 2026-10-28 追加批注与实施授权
+
+用户选择的原说明：
+
+> 应看到八份阶段 .log，以及保留的 imports/；旧的 history/、native-jobs/、native-progress/ 等应已撤下。
+
+用户批注：
+
+> 撤到哪里了？是被删除了，还是被移动到别的地方了？
+
+用户选择的命令：
+
+```bash
+cd "/data/home/mayuan/code/dftflow/examples/SiP2"
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+
+epw_wannier --config "epwinput.toml" --migrate-state
+```
+
+用户批注：
+
+> 这个命令追加写到/data/home/mayuan/code/dftflow/examples/SiP2/README.md里面。这很重要
+
+用户选择的配置段：`[stages."5.epw-wannier"]`。用户批注：
+
+> 我挺喜欢这个名字的，我不希望 5.wannier90的名字。我原本就还是希望你能用1.qe-scf          4.qe-phonon-coords  7.epw-fine  2.qe-nscf         5.epw-wannier       8.epw-superconductivity 3.qe-electronic     6.epw-coarse      来标记 epwinput.toml里面的状态的
+
+> 开始。
+
+追加澄清答复原文：
+
+> 会有那个参数冲突啊？你先举例子，我再判断
+
+当前未确认程序子段或前缀方案。只读核对 SiP₂ 原配置：第 3 步 PW 能带的 degauss=0.02，而 DOS/PDOS 为 0.007349864435130998；第 5 步 Wannier90 的 bands_plot=true，postw90 为 false；第 6 步粗网格与比较调用的 epwread/epwwrite/band_plot 分别不同；第 8 步 iso/aniso 的 liso/laniso 相反。num_iter 两处均为 500，不构成当前取值冲突。对话先给具体例子，配置结构待用户判断；不修改代码或真实 TOML。
