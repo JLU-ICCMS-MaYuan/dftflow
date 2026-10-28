@@ -386,3 +386,17 @@ bands_plot = false            # 本调用只做 DOS
 不再有独立的 `[stages."5.wannier90"]`。能带 PW 的展宽在 `[stages."3.qe-electronic"]`，电子总 DOS 与投影 DOS 分别在 `.dos` 和 `.projwfc`；粗网格主计算与比较分别在 `[stages."6.epw-coarse"]` 和其 `.comparison`；超导两种方法分别在 `[stages."8.epw-superconductivity".iso]`、`.aniso`。同名字段分别作用于各自调用。
 
 本次仅改配置表头和参数归属位置，保留全部科学值，包括 96 个 Wannier 函数、Si/P 的 s,p 初始投影和 500 次迭代上限。历史平层版本仍可读取，已有编号配置副本不改写；仅此格式调整不改变科学复用标识。整理配置本身不转换 `epw-state`；需要转换时执行上节的 `--migrate-state`。
+
+### 转换后第 3 步仍引用旧赝势目录时
+
+旧 `eband.in`／QE XML 中记录的 `attempts/.../pp` 可以继续保留为历史计算信息，不手工改写它们，也不重建已删除目录。程序对当前配置生成的输入进行完整比较，仅允许 `CONTROL.pseudo_dir` 位置不同；还要逐元素核对保存 XML 的赝势文件映射、保存树中的 UPF 与当前配置赝势的 SHA-256。截断能、结构、带数、k 路径、赝势内容或上游批次不一致仍拒绝复用。
+
+若八日志转换后第 3 步仍显示“旧结果需要检查”，使用修复后的正式 CLI 重新执行以下命令：
+
+```bash
+cd "/data/home/mayuan/code/dftflow/examples/SiP2"
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+epw_wannier --config "epwinput.toml" --migrate-state
+```
+
+这次只重新核验并登记已有电子结果，不准备或运行科学输入、不提交 Slurm 作业。成功时第 3 步日志显示“已完成”，旧报错清除；失败则保留具体原因和原始科学文件，不自动重算。重复执行不会增加科学任务。

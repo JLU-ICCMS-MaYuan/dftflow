@@ -31,6 +31,77 @@ fn eight(c: &Case) {
 }
 
 #[test]
+fn migrated_electronic_rechecks_deleted_pseudo_directory_without_scientific_calls() {
+    use epwflow::foundation::{readable_state as log, stages};
+    let c = Case::numbered();
+    c.stage_setup();
+    success(c.stage_submit("electronic", false));
+    success(c.stage_execute());
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    assert!(stages::reusable(&cfg, Step::Electronic).unwrap());
+    let input = cfg.work_dir.join("3.qe-electronic/qe_eband/eband.in");
+    let old_pp = cfg.work_dir.join("epw-state/attempts/deleted/pp");
+    assert!(!old_pp.exists());
+    let actual = fs::read_to_string(&input).unwrap().replace(
+        &format!("pseudo_dir = '{}'", c.root.display()),
+        &format!("pseudo_dir = '{}'", old_pp.display()),
+    );
+    assert!(actual.contains(&old_pp.to_string_lossy().to_string()));
+    fs::write(&input, &actual).unwrap();
+    let scientific_before = epwflow::qe_data::save::files(&Step::Electronic.directory(&cfg)).unwrap();
+    let before = c.calls();
+    let post_before = c.post_calls();
+    let submits = fs::read(c.root.join("submissions")).unwrap_or_default();
+    let needs_check = || {
+        log::update(&cfg.work_dir, Step::Electronic, |d| {
+            d.set("阶段", "状态", "旧结果需要检查");
+            d.set("阶段", "科学状态", "尚未检查");
+            d.set("问题", "原因", "input_conflict: 已有 PW 能带输入与当前配置不符");
+            Ok(())
+        }).unwrap();
+    };
+    needs_check();
+    success(c.numbered_cli(1, &["--migrate-state"], None, "pseudo-relocation"));
+    assert!(stages::reusable(&cfg, Step::Electronic).unwrap());
+    assert!(log::read(&cfg.work_dir, Step::Electronic).unwrap().sections.get("问题").is_none());
+    success(c.numbered_cli(1, &["--migrate-state"], None, "pseudo-relocation-again"));
+    assert_eq!(scientific_before, epwflow::qe_data::save::files(&Step::Electronic.directory(&cfg)).unwrap());
+    assert!(!old_pp.exists(), "不得重建旧目录来绕过检查");
+
+    let saved_pseudo = cfg.work_dir.join("3.qe-electronic/qe_eband/out/scf.save/POSCAR");
+    let saved = fs::read(&saved_pseudo).unwrap();
+    for failure in ["pseudo-content", "pseudo-missing", "cutoff", "path", "dependency"] {
+        needs_check();
+        match failure {
+            "pseudo-content" => fs::write(&saved_pseudo, "different UPF").unwrap(),
+            "pseudo-missing" => fs::remove_file(&saved_pseudo).unwrap(),
+            "cutoff" => fs::write(&input, actual.replace("ecutwfc = 40", "ecutwfc = 41")).unwrap(),
+            "path" => fs::write(&input, actual.replacen("K_POINTS crystal", "K_POINTS tpiba", 1)).unwrap(),
+            "dependency" => log::update(&cfg.work_dir, Step::Electronic, |d| {
+                d.set("依赖", "nscf 批次", "other-batch"); Ok(())
+            }).unwrap(),
+            _ => unreachable!(),
+        }
+        if failure == "cutoff" {
+            assert_ne!(fs::read_to_string(&input).unwrap(), actual);
+        }
+        let out = c.numbered_cli(1, &["--migrate-state"], None, failure);
+        assert!(!out.status.success(), "{failure}: {}", String::from_utf8_lossy(&out.stdout));
+        assert_ne!(log::read(&cfg.work_dir, Step::Electronic).unwrap().get("阶段", "科学状态"), Some("已完成"));
+        fs::write(&saved_pseudo, &saved).unwrap();
+        fs::write(&input, &actual).unwrap();
+        let dependency = log::read(&cfg.work_dir, Step::Nscf).unwrap().get("阶段", "批次").unwrap().to_string();
+        log::update(&cfg.work_dir, Step::Electronic, |d| { d.set("依赖", "nscf 批次", dependency); Ok(()) }).unwrap();
+    }
+    success(c.numbered_cli(1, &["--migrate-state"], None, "pseudo-restored"));
+    assert!(stages::reusable(&cfg, Step::Electronic).unwrap());
+    assert_eq!(before, c.calls());
+    assert_eq!(post_before, c.post_calls());
+    assert_eq!(submits, fs::read(c.root.join("submissions")).unwrap_or_default());
+    eight(&c);
+}
+
+#[test]
 fn grouped_stage_configuration_runs_and_resumes_wannier_without_rebuilding_upstream() {
     let c = Case::numbered();
     c.stage_setup();

@@ -178,3 +178,11 @@ epw_wannier --config "epwinput.toml" --migrate-state
 > 开始。
 
 本项补充迁移文档：明确“撤下”为删除固定旧状态及其历史内容，不移动、不备份；当前计算目录、结果和 imports 保留。在 SiP₂ README 追加正式入口、无提交转换命令、检查及失败处理，不能把写入文档视为已转换真实 SiP₂。配置阶段命名调整由 [0061](../0061-epw-flat-stage-config/spec.md) 统筹。
+
+## 原始需求记录追加：SiP₂ 旧赝势目录接续（2026-10-28）
+
+> 接续还有一处问题：第 3 步日志报输入不符，[eband.in 第 5 行 (line 5)](/data/home/mayuan/code/dftflow/examples/SiP2/3.qe-electronic/qe_eband/eband.in:5) 仍引用已删除的旧 `attempts/.../pp` 赝势目录。这是后续需要处理的兼容问题；本轮没有改写科学结果或提交重算。把这个处理好
+
+本次修复沿用 0064：旧能带输入只因赝势目录迁移而不匹配时，必须核对保存树中的实际赝势内容和完整输入，允许已有结果继续使用。赝势内容、其他科学参数、路径或证据不符仍拒绝；保留原始输入和 XML，不调用科学程序或提交重算。显式迁移命令可以重新核验此前转换失败的电子阶段，核验成功后才登记完成。
+
+本地修复已验证并安装：SiP₂ 第 3 步通过正式 `--migrate-state` 重新核验，保留批次 `converted-electronic` 和历史科学文件，清除旧输入冲突。Documentation Impact：SiP₂ README 和 Quickstart 已补重验命令，Overview 已说明路径与内容的区别；源码、受控回归、安装哈希和真实边界见 [验收](acceptance.md)。线上 Issue 仍由用户管理，本次不操作线上或推送。

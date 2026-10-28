@@ -13,6 +13,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+mod pw_reuse;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -379,18 +380,12 @@ fn validate_pw(cfg: &Config) -> Result<()> {
     );
     qf_io::qe_completion::checked_log(&dir.join("eband.out"), false)?;
     let qe = QeSettings::from_config(cfg)?;
-    let normalize = |text: &str| {
-        text.lines()
-            .map(|line| line.split('!').next().unwrap_or(""))
-            .collect::<String>()
-            .split_whitespace()
-            .collect::<String>()
-    };
-    ensure!(
-        normalize(&fs::read_to_string(dir.join("eband.in"))?)
-            == normalize(&qe.path_input("./out", &path_points(cfg)?)?),
-        "input_conflict: 已有 PW 能带输入与当前配置不符"
-    );
+    pw_reuse::validate(
+        &fs::read_to_string(dir.join("eband.in"))?,
+        &qe.path_input("./out", &path_points(cfg)?)?,
+        &dir.join(format!("out/{}.save", cfg.qe.prefix)),
+        &cfg.pseudos,
+    )?;
     let geo = crate::qe_data::xml::validate_save(&dir.join("out"), &cfg.qe.prefix, &qe, None)?;
     let states = crate::qe_data::nscf::parse_xml(
         &dir.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix)),

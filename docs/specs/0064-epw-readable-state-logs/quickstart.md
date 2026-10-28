@@ -56,3 +56,17 @@ epw_wannier --config "epwinput.toml" --migrate-state
 ```
 
 旧可见 epw-state 在公开入口先自动转换；命令末尾可能提示已采用八阶段日志。检查实际 `epw-state/` 应为八份日志及保留的 imports。旧 JSON、旧历史和旧回执直接删除，不搬移、不备份；历史内计算副本也随历史删除。当前计算目录、results 和外部声子资料保留。需要的历史须预先另存，未知或活动任务阻断时不能手工删状态。完整说明见 [SiP₂ README](../../../examples/SiP2/README.md#旧-epw-state-转换为八份阶段日志0064)。本轮只追加操作文档，未转换真实现场。
+
+## 已迁移的旧能带赝势路径报错
+
+旧 `eband.in`／QE XML 中记录的 `attempts/.../pp` 可以继续保留为历史计算信息，不手工改写它们，也不重建已删除目录。程序对当前配置生成的输入进行完整比较，仅允许 `CONTROL.pseudo_dir` 位置不同；还要逐元素核对保存 XML 的赝势文件映射、保存树中的 UPF 与当前配置赝势的 SHA-256。截断能、结构、带数、k 路径、赝势内容或上游批次不一致仍拒绝复用。
+
+若八日志转换后第 3 步仍显示“旧结果需要检查”，使用修复后的正式 CLI 重新执行以下命令：
+
+```bash
+cd "/data/home/mayuan/code/dftflow/examples/SiP2"
+source "/data/home/mayuan/code/dftflow/scripts/env.sh"
+epw_wannier --config "epwinput.toml" --migrate-state
+```
+
+这次只重新核验并登记已有电子结果，不准备或运行科学输入、不提交 Slurm 作业。成功时第 3 步日志显示“已完成”，旧报错清除；失败则保留具体原因和原始科学文件，不自动重算。重复执行不会增加科学任务。

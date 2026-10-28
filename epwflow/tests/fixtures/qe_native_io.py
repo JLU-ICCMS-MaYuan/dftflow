@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """实际 QE 文件层级的独立进程替身；不计算物理量或产生科学参考。"""
-import math, re, struct, sys
+import math, re, struct, sys, shutil
 from pathlib import Path
 import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parent
@@ -111,6 +111,13 @@ if kind=='pw':
         points=[[0.,0.,0.,1/16]]*16
     save.mkdir(parents=True,exist_ok=True)
     root=ET.Element('espresso'); output=ET.SubElement(root,'output')
+    atomic_species=ET.SubElement(output,'atomic_species')
+    for line in species.strip().splitlines():
+        name, mass, pseudo=line.split(None,2)
+        pseudo=pseudo.strip("'").replace("''", "'")
+        entry=ET.SubElement(atomic_species,'species',name=name)
+        ET.SubElement(entry,'pseudo_file').text=pseudo
+        shutil.copyfile(Path(value('pseudo_dir', './'))/pseudo, save/pseudo)
     conv=ET.SubElement(output,'convergence_info');ET.SubElement(conv,'convergence_achieved').text='true'
     structure=ET.SubElement(output,'atomic_structure',nat=str(len(atoms)),alat=str(alat))
     pos=ET.SubElement(structure,'atomic_positions')

@@ -166,7 +166,7 @@ Wannier 配置支持可选布尔值 `guiding_centres`，显式透传原生中心
 | `-s`／`-r` | 提交一个阶段分配，或在已登记分配中同步执行；回执不能替代数值完成 |
 | `--status -w W [--refresh] [--json]` | 查询记录，refresh 读取 allocation 并结算；未知预算不退款 |
 | `--resume -w W -s/-r` | 固定快照恢复，重验完成证据；失败现场保留，活动或未知任务不重提；粗／细检查点重验完整输出、归档失败尝试并复用成功展宽 |
-| `--migrate-state` | 显式迁移旧编号隐藏状态，保留历史与预算，不提交作业 |
+| `--migrate-state` | 将旧状态转换为八日志；可重新核验此前转换失败的电子阶段，不提交作业。删除固定旧状态和历史目录，保留当前科学数据、配置版本、导入资料及预算 |
 | `--import M` | 核查、隔离并登记本阶段既有清单 |
 | `--import-phonon SAVE` | 仅 epw_phonon；核验原始 PH save 并自动完成 QE 声子后处理，既有 SCF/NSCF 必须有效；支持只读检查、准备和显式恢复 |
 | `--export-comparison S --output D` | 仅 epw_wannier，从既有带哈希来源导出原生比较数据 |
