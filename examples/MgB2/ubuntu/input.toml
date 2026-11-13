@@ -184,7 +184,15 @@ bands_num_points = 1
 # 能窗为绝对 eV；conv_tol 为 Å²；num_iter 等为迭代次数。
 num_wann = 5
 projections = ["B:pz", "f=0.5,0.0,0.5:s", "f=0.0,0.5,0.5:s", "f=0.5,0.5,0.5:s"]
-exclude_bands = []
+# Mg 2s/2p 半芯态：原始带编号 1–4；余下 12 带用于 5 个 Wannier 函数。
+exclude_bands = [1, 2, 3, 4]
+# 四界均为绝对 eV（QE 能量零点），不是相对 E_F。
+# Mori 第 19–20 页：8.8 - 7.469822726 = E_F 上方约 1.330177274 eV。
+# 当前 NSCF E_F=9.183946302 eV，故冻结上界取 10.51412358 eV。
+dis_win_min = -3.40915530
+dis_win_max = 26.41812126
+dis_froz_min = -3.40915530
+dis_froz_max = 10.51412358
 num_iter = 1000
 conv_tol = 1e-10
 conv_window = 5
