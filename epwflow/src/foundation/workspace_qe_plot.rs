@@ -151,6 +151,9 @@ fn electronic_request(cfg: &Config, leaf: &str) -> Result<Request> {
 }
 
 pub fn electronic(cfg: &Config, leaf: &str) -> Result<()> {
+    if leaf == "qe_eband" {
+        super::band_ranges::generate(cfg, Step::Electronic)?;
+    }
     let pdos = if leaf == "qe_eledos" {
         super::workspace_pdos::run(cfg)
     } else {
@@ -307,6 +310,7 @@ pub fn phonon(cfg: &Config) -> Result<()> {
 
 pub fn refresh(cfg: &Config, step: Step) -> Result<()> {
     match step {
+        Step::Scf | Step::Nscf => super::band_ranges::generate(cfg, step),
         Step::Electronic => {
             electronic(cfg, "qe_eband")?;
             electronic(cfg, "qe_eledos")
@@ -318,6 +322,12 @@ pub fn refresh(cfg: &Config, step: Step) -> Result<()> {
 
 pub fn pending(cfg: &Config, target: Step) -> Result<bool> {
     for step in stages::execution_steps(cfg, target) {
+        if matches!(step, Step::Scf | Step::Nscf | Step::Electronic)
+            && stages::reusable(cfg, step)?
+            && super::band_ranges::pending(cfg, step)?
+        {
+            return Ok(true);
+        }
         if !matches!(step, Step::Electronic | Step::Phonon) || !stages::reusable(cfg, step)? {
             continue;
         }

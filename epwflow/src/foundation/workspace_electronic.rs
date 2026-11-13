@@ -554,6 +554,8 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                 )?;
                 persist_receipt(cfg, "pw-bands", &receipt)?;
             }
+            // 路径本征值一经核验就画范围图，不等待 bands.x、DOS 或投影。
+            super::band_ranges::generate(cfg, Step::Electronic)?;
             if reusable(cfg, "bands")? {
                 println!("reuse: electronic/bands");
             } else {

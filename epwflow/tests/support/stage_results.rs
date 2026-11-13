@@ -110,7 +110,7 @@ impl Case {
             args.push("--resume");
         }
         self.numbered_cli(
-            if stage == "electronic" { 0 } else { 1 },
+            if matches!(stage, "scf" | "nscf" | "electronic" | "phonon") { 0 } else { 1 },
             &args,
             None,
             "stage-submit",
@@ -609,4 +609,77 @@ fn failed_wannier_generation_error_recovers_without_archived_inputs() {
         2
     );
     assert!(c.root.join("run/5.epw-wannier/scf.ukk").is_file());
+}
+
+#[test]
+fn band_ranges_are_drawn_inside_each_stage_and_repaired_without_scientific_calls() {
+    let c = Case::numbered();
+    c.stage_setup();
+    for (stage, directory) in [
+        ("scf", "1.qe-scf/plots"),
+        ("nscf", "2.qe-nscf/plots"),
+        ("electronic", "3.qe-electronic/qe_eband/plots"),
+    ] {
+        success(c.stage_submit(stage, false));
+        success(c.stage_execute());
+        let image = c.root.join("run").join(directory).join(format!("{stage}-band-ranges.png"));
+        assert!(image.is_file(), "阶段分配结束必须已有图：{}", image.display());
+        let mut reader = png::Decoder::new(fs::File::open(&image).unwrap()).read_info().unwrap();
+        let info = reader.info();
+        assert_eq!(info.pixel_dims.unwrap().xppu, 11812);
+        assert!(info.width >= 3000 && info.height >= 2000);
+        let mut pixels = vec![0;reader.output_buffer_size()];
+        reader.next_frame(&mut pixels).unwrap();
+        let report:Value=store::read(&image.with_extension("json")).unwrap();
+        assert_eq!(report["stage"],stage);
+        if stage == "scf" { assert!(!c.root.join("run/2.qe-nscf/out").exists(),"SCF 图不得等待 NSCF"); }
+        if stage == "nscf" { assert!(!c.root.join("run/3.qe-electronic/qe_eband/out").exists(),"NSCF 图不得等待 electronic"); }
+    }
+    let before = c.calls();
+    let post = c.post_calls();
+    let image = c.root.join("run/2.qe-nscf/plots/nscf-band-ranges.png");
+    fs::remove_file(&image).unwrap();
+    success(c.stage_submit("nscf", false));
+    success(c.stage_execute());
+    assert!(image.is_file());
+    assert_eq!(before,c.calls()); assert_eq!(post,c.post_calls());
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    assert!(!epwflow::foundation::workspace_science::post_pending(&cfg,epwflow::foundation::stages::Step::Electronic).unwrap());
+    let moved=c.root.join("moved-results");
+    copy_results(&c.root.join("run/results"),&moved);
+    let copied=moved.join("2.qe-nscf/band-ranges/nscf-band-ranges.png");
+    fs::remove_file(&copied).unwrap();
+    let out=Command::new(BINS[1]).args(["--plot","--results",moved.to_str().unwrap()]).env("PATH","").output().unwrap();
+    success(out); assert!(copied.is_file());
+    assert_eq!(before,c.calls()); assert_eq!(post,c.post_calls());
+}
+
+#[test]
+fn electronic_band_ranges_precede_dos_failure_and_invalid_windows_keep_diagnostics() {
+    let c = Case::numbered();
+    c.stage_setup();
+    c.numbered_change(|cfg| {
+        cfg.wannier.selection_mode=qf_wannier::SelectionMode::EnergyOnly;
+        cfg.wannier.exclude_bands.clear();
+        cfg.wannier.num_wann=5;
+        cfg.wannier.outer_window_ev=Some([-1.,6.]);
+        cfg.wannier.frozen_window_ev=Some([-1.,4.]);
+        cfg.wannier.frozen_max_ev=None;
+        cfg.wannier.energy_reference=config::EnergyReference::QeZero;
+    });
+    c.script("dos.x","#!/bin/sh\nexit 17\n");
+    success(c.stage_submit("electronic",false));
+    assert!(!c.stage_execute().status.success());
+    let root=c.root.join("run");
+    for path in ["1.qe-scf/plots/scf-band-ranges.json","2.qe-nscf/plots/nscf-band-ranges.json","3.qe-electronic/qe_eband/plots/electronic-band-ranges.json"] {
+        let r:Value=store::read(&root.join(path)).unwrap();
+        assert_eq!(r["sample_capacity_ok"],false,"{path}");
+        assert!(root.join(path).with_extension("png").is_file());
+    }
+    assert!(!root.join("3.qe-electronic/qe_eledos/dos.exitcode").is_file()
+        || fs::read_to_string(root.join("3.qe-electronic/qe_eledos/dos.exitcode")).unwrap().trim()!="0");
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    let states=epwflow::qe_data::nscf::parse_xml(&root.join(format!("2.qe-nscf/out/{}.save/data-file-schema.xml",cfg.qe.prefix))).unwrap();
+    let error=epwflow::interpolation::epw_config::EpwConfig::from_config(&cfg).unwrap().with_fermi(states.fermi).unwrap().with_bands(&states.eigenvalues).unwrap().window_selection().unwrap_err();
+    assert!(error.to_string().contains("不自动裁剪"));
 }

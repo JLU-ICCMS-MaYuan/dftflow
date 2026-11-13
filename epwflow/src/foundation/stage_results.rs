@@ -393,6 +393,8 @@ pub fn redraw(results: &Path) -> Result<PathBuf> {
         for f in crate::qe_data::save::files(&dir)? {
             if f.relative_path.to_string_lossy().ends_with(".plot.json") {
                 super::workspace_plot::redraw(&dir.join(f.relative_path))?;
+            } else if f.relative_path.to_string_lossy().ends_with("-band-ranges.json") {
+                super::band_ranges::redraw(&dir.join(f.relative_path))?;
             }
         }
         if stage.starts_with("4.qe-phonon-") {

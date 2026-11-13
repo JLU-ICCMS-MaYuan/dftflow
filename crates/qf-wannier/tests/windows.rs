@@ -1,6 +1,15 @@
 use qf_wannier::{select_default, Bounds, Reference};
 
 #[test]
+fn diagnostic_bounds_survive_capacity_failure_and_fully_occupied_scf() {
+    let bands = vec![vec![-10., -2., -1.], vec![-9., -2., -0.5]];
+    let bounds = Bounds { dis_win_max: Some(4.), ..Bounds::default() };
+    let actual = qf_wannier::energy_only_bounds(&bands, 0., &bounds, Reference::Absolute).unwrap();
+    assert_eq!(actual, [-10.02, 4., -10.02, 2.]);
+    assert!(qf_wannier::select_energy_only(&bands, 0., 2, &[], &bounds, Reference::Absolute).is_err());
+}
+
+#[test]
 fn energy_only_uses_fermi_and_never_caps_requested_bound() {
     let bands = vec![vec![-10., -2., -1., 3., 6.], vec![-9., -2., -0.5, 4., 8.]];
     let s = qf_wannier::select_energy_only(

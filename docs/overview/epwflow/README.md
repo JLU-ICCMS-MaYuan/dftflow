@@ -398,3 +398,12 @@ sacct 明确报告 accounting storage is disabled 时，EPW 使用 scontrol 核�
 共享 qe_payload 规则按名称排除 charge-density、wfc／prefix.wfcN／evc 原始数据。EPW 的核验目录清单不包含这些文件；复制遍历独立，仍复制原始数据，不做复制前后的数据完整性比对。旧 Identity、快照文件清单、QE 交付、电子参考及导入记录在使用时忽略对应条目，不读取其内容或以旧大小／哈希／存在性阻断。
 
 XML 与日志的原生完成和收敛语义仍检查；结构、赝势、程序及其他产物维持核验。共享 qeflow 声子初始化不再预先检查电荷密度／波函数的非空和存在性，仅保留 XML；原生程序实际读取错误正常传播。该条款替代历史设计中只针对这两类数据的核验要求，目录和科学参数不变。需求和验收见 [0067](../../specs/0067-unchecked-density-wavefunctions/spec.md)。
+
+
+## 三个前置电子阶段的能带范围图（0068）
+
+SCF、NSCF 各自科学数据检查完成后，在同一阶段分配内立即生成 `plots/scf-band-ranges.png`、`plots/nscf-band-ranges.png`。electronic 的路径 PW 检查完成后立即生成 `qe_eband/plots/electronic-band-ranges.png`，不等待 bands.x、DOS、投影、声子或 Wannier。已有结果复用可补图，图片不参与科学结果身份。
+
+横轴是原始 1-based band 编号，纵轴是 E−E_F；灰色竖线和端点表示采样内逐带最低／最高能量，跨费米能带分别着色。右侧显示四个可解析窗口的绝对／相对能量，重合窗口交错绘制；脚注显示能量冻结态范围、外窗态数与 num_wann。纯能量冻结态超限仍出图并标记，正式 Wannier 检查继续拒绝；未解析边界不冒充实际值。自动边界是本阶段采样预览，最终拟合仍使用 NSCF 来源。
+
+SCF 使用自身 XML 和 E_F，NSCF 使用自身均匀采样，electronic 使用路径 XML 和 NSCF E_F。三者范围只代表各自采样，不能作为完整布里渊区保证。PNG 为 300 DPI，同时保存 SVG／CSV／JSON，发布到 `results/<阶段>/band-ranges/`；结果包可只依赖包内报告离线重绘。只读取 XML 和绘图配置，不核验密度或原始波函数。实现、边界和验证见 [0068](../../specs/0068-epw-stage-band-ranges/spec.md)。

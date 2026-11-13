@@ -192,7 +192,7 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
         crate::delivery::decay::refresh(cfg)?;
     }
     for step in stages::execution_steps(cfg, target) {
-        if matches!(step, Step::Electronic | Step::Phonon) && stages::reusable(cfg, step)? {
+        if matches!(step, Step::Scf | Step::Nscf | Step::Electronic | Step::Phonon) && stages::reusable(cfg, step)? {
             super::workspace_qe_plot::refresh(cfg, step)?;
         }
     }

@@ -416,3 +416,16 @@ epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
 按用户明确要求，SCF／NSCF 的原始电荷密度和波函数不参与完整性核对，包括 charge-density 的 dat／hdf5／xml、wfc 的 dat／hdf5、prefix.wfcN 和旧 evc.dat。复用、完成检查、导入、电子后处理和复制交接均不对这些文件计算哈希，也不比较大小、非空、存在性或文件集合。历史记录中的对应条目在内存中忽略，不重写历史文件，不设严格模式开关。
 
 实际复制仍传递这些数据；QE／EPW／projwfc 在计算时仍读取所需文件，实际复制或原生读取错误照常报告。结构、赝势、程序、原生输入、XML、日志、收敛及其他科学产物仍核验。当前目录、12 MPI、Slurm header／launcher 和覆盖构建约定保持，见 [0067](../docs/specs/0067-unchecked-density-wavefunctions/spec.md)。
+
+
+## SCF／NSCF／electronic 完成后即时绘制能带范围
+
+原有阶段命令无需新增参数：SCF、NSCF 在阶段分配内完成数据核验后立即画图；electronic 的路径 PW 完成核验后即画图，不等待 DOS。三个图的位置分别为：
+
+- `1.qe-scf/plots/scf-band-ranges.png`
+- `2.qe-nscf/plots/nscf-band-ranges.png`
+- `3.qe-electronic/qe_eband/plots/electronic-band-ranges.png`
+
+各自同时保存 SVG／CSV／JSON，并发布到根 `results/<阶段>/band-ranges/`。图中显示每条带在当前采样上的 min/max、跨费米带、四个可解析窗口、逐 k 点能量冻结态范围及 num_wann。SCF／NSCF 用各自 E_F，electronic 用 NSCF E_F。自动窗口为各阶段采样预览，最终选窗仍由 NSCF 决定；边界尚未解析时明确标注。PNG 至少 300 DPI。
+
+复用已有结果时可补图，不重算科学任务；不要为补图使用强制重算 SCF 的 `--resume`。冻结态超限仍留下诊断图，但不能继续提交不合法的 Wannier 窗口，也不会自动缩窗或增加 num_wann。可移动结果包的 `--plot --results "results"` 只读取包内报告重绘。需求与验收见 [0068](../docs/specs/0068-epw-stage-band-ranges/spec.md)。

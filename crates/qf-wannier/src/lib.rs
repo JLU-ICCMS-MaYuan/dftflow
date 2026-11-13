@@ -67,13 +67,8 @@ pub fn select_energy_only(
 ) -> Result<Selection> {
     ensure!(fermi_ev.is_finite(), "data_invalid: Fermi 能非有限");
     let (kept, excluded) = kept_bands(bands, num_wann, exclude_bands)?;
-    let offset = match reference {
-        Reference::Absolute => 0.0,
-        Reference::Fermi => fermi_ev,
-        Reference::UpstreamRelative => {
-            anyhow::bail!("configuration: 纯能量模式仅接受绝对或 Fermi 能量参考")
-        }
-    };
+    let [lower, upper, frozen_lower, frozen_upper] =
+        energy_only_bounds(&kept, fermi_ev, overrides, reference)?;
     let homo = kept
         .iter()
         .flatten()
@@ -88,40 +83,11 @@ pub fn select_energy_only(
         .filter(|&e| e > fermi_ev)
         .reduce(f64::min)
         .context("data_invalid: 没有未占据态")?;
-    let bound = |value: Option<f64>, default: f64| -> Result<f64> {
-        let result = value.map(|v| v + offset).unwrap_or(default);
-        ensure!(result.is_finite(), "data_invalid: 能窗非有限或换算溢出");
-        Ok(result)
-    };
-    let lower = bound(
-        overrides.dis_win_min,
-        kept.iter().flatten().copied().fold(f64::INFINITY, f64::min) - 0.02,
-    )?;
-    let upper = bound(
-        overrides.dis_win_max,
-        kept.iter()
-            .flatten()
-            .copied()
-            .fold(f64::NEG_INFINITY, f64::max)
-            + 0.02,
-    )?;
-    let frozen_lower = bound(overrides.dis_froz_min, lower)?;
-    let frozen_upper = bound(overrides.dis_froz_max, fermi_ev + DEFAULT_FROZEN_OFFSET_EV)?;
-    ensure!(
-        lower < upper
-            && lower <= frozen_lower
-            && frozen_lower < frozen_upper
-            && frozen_upper <= upper,
-        "data_invalid: 纯能量外窗 [{lower},{upper}] 不包含冻结窗 [{frozen_lower},{frozen_upper}]"
-    );
     let mut outer_counts = Vec::new();
     let mut energy_frozen_counts = Vec::new();
     for (k, row) in kept.iter().enumerate() {
         let outer = row.iter().filter(|&&e| lower <= e && e <= upper).count();
-        let frozen = row
-            .iter()
-            .filter(|&&e| frozen_lower <= e && e <= frozen_upper)
-            .count();
+        let frozen = row.iter().filter(|&&e| frozen_lower <= e && e <= frozen_upper).count();
         ensure!(outer >= num_wann && frozen <= num_wann,
             "data_invalid: k={} 外窗 {} 态、冻结 {} 态，要求 frozen<=N={}<=outer；请求冻结窗 [{frozen_lower},{frozen_upper}] 不自动裁剪", k + 1, outer, frozen, num_wann);
         outer_counts.push(outer);
@@ -136,7 +102,6 @@ pub fn select_energy_only(
         lumo_ev: lumo,
         shift_ev: fermi_ev,
         requested_frozen_max_ev: frozen_upper,
-        // 历史记录兼容字段：纯能量模式不施加 cap，保留请求值。
         frozen_cap_ev: frozen_upper,
         num_wann,
         excluded_bands: excluded,
@@ -145,11 +110,56 @@ pub fn select_energy_only(
             ("dis_win_max".into(), upper),
             ("dis_froz_min".into(), frozen_lower),
             ("dis_froz_max".into(), frozen_upper),
-        ]
-        .into(),
+        ].into(),
         outer_counts,
         energy_frozen_counts,
     })
+}
+
+/// 只解析纯能量窗口，不检查子空间容量；供前置阶段诊断使用。
+/// 调用方传入排除指定带后的谱，正式选择仍须执行逐 k 点数量检查。
+pub fn energy_only_bounds(
+    bands: &[Vec<f64>],
+    fermi_ev: f64,
+    overrides: &Bounds,
+    reference: Reference,
+) -> Result<[f64; 4]> {
+    validate_bands(bands)?;
+    ensure!(fermi_ev.is_finite(), "data_invalid: Fermi 能非有限");
+    let offset = match reference {
+        Reference::Absolute => 0.0,
+        Reference::Fermi => fermi_ev,
+        Reference::UpstreamRelative => {
+            anyhow::bail!("configuration: 纯能量模式仅接受绝对或 Fermi 能量参考")
+        }
+    };
+    let bound = |value: Option<f64>, default: f64| -> Result<f64> {
+        let result = value.map(|v| v + offset).unwrap_or(default);
+        ensure!(result.is_finite(), "data_invalid: 能窗非有限或换算溢出");
+        Ok(result)
+    };
+    let lower = bound(
+        overrides.dis_win_min,
+        bands.iter().flatten().copied().fold(f64::INFINITY, f64::min) - 0.02,
+    )?;
+    let upper = bound(
+        overrides.dis_win_max,
+        bands.iter()
+            .flatten()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max)
+            + 0.02,
+    )?;
+    let frozen_lower = bound(overrides.dis_froz_min, lower)?;
+    let frozen_upper = bound(overrides.dis_froz_max, fermi_ev + DEFAULT_FROZEN_OFFSET_EV)?;
+    ensure!(
+        lower < upper
+            && lower <= frozen_lower
+            && frozen_lower < frozen_upper
+            && frozen_upper <= upper,
+        "data_invalid: 纯能量外窗 [{lower},{upper}] 不包含冻结窗 [{frozen_lower},{frozen_upper}]"
+    );
+    Ok([lower, upper, frozen_lower, frozen_upper])
 }
 
 /// 未设置的边界保留为 None，由原生程序决定实际默认范围。

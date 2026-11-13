@@ -251,7 +251,7 @@ fn refresh_stage(
 ) -> Result<bool> {
     if !matches!(
         step,
-        Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse | Step::Superconductivity
+        Step::Scf | Step::Nscf | Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse | Step::Superconductivity
     ) {
         return Ok(false);
     }
