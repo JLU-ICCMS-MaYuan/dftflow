@@ -152,14 +152,11 @@ impl QeManifest {
         let canonical_root = root.canonicalize()?;
         let mut roles = std::collections::BTreeSet::new();
         for a in &self.artifacts {
-            ensure!(
-                roles.insert(&a.role)
-                    && !a.relative_path.is_absolute()
-                    && a.relative_path
-                        .components()
-                        .all(|c| matches!(c, std::path::Component::Normal(_))),
-                "data_invalid: QE 角色重复或路径非法"
-            );
+            ensure!(!a.relative_path.is_absolute()
+                && a.relative_path.components().all(|c| matches!(c, std::path::Component::Normal(_))),
+                "data_invalid: QE 路径非法");
+            if qf_io::qe_payload::unchecked(&a.relative_path) { continue; }
+            ensure!(roles.insert(&a.role), "data_invalid: QE 角色重复");
             let p = root.join(&a.relative_path);
             ensure!(
                 p.canonicalize()?.starts_with(&canonical_root)
@@ -241,6 +238,7 @@ impl QeManifest {
                 .iter()
                 .filter(|a| {
                     a.producer_stage == stage
+                        && !qf_io::qe_payload::unchecked(&a.relative_path)
                         && !["scf_snapshot_identity", "nscf_input"].contains(&a.role.as_str())
                 })
                 .map(|a| root.join(&a.relative_path))

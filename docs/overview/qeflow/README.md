@@ -79,3 +79,7 @@ flowchart LR
 ## MPI 提交命令
 
 新生成的科学调用使用普通命令，`mpirun` 从作业环境 PATH 查找，不写登录节点 MPI 绝对路径；原参数、科学程序路径和用户 header 保留。共享规则及历史边界见 [MPI 调用约束](../README.md#科学任务的-mpi-调用) 与 [0044](../../specs/0044-mpi-submit-command/spec.md)。
+
+## 原始电子数据的初始化边界
+
+声子初始化仅保留 SCF 保存 XML 的前置检查，不预先核对电荷密度和波函数的存在性、非空或完整性。复制和原生 PH 读取仍照常进行，真实 I/O 错误照常报告；输入、日志、dyn0 和响应数据验证保持。共享规则与 EPW 同步，见 [0067](../../specs/0067-unchecked-density-wavefunctions/spec.md)。

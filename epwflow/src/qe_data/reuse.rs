@@ -58,16 +58,31 @@ pub fn import_from_run(source_work: &Path, work: &Path) -> Result<ImportReport> 
         let dst = target.join(&a.relative_path);
         std::fs::create_dir_all(dst.parent().unwrap())?;
         std::fs::copy(&src, &dst)?;
-        ensure!(
-            store::hash_file(&dst)? == a.sha256,
-            "input_conflict: 导入复制后身份不符"
-        );
+        if qf_io::qe_payload::unchecked(&a.relative_path) { continue; }
+        ensure!(store::hash_file(&dst)? == a.sha256, "input_conflict: 导入复制后身份不符");
         roles.push(a.role.clone());
         checks.push(Check {
             role: a.role.clone(),
             passed: true,
             detail: "按原生清单复制并重验身份".into(),
         });
+    }
+    // 核验清单不包含原始大数据，复制时仍从保存目录传递它们。
+    let mut payload_roots = Vec::new();
+    if let Some(scf) = &source.scf { payload_roots.push(scf.snapshot_dir.clone()); }
+    if let Some(states) = &source.states {
+        payload_roots.push(states.wavefunctions.parent().context("data_invalid: 保存目录缺父路径")?.into());
+    }
+    for root in payload_roots {
+        for relative in super::save::all_files(&root)? {
+            if !qf_io::qe_payload::unchecked(&relative) { continue; }
+            let from = root.join(relative);
+            let dst = target.join(from.strip_prefix(&source_root)?);
+            if !dst.exists() {
+                std::fs::create_dir_all(dst.parent().unwrap())?;
+                std::fs::copy(from, dst)?;
+            }
+        }
     }
     source.verify()?;
     let rebase = |p: &std::path::PathBuf| -> Result<std::path::PathBuf> {

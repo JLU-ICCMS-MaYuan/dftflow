@@ -410,3 +410,9 @@ epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
 不必为了查询作业状态安装 accounting 数据库。本机已有 jobcomp/filetxt 时，CLI 在 sacct 明确报告未启用 accounting 后，使用控制器确认正在运行的分配，使用原生完成日志查询真实终态、节点数、用时与退出码。完成日志只读，临时查询副本自动清理；没有可用证据时仍拒绝重提，不绕过状态检查。
 
 旧 Vanderbilt 二进制 .uspp 与默认文本读取分支不兼容时，可以保留同一赝势模型转换为 UPF；不能只改后缀。当前 MgB₂ 的同版本 QE 原生转换、数组往返核对及真实 SCF 结果见 [Ubuntu 手册](../examples/MgB2/ubuntu/readme.md) 和 [0066 验收](../docs/specs/0066-mgb2-legacy-pseudo-slurm/acceptance.md)。
+
+## 电荷密度和波函数不核对
+
+按用户明确要求，SCF／NSCF 的原始电荷密度和波函数不参与完整性核对，包括 charge-density 的 dat／hdf5／xml、wfc 的 dat／hdf5、prefix.wfcN 和旧 evc.dat。复用、完成检查、导入、电子后处理和复制交接均不对这些文件计算哈希，也不比较大小、非空、存在性或文件集合。历史记录中的对应条目在内存中忽略，不重写历史文件，不设严格模式开关。
+
+实际复制仍传递这些数据；QE／EPW／projwfc 在计算时仍读取所需文件，实际复制或原生读取错误照常报告。结构、赝势、程序、原生输入、XML、日志、收敛及其他科学产物仍核验。当前目录、12 MPI、Slurm header／launcher 和覆盖构建约定保持，见 [0067](../docs/specs/0067-unchecked-density-wavefunctions/spec.md)。

@@ -1207,21 +1207,22 @@ fn numbered_electronic_receipt_rejects_corrupted_save_and_adopts_verified_old_pw
     let calls=c.calls();
     let prefix=config::Config::load(&c.root.join("input.toml")).unwrap().qe.prefix.clone();
     let wfc=c.root.join(format!("run/3.qe-electronic/qe_eband/out/{prefix}.save/wfc1.dat"));
-    let original=fs::read(&wfc).unwrap();fs::write(&wfc,"").unwrap();
+    let xml=wfc.parent().unwrap().join("data-file-schema.xml");
+    let original=fs::read(&xml).unwrap();fs::write(&xml,"").unwrap();
     c.accounting(Some(202));
     let o=c.numbered_cli(1,&["--stage","wannier","--resume","-r"],Some(202),"corrupted-pw");
-    assert!(!o.status.success());assert!(String::from_utf8_lossy(&o.stderr).contains("data_invalid"));
-    assert_eq!(calls,c.calls());fs::write(&wfc,original).unwrap();
+    assert!(!o.status.success(), "损坏 XML 必须停止恢复");
+    assert_eq!(calls,c.calls());fs::write(&xml,original).unwrap();
     // 模拟 0018：有零退出码和冻结尝试，没有新原生任务收据。
 
     let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
     epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).unwrap();
     let density=wfc.parent().unwrap().join("charge-density.dat");
     let original_density=fs::read(&density).unwrap();fs::write(&density,b"wrong density").unwrap();
-    assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());
+    epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).unwrap();
     fs::write(density,original_density).unwrap();
     fs::remove_file(&wfc).unwrap();
-    assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());
+    epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).unwrap();
     fs::write(&wfc,b"fixture-wfc").unwrap();
     let exit=c.root.join("run/3.qe-electronic/qe_eband/eband.exitcode");
     fs::write(&exit,"6").unwrap();assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());fs::write(exit,"0").unwrap();
@@ -1695,3 +1696,22 @@ fn failed_native_wannier_still_draws_before_scheduler_error_returns() {
 
 #[path = "support/readable_state_0064.rs"]
 mod readable_state_0064;
+
+#[test]
+fn public_scf_reuse_ignores_raw_density_and_wavefunction_changes() {
+    let c = Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(0, &["--stage", "scf", "-r"], Some(201), "scf-for-unchecked"));
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let snapshot = c.root.join("run/1.qe-scf/snapshot").join(format!("{}.save", cfg.qe.prefix));
+    fs::remove_file(snapshot.join("wfc1.dat")).unwrap();
+    let density = snapshot.join("charge-density.dat");
+    fs::set_permissions(&density, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::write(density, "").unwrap();
+    let before = c.calls();
+    c.accounting(None);
+    let out = c.numbered_cli(0, &["--stage", "scf", "-s"], None, "unchecked-scf-reuse");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("复用：1.qe-scf"));
+    success(out);
+    assert_eq!(before, c.calls(), "不得因原始大数据变化重跑 SCF");
+}

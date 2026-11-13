@@ -27,16 +27,16 @@ pub fn migrate(cfg: &Config, input: &Path) -> Result<()> {
     if imports.is_dir() {
         let target = cfg.work_dir.join("epw-state/imports");
         fs::create_dir_all(&target)?;
-        for file in crate::qe_data::save::files(&imports)? {
-            let to = target.join(&file.relative_path);
+        for relative in crate::qe_data::save::all_files(&imports)? {
+            let to = target.join(&relative);
             if to.exists() {
-                ensure!(
-                    super::store::hash_file(&to)? == file.sha256,
-                    "input_conflict: 导入来源记录冲突"
-                );
+                if !qf_io::qe_payload::unchecked(&relative) {
+                    ensure!(super::store::hash_file(&to)? == super::store::hash_file(&imports.join(&relative))?,
+                        "input_conflict: 导入来源记录冲突");
+                }
             } else {
                 fs::create_dir_all(to.parent().unwrap())?;
-                fs::copy(imports.join(&file.relative_path), &to)?;
+                fs::copy(imports.join(&relative), &to)?;
             }
         }
     }

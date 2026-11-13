@@ -1,4 +1,4 @@
-//! QE 保存树的完整复制与身份核验；SCF 来源不作为下游可写目录。
+//! QE 保存树复制与受保护元数据核验；电荷密度和波函数不参与核对。
 use super::super::foundation::store;
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -15,11 +15,13 @@ pub struct TreeFile {
     pub sha256: String,
 }
 
+/// 仅列出需要核验的文件，不读取被排除的原始数据。
 pub fn files(root: &Path) -> Result<Vec<TreeFile>> {
     fn visit(root: &Path, dir: &Path, result: &mut Vec<TreeFile>) -> Result<()> {
         for e in fs::read_dir(dir)? {
             let e = e?;
             let path = e.path();
+            if qf_io::qe_payload::unchecked(&path) { continue; }
             let kind = e.file_type()?;
             ensure!(
                 !kind.is_symlink(),
@@ -47,11 +49,41 @@ pub fn files(root: &Path) -> Result<Vec<TreeFile>> {
     let mut result = vec![];
     visit(root, root, &mut result)?;
     result.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-    ensure!(!result.is_empty(), "data_invalid: 保存树为空");
     Ok(result)
 }
 
-/// 只复制到空目录；复制前后核对完整集合，避免合并不同尝试或共享可写链接。
+/// 真实复制所需的文件遍历；不计算数据哈希，不将此列表作为 payload 核验依据。
+pub fn all_files(root: &Path) -> Result<Vec<PathBuf>> {
+    fn visit(root: &Path, dir: &Path, result: &mut Vec<PathBuf>) -> Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if qf_io::qe_payload::unchecked(&path) {
+                result.push(path.strip_prefix(root)?.into());
+                continue;
+            }
+            let kind = entry.file_type()?;
+            ensure!(!kind.is_symlink(), "data_invalid: 保存树不能含链接 {}", path.display());
+            if kind.is_dir() { visit(root, &path, result)?; }
+            else {
+                ensure!(kind.is_file(), "data_invalid: 保存树含未知类型 {}", path.display());
+                result.push(path.strip_prefix(root)?.into());
+            }
+        }
+        Ok(())
+    }
+    let mut result = Vec::new();
+    visit(root, root, &mut result)?;
+    result.sort();
+    Ok(result)
+}
+
+/// 兼容旧记录：仅在内存中过滤，不改写历史清单。
+pub fn checked_entries(entries: &[TreeFile]) -> Vec<TreeFile> {
+    entries.iter().filter(|f| !qf_io::qe_payload::unchecked(&f.relative_path)).cloned().collect()
+}
+
+/// 复制全部文件到空目录；只对受保护文件核对复制结果。
 pub fn copy_tree(source: &Path, target: &Path) -> Result<Vec<TreeFile>> {
     let before = files(source)?;
     ensure!(
@@ -60,10 +92,10 @@ pub fn copy_tree(source: &Path, target: &Path) -> Result<Vec<TreeFile>> {
         target.display()
     );
     fs::create_dir_all(target)?;
-    for file in &before {
-        let dest = target.join(&file.relative_path);
+    for relative in all_files(source)? {
+        let dest = target.join(&relative);
         fs::create_dir_all(dest.parent().unwrap())?;
-        fs::copy(source.join(&file.relative_path), &dest)?;
+        fs::copy(source.join(&relative), &dest)?;
         // 快照可能不可写；下游副本需要独立写权限，绝不修改来源权限。
         #[cfg(unix)]
         {
@@ -84,8 +116,8 @@ pub fn snapshot(outdir: &Path, work: &Path) -> Result<PathBuf> {
     let target = crate::foundation::layout::path(&work, "scf/snapshot");
     let entries = copy_tree(outdir, &target)?;
     store::write(&crate::foundation::layout::path(&work, "scf/snapshot-files.json"), &entries)?;
-    for e in &entries {
-        let p = target.join(&e.relative_path);
+    for relative in all_files(&target)? {
+        let p = target.join(relative);
         let mut permissions = fs::metadata(&p)?.permissions();
         permissions.set_readonly(true);
         fs::set_permissions(&p, permissions)?;
@@ -97,7 +129,7 @@ pub fn verify_snapshot(work: &Path) -> Result<()> {
     let expected: Vec<TreeFile> = store::read(&crate::foundation::layout::path(&work, "scf/snapshot-files.json"))
         .context("data_invalid: 缺少完整 SCF 快照身份")?;
     ensure!(
-        expected == files(&crate::foundation::layout::path(&work, "scf/snapshot"))?,
+        checked_entries(&expected) == files(&crate::foundation::layout::path(&work, "scf/snapshot"))?,
         "input_conflict: SCF 快照被修改"
     );
     Ok(())
@@ -111,6 +143,7 @@ pub fn stage_scf(work: &Path, outdir: &Path, prefix: &str) -> Result<()> {
 }
 
 pub fn nonempty(path: &Path) -> Result<()> {
+    if qf_io::qe_payload::unchecked(path) { return Ok(()); }
     ensure!(
         path.is_file() && fs::metadata(path)?.len() > 0,
         "data_invalid: 必需保存文件缺失或空 {}",

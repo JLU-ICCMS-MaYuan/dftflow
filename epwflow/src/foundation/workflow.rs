@@ -499,16 +499,11 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
 }
 
 fn files(path: &Path, identities: &mut Vec<store::Identity>) -> Result<()> {
+    if qf_io::qe_payload::unchecked(path) { return Ok(()); }
     if path.is_dir() {
-        let before = identities.len();
         for entry in fs::read_dir(path)? {
             files(&entry?.path(), identities)?;
         }
-        ensure!(
-            identities.len() > before,
-            "data_invalid: 保存树为空 {}",
-            path.display()
-        );
     } else {
         let id = store::Identity::capture(path)?;
         ensure!(
@@ -604,6 +599,7 @@ fn verify_stage(
                         .context("清单路径")?
                         .join(&a.relative_path)
                 };
+                if qf_io::qe_payload::unchecked(&p) { continue; }
                 ensure!(
                     store::hash_file(&p)? == a.sha256,
                     "input_conflict: 插值产物哈希不匹配"

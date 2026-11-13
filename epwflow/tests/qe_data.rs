@@ -601,7 +601,6 @@ fn run_pipeline(case: &Case) -> QeManifest {
 fn native_qe_rejects_incomplete_and_mismatched_outputs() {
     for failure in [
         "energy",
-        "missing_wfc",
         "duplicate_k",
         "wrong_q",
         "truncated_dvscf",
@@ -656,10 +655,17 @@ fn scf_snapshot_and_ph_copies_are_independent() {
             .unwrap();
     assert!(original.contains("<QPOINT_NUMBER>1</QPOINT_NUMBER>"));
     m.verify().unwrap();
+    let mut unsafe_manifest = m.clone();
+    let mut invalid = m.artifacts[0].clone();
+    invalid.role = "unchecked-outside".into();
+    invalid.relative_path = "../wfc1.dat".into();
+    unsafe_manifest.artifacts.push(invalid);
+    assert!(unsafe_manifest.verify().is_err(), "排除数据核验不取消通用路径边界");
     let victim = &m.states.as_ref().unwrap().wavefunctions.join("wfc1.dat");
     std::fs::write(victim, "tampered").unwrap();
-    assert!(m.verify().is_err());
-    assert!(reuse::import_from_run(&work, &case.root.join("bad-import")).is_err());
+    m.verify().unwrap();
+    reuse::import_from_run(&work, &case.root.join("unchecked-import")).unwrap();
+    assert_eq!(std::fs::read(case.root.join("unchecked-import/imported/qe-data/nscf/out/actual_prefix.save/wfc1.dat")).unwrap(), b"tampered");
 }
 
 // ---------- FR-001/003~010：三种 PH 模式完整 qe-data 闭环 ----------
@@ -1107,4 +1113,13 @@ fn shared_qeflow_reuses_xml_q2r_after_matdyn_failure() {
     for stage in ["ph", "q2r"] {
         assert_eq!(calls.lines().filter(|l| *l == stage).count(), 1);
     }
+}
+
+
+#[test]
+fn missing_nscf_wavefunction_does_not_trigger_integrity_rejection() {
+    let case = make_case("index");
+    std::fs::write(case.root.join("fixture-failure"), "missing_wfc").unwrap();
+    let manifest = run_pipeline(&case);
+    manifest.verify().unwrap();
 }

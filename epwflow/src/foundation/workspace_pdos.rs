@@ -88,13 +88,6 @@ pub fn run(cfg: &Config) -> Result<()> {
     fs::create_dir_all(&root)?;
     let ids = source_ids(cfg)?;
 
-    ensure!(
-        ids.iter().any(|i| i
-            .path
-            .file_name()
-            .is_some_and(|n| n.to_string_lossy().starts_with("wfc"))),
-        "required: 元素 PDOS 需要 NSCF 波函数，保留检查点，不自动重算 NSCF"
-    );
     let xml = source(cfg).join(format!("{}.save/data-file-schema.xml", cfg.qe.prefix));
     let text = fs::read_to_string(&xml)?;
     let doc = roxmltree::Document::parse(&text)?;

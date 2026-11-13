@@ -460,7 +460,7 @@ pub fn complete_files(cfg: &Config, step: Step, label: &str, outputs: &[PathBuf]
         d.set(label, "状态", "已完成");
         d.set(label, "所属批次", batch);
         d.set(label, "使用配置", relative(&cfg.work_dir, &config));
-        for (i, path) in outputs.iter().enumerate() {
+        for (i, path) in outputs.iter().filter(|p| !qf_io::qe_payload::unchecked(p)).enumerate() {
             d.set(
                 label,
                 &format!("产物{:03}", i + 1),
@@ -486,6 +486,7 @@ pub fn completed_files(
         for (key, value) in fields {
             if key.starts_with("产物") {
                 let p = resolve(&cfg.work_dir, value);
+                if qf_io::qe_payload::unchecked(&p) { continue; }
                 if !p.is_file() {
                     return Ok(None);
                 }

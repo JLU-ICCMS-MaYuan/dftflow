@@ -30,23 +30,6 @@ pub(super) fn prepare_input(ctx: &PhononCtx) -> Result<()> {
 
 pub(super) use qf_io::qe_completion::checked_log;
 
-fn has_wfc(dir: &Path) -> Result<bool> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        // 不跟随目录链接，避免环；普通波函数文件链接可由 QE 正常读取。
-        if entry.file_type()?.is_dir() {
-            if has_wfc(&entry.path())? {
-                return Ok(true);
-            }
-        } else if entry.file_name().to_string_lossy().contains("wfc")
-            && fs::metadata(entry.path())?.len() > 0
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 pub(super) fn check_save(ctx: &PhononCtx) -> Result<()> {
     let od = ctx
         .cfg
@@ -57,7 +40,7 @@ pub(super) fn check_save(ctx: &PhononCtx) -> Result<()> {
         .unwrap_or("./tmp");
     let root = Path::new(&ctx.workspace).join(od);
     let save = root.join(format!("{}.save", ctx.prefix));
-    for name in ["data-file-schema.xml", "charge-density.dat"] {
+    for name in ["data-file-schema.xml"] {
         let path = save.join(name);
         ensure!(
             path.is_file() && path.metadata()?.len() > 0,
@@ -65,7 +48,6 @@ pub(super) fn check_save(ctx: &PhononCtx) -> Result<()> {
             path.display()
         );
     }
-    ensure!(has_wfc(&root)?, "SCF 波函数缺失: {}", root.display());
     Ok(())
 }
 

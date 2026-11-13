@@ -26,7 +26,7 @@ struct Transaction {
 fn publish(cfg: &Config, t: &Transaction, report: &Path) -> Result<()> {
     t.source.verify()?;
     ensure!(
-        t.source_files == save::files(&t.calculation_dir)?,
+        save::checked_entries(&t.source_files) == save::files(&t.calculation_dir)?,
         "input_conflict: 导入来源文件集合改变"
     );
     let heads = t
@@ -56,7 +56,7 @@ fn publish(cfg: &Config, t: &Transaction, report: &Path) -> Result<()> {
         for f in t
             .files
             .iter()
-            .filter(|f| f.relative_path.starts_with(&head))
+            .filter(|f| f.relative_path.starts_with(&head) && !qf_io::qe_payload::unchecked(&f.relative_path))
         {
             let p = root.join(&f.relative_path);
             ensure!(
@@ -85,7 +85,7 @@ fn publish(cfg: &Config, t: &Transaction, report: &Path) -> Result<()> {
     }
     t.source.verify()?;
     ensure!(
-        t.source_files == save::files(&t.calculation_dir)?,
+        save::checked_entries(&t.source_files) == save::files(&t.calculation_dir)?,
         "input_conflict: 原来源在发布期间改变"
     );
     store::write(
@@ -202,10 +202,9 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
         let temp = partial.join(rel);
         fs::create_dir_all(temp.parent().unwrap())?;
         fs::copy(&from, &temp)?;
-        ensure!(
-            store::hash_file(&temp)? == a.sha256,
-            "data_invalid: 导入复制哈希不符"
-        );
+        if !qf_io::qe_payload::unchecked(&temp) {
+            ensure!(store::hash_file(&temp)? == a.sha256, "data_invalid: 导入复制哈希不符");
+        }
         a.relative_path = rel.into();
     }
     // 严格清单只包含必要角色；另复制完整 NSCF 和 SCF 快照以保留所有可重读文件。
@@ -229,17 +228,15 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
             PathBuf::from("2.qe-nscf/out"),
         ),
     ] {
-        for f in save::files(&from)? {
-            let to = partial.join(&rel).join(&f.relative_path);
+        for relative in save::all_files(&from)? {
+            let to = partial.join(&rel).join(&relative);
             fs::create_dir_all(to.parent().unwrap())?;
             if to.exists() {
-                ensure!(
-                    store::hash_file(&to)? == f.sha256,
-                    "input_conflict: 导入角色冲突"
-                );
-            } else {
-                fs::copy(from.join(&f.relative_path), &to)?;
-            }
+                if !qf_io::qe_payload::unchecked(&relative) {
+                    ensure!(store::hash_file(&to)? == store::hash_file(&from.join(&relative))?,
+                        "input_conflict: 导入角色冲突");
+                }
+            } else { fs::copy(from.join(&relative), &to)?; }
         }
     }
     // 旧共享链把 SCF 输入/日志放在声子目录；新布局归到第 1 步。

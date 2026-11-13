@@ -227,7 +227,6 @@ pub fn validate_save(
     let dir = outdir.join(format!("{prefix}.save"));
     let xml = dir.join("data-file-schema.xml");
     save::nonempty(&xml)?;
-    save::nonempty(&dir.join("charge-density.dat"))?;
     let raw = std::fs::read_to_string(&xml)?;
     let doc = roxmltree::Document::parse(&raw)?;
     let out = doc
@@ -242,9 +241,6 @@ pub fn validate_save(
     }
     let nks: usize = text(out, "nks")?.trim().parse()?;
     ensure!(nks > 0, "data_invalid: 保存树电子态为空");
-    for k in 1..=nks {
-        save::nonempty(&dir.join(format!("wfc{k}.dat")))?;
-    }
     if let Some(energy) = scf_energy {
         ensure!(
             text(out, "convergence_achieved")?.trim() == "true",

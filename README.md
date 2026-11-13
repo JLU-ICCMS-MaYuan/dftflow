@@ -204,6 +204,8 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 阶段重算覆盖旧内容，保留编号目录 inode 和当前打开的 Slurm 日志，不生成历史。`epw-state/` 保存八份中文阶段日志、编号原文配置及按需保留的 `imports/`；作业号保存在各计算目录同名 `.jobs`。输入原文变化时，在工作区 `epw-state/` 增加 `NNNN-config.toml` 版本。
 八日志布局执行 `epw_clear` 会报告无需清理；旧布局仍支持预览并清空三类历史。详见 [清理用法](docs/overview/epwflow/epw_clear.md)。
 各 flow 统一采用 `[slurm].header` 多行字符串填写 Slurm 文件头，MPI 启动参数由 launcher／现有程序启动命令指定。EPW 已删除整个 `[resources]`，不再自动补写或通过 sbatch 参数覆盖分区、节点数和任务数。旧输入须迁移，历史冻结快照不手改；示例见 [EPW 配置说明](epwflow/README.md#slurm-文件头)。
+
+SCF／NSCF 的原始电荷密度和波函数不做哈希、大小、非空、存在性或文件集合核对，实际复制和原生读取保留；其他科学证据照常验证，见 [0067](docs/specs/0067-unchecked-density-wavefunctions/spec.md)。
 修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。
 `--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
 第 3 步 QE 子任务完成即发布单侧图；第 5 步完成电子能带／总 DOS 对比，第 6 步完成声子谱／TDOS 对比及总览，图片、数据和来源按阶段保存在工作区根 `results/`。

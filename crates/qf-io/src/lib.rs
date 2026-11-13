@@ -6,6 +6,7 @@
 //! 以及 VASP 的 `EIGENVAL`/`OUTCAR`/`DOSCAR`（COHPCAR.lobster 与 LOCPOT/CHGCAR 留待后续补齐）。
 
 pub mod qe_completion;
+pub mod qe_payload;
 pub mod qe_proj;
 pub mod vasp_cohpar;
 pub mod vasp_doscar;

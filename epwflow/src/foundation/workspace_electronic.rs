@@ -40,6 +40,7 @@ impl NativeReceipt {
             let mut expected = self
                 .outputs
                 .iter()
+                .filter(|id| !qf_io::qe_payload::unchecked(&id.path))
                 .filter_map(|id| id.path.strip_prefix(root).ok().map(Path::to_path_buf))
                 .collect::<Vec<_>>();
             expected.sort();
@@ -367,13 +368,6 @@ fn archive_task(_cfg: &Config, _task: &str, paths: &[PathBuf]) -> Result<()> {
 fn validate_pw(cfg: &Config) -> Result<()> {
     let dir = Step::Electronic.directory(cfg).join("qe_eband");
     save::verify_snapshot(&cfg.work_dir)?;
-    let snapshot = super::layout::path(&cfg.work_dir, "scf/snapshot");
-    let density = PathBuf::from(format!("{}.save/charge-density.dat", cfg.qe.prefix));
-    ensure!(
-        store::hash_file(&snapshot.join(&density))?
-            == store::hash_file(&dir.join("out").join(&density))?,
-        "input_conflict: PW 能带电荷密度与已校验 SCF 快照不一致"
-    );
     ensure!(
         fs::read_to_string(dir.join("eband.exitcode"))?.trim() == "0",
         "data_invalid: PW 能带缺零退出码"

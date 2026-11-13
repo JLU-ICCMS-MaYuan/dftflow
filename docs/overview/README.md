@@ -83,3 +83,7 @@ EPW 常规四类比较保留，独立抽样核验已取消；四项最大差值�
 ## Slurm 文件头与 MPI 配置
 
 各 flow 统一采用现有 `[slurm].header` 字符串作为用户 Slurm 文件头，MPI 使用各模块既有 launcher／程序启动命令。EPW 的 `[resources]` 已移除，脚本和 sbatch argv 不再自动指定分区、节点或任务数。EPW 默认作业名和日志指令位于用户 header 之前，用户显式同名指令优先；不对用户 shell 片段做资源推断。编译成功直接覆盖固定模块入口，不保留编译版本记录和旧命令备份。详见 [0065](../specs/0065-slurm-header-launcher/spec.md)。
+
+## 原始电荷密度与波函数的核验边界
+
+电荷密度和原始波函数不做完整性核对，EPW 复用／恢复／导入与共享 QE 初始化均排除相关内容、大小、非空、存在性和集合检查；实际复制和科学读取保留。其他元数据、输入和日志仍核验。当前规则覆盖历史相关条款，详见 [0067](../specs/0067-unchecked-density-wavefunctions/spec.md)。

@@ -94,3 +94,7 @@ epw_superconductivity -c "input.toml" --stage superconductivity -s
     epw_phonon -c "input.toml" --stage nscf -s
 
 不要再次对已完成 SCF 使用 --resume，除非确实需要重算。详细证据见 [0066 验收](../../../docs/specs/0066-mgb2-legacy-pseudo-slurm/acceptance.md)。
+
+## 电荷密度与波函数不核对（0067）
+
+原始电荷密度和波函数不做哈希、大小、非空、存在性或集合核对，旧记录对应条目也忽略；实际复制与原生读取保留，其他元数据和科学检查保留。本次目录保持现状，不删除 campaign 或 repair/pp。正式 CLI 已覆盖，现场 SCF 复用打开这两类文件的次数由 3934 降为 0，未提交新计算。完整原话和验收见 [0067](../../../docs/specs/0067-unchecked-density-wavefunctions/spec.md)。

@@ -128,14 +128,14 @@ fn submit_executes_same_checked_initialization_script() {
     assert!(!cli(&w, &["-s"], &[("BAD_SUBMIT", "1")]).status.success());
 }
 #[test]
-fn missing_save_or_wavefunctions_blocks_run_and_submit() {
+fn density_and_wavefunction_presence_is_left_to_the_native_program() {
     let w = setup();
     fs::remove_file(w.0.join("calc/custom-save/Si.save/wfc1.dat")).unwrap();
-    assert!(!cli(&w, &["-r"], &[]).status.success());
-    assert!(!cli(&w, &["-s"], &[]).status.success());
-    assert!(!w.0.join("calls").exists());
-    fs::write(w.0.join("calc/custom-save/Si.save/wfc1.dat"), "wfc").unwrap();
     fs::remove_file(w.0.join("calc/custom-save/Si.save/charge-density.dat")).unwrap();
+    ok(cli(&w, &["-r"], &[]));
+    ok(cli(&w, &["-s"], &[]));
+    assert!(w.0.join("calls").exists());
+    fs::remove_file(w.0.join("calc/custom-save/Si.save/data-file-schema.xml")).unwrap();
     assert!(!cli(&w, &["-r"], &[]).status.success());
 }
 #[test]

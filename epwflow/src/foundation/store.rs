@@ -25,10 +25,11 @@ pub fn write<T:Serialize>(path:&Path,data:&T)->Result<()> {let mut bytes=serde_j
 pub struct Identity {pub path:PathBuf,pub target:PathBuf,pub sha256:String,pub bytes:u64}
 impl Identity {
     pub fn capture(path:&Path)->Result<Self>{let target=fs::canonicalize(path).with_context(||format!("input_conflict: 无法定位 {}",path.display()))?;let bytes=fs::metadata(&target)?.len();let sha256=hash_file(path)?;Ok(Self{path:path.into(),target,sha256,bytes})}
-    pub fn verify(&self)->Result<()>{let now=Self::capture(&self.path)?;ensure!(now.target==self.target && now.sha256==self.sha256&&now.bytes==self.bytes,"input_conflict: 文件或链接目标已改变 {}",self.path.display());Ok(())}
+    pub fn verify(&self)->Result<()>{if qf_io::qe_payload::unchecked(&self.path){return Ok(());}let now=Self::capture(&self.path)?;ensure!(now.target==self.target && now.sha256==self.sha256&&now.bytes==self.bytes,"input_conflict: 文件或链接目标已改变 {}",self.path.display());Ok(())}
 }
 /// 仅文件确实不存在才返回不可用；权限、链接目标及内容冲突仍返回原错误。
 pub fn identity_available(id: &Identity) -> Result<bool> {
+    if qf_io::qe_payload::unchecked(&id.path) { return Ok(true); }
     match fs::metadata(&id.path) {
         Ok(_) => { id.verify()?; Ok(true) }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
