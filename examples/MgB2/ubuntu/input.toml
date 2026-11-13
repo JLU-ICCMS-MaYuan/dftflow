@@ -13,7 +13,7 @@ Mg = "../../../test_auto/MgB2/pp/mg_pbe_v1.4.uspp"
 B = "../../../test_auto/MgB2/pp/b_pbe_v1.4.uspp.F.UPF"
 
 [programs]
-launcher = ["mpirun", "-np", "2"]
+launcher = ["mpirun", "-np", "12"]
 environment_script = "/home/mayuan/bin/dftflow-env.sh"
 
 [programs.pw]
@@ -26,14 +26,14 @@ args = []
 
 [programs.epw]
 path = "/home/mayuan/soft/dftflow-external/bin/epw.x"
-args = ["-nk", "2"]
+args = ["-nk", "12"]
 
 
 [slurm]
 header = """
 #SBATCH --partition=local
 #SBATCH --nodes=1
-#SBATCH --ntasks=2
+#SBATCH --ntasks=12
 """
 
 [budget]
