@@ -14,7 +14,7 @@ B = "../../../test_auto/MgB2/pp/b_pbe_v1.4.uspp.F.UPF"
 
 [programs]
 launcher = ["mpirun", "-np", "2"]
-environment_script = "/home/mayuan/soft/dftflow-env.sh"
+environment_script = "/home/mayuan/bin/dftflow-env.sh"
 
 [programs.pw]
 path = "/home/mayuan/soft/dftflow-external/bin/pw.x"

@@ -14,11 +14,13 @@
 ## 本机环境
 
 ```bash
-source "/home/mayuan/soft/dftflow-env.sh"
+source "/home/mayuan/bin/dftflow-env.sh"
 source "/home/mayuan/code/dftflow/scripts/env.sh"
 cd "/home/mayuan/code/dftflow/examples/MgB2/ubuntu"
 epw_phonon -c "input.toml" --check --json
 ```
+
+编译及运行环境入口统一放在 `~/bin/`：`dftflow-env.sh` 内部加载 `intel-env.sh`，后者激活 Conda 构建环境和 Intel oneAPI。只需 source 前者。TOML 使用绝对路径，避免依赖 `~` 展开。仓库 `scripts/env.sh` 负责加载构建后的产品入口。
 
 配置中的科学程序和环境脚本使用本机绝对路径；迁移机器时应修改。相对结构、赝势和 KPATH 路径均以输入文件所在目录为基准。
 
