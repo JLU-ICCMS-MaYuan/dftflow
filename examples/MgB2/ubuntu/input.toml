@@ -9,8 +9,8 @@ schema_version = 2
 outdir = "scratch"
 
 [pseudos]
-Mg = "../../../test_auto/MgB2/pp/mg_pbe_v1.4.uspp"
-B = "../../../test_auto/MgB2/pp/b_pbe_v1.4.uspp.F.UPF"
+Mg = "repair/pp/mg_pbe_v1.4.UPF"
+B = "repair/pp/b_pbe_v1.4.uspp.F.UPF"
 
 [programs]
 launcher = ["mpirun", "-np", "12"]
@@ -45,7 +45,7 @@ ledger = "campaign/ledger.json"
 [stages."1.qe-scf"]
 K_POINTS = '''automatic
 4 4 2 0 0 0'''
-ATOMIC_SPECIES = '''Mg 24.305 mg_pbe_v1.4.uspp
+ATOMIC_SPECIES = '''Mg 24.305 mg_pbe_v1.4.UPF
 B 10.811 b_pbe_v1.4.uspp.F.UPF'''
 
 calculation = "scf"
@@ -63,7 +63,7 @@ conv_thr = 1e-10
 
 [stages."2.qe-nscf"]
 K_POINTS = [4, 4, 2]
-ATOMIC_SPECIES = '''Mg 24.305 mg_pbe_v1.4.uspp
+ATOMIC_SPECIES = '''Mg 24.305 mg_pbe_v1.4.UPF
 B 10.811 b_pbe_v1.4.uspp.F.UPF'''
 
 calculation = "nscf"
@@ -86,7 +86,7 @@ conv_thr = 1e-12
 points_per_edge = 20
 
 [stages."3.qe-bands"]
-ATOMIC_SPECIES = '''Mg 24.305 mg_pbe_v1.4.uspp
+ATOMIC_SPECIES = '''Mg 24.305 mg_pbe_v1.4.UPF
 B 10.811 b_pbe_v1.4.uspp.F.UPF'''
 
 calculation = "bands"

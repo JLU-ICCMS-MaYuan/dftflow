@@ -529,20 +529,7 @@ pub fn reconcile_task(cfg: &Config, _resume: bool, task: &mut Task) -> Result<()
             "scheduler_unknown: 原生任务 {job} 仍为 {}，禁止重复提交",
             accounting.state
         );
-        let out = Command::new("sacct")
-            .args([
-                "--noheader",
-                "--parsable2",
-                "-j",
-                &job.to_string(),
-                "--format=JobIDRaw,ExitCode",
-            ])
-            .output()?;
-        ensure!(
-            out.status.success(),
-            "scheduler_unknown: 无法查询任务 {job} 退出码"
-        );
-        let text = String::from_utf8(out.stdout)?;
+        let text = slurm::exit_code_record(job)?;
         let rows: Vec<_> = text
             .lines()
             .filter_map(|l| l.trim().split_once('|'))

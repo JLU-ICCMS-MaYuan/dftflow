@@ -404,3 +404,9 @@ epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
 `--check` 不提交任务或改写科学数据；配置仍按 CLI 观察到的内容变化保存原文版本。无 `-s` 只准备；失败后相同命令加 `--resume`。重复完成请求不重提，只缺图时只补图；来源变化或产物损坏拒绝。显式导入可受控读取旧嵌套版本 2 TOML，不改写用户输入；外部来源和转换信息保存在 `epw-state/imports/`，进度进入第 4 步日志。历史赝势/截断能记录按用户例外不设门槛，报告明确未核验范围。
 
 声子交付成功后使用 `epw_wannier --config "epwinput.toml" --stage wannier -s`，可补缺失的第三阶段电子参考，已有 SCF/NSCF/PH 复用。实际结果和路径见 [SiP₂ 说明](../examples/SiP2/README.md) 与 [0010 验收](../docs/specs/0010-epwflow-qe-data/acceptance.md)。
+
+## 未启用 Slurm accounting 的本机环境
+
+不必为了查询作业状态安装 accounting 数据库。本机已有 jobcomp/filetxt 时，CLI 在 sacct 明确报告未启用 accounting 后，使用控制器确认正在运行的分配，使用原生完成日志查询真实终态、节点数、用时与退出码。完成日志只读，临时查询副本自动清理；没有可用证据时仍拒绝重提，不绕过状态检查。
+
+旧 Vanderbilt 二进制 .uspp 与默认文本读取分支不兼容时，可以保留同一赝势模型转换为 UPF；不能只改后缀。当前 MgB₂ 的同版本 QE 原生转换、数组往返核对及真实 SCF 结果见 [Ubuntu 手册](../examples/MgB2/ubuntu/readme.md) 和 [0066 验收](../docs/specs/0066-mgb2-legacy-pseudo-slurm/acceptance.md)。

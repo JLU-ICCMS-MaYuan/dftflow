@@ -4,7 +4,7 @@
 
 ## 输入与测试范围
 
-- 复用仓库 `test_auto/MgB2/MgB2.vasp` 结构及 `test_auto/MgB2/pp/` 的 PBE 赝势，无须在本目录再跟踪结构或赝势。
+- 复用仓库 test_auto/MgB2/MgB2.vasp 结构和 test_auto/MgB2/pp/ 的 PBE 赝势模型。当前输入读取 repair/pp/：Mg 为原二进制势的同模型 UPF 转换，B 为原文件的逐字节副本；均不跟踪。
 - SCF／NSCF 网格 4×4×2，16 条带；PH 为 index 模式、2×2×1；细网格 k 为 8×8×4、q 为 4×4×2。截断能为 40／320 Ry。
 - 5 个 Wannier 函数，B:pz 与三个键中心 s 初始投影；使用 `energy_only` 自动选窗，实际能窗须查看本次原生日志。
 - 第 8 阶段为 iso／aniso 的 20／30／40 K 能隙计算，μ*=0.1，不执行 Tc 搜索。
@@ -69,10 +69,28 @@ epw_superconductivity -c "input.toml" --stage superconductivity -s
 
 初次准备时环境找不到 `cargo`／`rustc` 和 EPW 入口，未运行配置检查或提交科学作业。此输入基于仓库版本 2 测试配置整理，尚待真实 CLI 和原生链验证，不能声称计算通过。当前工具链及构建验证以 [0065 验收](../../../docs/specs/0065-slurm-header-launcher/acceptance.md) 为准，再从上面的配置检查开始。
 
-## 本次统一配置后的检查
+## 0065 初次统一配置后的检查
 
 正式 EPW 三入口的 `--check --json` 均返回 `operation_status=ok`、`workflow_status=configured`。首次通过正式入口生成 `run/1.qe-scf/scf.sh` 时，核对 header、`mpirun -np 2` 与 `~/bin/dftflow-env.sh`，未提交作业。gap 输入显式设置 `tc_linear=false` 和 `gap_edge=0.01` eV，当时 EPW 原生 pool 为 2；这些是输入完整性与并行约束，不是科学收敛结论。
 
 全部正式命令已在固定 `bin/<模块>/` 覆盖。359 项 EPW 回归与 140 项其他模块回归通过；15 项既有暂挂测试不计通过。详见本次验收记录。Git 仍只纳管本目录的 `input.toml` 和本文档。
 
-2026-11-13 按用户要求将当前配置调整为 12 MPI／12 Slurm 任务／12 EPW pool。三个正式入口重新检查通过。本次更新旧 SCF 脚本时，因已有作业记录触发 sacct 查询且本机 accounting storage is disabled，CLI 拒绝继续；现存 scf.sh 仍为 2 路，不能作为本次 12 路配置的有效执行脚本。恢复调度记账查询后需通过公开入口重新生成，不直接改写旧脚本和作业身份。本次没有提交科学作业。
+2026-11-13 按用户要求将当前配置调整为 12 MPI／12 Slurm 任务／12 EPW pool。当时三个正式入口检查通过，但重生成被 accounting 未启用阻断。该阻塞现已在 0066 修复，当前脚本和真实完成的作业 4 均为 12 路；先前 2 路失败日志保存在 repair/failed-scf-evidence/。
+
+## 旧 Mg 赝势修复与真实 SCF
+
+2026-11-13 已完成一次 12 MPI 真实 SCF（Slurm 作业 4）。9 次迭代收敛，最终自由能为 −138.11356494 Ry，QE WALL 为 53.75 秒，Slurm 记录 60 秒、1 节点，退出码 0:0；原生日志包含 JOB DONE。公开入口再检查返回 stage_complete=true、workflow_complete=false。仅证明此 SCF 成功，不表示网格、Wannier、声子或超导结果收敛。
+
+旧 mg_pbe_v1.4.uspp 是 Vanderbilt 7.3.6 的 Fortran 未格式化二进制文件。QE 7.5 的默认 read_ps_new 先尝试 UPF，旧 Vanderbilt 分支则按 .vdb／.van 后缀读取文本；原 .uspp 因而误入旧 NC 文本读取器。并非原势模型失效，也不是文件权限问题。
+
+本地 repair/legacy_binary_uspp.f90 按同版本 QE upflib/read_uspp.f90 的 !unf 注释恢复二进制读取及三个合并记录，repair/convert_legacy.f90 调用同版本原生 write_upf／read_ps_new 转换并重读核对。保持 PBE、10 个价电子、821 径向点、3 个原子波函数和 7 个 beta；r、rab、vloc、rho_at、beta、dion、qqq、qfunc、qfcoef、chi 全部满足 1e-12×(1+数组最大绝对值) 的往返误差标准。未重新生成另一套赝势，原始 Mg／B 文件保持不变。
+
+转换源代码、单份本地转换命令、输出和 conversion.log 位于忽略的 repair/；生成文件不纳入 Git，删除后须依据上述同版本源码重新转换。当前路径是 repair/pp/mg_pbe_v1.4.UPF 和 repair/pp/b_pbe_v1.4.uspp.F.UPF。原始文件校验记录为 repair/original-pseudos.sha256。
+
+本机没有 Slurm accounting 数据库，但启用了 jobcomp/filetxt。新版 CLI 在 sacct 明确报告未启用 accounting 时，使用控制器核验正在运行的作业，或对完成日志的 0600 临时副本调用原生 sacct --completion --file，读取真实终态、NNodes、ElapsedRaw 和 ExitCode；副本查询后删除。不修改系统配置、原完成日志或账本，不猜测缺失任务终态。
+
+后续手动继续 NSCF：
+
+    epw_phonon -c "input.toml" --stage nscf -s
+
+不要再次对已完成 SCF 使用 --resume，除非确实需要重算。详细证据见 [0066 验收](../../../docs/specs/0066-mgb2-legacy-pseudo-slurm/acceptance.md)。

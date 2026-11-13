@@ -386,3 +386,9 @@ NSCF 简写网格、实际输入／输出与 FFT 接续检查见 [NSCF 网格说
 2026-10-27 源码支持 `epw_wannier --config "epwinput.toml" --plot` 直接读取当前拟合现场，输出 `5.epw-wannier/diagnostics/`。未收敛或失败不再跳过可用诊断：已有原生能带时交付完整外窗及 E_F±5 eV 的 QE／Wannier 对比，已有迭代日志时交付 spread 曲线；缺项写入诊断报告，未写出的数据不编造。图标明未收敛，保存实际模型输入、来源快照及表格，不发布科学成功回执、不放行下游。带 `--results` 的结果包重绘保持原行为。
 
 源配置未填写 `num_iter` 时默认为 500，EPW 与内嵌 Wannier90 使用同次迭代数；显式值保留。SiP₂ 源配置改为 500 轮及 `Si:s,p`、`P:s,p`，既有真实诊断图仍来自旧 sp3／5000 轮失败模型，未执行新拟合。真实出图、受控回归和安装边界见 [0023 验收](../../specs/0023-epw-wannier-native-start/acceptance.md)。
+
+## 无 accounting 数据库的 Slurm 查询
+
+sacct 明确报告 accounting storage is disabled 时，EPW 使用 scontrol 核验仍在 RUNNING 的分配；终态则从 scontrol show config 指定的 jobcomp/filetxt 完成日志查询。因为原生 sacct 完成插件以可写方式打开文件，程序只读复制到权限 0600 的临时副本，再由 sacct --completion --file 读取状态、ElapsedRaw、NNodes 和 ExitCode，随后删除副本。原完成日志和系统配置不修改。
+
+不支持的完成后端、不可读日志、任务缺失或重复、查询失败继续返回未知，不伪造完成、不清空账本或自动重提。此路径已在本机真实旧失败作业 3 与 12 MPI 成功 SCF 作业 4 上验证；证据与格式转换边界见 [0066](../../specs/0066-mgb2-legacy-pseudo-slurm/acceptance.md)。通用旧二进制赝势自动识别尚未接入，当前 Mg 使用原文件的同模型 UPF 转换。

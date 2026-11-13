@@ -93,6 +93,11 @@ pub fn query(job_id: u64) -> Option<String> {
         .args(["-j", &job_id.to_string(), "--noheader", "-o", "State"])
         .output()
         .ok()?;
+    if !out.status.success() {
+        return if String::from_utf8_lossy(&out.stderr).contains("Slurm accounting storage is disabled") {
+            accounting(job_id).ok().map(|a| a.state)
+        } else { None };
+    }
     let s = String::from_utf8_lossy(&out.stdout);
     s.lines()
         .map(|l| l.trim().to_string())
@@ -220,16 +225,83 @@ pub fn accounting(job_id: u64) -> Result<Accounting> {
             "--parsable2",
             "-j",
             &job_id.to_string(),
-            "--format=JobIDRaw,State,ElapsedRaw,AllocNodes",
+            "--format=JobIDRaw,State,ElapsedRaw,NNodes",
         ])
         .output()
         .context("scheduler_unknown: 无法查询 sacct")?;
+    if !out.status.success()
+        && String::from_utf8_lossy(&out.stderr).contains("Slurm accounting storage is disabled")
+    {
+        if let Ok(active) = controller_allocation(job_id) {
+            return Ok(active);
+        }
+        return completion_accounting(job_id);
+    }
     ensure!(
         out.status.success(),
         "scheduler_unknown: sacct 失败：{}",
         String::from_utf8_lossy(&out.stderr)
     );
     parse_accounting(job_id, &String::from_utf8(out.stdout)?)
+}
+
+/// filetxt 后端的 sacct 会以可写方式打开日志；查询私有副本，不改权限或原日志。
+fn completion_accounting(job_id: u64) -> Result<Accounting> {
+    let text = completion_query(job_id, "--format=JobIDRaw,State,ElapsedRaw,NNodes")?;
+    let observation = parse_accounting(job_id, &text)?;
+    ensure!(observation.terminal, "scheduler_unknown: 完成日志没有可靠终态");
+    Ok(observation)
+}
+
+/// 原生任务终态的退出码与状态使用同一真实 Slurm 后端。
+pub fn exit_code_record(job_id: u64) -> Result<String> {
+    ensure!(job_id > 0, "scheduler_unknown: 无效作业号");
+    let out = Command::new("sacct").args(["--noheader", "--parsable2", "-j",
+        &job_id.to_string(), "--format=JobIDRaw,ExitCode"]).output()?;
+    if !out.status.success()
+        && String::from_utf8_lossy(&out.stderr).contains("Slurm accounting storage is disabled")
+    {
+        return completion_query(job_id, "--format=JobIDRaw,ExitCode");
+    }
+    ensure!(out.status.success(), "scheduler_unknown: 无法查询任务 {job_id} 退出码");
+    Ok(String::from_utf8(out.stdout)?)
+}
+
+fn completion_query(job_id: u64, fields: &str) -> Result<String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let config = Command::new("scontrol").args(["show", "config"]).output()
+        .context("scheduler_unknown: 无法查询 Slurm 完成日志配置")?;
+    ensure!(config.status.success(), "scheduler_unknown: Slurm 完成日志配置查询失败");
+    let text = String::from_utf8(config.stdout)?;
+    let value = |key: &str| -> Result<&str> {
+        let values: Vec<_> = text.lines().filter_map(|line| line.split_once('='))
+            .filter(|(name, _)| name.trim() == key).map(|(_, value)| value.trim()).collect();
+        ensure!(values.len() == 1, "scheduler_unknown: Slurm {key} 缺失或重复");
+        Ok(values[0])
+    };
+    ensure!(value("JobCompType")? == "jobcomp/filetxt",
+        "scheduler_unknown: accounting 未启用且没有 jobcomp/filetxt 完成日志");
+    let source = Path::new(value("JobCompLoc")?);
+    ensure!(source.is_absolute(), "scheduler_unknown: Slurm 完成日志路径不是绝对路径");
+    let bytes = fs::read(source).context("scheduler_unknown: 无法读取 Slurm 完成日志")?;
+    let snapshot = std::env::temp_dir().join(format!("epw-jobcomp-{}.log", super::store::token()));
+    let mut file = fs::OpenOptions::new().write(true).create_new(true).mode(0o600)
+        .open(&snapshot)?;
+    let result = (|| {
+        file.write_all(&bytes)?;
+        drop(file);
+        let out = Command::new("sacct").args(["--completion", "--file"])
+            .arg(&snapshot).args(["--noheader", "--parsable2", "-j", &job_id.to_string(),
+                fields]).output()
+            .context("scheduler_unknown: 无法查询 Slurm 完成日志")?;
+        ensure!(out.status.success(), "scheduler_unknown: Slurm 完成日志查询失败：{}",
+            String::from_utf8_lossy(&out.stderr));
+        Ok(String::from_utf8(out.stdout)?)
+    })();
+    let cleanup = fs::remove_file(&snapshot);
+    cleanup.context("scheduler_unknown: 无法删除 Slurm 完成日志查询副本")?;
+    result
 }
 
 pub fn parse_accounting(job_id: u64, text: &str) -> Result<Accounting> {
