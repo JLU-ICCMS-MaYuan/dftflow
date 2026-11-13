@@ -60,7 +60,7 @@ bash scripts/build-native.sh build --release --locked --manifest-path tools/qf-g
 
 原始制品、缓存与测试 harness 位于 `bin/.build/<平台>/`，本机私有编译和运行依赖可位于 `bin/.native/<平台>/`。公开模块仍为 epwflow、qeflow、vaspflow、scflow、wannierflow、substitutionflow 和 tools，兼容名使用组内相对链接。独立工具仍单独构建；主 workspace 构建不顺带更新它。显式交叉目标只构建，不替换宿主程序。
 
-发布前完成所选产品全部入口启动验证、目标冲突检查及本机／Slurm 活动引用检查，再逐文件替换；编译和预检失败保留原可用程序。发布锁阻止并发写入，不宣称整组事务。来源与发布后 SHA-256 保存于 `bin/.build/published/<程序>.json`，fresh 增量构建仍会发布。
+发布前完成所选产品全部入口启动验证、目标冲突检查及本机／Slurm 活动引用检查，再逐文件替换；编译和预检失败保留原可用程序。发布锁阻止并发写入，不宣称整组事务。成功制品直接覆盖固定路径，不保存编译版本记录、旧入口备份或版本安装目录；fresh 增量构建仍会发布。构建缓存不是另一套用户命令。
 
 [install-bin.sh](../../scripts/install-bin.sh) 保留为显式制品发布入口，支持 `--products CSV` 或 `--module FAMILY`，与自动构建复用同一清单；[install-current.sh](../../scripts/install-current.sh) 已退役，明确失败且不创建旧用户安装。兼容入口生成器要求显式目标目录，不再默认写入用户命令目录。
 

@@ -2,7 +2,7 @@
 # 版本 2：各阶段独立设置；不兼容旧版。
 # 科学参数保留原生名称和单位；workflow 独立记录执行设置；自动绑定由程序内部确认。
 layout = "numbered"
-work_dir = "."
+work_dir = "run"
 kpath = "../KPATH.in"
 structure = "../../../test_auto/MgB2/MgB2.vasp"
 schema_version = 2
@@ -26,16 +26,19 @@ args = []
 
 [programs.epw]
 path = "/home/mayuan/soft/dftflow-external/bin/epw.x"
-args = []
+args = ["-nk", "2"]
 
-[resources]
-partition = "local"
-nodes = 1
-mpi = 2
+
+[slurm]
+header = """
+#SBATCH --partition=local
+#SBATCH --nodes=1
+#SBATCH --ntasks=2
+"""
 
 [budget]
-campaign_id = "mgb2-ubuntu-smoke"
-# 独立 Ubuntu 小网格功能测试，不表示历史项目预算已重置。
+campaign_id = "epic-0007"
+# 沿用当前实现要求的 campaign 身份，不表示历史项目预算已重置。
 ledger = "campaign/ledger.json"
 
 
@@ -409,6 +412,7 @@ eliashberg = true
 liso = true
 laniso = false
 tc_linear_solver = "lapack"
+tc_linear = false
 limag = true
 lreal = false
 lpade = false
@@ -427,6 +431,7 @@ conv_thr_iaxis = 1e-8
 broyden_beta = 0.3
 broyden_ndim = 4
 a_gap0 = 1.0
+gap_edge = 0.01
 nqstep = 500
 iverbosity = 2
 eps_acoustic = 1.0
@@ -451,6 +456,7 @@ eliashberg = true
 liso = false
 laniso = true
 tc_linear_solver = "lapack"
+tc_linear = false
 limag = true
 lreal = false
 lpade = false
@@ -469,6 +475,7 @@ conv_thr_iaxis = 1e-8
 broyden_beta = 0.3
 broyden_ndim = 4
 a_gap0 = 1.0
+gap_edge = 0.01
 nqstep = 500
 iverbosity = 2
 eps_acoustic = 1.0

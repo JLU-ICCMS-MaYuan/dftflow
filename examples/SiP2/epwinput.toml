@@ -43,10 +43,13 @@ args = []
 path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/postw90.x"
 args = []
 
-[resources]
-partition = "amd7513"
-nodes = 1
-mpi = 36
+
+[slurm]
+header = """
+#SBATCH --partition=amd7513
+#SBATCH --nodes=1
+#SBATCH --ntasks=36
+"""
 
 [budget]
 campaign_id = "epic-0007"

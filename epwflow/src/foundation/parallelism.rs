@@ -2,8 +2,13 @@
 use super::{config::Config, snapshot::RunBinding};
 use anyhow::{ensure, Context, Result};
 
+/// 仅供原生并行约束与展示，不生成调度参数或修改启动命令。
+pub fn mpi_count(cfg: &Config) -> Result<u32> {
+    read_count(&cfg.programs.launcher, &["-np", "-n", "--np", "--ntasks"], 1)
+}
+
 /// 仅读取显式数量，不替用户修正或补充并行参数。
-fn read_count(args: &[String], flags: &[&str], default: u32) -> Result<u32> {
+pub(super) fn read_count(args: &[String], flags: &[&str], default: u32) -> Result<u32> {
     let mut found = None;
     for (i, value) in args.iter().enumerate() {
         if flags.contains(&value.as_str()) {
@@ -20,13 +25,9 @@ fn read_count(args: &[String], flags: &[&str], default: u32) -> Result<u32> {
 }
 
 pub fn preflight(cfg: &Config, step: super::stages::Step, allocation: bool) -> Result<()> {
-    let mpi=cfg.resources.mpi;
-    let launched=read_count(&cfg.programs.launcher, &["-np","-n","--np","--ntasks"],1)?;
-    ensure!(launched==mpi, "configuration: MPI 启动数量 {launched} 与 resources.mpi={mpi} 不一致");
-    if allocation {
-        let tasks=std::env::var("SLURM_NTASKS").context("allocation: 缺少 SLURM_NTASKS")?.parse::<u32>()?;
-        ensure!(tasks==mpi,"allocation: Slurm ntasks={tasks} 与 MPI={mpi} 不一致");
-    }
+    let mpi = mpi_count(cfg)?;
+    // 分配状态由调度器校验；Slurm 分配可以大于实际启动数量。
+    let _ = allocation;
     let epw=step.epw();
     let args=if epw { &cfg.programs.epw.args } else if step==super::stages::Step::Phonon { &cfg.programs.ph.args } else { &cfg.programs.pw.args };
     let pools=read_count(args,&["-nk","-npool","--npool","-npools"],1)?;
@@ -84,7 +85,7 @@ fn count_arg(args: &mut Vec<String>, flags: &[&str], count: u32, required: bool)
 }
 
 pub fn apply(cfg: &mut Config, mpi: u32) -> Result<()> {
-    ensure!((1..=64).contains(&mpi), "configuration: MPI 必须在 1..64");
+    ensure!(mpi > 0, "configuration: MPI 必须为正");
     let nk: u64 = cfg.qe.nscf.k_grid.iter().map(|&n| u64::from(n)).product();
     ensure!(
         u64::from(mpi) <= nk,
@@ -126,7 +127,6 @@ pub fn apply(cfg: &mut Config, mpi: u32) -> Result<()> {
         mpi,
         false,
     )?;
-    cfg.resources.mpi = mpi;
     cfg.validate()
 }
 
@@ -139,12 +139,11 @@ mod tests {
     #[test]
     fn mpi_and_pool_follow_32_points_but_physics_is_preserved() {
         let mut cfg = config();
-        cfg.resources.mpi = 64;
         cfg.programs.launcher[2] = "64".into();
         cfg.programs.epw.args = vec!["-nk".into(), "64".into()];
         let qe = serde_json::to_value(&cfg.qe).unwrap();
         apply(&mut cfg, 32).unwrap();
-        assert_eq!(cfg.resources.mpi, 32);
+        assert_eq!(mpi_count(&cfg).unwrap(), 32);
         assert_eq!(cfg.programs.launcher[2], "32");
         assert_eq!(cfg.programs.epw.args, ["-nk", "32"]);
         assert_eq!(serde_json::to_value(&cfg.qe).unwrap(), qe);
@@ -173,11 +172,11 @@ pub fn request_identity(cfg: &Config, launcher: &[String]) -> Result<(Config, Ve
     let binding = RunBinding::load(&cfg.work_dir)?;
     binding.verify()?;
     let original = Config::load(&cfg.work_dir.join("input-init.toml"))?;
-    if original.resources.mpi == cfg.resources.mpi {
+    if mpi_count(&original)? == mpi_count(cfg)? {
         return Ok((cfg.clone(), launcher.to_vec()));
     }
     let mut allowed = original.clone();
-    apply(&mut allowed, cfg.resources.mpi)?;
+    apply(&mut allowed, mpi_count(cfg)?)?;
     ensure!(
         serde_json::to_value(&allowed)? == serde_json::to_value(cfg)?
             && launcher == cfg.programs.launcher,

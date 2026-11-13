@@ -16,7 +16,7 @@
 
 显式 `epw_phonon -c "epwinput.toml" --stage scf --resume -s` 强制覆盖已退出的 SCF 并启动新批次。保留编号目录 inode、脚本和打开的 Slurm 日志，不再保存旧计算历史。活动或提交未知时拒绝覆盖；普通 `--stage scf -s` 检查并复用相容结果。
 
-DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。新生成的 EPW 脚本和提交参数不添加时长限制；`resources.wall_seconds`、`resources.storage_bytes` 及 `--wall-seconds`、`--storage-bytes` 两个 CLI 选项已删除。配置仍含旧字段时明确拒绝，应清理用户源配置并重新运行 CLI 保存新版本，不手改已保存的编号版本。历史账本保留用量和原额度，状态仅将原并发限制作为有效额度；活动、未知任务及来源保护继续有效。已有脚本和默认安装不会随源码修改自动更新。见 [0058 验收](../../specs/0058-epw-remove-resource-limits/acceptance.md)。
+DFTFlow 不额外限制计算时长和存储空间，集群规则由 Slurm 管理。当前整个 `[resources]` 已移除，统一复用 QE／VASP 的 `[slurm].header` 字符串；新脚本及提交命令不从程序配置生成分区、节点数或任务数覆盖。MPI 以 `programs.launcher` 为唯一配置来源，不与 `SLURM_NTASKS` 强制相等；原生 pool／image 和空 k pool 检查仍有效。账本只依赖实际作业身份，消费使用 Slurm 实际节点证据；活动／未知作业及并发登记保留。旧输入必须迁移，冻结快照和旧脚本不自动改写。设计与验证见 [0065](../../specs/0065-slurm-header-launcher/spec.md)；0058 保留为历史依据。
 
 ## 历史清理
 

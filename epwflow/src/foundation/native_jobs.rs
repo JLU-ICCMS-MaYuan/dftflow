@@ -816,7 +816,7 @@ pub fn submit_task(cfg: &Config, task: &mut Task) -> Result<()> {
         &cfg.budget.campaign_id,
         |l| {
             budget::reconcile(l)?;
-            budget::reserve_workflow(l, &format!("native:{}", task.id), &cfg.resources)
+            budget::reserve_workflow(l, &format!("native:{}", task.id))
         },
     )?);
     task.state = "submission_pending".into();
@@ -980,11 +980,6 @@ fn prepare_mode(
     } else {
         stem
     };
-    let r = &cfg.resources;
-    ensure!(
-        !r.partition.contains(['\n', '\r']),
-        "configuration: partition 含换行"
-    );
     ensure!(
         !work.to_string_lossy().contains(['\n', '\r']),
         "configuration: 工作目录含换行"
@@ -996,7 +991,7 @@ fn prepare_mode(
         "configuration: 脚本功能名称含特殊字符"
     );
     let log = format!("slurm-{purpose}.log");
-    let mut text = format!("#!/bin/bash\n#SBATCH --job-name=epw-{purpose}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n{}#SBATCH --open-mode=truncate\n", r.partition, r.nodes, r.mpi, slurm::log_directives(work, &log, &log));
+    let mut text = slurm::script_header(cfg, work, &format!("epw-{purpose}"), &log, &log);
     let mut sources = vec![Identity::capture(&cfg.structure)?];
     sources.extend(
         cfg.pseudos

@@ -40,7 +40,7 @@ fn allocation(cfg: &Config) -> Result<u64> {
         "真实分配没有运行"
     );
     ensure!(
-        std::env::var("SLURM_NTASKS")?.parse::<u32>()? == cfg.resources.mpi,
+        std::env::var("SLURM_NTASKS")?.parse::<u32>()? == epwflow::foundation::parallelism::mpi_count(&cfg).unwrap(),
         "MPI 数不符"
     );
     // 原共享历史账本，不为本项建立新的零消费预算。
@@ -120,7 +120,7 @@ fn actual(diagnostic: bool) -> Result<()> {
         "求解器、初值、容差或必需能隙温度改变"
     );
     ensure!(
-        cfg.resources.nodes == 1 && cfg.resources.mpi == 24,
+        epwflow::foundation::parallelism::mpi_count(&cfg).unwrap() == 24,
         "超出本次有界分配"
     );
     let job = allocation(&cfg)?;

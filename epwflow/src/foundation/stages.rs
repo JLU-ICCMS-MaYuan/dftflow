@@ -438,8 +438,7 @@ mod tests {
         let keys = |cfg: &Config| Step::ALL.map(|s| scientific_key(cfg, s).unwrap());
         let old = keys(&cfg);
         let mut new = cfg.clone();
-        new.resources.mpi = 32;
-        new.resources.partition = "other".into();
+        new.slurm.header = Some("#SBATCH --partition=other".into());
         new.programs.launcher = vec!["mpirun".into(), "-np".into(), "32".into()];
         new.programs.epw.args = vec!["-nk".into(), "32".into()];
         assert_eq!(old, keys(&new));

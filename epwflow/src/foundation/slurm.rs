@@ -20,12 +20,23 @@ pub(super) fn log_directives(directory: &Path, output: &str, error: &str) -> Str
     )
 }
 
+/// 资源指令完全来自用户 header；默认日志在前，用户显式设置优先。
+pub fn script_header(cfg: &super::config::Config, directory: &Path, name: &str, output: &str, error: &str) -> String {
+    let mut text = format!("#!/bin/bash\n#SBATCH --job-name={name}\n{}#SBATCH --open-mode=truncate\n", log_directives(directory, output, error));
+    if let Some(header) = &cfg.slurm.header {
+        text.push_str(header);
+        if !header.ends_with('\n') { text.push('\n'); }
+    }
+    text
+}
+
 /// 构造 sbatch 脚本并原生提交；核对退出码与唯一正整数作业号。
 pub fn submit_via_sbatch(
     launcher: &[String],
     command: &[String],
     work: &Path,
     name: &str,
+    header: &str,
 ) -> Result<SubmittedJob> {
     let dir = work.join("epw-state").join("slurm");
     fs::create_dir_all(&dir)?;
@@ -33,6 +44,8 @@ pub fn submit_via_sbatch(
     let mut body = String::from("#!/bin/bash\n");
     body.push_str(&format!("#SBATCH --job-name={name}\n"));
     body.push_str(&log_directives(&dir, "slurm-%j.out", "slurm-%j.err"));
+    body.push_str(header);
+    if !body.ends_with('\n') { body.push('\n'); }
     body.push_str(&format!("cd -- {} || exit $?\n", shell_quote(&work.to_string_lossy())));
     let line = {
         let mut v = launcher.to_vec();

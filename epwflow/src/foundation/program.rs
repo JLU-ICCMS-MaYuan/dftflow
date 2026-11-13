@@ -116,11 +116,6 @@ struct Options {
     #[arg(long)]
     label: Option<String>,
     #[arg(long)]
-    nodes: Option<u32>,
-    /// 预算预留或失败 Wannier 阶段恢复时的 MPI 数；恢复同步设置单 image pool 数。
-    #[arg(long)]
-    mpi: Option<u32>,
-    #[arg(long)]
     token: Option<String>,
     #[arg(long)]
     job: Option<u64>,
@@ -273,10 +268,6 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             (Phase::Superconductivity, Some(s @ (Step::Fine | Step::Superconductivity))) => s,
             _ => anyhow::bail!("input_conflict: --stage 不属于当前程序"),
         };
-        ensure!(
-            o.mpi.is_none(),
-            "configuration: 编号工作区请修改 input.toml 的资源及启动器/pool"
-        );
         let cfg = super::config::Config::load(&o.config)?;
         super::run_state::ready(&cfg.work_dir)?;
         if o.status {
@@ -362,10 +353,6 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         "input_conflict: 只读、导入或准备操作不能同时执行/提交/恢复"
     );
     ensure!(!o.refresh || o.status, "required: --refresh 需要 --status");
-    ensure!(
-        o.mpi.is_none() || o.budget.is_some() || (o.resume && phase == Phase::Wannier),
-        "input_conflict: --mpi 仅用于预算操作或 epw_wannier --resume"
-    );
     ensure!(
         !o.resume || o.submit || o.run,
         "required: --resume 需要 -s 或 -r"
@@ -490,8 +477,6 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             BudgetOperation::Reserve => BudgetAction::Reserve {
                 ledger,
                 label: o.label.context("required: 需要 --label")?,
-                nodes: o.nodes.context("required: 需要 --nodes")?,
-                mpi: o.mpi.context("required: 需要 --mpi")?,
             },
         };
         EpwCommand::Budget {
@@ -504,7 +489,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
                 phase.boundary(),
                 o.submit,
                 o.run,
-                o.mpi,
+                None,
             );
         }
         if o.submit || o.run {

@@ -49,10 +49,13 @@ Si = "{structure}"
 [programs]
 launcher = []
 
-[resources]
-partition = "local"
-nodes = 1
-mpi = 1
+
+[slurm]
+header = """
+#SBATCH --partition=local
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+"""
 
 [budget]
 campaign_id = "epic-0007"

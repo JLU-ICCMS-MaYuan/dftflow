@@ -101,7 +101,8 @@ impl QeSection {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SlurmSection {
     #[serde(default)]
     pub header: Option<String>,

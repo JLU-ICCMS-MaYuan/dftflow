@@ -12,13 +12,10 @@ use std::path::Path;
 
 /// 在共享账本上登记本运行，不限制计算时长或存储空间。
 fn charge_budget(binding: &snapshot::RunBinding, cfg: &config::Config) -> Result<String> {
-    let r = &cfg.resources;
     budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
         budget::reserve(
             ledger,
             &format!("qe-data:{}", binding.run_id),
-            r.nodes,
-            r.mpi,
         )
     })
     .context("budget_denied: qe-data 预算预留失败")

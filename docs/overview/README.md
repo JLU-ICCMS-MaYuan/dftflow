@@ -79,3 +79,7 @@ EPW 常规四类比较保留，独立抽样核验已取消；四项最大差值�
 自有 QE、VASP、Wannier 和 EPW 科学任务脚本使用普通命令调用，科学执行前不增加 `exec`。配置中的裸 `mpirun` 或带目录的 `mpirun` 在新脚本中统一为 `mpirun`，由作业加载环境后的 PATH 查找；EPW 配置读取不再要求登录节点存在 MPI。并行参数与科学程序路径保留，自定义启动器、`mpiexec`／`srun` 和用户 Slurm header 原样遵循配置。
 
 单次调用以科学命令结束，多步骤保持显式失败处理；不启用严格 shell 选项。新 EPW 原生任务保存实际提交的命令，继续绑定科学程序与环境脚本，MPI 文件不再按登录节点路径冻结。历史唯一脚本及其回执不回写；安装和现用调试脚本的迁移边界见 [0044](../specs/0044-mpi-submit-command/spec.md)。
+
+## Slurm 文件头与 MPI 配置
+
+各 flow 统一采用现有 `[slurm].header` 字符串作为用户 Slurm 文件头，MPI 使用各模块既有 launcher／程序启动命令。EPW 的 `[resources]` 已移除，脚本和 sbatch argv 不再自动指定分区、节点或任务数。EPW 默认作业名和日志指令位于用户 header 之前，用户显式同名指令优先；不对用户 shell 片段做资源推断。编译成功直接覆盖固定模块入口，不保留编译版本记录和旧命令备份。详见 [0065](../specs/0065-slurm-header-launcher/spec.md)。

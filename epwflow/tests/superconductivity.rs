@@ -49,10 +49,13 @@ Si = "{structure}"
 [programs]
 launcher = []
 
-[resources]
-partition = "local"
-nodes = 1
-mpi = 1
+
+[slurm]
+header = """
+#SBATCH --partition=local
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+"""
 
 [budget]
 campaign_id = "epic-0007"
@@ -891,7 +894,7 @@ fn native_stage_requires_existing_allocation_without_time_or_storage_quota() {
     use epwflow::foundation::budget::BudgetLedger;
     let root = std::env::temp_dir().join(format!("epwflow-f4-budget-{}", store::token()));
     std::fs::create_dir_all(&root).unwrap();
-    let cfg = config::Config::load(&make_config(&root)).unwrap();
+    config::Config::load(&make_config(&root)).unwrap();
     let mut value = serde_json::json!({
         "schema_version":1,"campaign_id":"fixture",
         "limits":{"node_seconds":28800,"storage_bytes":107374182400_u64,"max_lanes":2},
@@ -902,18 +905,18 @@ fn native_stage_requires_existing_allocation_without_time_or_storage_quota() {
     });
     let ledger: BudgetLedger = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(
-        ledger.require_allocation(42, &cfg.resources).unwrap(),
+        ledger.require_allocation(42).unwrap(),
         "native"
     );
-    assert!(ledger.require_allocation(43, &cfg.resources).is_err());
+    assert!(ledger.require_allocation(43).is_err());
     value["allocations"][0]["node_seconds"] = 0.into();
     let ledger: BudgetLedger = serde_json::from_value(value.clone()).unwrap();
-    assert!(ledger.require_allocation(42, &cfg.resources).is_ok());
+    assert!(ledger.require_allocation(42).is_ok());
     value["allocations"][0]["node_seconds"] =
         7200.into();
     value["allocations"][0]["storage_bytes"] = 0.into();
     let ledger: BudgetLedger = serde_json::from_value(value).unwrap();
-    assert!(ledger.require_allocation(42, &cfg.resources).is_ok());
+    assert!(ledger.require_allocation(42).is_ok());
     std::fs::remove_dir_all(root).unwrap();
 }
 

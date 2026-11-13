@@ -60,13 +60,12 @@ impl BudgetLedger {
     }
 
     /// 核对当前分配已经登记，不检查时间／存储额度或创建第二份预留。
-    pub fn require_allocation(&self, job: u64, resources: &super::config::Resources) -> Result<String> {
+    pub fn require_allocation(&self, job: u64) -> Result<String> {
         let allocation = self
             .allocations
             .iter()
             .find(|a| a.job_id == Some(job))
             .context("allocation: 当前 Slurm 分配尚未登记；请先 budget reserve/attach")?;
-        resources.validate()?;
         Ok(allocation.reservation_id.clone())
     }
 
@@ -246,13 +245,7 @@ where
 pub fn reserve(
     ledger: &mut BudgetLedger,
     label: &str,
-    nodes: u32,
-    mpi: u32,
 ) -> Result<String> {
-    ensure!(
-        nodes == 1 && (1..=64).contains(&mpi),
-        "budget_denied: 每作业只允许1节点、1～64 MPI"
-    );
     let id = store::token();
     ledger.reservations.push(Reservation {
         id: id.clone(),
@@ -295,10 +288,10 @@ pub fn attach(ledger: &mut BudgetLedger, token: &str, job_id: Option<u64>) -> Re
 }
 
 /// 自动入口保守限制所有未结算预留；排队或未知任务也占名额。
-pub fn reserve_workflow(ledger: &mut BudgetLedger, label: &str, r: &super::config::Resources) -> Result<String> {
+pub fn reserve_workflow(ledger: &mut BudgetLedger, label: &str) -> Result<String> {
     ensure!(ledger.reservations.len() + ledger.allocations.len() < ledger.limits.max_lanes as usize,
         "budget_denied: 已有两个未结算任务；先核对终态并结算");
-    reserve(ledger, label, r.nodes, r.mpi)
+    reserve(ledger, label)
 }
 
 /// 提交回执与计算节点启动可能并发；仅同一 token/作业允许幂等绑定。
@@ -311,16 +304,16 @@ pub fn attach_once(ledger: &mut BudgetLedger, token: &str, job: u64) -> Result<(
 }
 
 /// 资源内运行必须复用已登记分配，不按阶段重复预留。
-pub fn registered_allocation(ledger: &BudgetLedger, job: u64, r: &super::config::Resources) -> Result<String> {
-    ledger.require_allocation(job, r)
+pub fn registered_allocation(ledger: &BudgetLedger, job: u64) -> Result<String> {
+    ledger.require_allocation(job)
 }
 
 /// 仅生成脚本的计算节点入口可自动登记；已有分配仍复用原登记。
-pub fn register_generated(ledger: &mut BudgetLedger, job: u64, r: &super::config::Resources) -> Result<String> {
+pub fn register_generated(ledger: &mut BudgetLedger, job: u64) -> Result<String> {
     if ledger.allocations.iter().any(|a| a.job_id == Some(job)) {
-        return registered_allocation(ledger, job, r);
+        return registered_allocation(ledger, job);
     }
-    let token = reserve_workflow(ledger, &format!("generated:{job}"), r)?;
+    let token = reserve_workflow(ledger, &format!("generated:{job}"))?;
     attach_once(ledger, &token, job)?;
     Ok(token)
 }

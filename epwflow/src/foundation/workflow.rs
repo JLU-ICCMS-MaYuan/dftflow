@@ -275,11 +275,9 @@ pub(super) fn generate_phase_for(config: &Path, until: Boundary, executable_path
     let executable = store::Identity::capture(executable_path)?;
     let path = target.with_extension("sh");
     ensure!(!path.exists(), "input_conflict: 已有未登记脚本，保留现场");
-    let r = &cfg.resources;
     let quote = slurm::shell_quote;
-    let mut body = format!("#!/bin/bash\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n{}export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\ncd {} || exit $?\n",
-        r.partition, r.nodes, r.mpi,
-        slurm::log_directives(path.parent().unwrap(), &format!("{}.%j.out", until.name()), &format!("{}.%j.err", until.name())), quote(&b.work_dir.to_string_lossy()));
+    let mut body = slurm::script_header(&cfg, path.parent().unwrap(), &format!("epw-{}", until.name()), &format!("{}.%j.out", until.name()), &format!("{}.%j.err", until.name()));
+    body.push_str(&format!("export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\ncd {} || exit $?\n", quote(&b.work_dir.to_string_lossy())));
     if let Some(env) = &cfg.programs.environment_script {
         body.push_str(&source_environment(env)?);
     }
@@ -298,10 +296,10 @@ pub fn run_generated(work: &Path, until: Boundary) -> Result<()> {
     require_phase(&b.work_dir, until, false)?;
     let job = job_id()?;
     let a = slurm::running_allocation(job)?;
-    ensure!(!a.terminal && a.state == "RUNNING" && a.nodes == cfg.resources.nodes as u64, "allocation: 当前分配状态或节点数不符");
+    ensure!(!a.terminal && a.state == "RUNNING", "allocation: 当前分配未运行");
     budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
         budget::reconcile(ledger)?;
-        budget::register_generated(ledger, job, &cfg.resources).map(|_| ())
+        budget::register_generated(ledger, job).map(|_| ())
     })?;
     let extend = record_path(&b.work_dir).exists() && load(&b.work_dir)?.state == "succeeded";
     start_bound(&b.work_dir, until, false, extend)
@@ -385,9 +383,9 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
         // 收到终态后才释放旧预留；查询失败时保守拒绝新任务。
         budget::reconcile(ledger)?;
         let token = if let Some(job) = direct_job {
-            budget::registered_allocation(ledger, job, &cfg.resources)?
+            budget::registered_allocation(ledger, job)?
         } else {
-            budget::reserve_workflow(ledger, &format!("workflow:{}", b.run_id), &cfg.resources)?
+            budget::reserve_workflow(ledger, &format!("workflow:{}", b.run_id))?
         };
         let mut r = new_record(until, token, direct_job, completed)?;
         r.calculation_dir =
@@ -418,8 +416,7 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
             .join("epw-state/slurm")
             .join(format!("{}.sh", record.attempt_id));
         let quote = slurm::shell_quote;
-        let mut body = String::from("#!/bin/bash\n");
-        body.push_str(&slurm::log_directives(script.parent().unwrap(), "%j.out", "%j.err"));
+        let mut body = slurm::script_header(&cfg, script.parent().unwrap(), &format!("epw-{}", record.attempt_id), "%j.out", "%j.err");
         body.push_str("export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\n");
         body.push_str(&format!(
             "cd {} || exit $?\n",
@@ -443,18 +440,8 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
         store::atomic_bytes(&script, body.as_bytes())?;
         record.script = Some(store::Identity::capture(&script)?);
         save(work, &record)?;
-        let r = &cfg.resources;
         let output = Command::new("sbatch")
             .arg("--parsable")
-            .args([
-                "--partition",
-                &r.partition,
-                "--nodes",
-                &r.nodes.to_string(),
-                "--ntasks",
-                &r.mpi.to_string(),
-            ])
-            .arg(format!("--job-name=epw-{}", record.attempt_id))
             .arg(format!("--comment=epwflow:{}", record.attempt_id))
             .arg(&script)
             .current_dir(work)
@@ -677,11 +664,11 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
             "allocation: 不是已登记的作业"
         );
         budget::attach_once(ledger, &r.reservation, job)?;
-        budget::registered_allocation(ledger, job, &cfg.resources)?;
+        budget::registered_allocation(ledger, job)?;
         let a = slurm::running_allocation(job)?;
         ensure!(
-            !a.terminal && a.state == "RUNNING" && a.nodes == cfg.resources.nodes as u64,
-            "allocation: 当前分配状态或节点数与固定请求不符"
+            !a.terminal && a.state == "RUNNING",
+            "allocation: 当前分配未运行"
         );
         r.job_id = Some(job);
         r.state = "running".into();
@@ -832,6 +819,6 @@ pub fn status(work: &Path, refresh: bool) -> Result<serde_json::Value> {
     }
     Ok(
         serde_json::json!({"schema_version":1,"workflow_status":r.state,"workflow_complete":r.state=="succeeded"&&r.until==Boundary::All,
-        "boundary_complete":r.state=="succeeded","until":r.until,"job_id":r.job_id,"attempt_id":r.attempt_id,"current_stage":r.current_stage,"error":r.error,"completed_stages":r.completed.keys().collect::<Vec<_>>(),"effective_mpi":cfg.resources.mpi,"mpi_override":r.mpi_override }),
+        "boundary_complete":r.state=="succeeded","until":r.until,"job_id":r.job_id,"attempt_id":r.attempt_id,"current_stage":r.current_stage,"error":r.error,"completed_stages":r.completed.keys().collect::<Vec<_>>(),"effective_mpi":super::parallelism::mpi_count(&cfg)?,"mpi_override":r.mpi_override }),
     )
 }

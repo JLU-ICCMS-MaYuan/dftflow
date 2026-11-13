@@ -190,7 +190,7 @@ bash scripts/build-native.sh build --release --locked --manifest-path tools/qf-g
 source "/path/to/dftflow/scripts/env.sh"
 ```
 
-构建入口读取本次 Cargo 制品报告，完成必要的兼容打包、全部选中入口启动检查与目标预检，再发布到固定模块路径。来源与发布后 SHA-256 记录在 `bin/.build/published/<程序>.json`。增量构建的 fresh 制品同样会发布；只构建 EPW 不更新其他模块。编译或预检失败保留现有程序。显式交叉目标只构建，不替换宿主模块程序。
+构建入口读取本次 Cargo 制品报告，完成必要的兼容打包、全部选中入口启动检查与目标预检，再发布到固定模块路径。成功制品直接覆盖固定模块命令，不创建版本目录或编译版本记录；构建缓存不作为另一套用户入口。增量构建的 fresh 制品同样会发布；只构建 EPW 不更新其他模块。编译或预检失败保留现有程序。显式交叉目标只构建，不替换宿主模块程序。
 
 Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter 和运行库搜索路径；该共享前缀必须在目标节点可读。运行库与加载器必须配套；已有前缀出现库版本冲突时拒绝覆盖。不要把含私有 glibc 的目录加入全局 `LD_LIBRARY_PATH`。未配置私有前缀的原生程序使用系统运行库；跨节点兼容性应另行核验，通用静态交付仍使用 musl。
 
@@ -203,7 +203,7 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 新 EPW 配置使用 `layout = "numbered"`、`work_dir = "."` 和根 `input.toml`。
 阶段重算覆盖旧内容，保留编号目录 inode 和当前打开的 Slurm 日志，不生成历史。`epw-state/` 保存八份中文阶段日志、编号原文配置及按需保留的 `imports/`；作业号保存在各计算目录同名 `.jobs`。输入原文变化时，在工作区 `epw-state/` 增加 `NNNN-config.toml` 版本。
 八日志布局执行 `epw_clear` 会报告无需清理；旧布局仍支持预览并清空三类历史。详见 [清理用法](docs/overview/epwflow/epw_clear.md)。
-EPW 的 `[resources]` 不再接受 `wall_seconds`、`storage_bytes`，新脚本和提交命令不增加时长限制，旧时间／存储预算不再阻断任务；集群自身规则仍由 Slurm 管理。源配置应删除旧字段，冻结快照不手工改写，详见 [资源说明](epwflow/README.md#计算时长与存储)。
+各 flow 统一采用 `[slurm].header` 多行字符串填写 Slurm 文件头，MPI 启动参数由 launcher／现有程序启动命令指定。EPW 已删除整个 `[resources]`，不再自动补写或通过 sbatch 参数覆盖分区、节点数和任务数。旧输入须迁移，历史冻结快照不手改；示例见 [EPW 配置说明](epwflow/README.md#slurm-文件头)。
 修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。
 `--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
 第 3 步 QE 子任务完成即发布单侧图；第 5 步完成电子能带／总 DOS 对比，第 6 步完成声子谱／TDOS 对比及总览，图片、数据和来源按阶段保存在工作区根 `results/`。

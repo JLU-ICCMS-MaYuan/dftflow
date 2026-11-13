@@ -12,9 +12,27 @@
 
 ## 计算时长与存储
 
-DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。`[resources]` 只保留 `partition`、`nodes`、`mpi`；`wall_seconds`、`storage_bytes` 已删除，出现旧字段会报出配置文件与字段名。CLI 不再接受 `--wall-seconds` 或 `--storage-bytes`，新脚本及提交命令不添加 `--time`。
+DFTFlow 不额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。历史账本保留消费、作业身份和并发登记；活动、未知作业检查继续有效。
 
-从自己维护的源配置中删除两项后重新运行 CLI，程序保存新的原文版本。含旧字段的历史配置直接拒绝，不手改已保存的编号版本；已有脚本及已提交作业不会自动变化。账本继续保存历史消费、作业身份和并发登记，历史时间／存储上限不再约束新任务，状态只显示仍生效的并发限制。源码、受测构建与当前安装分别核对，见 [0058](../docs/specs/0058-epw-remove-resource-limits/acceptance.md)。
+## Slurm 文件头
+
+与 QE／VASP 等模块统一使用 `[slurm].header`，删除整个 `[resources]`。MPI 参数仅在 launcher 中填写，Slurm 申请由 header 明确设置；程序不从 launcher 推导资源指令，也不通过 sbatch 参数覆盖资源申请。
+
+```toml
+[programs]
+launcher = ["mpirun", "-np", "2"]
+
+[slurm]
+header = """
+#SBATCH --partition=local
+#SBATCH --nodes=1
+#SBATCH --ntasks=2
+"""
+```
+
+header 原文保留；默认作业名和日志指令位于它之前，用户同名指令优先。未填写 header 时使用 Slurm 缺省资源，不自动增加分区、节点数或任务数。MPI 进程数可以小于分配的任务数，不再强制相等；EPW 原生 pool／image 与实际 k 网格的必要检查仍保留。旧 `[resources]` 直接报错，应迁移源输入并重新生成脚本，不手改冻结快照。公开 `--nodes`／预算 `--mpi` 已移除，恢复时修改源配置中的 launcher 及原生 pool 参数。
+
+构建成功后直接覆盖固定 `bin/<模块>/` 的命令，不保留编译版本目录或版本记录。详见 [0065](../docs/specs/0065-slurm-header-launcher/spec.md)。
 
 ## 编号工作区：原生任务与阶段交付
 

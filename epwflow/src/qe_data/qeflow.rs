@@ -157,7 +157,7 @@ pub fn run(
         "atomic_masses": cfg.atomic_masses,
         "pp_dir": dir.join("pp"),
         "qe": {"executable_path": shell_quote(&dir.join("bin").to_string_lossy()), "lattice_mode": "cell_parameters"},
-        "slurm": {"header": ""},
+        "slurm": {"header": cfg.slurm.header},
         "qe_phonon": {
             "retain_epw_data": true, "work_dir": dir, "prefix": cfg.qe.prefix,
             "scf": {"calculation": "scf", "outdir": "out", "prefix": cfg.qe.prefix,

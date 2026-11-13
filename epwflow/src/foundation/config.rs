@@ -31,7 +31,7 @@ pub struct RuntimeConfig {
     #[serde(default, skip_serializing_if="Option::is_none")] pub kpath:Option<PathBuf>,
     #[serde(default, skip_serializing_if="Option::is_none")] pub comparison:Option<Comparison>,
     #[serde(default)] pub atomic_masses:BTreeMap<String,f64>,
-    pub resources:Resources,pub budget:BudgetConfig,pub qe:Qe,pub phonon:Phonon,
+    pub slurm:qf_config::SlurmSection,pub budget:BudgetConfig,pub qe:Qe,pub phonon:Phonon,
     pub wannier:Wannier,pub interpolation:Interpolation,pub superconductivity:Superconductivity,
 }
 fn default_outdir()->PathBuf{PathBuf::from("./tmp")}
@@ -43,7 +43,6 @@ pub struct Programs {
     pub environment_script:Option<PathBuf>, pub wannier90:Option<Program>, pub pw2wannier90:Option<Program>,
     #[serde(default,skip_serializing_if="Option::is_none")] pub postw90:Option<Program>,
 }
-data!(Resources{partition:String,nodes:u32,mpi:u32});
 data!(BudgetConfig{campaign_id:String,ledger:PathBuf});
 data!(Qe{prefix:String,ecutwfc_ry:f64,ecutrho_ry:f64,occupations:Occupations,smearing:Option<Smearing>,degauss_ry:Option<f64>,scf:Scf,nscf:Nscf});
 data!(Scf{k_grid:[u32;3],k_shift:[u32;3],conv_thr_ry:f64});
@@ -92,13 +91,6 @@ pub fn temperature(x:f64,field:&str)->Result<i64>{
     positive(x,field)?;
     ensure!(x<=99999.99 && (x*100.0-(x*100.0).round()).abs()<1e-7,"configuration: {field}: 温度必须为 0.01 K 刻度且适配输出范围");Ok((x*100.0).round() as i64)
 }
-impl Resources {
-    pub fn validate(&self)->Result<()>{
-        ensure!(self.nodes==1,"configuration: resources.nodes: 只允许 1 节点");
-        ensure!((1..=64).contains(&self.mpi),"configuration: resources.mpi: 必须在 1..64");
-        ensure!(!self.partition.is_empty() && self.partition.chars().all(|c| c.is_ascii_alphanumeric()||"_-".contains(c)),"configuration: resources.partition: 非法分区");Ok(())
-    }
-}
 impl Convergence {fn validate(&self,f:&str,dis:bool)->Result<()>{let (tol,window,iterations)=if dis {("dis_conv_tol","dis_conv_window","dis_num_iter")}else{("conv_tol","conv_window","num_iter")};positive(self.tolerance_angstrom2,&format!("{f}.{tol}"))?;ensure!(self.window_iterations>0&&self.window_iterations<=self.max_iterations,"configuration: {f}.{window}/{iterations}: 无效迭代窗口");Ok(())}}
 impl Tc {fn validate(&self,f:&str)->Result<()>{
     let lo=temperature(self.min_k,&format!("{f}.min_k"))?;let hi=temperature(self.max_k,&format!("{f}.max_k"))?;
@@ -116,7 +108,12 @@ impl Config {
     fn load_impl(path:&Path)->Result<Self>{
         let path=paths::absolute(&std::env::current_dir()?,path)?;
         let raw=fs::read_to_string(&path).with_context(||format!("configuration: 无法读取 {}",path.display()))?;
-        let mut c:Self=toml::from_str(&raw).with_context(||format!("configuration: {}: TOML 字段/类型错误",path.display()))?;
+        let mut c:Self=toml::from_str(&raw).map_err(|e: toml::de::Error| {
+            let migration = if e.to_string().contains("unknown field `resources`") {
+                "；旧 [resources] 已移除，请使用 [slurm].header 和 programs.launcher"
+            } else { "" };
+            anyhow::anyhow!("configuration: {}: TOML 字段/类型错误{migration}: {e}", path.display())
+        })?;
         c.validate()?;
         c.resolve(&super::config_versions::base(&path)?)?;
         Ok(c)
@@ -129,7 +126,7 @@ impl Config {
         let ph=self.phonon_stage();
         let owner=if self.superconductivity.mode==Mode::Aniso {"aniso"}else{"iso"};
         ensure!(self.layout.as_deref().is_none_or(|v|v=="numbered"),"configuration: layout 只支持 numbered");
-        ensure!(self.schema_version==2,"unsupported_version: 仅支持 schema_version = 2，不兼容旧配置");self.resources.validate()?;
+        ensure!(self.schema_version==2,"unsupported_version: 仅支持 schema_version = 2，不兼容旧配置");ensure!(!self.slurm.header.as_deref().unwrap_or("").contains('\0'),"configuration: slurm.header: NUL");
         if let Some(c)=&self.comparison {
             ensure!((1..=1000).contains(&c.points_per_edge),"configuration: stages.3.qe-electronic.workflow.points_per_edge: 必须在 1..1000");
             positive(c.electronic_sigma_ev,"stages.5.epw-wannier.electron_dos.postw90.dos_smr_fixed_en_width")?;

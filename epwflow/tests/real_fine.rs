@@ -55,7 +55,7 @@ fn actual() -> Result<()> {
         "必须在实际运行的 Slurm 分配内"
     );
     ensure!(
-        std::env::var("SLURM_NTASKS")?.parse::<u32>()? == cfg.resources.mpi,
+        std::env::var("SLURM_NTASKS")?.parse::<u32>()? == epwflow::foundation::parallelism::mpi_count(&cfg).unwrap(),
         "MPI 数不符"
     );
     // 本机历史试验仍共用原账本；不得为测试建立零消费的新账本。

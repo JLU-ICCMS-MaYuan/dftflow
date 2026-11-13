@@ -80,4 +80,5 @@ fi
 kill "$running_pid" || exit $?
 wait "$running_pid" 2>/dev/null
 running_pid=""
+[[ ! -e "$fixture/bin/.build/published" ]] || { echo "不应记录编译版本" >&2; exit 1; }
 echo '自动发布通过：实际 Cargo、fresh、模块隔离、非交付、编译／启动失败、目标冲突、本机进程、活动作业、独立工具和带空格路径。'

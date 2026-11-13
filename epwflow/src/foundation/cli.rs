@@ -150,10 +150,6 @@ pub enum BudgetAction {
         ledger: PathBuf,
         #[arg(long)]
         label: String,
-        #[arg(long)]
-        nodes: u32,
-        #[arg(long)]
-        mpi: u32,
     },
     Attach {
         #[arg(long)]
@@ -294,11 +290,9 @@ fn budget_cmd(action: Option<BudgetAction>) -> Result<()> {
         Some(BudgetAction::Reserve {
             ledger,
             label,
-            nodes,
-            mpi,
         }) => {
             let token = budget::with_ledger(&ledger, "epic-0007", |ledger| {
-                budget::reserve(ledger, &label, nodes, mpi)
+                budget::reserve(ledger, &label)
             })?;
             println!("reserved: token={}", token);
             Ok(())

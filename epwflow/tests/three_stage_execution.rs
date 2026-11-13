@@ -227,8 +227,7 @@ runpy.run_path(str(root/name),run_name='__main__')
         // 历史 -r 只接受已登记分配；通过真实预算 CLI 登记本测试的手工分配。
         let cfg=config::Config::load(&self.root.join("inputepw.toml")).unwrap();
         let ledger=cfg.budget.ledger.to_string_lossy().into_owned();
-        let reserve=self.cli(0,&["--budget","reserve","--ledger",&ledger,"--label",label,
-            "--nodes",&cfg.resources.nodes.to_string(),"--mpi",&cfg.resources.mpi.to_string()],"manual-allocation-reserve");
+        let reserve=self.cli(0,&["--budget","reserve","--ledger",&ledger,"--label",label],"manual-allocation-reserve");
         assert!(reserve.status.success(),"{}",String::from_utf8_lossy(&reserve.stderr));
         let text=String::from_utf8(reserve.stdout).unwrap();
         let token=text.trim().strip_prefix("reserved: token=").unwrap();
@@ -611,7 +610,7 @@ impl Case {
         // 日志归档用例预建目录；新默认生成只准备当前就绪任务。
         fs::create_dir_all(c.root.join("run/4.qe-phonon-nosplit")).unwrap();
         let mut cfg=config::Config::load(&c.root.join("inputepw.toml")).unwrap();
-        cfg.layout=Some("numbered".into());cfg.resources.mpi=1;
+        cfg.layout=Some("numbered".into());
         cfg.programs.epw.args.extend(["-nk".into(),"1".into()]);
         c.put("input.toml",&toml::to_string_pretty(&cfg).unwrap());
         let qe=include_str!("fixtures/qe_native_io.py").replace("nscf=value('calculation')=='nscf'","nscf=value('calculation') in ('nscf','bands')")
@@ -692,7 +691,7 @@ else:
     fn numbered_cli(&self,i:usize,args:&[&str],job:Option<u64>,label:&str)->Output {
         if let Some(stage) = args.windows(2).find(|a| a[0] == "--stage").map(|a| a[1]) { self.put("last-stage-target", stage); }
         let mut cmd=Command::new(BINS[i]);cmd.args(["-c",self.root.join("input.toml").to_str().unwrap()]).args(args);
-        self.environment(&mut cmd,job);if job.is_some(){let cfg=config::Config::load(&self.root.join("input.toml")).unwrap_or_else(|e|panic!("测试配置加载失败：{e:#}"));cmd.env("SLURM_NTASKS",cfg.resources.mpi.to_string());}
+        self.environment(&mut cmd,job);if job.is_some(){let cfg=config::Config::load(&self.root.join("input.toml")).unwrap_or_else(|e|panic!("测试配置加载失败：{e:#}"));cmd.env("SLURM_NTASKS", (epwflow::foundation::parallelism::mpi_count(&cfg).unwrap() + 4).to_string());}
         let o=cmd.output().unwrap();self.put(&format!("{label}.stderr"),&String::from_utf8_lossy(&o.stderr));self.put(&format!("{label}.stdout"),&String::from_utf8_lossy(&o.stdout));o
     }
     fn numbered_change(&self,change:impl FnOnce(&mut config::Config)) {
@@ -804,7 +803,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     assert!(c.root.join("run/7.epw-fine/smearing-0001/epw_fine.sh").is_file());
     let before=c.calls();
     c.script("launcher","#!/bin/sh\nshift 2\nexec \"$@\"\n");
-    c.numbered_change(|cfg|{cfg.resources.mpi=2;cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"2".into()];cfg.programs.epw.args[2]="2".into();});
+    c.numbered_change(|cfg|{cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"2".into()];cfg.programs.epw.args[2]="2".into();});
     c.accounting(None);
     success(c.numbered_cli(1,&["--stage","coarse","-s"],None,"numbered-resource-reuse"));
     assert_eq!(before,c.calls(),"改资源不能重算已有科学结果");
@@ -820,7 +819,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     c.put("tc-failure","test failure");
     let failed=c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(207),"numbered-superconductivity-partial");assert!(!failed.status.success());
     let partial:Value=store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();assert_ne!(partial["validation"]["status"],"valid");
-    c.numbered_change(|cfg|{cfg.resources.mpi=3;cfg.programs.launcher[2]="3".into();cfg.programs.epw.args[2]="3".into();});
+    c.numbered_change(|cfg|{cfg.programs.launcher[2]="3".into();cfg.programs.epw.args[2]="3".into();});
     fs::remove_file(c.root.join("tc-failure")).unwrap();c.accounting(Some(210));
     success(c.numbered_cli(2,&["--stage","superconductivity","--resume","-r"],Some(210),"numbered-superconductivity"));
     c.assert_scripts_without_time_limits();
@@ -857,7 +856,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     wan.verify().unwrap();assert_eq!(c.calls().1.matches("wannier ").count(),2,"粗 q 不能重复拟合");
     let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
     assert!(stages::reusable(&cfg,Step::Coarse).unwrap());assert!(!stages::reusable(&cfg,Step::Fine).unwrap());
-    c.numbered_change(|cfg|{cfg.resources.mpi=16;cfg.programs.launcher[2]="16".into();cfg.programs.epw.args[2]="16".into();});
+    c.numbered_change(|cfg|{cfg.programs.launcher[2]="16".into();cfg.programs.epw.args[2]="16".into();});
     success(c.numbered_cli(2,&["--stage","fine","--check"],None,"fine-resources-exceed-cached-coarse-grid"));
     // 分配内执行不额外生成第 5～8 步包装脚本；原生提交脚本由 direct_submit 覆盖。
     for (stage, name) in [("5.epw-wannier", "wannier.sh"), ("6.epw-coarse", "coarse.sh"), ("7.epw-fine", "fine.sh")] {
@@ -924,7 +923,7 @@ fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
     let c = Case::numbered();
     c.script("launcher", "#!/bin/sh\nshift 2\nexec \"$@\"\n");
     c.numbered_change(|cfg| {
-        cfg.qe.scf.k_grid=[4,4,2]; cfg.qe.nscf.k_grid=[4,4,2]; cfg.resources.mpi=64;
+        cfg.qe.scf.k_grid=[4,4,2]; cfg.qe.nscf.k_grid=[4,4,2];
         cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"64".into()];
         cfg.programs.epw.args=vec!["--io-contract".into(),"-nk".into(),"64".into()];
     });
@@ -933,11 +932,12 @@ fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
     let error=String::from_utf8_lossy(&out.stderr);
     assert!(error.contains("k 点数=32") && error.contains("pool=64") && error.contains("空 pool"),"{error}");
     assert_eq!(c.calls().0, "");
-    c.numbered_change(|cfg| { cfg.resources.mpi=32; cfg.programs.launcher[2]="32".into(); cfg.programs.epw.args[2]="32".into(); });
+    c.numbered_change(|cfg| {  cfg.programs.launcher[2]="32".into(); cfg.programs.epw.args[2]="32".into(); });
     success(c.numbered_cli(1,&[],None,"numbered-legal-generation"));
     let active = c.direct_task();
     let script=fs::read_to_string(active["script"]["path"].as_str().unwrap()).unwrap();
-    assert!(script.contains("#SBATCH --ntasks=32"));
+    assert!(script.contains("#SBATCH --ntasks=1"));
+    assert!(!script.contains("#SBATCH --ntasks=32"));
     assert!(script.contains("launcher") && script.contains("pw.x"));
     assert_eq!(c.calls().0, "");
 }
@@ -946,7 +946,7 @@ fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
 fn numbered_submit_and_execution_ignore_exhausted_time_and_storage_limits() {
     let c = Case::numbered();
     c.direct_setup();
-    success(c.cli(0, &["--budget", "reserve", "--ledger", "fixture-ledger.json", "--label", "initialize", "--nodes", "1", "--mpi", "1"], "initialize-ledger"));
+    success(c.cli(0, &["--budget", "reserve", "--ledger", "fixture-ledger.json", "--label", "initialize"], "initialize-ledger"));
     let path = c.root.join("fixture-ledger.json");
     let mut ledger: Value = store::read(&path).unwrap();
     ledger["reservations"] = json!([]);
@@ -983,7 +983,7 @@ fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
     assert!(!blocked.status.success());
     assert!(c.root.join("run/epw-state/control.lock/owner.json").is_file());
     drop(control);
-    c.numbered_change(|cfg|cfg.resources.partition="other".into());
+    c.numbered_change(|cfg|cfg.slurm.header=Some("#SBATCH --partition=other".into()));
     assert!(!c.numbered_cli(0,&["--stage","electronic","-s","--resume"],None,"numbered-duplicate").status.success());
     assert_eq!(fs::read(&script).unwrap(),before);
     assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(),1);
@@ -1137,7 +1137,7 @@ fn numbered_failed_coarse_resume_changes_resources_and_preserves_qe() {
     let calls=c.calls().0;
     let reference=store::Identity::capture(&c.root.join("run/4.qe-phonon-nosplit/save/scf.dvscf_q1")).unwrap();
     c.script("launcher","#!/bin/sh\nshift 2\nexec \"$@\"\n");
-    c.numbered_change(|cfg|{cfg.resources.mpi=2;cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"2".into()];cfg.programs.epw.args[2]="2".into();});
+    c.numbered_change(|cfg|{cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"2".into()];cfg.programs.epw.args[2]="2".into();});
     fs::remove_file(c.root.join("fail-coarse")).unwrap();c.accounting(Some(203));
     success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(203),"coarse-recovered"));
     reference.verify().unwrap();assert_eq!(c.calls().0.lines().filter(|s|*s=="pw").count(),calls.lines().filter(|s|*s=="pw").count(),"电子参考复用第 3 步，已成功 QE 保留");
@@ -1176,9 +1176,9 @@ if (root/'fail-bands').exists():
 #[test]
 fn numbered_electronic_retry_preserves_pw_with_32_mpi_and_then_changed_resources() {
     let c=Case::numbered();c.fail_bands();
-    c.script("launcher", "#!/bin/sh\n[ \"$1\" = -np ] || exit 11\n[ \"$2\" = \"$SLURM_NTASKS\" ] || exit 12\nshift 2\nexec \"$@\"\n");
+    c.script("launcher", "#!/bin/sh\n[ \"$1\" = -np ] || exit 11\n[ \"$2\" -le \"$SLURM_NTASKS\" ] || exit 12\nshift 2\nexec \"$@\"\n");
     c.numbered_change(|cfg|{
-        cfg.qe.scf.k_grid=[4,4,2]; cfg.qe.nscf.k_grid=[4,4,2]; cfg.resources.mpi=32;
+        cfg.qe.scf.k_grid=[4,4,2]; cfg.qe.nscf.k_grid=[4,4,2];
         cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"32".into()];
         cfg.programs.epw.args[2]="32".into();
     });
@@ -1186,7 +1186,7 @@ fn numbered_electronic_retry_preserves_pw_with_32_mpi_and_then_changed_resources
     let before=c.calls();assert_eq!(before.0.lines().filter(|l|*l=="pw").count(),3);
     let save=c.root.join("run/3.qe-electronic/qe_eband/out");
     let saved=epwflow::qe_data::save::files(&save).unwrap();
-    c.numbered_change(|cfg|{cfg.resources.mpi=16;cfg.programs.launcher[2]="16".into();cfg.programs.epw.args[2]="16".into();});
+    c.numbered_change(|cfg|{cfg.programs.launcher[2]="16".into();cfg.programs.epw.args[2]="16".into();});
     fs::remove_file(c.root.join("fail-bands")).unwrap();c.accounting(Some(202));
     success(c.numbered_cli(1,&["--stage","wannier","--resume","-r"],Some(202),"electronic-recovered"));
     assert_eq!(before.0,c.calls().0,"恢复不得重跑 SCF／NSCF／PW bands");

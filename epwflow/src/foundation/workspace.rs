@@ -137,12 +137,7 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
     let dir = target.directory(&cfg);
     fs::create_dir_all(&dir)?;
     let q = slurm::shell_quote;
-    let r = &cfg.resources;
-    ensure!(
-        !r.partition.contains(['\n', '\r']),
-        "configuration: 分区名含换行"
-    );
-    let mut body=format!("#!/bin/bash\n#SBATCH --job-name=epw-{}\n#SBATCH --partition={}\n#SBATCH --nodes={}\n#SBATCH --ntasks={}\n{}#SBATCH --open-mode=truncate\n",target.name(),r.partition,r.nodes,r.mpi,slurm::log_directives(&dir,&format!("slurm-{}.log",target.name()),&format!("slurm-{}.log",target.name())));
+    let mut body = slurm::script_header(&cfg, &dir, &format!("epw-{}", target.name()), &format!("slurm-{}.log", target.name()), &format!("slurm-{}.log", target.name()));
     if let Some(env) = &cfg.programs.environment_script {
         body.push_str(&super::workflow::source_environment(env)?);
     }
@@ -171,7 +166,7 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
     }
     let reservation = budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
         budget::reconcile(l)?;
-        budget::reserve_workflow(l, &format!("stage:{id}"), r)
+        budget::reserve_workflow(l, &format!("stage:{id}"))
     })?;
     log::set_job(&cfg.work_dir, target, "阶段分配", None)?;
     log::update(&cfg.work_dir, target, |d| {
@@ -257,10 +252,7 @@ pub fn allocated(config: &Path, target: Step, resume: bool, id: &str) -> Result<
         "input_conflict: 阶段脚本绑定不同作业"
     );
     let allocation = slurm::running_allocation(job)?;
-    ensure!(
-        allocation.nodes == u64::from(cfg.resources.nodes),
-        "allocation: 节点数量与配置不符"
-    );
+    ensure!(!allocation.terminal && allocation.state == "RUNNING", "allocation: 当前分配未运行");
     parallelism::preflight(&cfg, target, true)?;
     log::set_job(&cfg.work_dir, target, "阶段分配", Some(job))?;
     if let Some(token) = doc.get("阶段分配", "预算关联") {
@@ -307,7 +299,7 @@ pub fn start_allocated(config: &Path, target: Step, resume: bool) -> Result<()> 
     parallelism::preflight(&cfg, target, true)?;
     budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
         budget::reconcile(l)?;
-        budget::register_generated(l, job, &cfg.resources)
+        budget::register_generated(l, job)
     })?;
     super::native_workspace::allocated(config, target, resume, &generation)
 }

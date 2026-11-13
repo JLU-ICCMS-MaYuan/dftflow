@@ -24,10 +24,13 @@ args = []
 path = "./epw.x"
 args = []
 
-[resources]
-partition = "test"
-nodes = 1
-mpi = 1
+
+[slurm]
+header = """
+#SBATCH --partition=test
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+"""
 
 [budget]
 campaign_id = "epic-0007"

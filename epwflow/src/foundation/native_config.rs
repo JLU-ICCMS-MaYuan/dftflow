@@ -36,7 +36,8 @@ pub struct Document {
     pub structure: PathBuf,
     pub pseudos: BTreeMap<String, PathBuf>,
     pub programs: config::Programs,
-    pub resources: config::Resources,
+    #[serde(default)]
+    pub slurm: qf_config::SlurmSection,
     pub budget: config::BudgetConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout: Option<String>,
@@ -520,7 +521,7 @@ fn decode(d: &Document) -> Result<RuntimeConfig> {
         structure: d.structure.clone(),
         pseudos: d.pseudos.clone(),
         programs: d.programs.clone(),
-        resources: d.resources.clone(),
+        slurm: d.slurm.clone(),
         budget: d.budget.clone(),
         layout: d.layout.clone(),
         kpath: d.kpath.clone(),
@@ -1230,7 +1231,7 @@ impl Config {
         d.structure = self.structure.clone();
         d.pseudos = self.pseudos.clone();
         d.programs = self.programs.clone();
-        d.resources = self.resources.clone();
+        d.slurm = self.slurm.clone();
         d.budget = self.budget.clone();
         d.layout = self.layout.clone();
         d.kpath = self.kpath.clone();

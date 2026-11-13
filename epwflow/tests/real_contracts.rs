@@ -334,10 +334,6 @@ fn b06_unknown_scheduler_preserves_active_allocation() {
         ledger,
         "--label",
         "isolated-test",
-        "--nodes",
-        "1",
-        "--mpi",
-        "1",
     ]);
     assert!(
         out.status.success(),
@@ -678,10 +674,6 @@ fn attached_allocations_still_enforce_existing_concurrency_limit() {
             "campaign/ledger.json",
             "--label",
             "bound",
-            "--nodes",
-            "1",
-            "--mpi",
-            "1",
         ]);
         assert!(
             out.status.success(),

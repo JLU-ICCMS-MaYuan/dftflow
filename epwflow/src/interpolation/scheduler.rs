@@ -10,9 +10,8 @@ use std::path::Path;
 
 /// 在共享预算账本上预留资源（FR-011）。
 fn charge_budget(cfg: &config::Config, run_id: &str) -> Result<String> {
-    let r = &cfg.resources;
     budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
-        budget::reserve(ledger, &format!("interpolation:{}", run_id), r.nodes, r.mpi)
+        budget::reserve(ledger, &format!("interpolation:{}", run_id))
     })
     .context("budget_denied: interpolation 预算预留失败")
 }

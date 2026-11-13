@@ -300,7 +300,7 @@ fn stage_backend_keeps_log_directory_separate_from_scientific_working_directory(
     if let Some(root) = std::env::var_os(CHILD_ROOT) {
         let cfg = Config::load(&PathBuf::from(root).join("inputepw.toml")).unwrap();
         fs::create_dir_all(&cfg.work_dir).unwrap();
-        slurm::submit_via_sbatch(&[], &["/bin/pwd".into()], &cfg.work_dir, "check-cwd").unwrap();
+        slurm::submit_via_sbatch(&[], &["/bin/pwd".into()], &cfg.work_dir, "check-cwd", cfg.slurm.header.as_deref().unwrap_or("")).unwrap();
         return;
     }
     let c = Case::new(false);
@@ -367,5 +367,44 @@ fn wannier_default_logs_stay_local_and_custom_headers_are_preserved() {
         let text = fs::read_to_string(c.work.join(name)).unwrap();
         assert!(text.starts_with(header));
         assert_eq!(text.matches("#SBATCH --chdir=").count(), 1);
+    }
+}
+
+#[test]
+fn user_resource_header_survives_public_submission_without_cli_overrides() {
+    let c = Case::new(true);
+    let mut cfg: Config = toml::from_str(&fs::read_to_string(c.config()).unwrap()).unwrap();
+    let header = "#SBATCH --partition=user_partition\n#SBATCH --nodes=3\n#SBATCH --ntasks=8\n#SBATCH --cpus-per-task=2\n#SBATCH --output=custom-%j.log\n";
+    cfg.slurm.header = Some(header.into());
+    fs::write(c.config(), toml::to_string_pretty(&cfg).unwrap()).unwrap();
+    success(c.command(PHONON)
+        .args(["-c", c.config().to_str().unwrap(), "--stage", "scf", "-s"])
+        .output().unwrap());
+    let rows = c.rows();
+    assert_eq!(rows.len(), 1);
+    let row = &rows[0];
+    for (key, value) in [("partition", "user_partition"), ("nodes", "3"), ("ntasks", "8"), ("cpus-per-task", "2"), ("output", "custom-%j.log")] {
+        assert_eq!(row["options"][key], value);
+    }
+    let script = fs::read_to_string(row["script"].as_str().unwrap()).unwrap();
+    assert!(script.contains(header));
+    for option in ["partition", "nodes", "ntasks", "cpus-per-task", "output"] {
+        assert!(!row["argv"].as_array().unwrap().iter().any(|v| v.as_str().unwrap().starts_with(&format!("--{option}"))));
+    }
+    assert_eq!(epwflow::foundation::parallelism::mpi_count(&cfg).unwrap(), 1);
+}
+
+#[test]
+fn absent_header_does_not_invent_resource_directives() {
+    let c = Case::new(true);
+    let mut cfg: Config = toml::from_str(&fs::read_to_string(c.config()).unwrap()).unwrap();
+    cfg.slurm.header = None;
+    fs::write(c.config(), toml::to_string_pretty(&cfg).unwrap()).unwrap();
+    success(c.command(PHONON)
+        .args(["-c", c.config().to_str().unwrap(), "--stage", "electronic"])
+        .output().unwrap());
+    let script = fs::read_to_string(c.work.join("3.qe-electronic/electronic.sh")).unwrap();
+    for option in ["--partition", "--nodes", "--ntasks"] {
+        assert!(!script.contains(option), "{script}");
     }
 }

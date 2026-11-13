@@ -88,7 +88,7 @@ pub fn execute(
             let _report = process::run(&cmd, &binding.work_dir)?;
         }
         Backend::Slurm => {
-            let job = slurm::submit_via_sbatch(launcher, &cmd, &binding.work_dir, stage_id)?;
+            let job = slurm::submit_via_sbatch(launcher, &cmd, &binding.work_dir, stage_id, super::config::Config::load(&binding.work_dir.join("input-init.toml"))?.slurm.header.as_deref().unwrap_or(""))?;
             attempt.job_id = Some(job.job_id);
             attempt.cluster = job.cluster;
         }

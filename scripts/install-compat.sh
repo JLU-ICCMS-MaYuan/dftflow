@@ -27,21 +27,11 @@ legacy_dyn0="$target_dir/qf-gen-dyn0"
 if [[ " ${dftflow_products[*]} " == *' qeflow '* && " ${dftflow_products[*]} " != *' qf-gen-dyn0 '* &&
     -L "$legacy_dyn0" && -L "$target_dir/qeflow" ]] &&
     [[ $(readlink "$legacy_dyn0") == $(readlink "$target_dir/qeflow") ]]; then
-    if [[ "${DFTFLOW_BACKUP_ENTRIES:-0}" == 1 ]]; then
-        backup="$target_dir/.dftflow-backup-$$"
-        mkdir -p "$backup" || exit $?
-        cp -P "$legacy_dyn0" "$backup/qf-gen-dyn0" || exit $?
-    fi
     rm -- "$legacy_dyn0" || exit $?
 fi
 for product in "${dftflow_products[@]}"; do
     while IFS= read -r entry; do
         dest="$target_dir/$entry"
-        if [[ "${DFTFLOW_BACKUP_ENTRIES:-0}" == 1 && ( -e "$dest" || -L "$dest" ) ]]; then
-            backup="$target_dir/.dftflow-backup-$$"
-            mkdir -p "$backup" || exit $?
-            cp -P "$dest" "$backup/$entry" || exit $?
-        fi
         temp="$target_dir/.dftflow-$entry-$$"
         ln -s "$source_bin/$product" "$temp" || exit $?
         mv -f "$temp" "$dest" || exit $?

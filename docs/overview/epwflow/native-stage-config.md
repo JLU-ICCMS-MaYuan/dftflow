@@ -40,7 +40,7 @@ amass、temps 等数组保持原生名字，输入生成 Fortran 下标；nstemp
 
 ## 工作流与自动绑定
 
-用户可编辑的设置单独放在顶层 workflow，例如 `[workflow."5.epw-wannier"]` 保存选窗和输入来源，`[workflow."8.epw-superconductivity"]` 保存 task、mode 和搜索设置。resources/programs 保留调度与程序设置。
+用户可编辑的设置单独放在顶层 workflow，例如 `[workflow."5.epw-wannier"]` 保存选窗和输入来源，`[workflow."8.epw-superconductivity"]` 保存 task、mode 和搜索设置。调度文件头使用 `[slurm].header` 多行字符串，程序启动使用 programs；整个 `[resources]` 已移除。MPI 启动参数仅由 launcher 指定，Slurm 分配由用户 header 决定，两者不强制相等。
 
 TOML 无需填写 outdir、pseudo_dir、nat 等自动绑定项或 derived 表。程序内部登记有限规则，按结构、任务目录及核验后的数据生成；手填同一目标仍拒绝双重定义，未配置且未登记的生成参数同样停止。
 

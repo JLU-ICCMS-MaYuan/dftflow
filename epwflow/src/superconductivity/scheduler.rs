@@ -46,7 +46,7 @@ pub fn run_with_retry(
                 .context("allocation: 缺少当前 Slurm 分配")?
                 .parse::<u64>()?;
             budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
-                ledger.require_allocation(job, &cfg.resources).map(|_| ())
+                ledger.require_allocation(job).map(|_| ())
             })?;
         }
         ensure!(

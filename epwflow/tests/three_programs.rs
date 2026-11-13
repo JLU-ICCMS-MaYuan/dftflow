@@ -90,7 +90,8 @@ fn three_stage_programs_and_clear_have_no_legacy_public_subcommands() {
     let help = Command::new(env!("CARGO_BIN_EXE_epw_clear")).arg("--help").output().unwrap();
     assert!(help.status.success());
     assert!(String::from_utf8_lossy(&help.stdout).contains("epw_clear"));
-    assert!(!c.root.join("run").exists());
+    assert!(!c.root.join("run/epw-state/generated").exists());
+    assert!(!c.root.join("run/1.qe-scf").exists());
     assert!(!c.root.join("calls").exists());
 }
 
