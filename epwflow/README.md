@@ -429,3 +429,9 @@ epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
 各自同时保存 SVG／CSV／JSON，并发布到根 `results/<阶段>/band-ranges/`。图中显示每条带在当前采样上的 min/max、跨费米带、四个可解析窗口、逐 k 点能量冻结态范围及 num_wann。SCF／NSCF 用各自 E_F，electronic 用 NSCF E_F。自动窗口为各阶段采样预览，最终选窗仍由 NSCF 决定；边界尚未解析时明确标注。PNG 至少 300 DPI。
 
 复用已有结果时可补图，不重算科学任务；不要为补图使用强制重算 SCF 的 `--resume`。冻结态超限仍留下诊断图，但不能继续提交不合法的 Wannier 窗口，也不会自动缩窗或增加 num_wann。可移动结果包的 `--plot --results "results"` 只读取包内报告重绘。需求与验收见 [0068](../docs/specs/0068-epw-stage-band-ranges/spec.md)。
+
+## EPW 运行版本识别与旧误拒绝
+
+当前原生运行头接受 EPW 5.9 和 6.0；必须有且只有一条真实 Program EPW v. 记录，不使用输入标题中的版本文字。退出码、原生错误和完整结束计时仍检查；多温度入口复用同一版本识别。该兼容只表示运行证据适配，不代表 EPW 6.0 的全部粗／细矩阵布局或求解结果均已科学验收。
+
+旧版本门将真实 EPW 6.0 成功 Wannier 作业误标失败时，正常阶段命令会核对原错误、实际 6.0 日志、零退出码、COMPLETED 作业和输入存在性，再恢复到待验证；随后完整核验拟合、窗口和模型，不直接宣告科学成功或重跑拟合。其他失败不自动恢复。当前 MgB₂ 已恢复拟合，并准备 comparison-native/electron/postw90.sh；需用户正常 -s 提交 DOS 后处理，结束后再次检查发布图。不要为此强制 --resume。见 [0069](../docs/specs/0069-epw6-runtime-evidence/acceptance.md)。

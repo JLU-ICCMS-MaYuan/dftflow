@@ -1715,3 +1715,48 @@ fn public_scf_reuse_ignores_raw_density_and_wavefunction_changes() {
     success(out);
     assert_eq!(before, c.calls(), "不得因原始大数据变化重跑 SCF");
 }
+
+#[test]
+fn epw6_version_rejection_is_revalidated_without_refitting() {
+    use epwflow::foundation::{readable_state as log, stages::Step};
+    let c = Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(1, &["--stage", "wannier", "-r"], Some(201), "fit-before-version-upgrade"));
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let output = c.root.join("run/5.epw-wannier/epw.out");
+    fs::write(&output, fs::read_to_string(&output).unwrap().replace("Program EPW v.5.9", "Program EPW v.6.0")).unwrap();
+    let mark = |reason: &str| {
+        log::update(&cfg.work_dir, Step::Wannier, |d| {
+            d.set("阶段", "状态", "失败");
+            d.set("阶段", "科学状态", "待检查");
+            d.set("问题", "原因", reason);
+            let label = d.sections.iter().find(|(_, fields)| fields.get("输出名称").is_some_and(|s| s == "epw"))
+                .map(|(name, _)| name.clone()).unwrap();
+            d.set(&label, "状态", "失败");
+            d.set(&label, "退出码", "0");
+            Ok(())
+        }).unwrap();
+    };
+    c.accounting(None);
+    let before = c.calls();
+    mark("execution_failed: unrelated failure");
+    assert!(!c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "unrelated-failure-stays-failed").status.success());
+    assert_eq!(before, c.calls());
+    mark("environment_incompatible: 缺少 EPW 5.9 运行证据");
+    let label = log::read(&cfg.work_dir, Step::Wannier).unwrap().sections.iter()
+        .find(|(_, fields)| fields.get("输出名称").is_some_and(|s| s == "epw"))
+        .map(|(name, _)| name.clone()).unwrap();
+    log::update(&cfg.work_dir, Step::Wannier, |d| {
+        d.sections.get_mut(&label).unwrap().retain(|k, _| !k.starts_with("科学输入"));
+        Ok(())
+    }).unwrap();
+    assert!(!c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "missing-input-record-stays-failed").status.success());
+    assert_eq!(before, c.calls());
+    log::update(&cfg.work_dir, Step::Wannier, |d| {
+        d.set(&label, "科学输入1", "5.epw-wannier/epw_wannier.in");
+        Ok(())
+    }).unwrap();
+    success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "revalidate-epw6"));
+    assert_eq!(before, c.calls(), "版本误拒绝恢复不得重跑任何科学任务");
+    assert_eq!(log::read(&cfg.work_dir, Step::Wannier).unwrap().get("阶段", "科学状态"), Some("已完成"));
+}

@@ -161,13 +161,7 @@ pub fn inspect(
     let batch = record.batch.as_ref().context("data_invalid: 缺批次证据")?;
     batch.log.verify()?;
     let log = fs::read_to_string(&batch.log.path)?;
-    ensure!(
-        regex::Regex::new(r"Program EPW v\.5\.9\s")?
-            .find_iter(&log)
-            .count()
-            == 1,
-        "data_invalid: 批次缺少唯一 EPW 5.9 运行证据"
-    );
+    crate::interpolation::native::runtime_version(&log)?;
     let normal =
         record.exit_status == Some(0) && crate::interpolation::native::checked_log(&log, 0).is_ok();
     let part = segment(&log, &batch.temperatures, &record.request)?;

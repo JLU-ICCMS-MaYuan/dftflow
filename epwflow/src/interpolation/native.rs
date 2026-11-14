@@ -1,4 +1,4 @@
-//! EPW 5.9 原生输出解析。谱能量轴独立于细网格声子本征频率。
+//! EPW 5.9／6.0 原生运行证据与输出解析。谱能量轴独立于细网格声子本征频率。
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
@@ -80,13 +80,21 @@ fn number(s: &str) -> Result<f64> {
     Ok(value)
 }
 
+/// 只认真实运行头，不认输入标题；支持范围不等于所有科学格式均已验收。
+pub fn runtime_version(log: &str) -> Result<&str> {
+    let header = regex::Regex::new(r"(?m)^\s*Program EPW v\.([0-9]+(?:\.[0-9]+)*)\s")?;
+    let versions: Vec<_> = header.captures_iter(log)
+        .map(|c| c.get(1).unwrap().as_str()).collect();
+    ensure!(versions.len() == 1, "environment_incompatible: 缺少唯一 EPW 运行版本记录");
+    ensure!(matches!(versions[0], "5.9" | "6.0"),
+        "environment_incompatible: 未适配的 EPW 运行版本 {}", versions[0]);
+    Ok(versions[0])
+}
+
 /// EPW 的结束计时和进程退出码均必需；它不输出 PW/PH 的 JOB DONE。
 pub fn checked_log(log: &str, exit_code: i32) -> Result<()> {
     ensure!(exit_code == 0, "execution_failed: EPW 退出码 {exit_code}");
-    ensure!(
-        regex::Regex::new(r"Program EPW v\.5\.9\s")?.is_match(log),
-        "environment_incompatible: 缺少 EPW 5.9 运行证据"
-    );
+    runtime_version(log)?;
     ensure!(
         !regex::Regex::new(r"(?i)error in routine|segmentation fault|MPI_Abort")?.is_match(log),
         "execution_failed: EPW 报告原生错误"

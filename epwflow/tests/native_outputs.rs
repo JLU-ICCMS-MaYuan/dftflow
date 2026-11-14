@@ -46,7 +46,10 @@ fn completion_requires_exit_status_and_epw_timing() {
     let log = "Program EPW v.5.9 starts\nTotal program execution\nEPW : 2s CPU 3s WALL\n";
     native::checked_log(log, 0).unwrap();
     assert!(native::checked_log(log, 1).is_err());
-    assert!(native::checked_log(&log.replace("5.9", "6.0"), 0).is_err());
+    native::checked_log(&log.replace("5.9", "6.0"), 0).unwrap();
+    assert!(native::checked_log(&log.replace("5.9", "6.1"), 0).is_err());
+    assert!(native::checked_log(&format!("{log}{log}"), 0).is_err());
+    assert!(native::checked_log(&log.replace("Program EPW v.5.9 starts", "DFTFlow EPW 5.9 workflow input"), 0).is_err());
     assert!(native::checked_log(&log.replace("Total program execution", "JOB DONE"), 0).is_err());
     assert!(native::checked_log(&format!("{log} Error in routine broken"), 0).is_err());
 }

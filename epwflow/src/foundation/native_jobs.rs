@@ -500,7 +500,32 @@ pub fn task_status(task: &Task) -> Result<serde_json::Value> {
         serde_json::json!({"state":state,"job":task.job,"script":task.script.path,"directory":task.directory}),
     )
 }
+/// 只恢复旧版本门误拒绝的成功拟合；完整模型核验仍由正常 Wannier 路径完成。
+fn recover_epw6_version_rejection(cfg: &Config) -> Result<()> {
+    use super::{readable_state as log, stages::Step};
+    let doc = log::read(&cfg.work_dir, Step::Wannier)?;
+    if doc.get("问题", "原因") != Some("environment_incompatible: 缺少 EPW 5.9 运行证据") {
+        return Ok(());
+    }
+    for mut task in tasks(cfg)?.into_iter().filter(|t| t.directory == Step::Wannier.directory(cfg)
+        && t.stem == "epw" && t.state == "failed" && t.exit_status == Some(0)) {
+        let output = task.directory.join("epw.out");
+        let text = fs::read_to_string(&output)?;
+        if crate::interpolation::native::runtime_version(&text)? != "6.0" { continue; }
+        crate::interpolation::native::checked_log(&text, 0)?;
+        ensure!(!task.inputs.is_empty() && task.inputs.iter().all(|i| i.path.is_file()), "data_invalid: 误拒绝恢复缺少原生输入");
+        let job = task.job.context("scheduler_unknown: 误拒绝恢复缺少作业号")?;
+        let observed = slurm::accounting(job)?;
+        ensure!(observed.terminal && observed.state == "COMPLETED",
+            "scheduler_unknown: 误拒绝恢复需要真实 COMPLETED 作业");
+        task.state = "awaiting_validation".into();
+        persist(cfg, &task)?;
+    }
+    Ok(())
+}
+
 pub fn reconcile(cfg: &Config, resume: bool) -> Result<()> {
+    recover_epw6_version_rejection(cfg)?;
     for mut task in tasks(cfg)?.into_iter().filter(|t| t.group.is_none()) {
         if matches!(
             task.state.as_str(),
