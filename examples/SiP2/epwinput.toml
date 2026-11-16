@@ -219,7 +219,7 @@ num_iter = 500 # 与下方 wannier90.num_iter 保持一致
 
 [stages."5.epw-wannier".wannier90]
 bands_plot = true
-bands_num_points = 1
+bands_num_points = 50
 num_wann = 96
 projections = [
     "Si:s,p",

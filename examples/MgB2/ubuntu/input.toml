@@ -186,7 +186,7 @@ selection_mode = "energy_only"
 
 [stages."5.wannier90"]
 bands_plot = true
-bands_num_points = 1
+bands_num_points = 50
 # 能窗为绝对 eV；conv_tol 为 Å²；num_iter 等为迭代次数。
 num_wann = 5
 projections = ["B:pz", "f=0.5,0.0,0.5:s", "f=0.0,0.5,0.5:s", "f=0.5,0.5,0.5:s"]
