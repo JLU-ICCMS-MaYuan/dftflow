@@ -1,5 +1,8 @@
 # 实施计划：电子对比前置与逐阶段发布
 
+> 比较目录以文末“2026-11-16 目录扁平化”修订为准：第 5、6 步分别直接使用 comparison-native/，旧 electron／phonon 路径仅保留为历史记录。
+
+
 **日期**：2026-10-22。**基线**：[Spec](spec.md)。
 **性质**：前轮完整设计已交付；用户“开始落地”授权按本版实施，代码与隔离验证进行中。
 
@@ -45,10 +48,11 @@
 ├── 3.qe-electronic/
 ├── 4.qe-phonon-<模式>/
 ├── 5.epw-wannier/
-│   └── comparison-native/electron/
+│   └── comparison-native/
 ├── 6.epw-coarse/
 │   └── comparison-native/
-│       ├── phonon/
+│       ├── force-constants/
+│       ├── frequencies/
 │       └── epw/
 ├── 7.epw-fine/
 ├── 8.epw-superconductivity/
@@ -154,3 +158,10 @@ flowchart TD
 ## 文档与关闭门
 
 [任务](tasks.md)列出技术拆解与依赖，[验收说明](acceptance.md)只按事实登记状态。代码验收后应用总览维护 skill 更新 EPW 总览及使用说明，未实现行为不得提前写入。线上链接、Issue 状态由用户管理；本地文档提交不代表线上 Issue 创建或关闭。
+
+
+## 2026-11-16 目录扁平化修订
+
+集中修改 layout::path 编号映射，内部 electron／phonon 语义键保留但不再成为实体目录。第 6 步归档保留 force-constants／frequencies 及对应已核验检查点；原 PH 替换时清除这些检查点，防止跨来源复用。已有 Ubuntu 工作区通过本次一次性定向迁移处理，不引入常驻旧布局回退。
+
+第 6 步批次变更时，保留的 comparison-q2r／comparison-matdyn 检查点重新关联当前批次，再由 attempt 核验旧配置与当前参数；仅电子模型变化不重复计算，上游 SCF／PH 重建则清除检查点。

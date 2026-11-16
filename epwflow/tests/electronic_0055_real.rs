@@ -64,7 +64,7 @@ fn real_electronic_dual_windows_and_pdos() {
     .fermi;
     let comparison = cfg
         .work_dir
-        .join("5.epw-wannier/comparison-native/electron");
+        .join("5.epw-wannier/comparison-native");
     fs::create_dir_all(&comparison).unwrap();
     for name in [
         "band.eig".into(),
@@ -73,7 +73,7 @@ fn real_electronic_dual_windows_and_pdos() {
         format!("{prefix}-dos.dat"),
     ] {
         let from = old
-            .join("5.epw-wannier/comparison-native/electron")
+            .join("5.epw-wannier/comparison-native")
             .join(&name);
         identities.push(Identity::capture(&from).unwrap());
         fs::copy(from, comparison.join(name)).unwrap();

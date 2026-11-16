@@ -30,7 +30,7 @@ DFTFlow 不额外限制计算时长和存储空间，集群规则由 Slurm 管�
 
 原生脚本位于实际科学目录，新 QE／EPW 命令通过 `< 输入.in > 输出.out 2>&1` 直接读写，postw90 保留种子参数接口。环境脚本使用 `source "路径" --force`，加载失败显式传播退出码，不自动开启严格 shell 选项；普通安全参数直接显示，特殊参数使用必要双引号和转义。第 5～8 步原生提交脚本禁止调用 `epw_wannier`、`epw_superconductivity` 及内部执行／批次收尾入口；科学退出与后续作业外交付核验分别记录。EPW 生成的 `.sh` 在原子创建和覆盖时均设置 `0755`，普通输入文件不增加执行权限。2026-10-27 修复源码与活动旧作业、默认安装的边界见 [0026 回退验收](../../specs/0026-epw-direct-native-submit/acceptance.md)。
 
-任务状态和续算信息进入对应阶段日志，Slurm 作业号放在计算目录同名 `.jobs`。原生科学输出使用合并的 `.out`；复用直接检查实际科学文件。能带在 EPW 内嵌 Wannier90 的 wdata 路线输出，只有 DOS 调用 postw90，派生目录为 `5.epw-wannier/comparison-native/electron/`。
+任务状态和续算信息进入对应阶段日志，Slurm 作业号放在计算目录同名 `.jobs`。原生科学输出使用合并的 `.out`；复用直接检查实际科学文件。能带在 EPW 内嵌 Wannier90 的 wdata 路线输出，只有 DOS 调用 postw90，派生目录为 `5.epw-wannier/comparison-native/`。
 
 工作区推进与日志合并使用稳定目录 inode 的系统锁，不生成永久工作流锁文件。进程结束释放锁；提交中断仍从日志和 `.jobs` 识别未知回执，不能重复提交。预算账本、注册表及结果发布锁各自保留。
 
@@ -314,7 +314,7 @@ EPW 的 `wannier.selection_mode = "energy_only"` 使用共享 Rust 纯能量选�
 
 公开第二阶段使用已冻结 KPATH 展开同路径点，DOS 采用 F2 的完整均匀 NSCF 网格。程序从 SCF 副本生成常规 bands 路径数据，在原始 PH 副本上施加同源 Γ onsite 与 QE Hermitian 平均后运行 q2r／matdyn，再隔离重读原 EPW 粗网格；不重做 SCF／已有 PH，不提前执行细网格 EPC。实际原子顺序用于校验 3N，缺投影继续明确标记。
 
-电子来源和后处理保存在 `5.epw-wannier/comparison-native/electron/`；比较声子的 q2r／matdyn 位于第 4 步 `comparison/`，EPW 重读位于 `6.epw-coarse/comparison-native/epw/`，比较表位于第 6 步 `comparison/`，按阶段交付到工作区根 `results/`。科学检查与派生发布分开；最大差值仅展示；来源和产物完整时发布粗阶段标记，没有质量评级或告警。原生配置分别设置路径点数和两种高斯核宽，见[模块手册](../../../epwflow/README.md)。
+电子来源和后处理保存在 `5.epw-wannier/comparison-native/`；比较声子的 q2r／matdyn 位于第 6 步 `comparison-native/force-constants/` 与 `comparison-native/frequencies/`，EPW 重读位于 `6.epw-coarse/comparison-native/epw/`，比较表位于第 6 步 `comparison/`，按阶段交付到工作区根 `results/`。科学检查与派生发布分开；最大差值仅展示；来源和产物完整时发布粗阶段标记，没有质量评级或告警。原生配置分别设置路径点数和两种高斯核宽，见[模块手册](../../../epwflow/README.md)。
 
 成功任务显式恢复时重验复用，失败子任务直接替换，不新建归档。单格式重绘保留同源且哈希有效的其他已登记格式；比较图使用共享发布日志，检查拒绝半写状态，绘图先校验并恢复。只回收当前任务号表中已确认终态且归属原作业的比较锁。独立进程回归覆盖成功、大差值、失败任务恢复、来源篡改、半写发布和移动重绘；这些回归不增加真实科学作业或 Tc 证据。
 

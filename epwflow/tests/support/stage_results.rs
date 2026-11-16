@@ -173,7 +173,7 @@ fn wannier_allocation_publishes_without_phonons_and_repairs_only_derivatives() {
     fs::remove_file(result.join("electronic-bands.png")).unwrap();
     fs::remove_file(
         c.root
-            .join("run/5.epw-wannier/comparison-native/electron/electronic-dos.png"),
+            .join("run/5.epw-wannier/comparison-native/electronic-dos.png"),
     )
     .unwrap();
     success(c.stage_submit("wannier", false));
@@ -224,7 +224,7 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
     let post = c.post_calls();
     let electron = store::hash_file(
         &c.root
-            .join("run/5.epw-wannier/comparison-native/electron/band.eig"),
+            .join("run/5.epw-wannier/comparison-native/band.eig"),
     )
     .unwrap();
     success(c.stage_submit("coarse", false));
@@ -238,7 +238,7 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
         electron,
         store::hash_file(
             &c.root
-                .join("run/5.epw-wannier/comparison-native/electron/band.eig")
+                .join("run/5.epw-wannier/comparison-native/band.eig")
         )
         .unwrap()
     );
@@ -250,7 +250,7 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
     assert!(source["epw_bands"]["path"]
         .as_str()
         .unwrap()
-        .contains("5.epw-wannier/comparison-native/electron"));
+        .contains("5.epw-wannier/comparison-native"));
     assert!(source["qe_bands_xml"]["path"]
         .as_str()
         .unwrap()
@@ -288,9 +288,16 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
         c.calls().0,
         "电子模型变化不能重复 PW/PH/q2r/matdyn"
     );
-    let phonon = c.root.join("run/4.qe-phonon-nosplit/comparison");
+    let phonon = c.root.join("run/6.epw-coarse/comparison-native");
     assert!(phonon.join("force-constants/reference.fc.xml").is_file());
     assert!(phonon.join("frequencies/reference.freq").is_file());
+    // 显式重建上游 SCF 时，原 PH 来源即失效，不能跨来源保留比较检查点。
+    success(c.stage_submit("scf", true));
+    let coarse = epwflow::foundation::readable_state::read(
+        &c.root.join("run"), epwflow::foundation::stages::Step::Coarse,
+    ).unwrap();
+    assert!(coarse.get("子步骤 · comparison-q2r", "状态").is_none());
+    assert!(coarse.get("子步骤 · comparison-matdyn", "状态").is_none());
 }
 
 #[test]
@@ -316,7 +323,7 @@ fn matdyn_recovery_reuses_successful_force_constants_and_native_coarse() {
     assert!(epwflow::foundation::stages::reusable(&cfg, epwflow::foundation::stages::Step::Coarse).unwrap());
     let force = c
         .root
-        .join("run/4.qe-phonon-nosplit/comparison/force-constants/reference.fc.xml");
+        .join("run/6.epw-coarse/comparison-native/force-constants/reference.fc.xml");
     let hash = store::hash_file(&force).unwrap();
     fs::remove_file(c.root.join("comparison-failure")).unwrap();
     success(c.stage_submit("coarse", true));
@@ -371,7 +378,7 @@ fn registered_legacy_electronic_samples_migrate_without_refitting_or_changing_sc
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
     let sampling = epwflow::interpolation::electronic_sampling::plan(&cfg).unwrap();
     let fit = c.root.join("run/5.epw-wannier");
-    let post = fit.join("comparison-native/electron");
+    let post = fit.join("comparison-native");
     let old = c.root.join("run/6.epw-coarse/comparison-native");
     fs::create_dir_all(old.join("epw")).unwrap();
     let band = old.join("epw/band.eig");
@@ -716,6 +723,16 @@ fn wannier_and_coarse_single_allocation_freezes_config_and_automatically_plots()
             "阶段内不能嵌套提交");
         assert_eq!(logs::read(&c.root.join("run"), step).unwrap().get("阶段分配", "状态"), Some("已完成"));
         let result = c.root.join("run/results").join(folder);
+        let comparison = c.root.join("run").join(folder).join("comparison-native");
+        assert!(!comparison.join("electron").exists());
+        assert!(!comparison.join("phonon").exists());
+        if step == Step::Wannier {
+            assert!(comparison.join("postw90.out").is_file());
+            assert!(comparison.join("band.eig").is_file());
+        } else {
+            assert!(comparison.join("force-constants/reference.fc.xml").is_file());
+            assert!(comparison.join("frequencies/reference.freq").is_file());
+        }
         assert!(result.join("stage-manifest.json").is_file());
         let files = epwflow::qe_data::save::files(&result).unwrap();
         assert!(files.iter().any(|f| f.relative_path.extension().is_some_and(|ext| ext == "png")));

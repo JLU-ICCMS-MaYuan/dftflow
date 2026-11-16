@@ -142,6 +142,14 @@ fn advance_mode(
             d.set("阶段", "状态", "推进中");
             d.set("阶段", "科学状态", "待检查");
             d.set("阶段", "批次", &generation);
+            if step == Step::Coarse {
+                // 目录保留的 QE 声子检查点仍由 attempt 核验参数后复用。
+                for section in ["子步骤 · comparison-q2r", "子步骤 · comparison-matdyn"] {
+                    if d.get(section, "状态") == Some("已完成") {
+                        d.set(section, "所属批次", &generation);
+                    }
+                }
+            }
             d.set("阶段", "计算配置", log::relative(&cfg.work_dir, &version));
             d.remove("问题");
             Ok(())

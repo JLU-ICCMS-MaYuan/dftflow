@@ -61,3 +61,8 @@ epw_superconductivity --plot --results "results"
 ```
 
 根目录检查返回阶段交付完整性，不将已有少数阶段包冒充整条超导流程完成。重绘只使用包内数值、图参和结构信息。第 3／5 步保留已有 PNG 图型；第 4 步保留既有图型；第 6／8 步沿用既有多格式图。第 7 步当前没有独立最终图，不创建空包。
+
+
+## 2026-11-16 扁平目录验证
+
+第 5 步检查 comparison-native 根目录的 postw90 输出、band.eig 和电子图表，无 electron 子目录；第 6 步检查 comparison-native 根目录的 force-constants／frequencies 与 epw，无 phonon 子目录。电子模型变化后相容 q2r／matdyn 调用次数不增加；上游来源重建后旧检查点失效。已有 Ubuntu 目录的定向迁移及来源核验见本项验收追加段。

@@ -1,5 +1,8 @@
 # 数据模型与完整性约束
 
+> 比较目录以文末“2026-11-16 目录扁平化”修订为准：第 5、6 步分别直接使用 comparison-native/，旧 electron／phonon 路径仅保留为历史记录。
+
+
 本文件记录本轮实现的数据格式和完整性约束。需求见 [Spec](spec.md)，执行边界见 [契约](contracts/cli.md)，适用验证见 [验收说明](acceptance.md)。
 
 ## 来源与复用判定
@@ -81,3 +84,8 @@
 ## 版本和旧布局
 
 已知旧路径 `6.epw-coarse/comparison-native/electron`、`5.epw-wannier/native-post` 及 `6.epw-coarse/results` 只作为有界只读来源。核验后导出派生结果，不搬移原科学产物、不改旧清单内容或冻结脚本。新包显式标明读取的旧版本及来源，旧版本无法提供必要身份时报告缺项，不能重捕哈希冒充已核验历史。
+
+
+## 2026-11-16 目录扁平化修订
+
+电子实际路径改为 5.epw-wannier/comparison-native/；声子 force-constants／frequencies 改为 6.epw-coarse/comparison-native/ 下的直接子目录。电子 sampling、DOS、绘图与来源元数据直接位于根；EPW 路径求值 epw 子目录不变。续算日志路径与来源 Identity 同步迁移，不更改科学文件内容。
