@@ -934,11 +934,13 @@ fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
     assert_eq!(c.calls().0, "");
     c.numbered_change(|cfg| {  cfg.programs.launcher[2]="32".into(); cfg.programs.epw.args[2]="32".into(); });
     success(c.numbered_cli(1,&[],None,"numbered-legal-generation"));
-    let active = c.direct_task();
-    let script=fs::read_to_string(active["script"]["path"].as_str().unwrap()).unwrap();
+    use epwflow::foundation::{readable_state as logs, stages::Step};
+    let root = c.root.join("run");
+    let active = logs::read(&root, Step::Coarse).unwrap();
+    let script = fs::read_to_string(logs::resolve(&root, active.get("阶段分配", "脚本").unwrap())).unwrap();
     assert!(script.contains("#SBATCH --ntasks=1"));
     assert!(!script.contains("#SBATCH --ntasks=32"));
-    assert!(script.contains("launcher") && script.contains("pw.x"));
+    assert!(script.contains("epw_wannier") && script.contains("--allocated-stage coarse"));
     assert_eq!(c.calls().0, "");
 }
 
@@ -1237,19 +1239,19 @@ fn numbered_electronic_receipt_rejects_corrupted_save_and_adopts_verified_old_pw
 fn numbered_electronic_script_change_is_rejected_and_fresh_attempt_recovers() {
     let c=Case::numbered(); c.stage_setup();
     success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"submit-before-edit"));
-    let task = c.direct_task();
-    let script=PathBuf::from(task["script"]["path"].as_str().unwrap());
-    let original=fs::read(&script).unwrap();
-    fs::write(&script,"#!/bin/bash\n# manually edited\nexit 0\n").unwrap();
-    let out=c.numbered_cli(1,&["--stage","wannier","-s"],None,"edited-script");
+    use epwflow::foundation::{readable_state as logs, stages::Step};
+    let root = c.root.join("run");
+    let doc = logs::read(&root, Step::Wannier).unwrap();
+    let script = logs::resolve(&root, doc.get("阶段分配", "脚本").unwrap());
+    let original = fs::read(&script).unwrap();
+    fs::write(&script, "#!/bin/bash\n# manually edited\nexit 0\n").unwrap();
+    let out = c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "edited-script");
     assert!(!out.status.success());
-    assert_eq!(c.calls(),(String::new(),String::new(),String::new()));
-    fs::write(&script,original).unwrap();
+    assert_eq!(c.calls(), (String::new(), String::new(), String::new()));
+    fs::write(&script, original).unwrap();
     success(c.stage_execute());
-    success(c.numbered_cli(1,&["--stage","wannier","-s"],None,"next-native-task"));
-    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
-    let complete = epwflow::foundation::native_jobs::tasks(&cfg).unwrap().into_iter().find(|t| t.id == task["id"].as_str().unwrap()).unwrap();
-    assert_eq!(complete.state, "validated");
+    success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "completed-stage"));
+    assert_eq!(logs::read(&root, Step::Wannier).unwrap().get("阶段分配", "状态"), Some("已完成"));
 }
 
 #[test]
@@ -1294,7 +1296,7 @@ fn numbered_deleted_wannier_directory_rebuilds_without_repeating_upstream() {
     }
     c.script("sbatch", "#!/bin/sh\nprintf '203\\n'\n");
     success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "deleted-submit"));
-    assert!(c.root.join("run/5.epw-wannier/epw_wannier.sh").is_file());
+    assert!(c.root.join("run/5.epw-wannier/wannier.sh").is_file());
     assert_eq!(before, c.calls(), "提交不能提前执行科学程序");
     c.stage_setup();
     success(c.stage_execute());
@@ -1404,7 +1406,11 @@ fn numbered_legacy_migration_preserves_history_budget_and_reuses_without_hidden_
     success(c.numbered_cli(1, &["--stage", "wannier"], None, "migration-independent-generate"));
     assert_eq!(before, c.calls());
     assert!(!c.root.join("run/.epwflow").exists());
-    success(c.numbered_cli(1, &["--migrate-state"], None, "migration-idempotent"));
+    // 阶段脚本生成不归集旧电子记录；显式迁移复查仍应如实报告未核验结果。
+    let out = c.numbered_cli(1, &["--migrate-state"], None, "migration-recheck");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("电子参考子任务尚未完整通过检查"));
+    assert_eq!(before, c.calls());
 }
 
 #[test]
@@ -1756,7 +1762,11 @@ fn epw6_version_rejection_is_revalidated_without_refitting() {
         d.set(&label, "科学输入1", "5.epw-wannier/epw_wannier.in");
         Ok(())
     }).unwrap();
+    c.stage_setup();
+    c.put("job-201.state", "COMPLETED");
+    c.put("submissions", "previous allocation\n");
     success(c.numbered_cli(1, &["--stage", "wannier", "-s"], None, "revalidate-epw6"));
+    success(c.stage_execute());
     assert_eq!(before, c.calls(), "版本误拒绝恢复不得重跑任何科学任务");
     assert_eq!(log::read(&cfg.work_dir, Step::Wannier).unwrap().get("阶段", "科学状态"), Some("已完成"));
 }

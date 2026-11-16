@@ -95,7 +95,7 @@ pub fn start_phonon(config: &Path, resume: bool) -> Result<()> {
     start_stage(config, Step::Phonon, resume)
 }
 pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: bool) -> Result<()> {
-    if target >= Step::Wannier {
+    if target > Step::Coarse {
         return super::native_workspace::advance(config, target, submit, resume);
     }
     let cfg = super::readable_state::load_config(config)?;
@@ -104,12 +104,27 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
     check_active(&cfg, None)?;
     native_jobs::check_groups(&cfg)?;
     native_jobs::reconcile(&cfg, resume)?;
+    if resume {
+        crate::delivery::decay::recover_pending(&cfg)?;
+    }
     if cfg.budget.ledger.is_file() {
         budget::with_ledger(
             &cfg.budget.ledger,
             &cfg.budget.campaign_id,
             budget::reconcile,
         )?;
+    }
+    if !resume {
+        for task in native_jobs::tasks(&cfg)? {
+            ensure!(
+                task.state != "failed"
+                    || !stages::execution_steps(&cfg, target)
+                        .iter()
+                        .any(|step| task.directory.starts_with(step.directory(&cfg))),
+                "execution_failed: {} 上次失败；修复后使用 --resume -s",
+                task.directory.display()
+            );
+        }
     }
     let version = log::backup_config(config)?;
     log::register_config(&cfg, config, &version)?;

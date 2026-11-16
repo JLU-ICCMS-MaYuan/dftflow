@@ -107,7 +107,12 @@ fn phonon_chain_single_submission_delivers_save_and_plots_without_downstream() {
     assert!(ledger["reservations"].as_array().unwrap().is_empty());
     success(c.numbered_cli(1, &["--stage", "coarse", "-s"], None, "chain-handoff"));
     assert!(!c.root.join("run/native-plan.json").exists());
-    assert_eq!(c.direct_task()["state"], "submitted");
+    assert_eq!(
+        epwflow::foundation::readable_state::read(
+            &c.root.join("run"), epwflow::foundation::stages::Step::Coarse,
+        ).unwrap().get("阶段分配", "状态"),
+        Some("已提交")
+    );
     assert_eq!(c.calls(), calls);
 }
 

@@ -435,3 +435,12 @@ epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
 当前原生运行头接受 EPW 5.9 和 6.0；必须有且只有一条真实 Program EPW v. 记录，不使用输入标题中的版本文字。退出码、原生错误和完整结束计时仍检查；多温度入口复用同一版本识别。该兼容只表示运行证据适配，不代表 EPW 6.0 的全部粗／细矩阵布局或求解结果均已科学验收。
 
 旧版本门将真实 EPW 6.0 成功 Wannier 作业误标失败时，正常阶段命令会核对原错误、实际 6.0 日志、零退出码、COMPLETED 作业和输入存在性，再恢复到待验证；随后完整核验拟合、窗口和模型，不直接宣告科学成功或重跑拟合。其他失败不自动恢复。当前 MgB₂ 已恢复拟合，并准备 comparison-native/electron/postw90.sh；需用户正常 -s 提交 DOS 后处理，结束后再次检查发布图。不要为此强制 --resume。见 [0069](../docs/specs/0069-epw6-runtime-evidence/acceptance.md)。
+
+
+### 第 5、6 步自动计算和绘图
+
+`epw_wannier -c "input.toml" --stage wannier -s` 提交一个阶段 Slurm 作业，脚本从开始调用阶段 CLI，在同一分配内完成 Wannier 拟合、科学核验、能带／DOS 后处理及绘图，不需要重复命令或等待 coarse 补齐。
+
+`epw_wannier -c "input.toml" --stage coarse -s` 同样在一个分配内完成粗网格、沿高对称路径插值及 QE／EPW 比较绘图。路径插值属于比较后处理，不是第 7 步 EPC 细网格。阶段内部不调用 sbatch；失败后修复原因并用相同阶段加 `--resume -s`，复用已核验结果。第 7、8 步仍直接提交原生任务并在作业外推进。
+
+默认不带 `-s` 时，第 5、6 步只生成阶段脚本，不执行科学程序；`--all` 保持已有准备清单语义。已有历史脚本不重写，新提交使用新入口。

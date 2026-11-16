@@ -71,7 +71,7 @@ struct Options {
     batch_exit: Option<i32>,
     #[arg(short = 'w', long)]
     work: Option<PathBuf>,
-    /// 第 5～8 步直接提交原生任务；结束后重复命令核验并推进。gap 每个方法独立提交。
+    /// 第 3～6 步提交阶段分配并自动后处理；第 7、8 步提交原生任务。gap 每个方法独立提交。
     #[arg(short = 's', long, conflicts_with = "run")]
     submit: bool,
     /// 在已经登记的 Slurm 分配内运行本阶段。
@@ -293,7 +293,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             return Ok(());
         }
         if o.submit {
-            if matches!(target, Step::Electronic | Step::Phonon) {
+            if matches!(target, Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse) {
                 return super::workspace::start_stage(&o.config, target, o.resume);
             }
             return super::native_workspace::advance(&o.config, target, true, o.resume);
@@ -301,7 +301,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         if o.run {
             return super::workspace::start_allocated(&o.config, target, o.resume);
         }
-        if matches!(target, Step::Electronic | Step::Phonon) && !o.all {
+        if matches!(target, Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse) && !o.all {
             return super::workspace::prepare_stage(&o.config, target, false, false);
         }
         super::native_workspace::advance(

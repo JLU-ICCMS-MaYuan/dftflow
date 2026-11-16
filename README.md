@@ -208,7 +208,7 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 各 flow 统一采用 `[slurm].header` 多行字符串填写 Slurm 文件头，MPI 启动参数由 launcher／现有程序启动命令指定。EPW 已删除整个 `[resources]`，不再自动补写或通过 sbatch 参数覆盖分区、节点数和任务数。旧输入须迁移，历史冻结快照不手改；示例见 [EPW 配置说明](epwflow/README.md#slurm-文件头)。
 
 SCF／NSCF 的原始电荷密度和波函数不做哈希、大小、非空、存在性或文件集合核对，实际复制和原生读取保留；其他科学证据照常验证，见 [0067](docs/specs/0067-unchecked-density-wavefunctions/spec.md)。
-修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。
+修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。第 5 步在一个 Slurm 分配内自动完成拟合、核验、能带／DOS 后处理和绘图；`--stage coarse -s` 同样自动完成第 6 步粗网格、路径插值与 QE／EPW 比较绘图。两步脚本从开始调用阶段 CLI，无需重复命令推进后处理。
 `--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
 第 3 步 QE 子任务完成即发布单侧图；第 5 步完成电子能带／总 DOS 对比，第 6 步完成声子谱／TDOS 对比及总览，图片、数据和来源按阶段保存在工作区根 `results/`。
 第 3／4 步在阶段分配内完成后处理；第 5～8 步直接提交原生任务，作业结束后再次执行相同公开命令核验和推进；第 5 步不等待声子。详见[阶段结果说明](docs/specs/0050-epw-stage-results/quickstart.md)。

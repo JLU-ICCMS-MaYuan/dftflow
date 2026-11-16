@@ -1,4 +1,4 @@
-//! 阶段交付契约：第 5～8 步由公开命令逐项推进，科学程序为隔离替身。
+//! 阶段交付契约：第 5、6 步在分配内自动完成交付，第 7、8 步逐项推进；科学程序为隔离替身。
 use super::*;
 impl Case {
     pub(super) fn stage_setup(&self) {
@@ -564,7 +564,12 @@ fn failed_wannier_generation_error_recovers_without_archived_inputs() {
     let failure = c.stage_execute();
     assert!(!failure.status.success());
     assert!(String::from_utf8_lossy(&failure.stderr).contains("局域化收敛证据"));
-    let old = c.direct_task();
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let old = serde_json::to_value(
+        epwflow::foundation::native_jobs::tasks(&cfg).unwrap().into_iter()
+            .find(|task| task.directory == cfg.work_dir.join("5.epw-wannier") && task.stem == "epw")
+            .unwrap()
+    ).unwrap();
     assert_eq!(old["state"], "failed");
     let scientific = c.calls().0;
     let path_hash = store::hash_file(&c.root.join("KPATH.in")).unwrap();
@@ -576,7 +581,8 @@ fn failed_wannier_generation_error_recovers_without_archived_inputs() {
         )
         .unwrap();
     });
-    let failure = c.stage_submit("wannier", true);
+    success(c.stage_submit("wannier", true));
+    let failure = c.stage_execute();
     assert!(!failure.status.success());
     assert!(String::from_utf8_lossy(&failure.stderr).contains("零个间隔"));
     assert!(!c.root.join("run/5.epw-wannier/epw_wannier.in").exists());
@@ -682,4 +688,40 @@ fn electronic_band_ranges_precede_dos_failure_and_invalid_windows_keep_diagnosti
     let states=epwflow::qe_data::nscf::parse_xml(&root.join(format!("2.qe-nscf/out/{}.save/data-file-schema.xml",cfg.qe.prefix))).unwrap();
     let error=epwflow::interpolation::epw_config::EpwConfig::from_config(&cfg).unwrap().with_fermi(states.fermi).unwrap().with_bands(&states.eigenvalues).unwrap().window_selection().unwrap_err();
     assert!(error.to_string().contains("不自动裁剪"));
+}
+
+#[test]
+fn wannier_and_coarse_single_allocation_freezes_config_and_automatically_plots() {
+    use epwflow::foundation::{readable_state as logs, stages::Step};
+    let c = Case::numbered();
+    c.stage_setup();
+    for (step, stage, folder) in [
+        (Step::Wannier, "wannier", "5.epw-wannier"),
+        (Step::Coarse, "coarse", "6.epw-coarse"),
+    ] {
+        let original = fs::read(c.root.join("input.toml")).unwrap();
+        let count = fs::read_to_string(c.root.join("submissions")).unwrap_or_default().lines().count();
+        success(c.stage_submit(stage, false));
+        let doc = logs::read(&c.root.join("run"), step).unwrap();
+        let script = logs::resolve(&c.root.join("run"), doc.get("阶段分配", "脚本").unwrap());
+        let body = fs::read_to_string(script).unwrap();
+        assert!(body.contains(&format!("--allocated-stage {stage}")));
+        assert!(body.contains("epw_wannier"));
+        assert!(!c.stage_submit(stage, false).status.success());
+        c.put("input.toml", "invalid pending edit");
+        // 真实执行一次捕获的 Slurm 脚本；不使用作业外反复推进辅助器。
+        success(c.stage_execute());
+        fs::write(c.root.join("input.toml"), original).unwrap();
+        assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), count + 1,
+            "阶段内不能嵌套提交");
+        assert_eq!(logs::read(&c.root.join("run"), step).unwrap().get("阶段分配", "状态"), Some("已完成"));
+        let result = c.root.join("run/results").join(folder);
+        assert!(result.join("stage-manifest.json").is_file());
+        let files = epwflow::qe_data::save::files(&result).unwrap();
+        assert!(files.iter().any(|f| f.relative_path.extension().is_some_and(|ext| ext == "png")));
+        let before = (c.calls(), c.post_calls());
+        success(c.stage_submit(stage, false));
+        assert_eq!(before, (c.calls(), c.post_calls()));
+        assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), count + 1);
+    }
 }
