@@ -29,6 +29,8 @@
 > (my_scripts) [mayuan@login02 SiP2]$ epw_wannier --config "epwinput.toml" --stage wannier  -s
 > input_conflict: input_conflict: 无法定位 /data/home/mayuan/code/dftflow/examples/SiP2/5.epw-wannier/epw_wannier.in:No such file or directory (os error 2)这是为什么？你在/data/home/mayuan/code/dftflow/examples/SiP2测试过了吗？为什么不行，还是报错。你确定你重新编译得到新的 CLI 了吗
 
+> bands_num_points = 1 默认以后都是 50。修改到对应的 issue 和 spec 里面，并且修改 input.toml文件
+
 随附图片的读取状态及 PDF 核查见 [Spec 附件登记](spec.md#附件与推断来源)。
 
 ## 问题与目标
@@ -86,3 +88,9 @@
 已发布 CLI 的哈希与发布记录一致；用户此次报错源于更早的失败任务已归档，而旧活动记录仍引用原输入路径。上一轮受控测试从成功模型改参数恢复，漏测“旧模型失败后再次输入生成失败”的状态。继续在本项下补 FR-012／SC-008 和 T011～T013，修复活动记录归档交接并严格接续遗留状态。必须在真实 SiP₂ 目录验证恢复与准备，不以只读路径生成或替身成功代替现场验收；实际作业仍由用户提交。
 
 本次续修已完成：68 个不同测试通过，真实失败记录经生产 API 核验接续，正式 CLI 在原目录退出 0 并保持同一 `prepared` 任务；新输入为 `s,p`／96 函数／500 次，旧失败记录原样归档、前置数据复用。4 个正式 CLI 已重编译安装；详见 [验收记录](acceptance.md)。未提交真实作业，不把准备成功当作拟合收敛或线上关闭。
+
+## 2026-11-16 默认采样设置补充
+
+按上述用户要求，`bands_num_points` 的用户示例默认值由 `1` 改为 `50`。同步 MgB₂ Ubuntu `input.toml` 与 SiP₂ `epwinput.toml`，保留用户显式调整能力及原生按段长比例取点规则；不改变 QE 的 `points_per_edge`，不重写历史输入或触发重算。
+
+验收对应 Spec 的 FR-013／SC-009、T014：两份示例值均为 `50`，中文注释准确，TOML 解析与文档一致性检查通过。Documentation Impact：更新本 Issue、Spec、Plan、契约、快速说明、任务与验收；当前功能架构、公开命令和根 README 不变，无需更新 Overview。本地维护不表示线上 Issue 已更新或关闭。

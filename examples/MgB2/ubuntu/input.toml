@@ -186,6 +186,7 @@ selection_mode = "energy_only"
 
 [stages."5.wannier90"]
 bands_plot = true
+# 默认首段采样间隔数为 50（含两端为 51 点），可按需调整；其余段由 Wannier90 按段长比例取整。
 bands_num_points = 50
 # 能窗为绝对 eV；conv_tol 为 Å²；num_iter 等为迭代次数。
 num_wann = 5

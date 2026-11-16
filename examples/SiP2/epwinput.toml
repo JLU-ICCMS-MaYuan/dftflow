@@ -219,6 +219,7 @@ num_iter = 500 # 与下方 wannier90.num_iter 保持一致
 
 [stages."5.epw-wannier".wannier90]
 bands_plot = true
+# 默认首段采样间隔数为 50（含两端为 51 点），可按需调整；其余段由 Wannier90 按段长比例取整。
 bands_num_points = 50
 num_wann = 96
 projections = [
