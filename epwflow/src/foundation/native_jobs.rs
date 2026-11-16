@@ -422,7 +422,7 @@ pub(crate) fn require_outputs(
     }
     if let Some(mut task) = tasks(cfg)?.into_iter().find(|t| {
         t.directory == dir
-            && t.stem == stem
+            && matches_stem(t, stem)
             && matches!(t.state.as_str(), "validated" | "awaiting_validation")
     }) {
         ensure!(
@@ -508,8 +508,8 @@ fn recover_epw6_version_rejection(cfg: &Config) -> Result<()> {
         return Ok(());
     }
     for mut task in tasks(cfg)?.into_iter().filter(|t| t.directory == Step::Wannier.directory(cfg)
-        && t.stem == "epw" && t.state == "failed" && t.exit_status == Some(0)) {
-        let output = task.directory.join("epw.out");
+        && matches_stem(t, "epw_wannier") && t.state == "failed" && t.exit_status == Some(0)) {
+        let output = task.directory.join(format!("{}.out", task.stem));
         let text = fs::read_to_string(&output)?;
         if crate::interpolation::native::runtime_version(&text)? != "6.0" { continue; }
         crate::interpolation::native::checked_log(&text, 0)?;
@@ -609,21 +609,25 @@ pub fn reconcile_task(cfg: &Config, _resume: bool, task: &mut Task) -> Result<()
 fn task_key(generation: &str, work: &Path, _command: &[String], stem: &str) -> Result<String> {
     Ok(format!("{generation}:{}:{stem}", work.display()))
 }
+// 旧记录只匹配同一输入，不把目录内另一次 EPW 调用误认成当前任务。
+fn matches_stem(task: &Task, stem: &str) -> bool {
+    task.stem == stem || (super::scientific_logs::legacy_stem(stem) == Some(task.stem.as_str())
+        && task.inputs.iter().any(|i| i.path.file_stem().and_then(|s| s.to_str()) == Some(stem)))
+}
+
 pub fn continuing(work: &Path, stem: &str) -> Result<bool> {
     SESSION.with(|s| {
         let s = s.borrow();
         let Some(s) = s.as_ref() else {
             return Ok(false);
         };
-        Ok(tasks(&s.cfg)?.iter().any(|t| {
-            t.generation == s.generation
-                && t.directory == work
-                && t.stem == stem
-                && t.state != "failed"
+        Ok(tasks(&s.cfg)?.iter()
+            .filter(|t| t.generation == s.generation && t.directory == work && matches_stem(t, stem))
+            .min_by_key(|t| t.stem != stem)
+            .is_some_and(|t| t.state != "failed"
                 && (!matches!(t.state.as_str(), "validated" | "awaiting_validation")
                     || (t.inputs.iter().all(|i| i.path.is_file())
-                        && work.join(format!("{stem}.out")).is_file()))
-        }))
+                        && work.join(format!("{}.out", t.stem)).is_file()))))
     })
 }
 pub fn continuing_directory(work: &Path) -> Result<bool> {
@@ -720,7 +724,11 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
     });
     let previous = tasks(&cfg)?
         .into_iter()
-        .find(|t| t.generation == generation && t.directory == work && t.stem == stem);
+        .filter(|t| t.generation == generation && t.directory == work && matches_stem(t, stem))
+        .min_by_key(|t| t.stem != stem);
+    let effective_stem = previous.as_ref().filter(|t| t.state != "failed")
+        .map(|t| t.stem.clone()).unwrap_or_else(|| stem.to_owned());
+    let stem = effective_stem.as_str();
     if let Some(t) = &previous {
         ensure!(
             t.state != "failed" || retry_enabled(),

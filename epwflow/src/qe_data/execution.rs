@@ -23,7 +23,7 @@ pub fn run(
             "execution_failed: QE 原生退出 {:?}",
             report.exit_status
         );
-        return qf_io::qe_completion::checked_log(&dir.join(format!("{stem}.out")), scf)
+        return qf_io::qe_completion::checked_log(&report.stdout_path, scf)
             .map(|_| ());
     }
     crate::foundation::workspace::native_script(program, input, dir, launcher, stem, true, scf)?;

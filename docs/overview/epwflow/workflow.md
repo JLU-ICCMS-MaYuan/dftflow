@@ -56,7 +56,7 @@ flowchart TD
 │   ├── <prefix>_band.dat、<prefix>_band.kpt
 │   └── comparison-native/            # 第 5 步电子数据、postw90 与来源
 ├── 6.epw-coarse/
-│   ├── epw_coarse.in、epw.out
+│   ├── epw_coarse.in、epw_coarse.out
 │   ├── comparison-native/
 │   │   ├── force-constants/  # 必要时的比较力常数，独立检查点
 │   │   ├── frequencies/      # 必要时的 matdyn，独立检查点

@@ -639,7 +639,7 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
         .with_fermi(s.fermi)?
         .with_bands(&s.eigenvalues)?
         .with_species(&qe.cell.elements)?;
-    if !super::native_jobs::continuing(&dir, "epw")? {
+    if !super::native_jobs::continuing(&dir, "epw_wannier")? {
         store::write(
             &dir.join("embedded-sampling-decision.json"),
             &json!({
@@ -1155,6 +1155,8 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
                     format!("{}_hr.dat", cfg.qe.prefix),
                     "embedded-bands.json".into(),
                     "epw_wannier.in".into(),
+                    "epw_wannier.out".into(),
+                    "epw_wannier.err".into(),
                     "epw.out".into(),
                     "epw.err".into(),
                 ]

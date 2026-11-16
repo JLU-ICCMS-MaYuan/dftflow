@@ -108,10 +108,10 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
         fs,
     };
     let cfg = epw_cfg.cfg;
-    super::native::checked_log(&fs::read_to_string(dir.join("epw.out"))?, 0)?;
+    super::native::checked_log(&fs::read_to_string(crate::foundation::scientific_logs::output(dir, "epw_fine"))?, 0)?;
     let matrix = dir.join("out").join(format!("{}.ephmat", cfg.qe.prefix));
     let e = native_matrices::eigenvalues(&fs::read(matrix.join("egnv"))?)?;
-    native_matrices::band_offset(&fs::read_to_string(dir.join("epw.out"))?, e.bands)?;
+    native_matrices::band_offset(&fs::read_to_string(crate::foundation::scientific_logs::output(dir, "epw_fine"))?, e.bands)?;
     ensure!(
         e.grid == cfg.interpolation.k_grid,
         "data_invalid: 原生 egnv 网格不符"
@@ -204,7 +204,7 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
             "fine_a2f".into(),
             dir.join(format!("{}.a2f", cfg.qe.prefix)),
         ),
-        ("fine_log".into(), dir.join("epw.out")),
+        ("fine_log".into(), crate::foundation::scientific_logs::output(dir, "epw_fine")),
     ];
     for (id, path) in shards {
         use std::io::Read;

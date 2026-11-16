@@ -326,3 +326,27 @@ fn native_velocity_dependencies_validate_grid_overlap_and_finite_records() {
     assert!(restart::velocity_files(&dir, "seed", 2, 2).is_err());
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn same_named_log_errors_never_fall_back_to_legacy_success() {
+    use epwflow::foundation::{scientific_logs, store};
+    let dir = std::env::temp_dir().join(format!("matching-logs-{}", store::token()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for (stem, old) in [
+        ("elebanddata", "bands"), ("eletdos", "dos"),
+        ("epw_wannier", "epw"), ("epw_coarse", "epw"), ("epw_fine", "epw"),
+    ] {
+        let legacy = dir.join(format!("{old}.out"));
+        std::fs::write(&legacy, "JOB DONE.").unwrap();
+        let old_hash = store::hash_file(&legacy).unwrap();
+        assert_eq!(scientific_logs::output(&dir, stem), legacy);
+        let current = dir.join(format!("{stem}.out"));
+        std::fs::write(&current, "Error in routine fixture: failure").unwrap();
+        let selected = scientific_logs::output(&dir, stem);
+        assert_eq!(selected, current);
+        assert!(qf_io::qe_completion::checked_log(&selected, false).is_err());
+        assert_eq!(old_hash, store::hash_file(&legacy).unwrap());
+        std::fs::remove_file(&current).unwrap();
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}

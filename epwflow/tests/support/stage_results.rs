@@ -418,7 +418,7 @@ fn registered_legacy_electronic_samples_migrate_without_refitting_or_changing_sc
         "fermi_reference":source(xml.clone()),"qe_mesh_xml":source(xml),
         "qe_bands_xml":source(cfg.work_dir.join("3.qe-electronic/qe_eband/out/scf.save/data-file-schema.xml")),
         "epw_bands":source(band.clone()),"qe_phonon_bands":source(band.clone()),
-        "epw_phonon_bands":source(band.clone()),"epw_log":source(fit.join("epw.out")),
+        "epw_phonon_bands":source(band.clone()),"epw_log":source(fit.join("epw_wannier.out")),
         "provenance":[source(fit.join("scf.chk"))],"path":sampling.path,"ticks":sampling.ticks,
         "mesh":sampling.mesh,"mesh_shape":cfg.qe.nscf.k_grid,"reciprocal":sampling.reciprocal,
         "window_ev":[-1.,1.],"wannier_wout":source(fit.join("scf.wout")),
@@ -574,7 +574,7 @@ fn failed_wannier_generation_error_recovers_without_archived_inputs() {
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
     let old = serde_json::to_value(
         epwflow::foundation::native_jobs::tasks(&cfg).unwrap().into_iter()
-            .find(|task| task.directory == cfg.work_dir.join("5.epw-wannier") && task.stem == "epw")
+            .find(|task| task.directory == cfg.work_dir.join("5.epw-wannier") && task.stem == "epw_wannier")
             .unwrap()
     ).unwrap();
     assert_eq!(old["state"], "failed");

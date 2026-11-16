@@ -208,7 +208,7 @@ fn native_pipeline_failure_preserves_evidence_and_blocks_downstream() {
         );
         if failure == "fine-exit" {
             assert!(
-                fs::read_to_string(c.cfg.work_dir.join("fine/smearing-0001/epw.out"))
+                fs::read_to_string(c.cfg.work_dir.join("fine/smearing-0001/epw_fine.out"))
                     .unwrap()
                     .contains("fine failed evidence")
             );

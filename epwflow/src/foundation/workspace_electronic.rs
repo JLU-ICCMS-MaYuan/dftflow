@@ -109,12 +109,12 @@ fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
     match task {
         "pw-bands" => validate_pw(cfg)?,
         "bands" => {
-            qf_io::qe_completion::checked_log(&dir.join("bands.out"), false)?;
+            qf_io::qe_completion::checked_log(&super::scientific_logs::output(&dir, "elebanddata"), false)?;
             save::nonempty(&dir.join(format!("{}_band", cfg.qe.prefix)))?;
             validate_table(&dir.join(format!("{}_band.gnu", cfg.qe.prefix)), false)?;
         }
         "dos" => {
-            qf_io::qe_completion::checked_log(&dir.join("dos.out"), false)?;
+            qf_io::qe_completion::checked_log(&super::scientific_logs::output(&dir, "eletdos"), false)?;
             validate_table(&dir.join(format!("{}.tdos", cfg.qe.prefix)), true)?;
             ensure!(
                 save::files(&super::layout::path(&cfg.work_dir, "nscf/out"))?
@@ -559,12 +559,12 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             if reusable(cfg, "bands")? {
                 super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("bands"));
             } else {
-                let mut paths = logs(&dir, "bands");
+                let mut paths = logs(&dir, "elebanddata");
                 paths.extend([
                     dir.join(format!("{}_band", cfg.qe.prefix)),
                     dir.join(format!("{}_band.gnu", cfg.qe.prefix)),
                 ]);
-                if !super::native_jobs::continuing(&dir, "bands")? {
+                if !super::native_jobs::continuing(&dir, "elebanddata")? {
                     archive_task(cfg, "bands", &paths)?;
                 }
                 qe_run(
@@ -572,8 +572,10 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                     &dir,
                     &post_program(cfg, "bands")?,
                     "elebanddata.in",
-                    "bands",
+                    "elebanddata",
                 )?;
+                let actual = super::scientific_logs::output(&dir, "elebanddata");
+                paths.splice(..3, ["out", "err", "exitcode"].map(|ext| actual.with_extension(ext)));
                 for p in &paths {
                     if p.extension().is_none_or(|ext| ext != "err") {
                         save::nonempty(p)?;
@@ -600,9 +602,9 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                 super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("dos"));
                 return super::workspace_qe_plot::electronic(cfg, name);
             }
-            let mut paths = logs(&dir, "dos");
+            let mut paths = logs(&dir, "eletdos");
             paths.push(dir.join(format!("{}.tdos", cfg.qe.prefix)));
-            if !super::native_jobs::continuing(&dir, "dos")? {
+            if !super::native_jobs::continuing(&dir, "eletdos")? {
                 archive_task(cfg, "dos", &paths)?;
             }
             let source = super::layout::path(&cfg.work_dir, "nscf/out");
@@ -614,7 +616,9 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                 save::files(&source)? == save::files(&out)?,
                 "input_conflict: DOS 副本与 NSCF 来源不一致"
             );
-            qe_run(cfg, &dir, &post_program(cfg, "dos")?, "eletdos.in", "dos")?;
+            qe_run(cfg, &dir, &post_program(cfg, "dos")?, "eletdos.in", "eletdos")?;
+            let actual = super::scientific_logs::output(&dir, "eletdos");
+            paths.splice(..3, ["out", "err", "exitcode"].map(|ext| actual.with_extension(ext)));
             save::nonempty(&dir.join(format!("{}.tdos", cfg.qe.prefix)))?;
             let receipt = capture(
                 cfg,

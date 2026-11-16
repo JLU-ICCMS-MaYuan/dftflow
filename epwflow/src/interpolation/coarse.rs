@@ -1,5 +1,5 @@
 //! EPW 内置 Wannier 化与粗网格，消费已逐文件核验的 F2 原生数据。
-use super::super::foundation::{stage::Backend, store};
+use super::super::foundation::{stage::Backend, store, scientific_logs};
 use super::{
     epw_config::EpwConfig,
     manifest::{Artifact, CoarseData},
@@ -24,7 +24,7 @@ pub fn stage_f2(f2: &QeManifest, work: &Path) -> Result<()> {
         crate::foundation::native_jobs::empty_execution_directory(&dir)?
             || (crate::foundation::layout::enabled(work)
                 && !dir.join("out").exists()
-                && !dir.join("epw.out").exists()),
+                && !scientific_logs::output(&dir, "epw_coarse").exists()),
         "input_conflict: 粗网格目标已存在，保留现场"
     );
     let states = f2.states.as_ref().context("data_invalid: 缺少 F2 NSCF")?;
@@ -88,12 +88,14 @@ pub fn run_epw(
         "allocation: EPW 须在 F1 已登记分配内同步运行"
     );
     let program = &epw_cfg.cfg.programs.epw;
+    let stem = Path::new(input_name).file_stem().and_then(|s| s.to_str())
+        .context("configuration: EPW 输入缺少文件主名")?;
     crate::foundation::workspace::native_script(
         program,
         &dir.join(input_name),
         dir,
         launcher,
-        "epw",
+        stem,
         false,
         false,
     )?;
@@ -104,10 +106,15 @@ pub fn run_epw(
         "-inp".into(),
         dir.join(input_name).to_string_lossy().into_owned(),
     ]);
-    let report = super::super::foundation::process::run_report(&cmd, dir)?;
-    report.copy_logs(dir, "epw")?;
+    let report = super::super::foundation::process::run_report_named(&cmd, dir, stem)?;
+    if !crate::foundation::native_jobs::enabled() {
+        report.copy_logs(dir, stem)?;
+    }
+    let output = if crate::foundation::native_jobs::enabled() {
+        report.stdout_path.clone()
+    } else { dir.join(format!("{stem}.out")) };
     fs::write(
-        dir.join("epw.exitcode"),
+        output.with_extension("exitcode"),
         report
             .exit_status
             .map(|x| x.to_string())
@@ -118,7 +125,7 @@ pub fn run_epw(
         "execution_failed: EPW 退出状态 {:?}",
         report.exit_status
     );
-    super::native::checked_log(&fs::read_to_string(dir.join("epw.out"))?, 0)
+    super::native::checked_log(&fs::read_to_string(output)?, 0)
 }
 
 pub fn run_coarse(
@@ -149,7 +156,7 @@ pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
         "data_invalid: 粗网格缺少原生 F2 保存数据"
     );
     ensure!(
-        !dir.join("epw_coarse.in").exists() && !dir.join("epw.out").exists(),
+        !dir.join("epw_coarse.in").exists() && !scientific_logs::output(&dir, "epw_coarse").exists(),
         "input_conflict: 粗网格已有执行现场"
     );
     qf_wannier::write_selection(
@@ -186,7 +193,7 @@ pub fn collect_coarse(work: &Path, epw_cfg: &EpwConfig) -> Result<CoarseResult> 
     let normalize = |text: &str| text.lines().map(|line| line.split('!').next().unwrap_or("")).flat_map(str::split_whitespace).collect::<Vec<_>>().join(" ");
     ensure!(normalize(&fs::read_to_string(dir.join("epw_coarse.in"))?) == normalize(&expected),
         "input_conflict: 粗网格实际输入与当前参数不符");
-    super::native::checked_log(&fs::read_to_string(dir.join("epw.out"))?, 0)?;
+    super::native::checked_log(&fs::read_to_string(scientific_logs::output(&dir, "epw_coarse"))?, 0)?;
     let cfg = epw_cfg.cfg;
     let structure = crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
     let modes = structure.cell.positions.len() * 3;
@@ -198,7 +205,7 @@ pub fn collect_coarse(work: &Path, epw_cfg: &EpwConfig) -> Result<CoarseResult> 
         modes,
     )?;
     paths.extend([
-        ("coarse_log".into(), dir.join("epw.out")),
+        ("coarse_log".into(), scientific_logs::output(&dir, "epw_coarse")),
         ("coarse_input".into(), dir.join("epw_coarse.in")),
         (
             "coarse_wannier".into(),

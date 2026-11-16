@@ -18,6 +18,14 @@
 
 DFTFlow 不额外限制计算时长和存储空间，集群规则由 Slurm 管理。当前整个 `[resources]` 已移除，统一复用 QE／VASP 的 `[slurm].header` 字符串；新脚本及提交命令不从程序配置生成分区、节点数或任务数覆盖。MPI 以 `programs.launcher` 为唯一配置来源，不与 `SLURM_NTASKS` 强制相等；原生 pool／image 和空 k pool 检查仍有效。账本只依赖实际作业身份，消费使用 Slurm 实际节点证据；活动／未知作业及并发登记保留。旧输入必须迁移，冻结快照和旧脚本不自动改写。设计与验证见 [0065](../../specs/0065-slurm-header-launcher/spec.md)；0058 保留为历史依据。
 
+## 科学输入与输出文件名
+
+同一次科学调用的输入与执行输出使用相同主文件名：电子后处理为 `elebanddata.in/out`、`eletdos.in/out`；第 5～7 步分别为 `epw_wannier.in/out`、`epw_coarse.in/out`、`epw_fine.in/out`。关联退出码使用同主名 `.exitcode`；分离错误输出存在时使用同主名 `.err`。编号工作区新原生任务仍将两路输出合并到 `.out`。
+
+SCF、NSCF、声子、q2r、matdyn 等已成对命名保留；第 8 步及自动比较的 `epw.in/out` 保留。原生 `.wout`、矩阵元、谱等数据继续采用科学程序规定的名字。
+
+旧 `bands.out`、`dos.out` 和 `epw.out` 只读兼容，已登记任务继续绑定原脚本和输出，不批量改名。新名存在时直接核验新名，不因新日志失败回退旧成功日志。需求和验证范围见 [#51 Spec](../../specs/0051-matching-log-names/spec.md)。
+
 ## 历史清理
 
 独立维护命令 [epw_clear](epw_clear.md) 对八日志布局报告无需清理；旧 `layout.json` 工作区仍可预览和清空三处历史。保留现用计算、结果、配置版本及预算。

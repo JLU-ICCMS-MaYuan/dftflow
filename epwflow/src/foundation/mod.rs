@@ -40,3 +40,4 @@ pub(crate) mod config_versions;
 pub mod wannier_diagnostics;
 
 pub mod legacy_state;
+pub mod scientific_logs;

@@ -777,7 +777,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     let qe_calls=c.calls().0;
     c.accounting(Some(202));
     success(c.numbered_cli(1,&["--stage","wannier","-r"],Some(202),"numbered-wannier"));
-    assert!(!c.root.join("run/6.epw-coarse/epw.out").exists());
+    assert!(!c.root.join("run/6.epw-coarse/epw_coarse.out").exists());
     let wan_hash=store::hash_file(&c.root.join("run/5.epw-wannier/scf.ukk")).unwrap();
     let key=stages::scientific_key(&cfg,Step::Wannier).unwrap();
     c.accounting(Some(203));
@@ -794,6 +794,23 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     assert!(epwflow::interpolation::manifest::InterpolationManifest::load(&layout::path(&cfg.work_dir,"coarse/manifest.json")).unwrap().coarse.is_some());
     c.accounting(Some(204));
     success(c.numbered_cli(2,&["--stage","fine","-r"],Some(204),"numbered-fine"));
+    for (directory, stem) in [
+        ("3.qe-electronic/qe_eband", "elebanddata"),
+        ("3.qe-electronic/qe_eledos", "eletdos"),
+        ("5.epw-wannier", "epw_wannier"),
+        ("6.epw-coarse", "epw_coarse"),
+        ("7.epw-fine/smearing-0001", "epw_fine"),
+    ] {
+        let dir = cfg.work_dir.join(directory);
+        assert!(dir.join(format!("{stem}.in")).is_file());
+        assert!(dir.join(format!("{stem}.out")).is_file());
+        assert_eq!(fs::read_to_string(dir.join(format!("{stem}.exitcode"))).unwrap().trim(), "0");
+        let script = fs::read_to_string(dir.join(format!("{stem}.sh"))).unwrap();
+        assert!(script.contains(&format!("> {stem}.out 2>&1")), "{script}");
+        for old in ["epw.out", "bands.out", "dos.out"] {
+            assert!(!dir.join(old).exists(), "新任务不应生成旧日志 {old}");
+        }
+    }
     let calls=c.calls();
     c.numbered_change(|cfg|cfg.interpolation.q_grid=[4;3]);
     c.accounting(Some(205));
@@ -1727,14 +1744,14 @@ fn epw6_version_rejection_is_revalidated_without_refitting() {
     c.accounting(Some(201));
     success(c.numbered_cli(1, &["--stage", "wannier", "-r"], Some(201), "fit-before-version-upgrade"));
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
-    let output = c.root.join("run/5.epw-wannier/epw.out");
+    let output = c.root.join("run/5.epw-wannier/epw_wannier.out");
     fs::write(&output, fs::read_to_string(&output).unwrap().replace("Program EPW v.5.9", "Program EPW v.6.0")).unwrap();
     let mark = |reason: &str| {
         log::update(&cfg.work_dir, Step::Wannier, |d| {
             d.set("阶段", "状态", "失败");
             d.set("阶段", "科学状态", "待检查");
             d.set("问题", "原因", reason);
-            let label = d.sections.iter().find(|(_, fields)| fields.get("输出名称").is_some_and(|s| s == "epw"))
+            let label = d.sections.iter().find(|(_, fields)| fields.get("输出名称").is_some_and(|s| s == "epw_wannier"))
                 .map(|(name, _)| name.clone()).unwrap();
             d.set(&label, "状态", "失败");
             d.set(&label, "退出码", "0");
@@ -1748,7 +1765,7 @@ fn epw6_version_rejection_is_revalidated_without_refitting() {
     assert_eq!(before, c.calls());
     mark("environment_incompatible: 缺少 EPW 5.9 运行证据");
     let label = log::read(&cfg.work_dir, Step::Wannier).unwrap().sections.iter()
-        .find(|(_, fields)| fields.get("输出名称").is_some_and(|s| s == "epw"))
+        .find(|(_, fields)| fields.get("输出名称").is_some_and(|s| s == "epw_wannier"))
         .map(|(name, _)| name.clone()).unwrap();
     log::update(&cfg.work_dir, Step::Wannier, |d| {
         d.sections.get_mut(&label).unwrap().retain(|k, _| !k.starts_with("科学输入"));
@@ -1767,4 +1784,42 @@ fn epw6_version_rejection_is_revalidated_without_refitting() {
     success(c.stage_execute());
     assert_eq!(before, c.calls(), "版本误拒绝恢复不得重跑任何科学任务");
     assert_eq!(log::read(&cfg.work_dir, Step::Wannier).unwrap().get("阶段", "科学状态"), Some("已完成"));
+}
+
+#[test]
+fn legacy_wannier_log_and_registered_task_resume_without_refitting() {
+    use epwflow::foundation::{readable_state as log, stages::Step};
+    let c = Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(1, &["--stage", "wannier", "-r"], Some(201), "create-fit"));
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let dir = cfg.work_dir.join("5.epw-wannier");
+    // 重建旧版记录的形状，输入与原生数据保持不变。
+    for ext in ["out", "exitcode"] {
+        fs::rename(dir.join(format!("epw_wannier.{ext}")), dir.join(format!("epw.{ext}"))).unwrap();
+    }
+    let script = dir.join("epw_wannier.sh");
+    fs::write(&script, fs::read_to_string(&script).unwrap().replace("epw_wannier.out", "epw.out")).unwrap();
+    log::update(&cfg.work_dir, Step::Wannier, |d| {
+        for fields in d.sections.values_mut() {
+            for value in fields.values_mut() {
+                *value = value.replace("epw_wannier.out", "epw.out")
+                    .replace("epw_wannier.exitcode", "epw.exitcode");
+            }
+            if fields.get("输出名称").is_some_and(|s| s == "epw_wannier") {
+                fields.insert("输出名称".into(), "epw".into());
+            }
+        }
+        // 保留任务证据，要求从已退出的原生任务继续阶段校验。
+        d.set("阶段", "状态", "待检查");
+        d.set("阶段", "科学状态", "待检查");
+        Ok(())
+    }).unwrap();
+    let before = c.calls();
+    let hash = store::hash_file(&dir.join("epw.out")).unwrap();
+    c.accounting(Some(202));
+    success(c.numbered_cli(1, &["--stage", "wannier", "--resume", "-r"], Some(202), "legacy-fit"));
+    assert_eq!(before, c.calls(), "旧任务不得重新拟合");
+    assert_eq!(hash, store::hash_file(&dir.join("epw.out")).unwrap());
+    assert!(!dir.join("epw_wannier.out").exists(), "不得复制旧日志制造新证据");
 }

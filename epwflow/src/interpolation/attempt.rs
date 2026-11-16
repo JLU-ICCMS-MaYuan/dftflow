@@ -14,13 +14,17 @@ pub fn run<T>(
     collect: impl Fn() -> Result<T>,
     evidence: impl Fn(&T) -> Result<Vec<Identity>>,
 ) -> Result<T> {
+    let stem = if label == "coarse" { "epw_coarse" }
+        else if label.starts_with("fine-smearing-") { "epw_fine" }
+        else { "epw" };
+    let exit_name = format!("{stem}.exitcode");
     run_with_inputs(
         work,
         label,
         dir,
         digest,
         retry,
-        "epw.exitcode",
+        &exit_name,
         None,
         prepare,
         execute,
@@ -45,6 +49,10 @@ pub(super) fn run_with_inputs<T>(
         dir.starts_with(work),
         "configuration: 原生计算目录不属于工作区"
     );
+    let exit_path = || {
+        let stem = Path::new(exit_code).file_stem().and_then(|s| s.to_str()).unwrap_or(exit_code);
+        crate::foundation::scientific_logs::output(dir, stem).with_extension("exitcode")
+    };
     let cfg = if crate::foundation::layout::enabled(work) {
         Some(crate::qe_data::direct::current(work)?)
     } else {
@@ -88,7 +96,7 @@ pub(super) fn run_with_inputs<T>(
             replace_outputs(dir)?;
         }
     } else if dir.exists() {
-        let exit = dir.join(exit_code);
+        let exit = exit_path();
         if exit.is_file() {
             if std::fs::read_to_string(&exit)?.trim() == "0" {
                 if let Ok(result) = collect() {
@@ -113,7 +121,7 @@ pub(super) fn run_with_inputs<T>(
     }
     execute()?;
     ensure!(
-        std::fs::read_to_string(dir.join(exit_code))?.trim() == "0",
+        std::fs::read_to_string(exit_path())?.trim() == "0",
         "execution_failed: 原生程序退出失败"
     );
     let result = collect()?;
