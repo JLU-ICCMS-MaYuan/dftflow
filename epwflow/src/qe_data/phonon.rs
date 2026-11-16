@@ -87,7 +87,7 @@ pub(crate) fn response(
         .collect::<Vec<_>>();
     ensure!(
         files.len() == 1,
-        "data_invalid: 缺少或存在歧义的原生 dvscf q={}",
+        "data_invalid: The birth of a lack of or disagreement dvscf q={}",
         q.global_index
     );
     // coords 的 fildyn 为不带全局编号的单 q 文件，内部 q 固定为 1。
@@ -132,7 +132,7 @@ pub fn run_q(
     q: &QPoint,
     q_index: usize,
 ) -> Result<PhResponse> {
-    ensure!(q_index == q.global_index, "data_invalid: 分 q 全局索引不符");
+    ensure!(q_index == q.global_index, "data_invalid: min q Global index does not match");
     let dir = crate::foundation::layout::path(&work, "ph").join(&q.directory);
     let input = qe.phonon_q_input(
         dir.join("out").to_str().unwrap(),

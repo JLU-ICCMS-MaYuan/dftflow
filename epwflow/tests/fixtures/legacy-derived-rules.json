@@ -1,0 +1,5 @@
+{
+  "outdir": "当前任务工作目录和已核验绑定数据",
+  "ibrav": "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS",
+  "fermi_energy": "已绑定第二步 NSCF XML 的费米能，eV"
+}

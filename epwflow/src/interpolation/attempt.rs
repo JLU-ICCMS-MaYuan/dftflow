@@ -47,7 +47,7 @@ pub(super) fn run_with_inputs<T>(
 ) -> Result<T> {
     ensure!(
         dir.starts_with(work),
-        "configuration: 原生计算目录不属于工作区"
+        "configuration: Numerical Catalogue does not belong to the workspace"
     );
     let exit_path = || {
         let stem = Path::new(exit_code).file_stem().and_then(|s| s.to_str()).unwrap_or(exit_code);
@@ -63,7 +63,7 @@ pub(super) fn run_with_inputs<T>(
             .into_iter()
             .find(|s| dir.starts_with(s.directory(c)))
     });
-    let section = format!("子步骤 · {label}");
+    let section = format!("Substep · {label}");
     if let (Some(cfg), Some(step)) = (&cfg, step) {
         if log::completed_files(cfg, step, &section)?.is_some() {
             let compatible = log::checkpoint_config(cfg, step, &section)?
@@ -106,12 +106,12 @@ pub(super) fn run_with_inputs<T>(
                     return Ok(result);
                 }
             }
-            ensure!(retry, "execution_failed: 原生子任务失败，需要显式恢复");
+            ensure!(retry, "execution_failed: The birthbaby mission failed. It needs a visible recovery");
             replace_outputs(dir)?;
         } else {
             ensure!(
                 std::fs::read_dir(dir)?.next().is_none(),
-                "scheduler_unknown: 原生目录尚无可确认退出码 {}",
+                "scheduler_unknown: No exit code confirmed for the native directory {}",
                 dir.display()
             );
         }
@@ -122,7 +122,7 @@ pub(super) fn run_with_inputs<T>(
     execute()?;
     ensure!(
         std::fs::read_to_string(exit_path())?.trim() == "0",
-        "execution_failed: 原生程序退出失败"
+        "execution_failed: native exit failed"
     );
     let result = collect()?;
     let ids = evidence(&result)?;

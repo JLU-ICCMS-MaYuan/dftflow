@@ -54,7 +54,7 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
         ensure!(
             store::hash_file(&source.join("manifest.json"))?
                 == store::hash_file(&output.join("comparison/manifest.json"))?,
-            "input_conflict: 结果绑定其他来源；请使用新的 --output"
+            "input_conflict: Result in binding other sources; please use new --output"
         );
         for file in &data.manifest.files {
             let target = output.join("comparison").join(&file.relative_path);
@@ -71,7 +71,7 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
     }
     ensure!(
         !output.join("comparison").exists() && !output.join("comparison-summary.json").exists(),
-        "input_conflict: 结果已存在；使用新的 --output，避免覆盖"
+        "input_conflict: Results exist; new ones are used --output ,Avoid Overwrite"
     );
     let stage = output.join(format!(".comparison-{}", store::token()));
     fs::create_dir(&stage)?;

@@ -76,7 +76,7 @@ fn advance_mode(
     if target >= Step::Phonon && super::phonon_import::bound(&cfg) {
         anyhow::ensure!(
             super::phonon_import::binding(&cfg).is_file(),
-            "data_invalid: 外部声子来源记录缺失，请重新指定 --import-phonon；不会重新执行 PH"
+            "data_invalid: external phonon source record missing; specify --import-phonon again; PH will not be rerun"
         );
     }
     // 先检查已有结果的损坏，再提交任何缺失的依赖任务。
@@ -104,7 +104,7 @@ fn advance_mode(
         parallelism::preflight(&cfg, step, own.is_some())?;
         let previous = log::read(&cfg.work_dir, step)?;
         let compatible = previous
-            .get("阶段", "计算配置")
+            .get("Stage", "Calculation configuration")
             .and_then(|p| super::readable_state::load_config(&log::resolve(&cfg.work_dir, p)).ok())
             .map(|old| {
                 Ok::<_, anyhow::Error>(
@@ -113,12 +113,12 @@ fn advance_mode(
             })
             .transpose()?
             .unwrap_or(false);
-        let failed = previous.get("阶段", "状态") == Some("失败");
+        let failed = previous.get("Stage", "Status") == Some("failed");
         let upstream = stages::upstream(&cfg, step)?;
         let dependencies_match = upstream.iter().all(|(name, batch)| {
-            previous.get("依赖", &format!("{name} 批次")) == Some(batch.as_str())
+            previous.get("Dependencies", &format!("{name} batch")) == Some(batch.as_str())
         });
-        let completed_but_missing = previous.get("阶段", "科学状态") == Some("已完成")
+        let completed_but_missing = previous.get("Stage", "Scientific status") == Some("completed")
             && !(step == Step::Phonon
                 && compatible
                 && dependencies_match
@@ -130,7 +130,7 @@ fn advance_mode(
             && !(resume && failed && matches!(step, Step::Scf | Step::Nscf | Step::Wannier))
         {
             previous
-                .get("阶段", "批次")
+                .get("Stage", "Batch")
                 .map(str::to_owned)
                 .unwrap_or_else(store::token)
         } else {
@@ -139,25 +139,25 @@ fn advance_mode(
             store::token()
         };
         log::update(&cfg.work_dir, step, |d| {
-            d.set("阶段", "状态", "推进中");
-            d.set("阶段", "科学状态", "待检查");
-            d.set("阶段", "批次", &generation);
+            d.set("Stage", "Status", "advancing");
+            d.set("Stage", "Scientific status", "validation pending");
+            d.set("Stage", "Batch", &generation);
             if step == Step::Coarse {
                 // 目录保留的 QE 声子检查点仍由 attempt 核验参数后复用。
-                for section in ["子步骤 · comparison-q2r", "子步骤 · comparison-matdyn"] {
-                    if d.get(section, "状态") == Some("已完成") {
-                        d.set(section, "所属批次", &generation);
+                for section in ["Substep · comparison-q2r", "Substep · comparison-matdyn"] {
+                    if d.get(section, "Status") == Some("completed") {
+                        d.set(section, "Owning batch", &generation);
                     }
                 }
             }
-            d.set("阶段", "计算配置", log::relative(&cfg.work_dir, &version));
-            d.remove("问题");
+            d.set("Stage", "Calculation configuration", log::relative(&cfg.work_dir, &version));
+            d.remove("Problem");
             Ok(())
         })?;
         log::update(&cfg.work_dir, step, |d| {
-            d.remove("依赖");
+            d.remove("Dependencies");
             for (name, batch) in &upstream {
-                d.set("依赖", &format!("{name} 批次"), batch);
+                d.set("Dependencies", &format!("{name} batch"), batch);
             }
             Ok(())
         })?;
@@ -185,12 +185,12 @@ fn advance_mode(
             Err(e) => {
                 native_jobs::reject(&cfg, &generation)?;
                 log::update(&cfg.work_dir, step, |d| {
-                    d.set("阶段", "状态", "失败");
-                    d.set("问题", "原因", format!("{e:#}"));
+                    d.set("Stage", "Status", "failed");
+                    d.set("Problem", "Reason", format!("{e:#}"));
                     d.set(
-                        "下一步",
-                        "操作",
-                        format!("修复原因后执行：{}", log::next_command(&cfg, step, true)?),
+                        "Next step",
+                        "Action",
+                        format!("After resolving the cause, run: {}", log::next_command(&cfg, step, true)?),
                     );
                     Ok(())
                 })?;
@@ -208,7 +208,7 @@ fn advance_mode(
     let generation = format!(
         "post-{}",
         log::read(&cfg.work_dir, target)?
-            .get("阶段", "批次")
+            .get("Stage", "Batch")
             .unwrap_or("existing")
     );
     let post = || workspace_science::refresh_post(&cfg, target);
@@ -221,15 +221,15 @@ fn advance_mode(
         Err(e) if native_jobs::paused(&e) => pending(&cfg, target),
         Err(e) => Err(e),
         Ok(()) => {
-            let valid = log::read(&cfg.work_dir, target)?.get("阶段", "科学状态") == Some("已完成");
+            let valid = log::read(&cfg.work_dir, target)?.get("Stage", "Scientific status") == Some("completed");
             log::update(&cfg.work_dir, target, |d| {
                 d.set(
-                    "下一步",
-                    "操作",
+                    "Next step",
+                    "Action",
                     if valid {
-                        "本阶段科学计算及派生交付已完成；可以推进下一阶段"
+                        "Stage scientific calculation and derived delivery complete; advance to the next stage"
                     } else {
-                        "求解已结束，能隙数据无效；请查看各温度的收敛及数据原因"
+                        "Solver finished; gap data invalid; inspect convergence and data diagnostics for each temperature"
                     },
                 );
                 Ok(())
@@ -266,7 +266,7 @@ fn refresh_stage(
     let generation = format!(
         "post-{}",
         log::read(&cfg.work_dir, step)?
-            .get("阶段", "批次")
+            .get("Stage", "Batch")
             .unwrap_or("existing")
     );
     let run = || workspace_science::refresh_post(cfg, step);
@@ -280,12 +280,12 @@ fn refresh_stage(
         Err(e) => {
             native_jobs::reject(cfg, &generation)?;
             log::update(&cfg.work_dir, step, |doc| {
-                doc.set("阶段", "状态", "后处理失败，科学结果保留");
-                doc.set("问题", "原因", format!("{e:#}"));
+                doc.set("Stage", "Status", "Postprocessing failed; scientific results preserved");
+                doc.set("Problem", "Reason", format!("{e:#}"));
                 doc.set(
-                    "下一步",
-                    "操作",
-                    format!("修复原因后执行：{}", log::next_command(cfg, step, true)?),
+                    "Next step",
+                    "Action",
+                    format!("After resolving the cause, run: {}", log::next_command(cfg, step, true)?),
                 );
                 Ok(())
             })?;
@@ -300,9 +300,9 @@ fn refresh_stage(
 fn pending(cfg: &Config, target: Step) -> Result<()> {
     log::update(&cfg.work_dir, target, |d| {
         d.set(
-            "下一步",
-            "操作",
-            format!("作业结束后执行：{}", log::next_command(cfg, target, false)?),
+            "Next step",
+            "Action",
+            format!("After the job finishes, run: {}", log::next_command(cfg, target, false)?),
         );
         Ok(())
     })?;

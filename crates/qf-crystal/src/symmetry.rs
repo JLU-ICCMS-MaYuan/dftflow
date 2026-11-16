@@ -27,12 +27,12 @@ pub fn volume(structure: &Structure) -> f64 {
 pub fn density(structure: &Structure) -> Result<f64> {
     let mut mass = 0.0_f64;
     for (sym, count) in structure.elements.iter().zip(&structure.counts) {
-        let m = atomic_mass(sym).ok_or_else(|| anyhow::anyhow!("未知元素质量: {sym}"))?;
+        let m = atomic_mass(sym).ok_or_else(|| anyhow::anyhow!("Unknown element mass: {sym}"))?;
         mass += m * (*count as f64);
     }
     let vol = volume(structure);
     if vol.abs() < 1e-12 {
-        bail!("晶胞体积为零，无法计算密度");
+        bail!("The crystal cell size is zero, so it's not possible to calculate density");
     }
     Ok(mass / vol * 1.6605390666050)
 }
@@ -93,7 +93,7 @@ pub fn analyze_symmetry(structure: &Structure, symprec: f64) -> Result<SymmetryI
     let (mut cell, lattice) = spglib_cell(structure);
     let dataset = Dataset::new(&mut cell, symprec);
     if dataset.spacegroup_number <= 0 || dataset.n_atoms == 0 {
-        bail!("spglib 未能识别空间群（symprec={symprec}）");
+        bail!("spglib No space group identified(symprec={symprec})");
     }
     // 理想化标准胞的类型编号 -> 元素符号映射。
     let mut type_elements: Vec<String> = Vec::new();

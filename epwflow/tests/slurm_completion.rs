@@ -23,7 +23,7 @@ fn completion_query_child() {
             assert_eq!(a.state, "RUNNING");
             assert_eq!(a.nodes, 1);
         }
-        _ => assert!(result.is_err(), "{kind} 不得产生虚构终态"),
+        _ => assert!(result.is_err(), "{kind} We can't create a fictional end"),
     }
 }
 
@@ -88,7 +88,7 @@ esac
         assert_eq!(fs::metadata(&source).unwrap().permissions().mode() & 0o777, 0o444);
         if query.exists() {
             let snapshot = fs::read_to_string(&query).unwrap();
-            assert!(!std::path::Path::new(snapshot.trim()).exists(), "查询副本未清理");
+            assert!(!std::path::Path::new(snapshot.trim()).exists(), "Query copy uncleaned");
         } else {
             assert!(matches!(kind, "running" | "other_error"));
         }

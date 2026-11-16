@@ -73,7 +73,7 @@ impl StructureOut {
         let mut mass = 0.0_f64;
         for (element, count) in self.element_counts() {
             mass += qf_crystal::atomic_mass(&element)
-                .ok_or_else(|| anyhow::anyhow!("未知元素质量: {element}"))?
+                .ok_or_else(|| anyhow::anyhow!("Unknown element mass: {element}"))?
                 * count as f64;
         }
         // pint/pymatgen 的 amu→g 换算常数（CODATA：1 amu = 1.66053906892e-24 g）

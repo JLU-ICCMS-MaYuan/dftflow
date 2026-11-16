@@ -59,27 +59,27 @@ fn eband_inputs_match_python_format() {
 
     let written = qf_input::electronic::write_eband_inputs(work.to_str().unwrap(), &cfg, &structure, &prefix)
         .expect("write eband inputs");
-    assert!(written.len() == 5, "eband 应写出 5 个文件，实际 {written:?}");
+    assert!(written.len() == 5, "eband Should Write 5 Documents, actual {written:?}");
 
     let eband = fs::read_to_string(work.join("eband.in")).unwrap();
-    assert!(eband.contains("calculation = 'bands'"), "eband.in 缺 calculation=bands");
-    assert!(eband.contains("K_POINTS crystal_b"), "eband.in 缺 K_POINTS crystal_b");
-    assert!(eband.contains("occupations = 'tetrahedra'"), "eband.in 缺 occupations");
+    assert!(eband.contains("calculation = 'bands'"), "eband.in Missing calculation=bands");
+    assert!(eband.contains("K_POINTS crystal_b"), "eband.in Missing K_POINTS crystal_b");
+    assert!(eband.contains("occupations = 'tetrahedra'"), "eband.in Missing occupations");
 
     let banddata = fs::read_to_string(work.join("elebanddata.in")).unwrap();
-    assert!(banddata.contains("&BANDS"), "elebanddata.in 缺 &BANDS");
-    assert!(banddata.contains("lp = .true."), "elebanddata.in 缺 lp");
+    assert!(banddata.contains("&BANDS"), "elebanddata.in Missing &BANDS");
+    assert!(banddata.contains("lp = .true."), "elebanddata.in Missing lp");
 
     let projdata = fs::read_to_string(work.join("elebandprojdata.in")).unwrap();
-    assert!(projdata.contains("&projwfc"), "elebandprojdata.in 缺 &projwfc");
+    assert!(projdata.contains("&projwfc"), "elebandprojdata.in Missing &projwfc");
 
     assert!(
         work.join(format!("{prefix}_band.labelinfo.dat")).exists(),
-        "缺少 band.labelinfo.dat"
+        "Missing band.labelinfo.dat"
     );
     assert!(
         work.join(format!("{prefix}_gun_band.labelinfo.dat")).exists(),
-        "缺少 gun_band.labelinfo.dat"
+        "Missing gun_band.labelinfo.dat"
     );
 }
 
@@ -107,15 +107,15 @@ fn eledos_inputs_match_python_format() {
     let work = dir.join("qe_eledos");
     let written = qf_input::electronic::write_eledos_inputs(work.to_str().unwrap(), &cfg, &prefix)
         .expect("write eledos inputs");
-    assert!(written.len() == 2, "eledos 应写出 2 个文件，实际 {written:?}");
+    assert!(written.len() == 2, "eledos Should Write 2 Documents, actual {written:?}");
 
     let eletdos = fs::read_to_string(work.join("eletdos.in")).unwrap();
-    assert!(eletdos.contains("&dos"), "eletdos.in 缺 &dos");
-    assert!(eletdos.contains("fildos"), "eletdos.in 缺 fildos");
-    assert!(eletdos.contains("DeltaE = 0.01"), "eletdos.in 缺 DeltaE 默认");
+    assert!(eletdos.contains("&dos"), "eletdos.in Missing &dos");
+    assert!(eletdos.contains("fildos"), "eletdos.in Missing fildos");
+    assert!(eletdos.contains("DeltaE = 0.01"), "eletdos.in Missing DeltaE Default");
 
     let elepdos = fs::read_to_string(work.join("elepdos.in")).unwrap();
-    assert!(elepdos.contains("&projwfc"), "elepdos.in 缺 &projwfc");
-    assert!(elepdos.contains("filpdos"), "elepdos.in 缺 filpdos");
+    assert!(elepdos.contains("&projwfc"), "elepdos.in Missing &projwfc");
+    assert!(elepdos.contains("filpdos"), "elepdos.in Missing filpdos");
     let _ = Path::new(&poscar);
 }

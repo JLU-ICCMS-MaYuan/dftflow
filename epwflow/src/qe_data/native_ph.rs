@@ -16,12 +16,12 @@ pub fn control(path: &Path, points: &[QPoint]) -> Result<()> {
     let count: usize = xml::text(n, "NUMBER_OF_Q_POINTS")?.trim().parse()?;
     ensure!(
         count == points.len(),
-        "data_invalid: PH 全局 control q 数不符"
+        "data_invalid: PH Global control q Numbers do not match"
     );
     let coords = xml::numbers(xml::text(n, "Q-POINT_COORDINATES")?)?;
     ensure!(
         coords.len() == count * 3,
-        "data_invalid: PH 全局 control q 列表截断"
+        "data_invalid: PH Global control q List Break"
     );
     for (q, cart) in points.iter().zip(coords.chunks_exact(3)) {
         ensure!(
@@ -29,7 +29,7 @@ pub fn control(path: &Path, points: &[QPoint]) -> Result<()> {
                 .iter()
                 .zip(cart)
                 .all(|(a, b)| (a - b).abs() < 1e-8),
-            "data_invalid: PH 全局 control 与 dyn0 q 顺序不符"
+            "data_invalid: PH Global control with dyn0 q The order does not match"
         );
     }
     Ok(())
@@ -41,20 +41,20 @@ pub fn dyn_modes(path: &Path) -> Result<usize> {
     let nat: usize = xml::text(doc.root_element(), "NUMBER_OF_ATOMS")?
         .trim()
         .parse()?;
-    ensure!(nat > 0, "data_invalid: PH 原子数为零");
+    ensure!(nat > 0, "data_invalid: PH Zero atoms");
     let freq = doc
         .descendants()
         .find(|n| n.has_tag_name("FREQUENCIES_THZ_CMM1"))
-        .context("data_invalid: PH 缺实际频率")?;
+        .context("data_invalid: PH Missing actual frequency")?;
     let nodes = freq
         .children()
         .filter(|n| n.is_element() && n.tag_name().name().starts_with("OMEGA."))
         .count();
-    ensure!(nodes == 3 * nat, "data_invalid: PH 模数不完整");
+    ensure!(nodes == 3 * nat, "data_invalid: PH Models incomplete");
     for m in 1..=3 * nat {
         ensure!(
             xml::numbers(xml::text(freq, &format!("OMEGA.{m}"))?)?.len() == 2,
-            "data_invalid: PH 频率格式不符"
+            "data_invalid: PH Inconsistent frequency format"
         );
     }
     Ok(3 * nat)
@@ -65,15 +65,15 @@ pub fn patterns(path: &Path, local: usize, modes: usize) -> Result<()> {
     let doc = roxmltree::Document::parse(&raw)?;
     let n = doc.root_element();
     let q: usize = xml::text(n, "QPOINT_NUMBER")?.trim().parse()?;
-    ensure!(q == local, "data_invalid: PH patterns 内部 q 编号不符");
+    ensure!(q == local, "data_invalid: PH patterns Internal q Numbers do not match");
     let irreps: usize = xml::text(n, "NUMBER_IRR_REP")?.trim().parse()?;
-    ensure!(irreps > 0, "data_invalid: PH 扰动表示数为零");
+    ensure!(irreps > 0, "data_invalid: PH Disturbation is zero");
     let mut basis = vec![];
     for irrep in 1..=irreps {
         let rep = n
             .descendants()
             .find(|x| x.has_tag_name(format!("REPRESENTION.{irrep}").as_str()))
-            .context("data_invalid: PH 缺扰动表示")?;
+            .context("data_invalid: PH Undisturbed sign")?;
         let count: usize = xml::text(rep, "NUMBER_OF_PERTURBATIONS")?.trim().parse()?;
         let children = rep
             .children()
@@ -81,19 +81,19 @@ pub fn patterns(path: &Path, local: usize, modes: usize) -> Result<()> {
             .count();
         ensure!(
             count > 0 && children == count,
-            "data_invalid: PH 扰动表示截断"
+            "data_invalid: PH Disturbing means cut"
         );
         for p in 1..=count {
             let node = rep
                 .children()
                 .find(|x| x.has_tag_name(format!("PERTURBATION.{p}").as_str()))
-                .context("data_invalid: PH 缺逐扰动模式")?;
+                .context("data_invalid: PH Disturbing mode missing")?;
             let v = xml::numbers(xml::text(node, "DISPLACEMENT_PATTERN")?)?;
-            ensure!(v.len() == 2 * modes, "data_invalid: PH 扰动模式维度不符");
+            ensure!(v.len() == 2 * modes, "data_invalid: PH Disturbing mode dimensions do not match");
             basis.push(v);
         }
     }
-    ensure!(basis.len() == modes, "data_invalid: PH 扰动基底不完整");
+    ensure!(basis.len() == modes, "data_invalid: PH Disturbing base incomplete");
     for i in 0..modes {
         for j in 0..=i {
             let re: f64 = basis[i]
@@ -108,7 +108,7 @@ pub fn patterns(path: &Path, local: usize, modes: usize) -> Result<()> {
                 .sum();
             ensure!(
                 (re - if i == j { 1.0 } else { 0.0 }).abs() < 1e-8 && im.abs() < 1e-8,
-                "data_invalid: PH 扰动基底不是完整正交归一基底"
+                "data_invalid: PH Disturbing the base is not going to the bottom in its entirety"
             );
         }
     }
@@ -118,11 +118,11 @@ pub fn patterns(path: &Path, local: usize, modes: usize) -> Result<()> {
 pub fn verify(response: &PhResponse, q: &QPoint, geometry: &Geometry) -> Result<()> {
     ensure!(
         response.format == FORMAT,
-        "data_invalid: PH 不是已验证的目标原生格式"
+        "data_invalid: PH Not a validated target native format"
     );
     ensure!(
         response.q_id == q.global_index,
-        "data_invalid: PH 全局 q 不符"
+        "data_invalid: PH Global q Inconsistencies"
     );
     let raw = fs::read_to_string(&response.dyn_file)?;
     let doc = roxmltree::Document::parse(&raw)?;
@@ -130,22 +130,22 @@ pub fn verify(response: &PhResponse, q: &QPoint, geometry: &Geometry) -> Result<
     let nat = geometry.atoms.len();
     ensure!(
         response.perturbations == nat * 3,
-        "data_invalid: PH 清单扰动数不符"
+        "data_invalid: PH The number of perturbation on the manifest does not match"
     );
     ensure!(
         dyn_modes(&response.dyn_file)? == nat * 3,
-        "data_invalid: PH 与 SCF 原子数不符"
+        "data_invalid: PH with SCF Atoms don't match"
     );
     let first = root
         .children()
         .find(|n| n.has_tag_name("DYNAMICAL_MAT_.1"))
-        .context("data_invalid: PH 缺动力学矩阵")?;
+        .context("data_invalid: PH Motivated Matrix")?;
     let cart = xml::vector(xml::text(first, "Q_POINT")?)?;
     ensure!(
         cart.iter()
             .zip(q.cartesian)
             .all(|(a, b)| (a - b).abs() < 1e-8),
-        "data_invalid: PH 动力学矩阵物理 q 不符"
+        "data_invalid: PH Dynamic Matrix Physics q Inconsistencies"
     );
     let at = xml::numbers(xml::text(root, "AT")?)?;
     ensure!(
@@ -154,27 +154,27 @@ pub fn verify(response: &PhResponse, q: &QPoint, geometry: &Geometry) -> Result<
                 .iter()
                 .zip(geometry.lattice.iter().flatten())
                 .all(|(a, b)| (a - b / geometry.alat).abs() < 1e-8),
-        "data_invalid: PH 晶格与 SCF 不符"
+        "data_invalid: PH Crystal and SCF Inconsistencies"
     );
     for i in 1..=nat {
         let atom = root
             .descendants()
             .find(|n| n.has_tag_name(format!("ATOM.{i}").as_str()))
-            .context("data_invalid: PH 原子列表截断")?;
+            .context("data_invalid: PH Interrupt Atom List")?;
         let tau = xml::vector(
             atom.attribute("TAU")
-                .context("data_invalid: PH 原子无坐标")?,
+                .context("data_invalid: PH Atoms without coordinates")?,
         )?;
         ensure!(
             tau.iter()
                 .zip(geometry.atoms[i - 1].1)
                 .all(|(a, b)| (a - b / geometry.alat).abs() < 1e-8),
-            "data_invalid: PH 原子顺序或坐标不符"
+            "data_invalid: PH Atom sequence or coordinates do not match"
         );
         for j in 1..=nat {
             ensure!(
                 xml::numbers(xml::text(first, &format!("PHI.{i}.{j}"))?)?.len() == 18,
-                "data_invalid: PH Cartesian 动力学矩阵截断"
+                "data_invalid: PH Cartesian The power matrix cut"
             );
         }
     }
@@ -182,16 +182,16 @@ pub fn verify(response: &PhResponse, q: &QPoint, geometry: &Geometry) -> Result<
     let dv = response
         .dvscf
         .as_ref()
-        .context("data_invalid: PH 缺 dvscf")?;
+        .context("data_invalid: PH Missing dvscf")?;
     save::nonempty(dv)?;
     let expected = geometry
         .fft
         .iter()
         .try_fold(16u64 * (nat * 3) as u64, |p, &n| p.checked_mul(n as u64))
-        .context("data_invalid: PH 响应尺寸溢出")?;
+        .context("data_invalid: PH Response size spill")?;
     ensure!(
         fs::metadata(dv)?.len() == expected,
-        "data_invalid: PH dvscf 截断或 FFT／扰动数不符：{}（需要 {} 字节，实际 {} 字节）",
+        "data_invalid: PH dvscf Interrupting or FFT /The number of perturbation doesn't match:{}(Yes {} bytes, actual {} Bytes)",
         dv.display(),
         expected,
         fs::metadata(dv)?.len()
@@ -204,7 +204,7 @@ pub fn verify(response: &PhResponse, q: &QPoint, geometry: &Geometry) -> Result<
         reader.read_exact(&mut bytes)?;
         ensure!(
             f64::from_le_bytes(bytes).is_finite(),
-            "data_invalid: PH dvscf 含非有限值：{}",
+            "data_invalid: PH dvscf Contains non-finite values:{}",
             dv.display()
         );
     }

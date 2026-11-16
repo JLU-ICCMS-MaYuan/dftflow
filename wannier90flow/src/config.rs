@@ -84,7 +84,7 @@ pub fn apply_config_overrides(
     allowed_keys: &[&str],
 ) -> Result<Value> {
     let Some(obj) = input_config.as_object() else {
-        anyhow::bail!("配置文件顶层必须是表");
+        anyhow::bail!("The top layer of the profile must be a table");
     };
     let mut filtered = serde_json::Map::new();
     for (k, v) in obj {
@@ -99,7 +99,7 @@ pub fn apply_config_overrides(
 /// `wannier_init` 的配置加载（模板 + 白名单 + 合并）。
 pub fn load_init_config(path: &str) -> Result<Value> {
     let text = std::fs::read_to_string(path)
-        .map_err(|e| anyhow::anyhow!("读取配置失败 {path}: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Reading configuration failed {path}: {e}"))?;
     let input: Value = parse_toml_or_json(&text, path)?;
     let mut template = wannier_init_template();
     let mut keys = SHARED_ALLOWED_KEYS.to_vec();
@@ -119,20 +119,20 @@ pub fn load_init_config(path: &str) -> Result<Value> {
 pub fn parse_toml_or_json(text: &str, path: &str) -> Result<Value> {
     if path.ends_with(".json") {
         let v: Value = serde_json::from_str(text)
-            .map_err(|e| anyhow::anyhow!("解析 JSON {path} 失败: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Parsing JSON {path} Failed: {e}"))?;
         return Ok(v);
     }
     match toml::from_str::<toml::Value>(text) {
         Ok(v) => {
             let json_v: Value =
-                serde_json::to_value(v).map_err(|e| anyhow::anyhow!("TOML 转 JSON 失败: {e}"))?;
+                serde_json::to_value(v).map_err(|e| anyhow::anyhow!("TOML Turn JSON Failed: {e}"))?;
             Ok(json_v)
         }
         Err(toml_err) => {
             // 尝试 JSON（对齐 Python load_config_file 的 TOML→JSON 回退）
             match serde_json::from_str::<Value>(text) {
                 Ok(v) => Ok(v),
-                Err(_) => anyhow::bail!("解析配置 {path} 失败: {toml_err}"),
+                Err(_) => anyhow::bail!("Parsing Configuration {path} Failed: {toml_err}"),
             }
         }
     }

@@ -50,7 +50,7 @@ fn electronic_leaf_plot_survives_other_leaf_failure_without_phonons() {
         "qe-plot-dos-resume",
     ));
     png(&c, "run/3.qe-electronic/qe_eledos/plots/electronic-dos.png");
-    assert_eq!(calls, c.calls(), "成功 PW 不得重跑");
+    assert_eq!(calls, c.calls(), "Success PW Don't run again");
     let bands = c
         .root
         .join("run/3.qe-electronic/qe_eband/plots/electronic-bands.png");
@@ -136,7 +136,7 @@ fn incomplete_atomic_projection_is_rejected_without_fake_element_plots() {
     let o = c.numbered_cli(0, &["-r"], Some(201), "qe-plot-ph-incomplete");
     assert!(!o.status.success());
     assert!(
-        String::from_utf8_lossy(&o.stderr).contains("原子投影列"),
+        String::from_utf8_lossy(&o.stderr).contains("atomic projection columns"),
         "{}",
         String::from_utf8_lossy(&o.stderr)
     );
@@ -173,7 +173,7 @@ fn phonon_plot_failure_resumes_from_numeric_checkpoint_without_rerunning_matdyn(
     c.accounting(Some(202));
     success(c.numbered_cli(0, &["--resume", "-r"], Some(202), "qe-plot-ph-write-resume"));
     png(&c, "run/4.qe-phonon-nosplit/plots/phband/phonon_band.png");
-    assert_eq!(calls, c.calls(), "PH、q2r、matdyn 均不得重跑");
+    assert_eq!(calls, c.calls(), "PH、q2r、matdyn Don't run again");
 }
 
 #[test]
@@ -190,9 +190,9 @@ fn element_pdos_failure_preserves_tdos_and_bands_and_resumes_without_pw_or_dos()
     assert_eq!(dos,fs::read(root.join("3.qe-electronic/qe_eledos/scf.tdos")).unwrap());assert_eq!(calls,c.calls());
     let pdos=c.root.join("pdos-calls");let native=fs::read(&pdos).unwrap();
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
-    epwflow::foundation::readable_state::update(&cfg.work_dir, epwflow::foundation::stages::Step::Electronic, |d| { d.remove("电子投影"); Ok(()) }).unwrap();
+    epwflow::foundation::readable_state::update(&cfg.work_dir, epwflow::foundation::stages::Step::Electronic, |d| { d.remove("Electronic Projection"); Ok(()) }).unwrap();
     fs::remove_file(root.join("results/3.qe-electronic/qe_eledos/electronic-dos-valence.png")).unwrap();
     success(c.stage_submit("electronic",false));success(c.stage_execute());
-    assert_eq!(native,fs::read(pdos).unwrap(),"已完成原生投影不得因派生收据丢失重算");
+    assert_eq!(native,fs::read(pdos).unwrap(),"The native projection has been completed and should not be recalculated because of the derivative receipts");
     let complete:Value=store::read(&root.join("results/3.qe-electronic/qe_eledos/electronic-pdos.json")).unwrap();assert_eq!(complete["complete"],true);
 }

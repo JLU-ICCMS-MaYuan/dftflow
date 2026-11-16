@@ -73,7 +73,7 @@ fn read_or_rebuild_index(results: &Path) -> Result<Index> {
             m.schema_version == 1
                 && !m.files.is_empty()
                 && results.join(&m.stage).join(&m.unit) == dir,
-            "data_invalid: 索引重建发现阶段清单位置冲突"
+            "data_invalid: Index rediscovery manifest location conflict"
         );
         for artifact in &m.files {
             artifact.verify(dir)?;
@@ -100,12 +100,12 @@ fn finish_index(results: &Path, destination: &Path) -> Result<()> {
         ensure!(
             Path::new(&update.staging).components().count() == 1
                 && update.staging.starts_with(".native-"),
-            "data_invalid: 索引暂存路径非法"
+            "data_invalid: The index temporary path is not valid"
         );
         let temp = destination.join(update.staging);
         ensure!(
             store::hash_file(&temp.join(MANIFEST))? == entry.manifest.sha256,
-            "input_conflict: 索引恢复暂存清单被修改"
+            "input_conflict: Index restore suspense manifest modified"
         );
         let next: Manifest = store::read(&temp.join(MANIFEST))?;
         let old = if destination.join(MANIFEST).exists() {
@@ -118,12 +118,12 @@ fn finish_index(results: &Path, destination: &Path) -> Result<()> {
     let path = entry.manifest.verify(results)?;
     ensure!(
         path == destination.join(MANIFEST),
-        "data_invalid: 索引恢复目标越界"
+        "data_invalid: Index recovery targets crossed the border"
     );
     let m: Manifest = store::read(&path)?;
     ensure!(
         m.schema_version == 1 && m.stage == entry.stage && m.unit == entry.unit,
-        "data_invalid: 索引恢复身份不符"
+        "data_invalid: The index restores an identity that does not match"
     );
     for f in &m.files {
         f.verify(destination)?;
@@ -131,7 +131,7 @@ fn finish_index(results: &Path, destination: &Path) -> Result<()> {
     let _lock = store::Lock::acquire(&results.join("index"))?;
     let index_path = results.join("index.json");
     let mut index = read_or_rebuild_index(results)?;
-    ensure!(index.schema_version == 1, "data_invalid: 阶段索引版本");
+    ensure!(index.schema_version == 1, "data_invalid: Stage Index Version");
     index
         .entries
         .retain(|e| !(e.stage == entry.stage && e.unit == entry.unit));
@@ -151,20 +151,20 @@ fn stage_name(cfg: &Config, step: Step) -> Result<String> {
     Ok(step
         .directory(cfg)
         .file_name()
-        .context("data_invalid: 阶段名称")?
+        .context("data_invalid: Phase Name")?
         .to_str()
-        .context("阶段名称非 UTF-8")?
+        .context("Stage name is not UTF-8")?
         .into())
 }
 pub fn check(results: &Path) -> Result<Index> {
     let index: Index = store::read(&results.join("index.json"))?;
-    ensure!(index.schema_version == 1, "data_invalid: 阶段索引版本");
-    ensure!(!index.entries.is_empty(), "data_invalid: 结果索引为空");
+    ensure!(index.schema_version == 1, "data_invalid: Stage Index Version");
+    ensure!(!index.entries.is_empty(), "data_invalid: Results index is empty");
     for entry in &index.entries {
         let path = entry.manifest.verify(results)?;
         ensure!(
             !path.parent().unwrap().join(INDEX_UPDATE).exists(),
-            "data_invalid: 索引更新尚未完成，请恢复阶段发布"
+            "data_invalid: The index update has not yet been completed, please release it during recovery"
         );
         publication::ensure_finished(path.parent().unwrap(), MANIFEST)?;
         let m: Manifest = store::read(&path)?;
@@ -173,7 +173,7 @@ pub fn check(results: &Path) -> Result<Index> {
                 && m.stage == entry.stage
                 && m.unit == entry.unit
                 && !m.files.is_empty(),
-            "data_invalid: 阶段清单身份或文件集"
+            "data_invalid: Stage manifest Identity or File Collection"
         );
         for f in &m.files {
             f.verify(path.parent().unwrap())?;
@@ -196,7 +196,7 @@ pub fn publish(
         Path::new(unit)
             .components()
             .all(|p| matches!(p, std::path::Component::Normal(_))),
-        "data_invalid: 结果单元越界"
+        "data_invalid: The result unit crosses the border"
     );
     let results = root(cfg);
     let destination = results.join(&stage).join(unit);
@@ -208,7 +208,7 @@ pub fn publish(
         let m: Manifest = store::read(&destination.join(MANIFEST))?;
         ensure!(
             m.stage == stage && m.unit == unit && m.schema_version == 1,
-            "input_conflict: 阶段交付身份"
+            "input_conflict: Phase delivery identity"
         );
         m.files
     } else {
@@ -220,7 +220,7 @@ pub fn publish(
     for name in names {
         ensure!(
             Path::new(name).components().count() == 1 && name != MANIFEST,
-            "data_invalid: 阶段文件名越界"
+            "data_invalid: Phase file name crossed the border"
         );
         let id = Identity::capture(&source.join(name))?;
         fs::copy(&id.path, temp.join(name))?;
@@ -228,7 +228,7 @@ pub fn publish(
         files.push(Artifact::capture(&temp, name)?);
     }
     files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-    ensure!(!files.is_empty(), "data_invalid: 没有阶段结果可发布");
+    ensure!(!files.is_empty(), "data_invalid: No stage results to publish");
     let manifest = Manifest {
         schema_version: 1,
         stage: stage.clone(),
@@ -355,7 +355,7 @@ pub fn pending(cfg: &Config, step: Step) -> Result<bool> {
 /// 重绘只使用包内数值及参数；来源绝对路径只用于审计，不作运行依赖。
 pub fn redraw(results: &Path) -> Result<PathBuf> {
     let mut index: Index = store::read(&results.join("index.json"))?;
-    ensure!(index.schema_version == 1, "data_invalid: 阶段索引版本");
+    ensure!(index.schema_version == 1, "data_invalid: Stage Index Version");
     let mut stages = std::collections::BTreeSet::new();
     for entry in &index.entries {
         let file = entry.manifest.verify(results)?;
@@ -401,13 +401,13 @@ pub fn redraw(results: &Path) -> Result<PathBuf> {
             let m: Manifest = store::read(&dir.join(MANIFEST))?;
             let prefix = m.parameters["prefix"]
                 .as_str()
-                .context("data_invalid: 缺声子前缀")?;
+                .context("data_invalid: phonon prefix")?;
             let elements: Vec<String> = serde_json::from_value(m.parameters["elements"].clone())?;
             let counts: Vec<usize> = serde_json::from_value(m.parameters["counts"].clone())?;
             let sigma = m.parameters["sigma_cm1"]
                 .as_f64()
-                .context("data_invalid: 缺声子展宽")?;
-            let work = dir.to_str().context("结果路径非 UTF-8")?;
+                .context("data_invalid: Unspeakable extension")?;
+            let work = dir.to_str().context("Result path is not UTF-8")?;
             qf_phonon::plot::plot_phonon_band(work, prefix)?;
             qf_phonon::plot::plot_phonon_dos(work, prefix, &elements, &counts, sigma)?;
             qf_phonon::plot::plot_phonon_combined(work, prefix, &elements, &counts, sigma)?;

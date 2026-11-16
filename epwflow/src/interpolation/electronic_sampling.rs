@@ -30,7 +30,7 @@ pub fn plan(cfg: &Config) -> Result<Sampling> {
     states.k_grid = cfg.qe.nscf.k_grid;
     nscf::validate_grid(&states, states.k_grid, cfg.qe.nscf.nbnd as usize, &geo)?;
     let (path, ticks) = automatic_comparison::path_points(
-        cfg.kpath.as_ref().context("required: 电子比较需要 KPATH")?,
+        cfg.kpath.as_ref().context("required: Electronic comparison requirements KPATH")?,
         &geo.reciprocal,
         cfg.native_value::<u32>(&[
             crate::foundation::native_config::ELECTRONIC,
@@ -65,13 +65,13 @@ pub fn wdata(
 ) -> Result<Vec<String>> {
     ensure!(
         bands_num_points > 0,
-        "configuration: bands_num_points 必须为正整数"
+        "configuration: bands_num_points It has to be positive"
     );
     let edges = high_symmetry_edges(path)?;
     let first_length = length(edges[0].start, edges[0].end, reciprocal);
     ensure!(
         first_length.is_finite() && first_length > 1e-12,
-        "data_invalid: {} 首段长度无效",
+        "data_invalid: {} Invalid first segment length",
         path.display()
     );
     for edge in &edges {
@@ -79,7 +79,7 @@ pub fn wdata(
             / first_length)
             .round();
         ensure!(intervals.is_finite() && intervals >= 1.,
-            "configuration: {}:{} 在 bands_num_points={} 下被 Wannier90 舍入为零个间隔，请提高 bands_num_points",
+            "configuration: {}:{} rounds to a zero interval in Wannier90 at bands_num_points={}; increase bands_num_points",
             path.display(), edge.line, bands_num_points);
     }
     let mut data = vec![
@@ -112,7 +112,7 @@ pub fn wdata(
         );
         ensure!(
             row.len() <= 79,
-            "configuration: {}:{} 的高对称路径行超过部署 EPW 的 79 字节限制，不能截断标签或坐标",
+            "configuration: {}:{} High symmetric routing lines exceed deployment EPW It's 79 Bytes limit, not to interrupt labels or coordinates",
             path.display(),
             edge.line
         );
@@ -134,7 +134,7 @@ pub(crate) struct PathEdge {
 }
 pub(crate) fn high_symmetry_edges(path: &Path) -> Result<Vec<PathEdge>> {
     let text = fs::read_to_string(path)
-        .with_context(|| format!("required: 无法读取 {}", path.display()))?;
+        .with_context(|| format!("required: Unable to read {}", path.display()))?;
     let lines: Vec<_> = text
         .lines()
         .enumerate()
@@ -158,17 +158,17 @@ pub(crate) fn high_symmetry_edges(path: &Path) -> Result<Vec<PathEdge>> {
         let cells: Vec<_> = line.split_whitespace().collect();
         ensure!(
             cells.len() == 4,
-            "data_invalid: {}:{} 应为 kx ky kz label",
+            "data_invalid: {}:{} should read kx ky kz label",
             path.display(),
             i + 1
         );
         let coords = (0..3)
             .map(|j| cells[j].parse::<f64>())
             .collect::<std::result::Result<Vec<_>, _>>()
-            .with_context(|| format!("data_invalid: {}:{} 端点坐标无效", path.display(), i + 1))?;
+            .with_context(|| format!("data_invalid: {}:{} End Coordinate Invalid", path.display(), i + 1))?;
         ensure!(
             coords.iter().all(|x| x.is_finite()),
-            "data_invalid: {}:{} 端点坐标非有限",
+            "data_invalid: {}:{} End Coordinates Unlimited",
             path.display(),
             i + 1
         );
@@ -178,7 +178,7 @@ pub(crate) fn high_symmetry_edges(path: &Path) -> Result<Vec<PathEdge>> {
                 && cells[3]
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '_'),
-            "data_invalid: {}:{} 标签应为最多 20 字节的 ASCII 字母、数字或下划线",
+            "data_invalid: {}:{} The label should be maximum 20 Bytes ASCII Letters, numbers or underlined",
             path.display(),
             i + 1
         );
@@ -190,7 +190,7 @@ pub(crate) fn high_symmetry_edges(path: &Path) -> Result<Vec<PathEdge>> {
     }
     ensure!(
         !endpoints.is_empty() && endpoints.len() % 2 == 0,
-        "data_invalid: {} 高对称端点为空或不成对",
+        "data_invalid: {} High symmetrical endpoints are empty or not paired",
         path.display()
     );
     let mut edges: Vec<PathEdge> = Vec::new();
@@ -202,7 +202,7 @@ pub(crate) fn high_symmetry_edges(path: &Path) -> Result<Vec<PathEdge>> {
                 .iter()
                 .zip(pair[1].0)
                 .any(|(a, b)| (a - b).abs() > 1e-12),
-            "data_invalid: {}:{} 路径包含零长度边",
+            "data_invalid: {}:{} Path contains zero length edges",
             path.display(),
             pair[0].2
         );
@@ -238,23 +238,23 @@ pub(crate) fn native_path_points(
 ) -> Result<(Vec<PathPoint>, Vec<Tick>)> {
     ensure!(
         gap_intervals > 0 && reciprocal.iter().flatten().all(|x| x.is_finite()),
-        "data_invalid: 原生路径度量无效"
+        "data_invalid: Numerical path measurement invalid"
     );
     let mut labels = Vec::new();
     for line in labelinfo.lines().filter(|line| !line.trim().is_empty()) {
         let cells: Vec<_> = line.split_whitespace().collect();
         ensure!(
             cells.len() == 6,
-            "data_invalid: 原生 labelinfo 应含标签、点序、距离及三维坐标"
+            "data_invalid: Native labelinfo Should contain labels, order of points, distance and 3D coordinates"
         );
         let index = cells[1]
             .parse::<usize>()?
             .checked_sub(1)
-            .context("data_invalid: 原生端点序号应从 1 开始")?;
+            .context("data_invalid: The native endpoint serial number should read 1 Here we go")?;
         let values = crate::qe_data::xml::numbers(&cells[2..].join(" "))?;
         ensure!(
             values.len() == 4 && values.iter().all(|x| x.is_finite()) && index < coords.len(),
-            "data_invalid: 原生 labelinfo 点序或坐标无效"
+            "data_invalid: Native labelinfo Invalid order or coordinates"
         );
         labels.push((
             cells[0].to_owned(),
@@ -272,10 +272,10 @@ pub(crate) fn native_path_points(
         let start_index = if new_segment {
             let record = labels
                 .get(cursor)
-                .context("data_invalid: 原生 labelinfo 缺少起点")?;
+                .context("data_invalid: Native labelinfo Missing Start")?;
             ensure!(
                 record.0.eq_ignore_ascii_case(&edge.start_label) && same(&record.2, &edge.start),
-                "input_conflict: 原生起点标签或坐标不同：{}",
+                "input_conflict: Different native starting labels or coordinates:{}",
                 edge.start_label
             );
             cursor += 1;
@@ -285,10 +285,10 @@ pub(crate) fn native_path_points(
         };
         let end = labels
             .get(cursor)
-            .context("data_invalid: 原生 labelinfo 缺少终点")?;
+            .context("data_invalid: Native labelinfo Missing Endpoint")?;
         ensure!(
             end.0.eq_ignore_ascii_case(&edge.end_label) && same(&end.2, &edge.end),
-            "input_conflict: 原生终点标签或坐标不同：{}",
+            "input_conflict: Different native endpoint labels or coordinates:{}",
             edge.end_label
         );
         cursor += 1;
@@ -302,14 +302,14 @@ pub(crate) fn native_path_points(
                     } else {
                         end_index
                     },
-            "data_invalid: 原生路径端点序号不连续或为空"
+            "data_invalid: Inconsistent or empty root path endpoint number"
         );
         end_index = end.1;
         let intervals = end_index - start_index;
         let size = length(edge.start, edge.end, reciprocal);
         ensure!(
             size.is_finite() && size > 1e-12,
-            "data_invalid: 原生路径零长度"
+            "data_invalid: Zero length of native path"
         );
         if new_segment {
             if !points.is_empty() {
@@ -327,7 +327,7 @@ pub(crate) fn native_path_points(
                 std::array::from_fn(|j| edge.start[j] + (edge.end[j] - edge.start[j]) * t);
             ensure!(
                 same(&expected, &coords[index]),
-                "input_conflict: 原生 kpt 第 {} 点偏离 {}–{} 声明路径",
+                "input_conflict: Native kpt I don't think so {} Point deviation {}–{} Declaration Path",
                 index + 1,
                 edge.start_label,
                 edge.end_label
@@ -350,7 +350,7 @@ pub(crate) fn native_path_points(
     }
     ensure!(
         !points.is_empty() && points.len() == coords.len() && cursor == labels.len(),
-        "data_invalid: 原生路径包含多余或缺失的采样／端点"
+        "data_invalid: Native path contains redundant or missing sampling/endpoints"
     );
     Ok((points, ticks))
 }
@@ -365,7 +365,7 @@ pub fn extract(cfg: &Config, dir: &Path) -> Result<()> {
     let mut lines = kpt.lines();
     let count: usize = lines
         .next()
-        .context("data_invalid: 空 W90 kpt")?
+        .context("data_invalid: Empty W90 kpt")?
         .trim()
         .parse()?;
     let coords = lines
@@ -374,19 +374,19 @@ pub fn extract(cfg: &Config, dir: &Path) -> Result<()> {
             let r = crate::qe_data::xml::numbers(l)?;
             ensure!(
                 r.len() == 4 && (r[3] - 1.0).abs() < 1e-8,
-                "data_invalid: W90 kpt 格式"
+                "data_invalid: W90 kpt Format"
             );
             Ok([r[0], r[1], r[2]])
         })
         .collect::<Result<Vec<_>>>()?;
-    ensure!(coords.len() == count, "data_invalid: W90 点表截断");
+    ensure!(coords.len() == count, "data_invalid: W90 Interrupt the dot");
     let bands = wannier90flow::plot::parse_segment_file(&band, 0.0)?;
     ensure!(
         bands.len() == cfg.wannier.num_wann as usize
             && bands
                 .iter()
                 .all(|(x, y)| x.len() == count && y.len() == count),
-        "data_invalid: W90 能带和真实坐标数量不同"
+        "data_invalid: W90 There's a difference in the number of coordinates"
     );
     let decision = crate::foundation::stages::Step::Wannier
         .directory(cfg)
@@ -394,7 +394,7 @@ pub fn extract(cfg: &Config, dir: &Path) -> Result<()> {
     let sparse = decision.is_file()
         && store::read::<serde_json::Value>(&decision)?["path_format"] == "high_symmetry_endpoints";
     let targets: Vec<[f64; 3]> = if sparse {
-        let edges = high_symmetry_edges(cfg.kpath.as_ref().context("required: 缺少 KPATH.in")?)?;
+        let edges = high_symmetry_edges(cfg.kpath.as_ref().context("required: Missing KPATH.in")?)?;
         let (path, ticks) = native_path_points(
             &edges,
             &sampling.reciprocal,
@@ -421,7 +421,7 @@ pub fn extract(cfg: &Config, dir: &Path) -> Result<()> {
         for q in &targets[..i] {
             ensure!(
                 !same(p, q) || p.iter().zip(q).all(|(a, b)| (a - b).abs() < 1e-10),
-                "data_invalid: kpt 六位小数不足以分辨目标点"
+                "data_invalid: kpt Six decimal places are not enough to distinguish the target"
             );
         }
     }
@@ -434,12 +434,12 @@ pub fn extract(cfg: &Config, dir: &Path) -> Result<()> {
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
         let index = *indices.first().with_context(|| {
-            format!("input_conflict: 内嵌 W90 未输出 QE 目标点 {p:?}；不能缩放横轴或重算 PW")
+            format!("input_conflict: Embedded W90 Not Outputd QE Target point {p:?};Can not scale or recalculate the axis PW")
         })?;
         for b in &bands {
             ensure!(
                 indices.iter().all(|&j| (b.1[j] - b.1[index]).abs() < 1e-5),
-                "data_invalid: 重复位置的 W90 本征值不一致"
+                "data_invalid: Repeated position W90 It's not consistent"
             );
         }
         let c = cart(p, &sampling.reciprocal);
@@ -479,7 +479,7 @@ pub(crate) fn common_difference(
 ) -> Result<super::differences::Statistics> {
     ensure!(
         qe_path.len() == qe.len() && epw_path.len() == epw.len(),
-        "data_invalid: 原生电子点数与能量不符"
+        "data_invalid: Natural electrons do not match energy"
     );
     let mut points = Vec::new();
     let mut distances = Vec::new();
@@ -513,11 +513,11 @@ pub fn legacy(cfg: &Config, dir: &Path) -> Result<()> {
         .work_dir
         .join("6.epw-coarse/comparison-native/sources.json");
     let source: super::comparison::Sources = store::read(&file).context(
-        "required: 旧模型缺少内嵌能带回执，也没有可核验的旧比较采样；保留模型，不自动重做拟合",
+        "required: The old model lacks internal embedding to carry back and no verifiable old comparison sampling; the model is retained and not automatically reworked",
     )?;
     ensure!(
         source.schema_version == 2,
-        "unsupported_version: 旧电子比较来源版本"
+        "unsupported_version: Old electronic comparison source version"
     );
     let base = file.parent().unwrap();
     for f in [
@@ -543,16 +543,16 @@ pub fn legacy(cfg: &Config, dir: &Path) -> Result<()> {
                 .iter()
                 .zip(&source.mesh)
                 .all(|(a, b)| same(a, b)),
-        "input_conflict: 旧采样不覆盖当前路径或网格"
+        "input_conflict: Old sample does not overwrite current path or grid"
     );
     ensure!(
         store::hash_file(&xml(cfg))? == source.qe_mesh_xml.sha256,
-        "input_conflict: 旧电子网格来源不同"
+        "input_conflict: The old electronic grid has different sources"
     );
     let log = source
         .wannier_wout
         .as_ref()
-        .context("required: 旧比较没有实际拟合窗口来源")?;
+        .context("required: The old comparison did not actually match the window source")?;
     log.checked_path(base)?;
     ensure!(
         store::hash_file(
@@ -560,7 +560,7 @@ pub fn legacy(cfg: &Config, dir: &Path) -> Result<()> {
                 .join("5.epw-wannier")
                 .join(format!("{}.wout", cfg.qe.prefix))
         )? == log.sha256,
-        "input_conflict: 旧采样不属于当前拟合模型"
+        "input_conflict: The old sample is not part of the current proposed model"
     );
     let mut bound = false;
     for ext in ["ukk", "chk"] {
@@ -573,14 +573,14 @@ pub fn legacy(cfg: &Config, dir: &Path) -> Result<()> {
     }
     ensure!(
         bound,
-        "input_conflict: 旧采样没有绑定当前 ukk/chk，不能仅凭相同窗口日志认作同一模型"
+        "input_conflict: The old sample is not bound to the current ukk/chk ,You can't just identify with the same window log as the same model"
     );
     let native = source.epw_bands.checked_path(base)?;
     fs::copy(&native, dir.join("band.eig"))?;
     store::write(&dir.join("sampling.json"), &sampling)?;
     store::write(
         &dir.join("band-origin.json"),
-        &serde_json::json!({"driver":"legacy_epw_readonly","source":store::Identity::capture(&file)?,"values":source.epw_bands,"reason":"有界读取已核验旧 EPW 采样；保留旧科学文件、输入脚本和历史回执，不重算"}),
+        &serde_json::json!({"driver":"legacy_epw_readonly","source":store::Identity::capture(&file)?,"values":source.epw_bands,"reason":"Read verified old EPW sampling; retaining old scientific files, input scripts and historical responses, not recalculating"}),
     )?;
     Ok(())
 }
@@ -619,7 +619,7 @@ mod tests {
     fn custom_titled_header_preserves_bare_path_and_source_lines() {
         let bare = path_file("0 0 0 G\n0.5 0 0 X\n");
         let expected = wdata(&bare, true, 20, &RECIPROCAL).unwrap();
-        for title in ["SiP2 Pbam; historical Wannier path", "自定义路径标题", "0 0 0 G"] {
+        for title in ["SiP2 Pbam; historical Wannier path", "Custom path title", "0 0 0 G"] {
             let text = format!("# preamble\n\n{title} # title\n 20\n line-mode\n reciprocal # coordinates\n\n0 0 0 G\n0.5 0 0 X\n");
             let path = path_file(&text);
             assert_eq!(wdata(&path, true, 20, &RECIPROCAL).unwrap(), expected);
@@ -774,9 +774,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "显式提供既有 MgB2 配置，只读检查 wdata，不运行科学程序"]
+    #[ignore = "Visible provision of existing MgB2 Configure, read-only check wdata ,Do not run the science program"]
     fn real_workspace_wdata_readonly() {
-        let path = std::env::var_os("DFTFLOW_0050_REAL_CONFIG").expect("显式配置");
+        let path = std::env::var_os("DFTFLOW_0050_REAL_CONFIG").expect("Visible Configuration");
         let cfg = Config::load(Path::new(&path)).unwrap();
         let sampling = plan(&cfg).unwrap();
         let data = wdata(cfg.kpath.as_ref().unwrap(), true, 100, &sampling.reciprocal).unwrap();

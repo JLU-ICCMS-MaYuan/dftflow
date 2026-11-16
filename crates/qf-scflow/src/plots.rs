@@ -21,13 +21,13 @@ pub fn svg_to_pdf(svg_text: &str, pdf_path: &Path) -> Result<()> {
     let mut options = svg2pdf::usvg::Options::default();
     options.fontdb_mut().load_system_fonts();
     let tree = svg2pdf::usvg::Tree::from_str(svg_text, &options)
-        .map_err(|e| anyhow::anyhow!("SVG 解析失败: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("SVG Parsing failed: {e}"))?;
     let pdf = svg2pdf::to_pdf(
         &tree,
         svg2pdf::ConversionOptions::default(),
         svg2pdf::PageOptions::default(),
     )
-    .map_err(|e| anyhow::anyhow!("PDF 转换失败: {e}"))?;
+    .map_err(|e| anyhow::anyhow!("PDF conversion failed: {e}"))?;
     std::fs::write(pdf_path, pdf)?;
     Ok(())
 }

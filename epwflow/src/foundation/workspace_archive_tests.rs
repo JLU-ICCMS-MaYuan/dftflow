@@ -107,7 +107,7 @@ fn destination_conflict_stops_before_moving_any_source() {
     let error = archive_contents(&f.dir(), &f.history(), None)
         .unwrap_err()
         .to_string();
-    assert!(error.contains("归档目标已存在"));
+    assert!(error.contains("Archive destination already exists"));
     assert_eq!(fs::read(f.dir().join("a.in")).unwrap(), b"a");
     assert_eq!(fs::read(f.dir().join("z.out")).unwrap(), b"z");
     assert_eq!(fs::read(f.history().join("z.out")).unwrap(), b"unknown");

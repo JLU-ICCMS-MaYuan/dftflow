@@ -384,15 +384,15 @@ pub fn run_cli() -> Result<()> {
                 output.as_deref(),
                 prefix.as_deref(),
             )?;
-            println!("已生成投影能带数据: {}", written[0]);
-            println!("已生成元素汇总投影能带数据: {}", written[1]);
-            println!("已生成能带数据: {}", written[2]);
+            println!("Generated projective tape data: {}", written[0]);
+            println!("Generated Element Summary Projectiles with Data: {}", written[1]);
+            println!("Generated to carry data: {}", written[2]);
             Ok(())
         }
         Commands::QeProcessElEdos { input, proj } => {
             let written = qf_io::qe_proj::run_process_eledos(&input, proj.as_deref())?;
             for w in &written {
-                println!("已生成: {w}");
+                println!("Generated: {w}");
             }
             Ok(())
         }
@@ -401,7 +401,7 @@ pub fn run_cli() -> Result<()> {
             let _cfg = qf_config::load(config.as_deref(), config.as_deref())?;
             let status = refresh_workflow_status(Path::new(&work_dir), &prefix)?;
             let (step, label) = split_resume_step(&status);
-            println!("[status] workflow_status.json 已刷新于 {work_dir}");
+            println!("[status] workflow_status.json Refreshed on {work_dir}");
             println!(
                 "  scf={:?} dyn0={:?} merge={:?} q2r={:?}",
                 status.scf, status.ph.dyn0, status.merge, status.q2r
@@ -414,9 +414,9 @@ pub fn run_cli() -> Result<()> {
                 println!("  split {q}: {s:?}");
             }
             if step == 0 {
-                println!("[status] 全部完成，无需续算");
+                println!("[status ] It's all done. It doesn't have to be continued");
             } else {
-                println!("[status] 续算点: {step}/11 {label}");
+                println!("[status ] Recalculate point: {step}/11 {label}");
             }
             Ok(())
         }
@@ -434,9 +434,9 @@ fn print_resume_point(ctx: &PhononCtx) -> Result<()> {
     let status = refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
     let (step, label) = split_resume_step(&status);
     if step == 0 {
-        println!("[status] 全部完成，无需续算");
+        println!("[status ] It's all done. It doesn't have to be continued");
     } else {
-        println!("[status] 续算点: {step}/11 {label}");
+        println!("[status ] Recalculate point: {step}/11 {label}");
     }
     Ok(())
 }
@@ -453,12 +453,12 @@ fn run_qe_phonon_merge(config: Option<String>, input: Option<String>) -> Result<
     let _ = input;
     let map = qf_phonon::index_map::load_q_index_map(&work_dir);
     if map.qpoints.is_empty() {
-        anyhow::bail!("缺少 q_index_map.json 或其中不包含 qpoints，请先运行 qe_phonon_split_*");
+        anyhow::bail!("Missing q_index_map.json or does not include qpoints ,Please run first qe_phonon_split_*");
     }
     let outdir = cfg.qe_phonon.scf.get("outdir").and_then(|v|v.as_str()).unwrap_or("./tmp");
     let result = if map.qpoints.iter().all(|e|e.q_cart.is_some()) { qf_phonon::merge::merge_split_results_with_outdir(&work_dir,&prefix,&map,outdir)? } else { qf_phonon::merge_split_results(&work_dir,&prefix,&map)? };
     if result.success {
-        println!("[qe_phonon_merge] 成功回收 {} 个 q 点 dyn 文件", result.dyn_summaries.len());
+        println!("[qe_phonon_merge ] Successfully recovered {} One q Points dyn Documentation", result.dyn_summaries.len());
         for (idx, vals) in &result.dyn_summaries {
             let formatted = vals
                 .iter()
@@ -471,7 +471,7 @@ fn run_qe_phonon_merge(config: Option<String>, input: Option<String>) -> Result<
         for e in &result.errors {
             println!("[qe_phonon_merge][error] {e}");
         }
-        anyhow::bail!("merge 失败，请先完成各 split ph.x 计算");
+        anyhow::bail!("merge If you fail, finish the job first split ph.x Calculate");
     }
     Ok(())
 }
@@ -517,7 +517,7 @@ fn run_qe_steps(
             println!("[{name}] submitted Slurm job {job}");
         }
     } else {
-        println!("[{name}] (dry-run) 未指定 -r/--submit，仅写出输入与脚本");
+        println!("[{name}] (dry-run ) Not specified -r/--submit ,Write input and script only");
     }
     Ok(())
 }
@@ -598,22 +598,22 @@ fn run_nosplit(config: Option<String>, input: Option<String>, run: bool, submit:
     let status = refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
     let mut needed: Vec<(String, String)> = Vec::new();
     if status.scf != TaskState::Finished {
-        needed.push(("运行根目录 SCF".to_string(), "bash run_scf.sh".to_string()));
+        needed.push(("Run root directory SCF".to_string(), "bash run_scf.sh".to_string()));
     }
     if status.ph.state != TaskState::Finished {
-        needed.push(("运行根目录 PH".to_string(), "bash run_ph.sh".to_string()));
+        needed.push(("Run root directory PH".to_string(), "bash run_ph.sh".to_string()));
     }
     let process_needed = status.q2r != TaskState::Finished
         || status.matdyn_phband != TaskState::Finished
         || status.matdyn_phdos != TaskState::Finished;
     if status.q2r != TaskState::Finished {
-        needed.push(("运行 q2r".to_string(), "bash run_q2r.sh".to_string()));
+        needed.push(("Run q2r".to_string(), "bash run_q2r.sh".to_string()));
     }
     if status.matdyn_phband != TaskState::Finished {
-        needed.push(("运行 matdyn 声子谱".to_string(), "bash run_matdyn_phband.sh".to_string()));
+        needed.push(("Run matdyn Sound spectra".to_string(), "bash run_matdyn_phband.sh".to_string()));
     }
     if status.matdyn_phdos != TaskState::Finished {
-        needed.push(("运行 matdyn 声子 DOS".to_string(), "bash run_matdyn_phdos.sh".to_string()));
+        needed.push(("Run matdyn Voice DOS".to_string(), "bash run_matdyn_phdos.sh".to_string()));
     }
 
     if run {
@@ -647,10 +647,10 @@ fn run_nosplit(config: Option<String>, input: Option<String>, run: bool, submit:
         qf_phonon::plot::plot_phonon_dos(&ctx.workspace, &ctx.prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&ctx.cfg)?)?;
         qf_phonon::plot::plot_phonon_combined(&ctx.workspace, &ctx.prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&ctx.cfg)?)?;
         export_epw_if_requested(&ctx.cfg, Path::new(&ctx.workspace), &ctx.prefix)?;
-        println!("声子流程已完成：{}", ctx.workspace);
+        println!("Sound subprocess has been completed:{}", ctx.workspace);
     } else if submit {
         if needed.is_empty() {
-            println!("声子流程已完成：{}", ctx.workspace);
+            println!("Sound subprocess has been completed:{}", ctx.workspace);
         } else {
             let mut steps = needed;
             if process_needed {
@@ -675,14 +675,14 @@ fn run_nosplit(config: Option<String>, input: Option<String>, run: bool, submit:
                 1,
                 steps.len(),
                 None,
-                Some("声子总工作流"),
+                Some("Sound always works "),
             )?;
             if let Some(job) = qf_runner::submit_via_sbatch(Path::new(&ctx.workspace), "submit_phonon_workflow.sh")? {
-                println!("已提交声子流程作业 {job}");
+                println!("phonon subprocesses have been submitted {job}");
             }
         }
     } else {
-        println!("已准备声子流程输入与脚本：{}", ctx.workspace);
+        println!("phonon process input and script prepared:{}", ctx.workspace);
     }
     refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
     Ok(())
@@ -718,7 +718,7 @@ fn run_qe_process_phonon(
     let prefix = cfg.qe_phonon.prefix.clone().or_else(|| cfg.qe_phonon.scf.get("prefix").and_then(|v|v.as_str()).map(str::to_string)).unwrap_or_else(|| "struct".into());
     let pos_path = input.unwrap_or_else(|| format!("{work_dir}/POSCAR"));
     let structure = qf_crystal::parse_poscar(&pos_path)
-        .map_err(|e| anyhow::anyhow!("解析 POSCAR 失败: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Parsing POSCAR Failed: {e}"))?;
     let (elements, counts) = structure_elements(&structure);
 
     if plot {
@@ -734,7 +734,7 @@ fn run_qe_process_phonon(
         let band_png = qf_phonon::plot::plot_phonon_band(&work_dir, &prefix)?;
         let dos_png = qf_phonon::plot::plot_phonon_dos(&work_dir, &prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&cfg)?)?;
         let combined = qf_phonon::plot::plot_phonon_combined(&work_dir, &prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&cfg)?)?;
-        println!("[qe_process_phonon] 绘图完成: {band_png}, {dos_png}, {combined}");
+        println!("[qe_process_phonon ] Drawing complete: {band_png}, {dos_png}, {combined}");
         return Ok(());
     }
 
@@ -751,7 +751,7 @@ fn run_qe_process_phonon(
         qf_phonon::write_csv(&format!("{work_dir}/phdos/phonon_dos_atoms.csv"), &atoms_rows)?;
         qf_phonon::write_csv(&format!("{work_dir}/phdos/phonon_dos_elements.csv"), &elements_rows)?;
         export_epw_if_requested(&cfg, Path::new(&work_dir), &prefix)?;
-        println!("[qe_process_phonon] 归档并生成表格完成");
+        println!("[qe_process_phonon ] Archive and Generate Table Complete");
         return Ok(());
     }
 
@@ -763,29 +763,29 @@ fn run_qe_process_phonon(
     let exec = cfg.qe.executable_path();
     let steps = vec![
         (
-            "运行 q2r".to_string(),
+            "Run q2r".to_string(),
             format!("{} < q2r.in > q2r.out", qf_runner::resolve_qe_command(exec, "q2r.x")),
         ),
         (
-            "运行 matdyn 声子谱".to_string(),
+            "Run matdyn Sound spectra".to_string(),
             format!(
                 "{} < matdyn_phband.in > matdyn_phband.out",
                 qf_runner::resolve_qe_command(exec, "matdyn.x")
             ),
         ),
         (
-            "运行 matdyn 声子 DOS".to_string(),
+            "Run matdyn Voice DOS".to_string(),
             format!(
                 "{} < matdyn_phdos.in > matdyn_phdos.out",
                 qf_runner::resolve_qe_command(exec, "matdyn.x")
             ),
         ),
         (
-            "归档并生成表格".to_string(),
+            "Archive and Generate Tables".to_string(),
             format!("{collect_cmd} --collect"),
         ),
         (
-            "绘图".to_string(),
+            "Drawing".to_string(),
             format!("{collect_cmd} --plot"),
         ),
     ];
@@ -807,7 +807,7 @@ fn copy_scf_save(work_dir: &str, prefix: &str, outdir: &str, copy_tree: bool) ->
     let source = Path::new("qe_scf").join(outdir).join(format!("{prefix}.save"));
     let target = Path::new(work_dir).join(outdir).join(format!("{prefix}.save"));
     if !source.exists() {
-        println!("[warn] 找不到 SCF 数据目录 {}", source.display());
+        println!("[warn ] Not found SCF Data Directory {}", source.display());
         return Ok(());
     }
     if source == target { return Ok(()); }
@@ -835,7 +835,7 @@ fn run_qe_eband(
     let cfg = qf_config::load(config.as_deref(), config.as_deref())?;
     let pos_path = poscar.unwrap_or_else(|| "POSCAR".to_string());
     let structure = qf_crystal::parse_poscar(&pos_path)
-        .map_err(|e| anyhow::anyhow!("解析 POSCAR 失败: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Parsing POSCAR Failed: {e}"))?;
     let prefix = structure.formula.clone();
     let work_dir = "qe_eband";
     std::fs::create_dir_all(work_dir)?;
@@ -874,9 +874,9 @@ fn run_qe_eband(
     let bands_cmd = with_args(&bands_exec, &bands_args, "< elebanddata.in > elebanddata.out");
     let proj_cmd = with_args(&proj_exec, &proj_args, "< elebandprojdata.in > elebandprojdata.out");
     let steps = vec![
-        ("运行 pw.x 能带".to_string(), format!("{pw} < eband.in > eband.out")),
-        ("运行 bands.x".to_string(), bands_cmd),
-        ("运行 projwfc.x".to_string(), proj_cmd),
+        ("Run pw.x Yeah".to_string(), format!("{pw} < eband.in > eband.out")),
+        ("Run bands.x".to_string(), bands_cmd),
+        ("Run projwfc.x".to_string(), proj_cmd),
     ];
     run_qe_steps(
         &cfg,
@@ -901,7 +901,7 @@ fn run_qe_eledos(
     let cfg = qf_config::load(config.as_deref(), config.as_deref())?;
     let pos_path = poscar.unwrap_or_else(|| "POSCAR".to_string());
     let structure = qf_crystal::parse_poscar(&pos_path)
-        .map_err(|e| anyhow::anyhow!("解析 POSCAR 失败: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Parsing POSCAR Failed: {e}"))?;
     let prefix = structure.formula.clone();
     let work_dir = "qe_eledos";
     std::fs::create_dir_all(work_dir)?;
@@ -938,8 +938,8 @@ fn run_qe_eledos(
     let dos_cmd = with_args(&dos_exec, &dos_args, "< eletdos.in > eletdos.out");
     let proj_cmd = with_args(&proj_exec, &proj_args, "< elepdos.in > elepdos.out");
     let steps = vec![
-        ("运行 dos.x".to_string(), dos_cmd),
-        ("运行 projwfc.x".to_string(), proj_cmd),
+        ("Run dos.x".to_string(), dos_cmd),
+        ("Run projwfc.x".to_string(), proj_cmd),
     ];
     run_qe_steps(
         &cfg,
@@ -984,7 +984,7 @@ const WORKSPACE_MARKERS: &[&str] = &[
 fn ensure_structure_source(struct_file: Option<&str>) -> Result<String> {
     if let Some(f) = struct_file {
         if !Path::new(f).exists() {
-            anyhow::bail!("找不到结构文件: {f}");
+            anyhow::bail!("Structure file not found: {f}");
         }
         return Ok(f.to_string());
     }
@@ -993,7 +993,7 @@ fn ensure_structure_source(struct_file: Option<&str>) -> Result<String> {
             return Ok(candidate.to_string());
         }
     }
-    anyhow::bail!("找不到结构文件，请使用 -i 指定，或在当前目录准备 POSCAR/CONTCAR。")
+    anyhow::bail!("Cannot find structure file, please use -i Specify, or prepare for the current directory POSCAR/CONTCAR.")
 }
 
 /// 复刻 `resolve_workspace` + `create_context` + `resolve_prefix`。
@@ -1054,14 +1054,14 @@ fn create_phonon_context(
             != std::fs::canonicalize(&structure_target).ok()
         {
             std::fs::copy(&structure_source, &structure_target).with_context(|| {
-                format!("复制结构文件 {structure_source} -> {structure_target}")
+                format!("Copy Structure File {structure_source} -> {structure_target}")
             })?;
         }
     }
 
     let poscar_path = format!("{workspace}/POSCAR");
     let structure = qf_crystal::parse_poscar(&poscar_path)
-        .map_err(|e| anyhow::anyhow!("解析 POSCAR 失败: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Parsing POSCAR Failed: {e}"))?;
     let prefix = cfg
         .qe_phonon
         .prefix
@@ -1192,7 +1192,7 @@ fn run_matdyn_phband(
     println!("[qe_matdyn_phband] wrote {input_path}, run_matdyn_phband.sh");
     if run {
         qf_runner::run_shell("bash run_matdyn_phband.sh", Path::new(&ctx.workspace))?;
-        println!("[qe_matdyn_phband] 归档 phband");
+        println!("[qe_matdyn_phband ] Archive phband");
         qf_phonon::collect_phband_outputs(&ctx.workspace, &ctx.prefix)?;
     } else if submit {
         let mut commands = vec!["bash run_matdyn_phband.sh".to_string()];
@@ -1202,7 +1202,7 @@ fn run_matdyn_phband(
             println!("[qe_matdyn_phband] submitted Slurm job {job}");
         }
     } else {
-        println!("[qe_matdyn_phband] (dry-run) 未指定 -r/--submit");
+        println!("[qe_matdyn_phband] (dry-run ) Not specified -r/--submit");
     }
     refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
     Ok(())
@@ -1228,7 +1228,7 @@ fn run_matdyn_phdos(
     println!("[qe_matdyn_phdos] wrote {input_path}, run_matdyn_phdos.sh");
     if run {
         qf_runner::run_shell("bash run_matdyn_phdos.sh", Path::new(&ctx.workspace))?;
-        println!("[qe_matdyn_phdos] 归档 phdos");
+        println!("[qe_matdyn_phdos ] Archive phdos");
         qf_phonon::collect_phdos_outputs(&ctx.workspace, &ctx.prefix)?;
     } else if submit {
         let mut commands = vec!["bash run_matdyn_phdos.sh".to_string()];
@@ -1238,7 +1238,7 @@ fn run_matdyn_phdos(
             println!("[qe_matdyn_phdos] submitted Slurm job {job}");
         }
     } else {
-        println!("[qe_matdyn_phdos] (dry-run) 未指定 -r/--submit");
+        println!("[qe_matdyn_phdos] (dry-run ) Not specified -r/--submit");
     }
     refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
     Ok(())
@@ -1258,7 +1258,7 @@ fn run_split_submit(
     mode: &str,
 ) -> Result<i32> {
     if mode != "index" && mode != "coords" {
-        anyhow::bail!("不支持的 split 模式: {mode}");
+        anyhow::bail!("Unsupported split Mode: {mode}");
     }
     let ctx = create_phonon_context(
         config.as_deref(),
@@ -1269,18 +1269,18 @@ fn run_split_submit(
     let status = refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
     if status.ph.dyn0 != TaskState::Finished {
         println!(
-            "[qe_split_submit] 3/11 split q 点提交失败: dyn0 未完成: {}",
+            "[qe_split_submit] 3/11 split q Point submission failed: dyn0 Not completed: {}",
             status.ph.dyn0.as_str()
         );
         println!(
-            "[qe_split_submit] 等待 dyn0 完成后重新执行 qe_phonon_split_{mode} -s"
+            "[qe_split_submit ] Wait dyn0 Re-executed after completion qe_phonon_split_{mode} -s"
         );
         print_resume_point(&ctx)?;
         return Ok(1);
     }
     let mode_key = if mode == "index" { "split_assign_index" } else { "split_assign_coords" };
     let entries = qf_phonon::generate_split_inputs(&ctx.workspace, &ctx.cfg, &ctx.prefix, mode_key, &ctx.structure)?;
-    println!("[qe_split_submit] generated run_split.sh ({} q 点)", entries.len());
+    println!("[qe_split_submit] generated run_split.sh ({} q Points)", entries.len());
     let status = refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
     let tasks = &status.ph.tasks;
     let mut submitted = Vec::new();
@@ -1300,14 +1300,14 @@ fn run_split_submit(
     }
     let mut parts = Vec::new();
     if !submitted.is_empty() {
-        parts.push(format!("提交 {}", submitted.join(", ")));
+        parts.push(format!("Submit {}", submitted.join(", ")));
     }
     if !skipped.is_empty() {
-        parts.push(format!("跳过 finished: {}", skipped.join(", ")));
+        parts.push(format!("Skip finished: {}", skipped.join(", ")));
     }
     println!(
-        "[qe_split_submit] split q 点: {}",
-        if parts.is_empty() { "无待提交任务".to_string() } else { parts.join("; ") }
+        "[qe_split_submit] split q Points: {}",
+        if parts.is_empty() { "No tasks to be submitted".to_string() } else { parts.join("; ") }
     );
     if !job_ids.is_empty() {
         println!("[qe_split_submit] split jobs: {}", job_ids.join(", "));
@@ -1331,11 +1331,11 @@ fn run_qe_check(
     let selected = [scf, relax, ph, q2r, matdyn_band, matdyn_dos, eph];
     let count = selected.iter().filter(|b| **b).count();
     if count != 1 {
-        eprintln!("error: 必须且只能指定一个检查开关。");
+        eprintln!("error: Only one check switch must be specified.");
         std::process::exit(2);
     }
     if eph || matdyn_band || matdyn_dos {
-        println!("暂未支持");
+        println!("Not supported");
         return Ok(());
     }
     let cfg = qf_config::load(config.as_deref(), config.as_deref())?;
@@ -1460,5 +1460,5 @@ fn run_qe_pw(kind: &str, config: Option<String>, poscar: Option<String>, run: bo
     if kind == "nscf" { copy_scf_save(&workspace, &structure.formula, &outdir, false)?; }
     let command = format!("{} < {kind}.in > {kind}.out", qf_runner::resolve_qe_command(cfg.qe.executable_path(), "pw.x"));
     run_qe_steps(&cfg, &workspace, &structure.formula, run, submit,
-        vec![(format!("运行 {kind}"), command)], "run_qe.sh", &workspace)
+        vec![(format!("Run {kind}"), command)], "run_qe.sh", &workspace)
 }

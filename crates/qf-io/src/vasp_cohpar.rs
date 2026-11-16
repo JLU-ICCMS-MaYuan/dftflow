@@ -34,22 +34,22 @@ pub fn read_cohpcarpcar(path: &str) -> Result<CohpCar> {
     let text = std::fs::read_to_string(path).with_context(|| format!("read {path}"))?;
     let lines: Vec<&str> = text.lines().collect();
     if lines.len() < 4 {
-        bail!("{path} 过短，无法解析 COHPCAR.lobster");
+        bail!("{path} It's too short to parse COHPCAR.lobster");
     }
 
     // 参数行：`ncohp nspin n_energies [emin emax efermi]`（LOBSTER ≥ 6 行尾带浮点）
     let tokens: Vec<&str> = lines[1].split_whitespace().collect();
     if tokens.len() < 3 {
-        bail!("{path} 第二行应为 `ncohp nspin n_energies [...]`");
+        bail!("{path} The second line should read `ncohp nspin n_energies [...]`");
     }
     let ncohp: usize = tokens[0]
         .parse()
-        .context("第二行 ncohp 解析失败")?;
+        .context("Second line ncohp Parsing failed")?;
     let n_spin: usize = tokens[1]
         .parse()
-        .context("第二行 nspin 解析失败")?;
+        .context("Second line nspin Parsing failed")?;
     if ncohp == 0 {
-        bail!("{path} 第二行 ncohp 为 0");
+        bail!("{path} Second line ncohp Yes 0");
     }
 
     // 标签：自第 3 行（下标 2）起收集，直至凑满 ncohp 个（每行 1~2 个 token 均可）
@@ -70,7 +70,7 @@ pub fn read_cohpcarpcar(path: &str) -> Result<CohpCar> {
     }
     if labels.len() != ncohp {
         bail!(
-            "{path} 标签数 {} 与 ncohp={} 不一致",
+            "{path} Number of Tabs {} with ncohp={} Inconsistencies",
             labels.len(),
             ncohp
         );
@@ -97,7 +97,7 @@ pub fn read_cohpcarpcar(path: &str) -> Result<CohpCar> {
         idx += 1;
     }
     if energies.is_empty() {
-        bail!("{path} 未解析到能量数据");
+        bail!("{path} Could not close temporary folder: %s");
     }
 
     Ok(CohpCar {

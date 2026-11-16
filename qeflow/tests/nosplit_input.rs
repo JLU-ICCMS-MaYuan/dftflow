@@ -91,7 +91,7 @@ fn omitted_input_preserves_automatic_lookup_and_missing_input_fails() {
         .output()
         .unwrap();
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("找不到结构文件: missing.vasp"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Structure file not found: missing.vasp"));
     assert_eq!(
         fs::read_to_string(w.0.join("calc/POSCAR")).unwrap(),
         structure(5)
@@ -129,7 +129,7 @@ fn preparation_and_submission_output_is_concise_and_errors_are_visible() {
     assert!(prepared.status.success());
     assert_eq!(
         String::from_utf8(prepared.stdout).unwrap(),
-        format!("已准备声子流程输入与脚本：{}\n", w.0.join("calc").display())
+        format!("phonon process input and script prepared:{}\n", w.0.join("calc").display())
     );
     let submitted = invoke(&["-s"], false);
     assert!(
@@ -139,7 +139,7 @@ fn preparation_and_submission_output_is_concise_and_errors_are_visible() {
     );
     assert_eq!(
         String::from_utf8(submitted.stdout).unwrap(),
-        "已提交声子流程作业 12345\n"
+        "phonon subprocesses have been submitted 12345\n"
     );
     assert!(
         fs::read_to_string(w.0.join("calc/submit_phonon_workflow.sh"))

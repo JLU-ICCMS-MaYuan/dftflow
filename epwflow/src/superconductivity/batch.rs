@@ -46,7 +46,7 @@ fn decimal(t: i64) -> String {
     (t as f64 / 100.0).to_string()
 }
 pub fn directory_name(cfg: &Config, mode: Mode) -> String {
-    let settings = cfg.solver_for(mode).expect("配置已在公开入口校验");
+    let settings = cfg.solver_for(mode).expect("Configuration validated at public entry");
     let ts = &settings.gap_temperatures_k;
     format!(
         "{}-mu{}-{}-{}",
@@ -60,7 +60,7 @@ pub fn directory_name(cfg: &Config, mode: Mode) -> String {
 pub fn render(requests: &[Request], source: &NativeInputs) -> Result<String> {
     ensure!(
         !requests.is_empty() && requests.len() <= 50,
-        "configuration: 原生批次需要 1～50 个温度"
+        "configuration: native batch requires 1-50 temperatures"
     );
     let mut text = attempt::render_base(&requests[0], source)?;
     let single = format!(
@@ -74,13 +74,13 @@ pub fn render(requests: &[Request], source: &NativeInputs) -> Result<String> {
         comparable.temperature_centikelvin = requests[0].temperature_centikelvin;
         ensure!(
             serde_json::to_value(comparable)? == serde_json::to_value(&requests[0])?,
-            "configuration: 同方法批次混用求解设置"
+            "configuration: batch mixes solver settings within the same method"
         );
         ensure!(
             !requests[..i]
                 .iter()
                 .any(|q| q.temperature_centikelvin == request.temperature_centikelvin),
-            "configuration: 批次温度重复"
+            "configuration: duplicate batch temperature"
         );
         temperatures.push_str(&format!(
             " temps({}) = {:.2}\n",
@@ -88,7 +88,7 @@ pub fn render(requests: &[Request], source: &NativeInputs) -> Result<String> {
             request.temperature_centikelvin as f64 / 100.0
         ));
     }
-    ensure!(text.contains(&single), "data_invalid: 原生温度输入模板缺失");
+    ensure!(text.contains(&single), "data_invalid: native temperature-input template missing");
     text = text.replacen(&single, &temperatures, 1);
     attempt::configured(
         &requests[0],
@@ -103,7 +103,7 @@ fn segment(log: &str, temperatures: &[i64], request: &Request) -> Result<Option<
     let blocks: Vec<_> = header.captures_iter(log).collect();
     ensure!(
         blocks.len() <= temperatures.len(),
-        "data_invalid: 批次含额外温度"
+        "data_invalid: batch contains extra temperatures"
     );
     let opposite = if request.mode == Mode::Iso {
         "anisotropic"
@@ -113,19 +113,19 @@ fn segment(log: &str, temperatures: &[i64], request: &Request) -> Result<Option<
     ensure!(
         !log.contains(&format!("Solve {opposite} Eliashberg equations"))
             && !log.contains("linearized Eliashberg"),
-        "data_invalid: 批次模式错误"
+        "data_invalid: incorrect batch mode"
     );
     for (i, block) in blocks.iter().enumerate() {
         ensure!(
             block[1].parse::<usize>()? == i + 1
                 && (block[2].parse::<f64>()? * 100.0 - temperatures[i] as f64).abs() < 1e-5,
-            "data_invalid: 批次实际温度或索引不符"
+            "data_invalid: actual batch temperature or index mismatch"
         );
     }
     let i = temperatures
         .iter()
         .position(|&t| t == request.temperature_centikelvin)
-        .context("data_invalid: 点不属于批次")?;
+        .context("data_invalid: point does not belong to the batch")?;
     let Some(block) = blocks.get(i) else {
         return Ok(None);
     };
@@ -139,7 +139,7 @@ fn segment(log: &str, temperatures: &[i64], request: &Request) -> Result<Option<
     for c in frequencies.captures_iter(text) {
         ensure!(
             c[2].parse::<usize>()? == i + 1,
-            "data_invalid: 批次频率索引不符"
+            "data_invalid: batch frequency-index mismatch"
         );
     }
     let text = header.replace(
@@ -158,7 +158,7 @@ fn segment(log: &str, temperatures: &[i64], request: &Request) -> Result<Option<
 pub fn inspect(
     record: &AttemptResult,
 ) -> Result<(GapStatus, Option<SolveEvidence>, Option<GapData>)> {
-    let batch = record.batch.as_ref().context("data_invalid: 缺批次证据")?;
+    let batch = record.batch.as_ref().context("data_invalid: batch evidence missing")?;
     batch.log.verify()?;
     let log = fs::read_to_string(&batch.log.path)?;
     crate::interpolation::native::runtime_version(&log)?;
@@ -172,7 +172,7 @@ pub fn inspect(
         reason: None,
     };
     let Some(part) = part else {
-        status.reason = Some("原生批次在到达此温度前停止".into());
+        status.reason = Some("Native batch stopped before reaching this temperature".into());
         return Ok((status, None, None));
     };
     let reached = part.contains("Convergence was reached in nsiter =");
@@ -186,12 +186,12 @@ pub fn inspect(
     status.execution_complete = record.exit_status.is_some()
         && ((normal && (reached || not_reached)) || (reached && !is_last));
     if !status.execution_complete {
-        status.reason = Some("本温度执行不完整或缺原生正常结束证据".into());
+        status.reason = Some("Execution incomplete or native normal-termination evidence missing at this temperature".into());
         return Ok((status, None, None));
     }
     if status.converged != Some(true) {
         status.data_status = "not_converged".into();
-        status.reason = Some("未获得明确的原生收敛证据".into());
+        status.reason = Some("No explicit native convergence evidence obtained".into());
         return Ok((status, None, None));
     }
     let outcome = (|| -> Result<(SolveEvidence, GapData)> {
@@ -199,7 +199,7 @@ pub fn inspect(
         let file = batch
             .gap_file
             .as_ref()
-            .context("data_invalid: 缺少原生完整 Δ/Z")?;
+            .context("data_invalid: complete native Delta/Z missing")?;
         file.verify()?;
         let gap = gap::parse_native(
             &fs::read_to_string(&file.path)?,
@@ -246,7 +246,7 @@ fn prepare(
             .args
             .iter()
             .any(|s| matches!(s.as_str(), "-in" | "-inp" | "-input")),
-        "configuration: EPW 参数不得覆盖批次输入"
+        "configuration: EPW arguments must not override batch input"
     );
     let dir = Step::Superconductivity
         .directory(cfg)
@@ -273,7 +273,7 @@ fn prepare(
             &source
                 .selecq
                 .as_ref()
-                .context("data_invalid: 缺 selecq")?
+                .context("data_invalid: selecq missing")?
                 .path,
             dir.join("selecq.fmt"),
         )?;
@@ -378,36 +378,36 @@ fn collect(cfg: &Config, run: &mut Run, index: usize, source: &NativeInputs) -> 
         });
         run.attempts.push(entry);
         crate::foundation::readable_state::update(&cfg.work_dir, Step::Superconductivity, |doc| {
-            let label = format!("温度 · {} · {temperature} K", method(batch.mode));
+            let label = format!("Temperature · {} · {temperature} K", method(batch.mode));
             doc.set(
                 &label,
-                "状态",
+                "Status",
                 match record.status.as_str() {
-                    "valid" => "已完成，能隙数据有效",
-                    "completed" => "求解已结束，能隙数据无效",
-                    "failed" => "失败",
-                    _ => "待检查",
+                    "valid" => "completed; gap data valid",
+                    "completed" => "Solver finished; gap data invalid",
+                    "failed" => "failed",
+                    _ => "validation pending",
                 },
             );
             doc.set(
                 &label,
-                "科学结果",
+                "Scientific result",
                 crate::foundation::readable_state::relative(&cfg.work_dir, &path),
             );
             if let Some(status) = &record.gap_status {
                 doc.set(
                     &label,
-                    "收敛",
+                    "Converged",
                     match status.converged {
-                        Some(true) => "是",
-                        Some(false) => "否",
-                        None => "尚未确认",
+                        Some(true) => "yes",
+                        Some(false) => "no",
+                        None => "unconfirmed",
                     },
                 );
-                doc.set(&label, "数据状态", &status.data_status);
+                doc.set(&label, "Data status", &status.data_status);
             }
             if let Some(reason) = &record.reason {
-                doc.set(&label, "原因", reason);
+                doc.set(&label, "Reason", reason);
             }
             Ok(())
         })?;
@@ -434,11 +434,11 @@ pub(crate) fn current(cfg: &Config, source: &NativeInputs, run_id: &str) -> Resu
     let doc = crate::foundation::readable_state::read(&cfg.work_dir, Step::Superconductivity)?;
     for request in &run.plan {
         let label = format!(
-            "温度 · {} · {} K",
+            "Temperature · {} · {} K",
             method(request.mode),
             decimal(request.temperature_centikelvin)
         );
-        let Some(path) = doc.get(&label, "科学结果") else {
+        let Some(path) = doc.get(&label, "Scientific result") else {
             continue;
         };
         let path = crate::foundation::readable_state::resolve(&cfg.work_dir, path);
@@ -448,7 +448,7 @@ pub(crate) fn current(cfg: &Config, source: &NativeInputs, run_id: &str) -> Resu
         let record = super::verify::record(&path)?;
         ensure!(
             serde_json::to_value(&record.request)? == serde_json::to_value(request)?,
-            "input_conflict: 温度结果参数与当前计划不符"
+            "input_conflict: temperature-result parameters differ from the current plan"
         );
         run.attempts.push(Entry {
             request: request.clone(),
@@ -495,14 +495,14 @@ pub(crate) fn run_mode(
             continue;
         }
         let result = (|| -> Result<()> {
-            let label = format!("方法 · {}", method(mode));
+            let label = format!("Method · {}", method(mode));
             if let Some(mut task) = native_jobs::group_task(cfg, method(mode))? {
                 let doc = log::read(&cfg.work_dir, Step::Superconductivity)?;
-                let already = doc.get(&label, "已归集提交") == Some(task.id.as_str());
+                let already = doc.get(&label, "Committed submissions collected") == Some(task.id.as_str());
                 if !already {
                     let temperatures = doc
-                        .get(&label, "本轮温度")
-                        .context("data_invalid: 方法日志缺少本轮温度")?;
+                        .get(&label, "Current temperatures")
+                        .context("data_invalid: method log has no current temperature set")?;
                     let temperatures = temperatures
                         .split(',')
                         .map(|s| {
@@ -519,7 +519,7 @@ pub(crate) fn run_mode(
                                 .iter()
                                 .find(|q| q.mode == mode && q.temperature_centikelvin == *t)
                                 .cloned()
-                                .context("input_conflict: 批次温度不属于当前计划")
+                                .context("input_conflict: batch temperature is outside the current plan")
                         })
                         .collect::<Result<Vec<_>>>()?;
                     let state = native_jobs::task_status(&task)?;
@@ -528,7 +528,7 @@ pub(crate) fn run_mode(
                             state["state"].as_str(),
                             Some("unknown" | "submission_pending")
                         ),
-                        "scheduler_unknown: 方法 {} 提交状态未知",
+                        "scheduler_unknown: method {} submission status unknown",
                         method(mode)
                     );
                     if state["state"] == "running" {
@@ -565,7 +565,7 @@ pub(crate) fn run_mode(
                     native_jobs::finish_group(cfg, &mut run.batches[index].task, complete)?;
                     let id = run.batches[index].task.id.clone();
                     log::update(&cfg.work_dir, Step::Superconductivity, |d| {
-                        d.set(&label, "已归集提交", id);
+                        d.set(&label, "Committed submissions collected", id);
                         Ok(())
                     })?;
                 }
@@ -586,14 +586,14 @@ pub(crate) fn run_mode(
             }
             ensure!(
                 resume || requests.iter().all(|q| run.latest(q).is_none()),
-                "execution_failed: {} 尚有失败温度，修复后使用 --resume -s",
+                "execution_failed: {} has failed temperatures; fix the cause and use --resume -s",
                 method(mode)
             );
             let mut batch = prepare(cfg, generation, &source, requests, run.attempts.len() + 1)?;
             log::update(&cfg.work_dir, Step::Superconductivity, |d| {
                 d.set(
                     &label,
-                    "本轮温度",
+                    "Current temperatures",
                     batch
                         .requests
                         .iter()
@@ -614,12 +614,12 @@ pub(crate) fn run_mode(
                 });
                 native_jobs::finish_group(cfg, &mut run.batches[index].task, complete)?;
                 log::update(&cfg.work_dir, Step::Superconductivity, |d| {
-                    d.set(&label, "已归集提交", &run.batches[index].task.id);
+                    d.set(&label, "Committed submissions collected", &run.batches[index].task.id);
                     Ok(())
                 })?;
                 ensure!(
                     complete,
-                    "execution_failed: {} 尚有未完成温度，请修复后 --resume -r",
+                    "execution_failed: {} has incomplete temperatures; fix the cause and use --resume -r",
                     method(mode)
                 );
             } else if submit {
@@ -640,7 +640,7 @@ pub(crate) fn run_mode(
     if pending {
         return Err(native_jobs::Paused.into());
     }
-    ensure!(run.execution_complete, "partial: 指定温度尚未全部完成");
+    ensure!(run.execution_complete, "partial: specified temperatures are not all complete");
     crate::delivery::finalize_to(&cfg.work_dir, Some(&root.join("results")))?;
     crate::foundation::stage_results::tree(
         cfg,
@@ -653,5 +653,5 @@ pub(crate) fn run_mode(
 }
 
 pub fn allocated_finish(_config: &std::path::Path, _group: &str, _exit: i32) -> Result<()> {
-    anyhow::bail!("unsupported_version: 旧收尾脚本已停用；请使用当前配置的公开命令归集方法结果")
+    anyhow::bail!("unsupported_version: legacy finalization scripts disabled; collect method results with the current public command")
 }

@@ -9,7 +9,7 @@ use crate::superconductivity::cli::SuperconductivityCommand;
 use crate::delivery::cli::DeliveryCommand;
 
 #[derive(Parser)]
-#[command(name = "epwflow", about = "受控的 QE/EPW 超导计算工作流")]
+#[command(name = "epwflow", about = "Controlled QE/EPW superconductivity workflow")]
 pub struct Cli {
     #[command(subcommand)]
     command: EpwCommand,
@@ -18,6 +18,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum EpwCommand {
     /// 运行前检查配置与文件；不启动科学程序或提交作业。
+    #[command(about = "Check configuration and files without running scientific programs or submitting jobs", long_about = "Check configuration and files without running scientific programs or submitting jobs")]
     Check {
         #[arg(short = 'c', long)]
         config: PathBuf,
@@ -25,11 +26,13 @@ pub enum EpwCommand {
         json: bool,
     },
     /// 固定输入并准备独立运行。
+    #[command(about = "Freeze input and prepare an independent run", long_about = "Freeze input and prepare an independent run")]
     Prepare {
         #[arg(short = 'c', long)]
         config: PathBuf,
     },
     /// 一次提交执行链；提交成功不代表数值完成。
+    #[command(about = "Submit the execution chain; submission success does not establish numerical completion", long_about = "Submit the execution chain; submission success does not establish numerical completion")]
     Submit {
         #[arg(short = 'c', long)]
         config: PathBuf,
@@ -37,6 +40,7 @@ pub enum EpwCommand {
         until: Boundary,
     },
     /// 在已登记的 Slurm 分配内依次执行科学阶段。
+    #[command(about = "Run scientific stages sequentially within a registered Slurm allocation", long_about = "Run scientific stages sequentially within a registered Slurm allocation")]
     Run {
         #[arg(short = 'c', long)]
         config: PathBuf,
@@ -44,6 +48,7 @@ pub enum EpwCommand {
         until: Boundary,
     },
     /// 查询运行状态；只读可以成功返回失败/未知，但要显式显示。
+    #[command(about = "Query run status read-only, explicitly reporting failed or unknown states", long_about = "Query run status read-only, explicitly reporting failed or unknown states")]
     Status {
         #[arg(short = 'w', long)]
         work: PathBuf,
@@ -53,6 +58,7 @@ pub enum EpwCommand {
         json: bool,
     },
     /// 使用固定快照核对并续算；-s 与 -r 互斥且必选其一。
+    #[command(about = "Validate and resume with the frozen snapshot; choose exactly one of -s or -r", long_about = "Validate and resume with the frozen snapshot; choose exactly one of -s or -r")]
     Resume {
         #[arg(short = 'w', long)]
         work: PathBuf,
@@ -71,6 +77,7 @@ pub enum EpwCommand {
         attempt: String,
     },
     /// 环境探测；-s 与 -r 互斥且必选其一。
+    #[command(about = "Probe the environment; choose exactly one of -s or -r", long_about = "Probe the environment; choose exactly one of -s or -r")]
     Probe {
         #[arg(short = 'c', long)]
         config: PathBuf,
@@ -80,31 +87,37 @@ pub enum EpwCommand {
         require_allocation: bool,
     },
     /// 共享预算账本：status/reserve/attach/reconcile。
+    #[command(about = "Shared budget ledger: status/reserve/attach/reconcile", long_about = "Shared budget ledger: status/reserve/attach/reconcile")]
     Budget {
         #[command(subcommand)]
         action: Option<BudgetAction>,
     },
     /// QE 数据准备阶段边界：check / import（FR-001）。
+    #[command(about = "QE data preparation: check / import", long_about = "QE data preparation: check / import")]
     QeData {
         #[command(subcommand)]
         command: QeDataCommand,
     },
     /// Wannier 化与 EPW 插值阶段边界：check / import（FR-001）。
+    #[command(about = "Wannier fitting and EPW interpolation: check / import", long_about = "Wannier fitting and EPW interpolation: check / import")]
     Interpolation {
         #[command(subcommand)]
         command: InterpolationCommand,
     },
     /// 超导求解阶段边界：check / import（FR-001）。
+    #[command(about = "Superconductivity solving: check / import", long_about = "Superconductivity solving: check / import")]
     Superconductivity {
         #[command(subcommand)]
         command: SuperconductivityCommand,
     },
     /// 结果交付阶段边界：collect / results / budget（FR-001）。
+    #[command(about = "Result delivery: collect / results / budget", long_about = "Result delivery: collect / results / budget")]
     Delivery {
         #[command(subcommand)]
         command: DeliveryCommand,
     },
     /// 收集经过核验的插值叠图数据；不要求已有超导结果。
+    #[command(about = "Collect validated interpolation comparison data; superconductivity results are not required", long_about = "Collect validated interpolation comparison data; superconductivity results are not required")]
     Collect {
         #[arg(short = 'w', long)]
         work: PathBuf,
@@ -112,6 +125,7 @@ pub enum EpwCommand {
         output: Option<PathBuf>,
     },
     /// 从自包含结果包绘图，不启动 QE、EPW 或 Slurm。
+    #[command(about = "Plot from a self-contained result package without starting QE, EPW or Slurm", long_about = "Plot from a self-contained result package without starting QE, EPW or Slurm")]
     Plot {
         #[arg(long)]
         results: PathBuf,
@@ -121,6 +135,7 @@ pub enum EpwCommand {
         formats: Vec<String>,
     },
     /// 只读检查结果包。
+    #[command(about = "Validate the result package read-only", long_about = "Validate the result package read-only")]
     Results {
         #[command(subcommand)]
         command: ResultsCommand,

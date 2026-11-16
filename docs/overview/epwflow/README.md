@@ -90,7 +90,7 @@ LDA 历史 40³/20³ EPC 已有 λ_integral=0.6853853、λ_sum=0.6853511，iso �
 
 ## 编号工作区与当前配置续算
 
-新工作区设置 `layout="numbered"`，采用八个实际计算目录。原生输入、脚本和输出共目录；`epw-state/` 保存八份中文阶段日志和编号原文配置，目录例外只有 `imports/`。每次 CLI 观察到输入原文变化时，在工作区 `epw-state/` 保存递增的 `NNNN-config.toml`，阶段日志指向当前及计算使用的版本。子任务、后处理、绘图和各温度的续算均进入日志，不另外保存阶段 completion、receipts、请求、共享 manifest、尝试或历史。
+新工作区设置 `layout="numbered"`，采用八个实际计算目录。原生输入、脚本和输出共目录；`epw-state/` 保存八份英文阶段日志和编号原文配置，目录例外只有 `imports/`。每次 CLI 观察到输入原文变化时，在工作区 `epw-state/` 保存递增的 `NNNN-config.toml`，阶段日志指向当前及计算使用的版本。子任务、后处理、绘图和各温度的续算均进入日志，不另外保存阶段 completion、receipts、请求、共享 manifest、尝试或历史。
 
 三个公开程序保持，`epw_wannier --stage wannier|coarse` 和 `epw_superconductivity --stage fine|superconductivity` 分离科学边界；默认分别到第 6、8 步。`epw_phonon --stage scf|nscf|electronic|phonon` 管理第 1～4 步，默认到 phonon，复用共享 qeflow/qf 输入、执行和后处理组件。PH 使用独立 SCF 快照，不额外做 SCF；nosplit、coords、index 均校验后交付 `save/`。
 

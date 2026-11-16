@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 fn pick_file(directory: &Path, suffixes: &[&str], desc: &str) -> Result<PathBuf> {
     let mut matches: Vec<PathBuf> = Vec::new();
     for entry in std::fs::read_dir(directory)
-        .with_context(|| format!("找不到 {desc}，目录: {}", directory.display()))?
+        .with_context(|| format!("Not found {desc},Contents: {}", directory.display()))?
     {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -20,10 +20,10 @@ fn pick_file(directory: &Path, suffixes: &[&str], desc: &str) -> Result<PathBuf>
     matches.sort();
     matches.dedup();
     if matches.is_empty() {
-        anyhow::bail!("找不到 {desc}，目录: {}", directory.display());
+        anyhow::bail!("Not found {desc},Contents: {}", directory.display());
     }
     if matches.len() > 1 {
-        println!("Warning: 找到多个{desc}，默认使用 {}", matches[0].display());
+        println!("Warning: Multiple Found{desc},Default Usage {}", matches[0].display());
     }
     Ok(matches[0].clone())
 }
@@ -33,11 +33,11 @@ pub fn resolve_inputs(qe_dir: &str, w90_dir: &str) -> Result<(PathBuf, PathBuf, 
     let qe_dir = std::fs::canonicalize(qe_dir).unwrap_or_else(|_| PathBuf::from(qe_dir));
     let w90_dir = std::fs::canonicalize(w90_dir).unwrap_or_else(|_| PathBuf::from(w90_dir));
 
-    let qe_band_file = pick_file(&qe_dir, &["*_band.dat"], "QE 能带数据")?;
-    let w90_band_file = pick_file(&w90_dir, &["*_band.dat"], "Wannier90 能带数据")?;
-    let label_path = match pick_file(&w90_dir, &["*_band.labelinfo.dat"], "高对称点信息") {
+    let qe_band_file = pick_file(&qe_dir, &["*_band.dat"], "QE Can carry data")?;
+    let w90_band_file = pick_file(&w90_dir, &["*_band.dat"], "Wannier90 Can carry data")?;
+    let label_path = match pick_file(&w90_dir, &["*_band.labelinfo.dat"], "High symmetry information") {
         Ok(p) => p,
-        Err(_) => pick_file(&qe_dir, &["*_band.labelinfo.dat"], "高对称点信息")?,
+        Err(_) => pick_file(&qe_dir, &["*_band.labelinfo.dat"], "High symmetry information")?,
     };
     Ok((qe_band_file, w90_band_file, label_path))
 }
@@ -130,7 +130,7 @@ pub fn parse_qe_plot_file(
         nks = parts[5].replace(',', "").parse().ok();
     }
     let (Some(nbnd), Some(nks)) = (nbnd, nks) else {
-        anyhow::bail!("无法解析 QE 能带文件头部: {header}");
+        anyhow::bail!("Unable to parse QE It's got the head of the file: {header}");
     };
 
     let mut qe_k_dist: Vec<f64> = Vec::with_capacity(nks);
@@ -197,8 +197,8 @@ pub fn parse_segment_file(path: &Path, fermi: f64) -> Result<Vec<(Vec<f64>, Vec<
         if parts.len() < 2 {
             continue;
         }
-        x_vals.push(parts[0].parse().context("解析 x 值失败")?);
-        y_vals.push(parts[1].parse().context("解析 y 值失败")?);
+        x_vals.push(parts[0].parse().context("Parsing x Value failed")?);
+        y_vals.push(parts[1].parse().context("Parsing y Value failed")?);
     }
     if !x_vals.is_empty() {
         segments.push((x_vals, y_vals.iter().map(|y| y - fermi).collect()));
@@ -215,11 +215,11 @@ pub fn plot_comparison(
     output_img: &Path,
 ) -> Result<()> {
     if !qe_band_file.exists() {
-        println!("Error: 找不到 QE 数据文件 {}", qe_band_file.display());
+        println!("Error: Not found QE Data Files {}", qe_band_file.display());
         return Ok(());
     }
     if !w90_band_file.exists() {
-        println!("Error: 找不到 Wannier90 数据文件 {}", w90_band_file.display());
+        println!("Error: Not found Wannier90 Data Files {}", w90_band_file.display());
         return Ok(());
     }
 
@@ -238,7 +238,7 @@ pub fn plot_comparison(
     let w90_segments = parse_segment_file(w90_band_file, fermi_energy)?;
     if w90_segments.is_empty() {
         anyhow::bail!(
-            "Wannier90 能带文件为空或无法解析: {}",
+            "Wannier90 Can bring files as empty or unable to resolve: {}",
             w90_band_file.display()
         );
     }

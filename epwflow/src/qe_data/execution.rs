@@ -20,7 +20,7 @@ pub fn run(
         let report = crate::foundation::process::run_report_named(&argv, dir, stem)?;
         ensure!(
             report.exit_status == Some(0),
-            "execution_failed: QE 原生退出 {:?}",
+            "execution_failed: QE Native exit {:?}",
             report.exit_status
         );
         return qf_io::qe_completion::checked_log(&report.stdout_path, scf)
@@ -29,7 +29,7 @@ pub fn run(
     crate::foundation::workspace::native_script(program, input, dir, launcher, stem, true, scf)?;
     ensure!(
         matches!(backend, Backend::Local),
-        "allocation: QE 阶段须在 F1 已登记分配内同步执行，不能异步提交后读取产物"
+        "allocation: QE Phase to be completed F1 Synchronizes in registered distribution and cannot be submitted and read after delivery"
     );
     qeflow::native::run_input(
         &program.path,

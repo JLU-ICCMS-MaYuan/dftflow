@@ -146,7 +146,7 @@ fn generated_script_is_authenticated_and_registers_one_allocation() {
         .env("SLURM_JOB_ID", "123")
         .output()
         .unwrap();
-    assert!(!out.status.success(), "替身退出必须失败");
+    assert!(!out.status.success(), "The double has to fail");
     let r: serde_json::Value = store::read(&c.root.join("run/epw-state/workflow.json")).unwrap();
     assert_eq!(r["state"], "failed");
     let l: serde_json::Value = store::read(&c.root.join("campaign/ledger.json")).unwrap();
@@ -160,7 +160,7 @@ fn generated_script_is_authenticated_and_registers_one_allocation() {
         .output()
         .unwrap();
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("程序与记录阶段不同"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Procedures differ from the recording stage"));
     fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
     let out = c
         .cmd(0)
@@ -273,12 +273,12 @@ fn environment_bootstrap_leaves_shell_options_unset_and_propagates_failure() {
         );
         assert_eq!(out.stdout, b"ready");
         let out = run("printf '%s' \"$EPW_TEST_UNSET\"");
-        assert!(out.status.success(), "执行阶段不得开启 nounset");
+        assert!(out.status.success(), "Implementation phase is not open nounset");
         assert!(out.stdout.is_empty());
         fs::write(&environment, "return 17\n").unwrap();
         let out = run("printf should-not-run");
         assert_eq!(out.status.code(), Some(17));
-        assert!(out.stdout.is_empty(), "环境加载失败不得继续执行");
+        assert!(out.stdout.is_empty(), "Environmental loading failure cannot continue");
         fs::write(
             &environment,
             "test \"$1\" = --force\nexport EPW_TEST_ENV=\"${EPW_TEST_OPTIONAL}ready\"\n",

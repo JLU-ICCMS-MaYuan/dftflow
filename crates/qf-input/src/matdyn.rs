@@ -40,9 +40,9 @@ pub fn run_vaspkit_for_kpath(work_dir: &str) -> Result<()> {
             }
             child.wait_with_output()
         })
-        .context("运行 vaspkit 生成 KPATH.in 失败（请确认 vaspkit 在 PATH 中）")?;
+        .context("Run vaspkit Generate KPATH.in Failed (please confirm) vaspkit Yes PATH Medium)")?;
     if !output.status.success() {
-        bail!("vaspkit 生成 KPATH.in 失败（cwd={work_dir}）");
+        bail!("vaspkit Generate KPATH.in Failed(cwd={work_dir})");
     }
     Ok(())
 }
@@ -74,7 +74,7 @@ fn parse_kpath_segments(path: &str) -> Result<Vec<Vec<KPathPoint>>> {
         });
     }
     if points.len() % 2 != 0 {
-        bail!("KPATH.in 格式异常，点数为奇数: {}", points.len());
+        bail!("KPATH.in Format abnormal, odd number of points: {}", points.len());
     }
     let mut segments: Vec<Vec<KPathPoint>> = Vec::new();
     for pair in points.chunks(2) {
@@ -130,7 +130,7 @@ fn det3(m: [[f64; 3]; 3]) -> f64 {
 fn reciprocal_lattice(lattice: [[f64; 3]; 3]) -> Result<[[f64; 3]; 3]> {
     let volume = det3(lattice);
     if volume.abs() < 1.0e-12 {
-        bail!("晶胞体积过小，无法计算倒格子。");
+        bail!("The crystals are too small to calculate the penthouse.");
     }
     let inv = inv3(lattice);
     // 2π * inv.T：行变列。
@@ -175,7 +175,7 @@ fn write_kpath_labels(
         }
     }
     if label_points.len() != weights.len() {
-        bail!("高对称点数量与权重数量不一致。");
+        bail!("The number of high symmetric points does not match the number of weights.");
     }
     let mut indices = vec![1usize];
     for i in 1..weights.len() {
@@ -224,11 +224,11 @@ fn build_matdyn_band_path(
         format!("{work_dir}/{kpath_file}")
     };
     if !Path::new(&kpath_path).exists() {
-        bail!("找不到 KPATH.in: {kpath_path}");
+        bail!("Not found KPATH.in: {kpath_path}");
     }
     let segments = parse_kpath_segments(&kpath_path)?;
     if segments.is_empty() {
-        bail!("KPATH.in 未解析到任何高对称点。");
+        bail!("KPATH.in No high symmetry parsed.");
     }
     let mut kpoint_lines: Vec<([f64; 3], String, i64)> = Vec::new();
     let n_seg = segments.len();
@@ -327,16 +327,16 @@ pub fn write_matdyn_phdos_input(
     let explicit = dos_cfg.contains_key("qpoints") || ["nk1", "nk2", "nk3"].iter().any(|k| dos_cfg.contains_key(*k));
     let (nk1, nk2, nk3) = if explicit {
         if let Some(grid) = dos_cfg.get("qpoints") {
-            anyhow::ensure!(grid.as_array().map(|a| a.len() == 3 && a.iter().all(|v| v.as_i64().map(|n| n > 0).unwrap_or(false))).unwrap_or(false), "DOS qpoints 必须是三个正整数");
+            anyhow::ensure!(grid.as_array().map(|a| a.len() == 3 && a.iter().all(|v| v.as_i64().map(|n| n > 0).unwrap_or(false))).unwrap_or(false), "DOS qpoints It has to be three positive integers");
         } else {
-            anyhow::ensure!(["nk1", "nk2", "nk3"].iter().all(|k| dos_cfg.get(*k).and_then(|v| v.as_i64()).map(|n| n > 0).unwrap_or(false)), "DOS nk1/nk2/nk3 必须完整指定为正整数");
+            anyhow::ensure!(["nk1", "nk2", "nk3"].iter().all(|k| dos_cfg.get(*k).and_then(|v| v.as_i64()).map(|n| n > 0).unwrap_or(false)), "DOS nk1/nk2/nk3 Must be fully assigned to a positive integer number");
         }
         resolve_grid(&dos_cfg, "qpoints", ("nk1", "nk2", "nk3"))
     } else {
         let (a, b, c) = resolve_grid(&config.qe_phonon.ph, "qpoints", ("nq1", "nq2", "nq3"));
-        (a.checked_mul(2).ok_or_else(|| anyhow::anyhow!("PH 网格溢出"))?, b.checked_mul(2).ok_or_else(|| anyhow::anyhow!("PH 网格溢出"))?, c.checked_mul(2).ok_or_else(|| anyhow::anyhow!("PH 网格溢出"))?)
+        (a.checked_mul(2).ok_or_else(|| anyhow::anyhow!("PH Grid overflowing"))?, b.checked_mul(2).ok_or_else(|| anyhow::anyhow!("PH Grid overflowing"))?, c.checked_mul(2).ok_or_else(|| anyhow::anyhow!("PH Grid overflowing"))?)
     };
-    anyhow::ensure!(nk1 > 0 && nk2 > 0 && nk3 > 0, "DOS 网格必须为正整数");
+    anyhow::ensure!(nk1 > 0 && nk2 > 0 && nk3 > 0, "DOS Grid must be positive integer");
 
     fs::create_dir_all(workspace)?;
     let path = format!("{workspace}/matdyn_phdos.in");

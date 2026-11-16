@@ -17,14 +17,14 @@ fn table(path: &Path, fermi: f64) -> Result<Vec<(f64, f64)>> {
         if v.len() >= 2 {
             ensure!(
                 v[..2].iter().all(|x| x.is_finite()),
-                "data_invalid: DOS 非有限"
+                "data_invalid: DOS Unlimited"
             );
             rows.push((v[0] - fermi, v[1]));
         }
     }
     ensure!(
         rows.len() > 1 && rows.windows(2).all(|w| w[0].0 < w[1].0),
-        "data_invalid: DOS 能量轴不递增"
+        "data_invalid: DOS The energy axis is not increasing"
     );
     Ok(rows)
 }
@@ -44,11 +44,11 @@ pub fn dos(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
     let step = axis[1] - axis[0];
     ensure!(
         step > 0. && axis.windows(2).all(|p| ((p[1] - p[0]) - step).abs() < 1e-5),
-        "data_invalid: postw90 DOS 能网格非均匀"
+        "data_invalid: postw90 DOS The grid is not even"
     );
     let first = axis[0];
     let extra = ((first - minimum).max(0.) / step).ceil() as usize;
-    ensure!(extra < 1000000, "data_invalid: DOS 扩展点数异常");
+    ensure!(extra < 1000000, "data_invalid: DOS Extension points abnormal");
     let mut extended = (1..=extra)
         .rev()
         .map(|i| first - i as f64 * step)
@@ -117,11 +117,11 @@ fn outer_bounds(window: &[(f64, &str, RGBColor)]) -> Result<[f64; 2]> {
     let boundary = |name| -> Result<f64> {
         let values = window.iter().filter(|v| v.1 == name).map(|v| v.0).collect::<Vec<_>>();
         ensure!(values.len() == 1 && values[0].is_finite(),
-            "data_invalid: 默认插值图需要唯一且有限的实际 {name}");
+            "data_invalid: Default illustration requires only and finite actual {name}");
         Ok(values[0])
     };
     let bounds = [boundary("dis_win_min")?, boundary("dis_win_max")?];
-    ensure!(bounds[0] < bounds[1], "data_invalid: 实际 Wannier 外窗顺序错误");
+    ensure!(bounds[0] < bounds[1], "data_invalid: Actual Wannier Outwindow order error");
     Ok(bounds)
 }
 fn is_primary(file: &Path) -> bool {
@@ -137,7 +137,7 @@ fn sync_default_bounds(file: &Path, native: bool, bounds: [f64; 2]) -> Result<()
         let metadata = file.parent().unwrap().join("electronic-display.json");
         if metadata.exists() {
             let mut value: serde_json::Value = super::store::read(&metadata)?;
-            let object = value.as_object_mut().context("data_invalid: 电子显示参数必须为对象")?;
+            let object = value.as_object_mut().context("data_invalid: Electronic display parameters must be objects")?;
             object.insert("default_ev".into(), serde_json::json!(bounds));
             object.insert("default_preset".into(), serde_json::json!("wannier_outer"));
             super::store::write(&metadata, &value)?;
@@ -168,7 +168,7 @@ fn dos_figure(
         },
     )?;
     let [lo, hi] = bounds.unwrap_or([-5., 5.]);
-    ensure!(lo < hi, "data_invalid: DOS 显示范围错误");
+    ensure!(lo < hi, "data_invalid: DOS Show range error");
     let ymax = qe
         .iter()
         .chain(wan.unwrap_or(&[]))
@@ -176,7 +176,7 @@ fn dos_figure(
         .filter(|(e, _)| *e >= lo && *e <= hi)
         .map(|(_, d)| *d)
         .fold(0.0, f64::max);
-    ensure!(ymax > 0.0, "data_invalid: DOS 为空");
+    ensure!(ymax > 0.0, "data_invalid: DOS empty");
     let mut svg = String::new();
     {
         let backend = SVGBackend::with_string(&mut svg, (1000, 700));
@@ -299,7 +299,7 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
                 } else {
                     n + sampling.mesh.len()
                 },
-        "data_invalid: 电子比较路径或网格点数不符"
+        "data_invalid: The number of electronically compared paths or grid points does not match"
     );
     for (path, coords) in [
         (&reference_sampling.path, &states.kpoints),
@@ -313,7 +313,7 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
                     .iter()
                     .zip(&coords[i])
                     .all(|(a, b)| (a - b).abs() < 1e-7),
-                "input_conflict: 电子原生坐标与路径不同，点 {i}"
+                "input_conflict: The electron native coordinates are different from the path, point {i}"
             );
         }
     }
@@ -322,7 +322,7 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
      -> Result<Vec<Band>> {
         ensure!(
             !rows.is_empty() && rows.iter().all(|r| r.len() == rows[0].len()),
-            "data_invalid: 电子带数变化"
+            "data_invalid: Changes in the number of electronic belts"
         );
         let mut curves = vec![];
         for segment in path
@@ -437,7 +437,7 @@ pub(crate) fn bands_figure(
     note: &str,
 ) -> Result<()> {
     let [lo, hi] = primary_bounds(file, wan.is_some(), window, Some(bounds))?
-        .context("data_invalid: 能带缺少显示范围")?;
+        .context("data_invalid: Can carry missing display ranges")?;
     super::store::write(
         &plot_file(file),
         &PlotData::Bands {
@@ -620,11 +620,11 @@ fn native_dos_electrons(log: &str) -> Result<u32> {
     let found = re
         .captures_iter(log)
         .last()
-        .ok_or_else(|| anyhow::anyhow!("data_invalid: postw90 缺少每态电子数的原生证据"))?;
+        .ok_or_else(|| anyhow::anyhow!("data_invalid: postw90 Lack of native evidence of the number of electrons per state"))?;
     let value: u32 = found[1].parse()?;
     ensure!(
         value == 2,
-        "data_invalid: 当前非磁标量 DOS 要求原生每态电子数为 2，实际 {value}"
+        "data_invalid: Current non-magnetic scale DOS Requires the number of electrons per native state to be 2 ,Actual {value}"
     );
     Ok(value)
 }
@@ -681,14 +681,14 @@ pub fn qe_bands(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     let segments = qf_input::electronic::parse_kpath_segments(
         cfg.kpath
             .as_ref()
-            .context("required: 电子能带图需要 KPATH")?
+            .context("required: Electronic energy belt requirements KPATH")?
             .to_str()
-            .context("KPATH 非 UTF-8")?,
+            .context("KPATH Not UTF-8")?,
     )?;
     let intervals = cfg.comparison.clone().unwrap_or_default().points_per_edge as usize;
     ensure!(
         intervals > 0 && states.kpoints.len() == points.len(),
-        "data_invalid: 电子路径点数不匹配"
+        "data_invalid: The number of electronic path points does not match"
     );
     let mut x = Vec::new();
     let mut label_text = String::new();
@@ -698,7 +698,7 @@ pub fn qe_bands(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         let count = (segment.len() - 1) * intervals + 1;
         ensure!(
             index + count <= points.len(),
-            "data_invalid: 电子路径索引越界"
+            "data_invalid: Electronic Path Index Crossing Borders"
         );
         for j in 0..count {
             let at = index + j;
@@ -713,7 +713,7 @@ pub fn qe_bands(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
                     .iter()
                     .zip(expected)
                     .all(|(a, b)| (a - b).abs() < 1e-7),
-                "data_invalid: 电子路径坐标与原生结果不符"
+                "data_invalid: The electronic path coordinates do not match the native results"
             );
             if j > 0 {
                 distance += (0..3)
@@ -734,19 +734,19 @@ pub fn qe_bands(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     }
     ensure!(
         index == points.len() && distance > 0.0,
-        "data_invalid: 电子路径覆盖不完整"
+        "data_invalid: Electronic path overlay incomplete"
     );
     let mut csv = String::from("point_index,distance,band,energy_minus_fermi_ev\n");
     let nband = states.nbnd;
     ensure!(
         states.eigenvalues.len() == x.len() && nband > 0,
-        "data_invalid: 电子本征值缺失"
+        "data_invalid: Lack of electron fundamentals"
     );
     let mut bands = Vec::new();
     for band in 0..nband {
         let mut energies = Vec::new();
         for (i, row) in states.eigenvalues.iter().enumerate() {
-            ensure!(row.len() == nband, "data_invalid: 电子能带数不一致");
+            ensure!(row.len() == nband, "data_invalid: The number of electrons is not consistent");
             let energy = row[band] - fermi;
             csv.push_str(&format!(
                 "{},{:.12},{},{:.12}\n",
@@ -771,7 +771,7 @@ pub fn qe_bands(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         .fold(f64::NEG_INFINITY, f64::max);
     ensure!(
         lo.is_finite() && hi.is_finite(),
-        "data_invalid: 电子能量非有限"
+        "data_invalid: Electronic energy is not finite"
     );
     fs::write(dir.join("electronic-bands.csv"), csv)?;
     bands_figure(
@@ -846,9 +846,9 @@ fn path_labels(text: &str) -> Result<Vec<(f64, String)>> {
         .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
     {
         let fields: Vec<_> = line.split_whitespace().collect();
-        ensure!(fields.len() >= 3, "data_invalid: 高对称点标签格式不完整");
+        ensure!(fields.len() >= 3, "data_invalid: High symmetric point label format incomplete");
         let x: f64 = fields[2].parse()?;
-        ensure!(x.is_finite(), "data_invalid: 高对称点位置非有限");
+        ensure!(x.is_finite(), "data_invalid: High symmetry points are not finite");
         let name = if matches!(fields[0], "G" | "GAMMA") {
             "Γ"
         } else {
@@ -856,7 +856,7 @@ fn path_labels(text: &str) -> Result<Vec<(f64, String)>> {
         }
         .to_string();
         if let Some((last, names)) = groups.last_mut() {
-            ensure!(x + 1e-9 >= *last, "data_invalid: 高对称点位置倒序");
+            ensure!(x + 1e-9 >= *last, "data_invalid: Rewind high symmetry points");
             if (x - *last).abs() <= 1e-9 {
                 if !names.contains(&name) {
                     names.push(name);
@@ -899,7 +899,7 @@ mod tests {
             ),
             vec![(0., "Γ".into()), (1.005, "A | L".into()), (2., "M".into())]
         );
-        assert_eq!(curves[1].0[0], 1.01, "标签布局不改变科学点位或曲线坐标");
+        assert_eq!(curves[1].0[0], 1.01, "Label layout does not change scientific dot or curve coordinates");
         assert_eq!(
             path_sections(&[0., 1., 1., 2., 3., 3., 4.]),
             vec![0..2, 2..5, 5..7]
@@ -1071,7 +1071,7 @@ fn display_bounds(cfg: &Config, dir: &Path, fermi: f64, default: Option<[f64; 2]
         .fold(f64::INFINITY, f64::min);
     ensure!(
         minimum.is_finite(),
-        "data_invalid: NSCF 缺占据态，无法确定最低价带"
+        "data_invalid: NSCF We can't find a minimum price zone without a occupation"
     );
     super::store::write(
         &dir.join("electronic-display.json"),
@@ -1152,7 +1152,7 @@ mod electronic_delivery_tests {
                     let p = &pixels[(row * 3000 + col) * 4..][..4];
                     p[0] < 80 && p[1] < 80 && p[2] < 80
                 }),
-                "密集尖峰不应出现脱离主体的断裂，像素行 {row}"
+                "The dense peaks should not break out of the body, pixel lines {row}"
             );
         }
 
@@ -1200,7 +1200,7 @@ mod electronic_delivery_tests {
         let metadata:serde_json::Value=super::super::store::read(&root.join("electronic-display.json")).unwrap();
         assert_eq!(metadata["default_ev"],serde_json::json!([-8.25,12.75]));
         assert_eq!(metadata["default_preset"],"wannier_outer");
-        assert_eq!(metadata["fermi_ev"],7.,"已相对费米能的外窗不能二次减去 E_F");
+        assert_eq!(metadata["fermi_ev"],7.,"There's no double subtraction of Fermein's outer window E_F");
         assert!(outer_bounds(&[]).is_err());
         assert!(outer_bounds(&[(2.,"dis_win_min",style::QE),(1.,"dis_win_max",style::QE)]).is_err());
         fs::remove_dir_all(root).unwrap();
@@ -1253,7 +1253,7 @@ mod electronic_delivery_tests {
             });
             assert!(
                 same_row_visible,
-                "{case}: 完全重合时必须保留所有颜色，且 QE 参考线不得出现虚线间隔"
+                "{case}: All colours must be preserved when fully overlapping, and QE Lines of reference should not be separated by false lines"
             );
         }
         fs::remove_dir_all(root).unwrap();

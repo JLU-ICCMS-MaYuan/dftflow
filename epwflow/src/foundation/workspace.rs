@@ -13,16 +13,16 @@ pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
     native_jobs::check_orphan_jobs(cfg)?;
     for step in Step::ALL {
         let doc = log::read(&cfg.work_dir, step)?;
-        if doc.get("阶段分配", "提交标识") == own && own.is_some() {
+        if doc.get("Stage allocation", "Submission ID") == own && own.is_some() {
             continue;
         }
-        let state = doc.get("阶段分配", "状态").unwrap_or("未开始");
-        if !matches!(state, "提交中" | "提交未知" | "已提交" | "运行中") {
+        let state = doc.get("Stage allocation", "Status").unwrap_or("not started");
+        if !matches!(state, "submitting" | "submission unknown" | "submitted" | "running") {
             continue;
         }
-        let job = log::jobs(&cfg.work_dir, step)?.get("阶段分配").copied();
+        let job = log::jobs(&cfg.work_dir, step)?.get("Stage allocation").copied();
         let job = job
-            .context("scheduler_unknown: 阶段提交尚无可确认作业号；请核对 Slurm 后补齐任务号表")?;
+            .context("scheduler_unknown: There is no confirmation of the operational number for the stage submission; check Slurm Complete the task list after")?;
         if std::env::var("SLURM_JOB_ID")
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
@@ -33,7 +33,7 @@ pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
         let accounting = slurm::accounting(job)?;
         ensure!(
             accounting.terminal,
-            "scheduler_unknown: 阶段 {} 作业 {job} 仍活动，禁止覆盖",
+            "scheduler_unknown: Phase {} Operations {job} Still active, no coverage",
             step.name()
         );
         budget::with_ledger(
@@ -43,12 +43,12 @@ pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
         )?;
         log::update(&cfg.work_dir, step, |d| {
             d.set(
-                "阶段分配",
-                "状态",
+                "Stage allocation",
+                "Status",
                 if accounting.state == "COMPLETED" {
-                    "已退出，待检查科学结果"
+                    "exited; scientific validation pending"
                 } else {
-                    "失败"
+                    "failed"
                 },
             );
             Ok(())
@@ -63,32 +63,11 @@ pub fn report(cfg: &Config) -> Result<serde_json::Value> {
     for step in Step::ALL {
         let reusable = stages::reusable(cfg, step)?;
         complete &= reusable;
-        steps.insert(step.name().into(),serde_json::json!({"状态":log::read(&cfg.work_dir,step)?.get("阶段","状态"),"可复用":reusable}));
+        steps.insert(step.name().into(),serde_json::json!({"Status":log::read(&cfg.work_dir,step)?.get("Stage","Status"),"reusable":reusable}));
     }
     Ok(
         serde_json::json!({"schema_version":1,"operation_status":"ok","workflow_status":if complete {"complete"} else {"incomplete"},"workflow_complete":complete,"steps":steps,"native_task":native_jobs::status(cfg)?,"native_methods":native_jobs::groups_status(cfg)?}),
     )
-}
-fn english_state(state: &str) -> &str {
-    match state {
-        "未开始" => "not started",
-        "待计算" => "calculation pending",
-        "上游已更新，待计算" => "upstream updated; calculation pending",
-        "待检查" => "validation pending",
-        "作业已结束，计算未通过检查" => "job finished; scientific validation failed",
-
-        "已准备" => "prepared",
-        "提交中" => "submitting",
-        "已提交" => "submitted",
-        "提交未知" => "submission unknown",
-        "运行中" => "running",
-        "已完成" => "complete",
-        "失败" => "failed",
-        "阶段分配" => "stage allocation",
-        "已退出，待检查科学结果" => "exited; scientific validation pending",
-        "求解已结束，能隙数据无效" => "solver finished; gap data invalid",
-        other => other,
-    }
 }
 pub fn status(cfg: &Config) -> Result<()> {
     for step in Step::ALL {
@@ -96,7 +75,7 @@ pub fn status(cfg: &Config) -> Result<()> {
         println!(
             "{}: {}; scientific results: {}",
             log::stage_name(step, log::mode(cfg)),
-            english_state(doc.get("阶段", "状态").unwrap_or("未开始")),
+            doc.get("Stage", "Status").unwrap_or("not started"),
             if stages::reusable(cfg, step)? {
                 "reusable"
             } else {
@@ -104,7 +83,7 @@ pub fn status(cfg: &Config) -> Result<()> {
             }
         );
         for (name, job) in log::jobs(&cfg.work_dir, step)? {
-            println!("  {}: Slurm {job}", english_state(&name));
+            println!("  {name}: Slurm {job}");
         }
     }
     Ok(())
@@ -142,7 +121,7 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
                     || !stages::execution_steps(&cfg, target)
                         .iter()
                         .any(|step| task.directory.starts_with(step.directory(&cfg))),
-                "execution_failed: {} 上次失败；修复后使用 --resume -s",
+                "execution_failed: {} Last failed; used after repair --resume -s",
                 task.directory.display()
             );
         }
@@ -166,8 +145,8 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         return Ok(());
     }
     ensure!(
-        resume || log::read(&cfg.work_dir, target)?.get("阶段分配", "状态") != Some("失败"),
-        "stage_failed: 上次阶段分配失败，请使用 --resume 继续未完成的任务"
+        resume || log::read(&cfg.work_dir, target)?.get("Stage allocation", "Status") != Some("failed"),
+        "stage_failed: Last stage distribution failed, please use --resume Continuation of unfinished business"
     );
     let id = store::token();
     let dir = target.directory(&cfg);
@@ -189,11 +168,11 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
     store::atomic_bytes(&script, body.as_bytes())?;
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
     log::update(&cfg.work_dir, target, |d| {
-        d.remove("阶段分配");
-        d.set("阶段分配", "提交标识", &id);
-        d.set("阶段分配", "状态", "已准备");
-        d.set("阶段分配", "配置", log::relative(&cfg.work_dir, &version));
-        d.set("阶段分配", "脚本", log::relative(&cfg.work_dir, &script));
+        d.remove("Stage allocation");
+        d.set("Stage allocation", "Submission ID", &id);
+        d.set("Stage allocation", "Status", "prepared");
+        d.set("Stage allocation", "Configuration", log::relative(&cfg.work_dir, &version));
+        d.set("Stage allocation", "Script", log::relative(&cfg.work_dir, &script));
         Ok(())
     })?;
     if !submit {
@@ -204,10 +183,10 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         budget::reconcile(l)?;
         budget::reserve_workflow(l, &format!("stage:{id}"))
     })?;
-    log::set_job(&cfg.work_dir, target, "阶段分配", None)?;
+    log::set_job(&cfg.work_dir, target, "Stage allocation", None)?;
     log::update(&cfg.work_dir, target, |d| {
-        d.set("阶段分配", "预算关联", &reservation);
-        d.set("阶段分配", "状态", "提交中");
+        d.set("Stage allocation", "Budget association", &reservation);
+        d.set("Stage allocation", "Status", "submitting");
         Ok(())
     })?;
     // 状态已落盘；不能在等待提交回执时阻塞可能已经启动的分配进程。
@@ -217,24 +196,24 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         .arg(&script)
         .current_dir(&dir)
         .output()
-        .context("scheduler_unknown: 无法调用 sbatch")
+        .context("scheduler_unknown: cannot invoke sbatch")
         .and_then(|out| {
             ensure!(
                 out.status.success(),
-                "scheduler_unknown: sbatch 失败：{}",
+                "scheduler_unknown: sbatch failed: {}",
                 String::from_utf8_lossy(&out.stderr)
             );
             slurm::parse_job_id(String::from_utf8_lossy(&out.stdout).trim())
         });
     let _receipt = log::DirectoryGuard::acquire(&cfg.work_dir)?;
     let current = log::read(&cfg.work_dir, target)?;
-    if current.get("阶段分配", "提交标识") != Some(id.as_str()) {
+    if current.get("Stage allocation", "Submission ID") != Some(id.as_str()) {
         println!("Allocation finalized; the stage has advanced to a new submission");
         return Ok(());
     }
     match result {
         Ok(job) => {
-            log::set_job(&cfg.work_dir, target, "阶段分配", Some(job.job_id))?;
+            log::set_job(&cfg.work_dir, target, "Stage allocation", Some(job.job_id))?;
             budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
                 if l.has_unsettled_token(&reservation) {
                     budget::attach_once(l, &reservation, job.job_id)?;
@@ -242,8 +221,8 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
                 Ok(())
             })?;
             log::update(&cfg.work_dir, target, |d| {
-                if d.get("阶段分配", "状态") == Some("提交中") {
-                    d.set("阶段分配", "状态", "已提交");
+                if d.get("Stage allocation", "Status") == Some("submitting") {
+                    d.set("Stage allocation", "Status", "submitted");
                 }
                 Ok(())
             })?;
@@ -256,10 +235,10 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         }
         Err(e) => {
             log::update(&cfg.work_dir, target, |d| {
-                if d.get("阶段分配", "状态") == Some("提交中") {
-                    d.set("阶段分配", "状态", "提交未知");
+                if d.get("Stage allocation", "Status") == Some("submitting") {
+                    d.set("Stage allocation", "Status", "submission unknown");
                 }
-                d.set("问题", "原因", format!("{e:#}"));
+                d.set("Problem", "Reason", format!("{e:#}"));
                 Ok(())
             })?;
             Err(e)
@@ -269,51 +248,51 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
 pub fn allocated(config: &Path, target: Step, resume: bool, id: &str) -> Result<()> {
     let cfg = super::readable_state::load_config(config)?;
     let job: u64 = std::env::var("SLURM_JOB_ID")
-        .context("allocation: 需要 Slurm 分配")?
+        .context("allocation: Yes Slurm Allocation")?
         .parse()?;
     let operation = log::DirectoryGuard::acquire(&cfg.work_dir)?;
     let doc = log::read(&cfg.work_dir, target)?;
     ensure!(
-        doc.get("阶段分配", "提交标识") == Some(id),
-        "input_conflict: 脚本不属于当前阶段分配，请使用公开命令重新生成"
+        doc.get("Stage allocation", "Submission ID") == Some(id),
+        "input_conflict: Scripts are not allocated at the current stage. Regenerated using a public command"
     );
     ensure!(
-        !matches!(doc.get("阶段分配", "状态"), Some("运行中" | "已完成")),
-        "scheduler_unknown: 同一分配已经执行"
+        !matches!(doc.get("Stage allocation", "Status"), Some("running" | "completed")),
+        "scheduler_unknown: The same allocation has been implemented"
     );
     ensure!(
         log::jobs(&cfg.work_dir, target)?
-            .get("阶段分配")
+            .get("Stage allocation")
             .is_none_or(|j| *j == job),
-        "input_conflict: 阶段脚本绑定不同作业"
+        "input_conflict: Phase script binding different jobs"
     );
     let allocation = slurm::running_allocation(job)?;
-    ensure!(!allocation.terminal && allocation.state == "RUNNING", "allocation: 当前分配未运行");
+    ensure!(!allocation.terminal && allocation.state == "RUNNING", "allocation: Current distribution is not running");
     parallelism::preflight(&cfg, target, true)?;
-    log::set_job(&cfg.work_dir, target, "阶段分配", Some(job))?;
-    if let Some(token) = doc.get("阶段分配", "预算关联") {
+    log::set_job(&cfg.work_dir, target, "Stage allocation", Some(job))?;
+    if let Some(token) = doc.get("Stage allocation", "Budget association") {
         budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
             budget::attach_once(l, token, job)
         })?;
     }
     log::update(&cfg.work_dir, target, |d| {
-        d.set("阶段分配", "状态", "运行中");
+        d.set("Stage allocation", "Status", "running");
         Ok(())
     })?;
     drop(operation);
     let result = super::native_workspace::allocated(config, target, resume, id);
     log::update(&cfg.work_dir, target, |d| {
         d.set(
-            "阶段分配",
-            "状态",
+            "Stage allocation",
+            "Status",
             if result.is_ok() {
-                "已完成"
+                "completed"
             } else {
-                "失败"
+                "failed"
             },
         );
         if let Err(e) = &result {
-            d.set("问题", "原因", format!("{e:#}"));
+            d.set("Problem", "Reason", format!("{e:#}"));
         }
         Ok(())
     })?;
@@ -330,7 +309,7 @@ pub fn start_allocated(config: &Path, target: Step, resume: bool) -> Result<()> 
     check_active(&cfg, None)?;
     let generation = store::token();
     let job = std::env::var("SLURM_JOB_ID")
-        .context("allocation: -r 需要 Slurm 分配")?
+        .context("allocation: -r Yes Slurm Allocation")?
         .parse::<u64>()?;
     parallelism::preflight(&cfg, target, true)?;
     budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
@@ -379,24 +358,24 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
             log::update(&cfg.work_dir, affected, |d| {
                 if affected == step {
                     d.sections.retain(|name, _| {
-                        matches!(name.as_str(), "工作区" | "阶段" | "阶段分配" | "下一步")
-                            || name.starts_with("配置快照 · ")
+                        matches!(name.as_str(), "Workspace" | "Stage" | "Stage allocation" | "Next step")
+                            || name.starts_with("Configuration snapshot · ")
                             || (step == Step::Coarse
-                                && matches!(name.as_str(), "子步骤 · comparison-q2r" | "子步骤 · comparison-matdyn"))
+                                && matches!(name.as_str(), "Substep · comparison-q2r" | "Substep · comparison-matdyn"))
                     });
                 }
                 if affected == Step::Coarse && step <= Step::Phonon {
-                    d.remove("子步骤 · comparison-q2r");
-                    d.remove("子步骤 · comparison-matdyn");
+                    d.remove("Substep · comparison-q2r");
+                    d.remove("Substep · comparison-matdyn");
                 }
-                d.set("阶段", "科学状态", "待计算");
+                d.set("Stage", "Scientific status", "calculation pending");
                 d.set(
-                    "阶段",
-                    "状态",
+                    "Stage",
+                    "Status",
                     if affected == step {
-                        "待计算"
+                        "calculation pending"
                     } else {
-                        "上游已更新，待计算"
+                        "upstream updated; calculation pending"
                     },
                 );
                 Ok(())

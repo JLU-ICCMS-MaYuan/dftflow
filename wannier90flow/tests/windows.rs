@@ -93,7 +93,7 @@ fn cli_default_and_legacy_rejection_are_observable() {
         .output()
         .unwrap();
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("已弃用"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Disabled"));
     std::fs::remove_dir_all(p).unwrap();
 }
 

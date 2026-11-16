@@ -27,7 +27,7 @@ fn publish(cfg: &Config, t: &Transaction, report: &Path) -> Result<()> {
     t.source.verify()?;
     ensure!(
         save::checked_entries(&t.source_files) == save::files(&t.calculation_dir)?,
-        "input_conflict: 导入来源文件集合改变"
+        "input_conflict: Import source file set changes"
     );
     let heads = t
         .files
@@ -46,7 +46,7 @@ fn publish(cfg: &Config, t: &Transaction, report: &Path) -> Result<()> {
         let to = cfg.work_dir.join(&head);
         ensure!(
             !from.exists() || !to.exists(),
-            "input_conflict: 导入来源与目标同时存在，保留现场"
+            "input_conflict: Import source exists with target, keep site"
         );
         let root = if from.exists() {
             &t.partial
@@ -61,7 +61,7 @@ fn publish(cfg: &Config, t: &Transaction, report: &Path) -> Result<()> {
             let p = root.join(&f.relative_path);
             ensure!(
                 fs::metadata(&p)?.len() == f.byte_size && store::hash_file(&p)? == f.sha256,
-                "input_conflict: 导入暂存数据改变 {}",
+                "input_conflict: Import Pending Data Changes {}",
                 p.display()
             );
         }
@@ -73,10 +73,10 @@ fn publish(cfg: &Config, t: &Transaction, report: &Path) -> Result<()> {
     for step in [Step::Scf, Step::Nscf, Step::Phonon] {
         let version = super::readable_state::current_config(&cfg.work_dir)?;
         super::readable_state::update(&cfg.work_dir, step, |d| {
-            d.set("阶段", "批次", format!("import-{}", step.name()));
+            d.set("Stage", "Batch", format!("import-{}", step.name()));
             d.set(
-                "阶段",
-                "计算配置",
+                "Stage",
+                "Calculation configuration",
                 super::readable_state::relative(&cfg.work_dir, &version),
             );
             Ok(())
@@ -86,11 +86,11 @@ fn publish(cfg: &Config, t: &Transaction, report: &Path) -> Result<()> {
     t.source.verify()?;
     ensure!(
         save::checked_entries(&t.source_files) == save::files(&t.calculation_dir)?,
-        "input_conflict: 原来源在发布期间改变"
+        "input_conflict: Source changed during release"
     );
     store::write(
         report,
-        &serde_json::json!({"schema_version":1,"source_sha256":t.source.sha256,"source_files":t.source_files,"calculation_dir":t.calculation_dir,"state":"八阶段可读日志"}),
+        &serde_json::json!({"schema_version":1,"source_sha256":t.source.sha256,"source_files":t.source_files,"calculation_dir":t.calculation_dir,"state":"Eight-stage readable logs"}),
     )?;
     println!("import_status: complete\nqe_recalculated: false");
     Ok(())
@@ -101,7 +101,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     let source = source.canonicalize()?;
     ensure!(
         !cfg.work_dir.starts_with(&source) && !source.starts_with(&cfg.work_dir.join("epw-state")),
-        "input_conflict: 导入来源与目标重叠"
+        "input_conflict: Import source and target overlap"
     );
     let mut binding = RunBinding::load(&source)?;
     // 历史绑定原字节保留；已删除的抽样程序不再是主科学数据导入依赖。
@@ -117,17 +117,17 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     if let Some(job) = record.get("job_id").and_then(|v| v.as_u64()) {
         ensure!(
             super::slurm::accounting(job)?.terminal,
-            "scheduler_unknown: 旧任务仍活动或未知"
+            "scheduler_unknown: The old task is still active or unknown"
         );
     }
     let calc = PathBuf::from(
         record
             .get("calculation_dir")
             .and_then(|v| v.as_str())
-            .context("data_invalid: 旧计算目录缺失")?,
+            .context("data_invalid: Old Calculator Directory Missing")?,
     )
     .canonicalize()?;
-    ensure!(calc.starts_with(&source), "input_conflict: 旧计算目录越界");
+    ensure!(calc.starts_with(&source), "input_conflict: Old Calculator Crosses Border");
     let old_path = calc.join("qe-data/manifest.json");
     let old = QeManifest::load(&old_path)?;
     old.verify()?;
@@ -135,14 +135,14 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     super::run_state::ready(&cfg.work_dir)?;
     ensure!(
         !cfg.work_dir.join("epw-state/active.json").exists(),
-        "input_conflict: 先核对已有工作区尝试，再导入旧现场"
+        "input_conflict: Check the existing workspace and then import the old site"
     );
     let report = cfg.work_dir.join("epw-state/imports/legacy-import.json");
     if report.exists() {
         let prior: serde_json::Value = store::read(&report)?;
         ensure!(
             prior["source_sha256"].as_str() == Some(&provenance.sha256),
-            "input_conflict: 工作区已导入不同来源"
+            "input_conflict: Workspace imported from different sources"
         );
         for step in [Step::Scf, Step::Nscf, Step::Phonon] {
             let c = stages::completion(&cfg, step)?;
@@ -154,7 +154,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     for step in [Step::Scf, Step::Nscf, Step::Phonon] {
         ensure!(
             stages::scientific_key(&cfg, step)? == stages::scientific_key(&original, step)?,
-            "input_conflict: 旧 {} 科学参数与当前配置不相容",
+            "input_conflict: Old {} Scientific parameters are not compatible with current configuration",
             step.name()
         );
     }
@@ -164,14 +164,14 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
         let t: Transaction = store::read(&journal)?;
         ensure!(
             t.source.sha256 == provenance.sha256,
-            "input_conflict: 未完成导入属于其他来源"
+            "input_conflict: Imports not completed belong to other sources"
         );
         return publish(&cfg, &t, &report);
     }
     for step in [Step::Scf, Step::Nscf, Step::Phonon] {
         ensure!(
             !step.directory(&cfg).exists(),
-            "input_conflict: 导入目标 {} 已存在",
+            "input_conflict: Import Target {} Exists",
             step.directory(&cfg).display()
         );
     }
@@ -186,8 +186,8 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     fn relocate(cfg: &Config, old: &Path, calc: &Path) -> Result<PathBuf> {
         let relative = old
             .strip_prefix(calc)
-            .context("data_invalid: 原清单文件越界")?;
-        let text = relative.to_str().context("data_invalid: 非 UTF-8 路径")?;
+            .context("data_invalid: Original manifest documents crossed the border")?;
+        let text = relative.to_str().context("data_invalid: Not UTF-8 Path")?;
         Ok(layout::path(&cfg.work_dir, text))
     }
     for a in &mut manifest.artifacts {
@@ -203,7 +203,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
         fs::create_dir_all(temp.parent().unwrap())?;
         fs::copy(&from, &temp)?;
         if !qf_io::qe_payload::unchecked(&temp) {
-            ensure!(store::hash_file(&temp)? == a.sha256, "data_invalid: 导入复制哈希不符");
+            ensure!(store::hash_file(&temp)? == a.sha256, "data_invalid: Import Copy Hash does not match");
         }
         a.relative_path = rel.into();
     }
@@ -212,7 +212,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
         (
             old.scf
                 .as_ref()
-                .context("data_invalid: 缺 SCF")?
+                .context("data_invalid: Missing SCF")?
                 .snapshot_dir
                 .clone(),
             PathBuf::from("1.qe-scf/snapshot"),
@@ -220,7 +220,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
         (
             old.states
                 .as_ref()
-                .context("data_invalid: 缺 NSCF")?
+                .context("data_invalid: Missing NSCF")?
                 .wavefunctions
                 .parent()
                 .unwrap()
@@ -234,7 +234,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
             if to.exists() {
                 if !qf_io::qe_payload::unchecked(&relative) {
                     ensure!(store::hash_file(&to)? == store::hash_file(&from.join(&relative))?,
-                        "input_conflict: 导入角色冲突");
+                        "input_conflict: Import Role Conflict");
                 }
             } else { fs::copy(from.join(&relative), &to)?; }
         }
@@ -308,7 +308,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
     }
     ensure!(
         before == save::files(&calc)?,
-        "input_conflict: 原来源在导入期间改变"
+        "input_conflict: Original source changed during import"
     );
     let transaction = Transaction {
         source: provenance,

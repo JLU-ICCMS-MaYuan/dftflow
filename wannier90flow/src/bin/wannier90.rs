@@ -135,7 +135,7 @@ fn main() -> Result<()> {
             exclude_bands,
         } => {
             if auto.is_some() {
-                anyhow::bail!("旧 --auto nbnd1 num_wann nbnd3 已弃用；请使用 --num-wann N，采用上游默认能量冻结＋投影解纠缠");
+                anyhow::bail!("Old --auto nbnd1 num_wann nbnd3 retired; please use --num-wann N ,Use default upstream energy freeze + projecting to resolve entanglements");
             }
             let mode = if let Some(n) = n {
                 window::WindowMode::Bands(n)
@@ -146,7 +146,7 @@ fn main() -> Result<()> {
                     num_wann, fermi, exclude_bands,
                 }
             } else {
-                anyhow::bail!("自动选窗请指定 --num-wann N；只读分析可指定 -n 或 -e");
+                anyhow::bail!("Automatic window selection --num-wann N ;Read-only analysis to specify -n or -e");
             };
             window::run(&xml, mode)
         }

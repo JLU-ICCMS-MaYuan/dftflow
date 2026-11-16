@@ -168,7 +168,7 @@ impl Config {
         let mode = self.qe.lattice_mode();
         if !VALID_LATTICE_MODES.contains(&mode) {
             anyhow::bail!(
-                "[qe].lattice_mode = {mode:?} 不合法，允许值: {}",
+                "[qe].lattice_mode = {mode:?} Invalid, allowed value: {}",
                 VALID_LATTICE_MODES.join(", ")
             );
         }
@@ -199,7 +199,7 @@ impl Config {
         }
         if !conflicts.is_empty() {
             anyhow::bail!(
-                "不允许在 input.toml 中手动指定 QE 晶格参数；请删除这些 key，由 lattice_mode 自动生成: {}",
+                "Not allowed in input.toml Manually Assign QE crystal parameters; please delete these key ,By lattice_mode Auto Generate: {}",
                 conflicts.join(", ")
             );
         }
@@ -251,10 +251,10 @@ pub fn load(path: Option<&str>, config_file: Option<&str>) -> Result<Config> {
     config.pp_dir = resolve_pp_dir_path(config.pp_dir, config_file);
     config.validate_no_manual_lattice_params()?;
     for (element, mass) in &config.atomic_masses {
-        anyhow::ensure!(mass.is_finite() && *mass > 0.0, "atomic_masses.{element} 必须为有限正数");
+        anyhow::ensure!(mass.is_finite() && *mass > 0.0, "atomic_masses.{element} It has to be a finite positive number");
     }
     if let Some(shift) = config.qe_phonon.scf.get("k_shift") {
-        anyhow::ensure!(shift.as_array().is_some_and(|v| v.len() == 3 && v.iter().all(|n| matches!(n.as_i64(), Some(0 | 1)))), "qe_phonon.scf.k_shift 必须包含三个 0/1 整数");
+        anyhow::ensure!(shift.as_array().is_some_and(|v| v.len() == 3 && v.iter().all(|n| matches!(n.as_i64(), Some(0 | 1)))), "qe_phonon.scf.k_shift It has to contain three 0/1 Integer");
     }
     Ok(config)
 }
@@ -416,9 +416,9 @@ mod tests {
 pub fn phonon_snapshot_text(path: &str, workspace: &str) -> Result<String> {
     let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(path)?)?;
     let cfg = load(Some(path), Some(path))?;
-    let root = value.as_table_mut().context("配置必须为 TOML 表")?;
+    let root = value.as_table_mut().context("The configuration must be TOML Table")?;
     if let Some(pp) = cfg.pp_dir { root.insert("pp_dir".into(), toml::Value::String(pp)); }
-    let ph = root.entry("qe_phonon").or_insert_with(|| toml::Value::Table(Default::default())).as_table_mut().context("qe_phonon 必须为表")?;
+    let ph = root.entry("qe_phonon").or_insert_with(|| toml::Value::Table(Default::default())).as_table_mut().context("qe_phonon It has to be a watch")?;
     ph.insert("work_dir".into(), toml::Value::String(workspace.into()));
     Ok(toml::to_string_pretty(&value)?)
 }

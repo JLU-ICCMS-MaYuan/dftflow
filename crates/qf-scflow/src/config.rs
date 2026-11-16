@@ -128,7 +128,7 @@ fn get_i64(section: &SectionMap, key: &str, default: i64) -> i64 {
 /// 从 `qf_config::Config` 直接构造（便于 CLI 复用同一份 input.toml）。
 pub fn from_config(base: &Path, cfg: &qf_config::Config) -> Result<ScflowConfig> {
     if cfg.scflow.is_empty() {
-        bail!("input.toml 缺少 [scflow] 配置段（需要 work_dir / a2f_file / mu 等）");
+        bail!("input.toml Missing [scflow ] Configure Section (needs) work_dir / a2f_file / mu Wait)");
     }
     ScflowConfig::from_section(base, &cfg.scflow)
 }

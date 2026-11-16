@@ -58,17 +58,17 @@ pub fn submit_via_sbatch(
     body.push_str(&line);
     body.push('\n');
     super::store::atomic_bytes(&script, body.as_bytes())
-        .with_context(|| format!("execution_failed: 无法写脚本 {}", script.display()))?;
+        .with_context(|| format!("execution_failed: Could not write script {}", script.display()))?;
 
     let out = Command::new("sbatch")
         .arg("--parsable")
         .arg(&script)
         .current_dir(work)
         .output()
-        .with_context(|| "scheduler_unknown: 无法调用 sbatch")?;
+        .with_context(|| "scheduler_unknown: cannot invoke sbatch")?;
     if !out.status.success() {
         bail!(
-            "scheduler_unknown: sbatch 失败: {}",
+            "scheduler_unknown: sbatch Failed: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
@@ -78,12 +78,12 @@ pub fn submit_via_sbatch(
 
 /// 本地执行：不经过 Slurm，用于测试阶段与登录节点受限运行；路径/参数列表处理，不经 shell 求值。
 pub fn run_local(command: &[String], work: &Path) -> Result<ExitStatus> {
-    ensure!(!command.is_empty(), "execution_failed: 空命令");
+    ensure!(!command.is_empty(), "execution_failed: empty command");
     let status = Command::new(&command[0])
         .args(&command[1..])
         .current_dir(work)
         .status()
-        .with_context(|| format!("execution_failed: 无法启动 {}", command[0]))?;
+        .with_context(|| format!("execution_failed: cannot start {}", command[0]))?;
     Ok(status)
 }
 
@@ -109,7 +109,7 @@ pub fn parse_job_id(text: &str) -> Result<SubmittedJob> {
     let re = regex::Regex::new(r"^([1-9][0-9]*)(?:;([A-Za-z0-9_.-]+))?$")?;
     let captures = re
         .captures(text.trim())
-        .context("scheduler_unknown: sbatch 作业号格式无效")?;
+        .context("scheduler_unknown: sbatch Job Number Format Invalid")?;
     Ok(SubmittedJob {
         job_id: captures[1].parse()?,
         cluster: captures.get(2).map(|v| v.as_str().to_owned()),
@@ -132,7 +132,7 @@ pub struct Accounting {
 struct RunningNodesPending;
 impl std::fmt::Display for RunningNodesPending {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "scheduler_unknown: RUNNING 的节点数尚未记账")
+        write!(f, "scheduler_unknown: RUNNING Nodes not yet accounted for")
     }
 }
 impl std::error::Error for RunningNodesPending {}
@@ -147,14 +147,14 @@ pub fn running_allocation(job_id: u64) -> Result<Accounting> {
 }
 
 fn controller_allocation(job_id: u64) -> Result<Accounting> {
-    ensure!(job_id > 0, "allocation: 无效作业号");
+    ensure!(job_id > 0, "allocation: Invalid Job Number");
     let out = Command::new("scontrol")
         .args(["show", "job", "-o", &job_id.to_string()])
         .output()
-        .context("scheduler_unknown: 无法查询 scontrol")?;
+        .context("scheduler_unknown: Unable to query scontrol")?;
     ensure!(
         out.status.success(),
-        "scheduler_unknown: scontrol 失败：{}",
+        "scheduler_unknown: scontrol Failed:{}",
         String::from_utf8_lossy(&out.stderr)
     );
     parse_controller(job_id, &String::from_utf8(out.stdout)?)
@@ -163,31 +163,31 @@ fn controller_allocation(job_id: u64) -> Result<Accounting> {
 /// 仅供启动门使用，不提供计费秒数，不从环境变量猜测资源。
 fn parse_controller(job_id: u64, text: &str) -> Result<Accounting> {
     let rows: Vec<_> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    ensure!(rows.len() == 1, "scheduler_unknown: 控制器记录缺失或不唯一");
+    ensure!(rows.len() == 1, "scheduler_unknown: Control record missing or not unique");
     let mut fields = std::collections::BTreeMap::new();
     for field in rows[0].split_whitespace() {
         if let Some((key, value)) = field.split_once('=') {
             if matches!(key, "JobId" | "JobState" | "NumNodes") {
                 ensure!(
                     fields.insert(key, value).is_none(),
-                    "scheduler_unknown: 控制器字段重复"
+                    "scheduler_unknown: Control field repeats"
                 );
             }
         }
     }
     ensure!(
         fields.get("JobId").copied() == Some(job_id.to_string().as_str()),
-        "input_conflict: 控制器作业身份冲突"
+        "input_conflict: Controlr operational identity conflict"
     );
     ensure!(
         fields.get("JobState") == Some(&"RUNNING"),
-        "allocation: 控制器当前分配尚未运行或已终止"
+        "allocation: The controller 's current distribution is not running or terminated"
     );
     let nodes = fields
         .get("NumNodes")
-        .context("scheduler_unknown: 控制器缺少节点数")?
+        .context("scheduler_unknown: controller missing nodes")?
         .parse()
-        .context("scheduler_unknown: 控制器节点数非整数")?;
+        .context("scheduler_unknown: Control Node Non-integer")?;
     Ok(Accounting {
         state: "RUNNING".into(),
         terminal: false,
@@ -206,19 +206,19 @@ fn running_with(
             Ok(a) if a.state == "RUNNING" && a.nodes > 0 => return Ok(a),
             Ok(a) if a.state == "RUNNING" && a.nodes == 0 => (),
             Err(e) if e.downcast_ref::<RunningNodesPending>().is_some() => (),
-            Ok(_) => bail!("allocation: 当前分配未运行或已终止"),
+            Ok(_) => bail!("allocation: Current distribution is not operational or terminated"),
             Err(e) => return Err(e),
         }
         if i + 1 < tries {
             pause();
         }
     }
-    bail!("scheduler_unknown: 等待控制器 RUNNING 节点数超时；禁止启动科学程序")
+    bail!("scheduler_unknown: Waiting for controller RUNNING Nodes timed out; prohibition on starting scientific programs")
 }
 
 /// 只采用 allocation 行，排除 batch/extern 等 step，未知状态保持预留。
 pub fn accounting(job_id: u64) -> Result<Accounting> {
-    ensure!(job_id > 0, "scheduler_unknown: 无效作业号");
+    ensure!(job_id > 0, "scheduler_unknown: Invalid Job Number");
     let out = Command::new("sacct")
         .args([
             "--noheader",
@@ -228,7 +228,7 @@ pub fn accounting(job_id: u64) -> Result<Accounting> {
             "--format=JobIDRaw,State,ElapsedRaw,NNodes",
         ])
         .output()
-        .context("scheduler_unknown: 无法查询 sacct")?;
+        .context("scheduler_unknown: Unable to query sacct")?;
     if !out.status.success()
         && String::from_utf8_lossy(&out.stderr).contains("Slurm accounting storage is disabled")
     {
@@ -239,7 +239,7 @@ pub fn accounting(job_id: u64) -> Result<Accounting> {
     }
     ensure!(
         out.status.success(),
-        "scheduler_unknown: sacct 失败：{}",
+        "scheduler_unknown: sacct Failed:{}",
         String::from_utf8_lossy(&out.stderr)
     );
     parse_accounting(job_id, &String::from_utf8(out.stdout)?)
@@ -249,13 +249,13 @@ pub fn accounting(job_id: u64) -> Result<Accounting> {
 fn completion_accounting(job_id: u64) -> Result<Accounting> {
     let text = completion_query(job_id, "--format=JobIDRaw,State,ElapsedRaw,NNodes")?;
     let observation = parse_accounting(job_id, &text)?;
-    ensure!(observation.terminal, "scheduler_unknown: 完成日志没有可靠终态");
+    ensure!(observation.terminal, "scheduler_unknown: There is no reliable end to the completed log");
     Ok(observation)
 }
 
 /// 原生任务终态的退出码与状态使用同一真实 Slurm 后端。
 pub fn exit_code_record(job_id: u64) -> Result<String> {
-    ensure!(job_id > 0, "scheduler_unknown: 无效作业号");
+    ensure!(job_id > 0, "scheduler_unknown: Invalid Job Number");
     let out = Command::new("sacct").args(["--noheader", "--parsable2", "-j",
         &job_id.to_string(), "--format=JobIDRaw,ExitCode"]).output()?;
     if !out.status.success()
@@ -263,7 +263,7 @@ pub fn exit_code_record(job_id: u64) -> Result<String> {
     {
         return completion_query(job_id, "--format=JobIDRaw,ExitCode");
     }
-    ensure!(out.status.success(), "scheduler_unknown: 无法查询任务 {job_id} 退出码");
+    ensure!(out.status.success(), "scheduler_unknown: _Other Organiser {job_id} Exit Code");
     Ok(String::from_utf8(out.stdout)?)
 }
 
@@ -271,20 +271,20 @@ fn completion_query(job_id: u64, fields: &str) -> Result<String> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
     let config = Command::new("scontrol").args(["show", "config"]).output()
-        .context("scheduler_unknown: 无法查询 Slurm 完成日志配置")?;
-    ensure!(config.status.success(), "scheduler_unknown: Slurm 完成日志配置查询失败");
+        .context("scheduler_unknown: Unable to query Slurm Log Configuration Completed")?;
+    ensure!(config.status.success(), "scheduler_unknown: Slurm Failed to complete log configuration query");
     let text = String::from_utf8(config.stdout)?;
     let value = |key: &str| -> Result<&str> {
         let values: Vec<_> = text.lines().filter_map(|line| line.split_once('='))
             .filter(|(name, _)| name.trim() == key).map(|(_, value)| value.trim()).collect();
-        ensure!(values.len() == 1, "scheduler_unknown: Slurm {key} 缺失或重复");
+        ensure!(values.len() == 1, "scheduler_unknown: Slurm {key} Missing or duplicated");
         Ok(values[0])
     };
     ensure!(value("JobCompType")? == "jobcomp/filetxt",
-        "scheduler_unknown: accounting 未启用且没有 jobcomp/filetxt 完成日志");
+        "scheduler_unknown: accounting Not enabled and not available jobcomp/filetxt Finish Log");
     let source = Path::new(value("JobCompLoc")?);
-    ensure!(source.is_absolute(), "scheduler_unknown: Slurm 完成日志路径不是绝对路径");
-    let bytes = fs::read(source).context("scheduler_unknown: 无法读取 Slurm 完成日志")?;
+    ensure!(source.is_absolute(), "scheduler_unknown: Slurm The completed log path is not an absolute path");
+    let bytes = fs::read(source).context("scheduler_unknown: Unable to read Slurm Finish Log")?;
     let snapshot = std::env::temp_dir().join(format!("epw-jobcomp-{}.log", super::store::token()));
     let mut file = fs::OpenOptions::new().write(true).create_new(true).mode(0o600)
         .open(&snapshot)?;
@@ -294,13 +294,13 @@ fn completion_query(job_id: u64, fields: &str) -> Result<String> {
         let out = Command::new("sacct").args(["--completion", "--file"])
             .arg(&snapshot).args(["--noheader", "--parsable2", "-j", &job_id.to_string(),
                 fields]).output()
-            .context("scheduler_unknown: 无法查询 Slurm 完成日志")?;
-        ensure!(out.status.success(), "scheduler_unknown: Slurm 完成日志查询失败：{}",
+            .context("scheduler_unknown: Unable to query Slurm Finish Log")?;
+        ensure!(out.status.success(), "scheduler_unknown: Slurm Failed to complete log query:{}",
             String::from_utf8_lossy(&out.stderr));
         Ok(String::from_utf8(out.stdout)?)
     })();
     let cleanup = fs::remove_file(&snapshot);
-    cleanup.context("scheduler_unknown: 无法删除 Slurm 完成日志查询副本")?;
+    cleanup.context("scheduler_unknown: Unable to delete Slurm Copy completed log query")?;
     result
 }
 
@@ -313,7 +313,7 @@ pub fn parse_accounting(job_id: u64, text: &str) -> Result<Accounting> {
         .collect();
     ensure!(
         rows.len() == 1 && rows[0].len() >= 4,
-        "scheduler_unknown: allocation 记录缺失或不唯一"
+        "scheduler_unknown: allocation Missing or not unique"
     );
     let r = &rows[0];
     let state = r[1].split_whitespace().next().unwrap_or("");
@@ -343,20 +343,20 @@ pub fn parse_accounting(job_id: u64, text: &str) -> Result<Accounting> {
                     | "REQUEUE_FED"
                     | "RESIZING"
             ),
-        "scheduler_unknown: 无法判定作业状态 {state}"
+        "scheduler_unknown: Could not determine operational status {state}"
     );
     let elapsed: u64 = r[2]
         .parse()
-        .context("scheduler_unknown: ElapsedRaw 非整数")?;
+        .context("scheduler_unknown: ElapsedRaw Non-integer")?;
     let nodes: u64 = r[3]
         .parse()
-        .context("scheduler_unknown: AllocNodes 非整数")?;
+        .context("scheduler_unknown: AllocNodes Non-integer")?;
     if state == "RUNNING" && nodes == 0 && elapsed > 0 {
         return Err(RunningNodesPending.into());
     }
     ensure!(
         elapsed == 0 || nodes > 0,
-        "scheduler_unknown: 已占用时间但节点数为零"
+        "scheduler_unknown: Time taken but zero nodes"
     );
     Ok(Accounting {
         state: state.to_owned(),
@@ -364,7 +364,7 @@ pub fn parse_accounting(job_id: u64, text: &str) -> Result<Accounting> {
         nodes,
         node_seconds: elapsed
             .checked_mul(nodes)
-            .context("scheduler_unknown: 节点时间溢出")?,
+            .context("scheduler_unknown: Node time spills")?,
     })
 }
 
@@ -413,7 +413,7 @@ mod tests {
                     calls += 1;
                     parse_accounting(12, row)
                 },
-                || panic!("未知或终态不得等待")
+                || panic!("Unknown or terminal cannot wait")
             )
             .is_err());
             assert_eq!(calls, 1, "{row}");

@@ -157,7 +157,7 @@ pub fn run(config: &ScflowConfig) -> Result<()> {
                 Some(s)
             }
             Err(e) => {
-                println!("WARNING: 结构解析失败: {e}");
+                println!("WARNING: Structure Parsing Failed: {e}");
                 None
             }
         },
@@ -179,7 +179,7 @@ pub fn run(config: &ScflowConfig) -> Result<()> {
 
     let lengths: Vec<usize> = dyn_elphs.iter().map(|d| d.headers.len()).collect();
     if lengths.is_empty() || !lengths.iter().all(|l| *l == lengths[0]) {
-        anyhow::bail!("所有 *.dyn*.elph* 文件必须包含相同数量的展宽区段");
+        anyhow::bail!("All *.dyn*.elph * The file must contain an equal number of stretch sections");
     }
     let length = lengths[0];
     let mut headers: Vec<Option<f64>> = Vec::new();
@@ -201,7 +201,7 @@ pub fn run(config: &ScflowConfig) -> Result<()> {
     for index in 0..length {
         let broadening = if length > 1 {
             println!("\nBroadening: {:?}", headers[index]);
-            headers[index].context("Gaussian Broadening 表头应为数值")?
+            headers[index].context("Gaussian Broadening The header should read")?
         } else {
             0.0
         };

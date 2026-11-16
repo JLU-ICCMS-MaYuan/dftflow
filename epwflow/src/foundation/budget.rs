@@ -65,7 +65,7 @@ impl BudgetLedger {
             .allocations
             .iter()
             .find(|a| a.job_id == Some(job))
-            .context("allocation: 当前 Slurm 分配尚未登记；请先 budget reserve/attach")?;
+            .context("allocation: Current Slurm Distribution not yet registered; please first budget reserve/attach")?;
         Ok(allocation.reservation_id.clone())
     }
 
@@ -97,11 +97,11 @@ impl BudgetLedger {
             };
             ensure!(
                 l.schema_version == 1,
-                "unsupported_version: 账本 schema_version 必须为 1"
+                "unsupported_version: Account books schema_version Must be 1"
             );
             ensure!(
                 l.campaign_id == campaign_id,
-                "input_conflict: 账本已登记为 campaign {}，与本次 {} 冲突",
+                "input_conflict: ledger registered to campaign {}, conflicting with {}",
                 l.campaign_id,
                 campaign_id
             );
@@ -112,7 +112,7 @@ impl BudgetLedger {
                 let entries: BTreeMap<String, String> = store::read(&registry)?;
                 ensure!(
                     !entries.values().any(|id| id == campaign_id),
-                    "input_conflict: 已登记活动的账本丢失或换路径，拒绝重置预算"
+                    "input_conflict: registered active ledger missing or relocated; refusing to reset the budget"
                 );
             }
             register_campaign(path, campaign_id)?;
@@ -143,29 +143,29 @@ impl BudgetLedger {
     }
 
     fn from_legacy(source: serde_json::Value) -> Result<Self> {
-        let campaign = source["campaign"].as_str().context("unsupported_version: 未识别的历史账本")?;
-        let number = |v: &serde_json::Value| -> Result<u64> { v.as_u64().context("budget_denied: 历史账本缺非负整数") };
+        let campaign = source["campaign"].as_str().context("unsupported_version: unrecognized historical ledger")?;
+        let number = |v: &serde_json::Value| -> Result<u64> { v.as_u64().context("budget_denied: historical ledger requires nonnegative integers") };
         let nodes = number(&source["limits"]["node_seconds"])?;
         let storage = number(&source["limits"]["storage_bytes"])?;
         let lanes = number(&source["limits"]["concurrent_jobs"])?;
-        ensure!(lanes > 0 && lanes <= LIMIT_MAX_LANES as u64, "budget_denied: 历史并发上限不符合原约束");
+        ensure!(lanes > 0 && lanes <= LIMIT_MAX_LANES as u64, "budget_denied: historical concurrency limit violates the original constraint");
         let spent = number(&source["spent_node_seconds"])?;
         number(&source["storage_actual_bytes"])?;
         let mut ids = std::collections::BTreeSet::new();
         let mut total = 0u64;
         for key in ["historical_jobs", "attempts"] {
-            for item in source[key].as_array().context("budget_denied: 历史任务列表缺失")? {
-                ensure!(ids.insert(legacy_job_id(&item["job_id"])?), "budget_denied: 历史作业重复计账");
+            for item in source[key].as_array().context("budget_denied: historical task list missing")? {
+                ensure!(ids.insert(legacy_job_id(&item["job_id"])?), "budget_denied: historical job accounted more than once");
                 if key == "attempts" {
                     let state = item["state"].as_str().and_then(|s| s.split_whitespace().next()).unwrap_or("");
                     ensure!(matches!(state, "COMPLETED" | "FAILED" | "CANCELLED" | "TIMEOUT" | "NODE_FAIL" | "OUT_OF_MEMORY" | "PREEMPTED" | "BOOT_FAIL" | "DEADLINE" | "REVOKED")
                         && number(&item["reserved_node_seconds"])? == 0,
-                        "scheduler_unknown: 历史尝试尚未明确结算，禁止转换或清空预留");
+                        "scheduler_unknown: historical attempt has not been settled; migration or clearing reservations is prohibited");
                 }
-                total = total.checked_add(number(&item["node_seconds"])?).context("budget_denied: 历史消费溢出")?;
+                total = total.checked_add(number(&item["node_seconds"])?).context("budget_denied: historical usage overflow")?;
             }
         }
-        ensure!(total == spent, "budget_denied: 历史累计消费与逐项记录不一致");
+        ensure!(total == spent, "budget_denied: accumulated historical usage differs from individual records");
         let mut ledger = Self::init(campaign);
         ledger.limits = Limits { node_seconds: Some(nodes), storage_bytes: Some(storage), max_lanes: lanes as u32 };
         ledger.spent_node_seconds = spent;
@@ -175,8 +175,8 @@ impl BudgetLedger {
 }
 
 fn legacy_job_id(v: &serde_json::Value) -> Result<u64> {
-    let id = match v.as_u64() { Some(n) => n, None => v.as_str().context("budget_denied: 历史作业号缺失")?.parse()? };
-    ensure!(id > 0, "budget_denied: 历史作业号无效");
+    let id = match v.as_u64() { Some(n) => n, None => v.as_str().context("budget_denied: historical job ID missing")?.parse()? };
+    ensure!(id > 0, "budget_denied: invalid historical job ID");
     Ok(id)
 }
 
@@ -203,20 +203,20 @@ fn register_campaign(ledger_path: &Path, campaign_id: &str) -> Result<()> {
     if let Some(existing_c) = map.get(&key) {
         ensure!(
             existing_c == campaign_id,
-            "input_conflict: 账本路径已登记为 campaign {existing_c}"
+            "input_conflict: Book path registered as campaign {existing_c}"
         );
     }
     if let Some(existing_p) = map.iter().find(|(_, c)| c.as_str() == campaign_id) {
         ensure!(
             existing_p.0 == &key,
-            "input_conflict: campaign {campaign_id} 已登记在其它路径"
+            "input_conflict: campaign {campaign_id} Registered on other paths"
         );
     }
     map.insert(key, campaign_id.to_string());
     fs::create_dir_all(
         reg_path
             .parent()
-            .context("data_invalid: 注册表缺少父目录")?,
+            .context("data_invalid: registry has no parent directory")?,
     )?;
     store::write(&reg_path, &map)?;
     Ok(())
@@ -260,21 +260,21 @@ pub fn reserve(
 pub fn attach(ledger: &mut BudgetLedger, token: &str, job_id: Option<u64>) -> Result<()> {
     ensure!(
         job_id.is_some_and(|id| id > 0),
-        "budget_denied: 需要有效作业号"
+        "budget_denied: valid job ID required"
     );
-    ensure!(!job_id.is_some_and(|job| ledger.historical_job(job)), "budget_denied: 历史分配已结算，禁止重新登记");
+    ensure!(!job_id.is_some_and(|job| ledger.historical_job(job)), "budget_denied: historical allocation already settled; re-registration prohibited");
     ensure!(
         !ledger.allocations.iter().any(|a| a.job_id == job_id),
-        "budget_denied: 分配已登记，不可重复计费"
+        "budget_denied: allocation already registered; duplicate billing prohibited"
     );
     let idx = ledger
         .reservations
         .iter()
         .position(|r| r.id == token)
-        .context("budget_denied: 预留 token 不存在")?;
+        .context("budget_denied: reservation token does not exist")?;
     ensure!(
         ledger.lanes < ledger.limits.max_lanes,
-        "budget_denied: 并发运行作业已达上限"
+        "budget_denied: concurrent running-job limit reached"
     );
     let r = ledger.reservations.remove(idx);
     ledger.allocations.push(Allocation {
@@ -290,14 +290,14 @@ pub fn attach(ledger: &mut BudgetLedger, token: &str, job_id: Option<u64>) -> Re
 /// 自动入口保守限制所有未结算预留；排队或未知任务也占名额。
 pub fn reserve_workflow(ledger: &mut BudgetLedger, label: &str) -> Result<String> {
     ensure!(ledger.reservations.len() + ledger.allocations.len() < ledger.limits.max_lanes as usize,
-        "budget_denied: 已有两个未结算任务；先核对终态并结算");
+        "budget_denied: two unsettled tasks already exist; verify terminal states and settle first");
     reserve(ledger, label)
 }
 
 /// 提交回执与计算节点启动可能并发；仅同一 token/作业允许幂等绑定。
 pub fn attach_once(ledger: &mut BudgetLedger, token: &str, job: u64) -> Result<()> {
     if let Some(a) = ledger.allocations.iter().find(|a| a.reservation_id == token) {
-        ensure!(a.job_id == Some(job), "input_conflict: 预留已绑定其他作业");
+        ensure!(a.job_id == Some(job), "input_conflict: reservation already attached to another job");
         return Ok(());
     }
     attach(ledger, token, Some(job))
@@ -324,7 +324,7 @@ pub fn reconcile(ledger: &mut BudgetLedger) -> Result<u64> {
     let observations = ledger
         .allocations
         .iter()
-        .map(|a| super::slurm::accounting(a.job_id.context("scheduler_unknown: 分配缺作业号")?))
+        .map(|a| super::slurm::accounting(a.job_id.context("scheduler_unknown: allocation has no job ID")?))
         .collect::<Result<Vec<_>>>()?;
     let mut settled = 0u64;
     let mut retained = Vec::new();
@@ -332,7 +332,7 @@ pub fn reconcile(ledger: &mut BudgetLedger) -> Result<u64> {
         if evidence.terminal {
             settled = settled
                 .checked_add(evidence.node_seconds)
-                .context("budget_denied: 计费溢出")?;
+                .context("budget_denied: billing overflow")?;
         } else {
             retained.push(a.clone());
         }
@@ -340,7 +340,7 @@ pub fn reconcile(ledger: &mut BudgetLedger) -> Result<u64> {
     ledger.spent_node_seconds = ledger
         .spent_node_seconds
         .checked_add(settled)
-        .context("budget_denied: 计费溢出")?;
+        .context("budget_denied: billing overflow")?;
     ledger.allocations = retained;
     ledger.lanes = ledger.allocations.len() as u32;
     Ok(settled)
@@ -355,7 +355,7 @@ pub fn status_json(ledger_path: &Path, campaign_id: &str) -> Result<serde_json::
     let ledger_path = normalized.as_path();
     ensure!(
         ledger_path.is_file(),
-        "data_invalid: 账本尚未创建；status 不创建预算身份"
+        "data_invalid: ledger not created; status does not create a budget identity"
     );
     let ledger = BudgetLedger::load_or_init(ledger_path, campaign_id)?;
     Ok(serde_json::json!({

@@ -9,26 +9,26 @@ pub fn parse_xml(xml_path: &Path) -> Result<ElectronicStates> {
     use anyhow::ensure;
     const HA_EV: f64 = 27.211386245988;
     let txt = std::fs::read_to_string(xml_path)?;
-    let doc = roxmltree::Document::parse(&txt).context("data_invalid: QE XML 损坏")?;
+    let doc = roxmltree::Document::parse(&txt).context("data_invalid: corrupted QE XML")?;
     let band = doc
         .descendants()
         .find(|n| n.has_tag_name("band_structure"))
-        .context("data_invalid: 缺少 QE band_structure")?;
+        .context("data_invalid: QE band_structure missing")?;
     let scalar = |name: &str| -> Result<f64> {
         let t = band
             .children()
             .find(|n| n.has_tag_name(name))
             .and_then(|n| n.text())
-            .with_context(|| format!("data_invalid: 缺少 {name}"))?;
+            .with_context(|| format!("data_invalid: {name} missing"))?;
         let v: f64 = t.trim().replace(['d', 'D'], "e").parse()?;
-        ensure!(v.is_finite(), "data_invalid: {name} 非有限");
+        ensure!(v.is_finite(), "data_invalid: {name} is not finite");
         Ok(v)
     };
     let nbnd = scalar("nbnd")?;
     let nks = scalar("nks")?;
     ensure!(
         nbnd > 0.0 && nbnd.fract() == 0.0 && nks > 0.0 && nks.fract() == 0.0,
-        "data_invalid: 非法带数或 k 点数"
+        "data_invalid: invalid band count or k-point count"
     );
     let mut kpoints = Vec::new();
     let mut weights = Vec::new();
@@ -36,7 +36,7 @@ pub fn parse_xml(xml_path: &Path) -> Result<ElectronicStates> {
     let numbers = |n: roxmltree::Node| -> Result<Vec<f64>> {
         let v: Vec<f64> = n
             .text()
-            .context("data_invalid: XML 数组为空")?
+            .context("data_invalid: empty XML array")?
             .split_whitespace()
             .map(|t| {
                 t.replace(['d', 'D'], "e")
@@ -46,7 +46,7 @@ pub fn parse_xml(xml_path: &Path) -> Result<ElectronicStates> {
             .collect::<Result<_>>()?;
         ensure!(
             v.iter().all(|x| x.is_finite()),
-            "data_invalid: XML 含非有限值"
+            "data_invalid: XML contains nonfinite values"
         );
         Ok(v)
     };
@@ -54,25 +54,25 @@ pub fn parse_xml(xml_path: &Path) -> Result<ElectronicStates> {
         let k = ks
             .children()
             .find(|n| n.has_tag_name("k_point"))
-            .context("data_invalid: 缺少 k_point")?;
+            .context("data_invalid: k_point missing")?;
         let v = numbers(k)?;
-        ensure!(v.len() == 3, "data_invalid: k 点不是三维");
+        ensure!(v.len() == 3, "data_invalid: k point must have three coordinates");
         let w: f64 = k
             .attribute("weight")
-            .context("data_invalid: k 权重缺失")?
+            .context("data_invalid: k-point weight missing")?
             .trim()
             .parse()?;
-        ensure!(w.is_finite() && w > 0.0, "data_invalid: 非法 k 权重");
+        ensure!(w.is_finite() && w > 0.0, "data_invalid: invalid k-point weight");
         let en = ks
             .children()
             .find(|n| n.has_tag_name("eigenvalues"))
-            .context("data_invalid: 缺本征值")?;
+            .context("data_invalid: eigenvalues missing")?;
         let ev = numbers(en)?;
-        ensure!(ev.len() == nbnd as usize, "data_invalid: 本征值带数不一致");
+        ensure!(ev.len() == nbnd as usize, "data_invalid: eigenvalue band-count mismatch");
         if let Some(size) = en.attribute("size") {
             ensure!(
                 size.parse::<usize>()? == ev.len(),
-                "data_invalid: XML size 不一致"
+                "data_invalid: XML size mismatch"
             );
         }
         kpoints.push([v[0], v[1], v[2]]);
@@ -81,7 +81,7 @@ pub fn parse_xml(xml_path: &Path) -> Result<ElectronicStates> {
     }
     ensure!(
         kpoints.len() == nks as usize,
-        "data_invalid: XML 声明 nks={}，实际 ks_energies={}，k 点数不完整",
+        "data_invalid: XML declares nks={}, actual ks_energies={}; incomplete k-point set",
         nks,
         kpoints.len()
     );
@@ -93,7 +93,7 @@ pub fn parse_xml(xml_path: &Path) -> Result<ElectronicStates> {
         eigenvalues,
         wavefunctions: xml_path
             .parent()
-            .context("data_invalid: XML 缺父目录")?
+            .context("data_invalid: XML path has no parent directory")?
             .to_path_buf(),
         fermi: scalar("fermi_energy")? * HA_EV,
         layout: "qe_cartesian_2pi_alat_energies_ev".into(),
@@ -159,10 +159,10 @@ pub fn verify_files(
         let points = input_points(&raw)?;
         let expected = input_points(&qf_input::pw::uniform_kpoints_text(grid.map(i64::from), true)?)?;
         anyhow::ensure!(points == expected,
-            "data_invalid: NSCF 实际输入点表与配置网格 {grid:?} 的 kmesh.pl 结果不一致；输入行数={}，要求={}", points.len(), expected.len());
-        let mut states = parse_xml(xml).with_context(|| format!("NSCF 输入点数={}", points.len()))?;
+            "data_invalid: actual NSCF input points differ from kmesh.pl for grid {grid:?}; input rows={}, required={}", points.len(), expected.len());
+        let mut states = parse_xml(xml).with_context(|| format!("NSCF input point count={}", points.len()))?;
         anyhow::ensure!(points.len() == states.kpoints.len(),
-            "data_invalid: NSCF 输入点数={}，输出 nks/ks_energies={}，数量不一致", points.len(), states.kpoints.len());
+            "data_invalid: NSCF input points={}, output nks/ks_energies={}; count mismatch", points.len(), states.kpoints.len());
         let geometry = super::xml::Geometry::read(xml)?;
         states.k_grid = grid;
         validate_grid(&states, grid, bands, &geometry)?;
@@ -171,11 +171,11 @@ pub fn verify_files(
             anyhow::ensure!((0..3).all(|a| {
                 let delta = c[a] - p[a];
                 delta.is_finite() && (delta - delta.round()).abs() <= 1e-8
-            }), "data_invalid: NSCF 第 {} 个点的输出坐标／顺序与实际输入不一致", i + 1);
+            }), "data_invalid: NSCF output coordinates/order at point {} differ from the actual input", i + 1);
         }
         Ok(states)
     })().with_context(|| format!(
-        "NSCF 输入/输出核验失败：输入 {}；输出 {}。请检查数量、点序及权重；若 pw.x 在 nscf 模式添加或改变 k 点，建议显式设置 stages.\"2.qe-nscf\".calculation='bands' 后按恢复流程重算 NSCF，仍调用 pw.x；bands.x 是后处理程序",
+        "NSCF input/output validation failed: input {}; output {}. Check point count, order and weights. If pw.x adds or reorders k points in nscf mode, explicitly set stages.\"2.qe-nscf\".calculation='bands' and resume NSCF. The executable remains pw.x; bands.x is a postprocessor",
         input.display(), xml.display()))?;
     super::xml::verify_fft(scf_xml, xml)?;
     Ok(result)
@@ -195,28 +195,28 @@ fn input_points(raw: &str) -> Result<Vec<[f64; 4]>> {
         .collect();
     ensure!(
         cards.len() == 1,
-        "data_invalid: NSCF 必须只有一份 K_POINTS 卡片"
+        "data_invalid: NSCF requires exactly one K_POINTS card"
     );
     let (start, header) = cards[0];
     ensure!(
         header.eq_ignore_ascii_case("K_POINTS crystal"),
-        "data_invalid: NSCF 需要 K_POINTS crystal"
+        "data_invalid: NSCF requires K_POINTS crystal"
     );
     let count: usize = lines
         .get(start + 1)
-        .context("data_invalid: NSCF 缺输入声明点数")?
+        .context("data_invalid: NSCF input point count missing")?
         .parse()?;
     let points = lines[start + 2..]
         .iter()
         .map(|line| -> Result<[f64; 4]> {
             super::xml::numbers(line)?
                 .try_into()
-                .map_err(|_| anyhow::anyhow!("data_invalid: NSCF 输入每点需要三维坐标及权重"))
+                .map_err(|_| anyhow::anyhow!("data_invalid: each NSCF input point requires three coordinates and a weight"))
         })
         .collect::<Result<Vec<_>>>()?;
     ensure!(
         count > 0 && points.len() == count && points.iter().all(|p| p[3] > 0.),
-        "data_invalid: NSCF 输入声明点数={count}，实际坐标行数={}；权重须为正",
+        "data_invalid: NSCF input declares {count} points, actual coordinate rows={}; weights must be positive",
         points.len()
     );
     Ok(points)
@@ -237,7 +237,7 @@ pub fn validate_grid(
             && states.kpoints.len() == count
             && states.eigenvalues.len() == count
             && states.weights.len() == count,
-        "data_invalid: NSCF 实际带数或完整 k 网格不符"
+        "data_invalid: actual NSCF band count or complete k grid mismatch"
     );
     let sum: f64 = states.weights.iter().sum();
     ensure!(
@@ -247,7 +247,7 @@ pub fn validate_grid(
                 .weights
                 .iter()
                 .all(|w| w.is_finite() && *w > 0. && (w / sum * count as f64 - 1.0).abs() < 1e-6),
-        "data_invalid: NSCF 权重不等或非有限"
+        "data_invalid: NSCF weights are unequal or nonfinite"
     );
     let mut indices = BTreeSet::new();
     for point in &states.kpoints {
@@ -259,11 +259,11 @@ pub fn validate_grid(
                 t.is_finite()
                     && (t - t.round()).abs() / (grid[a] as f64)
                         <= 1e-8_f64.min(0.25 / grid[a] as f64),
-                "data_invalid: NSCF k 点不在固定均匀网格上"
+                "data_invalid: NSCF k point is outside the fixed uniform grid"
             );
             index[a] = (t.round() as i64).rem_euclid(grid[a] as i64) as u32;
         }
-        ensure!(indices.insert(index), "data_invalid: NSCF 存在重复 k 点");
+        ensure!(indices.insert(index), "data_invalid: duplicate NSCF k points");
     }
     Ok(())
 }

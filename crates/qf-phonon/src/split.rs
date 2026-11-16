@@ -62,7 +62,7 @@ pub fn load_split_q_entries(workspace: &str, prefix: &str) -> Result<Vec<SplitQE
     if Path::new(&dyn0_path).exists() {
         let raw = std::fs::read_to_string(&dyn0_path)?;
         let qs = qf_io::parse_dyn0_qpoints(&raw)
-            .with_context(|| format!("解析 dyn0 失败: {dyn0_path}"))?;
+            .with_context(|| format!("Parsing dyn0 Failed: {dyn0_path}"))?;
         return Ok(qs
             .into_iter()
             .map(|q| SplitQEntry {

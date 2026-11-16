@@ -32,20 +32,20 @@ pub fn collect(
 ) -> Result<CollectedPh> {
     ensure!(
         !qpoints.is_empty() && qpoints.len() == responses.len(),
-        "data_invalid: PH 响应与 q 点数不符"
+        "data_invalid: PH Response and q The points don't match"
     );
     let mut by_q = BTreeMap::new();
     for r in responses {
         ensure!(
             by_q.insert(r.q_id, r).is_none(),
-            "data_invalid: PH 重复 q 响应"
+            "data_invalid: PH Repeat q Response"
         );
     }
     let mut source_checks = BTreeMap::new();
     for q in qpoints {
         let r = by_q
             .get(&q.global_index)
-            .context("data_invalid: 缺少物理 q 响应")?;
+            .context("data_invalid: Lack of physics q Response")?;
         native_ph::verify(r, q, geometry)?;
         native_ph::control(&r.control_metadata, qpoints)?;
         for p in [
@@ -61,7 +61,7 @@ pub fn collect(
     let importing = work.join("epw-state/imports/phonon-source.json").is_file();
     ensure!(
         !dest.exists() || importing || crate::foundation::layout::enabled(work),
-        "input_conflict: PH 交付目录已存在，保留原现场"
+        "input_conflict: PH The delivery directory already exists, keep the original site"
     );
     let phsave = dest.join(format!("{prefix}.phsave"));
     fs::create_dir_all(&phsave)?;
@@ -85,7 +85,7 @@ pub fn collect(
         let q_node = doc
             .descendants()
             .find(|n| n.has_tag_name("QPOINT_NUMBER"))
-            .context("data_invalid: patterns 缺内部 q")?;
+            .context("data_invalid: patterns Missing Internal q")?;
         let range = q_node.range();
         // 只更改内部整数标签，保留每个局部计算的完整复扰动基底。
         let normalized = format!(
@@ -97,7 +97,7 @@ pub fn collect(
         if patterns.exists() {
             ensure!(
                 fs::read_to_string(&patterns)? == normalized,
-                "input_conflict: 归集 patterns 内容改变"
+                "input_conflict: Recursive patterns Content Change"
             );
         } else {
             store::atomic_bytes(&patterns, normalized.as_bytes())?;
@@ -123,7 +123,7 @@ pub fn collect(
     let mut artifacts = vec![];
     let mut unique = BTreeSet::new();
     for (role, p) in paths {
-        ensure!(unique.insert(p.clone()), "data_invalid: PH 角色路径冲突");
+        ensure!(unique.insert(p.clone()), "data_invalid: PH Role Path Conflict");
         artifacts.push(Artifact {
             role,
             relative_path: p.strip_prefix(work)?.into(),
@@ -137,7 +137,7 @@ pub fn collect(
     for (p, sha) in source_checks {
         ensure!(
             store::hash_file(&p)? == sha,
-            "input_conflict: PH 来源在归集期间变化"
+            "input_conflict: PH Source changes during clustering"
         );
     }
     Ok(CollectedPh {
@@ -155,7 +155,7 @@ pub(crate) fn independent_copy(source: &Path, target: &Path) -> Result<()> {
             use std::os::unix::fs::MetadataExt;
             ensure!(
                 fs::metadata(target)?.nlink() == 1,
-                "input_conflict: 独立归集目标不能是硬链接 {}",
+                "input_conflict: The goal of the independent cluster cannot be a hard link {}",
                 target.display()
             );
         }
@@ -163,7 +163,7 @@ pub(crate) fn independent_copy(source: &Path, target: &Path) -> Result<()> {
             !fs::symlink_metadata(target)?.file_type().is_symlink()
                 && fs::metadata(source)?.len() == fs::metadata(target)?.len()
                 && store::hash_file(source)? == store::hash_file(target)?,
-            "input_conflict: 独立归集目标损坏或冲突 {}",
+            "input_conflict: Separated targets damaged or in conflict {}",
             target.display()
         );
         return Ok(());
@@ -172,7 +172,7 @@ pub(crate) fn independent_copy(source: &Path, target: &Path) -> Result<()> {
     fs::copy(source, &temporary)?;
     ensure!(
         store::hash_file(source)? == store::hash_file(&temporary)?,
-        "input_conflict: 复制时来源变化"
+        "input_conflict: Source change when copying"
     );
     fs::rename(temporary, target)?;
     Ok(())

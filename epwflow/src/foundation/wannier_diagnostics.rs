@@ -19,7 +19,7 @@ fn windows(text: &str, fermi: f64) -> Result<Vec<(f64, &'static str, RGBColor)>>
         let pattern = Regex::new(&format!(r"(?mi)^\s*{name}\s*=\s*([^!\s]+)"))?;
         if let Some(value) = pattern.captures(text) {
             let value: f64 = value[1].replace(['D', 'd'], "e").parse()?;
-            ensure!(value.is_finite(), "data_invalid: 诊断能窗非有限");
+            ensure!(value.is_finite(), "data_invalid: The diagnostic window is not finite");
             result.push((value - fermi, name, style::WINDOWS[index]));
         }
     }
@@ -39,7 +39,7 @@ fn spread_history(text: &str) -> Result<Vec<(f64, f64)>> {
             let value: f64 = value[1].replace(['D', 'd'], "e").parse()?;
             ensure!(
                 value.is_finite() && value >= 0.,
-                "data_invalid: 诊断 spread 非有限或为负"
+                "data_invalid: Diagnosis spread Unlimited or negative"
             );
             if rows.last().is_none_or(|(i, _)| *i != iteration) {
                 rows.push((iteration, value));
@@ -54,7 +54,7 @@ pub fn generate(cfg: &Config) -> Result<PathBuf> {
     let source = Step::Wannier.directory(cfg);
     ensure!(
         source.is_dir(),
-        "required: Wannier 现场不存在 {}",
+        "required: Wannier It doesn't exist {}",
         source.display()
     );
     let destination = source.join("diagnostics");
@@ -163,7 +163,7 @@ pub fn generate(cfg: &Config) -> Result<PathBuf> {
         let fermi = mesh.fermi;
         ensure!(
             qe.eigenvalues.len() == sampling.path.len(),
-            "data_invalid: 诊断参考路径点数与原采样不同"
+            "data_invalid: The number of diagnostic reference path points differs from the original sample"
         );
         for (actual, point) in qe.kpoints.iter().zip(&sampling.path) {
             let expected = electronic_sampling::cart(point.crystal, &sampling.reciprocal);
@@ -172,7 +172,7 @@ pub fn generate(cfg: &Config) -> Result<PathBuf> {
                     .iter()
                     .zip(expected)
                     .all(|(a, b)| (a - b).abs() <= 2.0e-6),
-                "data_invalid: 诊断参考路径坐标与原采样不同"
+                "data_invalid: The diagnostic reference path coordinates differ from the original sample"
             );
         }
         let kpt = fs::read_to_string(destination.join(format!("{prefix}_band.kpt")))?;
@@ -182,11 +182,11 @@ pub fn generate(cfg: &Config) -> Result<PathBuf> {
             .filter(|l| !l.trim().is_empty())
             .map(|line| {
                 let v = crate::qe_data::xml::numbers(line)?;
-                ensure!(v.len() == 4, "data_invalid: 原生 kpt 行无效");
+                ensure!(v.len() == 4, "data_invalid: Native kpt Line invalid");
                 Ok([v[0], v[1], v[2]])
             })
             .collect::<Result<Vec<_>>>()?;
-        ensure!(!coords.is_empty(), "required: 原生拟合能带尚未写出");
+        ensure!(!coords.is_empty(), "required: It's not written yet");
         let raw = fs::read_to_string(destination.join(format!("{prefix}_band.dat")))?;
         let values = raw
             .lines()
@@ -195,21 +195,21 @@ pub fn generate(cfg: &Config) -> Result<PathBuf> {
                 let v = crate::qe_data::xml::numbers(line)?;
                 ensure!(
                     v.len() == 2 && v.iter().all(|v| v.is_finite()),
-                    "data_invalid: 原生能带数据无效"
+                    "data_invalid: Numerical energy is invalid"
                 );
                 Ok(v[1])
             })
             .collect::<Result<Vec<_>>>()?;
         ensure!(
             values.len() % coords.len() == 0,
-            "data_invalid: 原生能带文件尚未完整写出"
+            "data_invalid: It's not finished yet"
         );
         let count = values.len() / coords.len();
         let model_count = Regex::new(r"(?mi)^\s*num_wann\s*=\s*(\d+)")?
             .captures(&input)
-            .context("data_invalid: 实际 win 缺少 num_wann")?[1]
+            .context("data_invalid: Actual win Missing num_wann")?[1]
             .parse::<usize>()?;
-        ensure!(count == model_count, "data_invalid: 诊断模型带数不符");
+        ensure!(count == model_count, "data_invalid: The number of diagnostic models does not match");
         let native_path = if decision["path_format"] == "high_symmetry_endpoints" {
             // 从实际模型输入恢复端点，避免源配置后来修改 KPATH 后错配旧模型。
             let mut kpath = String::new();
@@ -226,7 +226,7 @@ pub fn generate(cfg: &Config) -> Result<PathBuf> {
                     continue;
                 }
                 let cells = line.split_whitespace().collect::<Vec<_>>();
-                ensure!(cells.len() == 8, "data_invalid: 实际 win 路径端点格式无效");
+                ensure!(cells.len() == 8, "data_invalid: Actual win Path peer format invalid");
                 kpath.push_str(&format!(
                     "{} {} {} {}\n{} {} {} {}\n",
                     cells[1], cells[2], cells[3], cells[0], cells[5], cells[6], cells[7], cells[4]
@@ -238,7 +238,7 @@ pub fn generate(cfg: &Config) -> Result<PathBuf> {
             let first_end = sampling
                 .ticks
                 .get(1)
-                .context("data_invalid: 缺少原参考路径端点")?
+                .context("data_invalid: Missing original reference path endpoint")?
                 .distance;
             let gap_intervals = sampling
                 .path
@@ -274,7 +274,7 @@ pub fn generate(cfg: &Config) -> Result<PathBuf> {
                             .zip(point.crystal)
                             .all(|(a, b)| (a - b).abs() <= 5.1e-7)
                     })
-                    .context("required: 原生输出尚未覆盖完整诊断路径")
+                    .context("required: Native output does not yet cover the full diagnostic path")
             })
             .collect::<Result<Vec<_>>>()?;
         let mut qe_curves = vec![];
@@ -381,7 +381,7 @@ pub fn generate(cfg: &Config) -> Result<PathBuf> {
     store::write(&destination.join("diagnostic.json"), &report)?;
     ensure!(
         !report["plots"].as_array().unwrap().is_empty(),
-        "required: 现场尚无可绘制的拟合数据，见 {}",
+        "required: There is no comparable data available at the site {}",
         destination.join("diagnostic.json").display()
     );
     Ok(destination)

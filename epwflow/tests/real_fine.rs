@@ -26,13 +26,13 @@ struct Case {
 
 fn actual() -> Result<()> {
     let case_path = PathBuf::from(
-        std::env::var_os("EPWFLOW_REAL_FINE_CASE").context("指定冻结的真实测试清单")?,
+        std::env::var_os("EPWFLOW_REAL_FINE_CASE").context("Specifies the true test manifest for the freeze")?,
     );
     let case_id = Identity::capture(&case_path)?;
     let c: Case = store::read(&case_path)?;
     ensure!(
         c.schema_version == 1 && c.source_identities.len() >= 8,
-        "真实来源不完整"
+        "Real sources are incomplete"
     );
     c.config.verify()?;
     c.nscf_xml.verify()?;
@@ -47,20 +47,20 @@ fn actual() -> Result<()> {
             && cfg.interpolation.k_grid == [40; 3]
             && cfg.interpolation.q_grid == [20; 3]
             && cfg.interpolation.phonon_smearings_mev == [0.5],
-        "本次有界验收参数不符"
+        "There's a discrepancy between the acceptance parameters"
     );
     let job: u64 = std::env::var("SLURM_JOB_ID")?.parse()?;
     ensure!(
         slurm::running_allocation(job)?.state == "RUNNING",
-        "必须在实际运行的 Slurm 分配内"
+        "It has to be operational Slurm Inward"
     );
     ensure!(
         std::env::var("SLURM_NTASKS")?.parse::<u32>()? == epwflow::foundation::parallelism::mpi_count(&cfg).unwrap(),
-        "MPI 数不符"
+        "MPI Numbers do not match"
     );
     // 本机历史试验仍共用原账本；不得为测试建立零消费的新账本。
     let ledger: serde_json::Value = store::read(&cfg.budget.ledger)?;
-    let attempts = ledger["attempts"].as_array().context("缺原共享预算记录")?;
+    let attempts = ledger["attempts"].as_array().context("Lack of original shared budget records")?;
     let matching: Vec<_> = attempts
         .iter()
         .filter(|a| a["job_id"].as_u64() == Some(job))
@@ -73,13 +73,13 @@ fn actual() -> Result<()> {
                 .filter(|a| a["reserved_node_seconds"].as_u64().unwrap_or(0) > 0)
                 .count()
                 <= 2,
-        "共享账本未登记本次分配或并发超限"
+        "The shared account book does not register the current allocation or exceed the limit"
     );
-    ensure!(!cfg.work_dir.exists(), "目标已存在，禁止覆盖或暗中重试");
+    ensure!(!cfg.work_dir.exists(), "Target exists. Covering or retrying is prohibited");
     let states = epwflow::qe_data::nscf::parse_xml(&c.nscf_xml.path)?;
     ensure!(
         states.nbnd == cfg.qe.nscf.nbnd as usize && states.kpoints.len() == 216,
-        "原始 NSCF 不符"
+        "Original NSCF Inconsistencies"
     );
     let structure = epwflow::qe_data::qe_config::QeSettings::from_config(&cfg)?;
     let ep = EpwConfig::from_config(&cfg)?
@@ -139,15 +139,15 @@ fn publish(
 }
 
 #[test]
-#[ignore = "真实 40³/20³ EPC；须显式配置、预留原共享预算并在 Slurm 中执行"]
+#[ignore = "Real 40³/20³ EPC ;Requires visible configuration, pre-positioning of shared budgets and Slurm Under implementation"]
 fn actual_lda_fine_matrices() {
     actual().unwrap();
 }
 
 #[test]
-#[ignore = "只读重验已经终止的真实 EPC；不启动科学程序"]
+#[ignore = "Read only the truth of the termination EPC ;Do not start scientific program"]
 fn actual_lda_fine_readback() {
-    let path = PathBuf::from(std::env::var_os("EPWFLOW_REAL_FINE_CASE").expect("指定原冻结清单"));
+    let path = PathBuf::from(std::env::var_os("EPWFLOW_REAL_FINE_CASE").expect("Specifies the original freeze manifest"));
     let id = Identity::capture(&path).unwrap();
     let c: Case = store::read(&path).unwrap();
     c.config.verify().unwrap();

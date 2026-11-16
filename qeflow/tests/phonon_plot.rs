@@ -84,6 +84,6 @@ fn redraw_preserves_all_samples_and_rejects_mismatched_labels() {
     .unwrap();
     let bad = invoke();
     assert!(!bad.status.success());
-    assert!(String::from_utf8_lossy(&bad.stderr).contains("索引与频率点数不一致"));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("Inconsistent index with frequency points"));
     fs::remove_dir_all(dir).unwrap();
 }

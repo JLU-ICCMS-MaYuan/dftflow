@@ -10,25 +10,21 @@
 cat "epw-state/4.qe-phonon-nosplit.log"
 ```
 
-日志用下面这样的中文小节展示当前事实；实际文件还会列出各个 PH／后处理子任务、输入版本和产物路径：
+日志采用英文小节展示当前事实；实际文件还会列出 PH／后处理子任务、输入版本和产物路径：
 
 ```text
-第 4 步 · QE 声子
+Step 4 · QE phonons
 ================================================================
 
-【工作区】
-  布局              ：八阶段编号目录
-  声子模式          ：nosplit
-  计算目录          ：4.qe-phonon-nosplit/
+[Stage]
+  Status            : running
+  Phonon mode       : nosplit
 
-【阶段】
-  状态              ：后处理失败，科学结果保留
+[Next step]
+  Action            : After the job finishes, run: epw_phonon -c input.toml --stage phonon -s
 
-【问题】
-  原因              ：matdyn 上次失败
-
-【下一步】
-  操作              ：修复原因后执行：epw_phonon -c inputepw.toml --stage phonon --resume -s
+================================================================
+End of record
 ```
 
 上面是阅读样例，不能手工写入日志来宣告完成。程序续算时仍检查实际数值文件与 Slurm 状态；调度结束不会自动等于科学完成。
@@ -41,7 +37,7 @@ cat "4.qe-phonon-nosplit/4.qe-phonon-nosplit.jobs"
 
 配置备份保存原始 TOML 文本，包含注释与排版。连续两次运行内容相同只保存一份；修改后再运行 CLI 才生成下一份。恢复旧配置内容后再次运行，也会保存为新的编号版本。
 
-编号版本统一位于解析后的 `work_dir/epw-state/`。例如原文依次为 A、A、B、A，会得到 `0000-config.toml`、`0001-config.toml`、`0002-config.toml`，中间相同的 A 不重复保存。相对路径继续以原输入目录为基准；每版原始目录及原文哈希保存在 `1.qe-scf.log` 的 `配置快照` 小节，不手工编辑该记录或快照。
+编号版本统一位于解析后的 `work_dir/epw-state/`。例如原文依次为 A、A、B、A，会得到 `0000-config.toml`、`0001-config.toml`、`0002-config.toml`，中间相同的 A 不重复保存。相对路径继续以原输入目录为基准；每版原始目录及原文哈希保存在 `1.qe-scf.log` 的 `Configuration snapshot` 小节，不手工编辑该记录或快照。
 
 更新 CLI 后照常使用原 `--config` 文件；原输入旁的旧编号快照会自动核验、迁入 `epw-state/`、更新日志引用，最后移除旧位置文件，不需要手工搬动。只想迁移而不启动科学任务，可执行下文 `--migrate-state` 命令。活动／未知旧作业或目标内容冲突时程序保留原文件并明确报错，完成旧任务或查明冲突后重试相同命令。
 
@@ -74,3 +70,9 @@ epw_wannier --config "epwinput.toml" --migrate-state
 ```
 
 这次只重新核验并登记已有电子结果，不准备或运行科学输入、不提交 Slurm 作业。成功时第 3 步日志显示“已完成”，旧报错清除；失败则保留具体原因和原始科学文件，不自动重算。重复执行不会增加科学任务。
+
+## 英文输出检查
+
+公开入口的 --help、配置错误、--status 和运行提示均应使用英文。复用子任务示例为 reuse: 3.qe-electronic /projwfc；主阶段示例为 reuse: 1.qe-scf，声子阶段显示实际模式。
+
+旧中文日志和任务号表可继续读取；不要手工替换字段、重写哈希或删除状态来转换语言。程序正常更新记录时改用英文，用户路径和原始配置文字保持原样。只读状态查询不会为了转换语言重写记录。

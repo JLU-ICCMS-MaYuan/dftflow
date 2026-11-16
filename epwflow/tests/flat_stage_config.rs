@@ -82,7 +82,7 @@ fn deeply_nested_configuration_and_user_binding_registry_are_rejected() {
         .unwrap_err()
         .to_string();
     assert!(
-        error.contains("stages.1.qe-scf.pw") && error.contains("不再支持多层"),
+        error.contains("stages.1.qe-scf.pw") && error.contains("Do not support multilayers anymore"),
         "{error}"
     );
     let mut document = serde_json::to_value(fixture()).unwrap();
@@ -90,7 +90,7 @@ fn deeply_nested_configuration_and_user_binding_registry_are_rejected() {
     assert!(serde_json::from_value::<Config>(document)
         .unwrap_err()
         .to_string()
-        .contains("自动绑定由程序内部登记"));
+        .contains("Automatic binding by internal registration"));
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn manual_internal_bindings_and_aliases_are_rejected_with_real_toml_locations() 
     ] {
         let error = format!("{:#}", edited(call, key, value).validate().unwrap_err());
         assert!(
-            error.contains(&format!("stages.{call}.{key}")) && error.contains("双重定义"),
+            error.contains(&format!("stages.{call}.{key}")) && error.contains("Dual definition"),
             "{error}"
         );
         assert!(
@@ -134,7 +134,7 @@ fn clean_input_keeps_internal_rules_and_identity_in_parameter_receipts() {
     cfg.configure_file(&[SCF, "pw"], &input).unwrap();
     let text = std::fs::read_to_string(&input).unwrap();
     assert!(text.starts_with("&control\n"), "{text}");
-    assert!(!text.contains("参数来源") && !text.contains("内部推导规则"));
+    assert!(!text.contains("Parameter Source") && !text.contains("Internal derivation rule"));
     assert!(!input.with_extension("parameters.json").exists());
     assert!(!root.join("parameter-map.json").exists());
     std::fs::remove_dir_all(root).unwrap();
@@ -155,7 +155,7 @@ fn fine_spectrum_subtasks_are_also_independent_flat_calls() {
         .apply_native(&path, "&inputepw\n degaussq=1\n/\n")
         .unwrap();
     assert!(input.contains("degaussq = 2"));
-    assert!(input.starts_with("&inputepw\n") && !input.contains("参数来源"));
+    assert!(input.starts_with("&inputepw\n") && !input.contains("Parameter Source"));
     let text = toml::to_string(&cfg).unwrap();
     assert!(!text.contains(".spectra."));
 }
@@ -187,10 +187,10 @@ fn all_native_namelists_keep_titles_and_cards_without_source_headers() {
             "{task:?}"
         );
         assert!(clean.ends_with("0.0 0.0 0.0\n"), "{task:?}");
-        assert!(!clean.contains("参数来源"), "{task:?}");
+        assert!(!clean.contains("Parameter Source"), "{task:?}");
         let legacy = original.replace(
             &format!("&{section}"),
-            &format!("! 参数来源 stages.old.parameter\n! 参数来源 内部推导规则 old\n&{section}"),
+            &format!("! Parameter Source stages.old.parameter\n ! Parameter Source Internal extrapolation rules old\n&{section}"),
         );
         assert_eq!(cfg.apply_native(task, &legacy).unwrap(), clean, "{task:?}");
     }

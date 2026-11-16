@@ -46,7 +46,7 @@ impl Search {
     pub fn new(min: i64, max: i64, precision: i64) -> Result<Self> {
         ensure!(
             min > 0 && max > min && precision > 0 && precision <= max - min,
-            "configuration: 无效 Tc 搜索范围/精度"
+            "configuration: invalid Tc search range/resolution"
         );
         Ok(Self {
             min_centikelvin: min,
@@ -68,7 +68,7 @@ impl Search {
     pub fn observe(&mut self, t: i64, side: Side) -> Result<()> {
         ensure!(
             t >= self.min_centikelvin && t <= self.max_centikelvin && !self.points.contains_key(&t),
-            "data_invalid: 重复或越界温度"
+            "data_invalid: duplicate or out-of-range temperature"
         );
         let was_located = self.status == "located";
         self.points.insert(t, side);
@@ -87,7 +87,7 @@ impl Search {
             .min();
         if let (Some(s), Some(n)) = (super_max, normal_min) {
             if s >= n {
-                self.stop("inconsistent", "出现高温超导侧/低温正常侧矛盾");
+                self.stop("inconsistent", "Contradictory high-temperature superconducting / low-temperature normal classifications");
                 return Ok(());
             }
             self.interval_centikelvin = Some([s, n]);
@@ -118,13 +118,13 @@ impl Search {
                 } else {
                     "not_bracketed"
                 },
-                "固定上下端点未形成低温超导/高温正常的有效区间",
+                "Fixed endpoints do not bracket low-temperature superconducting and high-temperature normal states",
             );
             return None;
         }
         let [lo, hi] = self.interval_centikelvin.unwrap();
         if hi - lo <= self.precision_centikelvin {
-            self.stop("located", "有效区间达到目标宽度");
+            self.stop("located", "Valid interval reached target width");
             return None;
         }
         let width = hi - lo;
@@ -135,7 +135,7 @@ impl Search {
         }
         self.stop(
             "classification_uncertain",
-            "中点和固定四分点已尝试，无法用有效分类继续缩小区间",
+            "Midpoint and fixed quartile points attempted; valid classifications cannot narrow the interval further",
         );
         None
     }

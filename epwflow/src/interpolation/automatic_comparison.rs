@@ -71,10 +71,10 @@ pub(crate) fn path_points(
 ) -> Result<(Vec<comparison::PathPoint>, Vec<comparison_data::Tick>)> {
     ensure!(
         intervals > 0 && reciprocal.iter().flatten().all(|x| x.is_finite()),
-        "configuration: 比较路径参数无效"
+        "configuration: Invalid path parameter for comparison"
     );
     let segments =
-        qf_input::electronic::parse_kpath_segments(path.to_str().context("路径不是 UTF-8")?)?;
+        qf_input::electronic::parse_kpath_segments(path.to_str().context("The path isn't UTF-8")?)?;
     let mut points: Vec<comparison::PathPoint> = vec![];
     let mut ticks = vec![];
     let mut distance = 0.0;
@@ -85,7 +85,7 @@ pub(crate) fn path_points(
             let length = delta.iter().map(|x| x * x).sum::<f64>().sqrt();
             ensure!(
                 length.is_finite() && length > 1e-12,
-                "data_invalid: 路径含零长度或无效边"
+                "data_invalid: Path with zero length or invalid edge"
             );
             if edge == 0 {
                 // 断点保留独立段；留出可见空隙，但绝不跨段连曲线。
@@ -121,7 +121,7 @@ pub(crate) fn path_points(
             });
         }
     }
-    ensure!(points.len() >= 2, "data_invalid: 比较路径为空");
+    ensure!(points.len() >= 2, "data_invalid: Compare Path to Empty");
     Ok((points, ticks))
 }
 
@@ -133,7 +133,7 @@ fn check_points(
 ) -> Result<()> {
     ensure!(
         values.values.len() == points.len() && values.values.iter().all(|v| v.len() == modes),
-        "data_invalid: 比较点／带／模式数不同"
+        "data_invalid: Number of points/bands/modes"
     );
     for (p, q) in points.iter().zip(&values.points_cartesian) {
         ensure!(
@@ -141,7 +141,7 @@ fn check_points(
                 .iter()
                 .zip(q)
                 .all(|(a, b)| (a - b).abs() < 1e-6),
-            "input_conflict: 比较原生输出坐标或点序不同"
+            "input_conflict: Compare native output coordinates or order of points"
         );
     }
     Ok(())
@@ -162,7 +162,7 @@ pub(crate) fn run(
     };
     ensure!(
         backend == Backend::Local,
-        "allocation: 自动比较必须在已登记分配内同步执行"
+        "allocation: Autocomparison must be synchronized within the registered allocation"
     );
     let f2_path = crate::foundation::layout::path(&f2_work, "qe-data/manifest.json");
     let f2 = QeManifest::load(&f2_path)?;
@@ -181,7 +181,7 @@ pub(crate) fn run(
             "points_per_edge",
         ])? as usize,
     )?;
-    let states = f2.states.as_ref().context("data_invalid: 缺 F2 均匀网格")?;
+    let states = f2.states.as_ref().context("data_invalid: Missing F2 Flat Grid")?;
     let mesh: Vec<_> = states
         .kpoints
         .iter()
@@ -207,7 +207,7 @@ pub(crate) fn run(
         .ph
         .path
         .parent()
-        .context("configuration: PH 缺父目录")?;
+        .context("configuration: PH Missing Parent Directory")?;
     let q2r = Program {
         path: post_dir.join("q2r.x"),
         args: vec![],
@@ -219,7 +219,7 @@ pub(crate) fn run(
     for (role, program) in [("q2r", &q2r), ("matdyn", &matdyn)] {
         ensure!(
             f2.fingerprints.program_sha256.get(role) == Some(&store::hash_file(&program.path)?),
-            "input_conflict: 自动比较的 {role}.x 未在 F1 冻结或已改变"
+            "input_conflict: Autocomparison {role}.x Not here F1 Freezing or changed"
         );
     }
     let coarse_dir = crate::foundation::layout::path(&work, "coarse");
@@ -296,7 +296,7 @@ pub(crate) fn run(
                     .iter()
                     .zip(&mesh)
                     .all(|(a, b)| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-7)),
-            "input_conflict: 第 5/6 步参考网格不同"
+            "input_conflict: I don't think so 5/6 The step reference grid is different"
         );
         crate::foundation::workspace_science::verify_electronic_comparison(cfg)?;
     } else {
@@ -314,7 +314,7 @@ pub(crate) fn run(
                 fs::write(
                     &electron_input,
                     qe.path_input(
-                        electron.join("out").to_str().context("路径不是 UTF-8")?,
+                        electron.join("out").to_str().context("The path isn't UTF-8")?,
                         &path_crystal,
                     )?,
                 )?;
@@ -336,7 +336,7 @@ pub(crate) fn run(
                 let data = qe_data::nscf::parse_xml(&electron_xml)?;
                 ensure!(
                     data.nbnd == states.nbnd && data.kpoints.len() == path.len(),
-                    "data_invalid: 比较 NSCF 点／带数不同"
+                    "data_invalid: Comparison NSCF Different points/bands"
                 );
                 for (expected, actual) in path_crystal.iter().zip(&data.kpoints) {
                     ensure!(
@@ -344,7 +344,7 @@ pub(crate) fn run(
                             .iter()
                             .zip(actual)
                             .all(|(a, b)| (a - b).abs() < 1e-7),
-                        "input_conflict: 比较 NSCF 坐标或顺序不同"
+                        "input_conflict: Comparison NSCF Different coordinates or sequences"
                     );
                 }
                 Ok(())
@@ -357,12 +357,12 @@ pub(crate) fn run(
         .qpoints
         .iter()
         .find(|q| q.crystal.iter().all(|x| x.abs() < 1e-9))
-        .context("data_invalid: 缺 Γ")?;
+        .context("data_invalid: Missing Γ")?;
     let gamma = &f2
         .phonon_files
         .iter()
         .find(|p| p.q_id == gamma_q.global_index)
-        .context("data_invalid: 缺 Γ 映射")?
+        .context("data_invalid: Deficiencies and mapping")?
         .dyn_file;
     let force = phonon.join("force-constants");
     let force_file = force.join("reference.fc.xml");
@@ -373,7 +373,7 @@ pub(crate) fn run(
     ])?;
     ensure!(
         onsite == "gamma_hermitian",
-        "configuration: stages.6.epw-coarse.workflow.onsite_asr: 当前只支持 gamma_hermitian"
+        "configuration: stages.6.epw-coarse.workflow.onsite_asr: Current only support gamma_hermitian"
     );
     attempt::run_with_inputs(
         work,
@@ -390,7 +390,7 @@ pub(crate) fn run(
                 &serde_json::json!({
                     "required_programs":["q2r.x"],
                     "reference_mode":cfg.phonon.mode,
-                    "reason":"第 4 步 q2r/matdyn 使用 simple ASR；EPW 比较需要 Γ onsite 加 Hermitian 修正后、q2r/matdyn 不再施加 ASR。现有力常数未满足该口径；仅转换已核验动力学矩阵并补 q2r，不运行 PW/PH。",
+                    "reason":"I don't think so 4 Step q2r/matdyn Use simple ASR;EPW More so Γ onsite Add Hermitian Amended、q2r/matdyn No more impositions ASR .The current power constant does not meet the caliber; only the verified power matrix is converted and completed q2r ,Do Not Run PW/PH.",
                     "sources":f2.phonon_files
                 }),
             )?;
@@ -458,7 +458,7 @@ pub(crate) fn run(
                 &frequency.join("reuse-decision.json"),
                 &serde_json::json!({
                     "required_programs":["matdyn.x"],
-                    "reason":"第 4 步频率采用不同 ASR，且不包含完整路径加 DOS 网格；读取已完成的比较力常数，在所需 q 点补频率，不重跑 q2r/PW/PH。",
+                    "reason":"I don't think so 4 We're using different steps ASR ,and does not contain the complete path plus DOS grids;read completed comparative strength constants, as required q Dot the frequency. Do not run again q2r/PW/PH.",
                     "force_constants":force_identity,"qpoints":qe_all
                 }),
             )?;
@@ -524,7 +524,7 @@ pub(crate) fn run(
             )?;
             store::write(
                 &epw_dir.join("reuse-decision.json"),
-                &serde_json::json!({"required_programs":["epw.x"],"reason":"已有粗网格实空间数据不含路径及 DOS q 点的插值频率；用 epwread 读取模型，仅补声子求值。原生 band_plot 同时要求电子 k 表，给出一个占位点，输出不用于电子比较；电子对比复用第 5 步。","qpoints":all}),
+                &serde_json::json!({"required_programs":["epw.x"],"reason":"There are coarse grid real-space data that do not contain paths and DOS q interpolation frequency of points;using epwread Reads the model, only for acoustics. native band_plot At the same time, it requires electronics k Table, give a place-holder point, the output is not used for electronic comparison; the electronic comparison is reused 5 Step.","qpoints":all}),
             )?;
             EpwConfig::write_points(&epw_dir, if numbered { &all[..1] } else { &all }, &all)?;
             fs::write(
@@ -618,7 +618,7 @@ pub(crate) fn run(
         let previous: comparison::Sources = store::read(&source_path)?;
         ensure!(
             serde_json::to_value(&previous)? == serde_json::to_value(&sources)?,
-            "input_conflict: 比较来源清单变化"
+            "input_conflict: Comparison of changes in the manifest of sources"
         );
     } else {
         store::write(&source_path, &sources)?;
@@ -628,7 +628,7 @@ pub(crate) fn run(
         let data = comparison_data::load(&output)?;
         ensure!(
             data.manifest.upstream_digest == store::hash_file(&source_path)?,
-            "input_conflict: 比较包绑定其他来源"
+            "input_conflict: Compared to other sources"
         );
     } else {
         fs::create_dir_all(output.parent().unwrap())?;
@@ -652,7 +652,7 @@ pub(crate) fn run(
     }
     ensure!(
         crate::delivery::comparison_plot::check_figure_formats(&results, &["png", "svg", "pdf"])?,
-        "data_invalid: 比较图表未完整发布"
+        "data_invalid: Comparison chart not fully published"
     );
     Ok(())
 }

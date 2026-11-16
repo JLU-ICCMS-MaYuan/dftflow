@@ -71,7 +71,7 @@ impl InterpolationManifest {
         let m: InterpolationManifest = store::read(path)?;
         if m.schema_version != 2 {
             bail!(
-                "data_invalid: 插值清单 schema_version={} 不支持",
+                "data_invalid: manifest of interpolation values schema_version={} Not supported",
                 m.schema_version
             );
         }

@@ -25,13 +25,13 @@ pub fn files(root: &Path) -> Result<Vec<TreeFile>> {
             let kind = e.file_type()?;
             ensure!(
                 !kind.is_symlink(),
-                "data_invalid: 保存树不能含链接 {}",
+                "data_invalid: Save tree does not contain links {}",
                 path.display()
             );
             if kind.is_dir() {
                 visit(root, &path, result)?;
             } else {
-                ensure!(kind.is_file(), "data_invalid: 保存树含未知文件类型");
+                ensure!(kind.is_file(), "data_invalid: Save an unknown file type for tree contents");
                 result.push(TreeFile {
                     relative_path: path.strip_prefix(root)?.into(),
                     byte_size: fs::metadata(&path)?.len(),
@@ -43,7 +43,7 @@ pub fn files(root: &Path) -> Result<Vec<TreeFile>> {
     }
     ensure!(
         root.is_dir(),
-        "data_invalid: 保存树不存在 {}",
+        "data_invalid: Save Tree does not exist {}",
         root.display()
     );
     let mut result = vec![];
@@ -63,10 +63,10 @@ pub fn all_files(root: &Path) -> Result<Vec<PathBuf>> {
                 continue;
             }
             let kind = entry.file_type()?;
-            ensure!(!kind.is_symlink(), "data_invalid: 保存树不能含链接 {}", path.display());
+            ensure!(!kind.is_symlink(), "data_invalid: Save tree does not contain links {}", path.display());
             if kind.is_dir() { visit(root, &path, result)?; }
             else {
-                ensure!(kind.is_file(), "data_invalid: 保存树含未知类型 {}", path.display());
+                ensure!(kind.is_file(), "data_invalid: Save the unknown type of tree contents {}", path.display());
                 result.push(path.strip_prefix(root)?.into());
             }
         }
@@ -88,7 +88,7 @@ pub fn copy_tree(source: &Path, target: &Path) -> Result<Vec<TreeFile>> {
     let before = files(source)?;
     ensure!(
         !target.exists() || (target.is_dir() && fs::read_dir(target)?.next().is_none()),
-        "input_conflict: 保存树目标非空 {}",
+        "input_conflict: Save tree target is not empty {}",
         target.display()
     );
     fs::create_dir_all(target)?;
@@ -107,7 +107,7 @@ pub fn copy_tree(source: &Path, target: &Path) -> Result<Vec<TreeFile>> {
     }
     ensure!(
         before == files(source)? && before == files(target)?,
-        "input_conflict: 保存树在复制期间变化或复制不完整"
+        "input_conflict: Save tree change or copy incomplete during copying"
     );
     Ok(before)
 }
@@ -127,10 +127,10 @@ pub fn snapshot(outdir: &Path, work: &Path) -> Result<PathBuf> {
 
 pub fn verify_snapshot(work: &Path) -> Result<()> {
     let expected: Vec<TreeFile> = store::read(&crate::foundation::layout::path(&work, "scf/snapshot-files.json"))
-        .context("data_invalid: 缺少完整 SCF 快照身份")?;
+        .context("data_invalid: Missing completeness SCF Take an ID")?;
     ensure!(
         checked_entries(&expected) == files(&crate::foundation::layout::path(&work, "scf/snapshot"))?,
-        "input_conflict: SCF 快照被修改"
+        "input_conflict: SCF Snapshot modified"
     );
     Ok(())
 }
@@ -146,7 +146,7 @@ pub fn nonempty(path: &Path) -> Result<()> {
     if qf_io::qe_payload::unchecked(path) { return Ok(()); }
     ensure!(
         path.is_file() && fs::metadata(path)?.len() > 0,
-        "data_invalid: 必需保存文件缺失或空 {}",
+        "data_invalid: Missing or empty files must be saved {}",
         path.display()
     );
     Ok(())

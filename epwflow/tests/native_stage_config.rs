@@ -97,7 +97,7 @@ fn nscf_system_parameters_are_independent_and_render_native_names_and_units() {
     assert!(input.contains("ecutwfc = 48"), "{input}");
     assert!(input.contains("degauss = 0.03"), "{input}");
     assert!(input.starts_with("&CONTROL\n"));
-    assert!(!input.contains("参数来源"));
+    assert!(!input.contains("Parameter Source"));
     assert!(!input.contains("ecutwfc_ry"));
 }
 
@@ -201,7 +201,7 @@ fn manual_and_derived_definitions_are_rejected_before_execution() {
         .unwrap();
     let error = format!("{:#}", c.cfg.validate().unwrap_err());
     assert!(
-        error.contains("1.qe-scf.outdir") && error.contains("双重定义"),
+        error.contains("1.qe-scf.outdir") && error.contains("Dual definition"),
         "{error}"
     );
 }

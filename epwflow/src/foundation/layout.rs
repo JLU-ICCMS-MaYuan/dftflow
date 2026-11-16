@@ -14,7 +14,7 @@ pub struct Layout {
 pub fn enabled(root: &Path) -> bool {
     root.join("epw-state/layout.json").is_file()
         || super::readable_state::read(root, super::stages::Step::Scf)
-            .is_ok_and(|doc| doc.get("工作区", "布局") == Some("八阶段编号目录"))
+            .is_ok_and(|doc| doc.get("Workspace", "Layout") == Some("Eight numbered stages"))
 }
 pub fn initialize(cfg: &Config) -> Result<()> {
     super::readable_state::initialize(cfg)
@@ -32,7 +32,7 @@ pub fn path(root: &Path, relative: &str) -> PathBuf {
     if !enabled(root) {
         return root.join(relative);
     }
-    let mode = super::readable_state::mode_in(root).expect("工作区声子模式已在入口初始化");
+    let mode = super::readable_state::mode_in(root).expect("workspace phonon mode initialized at entry");
     let (head, tail) = relative.split_once('/').unwrap_or((relative, ""));
     let ph = format!("4.qe-phonon-{mode}");
     let base = match head {

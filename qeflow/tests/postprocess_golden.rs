@@ -57,7 +57,7 @@ fn process_eband_matches_python_reference() {
         .unwrap();
     assert!(
         output.status.success(),
-        "qe-process-eband 失败: {}",
+        "qe-process-eband Failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
@@ -85,7 +85,7 @@ fn process_eledos_matches_python_reference() {
         .unwrap();
     assert!(
         output.status.success(),
-        "qe-process-el-edos 失败: {}",
+        "qe-process-el-edos Failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
@@ -121,11 +121,11 @@ fn process_eledos_rejects_mismatched_grid() {
         .unwrap();
     assert!(
         !output.status.success(),
-        "能量网格不一致时应失败（对齐 Python）"
+        "Failure when energy grids are inconsistent (matching) Python)"
     );
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("能量网格与 TDOS 不一致"),
-        "错误信息应指向网格不一致"
+        String::from_utf8_lossy(&output.stderr).contains("Energy Grid and TDOS Inconsistencies"),
+        "Error message should point to a grid that is not consistent"
     );
     let _ = std::fs::remove_dir_all(&work);
 }

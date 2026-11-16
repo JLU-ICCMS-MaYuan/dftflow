@@ -28,11 +28,11 @@ pub struct RunBinding {
 impl RunBinding {
     pub fn load(work: &Path) -> Result<Self> {
         let p = work.join("run-binding.json");
-        ensure!(p.exists(), "input_conflict: 运行目录缺少 run-binding.json");
+        ensure!(p.exists(), "input_conflict: Run Directory Missing run-binding.json");
         let b: Self = store::read(&p)?;
         ensure!(
             b.schema_version == 1,
-            "unsupported_version: 运行绑定 schema_version 必须为 1"
+            "unsupported_version: Run binding schema_version Must be 1"
         );
         Ok(b)
     }
@@ -40,19 +40,19 @@ impl RunBinding {
     pub fn verify(&self) -> Result<()> {
         ensure!(
             config_sha_of_init(&self.work_dir)? == self.config_sha256,
-            "input_conflict: 固定配置被修改"
+            "input_conflict: Fixed Configuration modified"
         );
         self.structure
             .verify()
-            .context("input_conflict: 结构快照被修改")?;
-        if let Some(path) = &self.kpath { path.verify().context("input_conflict: 路径快照被修改")?; }
+            .context("input_conflict: Structure snapshot modified")?;
+        if let Some(path) = &self.kpath { path.verify().context("input_conflict: Pathshot modified")?; }
         for (el, id) in &self.pseudos {
             id.verify()
-                .with_context(|| format!("input_conflict: 赝势 {el} 被修改"))?;
+                .with_context(|| format!("input_conflict: Powerful {el} modified"))?;
         }
         for (n, id) in &self.programs {
             id.verify()
-                .with_context(|| format!("input_conflict: 程序 {n} 被修改"))?;
+                .with_context(|| format!("input_conflict: Procedures {n} modified"))?;
         }
         Ok(())
     }
@@ -74,7 +74,7 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
     let stem = config
         .structure
         .file_name()
-        .context("data_invalid: 结构缺少文件名")?
+        .context("data_invalid: Structure missing file name")?
         .to_string_lossy();
     let init_name = if stem.ends_with("-init") {
         stem.to_string()
@@ -91,14 +91,14 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
         existing.verify()?;
         ensure!(
             store::hash_bytes(&bytes) == existing.config_sha256,
-            "input_conflict: 工作目录已绑定不同配置，拒绝覆盖"
+            "input_conflict: Work directory bound to different configurations, rejecting overwrite"
         );
         ensure!(
             store::hash_file(&config.structure)? == existing.structure.sha256,
-            "input_conflict: 原结构与快照不一致"
+            "input_conflict: The original structure is not consistent with the snapshot"
         );
         if let Some(path) = &config.kpath {
-            ensure!(existing.kpath.as_ref().is_some_and(|id| store::hash_file(path).ok().as_ref() == Some(&id.sha256)), "input_conflict: 原路径与快照不一致");
+            ensure!(existing.kpath.as_ref().is_some_and(|id| store::hash_file(path).ok().as_ref() == Some(&id.sha256)), "input_conflict: The original path is not consistent with the snapshot");
         }
         return Ok(existing);
     }
@@ -169,7 +169,7 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
             if fixed.kpath.is_some() { names.push("KPATH-init"); }
             names.push("run-binding.json");
             for name in names {
-                ensure!(!work.join(name).exists(), "input_conflict: 初始化目标已存在 {}", work.join(name).display());
+                ensure!(!work.join(name).exists(), "input_conflict: Initialize target already exists {}", work.join(name).display());
                 fs::rename(staging.join(name), work.join(name))?;
             }
             fs::remove_dir(&staging)?;

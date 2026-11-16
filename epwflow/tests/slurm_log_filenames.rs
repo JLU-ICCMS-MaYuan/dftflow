@@ -122,7 +122,7 @@ fn check_row(row: &Value, job_placeholder: bool, merged: bool) {
         assert_eq!(filename.contains("%j"), job_placeholder, "{filename}");
         assert_eq!(
             row["directives"][key], row["options"][key],
-            "提交参数不能覆盖日志目录"
+            "Submit parameter cannot overwrite log directory"
         );
         let path = Path::new(row[key].as_str().unwrap());
         assert_eq!(path.parent(), script.parent());
@@ -246,7 +246,7 @@ fn public_submission_uses_short_names_and_refuses_duplicate_queued_jobs() {
         .args(["-c", c.config().to_str().unwrap(), "--stage", "scf", "-s"])
         .output()
         .unwrap();
-    assert_eq!(c.rows().len(), 1, "排队中的任务不能重复提交");
+    assert_eq!(c.rows().len(), 1, "Queued tasks cannot be duplicated");
     identity.verify().unwrap();
     let body = fs::read_to_string(script).unwrap();
     assert!(!body

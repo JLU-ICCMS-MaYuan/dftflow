@@ -18,7 +18,7 @@ fn charge_budget(binding: &snapshot::RunBinding, cfg: &config::Config) -> Result
             &format!("qe-data:{}", binding.run_id),
         )
     })
-    .context("budget_denied: qe-data 预算预留失败")
+    .context("budget_denied: qe-data Budget set aside failed")
 }
 
 /// 执行完整 QE 数据链到 qe-data 交付（FR-001/003~010）：
@@ -82,25 +82,25 @@ pub fn run_qeflow_registered(
 ) -> Result<QeManifest> {
     ensure!(
         !crate::foundation::layout::path(&work, "qe-data/manifest.json").exists(),
-        "input_conflict: QE 数据已发布，请复用完成记录"
+        "input_conflict: QE Data has been released, please return to finish record"
     );
     binding.verify()?;
     for role in ["q2r", "matdyn"] {
         let id = binding.programs.get(role).with_context(|| {
-            format!("environment: 缺少固定的 {role}.x；请用完整 QE 目录建立新运行")
+            format!("environment: Missing fixed {role}.x ;Please complete QE Create directory for new running")
         })?;
         id.verify()?;
     }
     let path = cfg
         .kpath
         .as_ref()
-        .context("required: 缺少 kpath 或 KPATH.in")?;
+        .context("required: Missing kpath or KPATH.in")?;
     ensure!(
         binding
             .kpath
             .as_ref()
             .is_some_and(|id| store::hash_file(path).ok().as_ref() == Some(&id.sha256)),
-        "input_conflict: 路径未绑定或发生变化"
+        "input_conflict: The path has not been bound or changed"
     );
     let (scf_res, qpoints, responses) = super::qeflow::run(cfg, qe, backend, launcher, work)?;
     // 失败的 NSCF 保存树不能与新尝试合并；保留原现场后重新从 SCF 快照启动。
@@ -211,7 +211,7 @@ pub(crate) fn publish_data(
     validation.check(
         "phonon_complete",
         collected.responses.iter().all(|r| r.perturbations > 0),
-        "所有响应势扰动数已确定",
+        "All response-potential perturbation counts determined",
     );
     validation.check(
         "artifact_integrity",
@@ -300,7 +300,7 @@ pub(crate) fn publish_data(
             eprintln!("qe-data validation failed: {} = {}", c.name, c.passed);
         }
         bail!(
-            "data_invalid: qe-data 本地校验未通过，拒绝发布清单: {}",
+            "data_invalid: qe-data Local verification failed, release manifest denied: {}",
             validation.status
         );
     }
@@ -310,14 +310,14 @@ pub(crate) fn publish_data(
 
 /// 阶段边界：仅执行到 qe-data 交付；后续阶段未接入时明确报错（FR-001）。
 pub fn unsupported_beyond_qe_data() -> Result<()> {
-    bail!("not_implemented: 全流程后续阶段（F3–F5）尚未接入，submit/run 越过 qe-data 不可用");
+    bail!("not_implemented: Full process follow-up phase(F3–F5 )Not yet accessed,submit/run Over qe-data Not Available");
 }
 
 /// qe-data 阶段自检（FR-010 依赖/预算/失败边界）：核对绑定来源未变。
 pub fn verify_binding(binding: &snapshot::RunBinding) -> Result<()> {
     binding
         .verify()
-        .context("input_conflict: 绑定来源在执行前已被修改")
+        .context("input_conflict: The binding source has been modified before execution")
 }
 
 /// 内部最小参考数值对照（FR-011）的便捷入口：把当前清单与参考清单比较。
@@ -337,7 +337,7 @@ pub fn register_import(source_work: &Path, work: &Path) -> Result<reuse::ImportR
 pub fn record_acceptance(work: &Path, record: &qe_acceptance::AcceptanceRecord) -> Result<()> {
     ensure!(
         record.require_evidence().is_ok(),
-        "data_invalid: 验收记录缺少真实证据，拒绝落盘冒充"
+        "data_invalid: The receipt and inspection records lacked real evidence and refused to leave the book and impersonate"
     );
     qe_acceptance::write(
         &crate::foundation::layout::path(&work, "qe-data").join("acceptance.json"),

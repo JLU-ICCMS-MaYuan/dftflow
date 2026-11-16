@@ -118,7 +118,7 @@ where
     } else {
         vec![
             format!(
-                "{}: no paired data (无可配对数据)",
+                "{}: no paired data",
                 if kind == 0 || kind == 2 {
                     "Path"
                 } else {
@@ -190,7 +190,7 @@ pub fn check_figures(results: &Path) -> Result<bool> {
         record.schema_version == 1
             && record.comparison_digest
                 == store::hash_file(&results.join("comparison/manifest.json"))?,
-        "data_invalid: 图像清单来源不符"
+        "data_invalid: Image manifest source does not match"
     );
     for file in record.files {
         file.verify(&output)?;
@@ -615,7 +615,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             && formats
                 .iter()
                 .all(|f| matches!(f.as_str(), "png" | "svg" | "pdf")),
-        "data_invalid: 格式只能是 png,svg,pdf"
+        "data_invalid: Format can only be png,svg,pdf"
     );
     let root = results.join("comparison");
     let data = comparison::load(&root)?;
@@ -626,22 +626,22 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
     let _lock = store::Lock::acquire(&output.join("comparison-figures"))?;
     ensure!(
         !output.canonicalize()?.starts_with(root.canonicalize()?),
-        "input_conflict: 图像输出不能覆盖比较数据"
+        "input_conflict: Image output cannot overwrite comparative data"
     );
     let previous = output.join("comparison-figures.json");
     super::publication::recover(&output, "comparison-figures.json")?;
     let comparison_digest = store::hash_file(&root.join("manifest.json"))?;
     let previous_files = if previous.exists() {
         let old: Figures = store::read(&previous)?;
-        ensure!(old.schema_version == 1, "data_invalid: 图像清单版本未知");
+        ensure!(old.schema_version == 1, "data_invalid: The image manifest version is unknown");
         ensure!(old.comparison_digest == comparison_digest,
-            "input_conflict: 图像绑定其他比较来源，请使用新的输出目录");
+            "input_conflict: To bind images to other sources of comparison, use the new output directory");
         for f in &old.files {
             if output.join(&f.relative_path).exists() {
                 f.verify(&output)?;
             } else {
                 ensure!(f.relative_path.extension().and_then(|e|e.to_str()).is_some_and(|ext|formats.iter().any(|v|v==ext)),
-                    "data_invalid: 缺失图像须包含在本次重绘格式中");
+                    "data_invalid: Missing images must be included in this repainting format");
             }
         }
         old.files
@@ -655,7 +655,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             let file = PathBuf::from(format!("{name}.{format}"));
             ensure!(
                 !output.join(&file).exists() || owned.contains(&file),
-                "input_conflict: 未知图像冲突 {}",
+                "input_conflict: Unknown image conflict {}",
                 file.display()
             );
         }
@@ -686,7 +686,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
                 let options = style::font_options();
                 let tree = svg2pdf::usvg::Tree::from_str(&fs::read_to_string(&svg)?, &options)?;
                 let pdf = svg2pdf::to_pdf(&tree, Default::default(), Default::default())
-                    .map_err(|e| anyhow::anyhow!("PDF 转换失败: {e}"))?;
+                    .map_err(|e| anyhow::anyhow!("PDF conversion failed: {e}"))?;
                 fs::write(stage.join(format!("{name}.pdf")), pdf)?;
             }
         }

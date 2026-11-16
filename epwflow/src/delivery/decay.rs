@@ -100,7 +100,7 @@ fn parse(text: &str, name: &str) -> Result<Vec<[f64; 2]>> {
             continue;
         }
         let columns: Vec<_> = row.split_whitespace().take(2).collect();
-        let location = || format!("data_invalid: {name}:{} 需要两个有限非负数", line + 1);
+        let location = || format!("data_invalid: {name}:{} requires two finite nonnegative numbers", line + 1);
         ensure!(columns.len() == 2, "{}", location());
         let mut pair = [0.; 2];
         for i in 0..2 {
@@ -112,7 +112,7 @@ fn parse(text: &str, name: &str) -> Result<Vec<[f64; 2]>> {
         }
         samples.push(pair);
     }
-    ensure!(!samples.is_empty(), "data_invalid: {name} 没有数据行");
+    ensure!(!samples.is_empty(), "data_invalid: {name} has no data rows");
     Ok(samples)
 }
 
@@ -128,7 +128,7 @@ fn load(dir: &Path, require_images: bool) -> Result<(Data, Manifest)> {
         .collect();
     ensure!(
         manifest.schema_version == 1 && expected == actual && actual.len() == manifest.files.len(),
-        "data_invalid: 衰减图包的版本或文件集合不完整"
+        "data_invalid: Incomplete version or file collection of the decay package"
     );
     for file in &manifest.files {
         if require_images || !image(&file.relative_path) || dir.join(&file.relative_path).exists() {
@@ -142,7 +142,7 @@ fn load(dir: &Path, require_images: bool) -> Result<(Data, Manifest)> {
             && data.panels.len() == 4
             && data.sources.len() == 4
             && !data.scientific_key.is_empty(),
-        "data_invalid: 衰减图数据或绘图参数不支持"
+        "data_invalid: The decaychart data or drawing parameters are not supported"
     );
     for (i, name) in NATIVE.iter().enumerate() {
         let artifact = manifest
@@ -155,7 +155,7 @@ fn load(dir: &Path, require_images: bool) -> Result<(Data, Manifest)> {
                 && data.sources[i].sha256 == artifact.sha256
                 && data.sources[i].bytes == artifact.byte_size
                 && parse(&fs::read_to_string(dir.join(name))?, name)? == data.panels[i],
-            "input_conflict: {name} 副本、来源和绘图数据不一致"
+            "input_conflict: {name} copy, source and plot data are inconsistent"
         );
     }
     Ok((data, manifest))
@@ -254,7 +254,7 @@ fn render_all(dir: &Path, data: &Data) -> Result<()> {
         )?;
         let tree = svg2pdf::usvg::Tree::from_str(&fs::read_to_string(&svg)?, &options)?;
         let pdf = svg2pdf::to_pdf(&tree, Default::default(), Default::default())
-            .map_err(|e| anyhow::anyhow!("PDF 转换失败: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("PDF conversion failed: {e}"))?;
         fs::write(dir.join(format!("{name}.pdf")), pdf)?;
     }
     Ok(())
@@ -304,17 +304,17 @@ pub fn collect(completion_path: &Path, output: &Path) -> Result<()> {
     };
     ensure!(
         receipt.step == Step::Coarse,
-        "input_conflict: 衰减来源必须是粗网格回执"
+        "input_conflict: decay data must come from a coarse-grid receipt"
     );
     receipt.verify()?;
     let source_dir = completion
         .target
         .parent()
-        .context("data_invalid: 粗网格回执缺父目录")?;
+        .context("data_invalid: coarse-grid receipt has no parent directory")?;
     let (sources, missing) = bound_sources(&receipt, source_dir)?;
     ensure!(
         missing.is_empty(),
-        "data_invalid: 粗网格衰减文件缺失或未绑定：{}；不自动重跑 EPW",
+        "data_invalid: coarse-grid decay file missing or unbound: {}; EPW is not rerun automatically",
         missing.join(", ")
     );
     let panels = sources
@@ -354,7 +354,7 @@ pub fn collect(completion_path: &Path, output: &Path) -> Result<()> {
         }
         ensure!(
             crate::qe_data::direct::workspace(completion_path).is_some(),
-            "input_conflict: 衰减图来源改变，保留已有包"
+            "input_conflict: The source of the decay map has changed and the package has been retained"
         );
     }
 
@@ -424,10 +424,10 @@ pub fn recover_pending(cfg: &Config) -> Result<()> {
         let owner: serde_json::Value = store::read(&owner_path)?;
         let job = owner["job_id"]
             .as_u64()
-            .context("scheduler_unknown: 发布锁缺少作业号，保留原锁")?;
+            .context("scheduler_unknown: Release lock missing task number, keep original lock")?;
         ensure!(
             jobs.contains(&job),
-            "scheduler_unknown: 发布锁所属作业 {job} 不在当前任务号表，保留原锁"
+            "scheduler_unknown: Release lock-on jobs {job} Not on current task list, keep the original lock"
         );
         store::recover_finished_lock(&target, job)?;
     }
@@ -463,7 +463,7 @@ pub fn refresh(cfg: &Config) -> Result<()> {
     let c = stages::completion(cfg, Step::Coarse)?;
     ensure!(
         c.scientific_key == stages::scientific_key(cfg, Step::Coarse)?,
-        "input_conflict: 粗网格配置来源改变"
+        "input_conflict: Change source of coarse grid configuration"
     );
     let dir = Step::Coarse.directory(cfg).join("decay");
     collect(&receipt, &dir)?;

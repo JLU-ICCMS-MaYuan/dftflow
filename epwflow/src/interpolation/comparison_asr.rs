@@ -8,18 +8,18 @@ fn one<'a, 'b>(root: roxmltree::Node<'a, 'b>, name: &str) -> Result<roxmltree::N
         .descendants()
         .filter(|n| n.has_tag_name(name))
         .collect();
-    ensure!(nodes.len() == 1, "data_invalid: PH XML 必须有唯一 {name}");
+    ensure!(nodes.len() == 1, "data_invalid: PH XML There must be one {name}");
     Ok(nodes[0])
 }
 fn value_range(node: roxmltree::Node<'_, '_>) -> Result<Range<usize>> {
     let nodes: Vec<_> = node.children().filter(|n| n.is_text()).collect();
-    ensure!(nodes.len() == 1, "data_invalid: PH XML 数值内容不唯一");
+    ensure!(nodes.len() == 1, "data_invalid: PH XML Numerical content is not unique");
     Ok(nodes[0].range())
 }
 fn matrix(root: roxmltree::Node<'_, '_>, a: usize, b: usize) -> Result<Vec<f64>> {
     let n = one(root, &format!("PHI.{a}.{b}"))?;
-    let values = xml::numbers(n.text().context("data_invalid: PHI 缺数值")?)?;
-    ensure!(values.len() == 18, "data_invalid: PHI 不是复数 3x3 矩阵");
+    let values = xml::numbers(n.text().context("data_invalid: PHI Missing value")?)?;
+    ensure!(values.len() == 18, "data_invalid: PHI It's not a plural 3x3 Matrix");
     Ok(values)
 }
 
@@ -32,15 +32,15 @@ pub(super) fn qe_xml_records(raw: &str) -> Result<String> {
         .descendants()
         .filter(|n| n.is_element() && n.tag_name().name().starts_with("PHI."))
     {
-        let values = xml::numbers(node.text().context("data_invalid: PHI 缺数值")?)?;
-        ensure!(values.len() == 18, "data_invalid: PHI 不是复数 3x3 矩阵");
+        let values = xml::numbers(node.text().context("data_invalid: PHI Missing value")?)?;
+        ensure!(values.len() == 18, "data_invalid: PHI It's not a plural 3x3 Matrix");
         let records = values
             .chunks_exact(2)
             .map(|pair| format!("  {:.17e} {:.17e}\n", pair[0], pair[1]))
             .collect::<String>();
         edits.push((value_range(node)?, format!("\n{records}    ")));
     }
-    ensure!(!edits.is_empty(), "data_invalid: PH XML 缺矩阵");
+    ensure!(!edits.is_empty(), "data_invalid: PH XML Missing Matrix");
     let mut output = raw.to_owned();
     for (range, value) in edits.into_iter().rev() {
         output.replace_range(range, &value);
@@ -61,13 +61,13 @@ pub(super) fn corrected_stars(raw: &str, gamma: &str, nat: usize) -> Result<Stri
         .parse()?;
     ensure!(
         count > 0 && count == stars.len(),
-        "data_invalid: PH 星数量不同"
+        "data_invalid: PH The number of stars is different"
     );
     let mut edits = vec![];
     for (i, star) in stars.iter().enumerate() {
         ensure!(
             star.tag_name().name() == format!("DYNAMICAL_MAT_.{}", i + 1),
-            "data_invalid: PH 星编号不同"
+            "data_invalid: PH Star numbers are different"
         );
         // 单 q 入口拥有 Γ 行和、原子数和 Fortran 布局的唯一实现。
         let first = stars[0];
@@ -116,7 +116,7 @@ pub(super) fn corrected_stars(raw: &str, gamma: &str, nat: usize) -> Result<Stri
     edits.sort_by_key(|e| e.0.start);
     ensure!(
         edits.windows(2).all(|w| w[0].0.end <= w[1].0.start),
-        "data_invalid: PH 修改重叠"
+        "data_invalid: PH Modify Overlap"
     );
     let mut output = raw.to_string();
     for (range, value) in edits.into_iter().rev() {
@@ -129,7 +129,7 @@ pub(super) fn corrected_stars(raw: &str, gamma: &str, nat: usize) -> Result<Stri
 /// PHI 为 Fortran 列主序；EPW 只对 jpol>=ipol 的 onsite 减去同源 Γ 行和。
 /// QE dyndiag 随后负责与 EPW 相同的 Hermitian 对称化和质量归一化。
 fn corrected_first_star(raw: &str, gamma: &str, nat: usize) -> Result<String> {
-    ensure!(nat > 0, "data_invalid: ASR 原子数为零");
+    ensure!(nat > 0, "data_invalid: ASR Zero atoms");
     let doc = roxmltree::Document::parse(raw)?;
     let gdoc = roxmltree::Document::parse(gamma)?;
     for tree in [&doc, &gdoc] {
@@ -138,7 +138,7 @@ fn corrected_first_star(raw: &str, gamma: &str, nat: usize) -> Result<String> {
                 .trim()
                 .parse::<usize>()?
                 == nat,
-            "input_conflict: Γ 与目标 PH 原子数不同"
+            "input_conflict: Γ and objectives PH Atoms are different"
         );
     }
     let first = one(doc.root_element(), "DYNAMICAL_MAT_.1")?;
@@ -146,7 +146,7 @@ fn corrected_first_star(raw: &str, gamma: &str, nat: usize) -> Result<String> {
     let q = xml::vector(xml::text(gfirst, "Q_POINT")?)?;
     ensure!(
         q.iter().all(|v| v.abs() < 1e-8),
-        "input_conflict: onsite 来源不是 Γ"
+        "input_conflict: onsite It's not the source Γ"
     );
     let _ = xml::vector(xml::text(first, "Q_POINT")?)?;
     let mut edits = Vec::new();
@@ -170,7 +170,7 @@ fn corrected_first_star(raw: &str, gamma: &str, nat: usize) -> Result<String> {
         }
         ensure!(
             onsite.iter().all(|v| v.is_finite()),
-            "data_invalid: onsite 修正溢出"
+            "data_invalid: onsite Fix Spill"
         );
         edits.push((
             value_range(node)?,
@@ -190,19 +190,19 @@ fn corrected_first_star(raw: &str, gamma: &str, nat: usize) -> Result<String> {
     ensure!(
         count
             .text()
-            .context("data_invalid: 缺 PH 星数")?
+            .context("data_invalid: Missing PH Stars")?
             .trim()
             .parse::<usize>()?
             == stars.len()
             && !stars.is_empty(),
-        "data_invalid: PH 星数量不符"
+        "data_invalid: PH The number of stars does not match"
     );
     edits.push((value_range(count)?, "1".into()));
-    ensure!(stars[0] == first, "data_invalid: PH 星必须从 .1 开始");
+    ensure!(stars[0] == first, "data_invalid: PH The star must come from .1 Here we go");
     for (i, node) in stars.iter().enumerate().skip(1) {
         ensure!(
             node.tag_name().name() == format!("DYNAMICAL_MAT_.{}", i + 1),
-            "data_invalid: PH 星编号重复或缺失"
+            "data_invalid: PH Star-number duplicate or missing"
         );
         edits.push((node.range(), String::new()));
     }
@@ -219,7 +219,7 @@ fn corrected_first_star(raw: &str, gamma: &str, nat: usize) -> Result<String> {
     edits.sort_by_key(|e| e.0.start);
     ensure!(
         edits.windows(2).all(|w| w[0].0.end <= w[1].0.start),
-        "data_invalid: PH XML 修改范围重叠"
+        "data_invalid: PH XML Overlap of scope of changes"
     );
     let mut output = raw.to_owned();
     for (range, replacement) in edits.into_iter().rev() {

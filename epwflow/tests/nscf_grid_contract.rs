@@ -196,7 +196,7 @@ fn actual_input_and_reused_outputs_are_rechecked() {
         "{:#}",
         nscf::verified_states(&c.cfg, &c.cfg.work_dir).unwrap_err()
     )
-    .contains("实际坐标行数=36"));
+    .contains("Actual number of rows=36"));
     fs::write(c.input(), &input).unwrap();
     let xml = fs::read_to_string(c.output()).unwrap();
     fs::write(c.output(), xml.replace("<nks>36</nks>", "<nks>40</nks>")).unwrap();
@@ -282,9 +282,9 @@ fn historical_fft_mismatch_reports_both_xml_sources_and_dimensions() {
 }
 
 #[test]
-#[ignore = "需要显式指定 EPWFLOW_SIP2_EVIDENCE_ROOT；只读历史 XML，不执行计算"]
+#[ignore = "Remarkable specification required EPWFLOW_SIP2_EVIDENCE_ROOT ;History only XML ,Do not perform calculations"]
 fn actual_sip2_fft_evidence_is_read_only_and_rejected() {
-    let root = PathBuf::from(std::env::var_os("EPWFLOW_SIP2_EVIDENCE_ROOT").expect("需要指定历史证据目录"));
+    let root = PathBuf::from(std::env::var_os("EPWFLOW_SIP2_EVIDENCE_ROOT").expect("Require to specify a catalogue of historical evidence"));
     let scf = root.join("000_scf_nk236/tmp/Si8P16.save/data-file-schema.xml");
     let nscf = root.join("001_nscf_nk236/tmp/Si8P16.save/data-file-schema.xml");
     let before = [store::hash_file(&scf).unwrap(), store::hash_file(&nscf).unwrap()];
@@ -294,5 +294,5 @@ fn actual_sip2_fft_evidence_is_read_only_and_rejected() {
     assert!(error.contains("[216, 128, 60]") && error.contains("[216, 125, 60]"), "{error}");
     let after = [store::hash_file(&scf).unwrap(), store::hash_file(&nscf).unwrap()];
     assert_eq!(before, after);
-    println!("{error}\n两份 XML 的 SHA256 保持不变：{before:?}");
+    println!("{error}\n Two XML  It's SHA256  No change:{before:?}");
 }

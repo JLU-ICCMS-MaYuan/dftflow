@@ -66,7 +66,7 @@ impl Request {
         r.validate()?;
         ensure!(
             mode != Mode::Both && (sc.mode == Mode::Both || sc.mode == mode),
-            "configuration: 尝试模式与固定配置不符"
+            "configuration: Attempt mode does not match fixed configuration"
         );
         if sc.task == crate::foundation::config::SuperconductivityTask::Gap {
             ensure!(
@@ -76,28 +76,28 @@ impl Request {
                         .gap_temperatures_k
                         .iter()
                         .any(|t| (*t * 100.0).round() as i64 == temperature),
-                "configuration: 指定温度请求与固定计划不符"
+                "configuration: The specified temperature request does not match the fixed plan"
             );
             return Ok(r);
         }
         ensure!(
             kind != SolveKind::Gap,
-            "configuration: Tc 任务不能使用单点请求"
+            "configuration: Tc Tasks cannot use single-point requests"
         );
         let tc = match mode {
             Mode::Iso => sc.iso.as_ref(),
             _ => sc.aniso.as_ref(),
         }
-        .context("configuration: 缺少模式搜索参数")?;
+        .context("configuration: Missing Mode Search Parameters")?;
         ensure!(
             temperature >= crate::foundation::config::temperature(tc.min_k, "min_k")?
                 && temperature <= crate::foundation::config::temperature(tc.max_k, "max_k")?,
-            "configuration: 尝试温度超出固定范围"
+            "configuration: Try temperature beyond the fixed range"
         );
         if let Some(seed) = seed_mev {
             ensure!(
                 sc.initial_gaps_mev.contains(&seed),
-                "configuration: 非预固定初值"
+                "configuration: Non-prefixed opening value"
             );
         }
         Ok(r)
@@ -106,23 +106,23 @@ impl Request {
     pub fn validate(&self) -> Result<()> {
         ensure!(
             self.mode != Mode::Both && (1..=99999).contains(&self.temperature_centikelvin),
-            "configuration: EPW 5.9 尝试温度须在 0.01..999.99 K，且单模式"
+            "configuration: EPW 5.9 Try the temperature 0.01..999.99 K ,Single Mode"
         );
         ensure!(
             self.kind != SolveKind::Linear || (self.mode == Mode::Iso && self.seed_mev.is_none()),
-            "configuration: 仅 iso 支持线性求解，线性无非线性初值"
+            "configuration: Only iso Support linear solvency, linear non-linear opening"
         );
         ensure!(
             self.kind == SolveKind::Linear
                 || self.seed_mev.is_some_and(|s| s.is_finite() && s > 0.0),
-            "configuration: 非线性必须固定非零初值"
+            "configuration: Non-linear must be fixed to non-zero starting values"
         );
         ensure!(
             self.mu_star.is_finite()
                 && self.mu_star >= 0.0
                 && self.cutoff_ev.is_finite()
                 && self.cutoff_ev > 0.0,
-            "configuration: μ*/截断无效"
+            "configuration: μ*/Interrupt invalid"
         );
         ensure!(
             self.max_iterations > 0
@@ -132,11 +132,11 @@ impl Request {
                 && self.mixing_beta.abs() > 0.0
                 && self.mixing_beta.abs() <= 1.0
                 && (1..=8).contains(&self.mixing_history),
-            "configuration: 非线性迭代设置无效"
+            "configuration: Non-linear iterative settings are invalid"
         );
         ensure!(
             self.initial_shape.is_finite() && self.initial_shape >= 0.0,
-            "configuration: 首版仅支持固定非负 a_gap0"
+            "configuration: Only fixed and non-negative is supported in the first edition a_gap0"
         );
         self.nfreq()?;
         Ok(())
@@ -150,7 +150,7 @@ impl Request {
                 - 1.0);
         ensure!(
             x.is_finite() && x >= 0.0 && x < usize::MAX as f64,
-            "configuration: 截断低于首个 Matsubara 频率或网格溢出"
+            "configuration: Cut below first Matsubara Frequency or grid spill"
         );
         Ok(x.trunc() as usize + 1)
     }
@@ -183,28 +183,28 @@ impl NativeInputs {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || "_-".contains(c))
                 && !self.prefix.is_empty(),
-            "data_invalid: 原生 prefix 非法"
+            "data_invalid: Native prefix Illegal"
         );
         ensure!(
             self.spectral_points > 1 && !self.interpolation_digest.is_empty(),
-            "data_invalid: 缺少谱/F3 身份"
+            "data_invalid: spectrum/F3 identity missing"
         );
         ensure!(
             self.eps_acoustic_cm1.is_finite() && self.eps_acoustic_cm1 >= 0.0,
-            "data_invalid: 低频规则无效"
+            "data_invalid: invalid low-frequency rule"
         );
         self.a2f.verify()?;
         self.crystal.verify()?;
         if mode == Mode::Aniso {
             self.selecq
                 .as_ref()
-                .context("data_invalid: 缺少原生 selecq.fmt")?
+                .context("data_invalid: native selecq.fmt missing")?
                 .verify()?;
             ensure!(
                 !self.states.is_empty()
                     && self.matrix_files.len() >= 4
                     && self.matrix_outdir.is_absolute(),
-                "data_invalid: 缺少原生矩阵元/状态映射"
+                "data_invalid: native matrix elements/state mapping missing"
             );
             for x in &self.matrix_files {
                 x.verify()?;
@@ -215,17 +215,17 @@ impl NativeInputs {
                 .iter()
                 .zip(self.q_grid)
                 .all(|(k, q)| q > 0 && *k > 0 && *k % q == 0),
-            "data_invalid: 原生细网格不可公度"
+            "data_invalid: native fine grids are incommensurate"
         );
         Ok(())
     }
 }
 
 fn quoted(path: &Path) -> Result<String> {
-    let s = path.to_str().context("configuration: 非 UTF-8 原生路径")?;
+    let s = path.to_str().context("configuration: native path is not UTF-8")?;
     ensure!(
         !s.contains(['\n', '\r', '\0']),
-        "configuration: 原生路径含控制字符"
+        "configuration: native path contains control characters"
     );
     Ok(format!("'{}'", s.replace('\'', "''")))
 }
@@ -242,7 +242,7 @@ pub(crate) fn configured(request:&Request,input:&NativeInputs,text:&str)->Result
     let mut values=stages.clone();let section=&mut values[crate::foundation::native_config::SUPER][method]["epw"]["INPUTEPW"];
     for key in ["temps","nstemp"] {section.as_object_mut().unwrap().remove(key);}
     let derived=&mut values[crate::foundation::native_config::SUPER]["workflow"]["derived"];
-    for key in ["temps","nstemp"] {derived[format!("{method}.epw.INPUTEPW.{key}")]=serde_json::json!("本方法固定温度计划的当前已核验请求/恢复子集");}
+    for key in ["temps","nstemp"] {derived[format!("{method}.epw.INPUTEPW.{key}")]=serde_json::json!("Current validated request/recovery subset of this method fixed-temperature plan");}
     crate::foundation::native_config::apply(&values,&[crate::foundation::native_config::SUPER,method,"epw"],text)
 }
 pub(crate) fn render_base(request: &Request, input: &NativeInputs) -> Result<String> {
@@ -307,23 +307,23 @@ pub fn run_attempt(
             .args
             .iter()
             .any(|a| matches!(a.as_str(), "-in" | "-inp" | "-input")),
-        "configuration: programs.epw.args 不得覆盖单温度输入"
+        "configuration: programs.epw.args must not override single-temperature input"
     );
     if crate::foundation::native_jobs::continuing(dir, "epw")? {
         let record: AttemptResult = store::read(&dir.join("attempt.json"))?;
         ensure!(
             serde_json::to_vec(&record.request)? == serde_json::to_vec(request)?
                 && serde_json::to_vec(&record.source)? == serde_json::to_vec(inputs)?,
-            "input_conflict: 原生尝试固定来源变化"
+            "input_conflict: fixed source of native attempt changed"
         );
         return collect(record, dir);
     }
     let executable = Identity::capture(&program.path)?;
-    ensure!(dir.is_absolute(), "configuration: 尝试目录须为绝对路径");
+    ensure!(dir.is_absolute(), "configuration: attempt directory must be absolute");
     let text = render(request, inputs)?;
     fs::create_dir(dir).with_context(|| {
         format!(
-            "scheduler_unknown: 尝试目录已存在或不可创建 {}，拒绝自动重提",
+            "scheduler_unknown: attempt directory exists or cannot be created {}; automatic resubmission refused",
             dir.display()
         )
     })?;
@@ -342,14 +342,14 @@ pub fn run_attempt(
     fs::copy(&inputs.a2f.path, dir.join("source.a2f"))?;
     ensure!(
         store::hash_file(&dir.join("source.a2f"))? == inputs.a2f.sha256,
-        "input_conflict: 原生谱副本与来源不符"
+        "input_conflict: native spectrum copy differs from its source"
     );
     if request.mode == Mode::Aniso {
         fs::copy(
             &inputs
                 .selecq
                 .as_ref()
-                .context("data_invalid: 缺少 selecq")?
+                .context("data_invalid: selecq missing")?
                 .path,
             dir.join("selecq.fmt"),
         )?;
@@ -401,7 +401,7 @@ fn collect(mut record: AttemptResult, dir: &Path) -> Result<AttemptResult> {
         }
         ensure!(
             report.exit_status == Some(0),
-            "execution_failed: EPW 退出 {:?}",
+            "execution_failed: EPW exited with {:?}",
             report.exit_status
         );
         let log = fs::read_to_string(dir.join("epw.out"))?;
@@ -436,7 +436,7 @@ fn collect(mut record: AttemptResult, dir: &Path) -> Result<AttemptResult> {
             );
             let path = dir.join(filename);
             let data = gap::parse_native(
-                &fs::read_to_string(&path).context("data_invalid: 缺少原生完整 Δ/Z")?,
+                &fs::read_to_string(&path).context("data_invalid: complete native Delta/Z missing")?,
                 request.temperature_centikelvin,
                 evidence.nfreq,
                 if request.mode == Mode::Iso {
@@ -504,11 +504,11 @@ pub fn inspect_gap(
 ) -> Result<(GapStatus, Option<SolveEvidence>, Option<GapData>)> {
     ensure!(
         record.request.kind == SolveKind::Gap,
-        "data_invalid: 非指定温度请求"
+        "data_invalid: not a specified-temperature request"
     );
     ensure!(
         record.exit_status == Some(0),
-        "execution_failed: EPW 未零退出"
+        "execution_failed: EPW returned a nonzero exit code"
     );
     let log = fs::read_to_string(dir.join("epw.out"))?;
     crate::interpolation::native::checked_log(&log, 0)?;
@@ -526,7 +526,7 @@ pub fn inspect_gap(
     };
     if status.converged != Some(true) {
         status.data_status = "not_converged".into();
-        status.reason = Some("未获得明确的原生收敛证据".into());
+        status.reason = Some("No explicit native convergence evidence obtained".into());
         return Ok((status, None, None));
     }
     let outcome = (|| -> Result<(SolveEvidence, GapData)> {
@@ -534,7 +534,7 @@ pub fn inspect_gap(
         let path = gap_path(record, dir);
         if !path.is_file() {
             status.data_status = "missing".into();
-            anyhow::bail!("data_invalid: 缺少原生完整 Δ/Z");
+            anyhow::bail!("data_invalid: complete native Delta/Z missing");
         }
         let data = gap::parse_native(
             &fs::read_to_string(path)?,

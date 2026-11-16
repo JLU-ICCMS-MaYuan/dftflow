@@ -17,7 +17,7 @@ fn weighted_mesh_is_byte_identical_to_official_perl() {
             .arg(&script)
             .args(grid.map(|n| n.to_string()))
             .output()
-            .expect("需要 Perl 执行官方对照");
+            .expect("Yes Perl Implementation of official comparisons");
         assert!(
             output.status.success(),
             "{}",

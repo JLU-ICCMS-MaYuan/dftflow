@@ -94,19 +94,19 @@ where
 /// 以 cm⁻¹ 为单位；0 显式关闭。仅用于绘图，CSV 保持原值。
 pub fn dos_plot_sigma(config: &qf_config::Config) -> Result<f64> {
     let sigma = match config.qe_phonon.phdos.get("plot_sigma_cm1") {
-        Some(value) => value.as_f64().ok_or_else(|| anyhow::anyhow!("plot_sigma_cm1 必须是非负数"))?,
+        Some(value) => value.as_f64().ok_or_else(|| anyhow::anyhow!("plot_sigma_cm1 Must be non-negative"))?,
         None => 5.0,
     };
-    ensure!(sigma.is_finite() && sigma >= 0.0, "plot_sigma_cm1 必须是有限非负数");
+    ensure!(sigma.is_finite() && sigma >= 0.0, "plot_sigma_cm1 It has to be finite and not negative");
     Ok(sigma)
 }
 
 /// 同一线性卷积核作用于全部 DOS 列。每个源点的核按输出梯形权重归一，
 /// 保留积分及投影可加性，包括有限频率区间的端点。
 fn gaussian_dos(rows: Vec<Vec<f64>>, sigma: f64) -> Result<Vec<Vec<f64>>> {
-    ensure!(sigma.is_finite() && sigma >= 0.0, "高斯展宽必须是有限非负数");
+    ensure!(sigma.is_finite() && sigma >= 0.0, "Goss must have a finite, non-negative amount");
     if sigma == 0.0 { return Ok(rows); }
-    ensure!(rows.len() >= 2 && rows.windows(2).all(|w| w[1][0] > w[0][0]), "高斯平滑要求至少两个严格递增的频率点");
+    ensure!(rows.len() >= 2 && rows.windows(2).all(|w| w[1][0] > w[0][0]), "Goss smooth requires at least two strictly incremental frequency points");
     let lo = rows[0][0];
     let hi = rows.last().unwrap()[0];
     let n = (((hi-lo)/(sigma/4.0)).ceil() as usize).max(rows.len()).min(20000).max(2);
@@ -119,7 +119,7 @@ fn gaussian_dos(rows: Vec<Vec<f64>>, sigma: f64) -> Result<Vec<Vec<f64>>> {
         let minimum = ((result[nearest][0]-source[0])/sigma).powi(2);
         let kernel: Vec<f64> = result.iter().map(|r| (-0.5*(((r[0]-source[0])/sigma).powi(2)-minimum)).exp()).collect();
         let norm: f64 = kernel.iter().enumerate().map(|(j,k)| k*dx*if j==0 || j+1==n {0.5} else {1.0}).sum();
-        ensure!(norm.is_finite() && norm > 0.0, "高斯展宽过小，请增大 plot_sigma_cm1");
+        ensure!(norm.is_finite() && norm > 0.0, "Goss is too small. Please increase plot_sigma_cm1");
         for (r,k) in result.iter_mut().zip(kernel) {
             for col in 1..source.len() { r[col] += source[col]*source_weight*k/norm; }
         }
@@ -144,18 +144,18 @@ fn load_dos(
     ))?;
     ensure!(
         !regex::Regex::new(r"(?i)\b(?:nan|inf|infinity)\b")?.is_match(&text),
-        "声子 DOS 包含非有限数值"
+        "Phonon DOS Include non-finite values"
     );
     let rows = qf_io::read_numeric_rows(&text);
     ensure!(
         !rows.is_empty() && rows[0].len() >= 2,
-        "声子 DOS 至少需要频率与 TDOS 两列"
+        "Phonon DOS At least it needs frequency and TDOS Two rows"
     );
     let width = rows[0].len();
     ensure!(
         rows.iter()
             .all(|r| r.len() == width && r.iter().all(|v| v.is_finite())),
-        "声子 DOS 列数不一致或包含非有限数值"
+        "Phonon DOS Columns are inconsistent or contain non-finite values"
     );
     // 与表格层一致：投影列是逐原子值，按结构的原子顺序聚合为元素。
     if width > 2 {

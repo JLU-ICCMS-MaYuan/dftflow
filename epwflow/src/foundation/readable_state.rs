@@ -22,6 +22,7 @@ pub(crate) fn load_config(path: &Path) -> Result<Config> {
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Document {
     pub sections: BTreeMap<String, Fields>,
+    legacy_language: bool,
 }
 
 /// 锁定稳定的父目录 inode，不创建会残留的锁文件；进程退出即释放。
@@ -136,7 +137,7 @@ pub fn mode_in(root: &Path) -> Result<String> {
         .collect();
     ensure!(
         found.len() <= 1,
-        "input_conflict: 多个声子目录尚未确定当前模式；请通过当前配置初始化工作区"
+        "input_conflict: multiple phonon directories exist without a current mode; initialize the workspace with the current configuration"
     );
     Ok(found.first().copied().unwrap_or("index").into())
 }
@@ -147,16 +148,22 @@ pub fn path(root: &Path, step: Step) -> Result<PathBuf> {
 }
 fn title(step: Step) -> &'static str {
     match step {
-        Step::Scf => "第 1 步 · QE 自洽",
-        Step::Nscf => "第 2 步 · QE 非自洽",
-        Step::Electronic => "第 3 步 · QE 电子参考",
-        Step::Phonon => "第 4 步 · QE 声子",
-        Step::Wannier => "第 5 步 · Wannier 拟合",
-        Step::Coarse => "第 6 步 · EPW 粗网格",
-        Step::Fine => "第 7 步 · EPW 细网格",
-        Step::Superconductivity => "第 8 步 · 超导求解",
+        Step::Scf => "Step 1 · QE SCF",
+        Step::Nscf => "Step 2 · QE NSCF",
+        Step::Electronic => "Step 3 · QE electronic reference",
+        Step::Phonon => "Step 4 · QE phonons",
+        Step::Wannier => "Step 5 · Wannier fitting",
+        Step::Coarse => "Step 6 · EPW coarse grid",
+        Step::Fine => "Step 7 · EPW fine grid",
+        Step::Superconductivity => "Step 8 · Superconductivity solver",
     }
 }
+fn split_field(line: &str) -> Option<(&str, &str)> {
+    let index = line.find([':', '：'])?;
+    let delimiter = line[index..].chars().next()?;
+    Some((&line[..index], &line[index + delimiter.len_utf8()..]))
+}
+
 impl Document {
     pub fn get(&self, section: &str, key: &str) -> Option<&str> {
         self.sections.get(section)?.get(key).map(String::as_str)
@@ -172,33 +179,37 @@ impl Document {
     }
     fn parse(text: &str, file: &Path) -> Result<Self> {
         ensure!(
-            text.ends_with("记录结束\n"),
-            "data_invalid: 阶段日志未写完整 {}；请核对实际任务和输出后恢复",
+            text.ends_with("End of record\n") || text.ends_with(super::legacy_language::FOOTER),
+            "data_invalid: stage log incomplete {}; verify actual jobs and output before recovery",
             file.display()
         );
-        let mut doc = Self::default();
+        let mut doc = Self { legacy_language: text.ends_with(super::legacy_language::FOOTER), ..Self::default() };
         let mut section = None;
         for (n, line) in text.lines().enumerate() {
-            if let Some(name) = line.strip_prefix("【").and_then(|s| s.strip_suffix('】')) {
+            if let Some(name) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
+                .or_else(|| line.strip_prefix('【').and_then(|s| s.strip_suffix('】'))) {
+                let name = super::legacy_language::translate(name).into_owned();
                 ensure!(
-                    !doc.sections.contains_key(name),
-                    "data_invalid: {}:{} 重复小节",
+                    !doc.sections.contains_key(&name),
+                    "data_invalid: {}:{} duplicate section",
                     file.display(),
                     n + 1
                 );
-                doc.sections.insert(name.into(), Fields::new());
+                doc.sections.insert(name.clone(), Fields::new());
                 section = Some(name.to_owned());
             } else if let Some((key, value)) =
-                line.strip_prefix("  ").and_then(|s| s.split_once('：'))
+                line.strip_prefix("  ").and_then(split_field)
             {
-                let section = section.as_ref().context("data_invalid: 日志字段缺少小节")?;
+                let section = section.as_ref().context("data_invalid: log field has no section")?;
+                let key = super::legacy_language::translate(key.trim()).into_owned();
+                let value = super::legacy_language::value(&key, value.trim()).into_owned();
                 ensure!(
                     doc.sections
                         .get_mut(section)
                         .unwrap()
-                        .insert(key.trim().into(), value.trim().into())
+                        .insert(key, value)
                         .is_none(),
-                    "data_invalid: {}:{} 重复字段",
+                    "data_invalid: {}:{} duplicate field",
                     file.display(),
                     n + 1
                 );
@@ -208,7 +219,7 @@ impl Document {
     }
     fn render(&self, step: Step) -> String {
         let mut out = format!("{}\n{}\n", title(step), "=".repeat(64));
-        let order = ["工作区", "阶段", "问题", "下一步"];
+        let order = ["Workspace", "Stage", "Problem", "Next step"];
         for name in order
             .into_iter()
             .filter(|n| self.sections.contains_key(*n))
@@ -219,7 +230,7 @@ impl Document {
                     .filter(|n| !order.contains(n)),
             )
         {
-            out.push_str(&format!("\n【{name}】\n"));
+            out.push_str(&format!("\n[{name}]\n"));
             for (key, value) in &self.sections[name] {
                 let value = value.replace(['\n', '\r'], " / ");
                 let width = key
@@ -227,12 +238,12 @@ impl Document {
                     .map(|c| if c.is_ascii() { 1 } else { 2 })
                     .sum::<usize>();
                 out.push_str(&format!(
-                    "  {key}{}：{value}\n",
+                    "  {key}{}: {value}\n",
                     " ".repeat(18usize.saturating_sub(width))
                 ));
             }
         }
-        out.push_str(&format!("\n{}\n记录结束\n", "=".repeat(64)));
+        out.push_str(&format!("\n{}\nEnd of record\n", "=".repeat(64)));
         out
     }
 }
@@ -241,7 +252,7 @@ pub fn read(root: &Path, step: Step) -> Result<Document> {
     match fs::read_to_string(&p) {
         Ok(text) => Document::parse(&text, &p),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Document::default()),
-        Err(e) => Err(e).with_context(|| format!("data_invalid: 无法读取阶段日志 {}", p.display())),
+        Err(e) => Err(e).with_context(|| format!("data_invalid: cannot read stage log {}", p.display())),
     }
 }
 pub fn update(
@@ -254,10 +265,10 @@ pub fn update(
     let mut doc = read(root, step)?;
     let previous = doc.clone();
     change(&mut doc)?;
-    if doc == previous {
+    if doc == previous && !doc.legacy_language {
         return Ok(());
     }
-    doc.set("工作区", "更新时间", timestamp());
+    doc.set("Workspace", "Updated at", timestamp());
     store::atomic_bytes(&path(root, step)?, doc.render(step).as_bytes())
 }
 fn timestamp() -> String {
@@ -283,7 +294,7 @@ pub fn initialize(cfg: &Config) -> Result<()> {
     let state = root.join("epw-state");
     ensure!(
         !fs::symlink_metadata(&state).is_ok_and(|m| m.file_type().is_symlink()),
-        "input_conflict: 状态目录不能是链接 {}",
+        "input_conflict: state directory cannot be a symlink {}",
         state.display()
     );
     let _guard = DirectoryGuard::acquire(&state)?;
@@ -306,15 +317,15 @@ pub fn initialize(cfg: &Config) -> Result<()> {
             let doc = Document::parse(&fs::read_to_string(&old)?, &old)?;
             let jobs = jobs(root, Step::Phonon)?;
             for (name, section) in &doc.sections {
-                if section.get("状态").is_some_and(|v| {
-                    matches!(v.as_str(), "运行中" | "提交中" | "提交未知" | "已提交")
+                if section.get("Status").is_some_and(|v| {
+                    matches!(v.as_str(), "running" | "submitting" | "submission unknown" | "submitted")
                 }) {
                     let job = jobs
                         .get(name)
-                        .context("scheduler_unknown: 旧声子模式提交缺少可确认的作业号")?;
+                        .context("scheduler_unknown: old phonon-mode submission has no confirmed job ID")?;
                     ensure!(
                         super::slurm::accounting(*job)?.terminal,
-                        "scheduler_unknown: 旧声子模式 {} 作业 {} 仍活动",
+                        "scheduler_unknown: old phonon-mode {} job {} remains active",
                         other,
                         job
                     );
@@ -331,24 +342,24 @@ pub fn initialize(cfg: &Config) -> Result<()> {
             Document::default()
         };
         let previous = doc.clone();
-        doc.set("工作区", "布局", "八阶段编号目录");
-        doc.set("工作区", "声子模式", mode(cfg));
+        doc.set("Workspace", "Layout", "Eight numbered stages");
+        doc.set("Workspace", "Phonon mode", mode(cfg));
         doc.set(
-            "工作区",
-            "计算目录",
+            "Workspace",
+            "Calculation directory",
             format!("{}/", stage_name(step, mode(cfg))),
         );
-        if doc.get("阶段", "状态").is_none() {
-            doc.set("阶段", "状态", "未开始");
+        if doc.get("Stage", "Status").is_none() {
+            doc.set("Stage", "Status", "not started");
         }
-        if doc.get("阶段", "科学状态").is_none() {
-            doc.set("阶段", "科学状态", "尚未检查");
+        if doc.get("Stage", "Scientific status").is_none() {
+            doc.set("Stage", "Scientific status", "not checked");
         }
-        if doc.get("下一步", "操作").is_none() {
-            doc.set("下一步", "操作", "使用当前配置执行本阶段公开命令");
+        if doc.get("Next step", "Action").is_none() {
+            doc.set("Next step", "Action", "Run this stage public command with the current configuration");
         }
         if doc != previous {
-            doc.set("工作区", "更新时间", timestamp());
+            doc.set("Workspace", "Updated at", timestamp());
             store::atomic_bytes(&file, doc.render(step).as_bytes())?;
         }
     }
@@ -376,21 +387,21 @@ pub fn jobs(root: &Path, step: Step) -> Result<BTreeMap<String, u64>> {
         Err(e) => return Err(e.into()),
     };
     ensure!(
-        text.starts_with("子任务\tSlurm 作业号\n"),
-        "data_invalid: 任务号表头不完整 {}",
+        text.starts_with("Task\tSlurm job ID\n") || text.starts_with(super::legacy_language::JOB_HEADER),
+        "data_invalid: incomplete job-table header {}",
         p.display()
     );
     let mut values = BTreeMap::new();
     for line in text.lines().skip(1).filter(|l| !l.trim().is_empty()) {
         let (name, job) = line
             .split_once('\t')
-            .context("data_invalid: 任务号表应为子任务和 Slurm 作业号两列")?;
+            .context("data_invalid: job table must contain task and Slurm job ID columns")?;
         let job = job
             .parse::<u64>()
-            .with_context(|| format!("data_invalid: 任务号无效 {}", p.display()))?;
+            .with_context(|| format!("data_invalid: invalid job ID {}", p.display()))?;
         ensure!(
-            job > 0 && values.insert(name.into(), job).is_none(),
-            "data_invalid: 任务号表重复或无效"
+            job > 0 && values.insert(super::legacy_language::translate(name).into_owned(), job).is_none(),
+            "data_invalid: duplicate or invalid job-table entry"
         );
     }
     Ok(values)
@@ -398,17 +409,17 @@ pub fn jobs(root: &Path, step: Step) -> Result<BTreeMap<String, u64>> {
 pub fn set_job(root: &Path, step: Step, name: &str, job: Option<u64>) -> Result<()> {
     ensure!(
         !name.contains(['\t', '\n', '\r']),
-        "configuration: 子任务名称含换行"
+        "configuration: subtask name contains a newline"
     );
     let _guard = DirectoryGuard::acquire(&root.join("epw-state"))?;
     let mut values = jobs(root, step)?;
     if let Some(job) = job {
-        ensure!(job > 0, "data_invalid: 作业号为零");
+        ensure!(job > 0, "data_invalid: job ID is zero");
         values.insert(name.into(), job);
     } else {
         values.remove(name);
     }
-    let mut text = String::from("子任务\tSlurm 作业号\n");
+    let mut text = String::from("Task\tSlurm job ID\n");
     for (name, job) in values {
         text.push_str(&format!("{name}\t{job}\n"));
     }
@@ -425,13 +436,13 @@ pub fn register_config(cfg: &Config, input: &Path, version: &Path) -> Result<()>
     let input = fs::canonicalize(input)?;
     for step in Step::ALL {
         update(&cfg.work_dir, step, |doc| {
-            doc.set("工作区", "当前输入", relative(&cfg.work_dir, &input));
-            doc.set("工作区", "当前输入版本", relative(&cfg.work_dir, version));
+            doc.set("Workspace", "Current input", relative(&cfg.work_dir, &input));
+            doc.set("Workspace", "Current input version", relative(&cfg.work_dir, version));
             Ok(())
         })?;
         let command = next_command(cfg, step, false)?;
         update(&cfg.work_dir, step, |doc| {
-            doc.set("下一步", "命令", &command);
+            doc.set("Next step", "Command", &command);
             Ok(())
         })?;
     }
@@ -451,13 +462,13 @@ pub fn current_config(root: &Path) -> Result<PathBuf> {
     }
     let doc = read(root, Step::Scf)?;
     let value = doc
-        .get("工作区", "当前输入版本")
-        .context("configuration: 尚未记录当前配置；请使用 --config 指定输入")?;
+        .get("Workspace", "Current input version")
+        .context("configuration: The current configuration has not been recorded; please use --config Specify Inputs")?;
     Ok(resolve(root, value))
 }
 pub fn computation_config(root: &Path, step: Step) -> Result<PathBuf> {
     let doc = read(root, step)?;
-    match doc.get("阶段", "计算配置") {
+    match doc.get("Stage", "Calculation configuration") {
         Some(p) => Ok(resolve(root, p)),
         None => current_config(root),
     }
@@ -467,15 +478,15 @@ pub fn computation_config(root: &Path, step: Step) -> Result<PathBuf> {
 pub fn complete_files(cfg: &Config, step: Step, label: &str, outputs: &[PathBuf]) -> Result<()> {
     let config = current_config(&cfg.work_dir)?;
     update(&cfg.work_dir, step, |d| {
-        let batch = d.get("阶段", "批次").unwrap_or("existing").to_owned();
+        let batch = d.get("Stage", "Batch").unwrap_or("existing").to_owned();
         d.remove(label);
-        d.set(label, "状态", "已完成");
-        d.set(label, "所属批次", batch);
-        d.set(label, "使用配置", relative(&cfg.work_dir, &config));
+        d.set(label, "Status", "completed");
+        d.set(label, "Owning batch", batch);
+        d.set(label, "Configuration used", relative(&cfg.work_dir, &config));
         for (i, path) in outputs.iter().filter(|p| !qf_io::qe_payload::unchecked(p)).enumerate() {
             d.set(
                 label,
-                &format!("产物{:03}", i + 1),
+                &format!("Artifact{:03}", i + 1),
                 relative(&cfg.work_dir, path),
             );
         }
@@ -488,15 +499,15 @@ pub fn completed_files(
     label: &str,
 ) -> Result<Option<Vec<store::Identity>>> {
     let doc = read(&cfg.work_dir, step)?;
-    if doc.get(label, "状态") != Some("已完成")
-        || doc.get(label, "所属批次") != Some(doc.get("阶段", "批次").unwrap_or("existing"))
+    if doc.get(label, "Status") != Some("completed")
+        || doc.get(label, "Owning batch") != Some(doc.get("Stage", "Batch").unwrap_or("existing"))
     {
         return Ok(None);
     }
     let mut ids = Vec::new();
     if let Some(fields) = doc.sections.get(label) {
         for (key, value) in fields {
-            if key.starts_with("产物") {
+            if key.starts_with("Artifact") {
                 let p = resolve(&cfg.work_dir, value);
                 if qf_io::qe_payload::unchecked(&p) { continue; }
                 if !p.is_file() {
@@ -510,7 +521,7 @@ pub fn completed_files(
 }
 pub fn checkpoint_config(cfg: &Config, step: Step, label: &str) -> Result<Option<Config>> {
     read(&cfg.work_dir, step)?
-        .get(label, "使用配置")
+        .get(label, "Configuration used")
         .map(|p| load_config(&resolve(&cfg.work_dir, p)))
         .transpose()
 }
@@ -523,7 +534,7 @@ pub fn next_command(cfg: &Config, step: Step, resume: bool) -> Result<String> {
     };
     let doc = read(&cfg.work_dir, step)?;
     let input = doc
-        .get("工作区", "当前输入")
+        .get("Workspace", "Current input")
         .map(|s| resolve(&cfg.work_dir, s))
         .unwrap_or(current_config(&cfg.work_dir)?);
     Ok(format!(
@@ -537,6 +548,60 @@ pub fn next_command(cfg: &Config, step: Step, resume: bool) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn legacy_language_preserves_identity_paths_and_unknown_submissions() {
+        let root = root();
+        let c = cfg(&root);
+        initialize(&c).unwrap();
+        let path = path(&root, Step::Scf).unwrap();
+        let legacy = include_str!("../../tests/fixtures/legacy-chinese-state.log");
+        fs::write(&path, legacy).unwrap();
+        let doc = read(&root, Step::Scf).unwrap();
+        assert_eq!(doc.get("Stage", "Status"), Some("running"));
+        assert_eq!(doc.get("Stage", "Batch"), Some("retained-batch"));
+        assert_eq!(doc.get("Stage allocation", "Status"), Some("submission unknown"));
+        assert_eq!(doc.get("Stage allocation", "Submission ID"), Some("retained-allocation"));
+        assert_eq!(doc.get("Task · scf", "Status"), Some("completed"));
+        let origin = doc.get("Configuration snapshot · 0000-config.toml", "Original directory").unwrap();
+        assert!(legacy.contains(origin));
+        assert_eq!(doc.get("Problem", "Reason"), Some("data_invalid: stage log incomplete broken.log; verify actual jobs and output before recovery"));
+        assert_eq!(doc.get("Next step", "Action"), Some("After the job finishes, run: epw_phonon -c input.toml --stage scf -s"));
+        assert_eq!(fs::read_to_string(&path).unwrap(), legacy, "read must be nonmutating");
+        update(&root, Step::Scf, |_| Ok(())).unwrap();
+        let rewritten = fs::read_to_string(&path).unwrap();
+        assert!(rewritten.contains("[Stage allocation]") && rewritten.ends_with("End of record\n"));
+        // 用户提供的路径原样保留；其余字段和值均采用英文。
+        assert!(!rewritten.replace(origin, "preserved-user-path").chars().any(|c| ('\u{3400}'..='\u{9fff}').contains(&c)));
+        let mut after = read(&root, Step::Scf).unwrap();
+        after.sections.get_mut("Workspace").unwrap().remove("Updated at");
+        assert_eq!(after.sections, doc.sections);
+        let mixed = legacy.replace(super::super::legacy_language::FOOTER, "[Stage]\n  Status: completed\nEnd of record\n");
+        fs::write(&path, mixed).unwrap();
+        assert!(read(&root, Step::Scf).unwrap_err().to_string().contains("duplicate section"));
+        fs::write(&path, legacy.trim_end_matches(super::super::legacy_language::FOOTER)).unwrap();
+        assert!(read(&root, Step::Scf).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_job_header_preserves_allocation_job_identity_and_rejects_alias_duplicates() {
+        let root = root();
+        let c = cfg(&root);
+        initialize(&c).unwrap();
+        let p = jobs_path(&root, Step::Scf).unwrap();
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let legacy = include_str!("../../tests/fixtures/legacy-chinese-jobs.txt").to_owned();
+        fs::write(&p, &legacy).unwrap();
+        assert_eq!(jobs(&root, Step::Scf).unwrap().get("Stage allocation"), Some(&201));
+        assert_eq!(fs::read_to_string(&p).unwrap(), legacy);
+        set_job(&root, Step::Scf, "scf", Some(202)).unwrap();
+        let en = fs::read_to_string(&p).unwrap();
+        assert_eq!(en, "Task\tSlurm job ID\nStage allocation\t201\nscf\t202\n");
+        fs::write(&p, format!("{legacy}Stage allocation\t203\n")).unwrap();
+        assert!(jobs(&root, Step::Scf).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn reuse_messages_identify_every_numbered_stage() {
         let root = root();
@@ -575,7 +640,7 @@ mod tests {
                 let root = &root;
                 scope.spawn(move || {
                     update(root, Step::Superconductivity, |d| {
-                        d.set(&format!("任务 · {method}"), "状态", "已完成");
+                        d.set(&format!("Task · {method}"), "Status", "completed");
                         Ok(())
                     })
                     .unwrap();
@@ -584,12 +649,12 @@ mod tests {
         });
         let d = read(&root, Step::Superconductivity).unwrap();
         for method in ["iso", "aniso"] {
-            assert_eq!(d.get(&format!("任务 · {method}"), "状态"), Some("已完成"));
+            assert_eq!(d.get(&format!("Task · {method}"), "Status"), Some("completed"));
         }
         set_job(&root, Step::Superconductivity, "iso", Some(123)).unwrap();
         assert_eq!(jobs(&root, Step::Superconductivity).unwrap()["iso"], 123);
         let text = fs::read_to_string(path(&root, Step::Superconductivity).unwrap()).unwrap();
-        assert!(text.contains("第 8 步 · 超导求解") && !text.contains("{\n"));
+        assert!(text.contains("Step 8 · Superconductivity solver") && !text.contains("{\n"));
         assert_eq!(fs::read_dir(root.join("epw-state")).unwrap().count(), 8);
         fs::remove_dir_all(root).unwrap();
     }
@@ -616,17 +681,17 @@ mod tests {
         let c = cfg(&root);
         initialize(&c).unwrap();
         update(&root, Step::Scf, |d| {
-            d.set("任务 · scf", "状态", "提交未知");
+            d.set("Task · scf", "Status", "submission unknown");
             Ok(())
         })
         .unwrap();
         assert_eq!(
-            read(&root, Step::Scf).unwrap().get("任务 · scf", "状态"),
-            Some("提交未知")
+            read(&root, Step::Scf).unwrap().get("Task · scf", "Status"),
+            Some("submission unknown")
         );
         fs::write(
             path(&root, Step::Scf).unwrap(),
-            "第 1 步\n【阶段】\n  状态：已完成\n",
+            "Step 1\n[Stage]\n  Status:completed\n",
         )
         .unwrap();
         assert!(read(&root, Step::Scf).is_err());

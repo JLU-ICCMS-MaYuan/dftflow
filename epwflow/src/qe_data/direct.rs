@@ -8,7 +8,7 @@ pub fn load(cfg: &Config) -> Result<QeManifest> {
     if crate::foundation::phonon_import::bound(cfg) {
         anyhow::ensure!(
             crate::foundation::phonon_import::binding(cfg).is_file(),
-            "data_invalid: 外部声子来源记录缺失，请重新指定 --import-phonon；不会重新执行 PH"
+            "data_invalid: external phonon source record missing; specify --import-phonon again; PH will not be rerun"
         );
     }
     let root = &cfg.work_dir;
@@ -94,7 +94,7 @@ pub fn load(cfg: &Config) -> Result<QeManifest> {
             .pw
             .path
             .parent()
-            .context("configuration: QE 缺程序目录")?
+            .context("configuration: QE Synchronising folder")?
             .join(format!("{name}.x"));
         programs.insert(name.into(), store::hash_file(&p)?);
     }
@@ -103,8 +103,8 @@ pub fn load(cfg: &Config) -> Result<QeManifest> {
         artifact_root: Some(root.canonicalize()?),
         artifacts,
         run_id: crate::foundation::readable_state::read(root, Step::Phonon)?
-            .get("阶段", "批次")
-            .unwrap_or("现有声子结果")
+            .get("Stage", "Batch")
+            .unwrap_or("Existing phonon results")
             .into(),
         fingerprints: Fingerprints {
             structure_sha256: store::hash_file(&cfg.structure)?,
@@ -130,9 +130,9 @@ pub fn load(cfg: &Config) -> Result<QeManifest> {
         validation: Validation {
             status: "valid".into(),
             checks: vec![Check {
-                name: "直接检查计算目录".into(),
+                name: "Direct validation of calculation directory".into(),
                 passed: true,
-                detail: "结构、NSCF 网格与波函数、PH 响应势及扰动模式逐项检查".into(),
+                detail: "Validate structure, NSCF grid, PH response potentials and perturbation modes individually".into(),
             }],
             units: BTreeMap::new(),
             thresholds: BTreeMap::new(),
@@ -151,6 +151,6 @@ pub fn workspace(path: &std::path::Path) -> Option<std::path::PathBuf> {
 pub fn current(root: &std::path::Path) -> Result<Config> {
     crate::foundation::readable_state::load_config(
         &crate::foundation::readable_state::current_config(root)
-            .context("configuration: 请通过当前配置初始化八阶段日志")?,
+            .context("configuration: Please use the current configuration to initialize phase 8 logs")?,
     )
 }

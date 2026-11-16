@@ -33,17 +33,17 @@ pub fn run_with_retry(
     let f3 = InterpolationManifest::load(&path)?;
     ensure!(
         f3.validation.all_passed(),
-        "data_invalid: 插值数据无效，F4 不得放行"
+        "data_invalid: interpolation data invalid; F4 cannot proceed"
     );
     let input = source::bind(&work, cfg, &f3)?;
     ensure!(
         backend == Backend::Local,
-        "allocation: F4 只在 F1 已登记分配内顺序执行，不另行 sbatch"
+        "allocation: F4 runs sequentially within the F1 registered allocation; no separate sbatch"
     );
     let mut before = || -> Result<()> {
         if !crate::foundation::native_jobs::enabled() {
             let job = std::env::var("SLURM_JOB_ID")
-                .context("allocation: 缺少当前 Slurm 分配")?
+                .context("allocation: current Slurm allocation missing")?
                 .parse::<u64>()?;
             budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
                 ledger.require_allocation(job).map(|_| ())
@@ -58,7 +58,7 @@ pub fn run_with_retry(
             } else {
                 store::hash_file(&path)?
             }) == input.interpolation_digest,
-            "input_conflict: F3 清单改变"
+            "input_conflict: F3 manifest changed"
         );
         Ok(())
     };
@@ -79,7 +79,7 @@ pub fn run_with_retry(
             engine.prepare_resume(&mut |job| {
                 ensure!(
                     crate::foundation::slurm::accounting(job)?.terminal,
-                    "scheduler_unknown: 原分配仍活动，不能重提中断尝试"
+                    "scheduler_unknown: original allocation remains active; interrupted attempt cannot be resubmitted"
                 );
                 Ok(())
             })?;
@@ -95,7 +95,7 @@ pub fn run_with_retry(
         native_modes,
     )?;
     if !result.converged {
-        bail!("partial: 原生求解或搜索尚未完成，已保存分模式区间、尝试和停止原因");
+        bail!("partial: native solve or search incomplete; per-mode intervals, attempts and stop reasons saved");
     }
     Ok(result)
 }
@@ -115,7 +115,7 @@ pub fn publish(
     };
     ensure!(
         native_modes.keys().map(String::as_str).collect::<Vec<_>>() == expected,
-        "data_invalid: 缺少所选模式，不能发布原生阶段"
+        "data_invalid: selected modes missing; native stage cannot be published"
     );
     for r in native_modes.values() {
         super::verify::mode(r, &interpolation_digest)?;
@@ -132,7 +132,7 @@ pub fn publish(
     validation.check(
         "native_modes_complete",
         complete,
-        "所选模式的原生 Tc 区间、双初值及必需能隙点均须有效",
+        "All selected modes require valid native Tc intervals, both initial gaps and mandatory gap points",
     );
     validation.units.insert("temperature".into(), "K".into());
     validation.units.insert("gap".into(), "meV".into());

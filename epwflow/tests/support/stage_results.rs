@@ -7,9 +7,9 @@ impl Case {
         let root=self.root.join("run");
         for step in Step::ALL {
             if let Ok(doc)=logs::read(&root,step){
-                if matches!(doc.get("阶段分配","状态"),Some("已完成"|"失败")){
-                    if let Some(job)=logs::jobs(&root,step).unwrap().get("阶段分配"){
-                        self.put(&format!("job-{job}.state"),if doc.get("阶段分配","状态")==Some("已完成"){"COMPLETED"}else{"FAILED"});
+                if matches!(doc.get("Stage allocation","Status"),Some("completed"|"failed")){
+                    if let Some(job)=logs::jobs(&root,step).unwrap().get("Stage allocation"){
+                        self.put(&format!("job-{job}.state"),if doc.get("Stage allocation","Status")==Some("completed"){"COMPLETED"}else{"FAILED"});
                     }
                 }
             }
@@ -26,7 +26,7 @@ impl Case {
             .into_iter()
             .filter_map(|step| {
                 let doc = logs::read(&cfg.work_dir, step).unwrap();
-                (doc.get("阶段分配", "状态") == Some("已提交")).then_some((step, doc))
+                (doc.get("Stage allocation", "Status") == Some("submitted")).then_some((step, doc))
             })
             .next();
         if allocation.is_none() {
@@ -43,14 +43,14 @@ impl Case {
         }
         use std::{io::Write, os::unix::fs::MetadataExt};
         let (step, doc) = allocation.unwrap();
-        let script = logs::resolve(&cfg.work_dir, doc.get("阶段分配", "脚本").unwrap());
+        let script = logs::resolve(&cfg.work_dir, doc.get("Stage allocation", "Script").unwrap());
         let script_body = fs::read(&script).unwrap();
         let log_path = script.with_file_name(format!("slurm-{}.log", step.name()));
         let mut open_log = fs::File::create(&log_path).unwrap();
         open_log
             .write_all(b"before stage initialization\n")
             .unwrap();
-        let job = logs::jobs(&cfg.work_dir, step).unwrap()["阶段分配"];
+        let job = logs::jobs(&cfg.work_dir, step).unwrap()["Stage allocation"];
         let mut cmd = self.scheduled_command(&script, script.parent().unwrap(), job);
         cmd.env("SLURM_NTASKS", "1");
         let out = cmd.output().unwrap();
@@ -58,12 +58,12 @@ impl Case {
         assert_eq!(
             fs::read(&script).unwrap(),
             script_body,
-            "当前阶段脚本不能随科学目录归档后消失"
+            "Scripts at the current stage cannot disappear after the scientific catalogue is archived"
         );
         assert_eq!(
             open_log.metadata().unwrap().ino(),
             fs::metadata(&log_path).unwrap().ino(),
-            "日志入口必须仍指向 Slurm 持有的 inode"
+            "The log entrance must remain pointed Slurm Holdings inode"
         );
         assert_eq!(
             fs::read_to_string(log_path).unwrap(),
@@ -102,7 +102,7 @@ impl Case {
                 return out;
             }
         }
-        panic!("原生阶段 {stage} 未在有限次公开推进中结束");
+        panic!("native {stage} Not completed in finite public advances");
     }
     pub(super) fn stage_submit(&self, stage: &str, resume: bool) -> Output {
         let mut args = vec!["--stage", stage, "-s"];
@@ -136,7 +136,7 @@ fn wannier_allocation_publishes_without_phonons_and_repairs_only_derivatives() {
         "metrics.json",
         "stage-manifest.json",
     ] {
-        assert!(result.join(name).is_file(), "缺少 {name}");
+        assert!(result.join(name).is_file(), "Missing {name}");
     }
     assert!(!c.root.join("run/4.qe-phonon-nosplit/ph.out").exists());
     assert!(!c.root.join("run/6.epw-coarse").exists());
@@ -286,7 +286,7 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
     assert_eq!(
         calls.0,
         c.calls().0,
-        "电子模型变化不能重复 PW/PH/q2r/matdyn"
+        "Electronic model changes cannot be repeated PW/PH/q2r/matdyn"
     );
     let phonon = c.root.join("run/6.epw-coarse/comparison-native");
     assert!(phonon.join("force-constants/reference.fc.xml").is_file());
@@ -296,8 +296,8 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
     let coarse = epwflow::foundation::readable_state::read(
         &c.root.join("run"), epwflow::foundation::stages::Step::Coarse,
     ).unwrap();
-    assert!(coarse.get("子步骤 · comparison-q2r", "状态").is_none());
-    assert!(coarse.get("子步骤 · comparison-matdyn", "状态").is_none());
+    assert!(coarse.get("Substep · comparison-q2r", "Status").is_none());
+    assert!(coarse.get("Substep · comparison-matdyn", "Status").is_none());
 }
 
 #[test]
@@ -442,7 +442,7 @@ fn registered_legacy_electronic_samples_migrate_without_refitting_or_changing_sc
         store::hash_file(&old.join("sources.json")).unwrap()
     );
     let origin: Value = store::read(&post.join("band-origin.json")).unwrap();
-    assert_ne!(origin["driver"], "legacy_epw_readonly", "有效的当前原生输出优先于旧比较缓存");
+    assert_ne!(origin["driver"], "legacy_epw_readonly", "Effective current raw output takes precedence over old, more cache");
 
 }
 
@@ -466,7 +466,7 @@ fn sparse_high_symmetry_path_preserves_unequal_native_sampling_and_dos() {
     let csv = fs::read_to_string(result.join("electronic-bands.csv")).unwrap();
     let qe = csv.lines().filter(|l| l.starts_with("qe,")).count();
     let epw = csv.lines().filter(|l| l.starts_with("epw,")).count();
-    assert!(qe > epw && epw > 0, "两侧应保留不同数量的原生点");
+    assert!(qe > epw && epw > 0, "Different numbers of native sites should be retained on both sides");
     let metrics: Value = store::read(&result.join("metrics.json")).unwrap();
     assert_eq!(metrics["independent_electronic_sampling"], true);
     assert!(
@@ -519,7 +519,7 @@ fn sip2_titled_path_survives_wannier_resume_without_recomputing_references() {
     assert_eq!(
         c.calls().0,
         references,
-        "恢复拟合不得重算 SCF/NSCF/PH/电子参考"
+        "Recovery is not recalculated SCF/NSCF/PH/Electronic reference"
     );
     assert!(!references.lines().any(|line| line == "ph"));
     assert_eq!(store::hash_file(&path).unwrap(), path_hash);
@@ -570,7 +570,7 @@ fn failed_wannier_generation_error_recovers_without_archived_inputs() {
     success(c.stage_submit("wannier", false));
     let failure = c.stage_execute();
     assert!(!failure.status.success());
-    assert!(String::from_utf8_lossy(&failure.stderr).contains("局域化收敛证据"));
+    assert!(String::from_utf8_lossy(&failure.stderr).contains("Evidence of localization"));
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
     let old = serde_json::to_value(
         epwflow::foundation::native_jobs::tasks(&cfg).unwrap().into_iter()
@@ -591,7 +591,7 @@ fn failed_wannier_generation_error_recovers_without_archived_inputs() {
     success(c.stage_submit("wannier", true));
     let failure = c.stage_execute();
     assert!(!failure.status.success());
-    assert!(String::from_utf8_lossy(&failure.stderr).contains("零个间隔"));
+    assert!(String::from_utf8_lossy(&failure.stderr).contains("zero interval"));
     assert!(!c.root.join("run/5.epw-wannier/epw_wannier.in").exists());
     let pointer = c.root.join("run/epw-state/native-active.json");
     store::write(&pointer, &old).unwrap();
@@ -636,7 +636,7 @@ fn band_ranges_are_drawn_inside_each_stage_and_repaired_without_scientific_calls
         success(c.stage_submit(stage, false));
         success(c.stage_execute());
         let image = c.root.join("run").join(directory).join(format!("{stage}-band-ranges.png"));
-        assert!(image.is_file(), "阶段分配结束必须已有图：{}", image.display());
+        assert!(image.is_file(), "The end of the phase must have a graph:{}", image.display());
         let mut reader = png::Decoder::new(fs::File::open(&image).unwrap()).read_info().unwrap();
         let info = reader.info();
         assert_eq!(info.pixel_dims.unwrap().xppu, 11812);
@@ -645,8 +645,8 @@ fn band_ranges_are_drawn_inside_each_stage_and_repaired_without_scientific_calls
         reader.next_frame(&mut pixels).unwrap();
         let report:Value=store::read(&image.with_extension("json")).unwrap();
         assert_eq!(report["stage"],stage);
-        if stage == "scf" { assert!(!c.root.join("run/2.qe-nscf/out").exists(),"SCF 图不得等待 NSCF"); }
-        if stage == "nscf" { assert!(!c.root.join("run/3.qe-electronic/qe_eband/out").exists(),"NSCF 图不得等待 electronic"); }
+        if stage == "scf" { assert!(!c.root.join("run/2.qe-nscf/out").exists(),"SCF I can't wait NSCF"); }
+        if stage == "nscf" { assert!(!c.root.join("run/3.qe-electronic/qe_eband/out").exists(),"NSCF I can't wait electronic"); }
     }
     let before = c.calls();
     let post = c.post_calls();
@@ -694,7 +694,7 @@ fn electronic_band_ranges_precede_dos_failure_and_invalid_windows_keep_diagnosti
     let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
     let states=epwflow::qe_data::nscf::parse_xml(&root.join(format!("2.qe-nscf/out/{}.save/data-file-schema.xml",cfg.qe.prefix))).unwrap();
     let error=epwflow::interpolation::epw_config::EpwConfig::from_config(&cfg).unwrap().with_fermi(states.fermi).unwrap().with_bands(&states.eigenvalues).unwrap().window_selection().unwrap_err();
-    assert!(error.to_string().contains("不自动裁剪"));
+    assert!(error.to_string().contains("Do Not Autocrop"));
 }
 
 #[test]
@@ -710,7 +710,7 @@ fn wannier_and_coarse_single_allocation_freezes_config_and_automatically_plots()
         let count = fs::read_to_string(c.root.join("submissions")).unwrap_or_default().lines().count();
         success(c.stage_submit(stage, false));
         let doc = logs::read(&c.root.join("run"), step).unwrap();
-        let script = logs::resolve(&c.root.join("run"), doc.get("阶段分配", "脚本").unwrap());
+        let script = logs::resolve(&c.root.join("run"), doc.get("Stage allocation", "Script").unwrap());
         let body = fs::read_to_string(script).unwrap();
         assert!(body.contains(&format!("--allocated-stage {stage}")));
         assert!(body.contains("epw_wannier"));
@@ -720,8 +720,8 @@ fn wannier_and_coarse_single_allocation_freezes_config_and_automatically_plots()
         success(c.stage_execute());
         fs::write(c.root.join("input.toml"), original).unwrap();
         assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), count + 1,
-            "阶段内不能嵌套提交");
-        assert_eq!(logs::read(&c.root.join("run"), step).unwrap().get("阶段分配", "状态"), Some("已完成"));
+            "No embedded submission at the stage");
+        assert_eq!(logs::read(&c.root.join("run"), step).unwrap().get("Stage allocation", "Status"), Some("completed"));
         let result = c.root.join("run/results").join(folder);
         let comparison = c.root.join("run").join(folder).join("comparison-native");
         assert!(!comparison.join("electron").exists());

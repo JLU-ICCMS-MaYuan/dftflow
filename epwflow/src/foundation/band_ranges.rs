@@ -67,7 +67,7 @@ fn paths(cfg: &Config, step: Step) -> Result<(PathBuf, Vec<PathBuf>)> {
                 Step::Nscf.directory(cfg).join("out").join(xml),
             ],
         ),
-        _ => anyhow::bail!("configuration: 能带范围图仅支持 SCF／NSCF／electronic"),
+        _ => anyhow::bail!("configuration: You can only support it with a scope diagram SCF/NSCF/electronic"),
     })
 }
 fn request(cfg: &Config, step: Step) -> Result<(PathBuf, Vec<Identity>, String)> {
@@ -541,7 +541,7 @@ pub fn generate(cfg: &Config, step: Step) -> Result<()> {
         let rendered = style::png(&svg, &temporary, width * 2, height * 2);
         if let Err(error) = rendered {
             let _ = fs::remove_file(&temporary);
-            return Err(error).context("plot_failed: 能带范围图生成失败；科学结果保留");
+            return Err(error).context("plot_failed: band-range plot generation failed; scientific results preserved");
         }
         fs::rename(temporary, dir.join(&files[0]))?;
         let mut csv =

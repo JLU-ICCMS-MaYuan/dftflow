@@ -135,7 +135,7 @@ pub fn compare_manifests(a: &QeManifest, b: &QeManifest) -> ComparisonReport {
     let same_fp = a.fingerprints.structure_sha256 == b.fingerprints.structure_sha256
         && a.fingerprints.pseudo_sha256 == b.fingerprints.pseudo_sha256
         && a.fingerprints.program_sha256 == b.fingerprints.program_sha256;
-    rep.metric("fingerprints", same_fp, "结构/赝势/程序身份");
+    rep.metric("fingerprints", same_fp, "Structure/pseudopotential/program identity");
 
     // SCF 总能绝对差。
     let (ea, eb) = match (&a.scf, &b.scf) {
@@ -151,13 +151,13 @@ pub fn compare_manifests(a: &QeManifest, b: &QeManifest) -> ComparisonReport {
             let grid_ok = x.k_grid == y.k_grid && x.nbnd == y.nbnd;
             rep.metric("nscf_grid_nbnd", grid_ok, &format!("k_grid={:?} nbnd={}", x.k_grid, x.nbnd));
             let coord_ok = compare_coordinates(&x.kpoints, &y.kpoints, TOL_COORD);
-            rep.metric("nscf_k_coordinates", coord_ok, "k 坐标周期匹配");
+            rep.metric("nscf_k_coordinates", coord_ok, "Periodic k-coordinate matching");
             let w_ok = compare_weights(&x.weights, &y.weights);
-            rep.metric("nscf_weights", w_ok, "权重归一化对照");
+            rep.metric("nscf_weights", w_ok, "Weight normalization comparison");
             let eig_ok = compare_eigenvalues(&x.eigenvalues, &y.eigenvalues, TOL_NSCF_EIGEN_EV);
             rep.metric("nscf_eigenvalues", eig_ok, &format!("tol={TOL_NSCF_EIGEN_EV} eV"));
         }
-        _ => rep.metric("nscf_states", false, "缺少电子态"),
+        _ => rep.metric("nscf_states", false, "Electronic states missing"),
     }
 
     // q 点数量与坐标。
@@ -167,7 +167,7 @@ pub fn compare_manifests(a: &QeManifest, b: &QeManifest) -> ComparisonReport {
             &b.qpoints.iter().map(|q| q.crystal).collect::<Vec<_>>(),
             TOL_COORD,
         );
-    rep.metric("q_points", q_ok, "q 数量与坐标");
+    rep.metric("q_points", q_ok, "q-point count and coordinates");
 
     // 响应文件数量与扰动数。
     let ph_ok = a.phonon_files.len() == b.phonon_files.len()
@@ -176,7 +176,7 @@ pub fn compare_manifests(a: &QeManifest, b: &QeManifest) -> ComparisonReport {
             .iter()
             .zip(b.phonon_files.iter())
             .all(|(x, y)| x.q_id == y.q_id && x.perturbations == y.perturbations);
-    rep.metric("phonon_files", ph_ok, "响应文件与扰动数");
+    rep.metric("phonon_files", ph_ok, "Response files and perturbation counts");
 
     rep
 }

@@ -31,7 +31,7 @@ fn digest(path: &Path) -> Result<(u64, String)> {
     let meta = fs::symlink_metadata(path)?;
     ensure!(
         meta.is_file() && meta.len() > 0,
-        "EPW 数据缺失、为空或不是普通文件: {}",
+        "EPW Data missing, empty or not a normal file: {}",
         path.display()
     );
     let mut input = fs::File::open(path)?;
@@ -67,7 +67,7 @@ fn phsave(files: &mut Vec<File>, root: &Path, relative: &Path, prefix: &str) -> 
         let kind = entry.file_type()?;
         ensure!(
             !kind.is_symlink(),
-            "EPW phsave 不允许符号链接: {}",
+            "EPW phsave Symbolic links are not allowed: {}",
             entry.path().display()
         );
         if kind.is_dir() {
@@ -99,10 +99,10 @@ pub fn export_nosplit(work: &Path, outdir: &Path, prefix: &str) -> Result<PathBu
             && prefix
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || "_-".contains(c)),
-        "EPW prefix 无效"
+        "EPW prefix Invalid"
     );
     let lock = work.join(".epw-save.lock");
-    fs::create_dir(&lock).context("EPW save 正在归档，或存在需核对的残留锁")?;
+    fs::create_dir(&lock).context("EPW save Archiving, or remaining locks to verify")?;
     let _lock = Lock(lock);
     qf_io::qe_completion::checked_log(&work.join("ph.out"), false)?;
     let dyn0 = work.join(format!("{prefix}.dyn0"));
@@ -111,17 +111,17 @@ pub fn export_nosplit(work: &Path, outdir: &Path, prefix: &str) -> Result<PathBu
         .lines()
         .filter(|l| !l.trim().is_empty())
         .nth(1)
-        .context("dyn0 缺 q 数")?
+        .context("dyn0 Missing q Number")?
         .trim()
         .parse()?;
     let points = qf_io::parse_dyn0_qpoints(&raw)?;
     ensure!(
         count > 0 && points.len() == count,
-        "EPW dyn0 q 点列表不完整"
+        "EPW dyn0 q Point List Incomplete"
     );
     ensure!(
         points[0].q_crystal.iter().all(|v| v.abs() < 1e-9),
-        "EPW 第一个 q 必须为 Gamma"
+        "EPW First q Must be Gamma"
     );
     let root = outdir.join("_ph0");
     let metadata = root.join(format!("{prefix}.phsave"));
@@ -136,7 +136,7 @@ pub fn export_nosplit(work: &Path, outdir: &Path, prefix: &str) -> Result<PathBu
     for (i, point) in points.iter().enumerate() {
         ensure!(
             point.q_crystal.iter().all(|v| v.is_finite()),
-            "EPW q 坐标非有限"
+            "EPW q Coordinates are not finite"
         );
         for prior in &points[..i] {
             ensure!(
@@ -145,7 +145,7 @@ pub fn export_nosplit(work: &Path, outdir: &Path, prefix: &str) -> Result<PathBu
                     .iter()
                     .zip(point.q_crystal)
                     .any(|(a, b)| (a - b).abs() > 1e-9),
-                "EPW dyn0 存在重复 q"
+                "EPW dyn0 Duplicate q"
             );
         }
         let q = i + 1;
@@ -159,7 +159,7 @@ pub fn export_nosplit(work: &Path, outdir: &Path, prefix: &str) -> Result<PathBu
             dir.join(format!("{prefix}.dvscf1")),
         ];
         let candidates = candidates.iter().filter(|p| p.exists()).collect::<Vec<_>>();
-        ensure!(candidates.len() == 1, "EPW q={q} 缺少逐 q dvscf 或存在歧义");
+        ensure!(candidates.len() == 1, "EPW q={q} Lack of a PV q dvscf Or there's a ambiguity");
         digest(&metadata.join(format!("patterns.{q}.xml")))?;
         add(
             &mut files,
@@ -185,34 +185,34 @@ pub fn export_nosplit(work: &Path, outdir: &Path, prefix: &str) -> Result<PathBu
     if destination.exists() {
         let old: Manifest = serde_json::from_slice(
             &fs::read(destination.join("manifest.json"))
-                .context("EPW save 已存在但缺归档清单，禁止覆盖")?,
+                .context("EPW save Existing but missing archive manifest, prohibited to overwrite")?,
         )?;
-        ensure!(old == manifest, "EPW save 已绑定不同来源，禁止覆盖");
+        ensure!(old == manifest, "EPW save Different sources have been bound and coverage is prohibited");
         for file in &manifest.files {
             ensure!(
                 digest(&destination.join(&file.relative_path))?
                     == (file.bytes, file.sha256.clone()),
-                "EPW save 归档数据已改变"
+                "EPW save Archival data changed"
             );
         }
         return Ok(destination);
     }
     let partial = work.join(format!("save.partial-{}", std::process::id()));
-    fs::create_dir(&partial).context("EPW save 临时交付已存在，保留现场")?;
+    fs::create_dir(&partial).context("EPW save Interim delivery already exists, on site")?;
     for file in &manifest.files {
         let target = partial.join(&file.relative_path);
-        fs::create_dir_all(target.parent().context("EPW 目标缺父目录")?)?;
+        fs::create_dir_all(target.parent().context("EPW Destination Missing Parent Directory")?)?;
         fs::copy(&file.source, &target)?;
         ensure!(
             digest(&target)? == (file.bytes, file.sha256.clone())
                 && digest(&file.source)? == (file.bytes, file.sha256.clone()),
-            "EPW 来源在归档期间改变"
+            "EPW Source changed during archiving"
         );
     }
     for file in &manifest.files {
         ensure!(
             digest(&file.source)? == (file.bytes, file.sha256.clone()),
-            "EPW 来源在发布前改变"
+            "EPW Source Change Before Release"
         );
     }
     fs::write(

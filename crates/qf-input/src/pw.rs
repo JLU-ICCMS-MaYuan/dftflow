@@ -255,7 +255,7 @@ pub fn write_calculation_input(
     let params = build_nested_pw_params(&section);
     let kp = &section["k_points"];
     let grid = if let Some(a) = kp["kpoints"].as_array() {
-        anyhow::ensure!(a.len() == 3, "kpoints 必须包含三个整数");
+        anyhow::ensure!(a.len() == 3, "kpoints Must contain three integers");
         [
             a[0].as_i64().unwrap_or(0),
             a[1].as_i64().unwrap_or(0),
@@ -272,7 +272,7 @@ pub fn write_calculation_input(
             0.04,
         )
     };
-    anyhow::ensure!(grid.iter().all(|v| *v > 0), "kpoints 必须为正整数");
+    anyhow::ensure!(grid.iter().all(|v| *v > 0), "kpoints It has to be positive");
     let [nx, ny, nz] = grid;
     let points = if nscf {
         uniform_kpoints_text(grid, !kp["wan"].as_bool().unwrap_or(false))?
@@ -295,10 +295,10 @@ pub fn write_calculation_input(
 
 /// QE 使用有符号整数记录点数；在生成正文前拒绝非法维度和乘积溢出。
 pub fn uniform_kpoint_count(grid: [i64; 3]) -> Result<usize> {
-    anyhow::ensure!(grid.iter().all(|n| *n > 0), "kpoints 必须为正整数");
+    anyhow::ensure!(grid.iter().all(|n| *n > 0), "kpoints It has to be positive");
     let total = grid.iter().try_fold(1i64, |n, v| n.checked_mul(*v))
-        .ok_or_else(|| anyhow::anyhow!("kpoints 数量溢出"))?;
-    anyhow::ensure!(total <= i32::MAX as i64, "kpoints 数量超过 QE 整数范围");
+        .ok_or_else(|| anyhow::anyhow!("kpoints Spills"))?;
+    anyhow::ensure!(total <= i32::MAX as i64, "kpoints More than QE Integer range");
     Ok(total as usize)
 }
 

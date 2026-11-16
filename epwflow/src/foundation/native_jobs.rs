@@ -20,7 +20,7 @@ use std::{
 pub struct Paused;
 impl std::fmt::Display for Paused {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("native_pending: 请在作业结束后再次执行同一公开命令 -s")
+        f.write_str("native_pending: after the job finishes, repeat the same public command with -s")
     }
 }
 impl std::error::Error for Paused {}
@@ -131,7 +131,7 @@ fn scoped_mode<T>(
     allocated: bool,
     run: impl FnOnce() -> Result<T>,
 ) -> Result<T> {
-    ensure!(!enabled(), "input_conflict: 原生执行上下文不能嵌套");
+    ensure!(!enabled(), "input_conflict: native execution contexts cannot be nested");
     struct Guard;
     impl Drop for Guard {
         fn drop(&mut self) {
@@ -159,14 +159,14 @@ fn task_step(cfg: &Config, directory: &Path) -> Result<super::stages::Step> {
     super::stages::Step::ALL
         .into_iter()
         .find(|s| directory.starts_with(s.directory(cfg)))
-        .context("configuration: 原生任务不属于八阶段计算目录")
+        .context("configuration: native task is outside the eight stage calculation directories")
 }
 fn task_label(cfg: &Config, task: &Task) -> String {
     if let Some(group) = &task.group {
-        format!("方法 · {group}")
+        format!("Method · {group}")
     } else {
         format!(
-            "任务 · {} / {}",
+            "Task · {} / {}",
             super::readable_state::relative(&cfg.work_dir, &task.directory),
             task.stem
         )
@@ -174,27 +174,27 @@ fn task_label(cfg: &Config, task: &Task) -> String {
 }
 fn state_text(state: &str) -> &str {
     match state {
-        "prepared" => "已准备",
-        "submission_pending" => "提交中",
-        "submitted" => "已提交",
-        "unknown" => "提交未知",
-        "running" => "运行中",
-        "awaiting_validation" => "待检查",
-        "validated" => "已完成",
-        "failed" => "失败",
+        "prepared" => "prepared",
+        "submission_pending" => "submitting",
+        "submitted" => "submitted",
+        "unknown" => "submission unknown",
+        "running" => "running",
+        "awaiting_validation" => "validation pending",
+        "validated" => "completed",
+        "failed" => "failed",
         s => s,
     }
 }
 fn state_code(state: &str) -> &str {
     match state {
-        "已准备" => "prepared",
-        "提交中" => "submission_pending",
-        "已提交" => "submitted",
-        "提交未知" => "unknown",
-        "运行中" => "running",
-        "待检查" => "awaiting_validation",
-        "已完成" => "validated",
-        "失败" => "failed",
+        "prepared" => "prepared",
+        "submitting" => "submission_pending",
+        "submitted" => "submitted",
+        "submission unknown" => "unknown",
+        "running" => "running",
+        "validation pending" => "awaiting_validation",
+        "completed" => "validated",
+        "failed" => "failed",
         s => s,
     }
 }
@@ -215,48 +215,48 @@ fn persist(cfg: &Config, task: &Task) -> Result<()> {
         if task.group.is_none() {
             doc.remove(&label);
         } else {
-            for key in ["退出码", "预算关联"] {
+            for key in ["Exit code", "Budget association"] {
                 if let Some(fields) = doc.sections.get_mut(&label) {
                     fields.remove(key);
                 }
             }
         }
         for (key, value) in [
-            ("提交标识", task.id.clone()),
-            ("批次", task.generation.clone()),
-            ("状态", state_text(&task.state).into()),
-            ("计算目录", log::relative(&cfg.work_dir, &task.directory)),
-            ("脚本", log::relative(&cfg.work_dir, &task.script.path)),
-            ("输出名称", task.stem.clone()),
+            ("Submission ID", task.id.clone()),
+            ("Batch", task.generation.clone()),
+            ("Status", state_text(&task.state).into()),
+            ("Calculation directory", log::relative(&cfg.work_dir, &task.directory)),
+            ("Script", log::relative(&cfg.work_dir, &task.script.path)),
+            ("Output name", task.stem.clone()),
             (
-                "运行命令",
+                "Run command",
                 task.command
                     .iter()
                     .map(|s| shell_words::quote(s))
                     .collect::<Vec<_>>()
                     .join(" "),
             ),
-            ("用时秒", format!("{:.3}", task.duration_secs)),
-            ("预算已关联", task.attached.to_string()),
+            ("Duration seconds", format!("{:.3}", task.duration_secs)),
+            ("Budget attached", task.attached.to_string()),
         ] {
             doc.set(&label, key, value);
         }
         if let Some(token) = &task.reservation {
-            doc.set(&label, "预算关联", token);
+            doc.set(&label, "Budget association", token);
         }
         if let Some(exit) = task.exit_status {
-            doc.set(&label, "退出码", exit);
+            doc.set(&label, "Exit code", exit);
         }
         for (i, input) in task.inputs.iter().enumerate() {
             doc.set(
                 &label,
-                &format!("科学输入{}", i + 1),
+                &format!("Scientific input{}", i + 1),
                 log::relative(&cfg.work_dir, &input.path),
             );
         }
         doc.set(
             &label,
-            "科学输出",
+            "Scientific output",
             log::relative(
                 &cfg.work_dir,
                 &task.directory.join(format!("{}.out", task.stem)),
@@ -273,51 +273,51 @@ pub fn tasks(cfg: &Config) -> Result<Vec<Task>> {
         let doc = log::read(&cfg.work_dir, step)?;
         let jobs = log::jobs(&cfg.work_dir, step)?;
         for (name, fields) in &doc.sections {
-            if !(name.starts_with("任务 · ") || name.starts_with("方法 · ")) {
+            if !(name.starts_with("Task · ") || name.starts_with("Method · ")) {
                 continue;
             }
             let field = |key: &str| {
                 fields.get(key).map(String::as_str).with_context(|| {
                     format!(
-                        "data_invalid: {} 缺少 {key}",
+                        "data_invalid: {} missing {key}",
                         log::path(&cfg.work_dir, step).unwrap().display()
                     )
                 })
             };
-            let directory = log::resolve(&cfg.work_dir, field("计算目录")?);
-            let stem = field("输出名称")?.to_owned();
+            let directory = log::resolve(&cfg.work_dir, field("Calculation directory")?);
+            let stem = field("Output name")?.to_owned();
             let output = directory.join(format!("{stem}.out"));
-            let state = state_code(field("状态")?);
+            let state = state_code(field("Status")?);
             let job = jobs.get(name).copied();
             let state = if state == "submission_pending" && job.is_some() {
                 "submitted"
             } else {
                 state
             };
-            let id = field("提交标识")?.to_owned();
+            let id = field("Submission ID")?.to_owned();
             let inputs = fields
                 .iter()
-                .filter(|(k, _)| k.starts_with("科学输入"))
+                .filter(|(k, _)| k.starts_with("Scientific input"))
                 .map(|(_, v)| optional_identity(&log::resolve(&cfg.work_dir, v)))
                 .collect();
             result.push(Task {
                 schema_version: 3,
-                group: name.strip_prefix("方法 · ").map(str::to_owned),
+                group: name.strip_prefix("Method · ").map(str::to_owned),
                 key: id.clone(),
                 id,
-                generation: field("批次")?.into(),
+                generation: field("Batch")?.into(),
                 directory,
-                command: shell_words::split(field("运行命令")?)?,
+                command: shell_words::split(field("Run command")?)?,
                 stem,
-                script: optional_identity(&log::resolve(&cfg.work_dir, field("脚本")?)),
+                script: optional_identity(&log::resolve(&cfg.work_dir, field("Script")?)),
                 inputs,
                 sources: Vec::new(),
                 state: state.into(),
                 job,
-                reservation: fields.get("预算关联").cloned(),
-                attached: fields.get("预算已关联").is_some_and(|v| v == "true"),
-                exit_status: fields.get("退出码").map(|v| v.parse()).transpose()?,
-                duration_secs: field("用时秒")?.parse()?,
+                reservation: fields.get("Budget association").cloned(),
+                attached: fields.get("Budget attached").is_some_and(|v| v == "true"),
+                exit_status: fields.get("Exit code").map(|v| v.parse()).transpose()?,
+                duration_secs: field("Duration seconds")?.parse()?,
                 stdout: output.is_file().then(|| optional_identity(&output)),
                 stderr: output.is_file().then(|| optional_identity(&output)),
             });
@@ -342,7 +342,7 @@ pub fn check_groups(cfg: &Config) -> Result<()> {
             let status = task_status(&task)?;
             ensure!(
                 !matches!(status["state"].as_str(), Some("running" | "unknown")),
-                "scheduler_unknown: {group} 原生作业仍活动或提交未知"
+                "scheduler_unknown: {group} native job is active or submission is unknown"
             );
         }
     }
@@ -355,18 +355,18 @@ pub(crate) fn check_orphan_jobs(cfg: &Config) -> Result<()> {
         let doc = log::read(&cfg.work_dir, step)?;
         let jobs_path = log::jobs_path(&cfg.work_dir, step)?;
         for (name, job) in log::jobs(&cfg.work_dir, step)? {
-            if doc.get(&name, "状态").is_some() {
+            if doc.get(&name, "Status").is_some() {
                 continue;
             }
             let accounting = slurm::accounting(job).with_context(|| {
                 format!(
-                    "scheduler_unknown: {} 中作业 {job} 的阶段记录缺失，无法确认终态，禁止覆盖",
+                    "scheduler_unknown: stage record missing for job {job} in {}; terminal state unconfirmed; overwriting prohibited",
                     jobs_path.display()
                 )
             })?;
             ensure!(
                 accounting.terminal,
-                "scheduler_unknown: {} 中作业 {job} 的阶段记录缺失且作业仍活动，禁止覆盖",
+                "scheduler_unknown: stage record missing for active job {job} in {}; overwriting prohibited",
                 jobs_path.display()
             );
             log::set_job(&cfg.work_dir, step, &name, None)?;
@@ -386,7 +386,7 @@ pub fn check_other_allocations(cfg: &Config) -> Result<()> {
         let status = task_status(&task)?;
         ensure!(
             !matches!(status["state"].as_str(), Some("running" | "unknown")),
-            "scheduler_unknown: {} 的原生作业仍活动或提交未知，禁止覆盖",
+            "scheduler_unknown: native job in {} is active or submission is unknown; overwriting prohibited",
             task.directory.display()
         );
     }
@@ -427,7 +427,7 @@ pub(crate) fn require_outputs(
     }) {
         ensure!(
             retry_enabled(),
-            "data_invalid: {stem} 缺少科学输出；请使用 --resume 恢复此阶段"
+            "data_invalid: {stem} scientific output missing; resume this stage with --resume"
         );
         task.state = "failed".into();
         persist(cfg, &task)?;
@@ -447,13 +447,13 @@ fn verify(task: &Task) -> Result<()> {
     if task.state == "prepared" {
         ensure!(
             task.script.path.is_file(),
-            "data_invalid: 缺少待提交脚本 {}",
+            "data_invalid: submission script missing {}",
             task.script.path.display()
         );
         for input in &task.inputs {
             ensure!(
                 input.path.is_file(),
-                "data_invalid: 缺少本次科学输入 {}",
+                "data_invalid: current scientific input missing {}",
                 input.path.display()
             );
         }
@@ -504,7 +504,7 @@ pub fn task_status(task: &Task) -> Result<serde_json::Value> {
 fn recover_epw6_version_rejection(cfg: &Config) -> Result<()> {
     use super::{readable_state as log, stages::Step};
     let doc = log::read(&cfg.work_dir, Step::Wannier)?;
-    if doc.get("问题", "原因") != Some("environment_incompatible: 缺少 EPW 5.9 运行证据") {
+    if doc.get("Problem", "Reason") != Some("environment_incompatible: EPW 5.9 runtime evidence missing") {
         return Ok(());
     }
     for mut task in tasks(cfg)?.into_iter().filter(|t| t.directory == Step::Wannier.directory(cfg)
@@ -513,11 +513,11 @@ fn recover_epw6_version_rejection(cfg: &Config) -> Result<()> {
         let text = fs::read_to_string(&output)?;
         if crate::interpolation::native::runtime_version(&text)? != "6.0" { continue; }
         crate::interpolation::native::checked_log(&text, 0)?;
-        ensure!(!task.inputs.is_empty() && task.inputs.iter().all(|i| i.path.is_file()), "data_invalid: 误拒绝恢复缺少原生输入");
-        let job = task.job.context("scheduler_unknown: 误拒绝恢复缺少作业号")?;
+        ensure!(!task.inputs.is_empty() && task.inputs.iter().all(|i| i.path.is_file()), "data_invalid: rejected-run recovery requires native input");
+        let job = task.job.context("scheduler_unknown: rejected-run recovery requires a job ID")?;
         let observed = slurm::accounting(job)?;
         ensure!(observed.terminal && observed.state == "COMPLETED",
-            "scheduler_unknown: 误拒绝恢复需要真实 COMPLETED 作业");
+            "scheduler_unknown: rejected-run recovery requires an actual COMPLETED job");
         task.state = "awaiting_validation".into();
         persist(cfg, &task)?;
     }
@@ -539,7 +539,7 @@ pub fn reconcile(cfg: &Config, resume: bool) -> Result<()> {
 pub fn reconcile_task(cfg: &Config, _resume: bool, task: &mut Task) -> Result<()> {
     if matches!(task.state.as_str(), "unknown" | "submission_pending") && task.job.is_none() {
         anyhow::bail!(
-            "scheduler_unknown: {} 提交回执未知；请核对 Slurm 后恢复",
+            "scheduler_unknown: submission receipt unknown for {}; check Slurm before recovery",
             task.directory.display()
         );
     }
@@ -547,11 +547,11 @@ pub fn reconcile_task(cfg: &Config, _resume: bool, task: &mut Task) -> Result<()
         task.state.as_str(),
         "submitted" | "submission_pending" | "unknown" | "running"
     ) {
-        let job = task.job.context("scheduler_unknown: 缺少 Slurm 作业号")?;
+        let job = task.job.context("scheduler_unknown: Slurm job ID missing")?;
         let accounting = slurm::accounting(job)?;
         ensure!(
             accounting.terminal,
-            "scheduler_unknown: 原生任务 {job} 仍为 {}，禁止重复提交",
+            "scheduler_unknown: native task {job} remains {}; duplicate submission prohibited",
             accounting.state
         );
         let text = slurm::exit_code_record(job)?;
@@ -562,16 +562,16 @@ pub fn reconcile_task(cfg: &Config, _resume: bool, task: &mut Task) -> Result<()
             .collect();
         ensure!(
             rows.len() == 1,
-            "scheduler_unknown: 任务 {job} 退出码缺失或不唯一"
+            "scheduler_unknown: task {job} exit code missing or nonunique"
         );
         let (code, signal) = rows[0]
             .1
             .trim_end_matches('|')
             .split_once(':')
-            .context("scheduler_unknown: ExitCode 格式无效")?;
+            .context("scheduler_unknown: invalid ExitCode format")?;
         let code: i32 = code.parse()?;
         let signal: i32 = signal.parse()?;
-        ensure!(code >= 0 && signal >= 0, "scheduler_unknown: ExitCode 为负");
+        ensure!(code >= 0 && signal >= 0, "scheduler_unknown: negative ExitCode");
         task.exit_status = Some(if signal == 0 { code } else { 128 + signal });
         task.duration_secs = accounting.node_seconds as f64 / accounting.nodes.max(1) as f64;
         if let Some(token) = &task.reservation {
@@ -677,7 +677,7 @@ pub fn retire(work: &Path) -> Result<()> {
 pub fn retire_stage(cfg: &Config, step: super::stages::Step) -> Result<()> {
     for name in super::readable_state::jobs(&cfg.work_dir, step)?
         .keys()
-        .filter(|name| name.as_str() != "阶段分配")
+        .filter(|name| name.as_str() != "Stage allocation")
     {
         super::readable_state::set_job(&cfg.work_dir, step, name, None)?;
     }
@@ -716,10 +716,10 @@ fn validate_consumed() -> Result<()> {
     Ok(())
 }
 pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionReport> {
-    ensure!(!command.is_empty(), "configuration: 空原生命令");
+    ensure!(!command.is_empty(), "configuration: empty native command");
     let (cfg, generation, submit, allocated) = SESSION.with(|s| {
         let s = s.borrow();
-        let s = s.as_ref().expect("原生上下文");
+        let s = s.as_ref().expect("Native context");
         (s.cfg.clone(), s.generation.clone(), s.submit, s.allocated)
     });
     let previous = tasks(&cfg)?
@@ -732,7 +732,7 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
     if let Some(t) = &previous {
         ensure!(
             t.state != "failed" || retry_enabled(),
-            "execution_failed: {} / {stem} 上次失败；修复后使用 --resume -s",
+            "execution_failed: {} / {stem} previously failed; fix the cause and use --resume -s",
             work.display()
         );
         if matches!(t.state.as_str(), "validated" | "awaiting_validation")
@@ -759,7 +759,7 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
                 t.state.as_str(),
                 "submitted" | "submission_pending" | "unknown" | "running"
             ),
-            "scheduler_unknown: {} / {stem} 已有活动或未知提交",
+            "scheduler_unknown: {} / {stem} already has an active or unknown submission",
             work.display()
         );
     }
@@ -772,7 +772,7 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
     if allocated {
         task.job = Some(
             std::env::var("SLURM_JOB_ID")
-                .context("allocation: 分配内子任务缺 Slurm 作业号")?
+                .context("allocation: allocated subtask has no Slurm job ID")?
                 .parse()?,
         );
         task.state = "running".into();
@@ -828,7 +828,7 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
 pub fn submit_task(cfg: &Config, task: &mut Task) -> Result<()> {
     ensure!(
         task.state == "prepared",
-        "scheduler_unknown: 任务已提交或提交状态未知"
+        "scheduler_unknown: task submitted or submission state unknown"
     );
     verify(task)?;
     task.reservation = Some(budget::with_ledger(
@@ -847,11 +847,11 @@ pub fn submit_task(cfg: &Config, task: &mut Task) -> Result<()> {
         .current_dir(&task.directory)
         .output();
     let receipt = out
-        .context("scheduler_unknown: 无法调用 sbatch")
+        .context("scheduler_unknown: cannot invoke sbatch")
         .and_then(|o| {
             ensure!(
                 o.status.success(),
-                "scheduler_unknown: sbatch 失败：{}",
+                "scheduler_unknown: sbatch failed: {}",
                 String::from_utf8_lossy(&o.stderr)
             );
             slurm::parse_job_id(String::from_utf8_lossy(&o.stdout).trim())
@@ -886,11 +886,11 @@ pub fn finish_group(cfg: &Config, task: &mut Task, complete: bool) -> Result<()>
 pub fn allocated_group_exit(cfg: &Config, task: &mut Task, exit: i32) -> Result<()> {
     verify(task)?;
     let job: u64 = std::env::var("SLURM_JOB_ID")
-        .context("allocation: 方法收尾需要作业分配")?
+        .context("allocation: method finalization requires a job allocation")?
         .parse()?;
     ensure!(
         task.group.is_some() && task.job.is_none_or(|j| j == job),
-        "input_conflict: 方法收尾作业身份不同"
+        "input_conflict: method-finalization job identity mismatch"
     );
     task.job = Some(job);
     task.exit_status = Some(exit);
@@ -912,7 +912,7 @@ pub fn allocated_group_exit(cfg: &Config, task: &mut Task, exit: i32) -> Result<
 pub fn execute_group(cfg: &Config, task: &mut Task) -> Result<()> {
     ensure!(
         task.state == "prepared",
-        "scheduler_unknown: 方法尚未处于可执行状态"
+        "scheduler_unknown: method is not ready for execution"
     );
     task.job = Some(std::env::var("SLURM_JOB_ID")?.parse()?);
     task.state = "running".into();
@@ -935,7 +935,7 @@ pub fn prepare_group(
 ) -> Result<Task> {
     ensure!(
         matches!(group, "iso" | "aniso"),
-        "configuration: 无效方法分组"
+        "configuration: invalid method group"
     );
     let key = task_key(generation, work, command, "epw")?;
     prepare_mode(cfg, generation, &key, command, work, "epw", Some(group))
@@ -1002,13 +1002,13 @@ fn prepare_mode(
     };
     ensure!(
         !work.to_string_lossy().contains(['\n', '\r']),
-        "configuration: 工作目录含换行"
+        "configuration: working directory contains a newline"
     );
     ensure!(
         purpose
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c)),
-        "configuration: 脚本功能名称含特殊字符"
+        "configuration: script function name contains special characters"
     );
     let log = format!("slurm-{purpose}.log");
     let mut text = slurm::script_header(cfg, work, &format!("epw-{purpose}"), &log, &log);
@@ -1057,7 +1057,7 @@ fn prepare_mode(
             }
         }
     }
-    ensure!(!inputs.is_empty(), "configuration: 原生调用缺少固定输入");
+    ensure!(!inputs.is_empty(), "configuration: native call has no fixed input");
     text.push_str(
         &invocation
             .iter()

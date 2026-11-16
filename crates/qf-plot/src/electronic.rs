@@ -44,7 +44,7 @@ pub const ELEMENTS: [RGBColor; 6] = [
 pub fn png(svg: &str, file: &Path, width: u32, height: u32) -> Result<()> {
     let options = font_options();
     let tree = resvg::usvg::Tree::from_str(svg, &options)?;
-    let mut pixels = resvg::tiny_skia::Pixmap::new(width, height).context("高清图像分配失败")?;
+    let mut pixels = resvg::tiny_skia::Pixmap::new(width, height).context("High-resolution image distribution failed")?;
     resvg::render(
         &tree,
         resvg::tiny_skia::Transform::from_scale(
@@ -96,7 +96,7 @@ mod tests {
                 .filter(|p| p[0] < 100 && p[3] > 100)
                 .count()
                 > 200,
-            "字体缺失不能默默输出空白文字"
+            "Missing fonts cannot be silently output blank text"
         );
         std::fs::remove_file(path).unwrap();
     }

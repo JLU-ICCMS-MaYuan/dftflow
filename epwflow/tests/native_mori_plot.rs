@@ -15,7 +15,7 @@ fn fixture() -> Data {
     search.observe(1500, Side::Uncertain).unwrap();
     search.observe(2000, Side::Normal).unwrap();
     let mode = ModeSummary {
-        method: "合成 IO 验证".into(),
+        method: "Synth IO Authentication".into(),
         thresholds: Tc {
             min_k: 10.,
             max_k: 20.,
@@ -185,7 +185,7 @@ fn partial_redraw_retains_formats_and_requires_full_redraw_after_source_change()
     write_bundle(&data);
     let figures = store::Identity::capture(&root.join("figures/native-figures.json")).unwrap();
     let err = native_plot::plot(&root, None, &["svg".into()]).unwrap_err();
-    assert!(err.to_string().contains("数据来源改变"));
+    assert!(err.to_string().contains("Change in data sources"));
     figures.verify().unwrap();
     native_plot::plot(&root, None, &formats).unwrap();
     assert!(native_plot::check(&root).unwrap());

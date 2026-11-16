@@ -30,7 +30,7 @@ impl NativeReceipt {
     fn verify(&self) -> Result<()> {
         ensure!(
             self.version == 1 && !self.outputs.is_empty(),
-            "data_invalid: 电子任务收据缺证据"
+            "data_invalid: Lack of evidence for electronic mission receipts"
         );
         self.input.verify()?;
         for id in self.outputs.iter().chain(&self.provenance) {
@@ -50,7 +50,7 @@ impl NativeReceipt {
                 .collect::<Vec<_>>();
             ensure!(
                 actual == expected,
-                "input_conflict: 电子保存树文件集合发生变化 {}",
+                "input_conflict: Change in the collection of electronic preservation tree files {}",
                 root.display()
             );
         }
@@ -68,7 +68,7 @@ impl NativeReceipt {
 }
 
 fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
-    let label = format!("电子子步骤 · {task}");
+    let label = format!("Electronic substep · {task}");
     let Some(outputs) = super::readable_state::completed_files(cfg, Step::Electronic, &label)?
     else {
         return Ok(None);
@@ -119,7 +119,7 @@ fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
             ensure!(
                 save::files(&super::layout::path(&cfg.work_dir, "nscf/out"))?
                     == save::files(&dir.join("out"))?,
-                "data_invalid: DOS 数据与当前 NSCF 不一致"
+                "data_invalid: DOS Data and Current NSCF Inconsistencies"
             );
         }
         _ => unreachable!(),
@@ -139,26 +139,26 @@ fn validate_table(path: &Path, increasing: bool) -> Result<()> {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         ensure!(
             row.len() >= 2 && row.iter().all(|v| v.is_finite()),
-            "data_invalid: 非法电子数据 {}",
+            "data_invalid: Illegal electronic data {}",
             path.display()
         );
         if increasing {
             ensure!(
                 previous.is_none_or(|p| row[0] > p),
-                "data_invalid: DOS 能量轴未递增"
+                "data_invalid: DOS The energy axis is not increasing"
             );
         }
         previous = Some(row[0]);
         count += 1;
     }
-    ensure!(count > 1, "data_invalid: 电子数据为空 {}", path.display());
+    ensure!(count > 1, "data_invalid: Electronic data is empty {}", path.display());
     Ok(())
 }
 fn persist_receipt(cfg: &Config, task: &str, r: &NativeReceipt) -> Result<()> {
     super::readable_state::complete_files(
         cfg,
         Step::Electronic,
-        &format!("电子子步骤 · {task}"),
+        &format!("Electronic substep · {task}"),
         &r.outputs
             .iter()
             .map(|id| id.path.clone())
@@ -210,7 +210,7 @@ fn key(cfg: &Config, task: &str) -> Result<String> {
             json!(stages::upstream(cfg, Step::Electronic)?),
         ),
         "bands" => {
-            let pw = read_receipt(cfg, "pw-bands")?.context("data_invalid: bands 缺 PW 收据")?;
+            let pw = read_receipt(cfg, "pw-bands")?.context("data_invalid: bands Missing PW Receipts")?;
             (
                 post_program(cfg, "bands")?,
                 fs::read_to_string(
@@ -235,7 +235,7 @@ fn key(cfg: &Config, task: &str) -> Result<String> {
             ),
             json!(stages::upstream(cfg, Step::Electronic)?),
         ),
-        _ => anyhow::bail!("configuration: 未知电子任务 {task}"),
+        _ => anyhow::bail!("configuration: Unknown electronic task {task}"),
     };
     Ok(store::hash_bytes(&serde_json::to_vec(&(
         1,
@@ -370,7 +370,7 @@ fn validate_pw(cfg: &Config) -> Result<()> {
     save::verify_snapshot(&cfg.work_dir)?;
     ensure!(
         fs::read_to_string(dir.join("eband.exitcode"))?.trim() == "0",
-        "data_invalid: PW 能带缺零退出码"
+        "data_invalid: PW Zero exit code"
     );
     qf_io::qe_completion::checked_log(&dir.join("eband.out"), false)?;
     let qe = QeSettings::from_config(cfg)?;
@@ -393,11 +393,11 @@ fn validate_pw(cfg: &Config) -> Result<()> {
                 .flatten()
                 .zip(expected.iter().flatten())
                 .all(|(a, b)| (a - b).abs() < 1e-10),
-        "input_conflict: 已有 PW 能带路径与当前 KPATH 不符，请重新计算电子阶段"
+        "input_conflict: Existing PW Can lead path and current KPATH Inconsistent, please recalculate the electronic phase"
     );
     ensure!(
         states.nbnd == cfg.qe.nscf.nbnd as usize && states.kpoints.len() == points.len(),
-        "data_invalid: PW 能带带数或 k 点数不符"
+        "data_invalid: PW Can carry a number or k The points don't match"
     );
     for (actual, expected) in states.kpoints.iter().zip(points) {
         ensure!(
@@ -405,7 +405,7 @@ fn validate_pw(cfg: &Config) -> Result<()> {
                 .iter()
                 .zip(expected)
                 .all(|(a, b)| (a - b).abs() < 1e-8),
-            "data_invalid: PW 能带实际 k 点与路径不符"
+            "data_invalid: PW It's practical k Point does not match the path"
         );
     }
     Ok(())
@@ -432,7 +432,7 @@ fn prepare_pw(cfg: &Config) -> Result<()> {
     if let Some(receipt) = read_receipt(cfg, "pw-bands")? {
         ensure!(
             receipt.key == key(cfg, "pw-bands")?,
-            "input_conflict: PW 能带原生选项或上游身份不相容"
+            "input_conflict: PW It's not compatible with native options or upstream status"
         );
         return receipt.verify();
     }
@@ -449,9 +449,9 @@ fn prepare_pw(cfg: &Config) -> Result<()> {
     Ok(())
 }
 fn path_points(cfg: &Config) -> Result<Vec<[f64; 3]>> {
-    let path = cfg.kpath.as_ref().context("required: 需要 KPATH.in")?;
+    let path = cfg.kpath.as_ref().context("required: Yes KPATH.in")?;
     let segments =
-        qf_input::electronic::parse_kpath_segments(path.to_str().context("KPATH 非 UTF-8")?)?;
+        qf_input::electronic::parse_kpath_segments(path.to_str().context("KPATH Not UTF-8")?)?;
     let intervals = cfg.comparison.clone().unwrap_or_default().points_per_edge;
     let mut points = vec![];
     for segment in segments {
@@ -583,7 +583,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                 }
                 // 后处理不得改写它读取的 portable PW 数据。
                 read_receipt(cfg, "pw-bands")?
-                    .context("data_invalid: 缺 PW 收据")?
+                    .context("data_invalid: Missing PW Receipts")?
                     .verify()?;
                 let receipt = capture(
                     cfg,
@@ -614,7 +614,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             }
             ensure!(
                 save::files(&source)? == save::files(&out)?,
-                "input_conflict: DOS 副本与 NSCF 来源不一致"
+                "input_conflict: DOS Copy with NSCF Sources are inconsistent"
             );
             qe_run(cfg, &dir, &post_program(cfg, "dos")?, "eletdos.in", "eletdos")?;
             let actual = super::scientific_logs::output(&dir, "eletdos");
@@ -630,7 +630,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             )?;
             persist_receipt(cfg, "dos", &receipt)?;
         }
-        _ => anyhow::bail!("configuration: 未知电子子阶段 {name}"),
+        _ => anyhow::bail!("configuration: Unknown electron subphase {name}"),
     }
     super::workspace_qe_plot::electronic(cfg, name)
 }

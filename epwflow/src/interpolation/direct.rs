@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 pub fn coarse(cfg: &Config) -> Result<InterpolationManifest> {
     let qe = qe_data::direct::load(cfg)?;
-    let states = qe.states.as_ref().context("data_invalid: 缺 NSCF")?;
+    let states = qe.states.as_ref().context("data_invalid: Missing NSCF")?;
     let structure = qe_data::qe_config::QeSettings::from_config(cfg)?;
     let epw = EpwConfig::from_config(cfg)?
         .with_fermi(states.fermi)?
@@ -20,13 +20,13 @@ pub fn coarse(cfg: &Config) -> Result<InterpolationManifest> {
         &layout::path(&cfg.work_dir, "coarse").join(format!("{}.wout", cfg.qe.prefix)),
         cfg.wannier.num_wann as usize,
     )?;
-    ensure!(wan.converged, "data_invalid: Wannier 未收敛");
+    ensure!(wan.converged, "data_invalid: Wannier Unrecovered");
     let validation = Validation {
         status: "valid".into(),
         checks: vec![check(
             "coarse_complete",
             true,
-            "原生矩阵、日志、Wannier 拟合逐项检查",
+            "Native Matrix, Log、Wannier Proposed line-by-line inspection",
         )],
         units: BTreeMap::new(),
         thresholds: BTreeMap::new(),
@@ -64,7 +64,7 @@ pub fn fine(cfg: &Config) -> Result<InterpolationManifest> {
             &dir.join(format!("{}.a2f", cfg.qe.prefix)),
             cfg.interpolation.spectral_points as usize,
         )?;
-        ensure!(raw.a2f.len() == 1, "data_invalid: 每个展宽应产生一列原生谱");
+        ensure!(raw.a2f.len() == 1, "data_invalid: Each extension should produce an native spectra");
         manifest.spectra.push(Spectrum {
             smearing_id: format!("mev-{smearing:.16e}"),
             energy_mev: raw.energy_mev,
@@ -85,13 +85,13 @@ pub fn fine(cfg: &Config) -> Result<InterpolationManifest> {
     let data = manifest
         .fine
         .as_mut()
-        .context("data_invalid: 缺少所选展宽的细网格数据")?;
+        .context("data_invalid: Missing selected extension fine grid data")?;
     data.artifacts.extend(other);
     manifest.mode_readiness.insert("fine".into(), true);
     manifest.validation.check(
         "fine_complete",
         true,
-        "全部展宽、矩阵分片、重启计数及原生谱检查通过",
+        "All widths, arrays, restart count and native spectroscopy pass",
     );
     Ok(manifest)
 }

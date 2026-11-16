@@ -19,7 +19,7 @@ fn tokens(input: &str) -> Result<Vec<String>> {
             quote @ (b'\'' | b'"') => {
                 i += 1;
                 loop {
-                    ensure!(i < bytes.len(), "input_conflict: PW 输入字符串未闭合");
+                    ensure!(i < bytes.len(), "input_conflict: PW Enter string not closed");
                     if bytes[i] == quote {
                         i += 1;
                         if i < bytes.len() && bytes[i] == quote {
@@ -70,15 +70,15 @@ fn comparable(input: &str) -> Result<Vec<String>> {
                     && tokens
                         .get(i + 2)
                         .is_some_and(|s| s.starts_with(['\'', '"'])),
-                "input_conflict: CONTROL.pseudo_dir 必须为字符串"
+                "input_conflict: CONTROL.pseudo_dir For Strings"
             );
-            tokens[i + 2] = "'<已核验的赝势目录>'".into();
+            tokens[i + 2] = "'<validated pseudopotential directory>'".into();
             fields += 1;
         }
     }
     ensure!(
         sections == 1 && fields == 1,
-        "input_conflict: PW 输入必须只有一份 CONTROL.pseudo_dir"
+        "input_conflict: PW Only one entry must be entered CONTROL.pseudo_dir"
     );
     Ok(tokens)
 }
@@ -91,7 +91,7 @@ pub(super) fn validate(
 ) -> Result<()> {
     ensure!(
         comparable(actual)? == comparable(expected)?,
-        "input_conflict: 已有 PW 能带输入与当前配置不符（仅允许已核验的赝势目录迁移）"
+        "input_conflict: Existing PW Can bring input that does not match the current configuration (only allowed to migrate verified profile directories))"
     );
     let raw = fs::read_to_string(save.join("data-file-schema.xml"))?;
     let doc = roxmltree::Document::parse(&raw)?;
@@ -100,38 +100,38 @@ pub(super) fn validate(
         .children()
         .find(|n| n.has_tag_name("output"))
         .and_then(|n| n.children().find(|n| n.has_tag_name("atomic_species")))
-        .context("data_invalid: PW 保存 XML 缺 output.atomic_species，无法核验赝势迁移")?;
+        .context("data_invalid: PW Save XML Missing output.atomic_species ,Could not verify movement")?;
     let mut seen = BTreeSet::new();
     for node in species.children().filter(|n| n.has_tag_name("species")) {
         let element = node
             .attribute("name")
-            .context("data_invalid: XML 赝势缺元素")?;
+            .context("data_invalid: XML Imperative missing elements")?;
         let configured = pseudos
             .get(element)
-            .context("input_conflict: XML 赝势元素与当前配置不符")?;
+            .context("input_conflict: XML Shape element does not match current configuration")?;
         let filename = node
             .children()
             .find(|n| n.has_tag_name("pseudo_file"))
             .and_then(|n| n.text())
-            .context("data_invalid: XML 缺 pseudo_file")?
+            .context("data_invalid: XML Missing pseudo_file")?
             .trim();
         ensure!(
             seen.insert(element)
                 && configured.file_name().and_then(|s| s.to_str()) == Some(filename),
-            "input_conflict: XML 赝势文件映射与当前配置不符：{element}"
+            "input_conflict: XML The profile map does not match the current configuration:{element}"
         );
         let saved = save.join(filename);
         save::nonempty(&saved).with_context(|| {
-            format!("data_invalid: 保存的 {element} 赝势缺失，不能验证目录迁移")
+            format!("data_invalid: Saved {element} Unable to verify directory migration due to missing profile")
         })?;
         ensure!(
             store::hash_file(&saved)? == store::hash_file(configured)?,
-            "input_conflict: 保存的 {element} 赝势内容与当前配置不符，拒绝复用 PW 能带"
+            "input_conflict: Saved {element} Shape content does not match current configuration. Reuse is denied PW Yeah"
         );
     }
     ensure!(
         seen.len() == pseudos.len(),
-        "input_conflict: XML 赝势元素集合与当前配置不符"
+        "input_conflict: XML Consorture collection does not match the current configuration"
     );
     Ok(())
 }

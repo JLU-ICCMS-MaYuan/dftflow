@@ -26,7 +26,7 @@ fn native_spectrum_uses_its_own_axis_and_preserves_both_couplings() {
     ] {
         assert!(
             NativeSpectrum::parse(&t, 3).is_err(),
-            "应拒绝损坏的原生谱: {t}"
+            "It's the native history that should be rejected: {t}"
         );
     }
 }
@@ -83,12 +83,12 @@ fn matdyn_path_ignores_only_unused_weight_and_checks_all_physical_records() {
     let data = native::parse_matdyn_path(&text).unwrap();
     assert_eq!(data.points_cartesian, vec![[0.3, 0.519615, 0.], [0.1, 0.2, 0.3]]);
     assert_eq!(data.values, vec![vec![-1., 2., 3.], vec![4., 5., 6.]]);
-    assert!(native::parse_matdyn(&text).is_err(), "普通加权格式仍严格检查权重");
+    assert!(native::parse_matdyn(&text).is_err(), "The normal weighted format is still strictly checked for weights");
     for bad in [text.replace("4 5 6", "4 NaN 6"), text.replace("4 5 6", "4 5"),
         text.replace("4 5 6", "4 5 6 7"), text.replace(".1 .2 .3 -999", ".1 NaN .3 -999"),
         text.replace("0.519615", "********"), format!("{text}0 0 0 1\n1 2 3\n"),
         text.replace("nbnd= 3", &format!("nbnd= {}", usize::MAX))] {
-        assert!(native::parse_matdyn_path(&bad).is_err(), "应拒绝损坏的物理记录: {bad}");
+        assert!(native::parse_matdyn_path(&bad).is_err(), "Physical records that should be rejected for damage: {bad}");
     }
 }
 
@@ -150,7 +150,7 @@ fn native_cli_checks_actual_files_and_reports_unverified_science() {
     .unwrap();
     assert!(
         !run().status.success(),
-        "解纠缠没有收敛，不得仅凭局域化放行"
+        "We can't let it go just by localizing"
     );
     fs::write(root.join("mgb2.wout"), wout).unwrap();
     fs::write(root.join("epw.exitcode"), "91").unwrap();
@@ -252,16 +252,16 @@ fn mori_fsr_parameters_use_native_coarse_and_fine_grid_contracts() {
     assert_eq!(field(&fine, "mp_mesh_k"), ".true.");
     assert_eq!(field(&fine, "phonselfen"), ".false.");
     assert_eq!(field(&fine, "eliashberg"), ".true.");
-    assert_eq!(field(&fine, "laniso"), ".false.", "准备谱不执行温度求解");
+    assert_eq!(field(&fine, "laniso"), ".false.", "Prepare to do no temperature resolution");
     assert_eq!(
         field(&fine, "a2f"),
         ".false.",
-        "必须写出原生 freq 数据供超导重读"
+        "It has to be written freq Data for superconductive rereading"
     );
     assert_eq!(
         field(&fine, "degaussq").parse::<f64>().unwrap(),
         0.5,
-        "meV 不能误除以 1000"
+        "meV We can't miss it 1000"
     );
 }
 
@@ -283,7 +283,7 @@ fn native_windows_require_bound_fermi_and_reject_fortran_truncation() {
     let ec = ec.with_fermi(7.5).unwrap();
     let input = ec.epw_coarse_input("./tmp").unwrap();
     assert!((field(&input, "dis_froz_max").parse::<f64>().unwrap() - 10.0).abs() < 1e-12,
-        "相对覆盖也必须受上游态数上限约束");
+        "Relative coverage must also be subject to upstream numerical ceilings");
     assert!(ec
         .native_input(NativeStage::Coarse, "./tmp", &"a".repeat(100), 0.5)
         .is_err());
@@ -300,7 +300,7 @@ fn native_windows_require_bound_fermi_and_reject_fortran_truncation() {
         .unwrap();
     assert_eq!(field(&input, "dvscf_dir"), "'../a''b'");
     cfg.wannier.frozen_window_ev = Some([0., 8.8]);
-    assert!(cfg.validate().is_err(), "两种冻结能窗不能同时指定");
+    assert!(cfg.validate().is_err(), "Two freezing windows can't be specified at the same time");
 }
 
 #[test]

@@ -428,7 +428,7 @@ pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
     success(c.stage_execute());
     assert_eq!(pw, fs::read(receipts.join("eband.out")).unwrap());
     assert_eq!(bands, fs::read(receipts.join("scf_band.gnu")).unwrap());
-    assert_eq!(calls.0, c.calls().0, "成功 PW 和 PH 不重跑");
+    assert_eq!(calls.0, c.calls().0, "Success PW and PH Do not run again");
     assert!(c.root.join("run/3.qe-electronic/qe_eledos/scf.tdos").is_file());
 }
 
@@ -439,7 +439,7 @@ fn sequential_public_commands_submit_only_once_and_reserve_budget_once() {
     success(c.direct_advance(0, &["-s"], "sequential-a"));
     let again = c.direct_advance(0, &["-s"], "sequential-b");
     assert!(!again.status.success());
-    assert!(String::from_utf8_lossy(&again.stderr).contains("仍为 RUNNING"));
+    assert!(String::from_utf8_lossy(&again.stderr).contains("remains RUNNING"));
     assert_eq!(
         fs::read_to_string(c.root.join("submissions"))
             .unwrap()
@@ -699,7 +699,7 @@ fn direct_gap_failure_needs_resume_and_freezes_failed_native_evidence() {
     )
     .unwrap();
     assert!(run.execution_complete && run.data_complete);
-    assert_eq!(run.attempts.len(), 2, "只保留当前温度结果，失败尝试直接覆盖");
+    assert_eq!(run.attempts.len(), 2, "Save only current temperature results, failed to try to overwrite directly");
     assert!(run.attempts.iter().all(|a|a.status=="valid"));
     let calls: Vec<Value> = c
         .calls()
@@ -737,7 +737,7 @@ fn workspace_residual_locks_do_not_block_public_submission() {
         assert!(!again.status.success());
         let error = String::from_utf8_lossy(&again.stderr);
         assert!(error.contains("RUNNING"), "{error}");
-        assert!(!error.contains("锁"), "{error}");
+        assert!(!error.contains("Lock"), "{error}");
         assert_eq!(c.direct_execute(), 0);
         success(c.direct_advance(0, &["--stage", "scf", "-s"], "old-lock-complete"));
         assert_eq!(
@@ -758,7 +758,7 @@ fn wait_for_file(path: &std::path::Path) {
     while !path.exists() {
         assert!(
             start.elapsed() < std::time::Duration::from_secs(15),
-            "等待超时：{}",
+            "Waiting for timeout:{}",
             path.display()
         );
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -792,8 +792,8 @@ fn interrupted_public_submit_reenters_receipt_checks_without_workspace_lock() {
     let again = c.direct_advance(0, &["--stage", "scf", "-s"], "interrupted-repeat");
     assert!(!again.status.success());
     let error = String::from_utf8_lossy(&again.stderr);
-    assert!(error.contains("提交回执未知"), "{error}");
-    assert!(!error.contains("锁"), "{error}");
+    assert!(error.contains("submission receipt unknown"), "{error}");
+    assert!(!error.contains("Lock"), "{error}");
     assert_eq!(c.direct_task()["state"], "submission_pending");
     assert!(!c.root.join("run/epw-state/control.lock").exists());
     assert!(!c.root.join("run/epw-state/execution.lock").exists());

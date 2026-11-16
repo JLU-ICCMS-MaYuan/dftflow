@@ -15,12 +15,12 @@ pub struct ScfResult {
 
 /// 从 pw.x 输出解析总能（Ry）；仅接受收敛后的最终总能，不接受屏幕舍入冒充。
 pub fn parse_scf_energy(out: &str) -> Result<f64> {
-    let re = Regex::new(r"!.*total energy\s*=\s*([-0-9.eE+]+)\s*Ry").expect("scf: 正则编译失败");
+    let re = Regex::new(r"!.*total energy\s*=\s*([-0-9.eE+]+)\s*Ry").expect("scf: Rectification failed");
     if let Some(c) = re.captures(out) {
         c[1].parse::<f64>()
-            .with_context(|| "data_invalid: SCF 总能非数值")
+            .with_context(|| "data_invalid: SCF It's not a value")
     } else {
-        bail!("data_invalid: 未在 SCF 输出中找到总能");
+        bail!("data_invalid: Not here SCF Always Found in Output");
     }
 }
 
@@ -49,7 +49,7 @@ pub fn run_scf(
         true,
     )?;
     let out = std::fs::read_to_string(dir.join("scf.out"))
-        .with_context(|| "data_invalid: 缺少 scf.out")?;
+        .with_context(|| "data_invalid: Missing scf.out")?;
     let energy = parse_scf_energy(&out)?;
     super::xml::validate_save(&outdir, &qe.config.qe.prefix, qe, Some(energy))?;
     let snapshot = super::save::snapshot(&outdir, work)?;

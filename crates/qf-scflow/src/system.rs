@@ -91,11 +91,11 @@ impl System {
         self.resolution = resolution;
         self.sigma = sigma;
         self.integration = integration.to_string();
-        let freqs = get(&self.direct, "freqs, THz").cloned().context("direct 缺少 freqs")?;
-        let dl_l = get(&self.direct, "lambda (lambda, not smooth)").cloned().context("缺少 lambda (lambda, not smooth)")?;
-        let dl_l_smooth = get(&self.direct, "lambda (lambda)").cloned().context("缺少 lambda (lambda)")?;
-        let dl_g = get(&self.direct, "lambda (gamma, not smooth)").cloned().context("缺少 lambda (gamma, not smooth)")?;
-        let dl_g_smooth = get(&self.direct, "lambda (gamma)").cloned().context("缺少 lambda (gamma)")?;
+        let freqs = get(&self.direct, "freqs, THz").cloned().context("direct Missing freqs")?;
+        let dl_l = get(&self.direct, "lambda (lambda, not smooth)").cloned().context("Missing lambda (lambda, not smooth)")?;
+        let dl_l_smooth = get(&self.direct, "lambda (lambda)").cloned().context("Missing lambda (lambda)")?;
+        let dl_g = get(&self.direct, "lambda (gamma, not smooth)").cloned().context("Missing lambda (gamma, not smooth)")?;
+        let dl_g_smooth = get(&self.direct, "lambda (gamma)").cloned().context("Missing lambda (gamma)")?;
 
         let (x_new, a2f_lambda) =
             interp_lambda(&freqs, &dl_l, &dl_l_smooth, resolution, sigma, self.smoothing);

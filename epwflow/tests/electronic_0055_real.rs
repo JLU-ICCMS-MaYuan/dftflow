@@ -9,18 +9,18 @@ use epwflow::foundation::{
 use epwflow::qe_data::save;
 use std::{fs, path::PathBuf};
 #[test]
-#[ignore = "需要指定真实 PBE 工作区、新目录及 Slurm 分配；只执行必要 projwfc 后处理"]
+#[ignore = "Need to specify real PBE Workspaces, new directories and Slurm Allocations; implementation only as necessary projwfc Reprocessing"]
 fn real_electronic_dual_windows_and_pdos() {
     assert!(
         std::env::var_os("SLURM_JOB_ID").is_some(),
-        "真实科学程序仅在 Slurm 分配内执行"
+        "The real science program is only Slurm Distributed execution"
     );
     let source = PathBuf::from(std::env::var_os("DFTFLOW_0055_SOURCE").unwrap());
     let output = PathBuf::from(std::env::var_os("DFTFLOW_0055_OUTPUT").unwrap());
     let resume = std::env::var_os("DFTFLOW_0055_RESUME").is_some();
     assert!(
         !output.exists() || (resume && !output.join("verification.json").exists()),
-        "拒绝覆盖已有完整验收目录"
+        "Refusal to overwrite a complete receipt and inspection directory"
     );
     let mut cfg = Config::load(&source.join("epwinput.toml")).unwrap();
     let old = cfg.work_dir.clone();

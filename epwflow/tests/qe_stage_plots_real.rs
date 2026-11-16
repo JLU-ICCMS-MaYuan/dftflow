@@ -3,7 +3,7 @@ use epwflow::foundation::{config::Config, stages::Step, store, workspace_qe_plot
 use std::{fs, path::PathBuf};
 
 #[test]
-#[ignore = "需要显式指定已有真实工作区和新的图像输出目录"]
+#[ignore = "Need visible specification of existing real workspaces and new image output directories"]
 fn existing_real_qe_data_plot_without_scientific_execution() {
     let source =
         PathBuf::from(std::env::var_os("DFTFLOW_QE_PLOT_SOURCE").expect("DFTFLOW_QE_PLOT_SOURCE"));
@@ -11,7 +11,7 @@ fn existing_real_qe_data_plot_without_scientific_execution() {
         PathBuf::from(std::env::var_os("DFTFLOW_QE_PLOT_OUTPUT").expect("DFTFLOW_QE_PLOT_OUTPUT"));
     assert!(
         !output.exists(),
-        "使用新的输出目录，不能覆盖真实来源或历史结果"
+        "Use new output directories to overwrite real sources or historical results"
     );
     let mut cfg = Config::load(&source.join("epwinput.toml")).unwrap();
     let prefix = cfg.qe.prefix.clone();
@@ -67,5 +67,5 @@ fn existing_real_qe_data_plot_without_scientific_execution() {
         "source":source, "inputs":identities, "input_hashes_unchanged":true,
         "scientific_program_calls":0, "slurm_submissions":0, "kind":"existing real QE data, plotting only"
     })).unwrap();
-    println!("真实 QE 图像：{}", output.display());
+    println!("Real QE Image:{}", output.display());
 }

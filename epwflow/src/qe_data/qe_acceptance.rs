@@ -40,11 +40,11 @@ impl AcceptanceRecord {
     pub fn require_evidence(&self) -> Result<()> {
         anyhow::ensure!(
             !self.program_identities.is_empty(),
-            "data_invalid: 验收缺少真实程序身份证据"
+            "data_invalid: Receiving and inspection lacked proof of true procedural identity"
         );
         anyhow::ensure!(
             self.scf_attempt_count > 0,
-            "data_invalid: 验收缺少真实 SCF 执行证据"
+            "data_invalid: The acceptance is not real SCF Evidence of execution"
         );
         Ok(())
     }

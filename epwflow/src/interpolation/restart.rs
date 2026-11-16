@@ -13,28 +13,28 @@ pub const FORMAT: &str = "epw5.9-coarse-le-c16";
 pub fn velocity_files(dir: &Path, prefix: &str, points: usize, bands: usize) -> Result<()> {
     let text = fs::read_to_string(dir.join(format!("{prefix}.bvec")))?;
     let mut rows = text.lines();
-    ensure!(rows.next().is_some(), "data_invalid: bvec 缺头");
-    let dims = rows.next().context("data_invalid: bvec 缺尺寸")?
+    ensure!(rows.next().is_some(), "data_invalid: bvec Short head");
+    let dims = rows.next().context("data_invalid: bvec Short Size")?
         .split_whitespace().map(str::parse::<usize>)
         .collect::<std::result::Result<Vec<_>, _>>()?;
     ensure!(dims.len() == 2 && dims[0] == points && dims[1] > 0 && bands > 0,
-        "data_invalid: bvec k 点或近邻数与当前 NSCF 不相容");
-    let count = points.checked_mul(dims[1]).context("data_invalid: bvec 尺寸溢出")?;
+        "data_invalid: bvec k Point or Near Neighbourhood Number and Current NSCF It's incompatible");
+    let count = points.checked_mul(dims[1]).context("data_invalid: bvec Size Spill")?;
     for _ in 0..count {
-        ensure!(numbers(rows.next().context("data_invalid: bvec 向量截断")?)?.len() == 4,
-            "data_invalid: bvec 向量／权重维度错误");
+        ensure!(numbers(rows.next().context("data_invalid: bvec Vector Cut")?)?.len() == 4,
+            "data_invalid: bvec Error vector/weight dimension");
     }
-    ensure!(rows.all(|s| s.trim().is_empty()), "data_invalid: bvec 多余记录");
+    ensure!(rows.all(|s| s.trim().is_empty()), "data_invalid: bvec Excess records");
     let count = count.checked_mul(bands).and_then(|n| n.checked_mul(bands))
-        .context("data_invalid: mmn 尺寸溢出")?;
+        .context("data_invalid: mmn Size Spill")?;
     let text = fs::read_to_string(dir.join(format!("{prefix}.mmn")))?;
     let mut rows = text.lines();
     for _ in 0..count {
-        let row = rows.next().context("data_invalid: EPW mmn 重叠矩阵截断")?.trim();
+        let row = rows.next().context("data_invalid: EPW mmn Overlap matrix cut")?.trim();
         ensure!(row.starts_with('(') && row.ends_with(')') && numbers(row)?.len() == 2,
-            "data_invalid: EPW mmn 复数布局错误");
+            "data_invalid: EPW mmn Bulk Layout Error");
     }
-    ensure!(rows.all(|s| s.trim().is_empty()), "data_invalid: EPW mmn 多余记录");
+    ensure!(rows.all(|s| s.trim().is_empty()), "data_invalid: EPW mmn Excess records");
     Ok(())
 }
 
@@ -43,7 +43,7 @@ fn numbers(text: &str) -> Result<Vec<f64>> {
         .split_whitespace()
         .map(|s| {
             let n: f64 = s.replace(['d', 'D'], "e").parse()?;
-            ensure!(n.is_finite(), "data_invalid: 粗网格数据含非有限数");
+            ensure!(n.is_finite(), "data_invalid: coarse grid data is not finite");
             Ok(n)
         })
         .collect()
@@ -57,35 +57,35 @@ pub fn band_manifold(path: &Path, nwann: usize) -> Result<()> {
 pub fn manifold_dimensions(path: &Path, nwann: usize) -> Result<(usize,Vec<usize>)> {
     let text = fs::read_to_string(path)?;
     let mut rows = text.lines().map(str::trim).filter(|s| !s.is_empty()).peekable();
-    let header = rows.next().context("data_invalid: 缺 ukk 头")?.split_whitespace()
+    let header = rows.next().context("data_invalid: Missing ukk Head")?.split_whitespace()
         .map(str::parse::<usize>).collect::<std::result::Result<Vec<_>,_>>()?;
-    ensure!(header.len() == 2 && header[0] >= nwann && nwann > 0, "data_invalid: ukk 带数错误");
+    ensure!(header.len() == 2 && header[0] >= nwann && nwann > 0, "data_invalid: ukk Error with number");
     let bands = header[0];
-    let kept = (0..bands).map(|_| rows.next().context("data_invalid: ukk 带映射截断")?
+    let kept = (0..bands).map(|_| rows.next().context("data_invalid: ukk Map Break")?
         .parse::<usize>().map_err(Into::into)).collect::<Result<Vec<_>>>()?;
-    ensure!(kept[0] > 0 && kept.windows(2).all(|w| w[0] < w[1]), "data_invalid: ukk 带映射无效");
+    ensure!(kept[0] > 0 && kept.windows(2).all(|w| w[0] < w[1]), "data_invalid: ukk Map invalid");
     let mut rotations = 0;
     while rows.peek().is_some_and(|s| s.starts_with('(')) {
-        ensure!(numbers(rows.next().unwrap())?.len() == 2, "data_invalid: ukk 复数布局错误");
+        ensure!(numbers(rows.next().unwrap())?.len() == 2, "data_invalid: ukk Bulk Layout Error");
         rotations += 1;
     }
-    ensure!(rotations > 0 && rotations % (bands * nwann) == 0, "data_invalid: ukk 旋转矩阵截断");
+    ensure!(rotations > 0 && rotations % (bands * nwann) == 0, "data_invalid: ukk Rotation Matrix Break");
     let points = rotations / (bands * nwann);
     let mut flags = vec![];
     while rows.peek().is_some_and(|s| matches!(*s, "T" | "F")) {
         flags.push(rows.next().unwrap() == "T");
     }
     let window_size = points * bands;
-    ensure!(flags.len() > window_size, "data_invalid: ukk 窗口／排除带截断");
+    ensure!(flags.len() > window_size, "data_invalid: ukk Window/Exclusion Belt Cut");
     let excluded = &flags[window_size..];
     ensure!(header[1] <= excluded.len()
         && excluded.iter().enumerate().filter(|(_, x)| !**x).map(|(i, _)| i+1).eq(kept.iter().copied())
         && flags[..window_size].chunks_exact(bands).all(|w| w.iter().filter(|v| **v).count() >= nwann),
-        "data_invalid: ukk 流形／排除带不相容");
+        "data_invalid: ukk Fluid/exclusion band incompatibility");
     for _ in 0..nwann {
-        ensure!(numbers(rows.next().context("data_invalid: ukk 中心截断")?)?.len() == 3, "data_invalid: ukk 中心维度错误");
+        ensure!(numbers(rows.next().context("data_invalid: ukk Center cut")?)?.len() == 3, "data_invalid: ukk Centre dimension error");
     }
-    ensure!(rows.next().is_none(), "data_invalid: ukk 多余记录");
+    ensure!(rows.next().is_none(), "data_invalid: ukk Excess records");
     Ok((points, kept))
 }
 
@@ -99,11 +99,11 @@ pub fn files(
     band_manifold(&dir.join(format!("{prefix}.ukk")), nwann)?;
     let text = fs::read_to_string(dir.join("epwdata.fmt"))?;
     let mut lines = text.lines();
-    let ef = numbers(lines.next().context("data_invalid: 缺少粗网格 Fermi 能")?)?;
-    ensure!(ef.len() == 1, "data_invalid: 粗网格 Fermi 维度错误");
+    let ef = numbers(lines.next().context("data_invalid: Missing coarse grid Fermi Yes")?)?;
+    ensure!(ef.len() == 1, "data_invalid: coarse Grid Fermi Dimension Error");
     let header = lines
         .next()
-        .context("data_invalid: 缺粗网格尺寸")?
+        .context("data_invalid: Short of coarse grid size")?
         .split_whitespace()
         .map(str::parse::<usize>)
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -112,14 +112,14 @@ pub fn files(
             && header.iter().all(|n| *n > 0)
             && header[0] == nwann
             && header[2] == modes,
-        "input_conflict: 粗网格 Wannier／模式维度不符"
+        "input_conflict: coarse Grid Wannier /Mode dimensions do not match"
     );
     let (nk, nq, ng) = (header[1], header[3], header[4]);
     let rest = numbers(&lines.collect::<Vec<_>>().join("\n"))?;
     let expected = (modes / 3) * 9 + 9 + 2 * nwann * nwann * nk + 2 * modes * modes * nq;
     ensure!(
         rest.len() == expected,
-        "data_invalid: epwdata.fmt 截断或布局不符"
+        "data_invalid: epwdata.fmt Intercept or layout does not match"
     );
     let crystal = fs::read_to_string(dir.join("crystal.fmt"))?;
     let dims = crystal
@@ -129,13 +129,13 @@ pub fn files(
         .collect::<std::result::Result<Vec<_>, _>>()?;
     ensure!(
         dims == [modes / 3, modes],
-        "data_invalid: crystal.fmt 原子／模式数不符"
+        "data_invalid: crystal.fmt Atoms/Models do not match"
     );
     let wigner = fs::read_to_string(dir.join("wigner.fmt"))?;
     let mut rows = wigner.lines();
     let dims = rows
         .next()
-        .context("data_invalid: 缺 Wigner 尺寸")?
+        .context("data_invalid: Missing Wigner Dimensions")?
         .split_whitespace()
         .map(str::parse::<usize>)
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -143,7 +143,7 @@ pub fn files(
         dims.len() == 5
             && dims[..3] == [nk, nq, ng]
             && ((dims[3] == 1 && dims[4] == 1) || (dims[3] == nwann && dims[4] == modes / 3)),
-        "data_invalid: Wigner 尺寸不符"
+        "data_invalid: Wigner The size doesn't match"
     );
     for (count, rows_per, cols) in [
         (nk, dims[3], dims[3]),
@@ -151,30 +151,30 @@ pub fn files(
         (ng, dims[3], dims[4]),
     ] {
         for _ in 0..count {
-            let row = numbers(rows.next().context("data_invalid: Wigner 向量截断")?)?;
+            let row = numbers(rows.next().context("data_invalid: Wigner Vector Cut")?)?;
             ensure!(
                 row.len() == 4 && row[..3].iter().all(|x| x.fract() == 0.0) && row[3] >= 0.0,
-                "data_invalid: Wigner 向量无效"
+                "data_invalid: Wigner Vector invalid"
             );
             for _ in 0..rows_per {
                 let weights = rows
                     .next()
-                    .context("data_invalid: Wigner 简并截断")?
+                    .context("data_invalid: Wigner Simplistic and cut")?
                     .split_whitespace()
                     .map(str::parse::<u32>)
                     .collect::<std::result::Result<Vec<_>, _>>()?;
-                ensure!(weights.len() == cols, "data_invalid: Wigner 简并维度不符");
+                ensure!(weights.len() == cols, "data_invalid: Wigner Simplicity does not match");
             }
         }
     }
     ensure!(
         rows.all(|s| s.trim().is_empty()),
-        "data_invalid: Wigner 多余数据"
+        "data_invalid: Wigner Extra data"
     );
     for (name, factor) in [("vmedata.fmt", 12), ("dmedata.fmt", 6)] {
         ensure!(
             numbers(&fs::read_to_string(dir.join(name))?)?.len() == factor * nwann * nwann * nk,
-            "data_invalid: {name} 截断或维度不符"
+            "data_invalid: {name} Intersection or dimension mismatch"
         );
     }
     let matrix = out.join(format!("{prefix}.epmatwp"));
@@ -188,10 +188,10 @@ pub fn files(
     ]
     .into_iter()
     .try_fold(1u64, |p, n| p.checked_mul(n))
-    .context("data_invalid: 粗网格尺寸溢出")?;
+    .context("data_invalid: coarse grid size spills")?;
     ensure!(
         fs::metadata(&matrix)?.len() == size,
-        "data_invalid: epmatwp 截断或非支持布局"
+        "data_invalid: epmatwp Interrupted or Non-Supported Layout"
     );
     let mut input = BufReader::new(fs::File::open(&matrix)?);
     let mut buffer = [0u8; 65536];
@@ -205,7 +205,7 @@ pub fn files(
                 && buffer[..n]
                     .chunks_exact(8)
                     .all(|b| f64::from_le_bytes(b.try_into().unwrap()).is_finite()),
-            "data_invalid: epmatwp 非有限或截断"
+            "data_invalid: epmatwp Unlimited or Interrupted"
         );
     }
     let mut result = vec![("coarse_epmatwp".into(), matrix),
@@ -237,7 +237,7 @@ pub fn stage(
     let sources = files(dir, out, prefix, nwann, modes)?;
     ensure!(
         crate::foundation::native_jobs::empty_execution_directory(target)?,
-        "input_conflict: 细网格目标已存在，保留现场"
+        "input_conflict: A fine grid target exists. Stay on site"
     );
     fs::create_dir_all(target.join("out"))?;
     for (_, src) in sources {
@@ -250,7 +250,7 @@ pub fn stage(
         fs::copy(&src, &dst)?;
         ensure!(
             store::hash_file(&src)? == hash && store::hash_file(&dst)? == hash,
-            "input_conflict: 粗网格复制身份变化"
+            "input_conflict: coarse Grid Copy Identity Change"
         );
     }
     save::nonempty(&target.join("epwdata.fmt"))?;

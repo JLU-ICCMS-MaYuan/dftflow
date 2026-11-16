@@ -31,7 +31,7 @@ pub(super) fn post_program(cfg: &Config, name: &str) -> Result<Program> {
             .pw
             .path
             .parent()
-            .context("configuration: QE 缺程序目录")?
+            .context("configuration: QE Synchronising folder")?
             .join(format!("{name}.x")),
         args: if matches!(name, "bands" | "dos" | "projwfc") {
             vec!["-pd".into(), ".true.".into()]
@@ -122,10 +122,10 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
     ))?))
 }
 fn read_post(cfg: &Config, step: Step) -> Result<Option<PostReceipt>> {
-    let Some(outputs) = super::readable_state::completed_files(cfg, step, "派生交付")? else {
+    let Some(outputs) = super::readable_state::completed_files(cfg, step, "Derived delivery")? else {
         return Ok(None);
     };
-    let Some(old) = super::readable_state::checkpoint_config(cfg, step, "派生交付")? else {
+    let Some(old) = super::readable_state::checkpoint_config(cfg, step, "Derived delivery")? else {
         return Ok(None);
     };
     Ok(Some(PostReceipt {
@@ -137,7 +137,7 @@ fn save_post(cfg: &Config, step: Step, outputs: &[Identity]) -> Result<()> {
     super::readable_state::complete_files(
         cfg,
         step,
-        "派生交付",
+        "Derived delivery",
         &outputs.iter().map(|id| id.path.clone()).collect::<Vec<_>>(),
     )
 }
@@ -226,7 +226,7 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                 })
                 .collect::<Result<Vec<_>>>()?
         } else {
-            let previous = super::readable_state::checkpoint_config(cfg, step, "比较路径")?;
+            let previous = super::readable_state::checkpoint_config(cfg, step, "Comparison path")?;
             let changed = previous
                 .as_ref()
                 .map(|old| {
@@ -269,7 +269,7 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                     true,
                 )?;
             }
-            super::readable_state::complete_files(cfg, step, "比较路径", &[])?;
+            super::readable_state::complete_files(cfg, step, "Comparison path", &[])?;
             let old = layout::path(&cfg.work_dir, "comparison-native/sources.json");
             let mut sources: interpolation::comparison::Sources = store::read(&old)?;
             let options = cfg.comparison.clone().unwrap_or_default();
@@ -551,13 +551,13 @@ fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
     let dyn0_source = manifest
         .artifact_root
         .as_ref()
-        .context("data_invalid: PH 缺根目录")?
+        .context("data_invalid: PH Synchronising folder")?
         .join(
             &manifest
                 .artifacts
                 .iter()
                 .find(|a| a.role == "dyn0")
-                .context("data_invalid: PH 缺归集 dyn0")?
+                .context("data_invalid: PH Synchronising folder dyn0")?
                 .relative_path,
         );
     let dyn0_target = dir.join(format!("{}.dyn0", cfg.qe.prefix));
@@ -628,7 +628,7 @@ fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
     .iter()
     .map(|n| dir.join(n))
     .collect::<Vec<_>>();
-    super::readable_state::complete_files(cfg, Step::Phonon, "声子后处理", &outputs)?;
+    super::readable_state::complete_files(cfg, Step::Phonon, "Phonon postprocessing", &outputs)?;
     Ok(())
 }
 
@@ -643,7 +643,7 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
         store::write(
             &dir.join("embedded-sampling-decision.json"),
             &json!({
-                "program":"epw.x","path_format":"high_symmetry_endpoints","reason":"本次拟合的 wdata 只声明真实高对称端点；从内嵌 Wannier90 的原生 kpt 和 labelinfo 读取路径，DOS 沿用 postw90，不另运行 Wannier90/PW。",
+                "program":"epw.x","path_format":"high_symmetry_endpoints","reason":"This time it's ready wdata Declares only true high symmetrical endpoints; embedded from Wannier90 It's the native kpt and labelinfo Read Path,DOS Continue postw90 ,Do Not Run Again Wannier90/PW.",
                 "nscf":Identity::capture(&interpolation::electronic_sampling::xml(cfg))?,
                 "sampling":interpolation::electronic_sampling::plan(cfg)?
             }),
@@ -711,20 +711,20 @@ pub fn validate_ukk(path: &Path, cfg: &Config) -> Result<()> {
                 .iter()
                 .map(|&n| n as usize)
                 .product::<usize>(),
-        "input_conflict: ukk k 点数与当前 NSCF 不相容"
+        "input_conflict: ukk k Points and Current NSCF It's incompatible"
     );
     let expected = (1..=cfg.qe.nscf.nbnd as usize)
         .filter(|n| !cfg.wannier.exclude_bands.contains(&(*n as u32)))
         .collect::<Vec<_>>();
     ensure!(
         kept == expected,
-        "input_conflict: ukk 排除带与当前配置不相容"
+        "input_conflict: ukk Disclose Belt is incompatible with the current configuration"
     );
     let raw = fs::read_to_string(path)?;
     let first = raw
         .lines()
         .next()
-        .context("data_invalid: 空 ukk")?
+        .context("data_invalid: Empty ukk")?
         .split_whitespace()
         .map(str::parse::<usize>)
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -733,11 +733,11 @@ pub fn validate_ukk(path: &Path, cfg: &Config) -> Result<()> {
             && first[0] > 0
             && first[0] <= cfg.qe.nscf.nbnd as usize
             && first[1] <= cfg.qe.nscf.nbnd as usize,
-        "data_invalid: ukk 带空间不相容"
+        "data_invalid: ukk It's not compatible with space"
     );
     ensure!(
         raw.lines().count() > cfg.wannier.num_wann as usize,
-        "data_invalid: ukk 数据不完整"
+        "data_invalid: ukk Data incomplete"
     );
     Ok(())
 }
@@ -833,7 +833,7 @@ fn check_wannier_post(
     };
     ensure!(
         report.exit_status == Some(0) && error.is_empty() && detail.is_empty(),
-        "execution_failed: {label} 退出状态 {:?}；{detail}（检查 {prefix}.werr 和原生日志）",
+        "execution_failed: {label} Quit Status {:?};{detail}(Inspection {prefix}.werr And the native birthday )",
         report.exit_status
     );
     Ok(())
@@ -861,10 +861,10 @@ fn electronic_files() -> [&'static str; 16] {
 }
 
 pub(crate) fn verify_electronic_comparison(cfg: &Config) -> Result<()> {
-    let r = read_post(cfg, Step::Wannier)?.context("data_invalid: 电子比较尚未完成")?;
+    let r = read_post(cfg, Step::Wannier)?.context("data_invalid: Electronic comparison not yet completed")?;
     ensure!(
         r.key == post_key(cfg, Step::Wannier)?,
-        "input_conflict: 第 5 步电子比较参数已变化"
+        "input_conflict: I don't think so 5 Step Electronic Comparison Parameter has changed"
     );
     for id in r.outputs {
         id.verify()?;
@@ -888,7 +888,7 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     }
     if dir.join("embedded-bands.json").exists() {
         let embedded: Vec<Identity> = store::read(&dir.join("embedded-bands.json"))
-            .context("required: 旧模型缺少内嵌能带来源回执；保留科学模型，不能因迁移重新拟合")?;
+            .context("required: The old model lacks embedded energy belt back-to-back from the source; the scientific model is retained and cannot be recomposed for migration")?;
         for id in embedded {
             id.verify()?;
         }
@@ -896,7 +896,7 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
             let name = format!("{}{suffix}", cfg.qe.prefix);
             let source = dir.join(&name);
             ensure!(source.is_file(),
-            "required: 已有拟合缺少 EPW 内嵌能带输出 {}；保留模型，不因目录迁移重算，请核对原始 EPW 输出",source.display());
+            "required: Existing contracts are missing EPW Embedded can lead to output {};Retain the model, not recalculated by the directory migration, check the original EPW Output",source.display());
             fs::copy(&source, post.join(&name))?;
         }
         interpolation::electronic_sampling::extract(cfg, &post)?;
@@ -959,7 +959,7 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
     ] {
         ensure!(
             !parameters.contains_key(key),
-            "configuration: stages.5.epw-wannier.electron_dos.postw90.{key}: 与实际模型派生值重复"
+            "configuration: stages.5.epw-wannier.electron_dos.postw90.{key}: Duplicate with actual model derived values"
         );
         parameters.insert(key.into(), json!(value));
     }
@@ -980,12 +980,12 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
         prefix,
     ));
     let reusable =
-        super::readable_state::completed_files(cfg, Step::Wannier, "电子子步骤 · postw90")?
+        super::readable_state::completed_files(cfg, Step::Wannier, "Electronic substep · postw90")?
             .is_some()
             && super::readable_state::checkpoint_config(
                 cfg,
                 Step::Wannier,
-                "电子子步骤 · postw90",
+                "Electronic substep · postw90",
             )?
             .is_some_and(|old| {
                 old.native_value::<serde_json::Value>(&[
@@ -1005,7 +1005,7 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
     fs::write(&win, &updated)?;
     if !reusable {
         let reason = json!({"schema_version":1,"decision":"necessary_postprocessing",
-            "reason":"已有电子模型未提供相容的 postw90 DOS；只求现有均匀网格总 DOS，不重新拟合",
+            "reason":"Existing electronic models do not provide compatible postw90 DOS ;Only the existing flat grid total DOS ,Do Not Rewrite",
             "program":program.path,"model":Identity::capture(&dir.join(format!("{prefix}.chk")))?,
             "mesh":cfg.qe.nscf.k_grid,"sigma_ev":options.electronic_sigma_ev,"expected_output":dos});
         store::write(&dir.join("dos-decision.json"), &reason)?;
@@ -1030,7 +1030,7 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
         super::readable_state::complete_files(
             cfg,
             Step::Wannier,
-            "电子子步骤 · postw90",
+            "Electronic substep · postw90",
             &[actual, dir.join(format!("{prefix}.wpout"))],
         )?;
     }
@@ -1066,7 +1066,7 @@ pub fn validate(cfg: &Config, step: Step) -> Result<()> {
         Step::Electronic => {
             ensure!(
                 super::workspace_electronic::completed(cfg)?,
-                "data_invalid: 电子参考子任务尚未完整通过检查"
+                "data_invalid: The electronic reference sub-task has not yet been fully checked"
             );
         }
         Step::Phonon => {
@@ -1086,16 +1086,16 @@ pub fn validate(cfg: &Config, step: Step) -> Result<()> {
                 &fs::read_to_string(dir.join(format!("{}.phband.freq", cfg.qe.prefix)))?,
                 modes,
             )?;
-            ensure!(!frequencies.is_empty(), "data_invalid: 声子频率输出为空");
+            ensure!(!frequencies.is_empty(), "data_invalid: Sound frequency output is empty");
         }
         Step::Wannier => {
             let result = interpolation::wannier::check_native(
                 &dir.join(format!("{}.wout", cfg.qe.prefix)),
                 cfg.wannier.num_wann as usize,
             )?;
-            ensure!(result.converged, "data_invalid: Wannier 未收敛");
+            ensure!(result.converged, "data_invalid: Wannier Unrecovered");
             validate_ukk(&dir.join(format!("{}.ukk", cfg.qe.prefix)), cfg)
-                .context("data_invalid: Wannier UKK 格式无效")?;
+                .context("data_invalid: Wannier UKK Format Invalid")?;
             save::nonempty(&dir.join(format!("{}.chk", cfg.qe.prefix)))?;
             let states = states(cfg)?;
             interpolation::restart::velocity_files(
@@ -1115,7 +1115,7 @@ pub fn validate(cfg: &Config, step: Step) -> Result<()> {
             ))?;
             ensure!(
                 manifest.fine.is_some() && manifest.validation.all_passed(),
-                "data_invalid: 细网格结果不完整"
+                "data_invalid: The fine grid results are incomplete"
             );
         }
         Step::Superconductivity => {
@@ -1192,7 +1192,7 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
         })
         .map(|f| Identity::capture(&dir.join(&f.relative_path)))
         .collect::<Result<Vec<_>>>()?;
-    ensure!(!ids.is_empty(), "data_invalid: 阶段没有科学证据");
+    ensure!(!ids.is_empty(), "data_invalid: There's no scientific evidence at the stage");
     Ok(ids)
 }
 

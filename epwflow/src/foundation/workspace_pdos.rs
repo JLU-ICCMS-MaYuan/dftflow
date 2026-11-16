@@ -61,7 +61,7 @@ pub fn files(cfg: &Config) -> Result<Vec<PathBuf>> {
     let Some(ids) = super::readable_state::completed_files(
         cfg,
         super::stages::Step::Electronic,
-        "电子子步骤 · projwfc",
+        "Electronic substep · projwfc",
     )?
     else {
         return Ok(vec![]);
@@ -69,7 +69,7 @@ pub fn files(cfg: &Config) -> Result<Vec<PathBuf>> {
     let Some(old) = super::readable_state::checkpoint_config(
         cfg,
         super::stages::Step::Electronic,
-        "电子子步骤 · projwfc",
+        "Electronic substep · projwfc",
     )?
     else {
         return Ok(vec![]);
@@ -97,12 +97,12 @@ pub fn run(cfg: &Config) -> Result<()> {
             .any(|n| n
                 .text()
                 .is_some_and(|t| matches!(t.trim(), "true" | ".true." | "T"))),
-        "unsupported: 元素 PDOS 当前只支持非磁标量态"
+        "unsupported: Elements PDOS Currently only non-magnetic labels are supported"
     );
     let native_complete = super::readable_state::completed_files(
         cfg,
         super::stages::Step::Electronic,
-        "电子原生子步骤 · projwfc",
+        "Electronic native substep · projwfc",
     )?
     .is_some();
     let continuing = super::native_jobs::continuing(&root, "projwfc")?;
@@ -111,7 +111,7 @@ pub fn run(cfg: &Config) -> Result<()> {
         store::write(
             &root.join("decision.json"),
             &serde_json::json!({"decision":"necessary_postprocessing",
-            "reason":"缺少与当前状态／展宽相容的原子投影，TDOS 不含分解信息；从已完成 NSCF 波函数求原子投影，不能由 TDOS 或 Wannier 初始轨道恢复元素贡献",
+            "reason":"Lack of atomic projection compatible with current state/extension,TDOS without decomposition information;from completed NSCF The wave function seeks to project atoms, not by TDOS or Wannier Initial orbital restoration element contribution",
             "program":post_program(cfg,"projwfc")?,"sources":ids,"input":input(cfg)?,"recalculate_scf_nscf_ph_wannier_epw":false}),
         )?;
         if !root.join("out").exists() {
@@ -122,7 +122,7 @@ pub fn run(cfg: &Config) -> Result<()> {
             let p = root.join("out").join(id.path.strip_prefix(source(cfg))?);
             ensure!(
                 p.is_file() && store::hash_file(&p)? == id.sha256,
-                "input_conflict: PDOS 隔离副本损坏 {}",
+                "input_conflict: PDOS The quarantine copy is damaged {}",
                 p.display()
             );
         }
@@ -130,7 +130,7 @@ pub fn run(cfg: &Config) -> Result<()> {
     }
     ensure!(
         fs::read_to_string(root.join("projwfc.in"))? == input(cfg)?,
-        "input_conflict: projwfc 输入被更改"
+        "input_conflict: projwfc Input Changed"
     );
     if !native_complete {
         qe_run(
@@ -166,7 +166,7 @@ pub fn run(cfg: &Config) -> Result<()> {
         super::readable_state::complete_files(
             cfg,
             super::stages::Step::Electronic,
-            "电子原生子步骤 · projwfc",
+            "Electronic native substep · projwfc",
             &outputs,
         )?;
     }
@@ -174,7 +174,7 @@ pub fn run(cfg: &Config) -> Result<()> {
     super::readable_state::complete_files(
         cfg,
         super::stages::Step::Electronic,
-        "电子子步骤 · projwfc",
+        "Electronic substep · projwfc",
         &receipt
             .outputs
             .iter()
@@ -207,14 +207,14 @@ fn numeric(file: &Path) -> Result<Vec<Vec<f64>>> {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         ensure!(
             row.len() >= 2 && row.iter().all(|v| v.is_finite()),
-            "data_invalid: 非法投影数值 {}",
+            "data_invalid: Invalid projection value {}",
             file.display()
         );
         rows.push(row);
     }
     ensure!(
         rows.len() > 1 && rows.windows(2).all(|r| r[0][0] < r[1][0]),
-        "data_invalid: 投影能轴非法"
+        "data_invalid: Projectivation axis is illegal"
     );
     Ok(rows)
 }
@@ -269,20 +269,20 @@ fn aggregate_native(
         .collect::<Result<BTreeSet<_>>>()?;
     ensure!(
         !shells.is_empty(),
-        "data_invalid: projwfc 缺原生原子波函数清单"
+        "data_invalid: projwfc manifest of non-natural atomic wave functions"
     );
     let mut seen = BTreeSet::new();
     let mut atoms = BTreeSet::new();
     let mut elements = BTreeMap::<String, Rows>::new();
     for path in paths {
         let Some((atom, element, wfc, l)) =
-            qf_io::qe_proj::parse_pdos_filename(path.to_str().context("投影路径非 UTF-8")?)
+            qf_io::qe_proj::parse_pdos_filename(path.to_str().context("Projection Path Not UTF-8")?)
         else {
             continue;
         };
         ensure!(
             atom > 0 && expected.get(atom - 1) == Some(&element) && seen.insert((atom, wfc)),
-            "data_invalid: 投影原子、元素或波函数重复／不匹配"
+            "data_invalid: Duplication/unmatching of projecting atoms, elements or wave functions"
         );
         atoms.insert(atom);
         let rows = numeric(path)?;
@@ -295,7 +295,7 @@ fn aggregate_native(
         };
         ensure!(
             rows.len() == tdos.len() && rows.iter().all(|r| r.len() == n + 2),
-            "data_invalid: 投影格式或点数不一致（仅支持标量非磁）"
+            "data_invalid: Inconsistent projection format or points (only non-magnetic))"
         );
         let target = elements
             .entry(element)
@@ -317,14 +317,14 @@ fn aggregate_native(
             ensure!(
                 (r[0] - fermi - t.0).abs() < 1e-5
                     && (r[1] - r[2..].iter().sum::<f64>()).abs() <= rounding,
-                "data_invalid: 投影能轴或 LDOS 与磁分量不符"
+                "data_invalid: Projection axis or LDOS It doesn't match the magnetic weight"
             );
             out.1 += r[1]; // LDOS 已是磁分量之和，只累加一次。
         }
     }
     ensure!(
         seen == shells && atoms.len() == expected.len(),
-        "data_invalid: 原子／波函数投影缺失"
+        "data_invalid: Missing atom/wave projection"
     );
     Ok(elements.into_iter().collect())
 }

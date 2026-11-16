@@ -33,8 +33,8 @@ fn fail(o:Output, expected:&str) {assert!(!o.status.success());assert!(String::f
 
 fn legacy_budget() -> serde_json::Value {
     serde_json::json!({"campaign":"epic-0007", "limits":{"node_seconds":28800,"concurrent_jobs":2,"storage_bytes":107374182400u64},
-        "historical_policy":"保守计入原预算", "historical_jobs":[{"job_id":"101","node_seconds":100}],
-        "attempts":[{"job_id":102,"node_seconds":300,"reserved_node_seconds":0,"state":"FAILED","extra_evidence":"保留"}],
+        "historical_policy":"Conservatively charged to the original budget", "historical_jobs":[{"job_id":"101","node_seconds":100}],
+        "attempts":[{"job_id":102,"node_seconds":300,"reserved_node_seconds":0,"state":"FAILED","extra_evidence":"Reservations"}],
         "spent_node_seconds":400,"storage_actual_bytes":1073741824u64})
 }
 
@@ -54,7 +54,7 @@ fn legacy_budget_read_is_immutable_and_first_write_preserves_spending_and_eviden
     assert_eq!(ledger["legacy_source"],source);
     assert_eq!(ledger["reservations"][0]["node_seconds"],0);
     let token=ledger["reservations"][0]["id"].as_str().unwrap();
-    fail(c.run(&["budget","attach","--ledger","legacy.json","--token",token,"--job","101"]),"历史分配已结算");
+    fail(c.run(&["budget","attach","--ledger","legacy.json","--token",token,"--job","101"]),"History distribution settled");
     assert_eq!(epwflow::foundation::store::read::<serde_json::Value>(&c.root.join("legacy.json")).unwrap(),ledger);
 }
 
@@ -143,7 +143,7 @@ fn readonly_check_all_modes_and_cross_directory() {
         assert_eq!(a["environment"]["runtime_version"],"unverified");
         let state=c.root.join("run/epw-state");
         assert_eq!(fs::read_dir(c.root.join("run")).unwrap().count(),1);
-        assert_eq!(fs::read_dir(&state).unwrap().count(),2,"检查仅保存原文与来源记录");
+        assert_eq!(fs::read_dir(&state).unwrap().count(),2,"Check to save only original and source records");
         assert_eq!(fs::read(state.join("0000-config.toml")).unwrap(),fs::read(c.root.join("input.toml")).unwrap());
         assert!(state.join("1.qe-scf.log").is_file());
         assert!(!epwflow::foundation::layout::enabled(&c.root.join("run")));
@@ -192,7 +192,7 @@ fn refuses_conflicts_and_no_science_success_on_failed_submission() {
     fail(c.run(&["prepare","-c","input.toml"]),"input_conflict"); assert_eq!(fs::read_to_string(c.root.join("run/important")).unwrap(),"keep");
     let c=Case::new();c.edit("schema_version = 2","schema_version = 2\nlayout = 'numbered'");
     fail(c.run(&["submit","-c","input.toml","--stage","scf"]),"scheduler_unknown");
-    assert!(!c.root.join("run/calculations").exists(),"提交失败不能运行科学阶段");
+    assert!(!c.root.join("run/calculations").exists(),"Failed to submit cannot run the science phase");
     let cfg = epwflow::foundation::config::Config::load(&c.root.join("input.toml")).unwrap();
     let task = epwflow::foundation::native_jobs::active_task(&cfg).unwrap().unwrap();
     assert_eq!(task.state, "unknown");
@@ -216,11 +216,11 @@ fn budget_reserve_attach_reconcile_and_reject_duplicate_allocation() {
     let id = output.trim().strip_prefix("reserved: token=").unwrap();
     assert!(c.run(&["budget", "attach", "--ledger", "ledger.json", "--token", id, "--job", "11"]).status.success());
     // 已绑定任务不能重复登记；结算仍依据实际终态而非预计时长。
-    fail(c.run(&["budget", "attach", "--ledger", "ledger.json", "--token", id, "--job", "11"]), "分配已登记");
+    fail(c.run(&["budget", "attach", "--ledger", "ledger.json", "--token", id, "--job", "11"]), "Distribution registered");
     assert!(c.run(&["budget", "reconcile", "--ledger", "ledger.json"]).status.success());
     let st = c.json(&["budget", "status", "--ledger", "ledger.json", "--json"]);
     assert_eq!(st["lanes"], 0);
-    assert_eq!(st["spent_node_seconds"], 120, "实际时间结算且不重复计算 batch 步骤");
+    assert_eq!(st["spent_node_seconds"], 120, "Actual time settlement without double counting batch Steps");
     assert!(c.run(&["budget", "reconcile", "--ledger", "ledger.json"]).status.success());
     let again = c.json(&["budget", "status", "--ledger", "ledger.json", "--json"]);
     assert_eq!(again["spent_node_seconds"], 120);
@@ -245,7 +245,7 @@ fn stage_state_machine_and_dependency_check() {
     blocked.insert("scf".to_string(), state::StageState::Running);
     assert!(
         state::dependencies_satisfied("nscf", &["scf".to_string()], &blocked).is_err(),
-        "依赖未完成必须阻断"
+        "Reliance incomplete must be blocked"
     );
 }
 
@@ -253,7 +253,7 @@ fn stage_state_machine_and_dependency_check() {
 fn environment_evidence_rejects_missing_program() {
     // 未探测的运行版本标为未验证，缺失程序必须返回环境错误而非零退出。
     let r = environment::verify_program(std::path::Path::new("/no/such/program-xyz"));
-    assert!(r.is_err(), "缺失程序必须 environment 错误");
+    assert!(r.is_err(), "Missing program must environment Error");
 }
 
 #[test]
@@ -269,7 +269,7 @@ fn visible_default_budget_registry_preserves_the_old_campaign_binding() {
     let args = ["budget", "reserve", "--ledger", "different-ledger.json", "--label", "guard"];
     let mut cmd = c.cmd(&args);
     cmd.env_remove("EPWFLOW_LOCAL_STATE").env_remove("XDG_STATE_HOME").env("HOME", &home);
-    fail(cmd.output().unwrap(), "已登记在其它路径");
+    fail(cmd.output().unwrap(), "Registered on other paths");
     let mut cmd = c.cmd(&["budget", "reserve", "--ledger", "existing-ledger.json", "--label", "migrate"]);
     cmd.env_remove("EPWFLOW_LOCAL_STATE").env_remove("XDG_STATE_HOME").env("HOME", &home);
     let result = cmd.output().unwrap();

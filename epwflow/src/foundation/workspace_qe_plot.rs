@@ -40,14 +40,14 @@ impl Request {
     }
     fn location(&self) -> Result<(Config, Step, String)> {
         let root = crate::qe_data::direct::workspace(&self.dir)
-            .context("configuration: 绘图目录不属于编号工作区")?;
+            .context("configuration: Drawing directories do not belong to numbered workspaces")?;
         let cfg = crate::qe_data::direct::current(&root)?;
         let step = Step::ALL
             .into_iter()
             .find(|s| self.dir.starts_with(s.directory(&cfg)))
-            .context("configuration: 绘图阶段未知")?;
+            .context("configuration: The drawing phase is unknown")?;
         let label = format!(
-            "绘图 · {}",
+            "Plot · {}",
             super::readable_state::relative(&root, &self.dir)
         );
         Ok((cfg, step, label))
@@ -57,7 +57,7 @@ impl Request {
         if super::readable_state::completed_files(&cfg, step, &label)?.is_none() {
             return Ok(false);
         }
-        if super::readable_state::read(&cfg.work_dir, step)?.get(&label, "绘图版本")
+        if super::readable_state::read(&cfg.work_dir, step)?.get(&label, "Plot version")
             != Some(self.renderer.as_str())
         {
             return Ok(false);
@@ -88,14 +88,14 @@ impl Request {
         fs::create_dir_all(&self.dir)?;
         render().with_context(|| {
             format!(
-                "plot_failed: QE 图像未完成 {}；科学结果已保留，可恢复补图",
+                "plot_failed: QE Image not finished {};The scientific results have been retained and can be restored",
                 self.dir.display()
             )
         })?;
         let (cfg, step, label) = self.location()?;
         super::readable_state::complete_files(&cfg, step, &label, &self.outputs)?;
         super::readable_state::update(&cfg.work_dir, step, |doc| {
-            doc.set(&label, "绘图版本", &self.renderer);
+            doc.set(&label, "Plot version", &self.renderer);
             Ok(())
         })?;
         println!("QE plots: {}", self.dir.display());
@@ -115,7 +115,7 @@ fn electronic_request(cfg: &Config, leaf: &str) -> Result<Request> {
             inputs.extend([
                 dir.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix)),
                 dir.join("path-points.json"),
-                cfg.kpath.clone().context("required: 电子绘图需要 KPATH")?,
+                cfg.kpath.clone().context("required: Electronic drawing needs KPATH")?,
             ]);
             &[
                 "electronic-bands.png",
@@ -140,7 +140,7 @@ fn electronic_request(cfg: &Config, leaf: &str) -> Result<Request> {
                 "electronic-pdos.json",
             ]
         }
-        _ => anyhow::bail!("configuration: 未知 QE 绘图任务 {leaf}"),
+        _ => anyhow::bail!("configuration: Unknown QE Drawing Tasks {leaf}"),
     };
     Request::new(
         dir.join("plots"),
@@ -232,7 +232,7 @@ pub fn phonon(cfg: &Config) -> Result<()> {
         )?;
         ensure!(
             !regex::Regex::new(r"(?i)\b(?:nan|inf|infinity)\b")?.is_match(&text),
-            "data_invalid: 声子 DOS 非有限"
+            "data_invalid: Voice DOS Unlimited"
         );
         let rows = qf_io::read_numeric_rows(&text);
         let nat: usize = qe.cell.counts.iter().sum();
@@ -241,18 +241,18 @@ pub fn phonon(cfg: &Config) -> Result<()> {
                 && rows
                     .iter()
                     .all(|r| r.len() == nat + 2 && r.iter().all(|v| v.is_finite())),
-            "data_invalid: 元素声子 DOS 需要完整的 {nat} 个原子投影列，不能用 TDOS 或部分投影代替"
+            "data_invalid: element phonon DOS requires all {nat} atomic projection columns; TDOS or partial projections cannot replace them"
         );
         ensure!(
             rows.windows(2).all(|r| r[0][0] < r[1][0]),
-            "data_invalid: 声子 DOS 频率轴不递增"
+            "data_invalid: Voice DOS The frequency axis is not increasing"
         );
         for (source, relative) in phonon_inputs(cfg) {
             let target = request.dir.join(relative);
             fs::create_dir_all(target.parent().unwrap())?;
             fs::copy(source, target)?;
         }
-        let work = request.dir.to_str().context("绘图路径非 UTF-8")?;
+        let work = request.dir.to_str().context("Drawing Path Not UTF-8")?;
         let (band, labels) = qf_phonon::build_phonon_band_tables(
             work,
             &cfg.qe.prefix,
@@ -276,7 +276,7 @@ pub fn phonon(cfg: &Config) -> Result<()> {
                     .dir
                     .join(relative)
                     .to_str()
-                    .context("CSV 路径非 UTF-8")?,
+                    .context("CSV Path Not UTF-8")?,
                 &rows,
             )?;
         }

@@ -282,14 +282,14 @@ fn both_split_modes_report_concise_preparation_submission_and_failure() {
         assert!(prepared.status.success());
         let text = String::from_utf8(prepared.stdout).unwrap();
         assert_eq!(text.lines().count(), 1);
-        assert!(text.starts_with("已准备声子流程输入与脚本："));
+        assert!(text.starts_with("phonon process input and script prepared:"));
         let failed = cli(&w, &["-s"], &[("FAIL_SUBMIT", "101")]);
         assert!(!failed.status.success());
         assert!(failed.stdout.is_empty());
         assert!(!failed.stderr.is_empty());
         let submitted = cli(&w, &["-s"], &[]);
         assert!(submitted.status.success(), "{}", String::from_utf8_lossy(&submitted.stderr));
-        assert_eq!(String::from_utf8(submitted.stdout).unwrap(), "已提交前置作业 102；后续计算及绘图将自动安排\n");
+        assert_eq!(String::from_utf8(submitted.stdout).unwrap(), "Pre-commissioned 102 ;Follow-up calculations and drawings will automatically be arranged\n");
     }
 }
 
@@ -323,10 +323,10 @@ fn submitted_scripts_use_frozen_config_and_original_structure_after_external_edi
         let wrong_mode=if mode=="coords" {"index"} else {"coords"};
         let wrong=command(&w).args(["qe-phonon-chain-stage","-c",snapshot.to_str().unwrap(),"--mode",wrong_mode,"--stage","post"]).output().unwrap();
         assert!(!wrong.status.success());
-        assert!(String::from_utf8_lossy(&wrong.stderr).contains("模式不同"));
+        assert!(String::from_utf8_lossy(&wrong.stderr).contains("Different mode"));
         fs::write(&snapshot,frozen.replace("ecutwfc = 40","ecutwfc = 90")).unwrap();
         let bad=command(&w).args(["qe-phonon-chain-stage","-c",snapshot.to_str().unwrap(),"--mode",mode,"--stage","post"]).output().unwrap();
         assert!(!bad.status.success());
-        assert!(String::from_utf8_lossy(&bad.stderr).contains("快照已改变"));
+        assert!(String::from_utf8_lossy(&bad.stderr).contains("The snapshot has changed"));
     }
 }

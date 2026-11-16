@@ -74,7 +74,7 @@ fn verification_does_not_open_wavefunction_or_density_fifos() {
         }
         send.send(result.len()).unwrap();
     });
-    assert_eq!(receive.recv_timeout(Duration::from_secs(3)).expect("核验误读 FIFO，正在等待大数据内容"), 1);
+    assert_eq!(receive.recv_timeout(Duration::from_secs(3)).expect("Verify Error FIFO ,Waiting for big data content"), 1);
     worker.join().unwrap();
     fs::remove_dir_all(root).unwrap();
 }

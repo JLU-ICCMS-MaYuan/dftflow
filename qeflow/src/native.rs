@@ -20,7 +20,7 @@ pub fn run_input(
             && stem
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
-        "非法 QE 日志名称"
+        "Illegal QE Log Name"
     );
     let mut argv = launcher.to_vec();
     argv.push(program.to_string_lossy().into_owned());
@@ -35,7 +35,7 @@ pub fn run_input(
         .stdout(stdout)
         .stderr(stderr)
         .status()
-        .context("无法启动 QE 原生程序")?;
+        .context("Cannot start QE Native procedure")?;
     fs::write(
         dir.join(format!("{stem}.exitcode")),
         status
@@ -43,6 +43,6 @@ pub fn run_input(
             .map(|n| n.to_string())
             .unwrap_or_else(|| "signal".into()),
     )?;
-    ensure!(status.success(), "QE {stem} 退出失败：{status}");
+    ensure!(status.success(), "QE {stem} Exit Failed:{status}");
     qf_io::qe_completion::checked_log(&dir.join(format!("{stem}.out")), scf)
 }

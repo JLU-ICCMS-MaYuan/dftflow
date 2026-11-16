@@ -81,12 +81,12 @@ fn find_dyn_source(q_dir: &str, prefix: &str, q_index: usize, coords_mode: bool,
     let existing: Vec<&String> = candidates.iter().filter(|c| Path::new(c).exists()).collect();
     match existing.len() {
         0 => {
-            errors.push(format!("{q_dir}: 缺少候选 dyn 源文件"));
+            errors.push(format!("{q_dir}: Missing Candidates dyn Source File"));
             None
         }
         1 => Some(existing[0].clone()),
         _ => {
-            errors.push(format!("{q_dir}: 存在多个候选 dyn 源文件 -> {}", existing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")));
+            errors.push(format!("{q_dir}: Multiple candidates exist dyn Source File -> {}", existing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")));
             None
         }
     }
@@ -107,10 +107,10 @@ fn find_q_phdir_source(q_dir: &str, prefix: &str, q_index: usize, coords_mode: b
         {
             return Some(q_ph_root);
         }
-        errors.push(format!("{q_dir} q_{q_index}: 缺少 tmp/_ph0/{prefix}.dvscf1、_ph0/dvscf 或 _ph0/{prefix}.q_1"));
+        errors.push(format!("{q_dir} q_{q_index}: Missing tmp/_ph0/{prefix}.dvscf1、_ph0/dvscf or _ph0/{prefix}.q_1"));
         return None;
     }
-    errors.push(format!("{q_dir} q_{q_index}: 缺少 tmp/_ph0/{prefix}.q_{q_index} 目录"));
+    errors.push(format!("{q_dir} q_{q_index}: Missing tmp/_ph0/{prefix}.q_{q_index} Contents"));
     None
 }
 
@@ -133,7 +133,7 @@ pub fn merge_split_results(workspace: &str, prefix: &str, map: &QIndexMap) -> Re
     let merged_ph_root = resolve_ph_root(workspace);
     if map.qpoints.is_empty() {
         return Ok(MergeResult {
-            errors: vec!["缺少 q_index_map.json 或其中不包含 qpoints".into()],
+            errors: vec!["Missing q_index_map.json or does not include qpoints".into()],
             ..Default::default()
         });
     }
@@ -145,14 +145,14 @@ pub fn merge_split_results(workspace: &str, prefix: &str, map: &QIndexMap) -> Re
         let split_out = format!("{q_dir}/split_ph.out");
         let ph_out = qf_io::read_ph_out(&split_out)?;
         if !ph_out.finished {
-            errors.push(format!("{}: split_ph.out 未完成，禁止 merge", entry.directory));
+            errors.push(format!("{}: split_ph.out Not completed, prohibited merge", entry.directory));
             continue;
         }
         let split_in = format!("{q_dir}/split_ph.in");
         if Path::new(&split_in).exists() {
             copy_file(&split_in, &format!("{workspace}/split_ph.in.{q_index}"));
         } else {
-            errors.push(format!("{}: 缺少 split_ph.in", entry.directory));
+            errors.push(format!("{}: Missing split_ph.in", entry.directory));
         }
         copy_file(&split_out, &format!("{workspace}/split_ph.out.{q_index}"));
 
@@ -191,26 +191,26 @@ pub fn merge_split_results(workspace: &str, prefix: &str, map: &QIndexMap) -> Re
 /// Issue 0006 的严格合并：依据配置 outdir，先验证再归集。
 pub fn merge_split_results_with_outdir(workspace: &str, prefix: &str, map: &QIndexMap, outdir: &str) -> Result<MergeResult> {
     use anyhow::{ensure, Context};
-    ensure!(!map.qpoints.is_empty(), "q 映射为空");
+    ensure!(!map.qpoints.is_empty(), "q Map to Empty");
     let coords = map.mode == "split_assign_coords";
     let mut prepared = Vec::new();
     let q_re=Regex::new(r"q\s*=\s*\(\s*([^)]*)\)")?;
     for entry in &map.qpoints {
         let dir=Path::new(workspace).join(&entry.directory);
         let log=std::fs::read_to_string(dir.join("split_ph.out"))?;
-        ensure!(log.contains("JOB DONE") && !log.to_lowercase().contains("error in routine"),"q {} 未正常完成",entry.index);
+        ensure!(log.contains("JOB DONE") && !log.to_lowercase().contains("error in routine"),"q {} Not normally completed",entry.index);
         let mut errors=Vec::new();
-        let dyn_src=find_dyn_source(dir.to_str().unwrap(),prefix,entry.index,coords,&mut errors).context("缺少或歧义 dyn 文件")?;
+        let dyn_src=find_dyn_source(dir.to_str().unwrap(),prefix,entry.index,coords,&mut errors).context("Lack or ambiguity dyn Documentation")?;
         if let Some(expected)=entry.q_cart {
             let dyn_text=std::fs::read_to_string(&dyn_src)?;
-            let cap=q_re.captures(&dyn_text).context("dyn 缺少 q 坐标")?;
+            let cap=q_re.captures(&dyn_text).context("dyn Missing q Coordinates")?;
             let got:Vec<f64>=cap[1].split_whitespace().map(str::parse).collect::<std::result::Result<_,_>>()?;
-            ensure!(got.len()==3 && got.iter().zip(expected).all(|(a,b)|(a-b).abs()<1e-7),"q {} 动力学矩阵坐标不匹配",entry.index);
+            ensure!(got.len()==3 && got.iter().zip(expected).all(|(a,b)|(a-b).abs()<1e-7),"q {} Power matrix coordinates don't match",entry.index);
         }
         let phroot=dir.join(outdir).join("_ph0");
         let phsave=phroot.join(format!("{prefix}.phsave"));
         let local_index=if coords {1} else {entry.index};
-        ensure!(phsave.join(format!("patterns.{local_index}.xml")).is_file(),"q {} 缺少 patterns",entry.index);
+        ensure!(phsave.join(format!("patterns.{local_index}.xml")).is_file(),"q {} Missing patterns",entry.index);
         prepared.push((entry,dir,dyn_src,phroot,phsave));
     }
     let dest_root=Path::new(workspace).join(outdir).join("_ph0");

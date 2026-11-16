@@ -17,15 +17,18 @@ const HISTORIES: [&str; 3] = [
 ];
 
 #[derive(Parser)]
-#[command(about = "清理 EPW 三类历史，默认仅预览；--yes 实际删除")]
+#[command(about = "Clean the three EPW history locations; preview by default, delete with --yes")]
 struct Options {
     /// 编号工作区根目录，不要求完整科学配置。
+    #[arg(help = "Numbered workspace root; no complete scientific configuration required", long_help = "Numbered workspace root; no complete scientific configuration required")]
     #[arg(short, long, default_value = ".")]
     work: PathBuf,
     /// 仅列出清理清单，不修改工作区。
+    #[arg(help = "Preview cleanup without changing the workspace", long_help = "Preview cleanup without changing the workspace")]
     #[arg(long, conflicts_with = "yes")]
     dry_run: bool,
     /// 实际删除三处 history 的全部内容，保留现用计算与记录。
+    #[arg(help = "Delete contents of the three history locations, preserving current calculations and records", long_help = "Delete contents of the three history locations, preserving current calculations and records")]
     #[arg(long)]
     yes: bool,
 }
@@ -48,13 +51,13 @@ fn metadata(path: &Path) -> Result<Option<fs::Metadata>> {
     match fs::symlink_metadata(path) {
         Ok(meta) => Ok(Some(meta)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error).with_context(|| format!("无法读取 {}", path.display())),
+        Err(error) => Err(error).with_context(|| format!("Cannot read {}", path.display())),
     }
 }
 
 fn children(path: &Path) -> Result<Vec<PathBuf>> {
     let mut paths = fs::read_dir(path)
-        .with_context(|| format!("无法列出 {}", path.display()))?
+        .with_context(|| format!("Cannot list {}", path.display()))?
         .map(|entry| entry.map(|entry| entry.path()))
         .collect::<io::Result<Vec<_>>>()?;
     paths.sort();
@@ -71,7 +74,7 @@ fn validate_roots(work: &Path) -> Result<Vec<PathBuf>> {
             let Some(meta) = metadata(&path)? else { break };
             ensure!(
                 meta.is_dir() && !meta.file_type().is_symlink(),
-                "input_conflict: 清理路径必须是普通目录，拒绝链接或文件 {}",
+                "input_conflict: Cleanup path must be a normal directory, rejecting links or files {}",
                 path.display()
             );
         }
@@ -90,7 +93,7 @@ fn count(path: &Path, result: &mut Count) -> Result<()> {
     } else {
         ensure!(
             meta.is_file() || meta.file_type().is_symlink(),
-            "input_conflict: 历史含不支持的文件类型 {}",
+            "input_conflict: File type not supported by history {}",
             path.display()
         );
         result.files += 1;
@@ -178,7 +181,7 @@ fn check_value(
                     .get("state")
                     .and_then(Value::as_str)
                     .with_context(|| {
-                        format!("data_invalid: 作业记录缺少状态 {}", source.display())
+                        format!("data_invalid: Job records are missing state {}", source.display())
                     })?;
                 match state {
                     "validated" | "succeeded" | "complete" | "completed" | "failed"
@@ -191,14 +194,14 @@ fn check_value(
                                 .filter(|job| *job > 0)
                                 .with_context(|| {
                                     format!(
-                                        "scheduler_unknown: {} 状态为 {state}，缺少可核查作业号",
+                                        "scheduler_unknown: {} Status as {state},Lack of verifiable operational numbers",
                                         source.display()
                                     )
                                 })?;
                         jobs.insert(job);
                     }
                     _ => bail!(
-                        "scheduler_unknown: {} 状态为 {state}，拒绝清理",
+                        "scheduler_unknown: {} Status as {state},Refuse Cleanup",
                         source.display()
                     ),
                 }
@@ -215,7 +218,7 @@ fn check_value(
         Value::String(value) => {
             if let Some(target) = reference(value, source, work, roots) {
                 bail!(
-                    "input_conflict: 现用记录 {} 引用历史 {}",
+                    "input_conflict: Current records {} References to history {}",
                     source.display(),
                     target.display()
                 );
@@ -244,7 +247,7 @@ fn scan_live(
                 .is_some_and(|name| name == "active.json"
                     || name.to_string_lossy().starts_with("native-active"))
                 && path.parent() != Some(work.join("epw-state/native-jobs").as_path()),
-            "input_conflict: 现用作业记录不能是符号链接 {}",
+            "input_conflict: Current Job Record cannot be a symbol link {}",
             path.display()
         );
         let link = fs::read_link(path)?;
@@ -254,7 +257,7 @@ fn scan_live(
             !roots
                 .iter()
                 .any(|root| target.starts_with(root) || resolved.starts_with(root)),
-            "input_conflict: 现用链接 {} 引用历史 {}",
+            "input_conflict: Current Link {} References to history {}",
             path.display(),
             target.display()
         );
@@ -278,7 +281,7 @@ fn scan_live(
                 {
                     ensure!(
                         value.get("job").is_some() && value.get("state").is_some(),
-                        "data_invalid: 活动记录不完整 {}",
+                        "data_invalid: Incomplete recording of activities {}",
                         path.display()
                     );
                 }
@@ -290,11 +293,11 @@ fn scan_live(
                 {
                     let config = value["config"]["path"]
                         .as_str()
-                        .context("data_invalid: 活动尝试缺少配置快照")?;
+                        .context("data_invalid: Activity attempt missing configuration snapshots")?;
                     let receipt = Path::new(config).with_file_name("submission.json");
                     ensure!(
                         receipt.starts_with(work),
-                        "input_conflict: 提交回执不属于工作区"
+                        "input_conflict: Submission of a receipt is not part of the work area"
                     );
                     let submitted: Value = store::read(&receipt)?;
                     if submitted["job"].as_u64().is_some_and(|job| job > 0) {
@@ -308,7 +311,7 @@ fn scan_live(
                 let text = fs::read_to_string(path)?;
                 if let Some(target) = reference(&text, path, work, roots) {
                     bail!(
-                        "input_conflict: 现用文件 {} 引用历史 {}",
+                        "input_conflict: Current File {} References to history {}",
                         path.display(),
                         target.display()
                     );
@@ -328,11 +331,11 @@ fn check_queue(work: &Path) -> Result<()> {
         Ok(output) => output,
         // 没有 Slurm 的机器仍可清理已终止的本地工作区；有未决作业时 accounting 会拒绝。
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error).context("scheduler_unknown: 无法查询 squeue"),
+        Err(error) => return Err(error).context("scheduler_unknown: cannot query squeue"),
     };
     ensure!(
         output.status.success(),
-        "scheduler_unknown: squeue 查询失败：{}",
+        "scheduler_unknown: squeue query failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     for line in String::from_utf8(output.stdout)?
@@ -341,12 +344,12 @@ fn check_queue(work: &Path) -> Result<()> {
     {
         let (job, directory) = line
             .split_once('|')
-            .context("scheduler_unknown: squeue 缺少作业工作目录")?;
+            .context("scheduler_unknown: squeue response has no job working directory")?;
         let directory = Path::new(directory.trim());
         let resolved = fs::canonicalize(directory).unwrap_or_else(|_| normalized(directory));
         ensure!(
             !resolved.starts_with(work),
-            "scheduler_unknown: 作业 {} 正在使用工作区 {}",
+            "scheduler_unknown: job {} is using workspace {}",
             job.trim(),
             directory.display()
         );
@@ -359,13 +362,13 @@ fn preflight(work: &Path, roots: &[PathBuf]) -> Result<()> {
     let cwd = std::env::current_dir()?;
     ensure!(
         !roots.iter().any(|root| cwd.starts_with(root)),
-        "input_conflict: 当前终端位于待清理历史内，请先进入工作区根目录"
+        "input_conflict: current directory is inside history scheduled for deletion; enter the workspace root first"
     );
     let active = work.join("epw-state/active.json");
     let current_attempt = if let Some(meta) = metadata(&active)? {
         ensure!(
             meta.is_file() && !meta.file_type().is_symlink(),
-            "input_conflict: 现用作业记录必须是普通文件 {}",
+            "input_conflict: The current working record must be a normal file {}",
             active.display()
         );
         let value: Value = store::read(&active)?;
@@ -380,7 +383,7 @@ fn preflight(work: &Path, roots: &[PathBuf]) -> Result<()> {
     for job in jobs {
         ensure!(
             slurm::accounting(job)?.terminal,
-            "scheduler_unknown: 作业 {job} 仍活动，拒绝清理"
+            "scheduler_unknown: Operations {job} Still active, refusing clean-up"
         );
     }
     check_queue(work)
@@ -408,7 +411,7 @@ fn remove_contents(root: &Path) -> Vec<String> {
 }
 
 pub fn clear(path: &Path, delete: bool) -> Result<()> {
-    let work = fs::canonicalize(path).context("configuration: 工作区不存在或不可读")?;
+    let work = fs::canonicalize(path).context("configuration: workspace does not exist or is unreadable")?;
     if work.join("epw-state/1.qe-scf.log").is_file() && !work.join("epw-state/layout.json").exists()
     {
         println!(
@@ -421,7 +424,7 @@ pub fn clear(path: &Path, delete: bool) -> Result<()> {
     let layout: Layout = store::read(&work.join("epw-state/layout.json"))?;
     ensure!(
         layout.schema_version == 1,
-        "unsupported_version: 工作区布局版本"
+        "unsupported_version: workspace layout version"
     );
     let before = inventory(&roots)?;
     preflight(&work, &roots)?;
@@ -454,7 +457,7 @@ pub fn clear(path: &Path, delete: bool) -> Result<()> {
     preflight(&work, &roots)?;
     ensure!(
         inventory(&roots)? == before,
-        "input_conflict: 预检期间历史发生变化，请重新执行"
+        "input_conflict: History changes during pre-screening. Re-executed"
     );
     let mut failures = Vec::new();
     for (root, old) in roots.iter().zip(&before) {
@@ -467,14 +470,14 @@ pub fn clear(path: &Path, delete: bool) -> Result<()> {
             Ok(remaining) => failures.extend(
                 remaining
                     .iter()
-                    .map(|path| format!("未删除 {}", path.display())),
+                    .map(|path| format!("Not removed: {}", path.display())),
             ),
             Err(error) => failures.push(format!("{error:#}")),
         }
     }
     ensure!(
         failures.is_empty(),
-        "execution_failed: 历史清理未全部完成：\n{}",
+        "execution_failed: history cleanup incomplete:\n{}",
         failures.join("\n")
     );
     println!("History cleanup complete; current calculations, results, task records and budget unchanged");

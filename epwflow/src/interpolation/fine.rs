@@ -66,12 +66,12 @@ pub fn collect_fine(work: &Path, epw_cfg: &EpwConfig) -> Result<FineResult> {
 /// 单一列 f64 文本读取（空格/换行分隔）。
 pub fn read_f64_col(path: &Path) -> Result<Vec<f64>> {
     let txt = std::fs::read_to_string(path)
-        .with_context(|| format!("data_invalid: 无法读取 {}", path.display()))?;
+        .with_context(|| format!("data_invalid: Unable to read {}", path.display()))?;
     let mut v = Vec::new();
     for tok in txt.split_whitespace() {
         v.push(
             tok.parse::<f64>()
-                .with_context(|| format!("data_invalid: 非数值 {tok}"))?,
+                .with_context(|| format!("data_invalid: Non-value {tok}"))?,
         );
     }
     Ok(v)
@@ -114,7 +114,7 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
     native_matrices::band_offset(&fs::read_to_string(crate::foundation::scientific_logs::output(dir, "epw_fine"))?, e.bands)?;
     ensure!(
         e.grid == cfg.interpolation.k_grid,
-        "data_invalid: 原生 egnv 网格不符"
+        "data_invalid: Native egnv Grid does not match"
     );
     let freq =
         native_matrices::frequencies(&fs::read(matrix.join("freq"))?, cfg.interpolation.q_grid)?;
@@ -127,7 +127,7 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
     let ikmap = fs::read(matrix.join("ikmap"))?;
     ensure!(
         ikmap.len() == ktotal * 8,
-        "data_invalid: 原生 ikmap 长度不符"
+        "data_invalid: Native ikmap The length does not match"
     );
     let nkfs = e
         .states
@@ -139,13 +139,13 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
         let n = i32::from_le_bytes(bytes.try_into().unwrap());
         ensure!(
             n >= 0 && n as usize <= if i < ktotal { nkfs } else { e.kpoints },
-            "data_invalid: 原生 ikmap 索引越界"
+            "data_invalid: Native ikmap Index Crosses"
         );
     }
     let npool = fs::read(matrix.join("npool"))?;
-    ensure!(npool.len() == 4, "data_invalid: 原生 npool 格式不符");
+    ensure!(npool.len() == 4, "data_invalid: Native npool Format Unmatched");
     let npool = i32::from_le_bytes(npool.try_into().unwrap());
-    ensure!(npool > 0 && npool <= 64, "data_invalid: 原生矩阵分片数无效");
+    ensure!(npool > 0 && npool <= 64, "data_invalid: Numerical matrix fraction invalid");
     let mut shards = BTreeMap::new();
     for file in fs::read_dir(&matrix)? {
         let path = file?.path();
@@ -153,16 +153,16 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
         if let Some(suffix) = name.strip_prefix("ephmat") {
             let id = suffix
                 .parse::<usize>()
-                .context("data_invalid: 矩阵分片编号无效")?;
+                .context("data_invalid: Matrix Fraction Number Invalid")?;
             ensure!(
                 shards.insert(id, path).is_none(),
-                "data_invalid: 重复矩阵分片"
+                "data_invalid: Repeat matrix fractions"
             );
         }
     }
     ensure!(
         shards.len() == npool as usize && shards.keys().copied().eq(1..=npool as usize),
-        "data_invalid: 缺少原生矩阵分片"
+        "data_invalid: Missing raw matrix fractions"
     );
     // io_supercond.f90 的最终写入计数可检出完整头部后截断的矩阵。
     let restart_path = dir.join("restart.fmt");
@@ -174,14 +174,14 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
         .split_whitespace()
         .map(str::parse::<u64>)
         .collect::<std::result::Result<Vec<_>, _>>()?;
-    let selected = *selection.first().context("data_invalid: 缺少细网格选择数量")?;
+    let selected = *selection.first().context("data_invalid: Number of fine grid selections missing")?;
     let qtotal = cfg.interpolation.q_grid.iter().map(|n| *n as u64).product::<u64>();
     ensure!(selected > 0 && selected <= qtotal
         && selection.get(1) == Some(&qtotal)
         && selection.len() as u64 == selected + 2
         && selection[2..].iter().all(|n| *n > 0 && *n <= qtotal)
         && selection[2..].iter().collect::<BTreeSet<_>>().len() as u64 == selected,
-        "data_invalid: 细网格选择数量、完整 q 数或索引不符");
+        "data_invalid: Line Grid Selection Number, Complete q The number or index does not match");
     ensure!(
         restart.len() == 4 + 2 * npool as usize
             && restart[0] == selected
@@ -189,7 +189,7 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
             && restart[1] == 0
             && restart[2] == 0
             && restart[3] == npool as u64,
-        "data_invalid: 细网格重启计数未完成或布局不符"
+        "data_invalid: The fine grid restart count is incomplete or layout does not match"
     );
     let mut covered = 0usize;
     let mut roles = vec![
@@ -215,15 +215,15 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
             i32::from_le_bytes(header[..4].try_into().unwrap()) == id as i32
                 && n >= 0
                 && fs::metadata(&path)?.len() % 8 == 0,
-            "data_invalid: 矩阵分片头/布局错误"
+            "data_invalid: Matrix Header/ Layout Error"
         );
         let expected_bytes = restart[3 + id]
             .checked_mul(8)
             .and_then(|x| x.checked_add(8))
-            .context("data_invalid: 细矩阵尺寸溢出")?;
+            .context("data_invalid: Fine Matrix Size Spill")?;
         ensure!(
             fs::metadata(&path)?.len() == expected_bytes,
-            "data_invalid: 矩阵分片负载与最终写入计数不同"
+            "data_invalid: The matrix fraction load is different from the final writing count"
         );
         let mut matrix_file = std::io::BufReader::new(fs::File::open(&path)?);
         matrix_file.read_exact(&mut header)?;
@@ -236,18 +236,18 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
                 buffer[..size]
                     .chunks_exact(8)
                     .all(|b| f64::from_le_bytes(b.try_into().unwrap()).is_finite()),
-                "data_invalid: 细矩阵含非有限数"
+                "data_invalid: The fine matrix contains non-finite numbers"
             );
             remaining -= size as u64;
         }
         covered += n as usize;
         roles.push((format!("fine_ephmat_{id:04}"), path));
     }
-    ensure!(covered == nkfs, "data_invalid: 矩阵分片未覆盖全部费米面 k");
+    ensure!(covered == nkfs, "data_invalid: The matrix fraction does not cover all the ferme noodles k");
     let mut artifacts = vec![];
     for (role, path) in roles {
         let byte_size = fs::metadata(&path)?.len();
-        ensure!(byte_size > 0, "data_invalid: 原生角色为空");
+        ensure!(byte_size > 0, "data_invalid: native character is empty");
         artifacts.push(Artifact {
             role,
             relative_path: path.strip_prefix(work)?.into(),

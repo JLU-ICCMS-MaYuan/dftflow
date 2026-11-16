@@ -413,7 +413,7 @@ fn run_cell2ibrav(executable: &str, lattice_bohr: [[f64; 3]; 3]) -> Result<Latti
         .captures(&stdout)
         .and_then(|c| c.get(1))
         .and_then(|m| m.as_str().parse::<i32>().ok())
-        .ok_or_else(|| anyhow::anyhow!("cell2ibrav.x 输出中未找到 ibrav"))?;
+        .ok_or_else(|| anyhow::anyhow!("cell2ibrav.x Not found in output ibrav"))?;
 
     let mut celldm = [0.0f64; 6];
     let cd_re =
@@ -431,7 +431,7 @@ fn run_cell2ibrav(executable: &str, lattice_bohr: [[f64; 3]; 3]) -> Result<Latti
     {
         let disc: f64 = m[1].replace('D', "E").replace('d', "e").parse()?;
         if disc > 1.0e-4 {
-            bail!("cell2ibrav.x 重构晶胞偏差过大: {disc} bohr");
+            bail!("cell2ibrav.x Reconstructing crystal cells is too different: {disc} bohr");
         }
     }
 

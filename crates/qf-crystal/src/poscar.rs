@@ -22,15 +22,15 @@ pub struct Structure {
 /// 解析 VASP POSCAR 为 [`Structure`]。
 pub fn parse_poscar(poscar_path: &str) -> Result<Structure> {
     let text = fs::read_to_string(poscar_path)
-        .map_err(|_| anyhow::anyhow!("找不到 {poscar_path} 文件"))?;
+        .map_err(|_| anyhow::anyhow!("Not found {poscar_path} Documentation"))?;
     let lines: Vec<&str> = text.lines().collect();
     if lines.len() < 8 {
-        bail!("POSCAR 行数不足，无法解析。");
+        bail!("POSCAR There's not enough lines to parse.");
     }
     let scale: f64 = lines[1]
         .trim()
         .parse()
-        .map_err(|_| anyhow::anyhow!("无法解析 POSCAR 第二行的缩放系数"))?;
+        .map_err(|_| anyhow::anyhow!("Unable to parse POSCAR Zoom factor for the second line"))?;
 
     let mut lattice = [[0.0f64; 3]; 3];
     for (i, row) in lattice.iter_mut().enumerate() {
@@ -38,7 +38,7 @@ pub fn parse_poscar(poscar_path: &str) -> Result<Structure> {
             .split_whitespace()
             .map(|s| s.parse::<f64>())
             .collect::<Result<_, _>>()
-            .map_err(|_| anyhow::anyhow!("无法解析晶格矢量第 {} 行", i + 1))?;
+            .map_err(|_| anyhow::anyhow!("Could not parse crystal vector number {} Okay", i + 1))?;
         for (j, v) in vals.iter().enumerate().take(3) {
             row[j] = v * scale;
         }
@@ -49,14 +49,14 @@ pub fn parse_poscar(poscar_path: &str) -> Result<Structure> {
     if elements.first().map(|s| s.chars().next().unwrap().is_ascii_digit()).unwrap_or(false) {
         elements = lines[0].split_whitespace().map(|s| s.to_string()).collect();
         if elements.is_empty() {
-            bail!("无法在 POSCAR 中找到元素名称。");
+            bail!("I can't POSCAR Found Element Name.");
         }
     }
     let counts: Vec<usize> = lines[6]
         .split_whitespace()
         .map(|s| s.parse::<usize>())
         .collect::<Result<_, _>>()
-        .map_err(|_| anyhow::anyhow!("无法解析原子计数行"))?;
+        .map_err(|_| anyhow::anyhow!("Unable to parse atomic count lines"))?;
 
     let coord_line = lines[7].trim().to_string();
     let (start_line, coord_type) = if coord_line.to_lowercase().starts_with('s') {
@@ -69,13 +69,13 @@ pub fn parse_poscar(poscar_path: &str) -> Result<Structure> {
     let mut positions = Vec::with_capacity(total);
     for i in 0..total {        let line = lines
             .get(start_line + i)
-            .ok_or_else(|| anyhow::anyhow!("POSCAR 坐标行不足"))?;
+            .ok_or_else(|| anyhow::anyhow!("POSCAR Weak Coordinate Lines"))?;
         let vals: Vec<f64> = line
             .split_whitespace()
             .take(3)
             .map(|s| s.parse::<f64>())
             .collect::<Result<_, _>>()
-            .map_err(|_| anyhow::anyhow!("无法解析坐标行 {}", i + 1))?;
+            .map_err(|_| anyhow::anyhow!("Could not parse coordinates line {}", i + 1))?;
         let mut p = [vals[0], vals[1], vals[2]];
         if !coord_type.to_lowercase().starts_with('d') {
             for v in &mut p {

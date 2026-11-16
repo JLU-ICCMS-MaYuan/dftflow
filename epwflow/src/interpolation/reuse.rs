@@ -18,19 +18,19 @@ pub struct ImportReport {
 pub fn import_from_run(source_work: &Path, work: &Path) -> Result<ImportReport> {
     let src = source_work.join("interpolation").join("manifest.json");
     let source = InterpolationManifest::load(&src)
-        .with_context(|| format!("data_invalid: 无法加载来源插值清单 {}", src.display()))?;
-    ensure!(source.validation.all_passed(), "data_invalid: 来源插值清单未通过，拒绝复用");
+        .with_context(|| format!("data_invalid: Could not load manifest of source interpolation values {}", src.display()))?;
+    ensure!(source.validation.all_passed(), "data_invalid: Source interpolation manifest not passed and re-used");
 
     let target = work.join("imported").join("interpolation");
     std::fs::create_dir_all(&target)?;
     let mut roles = Vec::new();
     let mut copy_role = |role: &str, p: &Path| -> Result<()> {
-        ensure!(p.exists(), "data_invalid: 来源角色 {role} 缺失 {}", p.display());
-        let dest = target.join(p.file_name().context("data_invalid: 缺文件名")?);
-        std::fs::copy(p, &dest).with_context(|| format!("data_invalid: 复制 {role} 失败"))?;
+        ensure!(p.exists(), "data_invalid: Source Role {role} Missing {}", p.display());
+        let dest = target.join(p.file_name().context("data_invalid: Filename missing")?);
+        std::fs::copy(p, &dest).with_context(|| format!("data_invalid: Copy {role} Failed"))?;
         let a = store::hash_file(p)?;
         let b = store::hash_file(&dest)?;
-        ensure!(a == b, "data_invalid: 复制前后哈希不一致 {role}");
+        ensure!(a == b, "data_invalid: Hash doesn't match before and after the copy {role}");
         roles.push(role.to_string());
         Ok(())
     };
@@ -51,7 +51,7 @@ pub fn import_from_run(source_work: &Path, work: &Path) -> Result<ImportReport> 
         status: if roles.is_empty() { "rejected" } else { "imported" }.to_string(),
     };
     if report.status == "rejected" {
-        bail!("data_invalid: 无可复用的粗/细数据");
+        bail!("data_invalid: Unusable rough/subsidiary data");
     }
     store::write(&work.join("imported").join("interpolation-import-report.json"), &report)?;
     Ok(report)

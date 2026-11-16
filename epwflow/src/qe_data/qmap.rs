@@ -16,21 +16,21 @@ pub fn parse_dyn0(
     let mut lines = raw.lines().filter(|line| !line.trim().is_empty());
     let grid = lines
         .next()
-        .context("data_invalid: dyn0 缺网格")?
+        .context("data_invalid: dyn0 Short Grid")?
         .split_whitespace()
         .map(str::parse::<u32>)
         .collect::<std::result::Result<Vec<_>, _>>()?;
-    ensure!(grid == expected_grid, "data_invalid: dyn0 网格与配置不符");
+    ensure!(grid == expected_grid, "data_invalid: dyn0 Grid does not match configuration");
     let count: usize = lines
         .next()
-        .context("data_invalid: dyn0 缺 q 数")?
+        .context("data_invalid: dyn0 Missing q Number")?
         .trim()
         .parse()?;
-    ensure!(count > 0, "data_invalid: dyn0 q 数为零");
+    ensure!(count > 0, "data_invalid: dyn0 q Zero");
     let values = lines.map(xml::vector).collect::<Result<Vec<_>>>()?;
     ensure!(
         values.len() == count,
-        "data_invalid: dyn0 声明数量与坐标数不符"
+        "data_invalid: dyn0 The declared number does not match the number of coordinates"
     );
     let mut points: Vec<QPoint> = vec![];
     let width = count.to_string().len().max(2);
@@ -41,13 +41,13 @@ pub fn parse_dyn0(
                 .iter()
                 .zip(expected_grid)
                 .all(|(x, g)| (x * g as f64 - (x * g as f64).round()).abs() < 1e-8),
-            "data_invalid: dyn0 q 点不属于固定均匀网格"
+            "data_invalid: dyn0 q Point does not belong to a fixed even grid"
         );
         ensure!(
             points
                 .iter()
                 .all(|q| !same_q_modulo_periodic(q.crystal, crystal)),
-            "data_invalid: dyn0 重复物理 q"
+            "data_invalid: dyn0 Repeat Physics q"
         );
         points.push(QPoint {
             global_index: n + 1,
@@ -62,7 +62,7 @@ pub fn parse_dyn0(
     }
     ensure!(
         points[0].crystal.iter().all(|x| x.abs() < 1e-9),
-        "data_invalid: 目标 EPW 网格第一 q 必须为 Γ"
+        "data_invalid: Objective EPW Grid first q Must be Γ"
     );
     Ok(points)
 }

@@ -56,7 +56,7 @@ pub fn parse_doscar(text: &str) -> Result<DosData> {
             break;
         }
     }
-    let hi = header_idx.ok_or_else(|| anyhow::anyhow!("DOSCAR 找不到整数头行"))?;
+    let hi = header_idx.ok_or_else(|| anyhow::anyhow!("DOSCAR Integer headline not found"))?;
     let nums: Vec<f64> = lines[hi]
         .split_whitespace()
         .filter_map(|s| s.parse::<f64>().ok())
@@ -66,7 +66,7 @@ pub fn parse_doscar(text: &str) -> Result<DosData> {
     let nedos = nums[3] as usize;
     let efermi = nums[4];
     if nedos == 0 {
-        bail!("DOSCAR NEDOS 为 0");
+        bail!("DOSCAR NEDOS Yes 0");
     }
 
     // 总 DOS 块。

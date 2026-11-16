@@ -37,11 +37,11 @@ fn kept_bands(
     excluded.dedup();
     ensure!(
         num_wann > 0 && excluded.iter().all(|&b| b > 0 && b <= nbnd),
-        "data_invalid: num_wann 或 exclude_bands 无效"
+        "data_invalid: num_wann or exclude_bands Invalid"
     );
     ensure!(
         nbnd - excluded.len() >= num_wann,
-        "data_invalid: 排除后能带少于 num_wann"
+        "data_invalid: You can take less after you've been eliminated num_wann"
     );
     let kept = bands
         .iter()
@@ -65,7 +65,7 @@ pub fn select_energy_only(
     overrides: &Bounds,
     reference: Reference,
 ) -> Result<Selection> {
-    ensure!(fermi_ev.is_finite(), "data_invalid: Fermi 能非有限");
+    ensure!(fermi_ev.is_finite(), "data_invalid: Fermi It's not finite");
     let (kept, excluded) = kept_bands(bands, num_wann, exclude_bands)?;
     let [lower, upper, frozen_lower, frozen_upper] =
         energy_only_bounds(&kept, fermi_ev, overrides, reference)?;
@@ -75,21 +75,21 @@ pub fn select_energy_only(
         .copied()
         .filter(|&e| e <= fermi_ev)
         .reduce(f64::max)
-        .context("data_invalid: 没有占据态")?;
+        .context("data_invalid: No occupation")?;
     let lumo = kept
         .iter()
         .flatten()
         .copied()
         .filter(|&e| e > fermi_ev)
         .reduce(f64::min)
-        .context("data_invalid: 没有未占据态")?;
+        .context("data_invalid: There's no unoccupied")?;
     let mut outer_counts = Vec::new();
     let mut energy_frozen_counts = Vec::new();
     for (k, row) in kept.iter().enumerate() {
         let outer = row.iter().filter(|&&e| lower <= e && e <= upper).count();
         let frozen = row.iter().filter(|&&e| frozen_lower <= e && e <= frozen_upper).count();
         ensure!(outer >= num_wann && frozen <= num_wann,
-            "data_invalid: k={} 外窗 {} 态、冻结 {} 态，要求 frozen<=N={}<=outer；请求冻结窗 [{frozen_lower},{frozen_upper}] 不自动裁剪", k + 1, outer, frozen, num_wann);
+            "data_invalid: k={} Outside windows {} State, freeze {} State, request frozen<=N={}<=outer ;Request to freeze the window [{frozen_lower},{frozen_upper}] Do Not Autocrop", k + 1, outer, frozen, num_wann);
         outer_counts.push(outer);
         energy_frozen_counts.push(frozen);
     }
@@ -125,17 +125,17 @@ pub fn energy_only_bounds(
     reference: Reference,
 ) -> Result<[f64; 4]> {
     validate_bands(bands)?;
-    ensure!(fermi_ev.is_finite(), "data_invalid: Fermi 能非有限");
+    ensure!(fermi_ev.is_finite(), "data_invalid: Fermi It's not finite");
     let offset = match reference {
         Reference::Absolute => 0.0,
         Reference::Fermi => fermi_ev,
         Reference::UpstreamRelative => {
-            anyhow::bail!("configuration: 纯能量模式仅接受绝对或 Fermi 能量参考")
+            anyhow::bail!("configuration: Pure energy mode only accepts absolute or Fermi Energy Reference")
         }
     };
     let bound = |value: Option<f64>, default: f64| -> Result<f64> {
         let result = value.map(|v| v + offset).unwrap_or(default);
-        ensure!(result.is_finite(), "data_invalid: 能窗非有限或换算溢出");
+        ensure!(result.is_finite(), "data_invalid: The window can be finite or converted to overflow");
         Ok(result)
     };
     let lower = bound(
@@ -157,7 +157,7 @@ pub fn energy_only_bounds(
             && lower <= frozen_lower
             && frozen_lower < frozen_upper
             && frozen_upper <= upper,
-        "data_invalid: 纯能量外窗 [{lower},{upper}] 不包含冻结窗 [{frozen_lower},{frozen_upper}]"
+        "data_invalid: Pure energy window [{lower},{upper}] _Other Organiser [{frozen_lower},{frozen_upper}]"
     );
     Ok([lower, upper, frozen_lower, frozen_upper])
 }
@@ -208,7 +208,7 @@ pub fn select_default(
     overrides: &Bounds,
     reference: Reference,
 ) -> Result<Selection> {
-    ensure!(fermi_ev.is_finite(), "data_invalid: Fermi 能非有限");
+    ensure!(fermi_ev.is_finite(), "data_invalid: Fermi It's not finite");
     let (kept, excluded) = kept_bands(bands, num_wann, exclude_bands)?;
     let homo = bands
         .iter()
@@ -216,14 +216,14 @@ pub fn select_default(
         .copied()
         .filter(|&e| e <= fermi_ev)
         .reduce(f64::max)
-        .context("data_invalid: 没有 HOMO，全部能带未占据")?;
+        .context("data_invalid: Nothing HOMO ,All unoccupied")?;
     let lumo = bands
         .iter()
         .flatten()
         .copied()
         .filter(|&e| e > fermi_ev)
         .reduce(f64::min)
-        .context("data_invalid: 没有 LUMO，全部能带已占据")?;
+        .context("data_invalid: Nothing LUMO ,All can be taken")?;
     let shift = if lumo - homo > 1e-3 { lumo } else { fermi_ev };
     let offset = match reference {
         Reference::UpstreamRelative => shift,
@@ -240,7 +240,7 @@ pub fn select_default(
         if let Some(value) = value {
             ensure!(
                 value.is_finite() && (value + offset).is_finite(),
-                "data_invalid: {name} 非有限或换算溢出"
+                "data_invalid: {name} Unlimited or conversion overload"
             );
             parameters.insert(name.to_string(), value + offset);
         }
@@ -250,7 +250,7 @@ pub fn select_default(
         .get("dis_froz_max")
         .copied()
         .unwrap_or(shift + DEFAULT_FROZEN_OFFSET_EV);
-    ensure!(requested.is_finite(), "data_invalid: 默认冻结上界溢出");
+    ensure!(requested.is_finite(), "data_invalid: Default Freezing Top Spill");
     let mut cap = kept
         .iter()
         .map(|row| row[num_wann - 1])
@@ -281,7 +281,7 @@ pub fn select_default(
             && frozen_lower <= frozen_upper
             && frozen_upper <= upper
             && lower < upper,
-        "data_invalid: 上游限制后的能窗不包含或冻结窗倒置，不能静默放宽上界"
+        "data_invalid: Upstream restricted windows do not contain or freeze windows inverted and do not ease the boundary in silence"
     );
     let mut outer_counts = Vec::with_capacity(kept.len());
     let mut energy_frozen_counts = Vec::with_capacity(kept.len());
@@ -293,14 +293,14 @@ pub fn select_default(
             .count();
         ensure!(
             outer >= num_wann,
-            "data_invalid: k={} 外窗仅 {} 态，少于 {}",
+            "data_invalid: k={} outer window only {} State, less {}",
             k + 1,
             outer,
             num_wann
         );
         ensure!(
             frozen <= num_wann,
-            "data_invalid: k={} 冻结 {} 态，超过 {}",
+            "data_invalid: k={} Freeze {} State, over {}",
             k + 1,
             frozen,
             num_wann
@@ -327,38 +327,38 @@ pub fn select_default(
 }
 
 pub fn validate_bands(bands: &[Vec<f64>]) -> Result<usize> {
-    let nbnd = bands.first().context("data_invalid: 本征值为空")?.len();
+    let nbnd = bands.first().context("data_invalid: This value is empty")?.len();
     ensure!(
         nbnd > 0
             && bands
                 .iter()
                 .all(|r| r.len() == nbnd && r.iter().all(|v| v.is_finite())),
-        "data_invalid: 本征值不完整、形状不一致或含非有限值"
+        "data_invalid: Incomplete, inconsistent or non-finite values"
     );
     ensure!(
         bands.iter().all(|r| r.windows(2).all(|v| v[0] <= v[1])),
-        "data_invalid: 本征值必须按带能量升序排列"
+        "data_invalid: This value must be in the order of energy rise"
     );
     Ok(nbnd)
 }
 
 /// 读取实际 QE NSCF 的单通道能谱，严格限制到 output/band_structure。
 pub fn read_qe_bands(path: &Path) -> Result<(Vec<Vec<f64>>, f64)> {
-    let text = std::fs::read_to_string(path).with_context(|| format!("读取 {}", path.display()))?;
+    let text = std::fs::read_to_string(path).with_context(|| format!("Read {}", path.display()))?;
     let doc = roxmltree::Document::parse(&text)?;
     let output = doc
         .descendants()
         .find(|n| n.has_tag_name("output"))
-        .context("data_invalid: 缺少 QE output")?;
+        .context("data_invalid: Missing QE output")?;
     let band = output
         .children()
         .find(|n| n.has_tag_name("band_structure"))
-        .context("data_invalid: 缺少 QE band_structure")?;
+        .context("data_invalid: Missing QE band_structure")?;
     let field = |name: &str| -> Result<&str> {
         band.children()
             .find(|n| n.has_tag_name(name))
             .and_then(|n| n.text())
-            .context("data_invalid: QE 能谱字段缺失")
+            .context("data_invalid: QE Missing Spectrum Field")
     };
     let number = |s: &str| -> Result<f64> { Ok(s.trim().replace(['d', 'D'], "e").parse()?) };
     for name in ["lsda", "noncolin", "spinorbit"] {
@@ -368,7 +368,7 @@ pub fn read_qe_bands(path: &Path) -> Result<(Vec<Vec<f64>>, f64)> {
                     value.trim().to_ascii_lowercase().as_str(),
                     "true" | ".true." | "t"
                 ),
-                "unsupported_version: 当前选窗 XML 适配仅支持非磁性单通道"
+                "unsupported_version: Current Window Selection XML Fitness only supports non-magnetic single channel"
             );
         }
     }
@@ -381,25 +381,25 @@ pub fn read_qe_bands(path: &Path) -> Result<(Vec<Vec<f64>>, f64)> {
         let en = ks
             .children()
             .find(|n| n.has_tag_name("eigenvalues"))
-            .context("data_invalid: 缺本征值")?;
+            .context("data_invalid: Impairment value")?;
         let values: Vec<f64> = en
             .text()
-            .context("data_invalid: 本征值为空")?
+            .context("data_invalid: This value is empty")?
             .split_whitespace()
             .map(|s| number(s).map(|v| v * HA_EV))
             .collect::<Result<_>>()?;
-        ensure!(values.len() == nbnd, "data_invalid: QE 带数不一致");
+        ensure!(values.len() == nbnd, "data_invalid: QE Inconsistent number of belts");
         if let Some(size) = en.attribute("size") {
             ensure!(
                 size.parse::<usize>()? == nbnd,
-                "data_invalid: QE size 不一致"
+                "data_invalid: QE size Inconsistencies"
             );
         }
         bands.push(values);
     }
     ensure!(
         bands.len() == nks && fermi.is_finite(),
-        "data_invalid: QE 点数或 Fermi 能无效"
+        "data_invalid: QE Points or Fermi It's not working"
     );
     validate_bands(&bands)?;
     Ok((bands, fermi))
@@ -414,12 +414,12 @@ pub fn require_projectability_keywords(program: &Path) -> Result<()> {
             .flat_map(|v| std::env::split_paths(&v).collect::<Vec<_>>())
             .map(|p| p.join(program))
             .find(|p| p.is_file())
-            .context("unsupported_version: 找不到实际 Wannier 程序")?
+            .context("unsupported_version: No actuals found Wannier Procedures")?
     } else {
         program.to_path_buf()
     };
     let mut file = std::fs::File::open(&resolved)
-        .with_context(|| format!("无法检查 {}", resolved.display()))?;
+        .with_context(|| format!("Unable to check {}", resolved.display()))?;
     let keys = [
         b"dis_proj_min".as_slice(),
         b"dis_proj_max".as_slice(),
@@ -444,7 +444,7 @@ pub fn require_projectability_keywords(program: &Path) -> Result<()> {
         let start = tail.len().saturating_sub(16);
         tail.drain(..start);
     }
-    anyhow::bail!("unsupported_version: {} 无法核验支持 dis_proj_min/dis_proj_max/dis_froz_proj；默认组合选窗禁止退回旧方案，请配置支持投影解纠缠的实际程序", resolved.display())
+    anyhow::bail!("unsupported_version: {} Could not verify support dis_proj_min/dis_proj_max/dis_froz_proj ;The default combination window prevents the return of the old scheme, please configure the actual program to support the projecting entanglement", resolved.display())
 }
 
 pub fn write_selection(path: &Path, selection: &Selection) -> Result<()> {

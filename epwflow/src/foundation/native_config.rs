@@ -83,7 +83,7 @@ impl Serialize for Config {
 fn ensure_version(version: u32) -> Result<()> {
     ensure!(
         version == 2,
-        "unsupported_version: 仅支持 schema_version = 2，不兼容旧配置"
+        "unsupported_version: only schema_version = 2 is supported; legacy configuration is incompatible"
     );
     Ok(())
 }
@@ -92,13 +92,13 @@ fn at<'a>(v: &'a Value, path: &[&str]) -> Result<&'a Value> {
     for name in path {
         node = node
             .get(*name)
-            .with_context(|| format!("configuration: stages.{}: 缺少必填参数", path.join(".")))?;
+            .with_context(|| format!("configuration: stages.{}: required parameter missing", path.join(".")))?;
     }
     Ok(node)
 }
 fn get<T: serde::de::DeserializeOwned>(v: &Value, path: &[&str]) -> Result<T> {
     serde_json::from_value(at(v, path)?.clone())
-        .with_context(|| format!("configuration: stages.{}: 参数类型错误", path.join(".")))
+        .with_context(|| format!("configuration: stages.{}: parameter type error", path.join(".")))
 }
 fn optional<T: serde::de::DeserializeOwned>(v: &Value, path: &[&str]) -> Result<Option<T>> {
     let mut node = v;
@@ -109,7 +109,7 @@ fn optional<T: serde::de::DeserializeOwned>(v: &Value, path: &[&str]) -> Result<
         node = next;
     }
     Ok(Some(serde_json::from_value(node.clone()).with_context(
-        || format!("configuration: stages.{}: 参数类型错误", path.join(".")),
+        || format!("configuration: stages.{}: parameter type error", path.join(".")),
     )?))
 }
 fn put(v: &mut Value, path: &[&str], value: Value) {
@@ -130,7 +130,7 @@ fn put(v: &mut Value, path: &[&str], value: Value) {
     }
 }
 fn stages(d: &Document) -> Value {
-    serde_json::to_value(&d.stages).expect("阶段配置已由 serde 校验")
+    serde_json::to_value(&d.stages).expect("Stage configuration validated by serde")
 }
 fn ph_name(d: &Document) -> Result<String> {
     let names: Vec<_> = d
@@ -141,7 +141,7 @@ fn ph_name(d: &Document) -> Result<String> {
         .collect();
     ensure!(
         names.len() == 1,
-        "configuration: stages: 必须且只能设置一种 4.qe-phonon-nosplit/index/coords 阶段"
+        "configuration: stages: exactly one 4.qe-phonon-nosplit/index/coords stage is required"
     );
     ensure!(
         [
@@ -150,7 +150,7 @@ fn ph_name(d: &Document) -> Result<String> {
             "4.qe-phonon-coords"
         ]
         .contains(&names[0].as_str()),
-        "configuration: stages.{}: 未知声子模式",
+        "configuration: stages.{}: unknown phonon mode",
         names[0]
     );
     Ok(names[0].clone())
@@ -158,36 +158,36 @@ fn ph_name(d: &Document) -> Result<String> {
 fn pw_grid(v: &Value, stage: &str) -> Result<([u32; 3], [u32; 3])> {
     if stage == NSCF {
         let grid: [u32; 3] = get(v, &[stage, "pw", "K_POINTS"])
-            .context("configuration: stages.2.qe-nscf.pw.K_POINTS: 需要三个正整数 [A, B, C]，不再接受完整点表")?;
+            .context("configuration: stages.2.qe-nscf.pw.K_POINTS: requires three positive integers [A, B, C]; explicit point lists are no longer accepted")?;
         qf_input::pw::uniform_kpoint_count(grid.map(i64::from))
-            .context("configuration: stages.2.qe-nscf.pw.K_POINTS: 非法网格")?;
+            .context("configuration: stages.2.qe-nscf.pw.K_POINTS: invalid grid")?;
         return Ok((grid, [0; 3]));
     }
     let text: String = get(v, &[stage, "pw", "K_POINTS"])?;
     let mut rows = text.lines().filter(|row| !row.trim().is_empty());
     let kind = rows
         .next()
-        .context("configuration: K_POINTS 卡片为空")?
+        .context("configuration: K_POINTS card is empty")?
         .trim();
     if kind == "automatic" {
-        ensure!(stage!=NSCF,"configuration: stages.{NSCF}.pw.K_POINTS: 需要显式 crystal 完整均匀网格，不能使用 automatic 的对称性约化");
+        ensure!(stage!=NSCF,"configuration: stages.{NSCF}.pw.K_POINTS: explicit complete uniform crystal grid required; symmetry-reduced automatic grids are unsupported");
         let nums = rows
             .flat_map(str::split_whitespace)
             .map(str::parse::<u32>)
             .collect::<std::result::Result<Vec<_>, _>>()?;
         ensure!(
             nums.len() == 6,
-            "configuration: stages.{stage}.pw.K_POINTS: automatic 需要六个整数"
+            "configuration: stages.{stage}.pw.K_POINTS: automatic requires six integers"
         );
         return Ok(([nums[0], nums[1], nums[2]], [nums[3], nums[4], nums[5]]));
     }
     ensure!(
         kind == "crystal",
-        "configuration: stages.{stage}.pw.K_POINTS: 当前支持 automatic(SCF) 或完整 crystal 网格"
+        "configuration: stages.{stage}.pw.K_POINTS: supports automatic (SCF) or a complete crystal grid"
     );
     let count: usize = rows
         .next()
-        .context("configuration: K_POINTS 缺少点数")?
+        .context("configuration: K_POINTS point count missing")?
         .trim()
         .parse()?;
     let points = rows
@@ -203,7 +203,7 @@ fn pw_grid(v: &Value, stage: &str) -> Result<([u32; 3], [u32; 3])> {
             && points
                 .iter()
                 .all(|p| p.len() == 4 && p.iter().all(|x| x.is_finite()) && p[3] > 0.),
-        "configuration: stages.{stage}.pw.K_POINTS: 点数/坐标/权重无效"
+        "configuration: stages.{stage}.pw.K_POINTS: invalid count/coordinates/weights"
     );
     let mut axes: [Vec<f64>; 3] = std::array::from_fn(|_| Vec::new());
     for p in &points {
@@ -221,13 +221,13 @@ fn pw_grid(v: &Value, stage: &str) -> Result<([u32; 3], [u32; 3])> {
     let grid = std::array::from_fn(|i| dims[i].len() as u32);
     ensure!(
         grid.iter().map(|n| *n as usize).product::<usize>() == count,
-        "configuration: stages.{stage}.pw.K_POINTS: 不是完整直积网格"
+        "configuration: stages.{stage}.pw.K_POINTS: not a complete Cartesian-product grid"
     );
     for axis in &dims {
         for (i, x) in axis.iter().enumerate() {
             ensure!(
                 (*x - i as f64 / axis.len() as f64).abs() <= 1e-8,
-                "configuration: stages.{stage}.pw.K_POINTS: 网格必须均匀且零位移"
+                "configuration: stages.{stage}.pw.K_POINTS: uniform zero-shift grid required"
             );
         }
     }
@@ -237,7 +237,7 @@ fn pw_grid(v: &Value, stage: &str) -> Result<([u32; 3], [u32; 3])> {
             std::array::from_fn(|i| (p[i].rem_euclid(1.) * grid[i] as f64).round() as i64);
         ensure!(
             seen.insert(index),
-            "configuration: stages.{stage}.pw.K_POINTS: 重复点"
+            "configuration: stages.{stage}.pw.K_POINTS: duplicate point"
         );
     }
     Ok((grid, [0; 3]))
@@ -292,18 +292,18 @@ pub fn apply(v: &Value, task: &[&str], input: &str) -> Result<String> {
 fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
     let clean = input
         .lines()
-        .filter(|line| !line.starts_with("! 参数来源 "))
+        .filter(|line| !line.starts_with("! Parameter source ") && !line.starts_with(super::legacy_language::INPUT_SOURCE_PREFIX))
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
     let input = clean.as_str();
     let call = at(v, task)?
         .as_object()
-        .context("configuration: 原生程序配置必须是表")?;
+        .context("configuration: native program configuration must be a table")?;
     let stage = task[0];
     let derived = at(v, &[stage, "workflow", "derived"])?
         .as_object()
-        .context("configuration: workflow.derived 必须是表")?;
+        .context("configuration: workflow.derived must be a table")?;
     let task_name = task[1..].join(".");
     let assignment = regex::Regex::new(r"(?i)([a-z_][a-z_0-9]*(?:\s*\(\s*\d+\s*\))?)\s*=")?;
     let sections = regex::Regex::new(r"(?im)^\s*&([a-z_][a-z_0-9]*)\b")?;
@@ -332,7 +332,7 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
                 break;
             }
         }
-        let stop = stop.with_context(|| format!("data_invalid: {name} 原生输入缺少结束符"))?;
+        let stop = stop.with_context(|| format!("data_invalid: {name} native input terminator missing"))?;
         let body = &input[start.end()..stop];
         let found: Vec<_> = assignment
             .captures_iter(body)
@@ -351,7 +351,7 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
                 .to_string();
             ensure!(
                 original.insert(key.to_lowercase(), value).is_none(),
-                "data_invalid: {name} 原生参数重复 {}",
+                "data_invalid: {name} duplicate native parameter {}",
                 &c[1]
             );
         }
@@ -360,7 +360,7 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
             .and_then(Value::as_object)
             .with_context(|| {
                 format!(
-                    "configuration: stages.{}.{}: 缺少原生输入段",
+                    "configuration: stages.{}.{}: native input section missing",
                     task.join("."),
                     name
                 )
@@ -369,13 +369,13 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
         for (key, value) in settings {
             ensure!(
                 key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),
-                "configuration: stages.{}.{name}.{key}: 非法原生参数名",
+                "configuration: stages.{}.{name}.{key}: invalid native parameter name",
                 task.join(".")
             );
             let location = format!("{task_name}.{name}.{key}");
             ensure!(
                 !derived.contains_key(&location),
-                "configuration: stages.{stage}.{location}: 手填与 workflow.derived 双重定义"
+                "configuration: stages.{stage}.{location}: both explicit and workflow.derived definitions provided"
             );
             if let Some(values) = value.as_array() {
                 for (n, value) in values.iter().enumerate() {
@@ -391,11 +391,11 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
             if derived.contains_key(&location) {
                 ensure!(
                     !settings.keys().any(|k| k.eq_ignore_ascii_case(base)),
-                    "configuration: stages.{stage}.{location}: 推导与原生值重复"
+                    "configuration: stages.{stage}.{location}: duplicate derived and native values"
                 );
                 result.insert(key.clone(), value);
             } else {
-                ensure!(result.contains_key(&key) || (key == base && settings.contains_key(base)),"configuration: stages.{stage}.{location}: 实际输入包含未配置且未登记推导的科学参数");
+                ensure!(result.contains_key(&key) || (key == base && settings.contains_key(base)),"configuration: stages.{stage}.{location}: actual input contains scientific parameters neither configured nor registered as derived");
             }
         }
         output.push_str(&input[end..start.start()]);
@@ -418,7 +418,7 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
             end += 1;
         }
     }
-    ensure!(end > 0, "data_invalid: 原生输入没有 namelist");
+    ensure!(end > 0, "data_invalid: native input contains no namelist");
     output.push_str(&input[end..]);
     Ok(output)
 }
@@ -441,7 +441,7 @@ impl Config {
         let document: Document = toml::from_str(&std::fs::read_to_string(&path)?)?;
         ensure_version(document.schema_version)?;
         ensure!(document.stages.get(SCF).is_some_and(|v| v.get("pw").is_some()),
-            "configuration: 受控升级只接受旧嵌套版本 2");
+            "configuration: controlled upgrade accepts only legacy nested version 2");
         let runtime = decode(&document)?;
         let mut cfg = Self { runtime, document };
         cfg.validate()?;
@@ -466,7 +466,7 @@ fn decode(d: &Document) -> Result<RuntimeConfig> {
     let (nscf_grid, nscf_shift) = pw_grid(&v, NSCF)?;
     ensure!(
         nscf_shift == [0; 3],
-        "configuration: stages.{NSCF}.pw.K_POINTS: EPW 完整均匀 NSCF 需要零位移"
+        "configuration: stages.{NSCF}.pw.K_POINTS: complete uniform EPW NSCF grid requires zero shift"
     );
     let species: String = get(&v, &[SCF, "pw", "ATOMIC_SPECIES"])?;
     let mut masses = BTreeMap::new();
@@ -474,13 +474,13 @@ fn decode(d: &Document) -> Result<RuntimeConfig> {
         let p: Vec<_> = row.split_whitespace().collect();
         ensure!(
             p.len() == 3,
-            "configuration: stages.{SCF}.pw.ATOMIC_SPECIES: 每行需要元素、质量、赝势文件"
+            "configuration: stages.{SCF}.pw.ATOMIC_SPECIES: each row requires element, mass and pseudopotential file"
         );
         ensure!(
             masses
                 .insert(p[0].to_owned(), p[1].parse::<f64>()?)
                 .is_none(),
-            "configuration: stages.{SCF}.pw.ATOMIC_SPECIES: 重复元素"
+            "configuration: stages.{SCF}.pw.ATOMIC_SPECIES: duplicate element"
         );
     }
     let bounds = |a: &str, b: &str| -> Result<Option<[f64; 2]>> {
@@ -490,7 +490,7 @@ fn decode(d: &Document) -> Result<RuntimeConfig> {
         ) {
             (None, None) => Ok(None),
             (Some(x), Some(y)) => Ok(Some([x, y])),
-            _ => bail!("configuration: stages.{WANNIER}.wannier90.{a}/{b}: 必须成对指定"),
+            _ => bail!("configuration: stages.{WANNIER}.wannier90.{a}/{b}: specify both values together"),
         }
     };
     let fine = at(&v, &[FINE, "epw", "INPUTEPW"])?;
@@ -591,7 +591,7 @@ fn decode(d: &Document) -> Result<RuntimeConfig> {
                 1 => config::Smearing::Mp,
                 -1 => config::Smearing::Mv,
                 -99 => config::Smearing::Fd,
-                _ => bail!("configuration: stages.{FINE}.epw.INPUTEPW.ngaussw: 不支持的展宽"),
+                _ => bail!("configuration: stages.{FINE}.epw.INPUTEPW.ngaussw: unsupported smearing"),
             },
             degaussw_ev: get(&v, &[FINE, "epw", "INPUTEPW", "degaussw"])?,
             phonon_smearings_mev: {
@@ -615,13 +615,13 @@ fn decode(d: &Document) -> Result<RuntimeConfig> {
 fn validate_node(node: &Value, path: &str) -> Result<()> {
     let object = node
         .as_object()
-        .with_context(|| format!("configuration: {path}: 需要配置表"))?;
+        .with_context(|| format!("configuration: {path}: configuration table required"))?;
     let allowed=section_parameters(path.rsplit('.').next().unwrap_or(""));
     if let Some(allowed) = allowed {
         for (key, value) in object {
             ensure!(
                 allowed.split_whitespace().any(|k| k == key),
-                "configuration: {path}.{key}: 未知或当前流程不支持的原生参数"
+                "configuration: {path}.{key}: unknown or unsupported native parameter"
             );
             validate_parameter(key, value, &format!("{path}.{key}"))?;
         }
@@ -648,7 +648,7 @@ fn section_parameters(section: &str) -> Option<&'static str> {
 }
 
 fn validate_task_node(node: &Value, path: &str) -> Result<()> {
-    let object = node.as_object().context("configuration: 需要配置表")?;
+    let object = node.as_object().context("configuration: configuration table required")?;
     if path.ends_with(".spectra") {
         for (name, task) in object {
             ensure!(
@@ -656,7 +656,7 @@ fn validate_task_node(node: &Value, path: &str) -> Result<()> {
                     && name
                         .chars()
                         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
-                "configuration: {path}.{name}: 非法子任务名"
+                "configuration: {path}.{name}: invalid subtask name"
             );
             validate_node(task, &format!("{path}.{name}"))?;
         }
@@ -666,7 +666,7 @@ fn validate_task_node(node: &Value, path: &str) -> Result<()> {
         if key == "workflow" {
             let workflow = value
                 .as_object()
-                .with_context(|| format!("configuration: {path}.workflow: 必须是表"))?;
+                .with_context(|| format!("configuration: {path}.workflow: must be a table"))?;
             for (name, item) in workflow {
                 ensure!(
                     [
@@ -684,18 +684,18 @@ fn validate_task_node(node: &Value, path: &str) -> Result<()> {
                         "aniso"
                     ]
                     .contains(&name.as_str()),
-                    "configuration: {path}.workflow.{name}: 未知工作流设置"
+                    "configuration: {path}.workflow.{name}: unknown workflow setting"
                 );
                 if name == "derived" {
                     for (target, rule) in item
                         .as_object()
-                        .context("configuration: workflow.derived 必须是表")?
+                        .context("configuration: workflow.derived must be a table")?
                     {
                         let field = target.rsplit('.').next().unwrap();
-                        ensure!(["outdir","pseudo_dir","ibrav","nat","ntyp","fildyn","flfrc","flfrq","fldos","filband","fildos","filpdos","dvscf_dir","fermi_energy","proj","bands_skipped","wdata","dis_win_min","dis_win_max","dis_froz_min","dis_froz_max","dos_energy_min","dos_energy_max","start_q","last_q","gap_edge","tc_linear","fila2f"].contains(&field),"configuration: {path}.workflow.derived.{target}: 不是允许自动推导的参数");
+                        ensure!(["outdir","pseudo_dir","ibrav","nat","ntyp","fildyn","flfrc","flfrq","fldos","filband","fildos","filpdos","dvscf_dir","fermi_energy","proj","bands_skipped","wdata","dis_win_min","dis_win_max","dis_froz_min","dis_froz_max","dos_energy_min","dos_energy_max","start_q","last_q","gap_edge","tc_linear","fila2f"].contains(&field),"configuration: {path}.workflow.derived.{target}: parameter cannot be derived automatically");
                         ensure!(
                             rule.as_str().is_some_and(|s| !s.trim().is_empty()),
-                            "configuration: {path}.workflow.derived.{target}: 缺少推导来源"
+                            "configuration: {path}.workflow.derived.{target}: derivation source missing"
                         );
                     }
                 }
@@ -703,7 +703,7 @@ fn validate_task_node(node: &Value, path: &str) -> Result<()> {
         } else if key == "K_POINTS" || key == "ATOMIC_SPECIES" {
             ensure!(
                 path.ends_with(".pw") && (value.is_string() || (key == "K_POINTS" && path == format!("stages.{NSCF}.pw") && value.is_array())),
-                "configuration: {path}.{key}: 需要 PW 原生卡片文本"
+                "configuration: {path}.{key}: native PW card text required"
             );
         } else {
             ensure!(
@@ -738,7 +738,7 @@ fn validate_task_node(node: &Value, path: &str) -> Result<()> {
                     "INPUTEPW"
                 ]
                 .contains(&key.as_str()),
-                "configuration: {path}.{key}: 未知阶段任务或输入段"
+                "configuration: {path}.{key}: unknown stage task or input section"
             );
             validate_node(value, &format!("{path}.{key}"))?;
         }
@@ -779,7 +779,7 @@ fn validate_parameter(key: &str, value: &Value, path: &str) -> Result<()> {
     } else {
         value.is_number()
     };
-    ensure!(valid, "configuration: {path}: 原生参数类型错误");
+    ensure!(valid, "configuration: {path}: native parameter type error");
     Ok(())
 }
 
@@ -803,12 +803,12 @@ impl Config {
         ];
         for key in v
             .as_object()
-            .context("configuration: stages 必须是表")?
+            .context("configuration: stages must be a table")?
             .keys()
         {
             ensure!(
                 expected.contains(&key.as_str()),
-                "configuration: stages.{key}: 未知阶段"
+                "configuration: stages.{key}: unknown stage"
             );
         }
         for name in expected {
@@ -816,14 +816,14 @@ impl Config {
         }
         fn finite(value: &Value, path: &str) -> Result<()> {
             match value {
-                Value::Null => bail!("configuration: {path}: 空值或非有限数"),
+                Value::Null => bail!("configuration: {path}: empty value or nonfinite number"),
                 Value::Number(n) => ensure!(
                     n.as_f64().is_some_and(f64::is_finite),
-                    "configuration: {path}: 非有限数"
+                    "configuration: {path}: nonfinite number"
                 ),
                 Value::String(s) => ensure!(
                     !s.contains(['\0', '\r']),
-                    "configuration: {path}: 非法控制字符"
+                    "configuration: {path}: invalid control character"
                 ),
                 Value::Array(a) => {
                     for (i, x) in a.iter().enumerate() {
@@ -847,25 +847,25 @@ impl Config {
             let calculation: String = get(&v, &[stage, "pw", "CONTROL", "calculation"])?;
             ensure!(
                 if stage == SCF { calculation == "scf" } else { ["nscf", "bands"].contains(&calculation.as_str()) },
-                "configuration: stages.{stage}.pw.CONTROL.calculation: 与阶段定义不符"
+                "configuration: stages.{stage}.pw.CONTROL.calculation: does not match the stage definition"
             );
             let cut: f64 = get(&v, &[stage, "pw", "SYSTEM", "ecutwfc"])?;
             let rho: f64 = get(&v, &[stage, "pw", "SYSTEM", "ecutrho"])?;
             ensure!(
                 cut > 0. && rho >= cut,
-                "configuration: stages.{stage}.pw.SYSTEM.ecutwfc/ecutrho: 非法截断能"
+                "configuration: stages.{stage}.pw.SYSTEM.ecutwfc/ecutrho: invalid cutoff energies"
             );
         }
         let (scf_grid, shift) = pw_grid(&v, SCF)?;
         let (nscf_grid, _) = pw_grid(&v, NSCF)?;
         ensure!(scf_grid == nscf_grid && shift == [0; 3],
-            "configuration: stages.{SCF}.pw.K_POINTS={scf_grid:?}, shift={shift:?} 与 stages.{NSCF}.pw.K_POINTS={nscf_grid:?}: 必须使用相同的零位移网格");
+            "configuration: stages.{SCF}.pw.K_POINTS={scf_grid:?}, shift={shift:?} and stages.{NSCF}.pw.K_POINTS={nscf_grid:?}: identical zero-shift grids required");
         for task in [vec![SCF, "pw"], vec![NSCF, "pw"], vec![ELECTRONIC, "qe_eband", "pw"]] {
             let system = at(&v, &[task.as_slice(), &["SYSTEM"]].concat())?;
             for keys in [["nr1", "nr2", "nr3"], ["nr1s", "nr2s", "nr3s"]] {
                 let present = keys.iter().filter(|k| system.get(**k).is_some()).count();
                 ensure!(present == 0 || (present == 3 && keys.iter().all(|k| system[*k].as_u64().is_some_and(|n| n > 0 && n <= i32::MAX as u64))),
-                    "configuration: stages.{}.SYSTEM.{keys:?}: FFT 必须是完整的三个正整数", task.join("."));
+                    "configuration: stages.{}.SYSTEM.{keys:?}: FFT requires three positive integers", task.join("."));
             }
         }
         // 重复参数只做约束检查，不把上游值写入下游配置。
@@ -887,7 +887,7 @@ impl Config {
                     occ == "fixed"
                         && system.get("degauss").is_none()
                         && system.get("smearing").is_none(),
-                    "configuration: stages.{}.SYSTEM.occupations: 占据与展宽字段冲突",
+                    "configuration: stages.{}.SYSTEM.occupations: occupations conflict with smearing fields",
                     task.join(".")
                 );
             }
@@ -895,7 +895,7 @@ impl Config {
         for (name, stage) in v.as_object().unwrap() {
             let rules = at(stage, &["workflow", "derived"])?
                 .as_object()
-                .context("configuration: 推导表缺失")?;
+                .context("configuration: derivation table missing")?;
             for target in rules.keys() {
                 let mut cursor = stage;
                 let mut present = true;
@@ -907,7 +907,7 @@ impl Config {
                         break;
                     }
                 }
-                ensure!(!present,"configuration: stages.{name}.{target}: 手填与内部推导规则双重定义");
+                ensure!(!present,"configuration: stages.{name}.{target}: both explicit and internally derived definitions provided");
             }
         }
         let prefix: String = get(&v, &[SCF, "pw", "CONTROL", "prefix"])?;
@@ -915,7 +915,7 @@ impl Config {
             let actual = at(&v, path)?;
             ensure!(
                 *actual == expected,
-                "input_conflict: stages.{}={} 与 {source}={} 不一致",
+                "input_conflict: stages.{}={} differs from {source}={}",
                 path.join("."),
                 actual,
                 expected
@@ -926,12 +926,12 @@ impl Config {
         same(
             &[WANNIER, "epw", "INPUTEPW", "num_iter"],
             at(&v, &[WANNIER, "wannier90", "num_iter"])?.clone(),
-            &format!("stages.{WANNIER}.wannier90.num_iter（同一次内嵌拟合）"),
+            &format!("stages.{WANNIER}.wannier90.num_iter (the same embedded fit)"),
         )?;
         same(
             &[WANNIER, "wannier90", "bands_plot"],
             json!(true),
-            "当前电子比较交付契约",
+            "Current electronic comparison delivery contract",
         )?;
         same(
             &[NSCF, "pw", "CONTROL", "prefix"],
@@ -950,13 +950,13 @@ impl Config {
             same(
                 &task,
                 json!(prefix),
-                &format!("stages.{SCF}.pw.CONTROL.prefix（读取同一数据集）"),
+                &format!("stages.{SCF}.pw.CONTROL.prefix (the same dataset)"),
             )?;
         }
         same(
             &[&ph, "ph", "INPUTPH", "only_init"],
             json!(self.phonon.mode != config::PhMode::Nosplit),
-            "声子拆分模式",
+            "Phonon splitting mode",
         )?;
         if self.phonon.mode != config::PhMode::Nosplit {
             same(
@@ -967,12 +967,12 @@ impl Config {
             same(
                 &[&ph, "q", "ph", "INPUTPH", "only_init"],
                 json!(false),
-                "逐 q 实际响应计算",
+                "Actual response calculation per q point",
             )?;
             same(
                 &[&ph, "q", "ph", "INPUTPH", "ldisp"],
                 json!(self.phonon.mode == config::PhMode::Index),
-                "声子点来源模式",
+                "Phonon point source mode",
             )?;
         }
         for (stage, flags) in [
@@ -999,7 +999,7 @@ impl Config {
                 same(
                     &[stage, "epw", "INPUTEPW", key],
                     json!(flag),
-                    "当前阶段原生执行契约",
+                    "Current stage native execution contract",
                 )?;
             }
         }
@@ -1043,7 +1043,7 @@ impl Config {
             ensure!(
                 masses.len() == self.atomic_masses.len()
                     && masses.iter().all(|m| m.is_finite() && *m > 0.),
-                "configuration: stages.{stage}.epw.INPUTEPW.amass: 需要按结构物种顺序的正质量数组"
+                "configuration: stages.{stage}.epw.INPUTEPW.amass: requires positive masses in structure-species order"
             );
         }
         if let Some(tasks) = v[FINE].get("spectra").and_then(Value::as_object) {
@@ -1065,7 +1065,7 @@ impl Config {
                 ] {
                     let actual = at(task, &["epw", "INPUTEPW", key])?;
                     let expected = at(&v, &[FINE, "epw", "INPUTEPW", key])?;
-                    ensure!(actual==expected,"input_conflict: stages.{FINE}.spectra.{name}.epw.INPUTEPW.{key}={actual} 与 stages.{FINE}.epw.INPUTEPW.{key}={expected} 不符：同一原生矩阵绑定");
+                    ensure!(actual==expected,"input_conflict: stages.{FINE}.spectra.{name}.epw.INPUTEPW.{key}={actual} differs from stages.{FINE}.epw.INPUTEPW.{key}={expected}: bound to the same native matrix");
                 }
             }
         }
@@ -1073,7 +1073,7 @@ impl Config {
         let temps = self.native_value::<Vec<f64>>(&[FINE, "epw", "INPUTEPW", "temps"])?;
         ensure!(
             nk as usize == temps.len() && nk > 0,
-            "configuration: stages.{FINE}.epw.INPUTEPW.nstemp/temps: 长度不符"
+            "configuration: stages.{FINE}.epw.INPUTEPW.nstemp/temps: length mismatch"
         );
         for mode in [config::Mode::Iso, config::Mode::Aniso] {
             let name = if mode == config::Mode::Iso {
@@ -1083,15 +1083,15 @@ impl Config {
             };
             let s = self.solver_for(mode)?;
             for (key,expected) in [("epwread",true),("wannierize",false),("elph",false),("eliashberg",true),("limag",true),("lreal",false)] {
-                same(&[SUPER,name,"epw","INPUTEPW",key],json!(expected),"当前虚频轴求解的阶段契约")?;
+                same(&[SUPER,name,"epw","INPUTEPW",key],json!(expected),"Current imaginary-axis solver stage contract")?;
             }
             if s.task == config::SuperconductivityTask::Gap {
-                same(&[SUPER,name,"epw","INPUTEPW","tc_linear"],json!(false),"指定温度非线性能隙任务")?;
+                same(&[SUPER,name,"epw","INPUTEPW","tc_linear"],json!(false),"Nonlinear gap calculation at specified temperatures")?;
             }
             let n: u32 = get(&v, &[SUPER, name, "epw", "INPUTEPW", "nstemp"])?;
             ensure!(
                 n as usize == s.gap_temperatures_k.len() && n > 0 && n <= 50,
-                "configuration: stages.{SUPER}.{name}.epw.INPUTEPW.nstemp/temps: 长度不符"
+                "configuration: stages.{SUPER}.{name}.epw.INPUTEPW.nstemp/temps: length mismatch"
             );
             for (base, g) in [
                 ("nkf", self.interpolation.k_grid),
@@ -1108,12 +1108,12 @@ impl Config {
             same(
                 &[SUPER, name, "epw", "INPUTEPW", "liso"],
                 json!(mode == config::Mode::Iso),
-                "当前方法定义",
+                "Current method definition",
             )?;
             same(
                 &[SUPER, name, "epw", "INPUTEPW", "laniso"],
                 json!(mode == config::Mode::Aniso),
-                "当前方法定义",
+                "Current method definition",
             )?;
             config::positive(
                 s.frequency_cutoff_ev,
@@ -1126,7 +1126,7 @@ impl Config {
                     && s.mixing_beta.abs() > 0.
                     && s.mixing_beta.abs() <= 1.
                     && (1..=8).contains(&s.mixing_history),
-                "configuration: stages.{SUPER}.{name}.epw.INPUTEPW: 迭代/混合参数无效"
+                "configuration: stages.{SUPER}.{name}.epw.INPUTEPW: invalid iteration/mixing parameters"
             );
             let mut seen = std::collections::BTreeSet::new();
             if s.task == config::SuperconductivityTask::Gap {
@@ -1136,10 +1136,10 @@ impl Config {
                 )?;
             }
             for t in &s.gap_temperatures_k {
-                ensure!(*t <= 999.99, "configuration: stages.{SUPER}.{name}.epw.INPUTEPW.temps: 原生温度文件格式最多支持 999.99 K");
+                ensure!(*t <= 999.99, "configuration: stages.{SUPER}.{name}.epw.INPUTEPW.temps: native temperature-file format supports at most 999.99 K");
                 ensure!(
                     seen.insert(config::temperature(*t, "temps")?),
-                    "configuration: stages.{SUPER}.{name}.epw.INPUTEPW.temps: 重复温度"
+                    "configuration: stages.{SUPER}.{name}.epw.INPUTEPW.temps: duplicate temperature"
                 );
                 config::temperature(*t, &format!("stages.{SUPER}.{name}.epw.INPUTEPW.temps"))?;
                 if s.task == config::SuperconductivityTask::Gap
@@ -1176,7 +1176,7 @@ impl Config {
                 }
             }
         }
-        bail!("configuration: stages.{FINE}: degaussq={smearing} 没有对应的显式原生子任务")
+        bail!("configuration: stages.{FINE}: degaussq={smearing} has no corresponding explicit native subtask")
     }
     pub fn stage_document(&self) -> Result<Value> {
         Ok(stages(&self.document()?))
@@ -1340,7 +1340,7 @@ impl Config {
                 json!(i
                     .phonon_smearings_mev
                     .first()
-                    .context("configuration: stages.7.epw-fine.epw.INPUTEPW.degaussq: 缺失")?),
+                    .context("configuration: stages.7.epw-fine.epw.INPUTEPW.degaussq: missing")?),
             ),
             ("fsthick", json!(i.fsthick_ev)),
             ("eps_acoustic", json!(i.eps_acoustic_cm1)),
@@ -1432,4 +1432,29 @@ impl Config {
         d.stages = serde_json::from_value(v)?;
         Ok(d)
     }
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::*;
+    #[test]
+    fn legacy_parameter_source_comment_does_not_change_native_input() {
+        let value = serde_json::json!({
+            "1.qe-scf": {"pw": {"CONTROL": {"calculation": "scf"}}, "workflow": {"derived": {}}}
+        });
+        let input = "&CONTROL\n calculation = 'scf'\n/\n";
+        let legacy = format!("{}legacy provenance\n{input}", super::super::legacy_language::INPUT_SOURCE_PREFIX);
+        assert_eq!(apply(&value, &[SCF, "pw"], &legacy).unwrap(), apply(&value, &[SCF, "pw"], input).unwrap());
+    }
+    #[test]
+    fn generated_internal_bindings_preserve_legacy_scientific_identity() {
+        let cfg: super::Config = toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(include_str!("../../tests/fixtures/legacy-derived-rules.json")).unwrap();
+        let scf: serde_json::Value = cfg.native_value(&[SCF, "workflow", "derived"]).unwrap();
+        assert_eq!(scf["pw.CONTROL.outdir"], expected["outdir"]);
+        assert_eq!(scf["pw.SYSTEM.ibrav"], expected["ibrav"]);
+        let fine: serde_json::Value = cfg.native_value(&[FINE, "workflow", "derived"]).unwrap();
+        assert_eq!(fine["epw.INPUTEPW.fermi_energy"], expected["fermi_energy"]);
+    }
+
 }

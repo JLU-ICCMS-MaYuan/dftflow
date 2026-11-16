@@ -8,6 +8,7 @@ use super::super::foundation::{config, snapshot, status};
 #[derive(Subcommand)]
 pub enum InterpolationCommand {
     /// 只读核查插值清单与来源；不启动后续求解。
+    #[command(about = "Validate interpolation manifest and sources read-only without starting downstream solvers", long_about = "Validate interpolation manifest and sources read-only without starting downstream solvers")]
     Check {
         #[arg(short = 'w', long)]
         work: PathBuf,
@@ -15,6 +16,7 @@ pub enum InterpolationCommand {
         json: bool,
     },
     /// 校验来源清单，准备隔离副本并登记可复用阶段；不提交计算。
+    #[command(about = "Validate the source manifest, prepare an isolated copy and register reusable stages without submitting calculations", long_about = "Validate the source manifest, prepare an isolated copy and register reusable stages without submitting calculations")]
     Import {
         #[arg(short = 'c', long)]
         config: PathBuf,
@@ -22,6 +24,7 @@ pub enum InterpolationCommand {
         source: PathBuf,
     },
     /// 校验原生来源，导出叠图诊断数据；不执行科学程序。
+    #[command(about = "Validate native sources and export comparison data without running scientific programs", long_about = "Validate native sources and export comparison data without running scientific programs")]
     ExportComparison {
         #[arg(long)]
         source: PathBuf,
@@ -58,7 +61,7 @@ fn check(work: &Path, json: bool) -> Result<()> {
             status::print_json(&status::envelope(
                 "ok",
                 "no_data",
-                serde_json::json!({"workflow_complete": false, "reason": "interpolation/manifest.json 不存在"}),
+                serde_json::json!({"workflow_complete": false, "reason": "interpolation/manifest.json does not exist"}),
             ));
         } else {
             println!("workflow_status: no_data");
@@ -66,7 +69,7 @@ fn check(work: &Path, json: bool) -> Result<()> {
         return Ok(());
     }
     let m = InterpolationManifest::load(&path)
-        .with_context(|| format!("data_invalid: 无法加载 {}", path.display()))?;
+        .with_context(|| format!("data_invalid: Cannot Load {}", path.display()))?;
     if json {
         status::print_json(&status::envelope(
             "ok",
@@ -96,7 +99,7 @@ fn import(config: &Path, source: &Path) -> Result<()> {
     let source_work = source
         .parent()
         .and_then(|p| p.parent())
-        .context("data_invalid: 来源清单路径须为 <source_work>/interpolation/manifest.json")?;
+        .context("data_invalid: The source manifest path shall be <source_work>/interpolation/manifest.json")?;
     let report = super::scheduler::register_import(source_work, &_binding.work_dir)?;
     println!("imported: source_run={} roles={} status={}", report.source_run, report.imported_roles.len(), report.status);
     Ok(())

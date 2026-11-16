@@ -195,16 +195,16 @@ fn public_plot_groups_close_path_labels_without_moving_scientific_ticks() {
         assert!(!labels.contains(&"GAMMA"));
         let lines: Vec<_> = doc.descendants().filter(|n| n.has_tag_name("polyline") && n.attribute("stroke") == Some("#C8C8C8")).collect();
         assert_eq!(lines.len(), panels * 4,
-            "显示分组不能删除或移动原高对称点竖线");
+            "Show group not to remove or move the logarithmic vertical line");
         for panel in lines.chunks_exact(4) {
             let xs: Vec<i32> = panel.iter().map(|n| n.attribute("points").unwrap().split(',').next().unwrap().trim().parse().unwrap()).collect();
             for (index, distance) in [(1, 0.5), (2, 0.505)] {
                 assert!((xs[index] as f64 - xs[0] as f64 - (xs[3] - xs[0]) as f64 * distance).abs() <= 1.0,
-                    "高对称点竖线仍应标记原来的物理路径距离");
+                    "The high symmetry point vertical line should still mark the original physical path distance");
             }
         }
     }
-    assert_eq!(before, fingerprints(&source), "绘图不能改科学表或元数据");
+    assert_eq!(before, fingerprints(&source), "Drawings cannot change scientific tables or metadata");
     fs::remove_dir_all(root).unwrap();
 }
 fn temp() -> PathBuf {
@@ -311,7 +311,7 @@ fn error_markers_validate_semantics_and_old_metadata_remains_readable() {
         rehash(&dir);
         assert!(
             comparison::load(&dir).is_err(),
-            "标注语义错误 {case} 未被拒绝"
+            "Punctuation error {case} Not rejected"
         );
     }
 }
@@ -353,14 +353,14 @@ fn check_path_axes(svg: &str, expected_ticks: usize) {
             labels
                 .iter()
                 .any(|&&(_, y, _)| y > bottom && y < bottom + 40),
-            "高对称符号必须在底部轴外：x={x}, bottom={bottom}, labels={labels:?}"
+            "High symmetrical symbols must be outside the bottom axis:x={x}, bottom={bottom}, labels={labels:?}"
         );
         assert!(
             !texts.iter().any(|&(tx, y, text)| tx == x
                 && y > bottom
                 && y < bottom + 40
                 && text.parse::<f64>().is_ok()),
-            "高对称点处不能显示路径数值"
+            "Unable to show path values at high symmetry points"
         );
     }
     assert!(!svg.contains("k path"));
@@ -432,7 +432,7 @@ fn check_electronic_reference_lines(svg: &str, panel: usize, horizontal: bool) {
                 }
             })
             .count();
-        assert!(segments >= 3, "{name} 必须在正确能量位置画出多段彩色虚线");
+        assert!(segments >= 3, "{name} Draw multiple colour lines in the right energy position");
     }
 }
 
@@ -499,7 +499,7 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
                 .map(|p| { let (x,y)=p.split_once(',').unwrap(); (x.parse().unwrap(),y.parse().unwrap()) }).collect();
             assert!(points.len() > 50 || (points.len() == 2 && points[0].1 == points[1].1
                 && points[1].0 - points[0].0 == 30),
-                "{kind}: QE 必须为完整实线或实线图例，不能出现虚线碎段");
+                "{kind}: QE It is necessary to have a full line or a solid line legend, and no dashed segment of the line should be present");
         }
         let doc = roxmltree::Document::parse(&svg).unwrap();
         for (color, width) in [
@@ -512,9 +512,9 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
             ).collect();
             // 声子参考使用自己的深灰；插值颜色在所有面板一致。
             if color == "#282828" && kind.starts_with("phonon_") { continue; }
-            assert!(!curves.is_empty(), "{kind}: 缺少 {color} 比较曲线");
+            assert!(!curves.is_empty(), "{kind}: Missing {color} Compare Curve");
             assert!(curves.iter().all(|n| n.attribute("stroke-width") == Some(width.as_str())),
-                "{kind}: 图例与比较曲线的粗细必须一致");
+                "{kind}: Legends must be in line with the roughness of the comparative curve");
         }
 
         if kind == "electronic_bands_comparison" || kind == "comparison_overview" {
@@ -541,7 +541,7 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
                     doc.descendants().any(|n| n.has_tag_name("text")
                         && n.attribute("text-anchor") == Some("middle")
                         && n.text().unwrap_or("").trim().parse::<f64>().is_ok()),
-                    "DOS 必须保留物理横轴的数值刻度"
+                    "DOS The numeric scale of the physical crossaxis must be maintained"
                 );
             }
         }
@@ -549,7 +549,7 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
         assert!(svg.contains("electronic window = [-5.000, 5.000] eV relative to EF"));
         let qe = svg.find(if kind=="electronic_bands_comparison" || kind=="electronic_dos_comparison" || kind=="comparison_overview" {"#282828"} else {"#2D2D37"}).unwrap();
         let epw = svg.find("#0046D2").unwrap();
-        assert!(qe < epw, "EPW 必须后绘");
+        assert!(qe < epw, "EPW It's got to come back");
         if kind == "phonon_dispersion_comparison" || kind == "comparison_overview" {
             assert!(!svg.contains("#8A2BE2"));
             assert!(!svg.contains("Sampled maximum (OFF PATH)"));
@@ -679,7 +679,7 @@ fn malformed_units_axes_projections_versions_and_tampering_are_rejected() {
                 }
             }
         }
-        assert!(comparison::load(&dir).is_err(), "未拒绝 {case}");
+        assert!(comparison::load(&dir).is_err(), "Not rejected {case}");
     }
 }
 
@@ -908,7 +908,7 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
         .err()
         .unwrap()
         .to_string()
-        .contains("覆盖"));
+        .contains("Overwrite"));
     fs::write(root.join("test.wout"), "altered").unwrap();
     assert!(!cli(
         &[
@@ -938,7 +938,7 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
         &root,
     );
     assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("坐标"));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("Coordinates"));
     assert!(!root.join("invalid/manifest.json").exists());
     sources.reciprocal[0][1] = 0.5;
     sources.mesh[1] = [0.0; 3];
@@ -986,7 +986,7 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
     let empty = root.join("empty-exported");
     let out=cli(&["interpolation","export-comparison","--source",config.to_str().unwrap(),
         "--output",empty.to_str().unwrap()],&root);
-    assert!(String::from_utf8_lossy(&out.stdout).contains("无可配对数据"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("No matching data"));
     success(out);
     let data=comparison::load(&empty).unwrap();
     let stats=data.differences.as_ref().unwrap();
@@ -1025,7 +1025,7 @@ fn outer_window_requires_one_finite_ordered_native_record() {
         " | Outer: 2 to 2 (eV)",
         " | Outer: -1 to 3 (eV)\n | Outer: -1 to 3 (eV)",
     ] {
-        assert!(parse_outer_window(text).is_err(), "未拒绝 {text}");
+        assert!(parse_outer_window(text).is_err(), "Not rejected {text}");
     }
 }
 
@@ -1049,7 +1049,7 @@ fn frozen_window_rejects_invalid_records_and_metadata_without_inventing_legacy_b
         " | Inner: broken",
         " | Inner: -1 to 3 (eV)\n | Inner: -1 to 3 (eV)",
     ] {
-        assert!(parse_frozen_window(text).is_err(), "未拒绝 {text}");
+        assert!(parse_frozen_window(text).is_err(), "Not rejected {text}");
     }
     let root = temp();
     let work = fixture(&root);
@@ -1060,7 +1060,7 @@ fn frozen_window_rejects_invalid_records_and_metadata_without_inventing_legacy_b
         metadata.frozen_window_ev = Some(frozen);
         store::write(&dir.join("metadata.json"), &metadata).unwrap();
         rehash(&dir);
-        assert!(comparison::load(&dir).is_err(), "未拒绝 {frozen:?}");
+        assert!(comparison::load(&dir).is_err(), "Not rejected {frozen:?}");
     }
     let mut metadata = original.clone();
     metadata.disentanglement_window_ev = None;

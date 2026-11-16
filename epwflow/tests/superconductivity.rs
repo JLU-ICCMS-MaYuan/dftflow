@@ -623,12 +623,12 @@ fn fortran_omitted_e_exponents_preserve_values_and_reject_invalid_tokens() {
     let actual = parse::numbers("1.7366215176-102 -2.5+100 +.25-100 1.0D-3 2e+1").unwrap();
     assert_eq!(actual, vec![1.7366215176e-102, -2.5e100, 0.25e-100, 1e-3, 20.0]);
     for bad in ["1-102", "1.2-10", "1.2--102", "1.2E-102-103", "1.2-102x", "1.0+999", "***", "NaN", "inf", "1.0E999"] {
-        assert!(parse::numbers(bad).is_err(), "必须拒绝 {bad}");
+        assert!(parse::numbers(bad).is_err(), "I must refuse {bad}");
     }
     let r = request(config::Mode::Aniso, attempt::SolveKind::Nonlinear);
     let text = raw_gap(&r, &states(), 1.7366215176e-99);
     let omitted = text.replace("1.7366215176e-102", "1.7366215176-102");
-    assert_ne!(text, omitted, "必须覆盖完整能隙文件中的真实省略格式");
+    assert_ne!(text, omitted, "You must overwrite the true omission format in the full-capable gap file");
     let gap = gap::parse_native(&omitted, 2000, r.nfreq().unwrap(), states()).unwrap();
     assert!((gap.delta_mev[0] / 1.7366215176e-99 - 1.0).abs() < 1e-12);
     let log = solve_log(&r).replace("2 1e-10", "2 1.7366215176-102");
@@ -964,7 +964,7 @@ fn missing_native_solver_cannot_publish_superconductivity() {
     .unwrap();
 
     let result = scheduler::run(&cfg, &work, &[], Backend::Local);
-    assert!(result.is_err(), "无原生求解证据不得发布超导结果");
+    assert!(result.is_err(), "You can't release a superconductor without proof of native solvency");
     assert!(!work.join("superconductivity/manifest.json").exists());
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -1191,7 +1191,7 @@ fn native_engine_both_modes_use_process_results_and_keep_independent_intervals()
     assert_eq!(diagnostic.attempts.len(), 2);
     diagnostic.search = search::Search::new(1000, 5500, 500).unwrap();
     diagnostic.complete = false;
-    diagnostic.reason = Some("固定非线性诊断，未执行线性 Tc 搜索".into());
+    diagnostic.reason = Some("Fixed non-linear diagnosis, non-implemented linear Tc Search".into());
     let diagnostic_root = root.join("iso-nonlinear-diagnostic");
     let partial = scheduler::publish(
         &diagnostic_root,
@@ -1300,7 +1300,7 @@ fn native_engine_both_modes_use_process_results_and_keep_independent_intervals()
         );
         let report: serde_json::Value = serde_json::from_slice(&cli.stdout).unwrap();
         assert_eq!(report["native_complete"], true);
-        assert_eq!(report["workflow_complete"], false, "尚未生成三格式图");
+        assert_eq!(report["workflow_complete"], false, "Three format diagrams have not been generated");
     }
     let (_, data) = epwflow::delivery::native::load(&output).unwrap();
     assert_eq!(data.modes.len(), 2);
@@ -1336,7 +1336,7 @@ fn native_engine_both_modes_use_process_results_and_keep_independent_intervals()
         "normalized Fermi-surface weight",
         "no temperature interpolation",
     ] {
-        assert!(distribution.contains(label), "缺少分布说明 {label}");
+        assert!(distribution.contains(label), "Lack of information on distribution {label}");
     }
     if let Ok(dest) = std::env::var("EPWFLOW_FIXTURE_ARTIFACTS") {
         std::fs::create_dir_all(&dest).unwrap();
@@ -1533,7 +1533,7 @@ fn native_explicit_resume_preserves_failed_evidence_and_counts_unknown_attempts(
         .attempt(2000, attempt::SolveKind::Linear, None, &mut || Ok(()))
         .is_err());
     engine
-        .prepare_resume(&mut |_| panic!("已结束进程不需猜测调度状态"))
+        .prepare_resume(&mut |_| panic!("The process is closed without speculation on the status of the deployment"))
         .unwrap();
     std::fs::write(root.join("allow"), "fixture").unwrap();
     engine

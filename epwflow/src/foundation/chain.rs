@@ -31,7 +31,7 @@ impl Chain {
                 && self.programs.len() == 3
                 && self.stages.len() == 3
                 && self.metadata.len() == 3,
-            "input_conflict: 总提交脚本身份不符"
+            "input_conflict: Always submitting script identity"
         );
         self.script.verify()?;
         for id in self
@@ -44,7 +44,7 @@ impl Chain {
         }
         ensure!(
             self.programs[0].path == std::env::current_exe()?,
-            "input_conflict: 总提交程序身份不符"
+            "input_conflict: The overall submission procedure does not match the identity"
         );
         Ok(())
     }
@@ -92,7 +92,7 @@ pub fn generate(config: &Path) -> Result<PathBuf> {
         return Ok(chain.script.path);
     }
     let executable = std::env::current_exe()?;
-    let parent = executable.parent().context("environment: 程序缺少父目录")?;
+    let parent = executable.parent().context("environment: executable has no parent directory")?;
     let mut programs = Vec::new();
     for name in ["epw_phonon", "epw_wannier", "epw_superconductivity"] {
         programs.push(store::Identity::capture(&parent.join(name))?);
@@ -111,7 +111,7 @@ pub fn generate(config: &Path) -> Result<PathBuf> {
     let script = target.with_file_name("submit-all.sh");
     ensure!(
         !script.exists(),
-        "input_conflict: 已有未登记总脚本，保留现场"
+        "input_conflict: Unregistered master script, on site"
     );
     let body = format!(
         "#!/bin/bash\nexec {} --submit-chain -w {}\n",
@@ -144,7 +144,7 @@ pub fn submit(work: &Path) -> Result<()> {
         let receipt: Receipt = store::read(&target)?;
         ensure!(receipt.schema_version == 1 && receipt.state == "submitted"
             && receipt.submitting_phase.is_none() && receipt.jobs.len() == 3,
-            "scheduler_unknown: 总提交存在部分或未知回执，核对 chain-submission.json 后人工处理，禁止自动重提");
+            "scheduler_unknown: partial or unknown chain submission receipt; check chain-submission.json manually; automatic resubmission prohibited");
         println!(
             "already_submitted: {}",
             serde_json::to_string(&receipt.jobs)?
@@ -153,7 +153,7 @@ pub fn submit(work: &Path) -> Result<()> {
     }
     ensure!(
         !work.join("epw-state/workflow.json").exists(),
-        "input_conflict: 已有阶段尝试，请使用对应程序恢复，禁止重新提交总链"
+        "input_conflict: Phase tried, please use the corresponding program to restore and prevent resubmission of the master chain"
     );
     let mut receipt = Receipt {
         schema_version: 1,
@@ -182,7 +182,7 @@ pub fn submit(work: &Path) -> Result<()> {
             .arg(&stage.path)
             .current_dir(work)
             .output()
-            .context("scheduler_unknown: 总提交无法调用 sbatch，保留未决回执")?;
+            .context("scheduler_unknown: Unable to call always sbatch ,Retain pending receipt")?;
         receipt.responses.push(Response {
             phase: index + 1,
             exit_code: out.status.code(),
@@ -192,7 +192,7 @@ pub fn submit(work: &Path) -> Result<()> {
         store::write(&target, &receipt)?;
         ensure!(
             out.status.success(),
-            "scheduler_unknown: 总提交 sbatch 失败，保留已提交作业及未决回执: {}",
+            "scheduler_unknown: Total submissions sbatch Failed, reservation submitted and pending receipt: {}",
             String::from_utf8_lossy(&out.stderr)
         );
         let job = slurm::parse_job_id(&String::from_utf8(out.stdout)?)?;
@@ -205,7 +205,7 @@ pub fn submit(work: &Path) -> Result<()> {
                     .jobs
                     .iter()
                     .all(|previous| previous.job_id != job.job_id),
-            "scheduler_unknown: 重复作业号或跨集群回执，禁止继续提交"
+            "scheduler_unknown: Repeat or cross-cluster callback, no further submission"
         );
         receipt.jobs.push(Job {
             job_id: job.job_id,

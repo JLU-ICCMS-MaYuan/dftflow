@@ -20,17 +20,17 @@ pub fn artifact_path(work: &Path, a: &Artifact) -> Result<std::path::PathBuf> {
             && a.relative_path
                 .components()
                 .all(|c| matches!(c, Component::Normal(_))),
-        "data_invalid: 产物路径逃逸"
+        "data_invalid: artifact path escapes its root"
     );
     let path = work.join(&a.relative_path);
     let target = fs::canonicalize(&path)?;
     ensure!(
         target.starts_with(fs::canonicalize(work)?),
-        "data_invalid: 产物链接逃逸"
+        "data_invalid: artifact symlink escapes its root"
     );
     ensure!(
         fs::metadata(&path)?.len() == a.byte_size && store::hash_file(&path)? == a.sha256,
-        "input_conflict: F3 产物改变 {}",
+        "input_conflict: F3 artifact changed {}",
         path.display()
     );
     Ok(path)
@@ -41,13 +41,13 @@ pub fn bind(work: &Path, cfg: &Config, f3: &InterpolationManifest) -> Result<Nat
     let fine = f3
         .fine
         .as_ref()
-        .context("data_invalid: F3 缺少细网格数据")?;
+        .context("data_invalid: F3 fine-grid data missing")?;
     let evidence = if crate::foundation::layout::enabled(work) {
         let file = fine
             .artifacts
             .iter()
             .find(|a| a.role == "fine_log")
-            .context("data_invalid: 缺原生细网格日志")?;
+            .context("data_invalid: native fine-grid log missing")?;
         Identity::capture(&artifact_path(work, file)?)?
     } else {
         Identity::capture(&crate::foundation::layout::path(
@@ -70,13 +70,13 @@ pub fn bind_native_roles(
     evidence.verify()?;
     ensure!(
         fine.layout == FORMAT,
-        "data_invalid: F3 尚未交付原生 Eliashberg 细网格布局"
+        "data_invalid: F3 native Eliashberg fine-grid layout not delivered"
     );
     let mut roles = BTreeSet::new();
     for a in &fine.artifacts {
         ensure!(
             a.format_version == FORMAT && roles.insert(a.role.clone()),
-            "data_invalid: 原生格式或重复角色"
+            "data_invalid: invalid native format or duplicate role"
         );
         artifact_path(work, a)?;
     }
@@ -86,7 +86,7 @@ pub fn bind_native_roles(
             fine.artifacts
                 .iter()
                 .find(|a| a.role == role)
-                .with_context(|| format!("data_invalid: 缺少 F3 角色 {role}"))?,
+                .with_context(|| format!("data_invalid: F3 role {role} missing"))?,
         )
     };
     let ep = get("fine_egnv")?;
@@ -96,7 +96,7 @@ pub fn bind_native_roles(
     let offset = crate::interpolation::native_matrices::band_offset(&log, data.bands)?;
     ensure!(
         offset + data.bands <= cfg.wannier.num_wann as usize,
-        "data_invalid: 原生带范围超出 Wannier 子空间"
+        "data_invalid: native band range exceeds the Wannier subspace"
     );
     for s in &mut data.states {
         s.band += offset;
@@ -105,7 +105,7 @@ pub fn bind_native_roles(
         data.grid == cfg.interpolation.k_grid
             && (data.fsthick_ev - cfg.interpolation.fsthick_ev).abs() < 1e-8
             && (data.degaussw_ev - cfg.interpolation.degaussw_ev).abs() < 1e-8,
-        "input_conflict: egnv 与固定网格/费米面设置不同"
+        "input_conflict: egnv differs from fixed grid/Fermi-surface settings"
     );
     let fp = get("fine_freq")?;
     frequencies(&fs::read(&fp)?, cfg.interpolation.q_grid)?;
@@ -117,19 +117,19 @@ pub fn bind_native_roles(
     let selected = cfg.superconductivity.spectrum_index as usize;
     ensure!(
         selected < spectra.len() && spectrum.a2f.len() == 1,
-        "data_invalid: F3 所选谱越界或原生谱列数无效"
+        "data_invalid: selected F3 spectrum out of range or native spectrum column count invalid"
     );
     let declared = &spectra[selected];
     ensure!(
         declared.energy_mev == spectrum.energy_mev && declared.a2f == spectrum.a2f[0],
-        "input_conflict: F3 谱与原生来源不同"
+        "input_conflict: F3 spectrum differs from native source"
     );
-    let matrix_dir = ep.parent().context("data_invalid: egnv 父目录")?;
+    let matrix_dir = ep.parent().context("data_invalid: egnv parent directory missing")?;
     ensure!(
         matrix_dir
             .file_name()
             .is_some_and(|n| n == format!("{}.ephmat", cfg.qe.prefix).as_str()),
-        "data_invalid: 原生矩阵目录名不符"
+        "data_invalid: native matrix directory name mismatch"
     );
     let mut files = vec![ep.clone(), fp, get("fine_ikmap")?, get("fine_npool")?];
     for a in &fine.artifacts {
@@ -139,7 +139,7 @@ pub fn bind_native_roles(
     }
     ensure!(
         files.len() >= 5 && files.iter().all(|p| p.parent() == Some(matrix_dir)),
-        "data_invalid: 原生矩阵分片缺失或目录混用"
+        "data_invalid: native matrix shards missing or directories mixed"
     );
     let ids = files
         .iter()
@@ -161,7 +161,7 @@ pub fn bind_native_roles(
         selecq: Some(Identity::capture(&get("fine_selecq")?)?),
         matrix_outdir: matrix_dir
             .parent()
-            .context("data_invalid: 缺少 outdir")?
+            .context("data_invalid: outdir missing")?
             .into(),
         matrix_files: ids,
         states: data.states,

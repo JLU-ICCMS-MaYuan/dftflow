@@ -37,15 +37,15 @@ fn allocation(cfg: &Config) -> Result<u64> {
     let job: u64 = std::env::var("SLURM_JOB_ID")?.parse()?;
     ensure!(
         slurm::running_allocation(job)?.state == "RUNNING",
-        "真实分配没有运行"
+        "Real distribution is not running"
     );
     ensure!(
         std::env::var("SLURM_NTASKS")?.parse::<u32>()? == epwflow::foundation::parallelism::mpi_count(&cfg).unwrap(),
-        "MPI 数不符"
+        "MPI Numbers do not match"
     );
     // 原共享历史账本，不为本项建立新的零消费预算。
     let ledger: serde_json::Value = store::read(&cfg.budget.ledger)?;
-    let attempts = ledger["attempts"].as_array().context("缺原共享预算")?;
+    let attempts = ledger["attempts"].as_array().context("Lack of original shared budget")?;
     let matching: Vec<_> = attempts
         .iter()
         .filter(|a| a["job_id"].as_u64() == Some(job))
@@ -58,20 +58,20 @@ fn allocation(cfg: &Config) -> Result<u64> {
                 .filter(|a| a["reserved_node_seconds"].as_u64().unwrap_or(0) > 0)
                 .count()
                 <= 2,
-        "共享账本未登记或并发超限"
+        "Shared books are not registered or issued out of limit"
     );
     Ok(job)
 }
 
 fn actual(diagnostic: bool) -> Result<()> {
-    let path = PathBuf::from(std::env::var_os("EPWFLOW_REAL_TC_CASE").context("指定冻结案例")?);
+    let path = PathBuf::from(std::env::var_os("EPWFLOW_REAL_TC_CASE").context("_Other Organiser")?);
     let case_id = Identity::capture(&path)?;
     let c: Case = store::read(&path)?;
     ensure!(
         c.schema_version == 1 && c.diagnostic == diagnostic,
-        "案例版本或执行类型不符"
+        "Unsatisfactory version of case or type of execution"
     );
-    ensure!(!diagnostic || !c.resume, "固定诊断只运行一次，不隐式续算");
+    ensure!(!diagnostic || !c.resume, "Fixed diagnostics run only once, and no hidden renewals");
     for id in [&c.config, &c.source_config, &c.fine_report] {
         id.verify()?;
     }
@@ -90,18 +90,18 @@ fn actual(diagnostic: bool) -> Result<()> {
         "interpolation",
         "budget",
     ] {
-        ensure!(current[key] == previous[key], "冻结物理来源改变：{key}");
+        ensure!(current[key] == previous[key], "Freezing changes in physical sources:{key}");
     }
     let mut sc = current["superconductivity"].clone();
     for mode in ["iso", "aniso"] {
         ensure!(
             sc[mode]["min_k"] == 10.0 && sc[mode]["max_k"] == if diagnostic { 80.0 } else { 55.0 },
-            "本次预先固定温度范围不符"
+            "This pre-fixed temperature range does not match"
         );
         sc[mode]["min_k"] = previous["superconductivity"][mode]["min_k"].clone();
         sc[mode]["max_k"] = previous["superconductivity"][mode]["max_k"].clone();
         if diagnostic {
-            ensure!(sc[mode]["max_solves"] == 2, "单次诊断每模式只能两初值");
+            ensure!(sc[mode]["max_solves"] == 2, "A single diagnosis can only have two starting values");
             sc[mode]["max_solves"] = previous["superconductivity"][mode]["max_solves"].clone();
         }
     }
@@ -111,29 +111,29 @@ fn actual(diagnostic: bool) -> Result<()> {
             ("mixing_beta", serde_json::json!(0.7)),
             ("mixing_history", serde_json::json!(8)),
         ] {
-            ensure!(sc[key] == expected, "固定诊断数值参数不符：{key}");
+            ensure!(sc[key] == expected, "Non-conformity of fixed diagnostic numerical parameters:{key}");
             sc[key] = previous["superconductivity"][key].clone();
         }
     }
     ensure!(
         sc == previous["superconductivity"],
-        "求解器、初值、容差或必需能隙温度改变"
+        "Solver, starting value, tolerance difference, or need to be able to change the temperature of the gap"
     );
     ensure!(
         epwflow::foundation::parallelism::mpi_count(&cfg).unwrap() == 24,
-        "超出本次有界分配"
+        "Over and above the distribution"
     );
     let job = allocation(&cfg)?;
     ensure!(
         cfg.work_dir.exists() == c.resume,
-        "新运行与显式恢复的目标状态不符"
+        "New operations do not match the target state for visible recovery"
     );
     let report: serde_json::Value = store::read(&c.fine_report.path)?;
     ensure!(
         report["stage"] == "fine_matrices_verified"
             && report["historical_sources_unchanged"] == true
             && report["automatic_workflow_validated"] == false,
-        "上游阶段证据不符"
+        "Evidence at the upstream stage does not match"
     );
     let fine_case: Identity = serde_json::from_value(report["case"].clone())?;
     fine_case.verify()?;
@@ -141,7 +141,7 @@ fn actual(diagnostic: bool) -> Result<()> {
     let source_config: Identity = serde_json::from_value(fine_case_data["config"].clone())?;
     ensure!(
         serde_json::to_value(&source_config)? == serde_json::to_value(&c.source_config)?,
-        "细网格与来源配置没有绑定"
+        "The fine grid and source configuration are not tied"
     );
     let historical: Vec<Identity> =
         serde_json::from_value(fine_case_data["source_identities"].clone())?;
@@ -160,12 +160,12 @@ fn actual(diagnostic: bool) -> Result<()> {
     }];
     let input = source::bind_native_roles(&c.fine_root, &cfg, &fine, &spectra, &c.fine_report)?;
     let previous_counts = if diagnostic {
-        let parent = c.parent_manifest.as_ref().context("诊断缺少历史计数来源")?;
+        let parent = c.parent_manifest.as_ref().context("Diagnosis lacked historical sources")?;
         parent.verify()?;
         let m = SuperconductivityManifest::load(&parent.path)?;
         ensure!(
             m.interpolation_digest == c.fine_report.sha256,
-            "历史计数不是同一细网格"
+            "History counts are not the same fine grid"
         );
         let counts: BTreeMap<_, _> = m
             .native_modes
@@ -175,10 +175,10 @@ fn actual(diagnostic: bool) -> Result<()> {
         for (name, n) in &counts {
             ensure!(
                 n + 2 <= 64 && (name == "iso" || name == "aniso"),
-                "诊断超过原剩余次数"
+                "More diagnostics than the original residuals"
             );
         }
-        ensure!(counts.len() == 2, "历史模式计数缺失");
+        ensure!(counts.len() == 2, "History mode count missing");
         counts
     } else {
         BTreeMap::new()
@@ -206,7 +206,7 @@ fn actual(diagnostic: bool) -> Result<()> {
             engine.prepare_resume(&mut |previous_job| {
                 ensure!(
                     slurm::accounting(previous_job)?.terminal,
-                    "原分配仍活动，不能重提"
+                    "The original allocation is still active and cannot be revisited"
                 );
                 Ok(())
             })?;
@@ -218,7 +218,7 @@ fn actual(diagnostic: bool) -> Result<()> {
             for seed in cfg.superconductivity.initial_gaps_mev {
                 let n = engine.result.attempts.len();
                 match engine.attempt(t, SolveKind::Nonlinear, Some(seed), &mut before) {
-                    Ok(record) => solutions.push(record.gap.context("有效非线性结果缺少 Δ/Z")?),
+                    Ok(record) => solutions.push(record.gap.context("Effective non-linear results are missing Δ/Z")?),
                     Err(e) => {
                         ensure!(
                             engine.result.attempts.len() == n + 1
@@ -227,7 +227,7 @@ fn actual(diagnostic: bool) -> Result<()> {
                                     .attempts
                                     .last()
                                     .is_some_and(|a| a.status == "failed"),
-                            "诊断在启动前或未知状态停止：{e:#}"
+                            "Diagnosis ceased before startup or unknown state:{e:#}"
                         );
                         println!("{name} {seed} meV failed: {e:#}");
                     }
@@ -300,19 +300,19 @@ fn actual(diagnostic: bool) -> Result<()> {
         } else {
             result.converged
         },
-        "原生两模式仍未满足本次验收；保留全部失败与计数，禁止经验 Tc 替代"
+        "Two native models are still not satisfied with this acceptance; all failures and counting are retained and experience is banned Tc Alternative"
     );
     Ok(())
 }
 
 #[test]
-#[ignore = "真实两模式 Tc；须冻结来源、预留原共享预算并在 Slurm 中显式执行"]
+#[ignore = "Real two patterns Tc ;Requires the freezing of sources, pre-encumbering of shared budgets and Slurm Medium-Specific Execution"]
 fn actual_lda_native_tc() {
     actual(false).unwrap();
 }
 
 #[test]
-#[ignore = "单次固定非线性诊断；须用户确认、历史次数与原共享预算"]
+#[ignore = "Single fixed non-linear diagnosis; user confirmation, number of history and original shared budget"]
 fn actual_lda_native_nonlinear_diagnostic() {
     actual(true).unwrap();
 }

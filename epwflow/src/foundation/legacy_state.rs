@@ -54,7 +54,7 @@ pub(crate) fn retire_locks(state: &Path) -> Result<()> {
         if let Some(job) = owner.as_ref().and_then(|v| v["job_id"].as_u64()) {
             ensure!(
                 super::slurm::accounting(job)?.terminal,
-                "scheduler_unknown: 旧锁所属作业 {job} 仍活动"
+                "scheduler_unknown: old lock belongs to active job {job}"
             );
         } else if let Some(owner) = &owner {
             if owner["host"].as_str() == Some(store::hostname().as_str()) {
@@ -63,7 +63,7 @@ pub(crate) fn retire_locks(state: &Path) -> Result<()> {
                         && pid <= i32::MAX as u64
                         && (unsafe { libc::kill(pid as i32, 0) } == 0
                             || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM));
-                    ensure!(!alive, "scheduler_unknown: 旧命令进程 {pid} 仍活动");
+                    ensure!(!alive, "scheduler_unknown: old command process {pid} is still active");
                 }
             }
         }
@@ -71,7 +71,7 @@ pub(crate) fn retire_locks(state: &Path) -> Result<()> {
             let entry = entry?;
             ensure!(
                 entry.file_name() == "owner.json" && entry.file_type()?.is_file(),
-                "input_conflict: 旧锁含未知内容 {}",
+                "input_conflict: old lock contains unknown content {}",
                 entry.path().display()
             );
             fs::remove_file(entry.path())?;
@@ -90,7 +90,7 @@ fn submission(value: &Value) -> Result<()> {
     if let Some(job) = v.get("job").and_then(Value::as_u64) {
         ensure!(
             super::slurm::accounting(job)?.terminal,
-            "scheduler_unknown: 旧作业 {job} 仍活动，暂不转换或覆盖"
+            "scheduler_unknown: old job {job} remains active; migration or overwriting prohibited"
         );
     } else if let Some(state) = v.get("state").and_then(Value::as_str) {
         ensure!(
@@ -98,7 +98,7 @@ fn submission(value: &Value) -> Result<()> {
                 state,
                 "submission_pending" | "unknown" | "running" | "submitted"
             ),
-            "scheduler_unknown: 旧提交状态 {state} 尚无法确认，请核对 Slurm"
+            "scheduler_unknown: cannot confirm old submission status {state}; check Slurm"
         );
     }
     Ok(())
@@ -117,7 +117,7 @@ pub fn prepare_at(cfg: &Config, state: &Path) -> Result<Option<Conversion>> {
     }
     ensure!(
         !fs::symlink_metadata(state)?.file_type().is_symlink(),
-        "input_conflict: 旧状态目录是链接 {}",
+        "input_conflict: old state directory is a symlink {}",
         state.display()
     );
     for entry in fs::read_dir(&state)? {
@@ -127,7 +127,7 @@ pub fn prepare_at(cfg: &Config, state: &Path) -> Result<Option<Conversion>> {
         ensure!(
             OLD.contains(&name.as_ref()) || name == "imports" || name.ends_with(".log")
                 || super::config_versions::number(&entry.path()).is_some(),
-            "input_conflict: 旧状态存在尚未识别的内容 {}；保留现场，请先核对",
+            "input_conflict: old state contains unrecognized content {}; preserve and inspect it first",
             entry.path().display()
         );
     }
@@ -185,13 +185,13 @@ pub fn prepare_at(cfg: &Config, state: &Path) -> Result<Option<Conversion>> {
                     let value: Value = store::read(&path)?;
                     let paths = value["outputs"]
                         .as_array()
-                        .context("data_invalid: 旧电子子步骤缺产物")?
+                        .context("data_invalid: old electronic substep has missing artifacts")?
                         .iter()
                         .filter_map(|v| v["path"].as_str().map(PathBuf::from))
                         .filter(|p| p.is_file())
                         .collect::<Vec<_>>();
                     if !paths.is_empty() {
-                        leaves.push((step, format!("电子子步骤 · {task}"), paths));
+                        leaves.push((step, format!("Electronic substep · {task}"), paths));
                     }
                 }
             }
@@ -210,14 +210,14 @@ pub fn prepare_at(cfg: &Config, state: &Path) -> Result<Option<Conversion>> {
 pub fn finish(cfg: &Config, version: &Path, conversion: Conversion) -> Result<()> {
     for step in Step::ALL {
         log::update(&cfg.work_dir, step, |d| {
-            if d.get("阶段", "批次").is_none() {
-                d.set("阶段", "批次", format!("converted-{}", step.name()));
-                d.set("阶段", "计算配置", log::relative(&cfg.work_dir, version));
+            if d.get("Stage", "Batch").is_none() {
+                d.set("Stage", "Batch", format!("converted-{}", step.name()));
+                d.set("Stage", "Calculation configuration", log::relative(&cfg.work_dir, version));
             }
             d.set(
-                "工作区",
-                "旧状态转换",
-                "已核对旧作业终态；旧输入路径不作为恢复前提",
+                "Workspace",
+                "Legacy state migration",
+                "Legacy jobs verified terminal; old input paths are not required for recovery",
             );
             Ok(())
         })?;
@@ -229,15 +229,15 @@ pub fn finish(cfg: &Config, version: &Path, conversion: Conversion) -> Result<()
         match super::workspace_science::validate(cfg, step) {
             Ok(()) => {
                 log::update(&cfg.work_dir, step, |d| {
-                    d.set("阶段", "科学状态", "已完成");
-                    d.set("阶段", "状态", "已完成");
+                    d.set("Stage", "Scientific status", "completed");
+                    d.set("Stage", "Status", "completed");
                     Ok(())
                 })?;
             }
             Err(e) => {
                 log::update(&cfg.work_dir, step, |d| {
-                    d.set("阶段", "状态", "旧结果需要检查");
-                    d.set("问题", "原因", format!("{e:#}"));
+                    d.set("Stage", "Status", "Legacy results require validation");
+                    d.set("Problem", "Reason", format!("{e:#}"));
                     Ok(())
                 })?;
             }
@@ -247,7 +247,7 @@ pub fn finish(cfg: &Config, version: &Path, conversion: Conversion) -> Result<()
         let deps = stages::upstream(cfg, step)?;
         log::update(&cfg.work_dir, step, |d| {
             for (dep, batch) in &deps {
-                d.set("依赖", &format!("{dep} 批次"), batch);
+                d.set("Dependencies", &format!("{dep} batch"), batch);
             }
             Ok(())
         })?;

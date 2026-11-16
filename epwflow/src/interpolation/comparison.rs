@@ -24,7 +24,7 @@ impl SourceFile {
         let path = base.join(&self.path);
         ensure!(
             self.sha256.len() == 64 && store::hash_file(&path)? == self.sha256,
-            "data_invalid: 比较来源指纹不符 {}",
+            "data_invalid: It's not the same from the source {}",
             path.display()
         );
         Ok(path)
@@ -107,12 +107,12 @@ impl ElectronicStage {
         let bands = fs::read_to_string(self.bands.checked_path(base)?)?;
         ensure!(
             bands.lines().next() == Some("method,segment_id,point_id,distance,band,energy_ev"),
-            "data_invalid: 第 5 步电子能带表头无效"
+            "data_invalid: I don't think so 5 Step electrons can't work with the header"
         );
         let dos = fs::read_to_string(self.dos.checked_path(base)?)?;
         ensure!(
             dos.lines().next() == Some("source,energy_minus_fermi_ev,states_per_ev_cell"),
-            "data_invalid: 第 5 步电子 DOS 表头无效"
+            "data_invalid: I don't think so 5 Step electrons DOS The header is invalid"
         );
         let mut converted =
             String::from("method,energy_ev,projection_kind,element,orbital,density\n");
@@ -120,13 +120,13 @@ impl ElectronicStage {
             let cells: Vec<_> = line.split(',').collect();
             ensure!(
                 cells.len() == 3 && matches!(cells[0], "QE" | "EPW"),
-                "data_invalid: 第 5 步 DOS 行无效"
+                "data_invalid: I don't think so 5 Step DOS Line invalid"
             );
             let e: f64 = cells[1].parse()?;
             let d: f64 = cells[2].parse()?;
             ensure!(
                 e.is_finite() && d.is_finite(),
-                "data_invalid: 第 5 步 DOS 非有限"
+                "data_invalid: I don't think so 5 Step DOS Unlimited"
             );
             converted.push_str(&format!(
                 "{},{e},total,,,{d}\n",
@@ -151,24 +151,24 @@ fn parse_window(text: &str, name: &str) -> Result<Option<[f64; 2]>> {
     }
     ensure!(
         records.len() == 1,
-        "data_invalid: Wannier 日志必须有唯一 {name} 能窗"
+        "data_invalid: Wannier The log must have one {name} The window"
     );
     let pattern = regex::Regex::new(r"^\s*(\S+)\s+to\s+(\S+)\s+\(eV\)")?;
     let record = pattern
         .captures(records[0])
-        .with_context(|| format!("data_invalid: Wannier {name} 能窗格式无效"))?;
+        .with_context(|| format!("data_invalid: Wannier {name} Could not initialise Bonobo"))?;
     let value = |i: usize| -> Result<f64> { Ok(record[i].replace(['d', 'D'], "e").parse()?) };
     let window = [value(1)?, value(2)?];
     ensure!(
         window.iter().all(|v| v.is_finite()) && window[0] < window[1],
-        "data_invalid: Wannier {name} 能窗必须有限且递增"
+        "data_invalid: Wannier {name} The window must be finite and incremental"
     );
     Ok(Some(window))
 }
 
 /// 读取 Wannier 实际采用的绝对能量外窗，也覆盖未显式设置 dis_win 的情况。
 pub fn parse_outer_window(text: &str) -> Result<[f64; 2]> {
-    parse_window(text, "Outer")?.context("data_invalid: Wannier 日志缺少 Outer 能窗")
+    parse_window(text, "Outer")?.context("data_invalid: Wannier Log Missing Outer The window")
 }
 
 /// 未记录 Inner 时返回缺失，不能用外窗或显示窗代替冻结窗。
@@ -192,7 +192,7 @@ pub fn gaussian_dos(
             && axis.windows(2).all(|w| w[0] < w[1])
             && states.iter().flatten().all(|v| v.is_finite())
             && weights.iter().all(|v| v.is_finite() && *v > 0.0),
-        "data_invalid: DOS 网格、状态、权重或核宽度无效"
+        "data_invalid: DOS Grid, state, weight or nuclear width invalid"
     );
     let norm = sigma * std::f64::consts::PI.sqrt();
     Ok(axis
@@ -227,13 +227,13 @@ pub(crate) fn native_path(
 ) -> Result<Vec<PathPoint>> {
     ensure!(
         reference.len() >= 2 && coordinates.len() >= 2,
-        "data_invalid: 原生路径坐标或端点不完整"
+        "data_invalid: Incomplete native path coordinates or endpoints"
     );
     let mut path: Vec<PathPoint> = Vec::new();
     for (i, point) in coordinates.iter().enumerate() {
         ensure!(
             point.iter().all(|v| v.is_finite()),
-            "data_invalid: 非有限路径坐标"
+            "data_invalid: Non-finite path coordinates"
         );
         let mut found = None;
         for edge in reference
@@ -275,7 +275,7 @@ pub(crate) fn native_path(
         }
         path.push(
             found
-                .with_context(|| format!("data_invalid: 原生坐标偏离物理路径或点序错误，点 {i}"))?,
+                .with_context(|| format!("data_invalid: Native coordinate deviation from physical path or point sequence error, point {i}"))?,
         );
     }
     // 必须保留真实拐点和断段端点，不能用跨过拐点的直线冒充原路径。
@@ -302,7 +302,7 @@ pub(crate) fn native_path(
                 || path.iter().any(|q| q.segment_id == p.segment_id
                     && (q.distance - p.distance).abs() < 1e-6
                     && same(&q.crystal, &p.crystal)),
-            "data_invalid: 原生路径坐标缺少高对称端点或拐点"
+            "data_invalid: No high symmetric endpoint or turning point for native path coordinates"
         );
     }
     Ok(path)
@@ -350,10 +350,10 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     let mut s: Sources = store::read(source)?;
     ensure!(
         s.schema_version == 2 && matches!(s.ph_mode.as_str(), "nosplit" | "index" | "coords"),
-        "data_invalid: 来源版本或 PH 模式无效"
+        "data_invalid: Source version or PH Mode invalid"
     );
-    let base = source.parent().context("data_invalid: 来源目录缺失")?;
-    ensure!(!output.exists(), "input_conflict: 比较输出已存在");
+    let base = source.parent().context("data_invalid: Source directory missing")?;
+    ensure!(!output.exists(), "input_conflict: Compare Output Exists");
     ensure!(
         s.path.len() >= 2
             && s.path
@@ -361,7 +361,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
                 .all(|p| p.crystal.iter().all(|v| v.is_finite()) && p.distance.is_finite())
             && s.path.windows(2).all(|p| p[0].distance < p[1].distance)
             && s.reciprocal.iter().flatten().all(|v| v.is_finite()),
-        "data_invalid: 路径不完整或距离不递增"
+        "data_invalid: Path incomplete or distance is not incremental"
     );
     let fermi = nscf::parse_xml(&s.fermi_reference.checked_path(base)?)?.fermi;
     let wannier_log = s
@@ -383,7 +383,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     let epw = native::parse_bands(&fs::read_to_string(s.epw_bands.checked_path(base)?)?)?;
     let qph =
         native::parse_matdyn_path(&fs::read_to_string(s.qe_phonon_bands.checked_path(base)?)?)
-            .context("data_invalid: QE matdyn 频率文件")?;
+            .context("data_invalid: QE matdyn Frequency File")?;
     let eph = native::parse_bands(&fs::read_to_string(s.epw_phonon_bands.checked_path(base)?)?)?;
     native::checked_log(&fs::read_to_string(s.epw_log.checked_path(base)?)?, 0)?;
     for p in &s.provenance {
@@ -395,8 +395,8 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         .map(|files| files.load(base))
         .transpose()?;
     let path_count = |len: usize| -> Result<usize> {
-        let count = len.checked_sub(s.mesh.len()).context("data_invalid: 原生网格点数不完整")?;
-        ensure!(count >= 2, "data_invalid: 原生路径端点不完整");
+        let count = len.checked_sub(s.mesh.len()).context("data_invalid: Numerical grid points incomplete")?;
+        ensure!(count >= 2, "data_invalid: Native Path Endpoint Incomplete");
         Ok(count)
     };
     let nq = path_count(qph.values.len())?;
@@ -408,7 +408,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         Some((native_path(&s.path, &qe.kpoints, &s.reciprocal)?,
             native_path(&s.path, &epw.points_cartesian[..count], &s.reciprocal)?))
     } else { None };
-    ensure!(mesh.kpoints.len() == s.mesh.len(), "data_invalid: QE DOS 网格点数不完整");
+    ensure!(mesh.kpoints.len() == s.mesh.len(), "data_invalid: QE DOS Grid points incomplete");
     let mut mesh_set = std::collections::BTreeSet::new();
     ensure!(
         s.mesh_shape.iter().all(|n| *n > 0)
@@ -416,7 +416,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
                 .iter()
                 .try_fold(1usize, |a, b| a.checked_mul(*b))
                 == Some(s.mesh.len()),
-        "data_invalid: DOS 必须来自完整均匀网格"
+        "data_invalid: DOS It has to come from a complete even grid"
     );
     for p in &s.mesh {
         let mut key = [0usize; 3];
@@ -424,17 +424,17 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
             let x = p[i] * s.mesh_shape[i] as f64;
             ensure!(
                 x.is_finite() && (x - x.round()).abs() < 1e-7 && p[i] >= 0.0 && p[i] < 1.0,
-                "data_invalid: DOS 网格并非固定 Gamma 均匀网格"
+                "data_invalid: DOS Grid is not fixed Gamma Flat Grid"
             );
             key[i] = x.round() as usize;
         }
-        ensure!(mesh_set.insert(key), "data_invalid: 重复 DOS 网格点");
+        ensure!(mesh_set.insert(key), "data_invalid: Repeat DOS Grid Point");
     }
     ensure!(
         mesh.weights
             .iter()
             .all(|w| (*w - mesh.weights[0]).abs() < 1e-8),
-        "data_invalid: 完整网格权重不均匀"
+        "data_invalid: Full grid weight is uneven"
     );
     // DOS 使用自身完整均匀网格；路径采样独立，不参与网格身份检查。
     for (i, p) in s.mesh.iter().enumerate() {
@@ -442,7 +442,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         ensure!(same(&expected, &qph.points_cartesian[nq+i])
             && same(&expected, &eph.points_cartesian[ne+i])
             && electronic_paths.as_ref().is_none_or(|(_, path)| same(&expected, &epw.points_cartesian[path.len()+i])),
-            "data_invalid: 原生 DOS 网格坐标不符，点 {i}");
+            "data_invalid: Native DOS Grid coordinates don't match, point {i}");
     }
     let modes = eph.values[0].len();
     ensure!(
@@ -452,7 +452,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
                 .iter()
                 .chain(&qph.values)
                 .all(|v| v.len() == modes),
-        "data_invalid: 声子模式不完整"
+        "data_invalid: Sound submodule incomplete"
     );
     // 总量比较按实际原子顺序验证 3N；缺少算符时不推断元素／轨道投影。
     let qe_text = fs::read_to_string(s.qe_mesh_xml.checked_path(base)?)?;
@@ -460,43 +460,43 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     let output_structure = doc
         .descendants()
         .find(|n| n.has_tag_name("output"))
-        .context("data_invalid: 缺少 QE output 结构")?;
+        .context("data_invalid: Missing QE output Structure")?;
     let atoms: Vec<_> = output_structure
         .descendants()
         .find(|n| n.has_tag_name("atomic_positions"))
-        .context("data_invalid: 缺少原子顺序")?
+        .context("data_invalid: Missing Atom Order")?
         .children()
         .filter(|n| n.has_tag_name("atom"))
-        .map(|n| n.attribute("name").context("data_invalid: 原子缺少元素名"))
+        .map(|n| n.attribute("name").context("data_invalid: Atom Missing Element Name"))
         .collect::<Result<_>>()?;
     ensure!(
         !atoms.is_empty() && modes == 3 * atoms.len(),
-        "data_invalid: 声子模式数与原子数不同"
+        "data_invalid: The number of acoustics differs from the number of atoms"
     );
     let path_text = fs::read_to_string(s.qe_bands_xml.checked_path(base)?)?;
     let path_doc = roxmltree::Document::parse(&path_text)?;
     let positions = |root: roxmltree::Node<'_, '_>| -> Result<Vec<(String, [f64; 3])>> {
         root.descendants()
             .find(|n| n.has_tag_name("output"))
-            .context("data_invalid: 缺少 QE output")?
+            .context("data_invalid: Missing QE output")?
             .descendants()
             .find(|n| n.has_tag_name("atomic_positions"))
-            .context("data_invalid: 缺少原子位置")?
+            .context("data_invalid: Missing Atom Location")?
             .children()
             .filter(|n| n.has_tag_name("atom"))
             .map(|n| {
                 Ok((
                     n.attribute("name")
-                        .context("data_invalid: 缺少元素名")?
+                        .context("data_invalid: Missing Element Name")?
                         .into(),
-                    crate::qe_data::xml::vector(n.text().context("data_invalid: 缺少原子坐标")?)?,
+                    crate::qe_data::xml::vector(n.text().context("data_invalid: Missing Atomic Coordinates")?)?,
                 ))
             })
             .collect()
     };
     ensure!(
         positions(path_doc.root_element())? == positions(doc.root_element())?,
-        "input_conflict: 路径与 DOS 网格原子位置或顺序不同"
+        "input_conflict: Paths and DOS The grid atoms have different positions or sequences"
     );
     let mut elements = Vec::new();
     for atom in &atoms {
@@ -512,7 +512,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     };
     ensure!(
         s.window_ev.iter().all(|v| v.is_finite()) && s.window_ev[0] < s.window_ev[1],
-        "data_invalid: 共同能窗不足"
+        "data_invalid: We don't have enough windows together"
     );
     let mut electronic = String::from("method,segment_id,point_id,distance,band,energy_ev\n");
     let mut phonon =
@@ -548,7 +548,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
             .collect();
         ensure!(
             indices.len() == 1,
-            "data_invalid: 均匀 QE k 点映射缺失或重复"
+            "data_invalid: even QE k PointMap Missing or Repeated"
         );
         qe_mesh.push(
             mesh.eigenvalues[indices[0]]
@@ -693,10 +693,10 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     };
     let destination = output;
     let _lock = store::Lock::acquire(destination)?;
-    ensure!(!destination.exists(), "input_conflict: 比较输出已存在");
+    ensure!(!destination.exists(), "input_conflict: Compare Output Exists");
     let stage = destination
         .parent()
-        .context("data_invalid: 比较输出缺父目录")?
+        .context("data_invalid: Compare output missing parent directory")?
         .join(format!(".comparison-{}", store::token()));
     fs::create_dir(&stage)?;
     let output = stage.as_path();

@@ -72,7 +72,7 @@ impl Run {
         let r: Self = store::read(path)?;
         ensure!(
             matches!(r.schema_version, 3 | 4) && r.task == "gap" && !r.plan.is_empty(),
-            "data_invalid: 指定温度清单版本或计划无效"
+            "data_invalid: specified-temperature manifest version or plan invalid"
         );
         for (i, q) in r.plan.iter().enumerate() {
             q.validate()?;
@@ -80,12 +80,12 @@ impl Run {
                 q.kind == SolveKind::Gap
                     && !r.plan[..i].iter().any(|p| p.mode == q.mode
                         && p.temperature_centikelvin == q.temperature_centikelvin),
-                "data_invalid: 指定温度计划重复或类型错误"
+                "data_invalid: duplicate or incorrectly typed specified-temperature plan"
             );
         }
         ensure!(
             r.schema_version == 4 || r.batches.is_empty(),
-            "data_invalid: 旧点清单含新批次"
+            "data_invalid: legacy point manifest contains a new batch"
         );
         for (i, b) in r.batches.iter().enumerate() {
             ensure!(
@@ -96,7 +96,7 @@ impl Run {
                         == Some(if b.mode == Mode::Iso { "iso" } else { "aniso" })
                     && b.task.directory.parent() == path.parent()
                     && !r.batches[..i].iter().any(|old| old.task.id == b.task.id),
-                "data_invalid: 方法批次身份或目录冲突"
+                "data_invalid: method batch identity or directory conflict"
             );
             b.executable.verify()?;
             for (j, q) in b.requests.iter().enumerate() {
@@ -106,25 +106,25 @@ impl Run {
                         && !b.requests[..j]
                             .iter()
                             .any(|p| p.temperature_centikelvin == q.temperature_centikelvin),
-                    "data_invalid: 批次请求不属于固定计划或重复"
+                    "data_invalid: batch request duplicated or outside the fixed plan"
                 );
             }
         }
         for a in &r.attempts {
             ensure!(
                 r.plan.iter().any(|q| same(q, &a.request).unwrap_or(false)),
-                "input_conflict: 尝试不属于固定温度计划"
+                "input_conflict: attempt is outside the fixed-temperature plan"
             );
             ensure!(
                 a.directory.parent() == path.parent(),
-                "data_invalid: 尝试目录逃逸"
+                "data_invalid: attempt directory escapes its root"
             );
             ensure!(
                 matches!(
                     a.status.as_str(),
                     "running" | "failed" | "valid" | "completed"
                 ),
-                "data_invalid: 尝试状态无效"
+                "data_invalid: invalid attempt status"
             );
             if let Some(id) = &a.record {
                 id.verify()?;
@@ -136,7 +136,7 @@ impl Run {
                                     .path
                                     .file_name()
                                     .is_some_and(|n| n.to_string_lossy().starts_with("point-")))),
-                    "data_invalid: 尝试记录路径冲突"
+                    "data_invalid: attempt-record path conflict"
                 );
                 let record = super::verify::record(&id.path)?;
                 if let Some(evidence) = &record.batch {
@@ -158,19 +158,19 @@ impl Run {
                                     .collect::<Vec<_>>()
                                     == evidence.temperatures
                                 && b.executable.sha256 == record.executable.sha256)),
-                        "input_conflict: 点与方法批次证据不符"
+                        "input_conflict: point differs from method batch evidence"
                     );
                 }
                 ensure!(
                     same(&record.request, &a.request)?
                         && record.status == a.status
                         && record.source.interpolation_digest == r.interpolation_digest,
-                    "input_conflict: 尝试记录与计划/来源冲突"
+                    "input_conflict: attempt record conflicts with plan/source"
                 );
             } else {
                 ensure!(
                     !matches!(a.status.as_str(), "valid" | "completed"),
-                    "data_invalid: 完成点缺少原生证据"
+                    "data_invalid: completed point has no native evidence"
                 );
             }
         }
@@ -179,7 +179,7 @@ impl Run {
         ensure!(
             checked.execution_complete == r.execution_complete
                 && checked.data_complete == r.data_complete,
-            "data_invalid: 指定温度完成状态冲突"
+            "data_invalid: specified-temperature completion status conflict"
         );
         Ok(r)
     }
@@ -212,7 +212,7 @@ pub fn published(work: &Path, cfg: &Config, run_id: &str) -> Result<Run> {
             && r.interpolation_digest == input.interpolation_digest
             && r.binding_digest == binding(cfg, &input, &cfg.programs.launcher)?
             && serde_json::to_value(&r.plan)? == serde_json::to_value(plan(cfg)?)?,
-        "input_conflict: 指定温度计划/程序/来源改变"
+        "input_conflict: specified-temperature plan/program/source changed"
     );
     Ok(r)
 }
@@ -226,11 +226,11 @@ pub fn run(
 ) -> Result<()> {
     ensure!(
         backend == crate::foundation::stage::Backend::Local,
-        "allocation: 单点求解须使用已登记分配"
+        "allocation: single-point solving requires a registered allocation"
     );
     let f3_path = crate::foundation::layout::path(work, "interpolation/manifest.json");
     let f3 = crate::interpolation::manifest::InterpolationManifest::load(&f3_path)?;
-    ensure!(f3.validation.all_passed(), "data_invalid: 插值数据无效");
+    ensure!(f3.validation.all_passed(), "data_invalid: invalid interpolation data");
     let source = super::source::bind(work, cfg, &f3)?;
     let root = crate::foundation::layout::path(work, "superconductivity");
     std::fs::create_dir_all(&root)?;
@@ -270,20 +270,20 @@ pub fn run(
             } else {
                 ensure!(
                     crate::foundation::native_jobs::failed(&dir)?,
-                    "scheduler_unknown: 中断点缺少已确认失败的原生任务"
+                    "scheduler_unknown: interrupted point has no confirmed failed native task"
                 );
                 None
             }
         } else if saved.exists() && store::read::<AttemptResult>(&saved)?.status != "running" {
             Some(super::verify::record(&saved)?)
         } else {
-            ensure!(retry, "scheduler_unknown: 中断尝试需要显式 --resume");
+            ensure!(retry, "scheduler_unknown: interrupted attempt requires explicit --resume");
             let job = r.attempts[i]
                 .job_id
-                .context("scheduler_unknown: 中断尝试缺少原分配号")?;
+                .context("scheduler_unknown: interrupted attempt has no original allocation ID")?;
             ensure!(
                 crate::foundation::slurm::accounting(job)?.terminal,
-                "scheduler_unknown: 原分配仍活动"
+                "scheduler_unknown: original allocation remains active"
             );
             None
         };
@@ -293,12 +293,12 @@ pub fn run(
             r.attempts[i].record = Some(Identity::capture(&saved)?);
         } else {
             r.attempts[i].status = "failed".into();
-            r.attempts[i].reason = Some("execution_failed: 原生尝试已确认中断".into());
+            r.attempts[i].reason = Some("execution_failed: native attempt confirmed interrupted".into());
             if saved.exists() {
                 let mut record: AttemptResult = store::read(&saved)?;
                 ensure!(
                     same(&record.request, &r.attempts[i].request)?,
-                    "input_conflict: 中断点请求改变"
+                    "input_conflict: interrupted point request changed"
                 );
                 record.source.verify(record.request.mode)?;
                 record.executable.verify()?;
@@ -334,12 +334,12 @@ pub fn run(
                 retry
                     && (!crate::foundation::native_jobs::enabled()
                         || crate::foundation::native_jobs::retry_enabled()),
-                "partial: 点失败，修复后使用 --resume；原尝试已保留"
+                "partial: point failed; fix the cause and use --resume; original attempt preserved"
             );
         }
         if !crate::foundation::native_jobs::enabled() {
             let job = std::env::var("SLURM_JOB_ID")
-                .context("allocation: 缺少当前 Slurm 分配")?
+                .context("allocation: current Slurm allocation missing")?
                 .parse::<u64>()?;
             crate::foundation::budget::with_ledger(
                 &cfg.budget.ledger,
@@ -349,7 +349,7 @@ pub fn run(
         }
         ensure!(
             store::hash_file(&f3_path)? == source.interpolation_digest,
-            "input_conflict: F3 清单改变"
+            "input_conflict: F3 manifest changed"
         );
         let mode = if request.mode == Mode::Iso {
             "iso"
@@ -387,7 +387,7 @@ pub fn run(
                         r.attempts.last().unwrap().status.as_str(),
                         "valid" | "completed"
                     ),
-                    "execution_failed: 原生单点异常退出；证据已保留"
+                    "execution_failed: native single-point run exited abnormally; evidence preserved"
                 );
             }
             Err(error) => {
@@ -404,6 +404,6 @@ pub fn run(
     }
     r.refresh();
     store::write(&path, &r)?;
-    ensure!(r.execution_complete, "partial: 指定温度尚未全部执行完成");
+    ensure!(r.execution_complete, "partial: specified-temperature execution incomplete");
     Ok(())
 }

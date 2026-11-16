@@ -28,28 +28,28 @@ pub fn import_from_run(source_work: &Path, work: &Path) -> Result<ImportReport> 
     let source_manifest_path = source_work.join("qe-data").join("manifest.json");
     let source = QeManifest::load(&source_manifest_path).with_context(|| {
         format!(
-            "data_invalid: 无法加载来源清单 {}",
+            "data_invalid: Could not load manifest of sources {}",
             source_manifest_path.display()
         )
     })?;
     ensure!(
         source.validation.all_passed(),
-        "data_invalid: 来源清单校验未通过，拒绝复用"
+        "data_invalid: Source manifest not verified, re-used"
     );
 
     source.verify()?;
     let source_root = source
         .artifact_root
         .as_ref()
-        .context("data_invalid: 缺原生产物根目录")?
+        .context("data_invalid: Lack of native production root catalogue")?
         .canonicalize()?;
     std::fs::create_dir_all(work)?;
     ensure!(
         !work.canonicalize()?.starts_with(&source_root),
-        "input_conflict: 不能把导入目标放入来源树"
+        "input_conflict: Can't put the import target in the source tree"
     );
     let target = work.join("imported/qe-data");
-    ensure!(!target.exists(), "input_conflict: 导入目标已存在");
+    ensure!(!target.exists(), "input_conflict: Import destination already exists");
     std::fs::create_dir_all(&target)?;
     let mut checks = vec![];
     let mut roles = vec![];
@@ -59,19 +59,19 @@ pub fn import_from_run(source_work: &Path, work: &Path) -> Result<ImportReport> 
         std::fs::create_dir_all(dst.parent().unwrap())?;
         std::fs::copy(&src, &dst)?;
         if qf_io::qe_payload::unchecked(&a.relative_path) { continue; }
-        ensure!(store::hash_file(&dst)? == a.sha256, "input_conflict: 导入复制后身份不符");
+        ensure!(store::hash_file(&dst)? == a.sha256, "input_conflict: Identities do not match after importing copy");
         roles.push(a.role.clone());
         checks.push(Check {
             role: a.role.clone(),
             passed: true,
-            detail: "按原生清单复制并重验身份".into(),
+            detail: "Copy according to native manifest and revalidate identities".into(),
         });
     }
     // 核验清单不包含原始大数据，复制时仍从保存目录传递它们。
     let mut payload_roots = Vec::new();
     if let Some(scf) = &source.scf { payload_roots.push(scf.snapshot_dir.clone()); }
     if let Some(states) = &source.states {
-        payload_roots.push(states.wavefunctions.parent().context("data_invalid: 保存目录缺父路径")?.into());
+        payload_roots.push(states.wavefunctions.parent().context("data_invalid: Save directory without parent path")?.into());
     }
     for root in payload_roots {
         for relative in super::save::all_files(&root)? {
@@ -88,7 +88,7 @@ pub fn import_from_run(source_work: &Path, work: &Path) -> Result<ImportReport> 
     let rebase = |p: &std::path::PathBuf| -> Result<std::path::PathBuf> {
         Ok(target.join(
             p.strip_prefix(&source_root)
-                .context("data_invalid: 来源角色越出 artifact_root")?,
+                .context("data_invalid: The source role's coming out artifact_root")?,
         ))
     };
     let mut imported = source.clone();
@@ -110,7 +110,7 @@ pub fn import_from_run(source_work: &Path, work: &Path) -> Result<ImportReport> 
             .artifacts
             .iter()
             .find(|a| a.role == "dyn0")
-            .context("data_invalid: 来源缺 dyn0")?
+            .context("data_invalid: Source is missing dyn0")?
             .relative_path,
     );
     for q in &mut imported.qpoints {
@@ -128,7 +128,7 @@ pub fn import_from_run(source_work: &Path, work: &Path) -> Result<ImportReport> 
         status: if all_ok { "imported" } else { "rejected" }.to_string(),
     };
     if !all_ok {
-        bail!("data_invalid: 导入校验未通过，拒绝登记可复用阶段");
+        bail!("data_invalid: Import verification not passed. Refusal to register reusable phase");
     }
     store::write(&work.join("imported").join("import-report.json"), &report)?;
     Ok(report)

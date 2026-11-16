@@ -218,7 +218,7 @@ fn native_pipeline_failure_preserves_evidence_and_blocks_downstream() {
 
 #[test]
 fn energy_window_mismatch_blocks_publication_even_without_comparison_plots() {
-    for (failure, expected) in [("coarse-window", "原生 dis_win_min"), ("coarse-window-missing", "缺少 Inner")] {
+    for (failure, expected) in [("coarse-window", "Native dis_win_min"), ("coarse-window-missing", "Missing Inner")] {
         let c = case_with_auto(failure, true);
         assert!(c.cfg.kpath.is_none());
         let error = run(&c).unwrap_err().to_string();
@@ -254,15 +254,15 @@ fn fine_rechecks_actual_windows_in_hash_consistent_legacy_coarse_manifest() {
     let error = interpolation::scheduler::run_fine_registered(
         &c.cfg, Backend::Local, &[], work,
     ).unwrap_err().to_string();
-    assert!(error.contains("原生 dis_win_min"), "{error}");
+    assert!(error.contains("Native dis_win_min"), "{error}");
     assert!(!work.join("fine").exists());
     assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 2);
 }
 
 #[test]
-#[ignore = "依赖本机忽略的真实 LDA 粗网格，只读核验须显式指定"]
+#[ignore = "Reliance on reality ignored by the machine LDA coarse Grid, read-only requires visible designation"]
 fn actual_lda_coarse_restart_and_wannier() {
-    let root = PathBuf::from(std::env::var_os("EPWFLOW_REAL_QE_ROOT").expect("指定本机来源根目录"));
+    let root = PathBuf::from(std::env::var_os("EPWFLOW_REAL_QE_ROOT").expect("Specify the root source directory of this machine"));
     let dir = root.join("019-lda-q6-phonon-wannier/coarse");
     let r = interpolation::wannier::check_native(&dir.join("mgb2.wout"), 5).unwrap();
     assert_eq!(r.num_iter, 14);

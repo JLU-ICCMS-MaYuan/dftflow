@@ -43,7 +43,7 @@ pub fn parse_eigenval(text: &str) -> Result<Eigenval> {
             break;
         }
     }
-    let hi = header_idx.ok_or_else(|| anyhow::anyhow!("EIGENVAL 找不到整数头行"))?;
+    let hi = header_idx.ok_or_else(|| anyhow::anyhow!("EIGENVAL Integer headline not found"))?;
     let header: Vec<usize> = lines[hi]
         .split_whitespace()
         .filter_map(|s| s.parse::<usize>().ok())
@@ -52,7 +52,7 @@ pub fn parse_eigenval(text: &str) -> Result<Eigenval> {
     let nspin = if header[1] == 0 { 1 } else { header[1] };
     let nbands = header[2];
     if nbands == 0 {
-        bail!("EIGENVAL NBANDS 为 0");
+        bail!("EIGENVAL NBANDS Yes 0");
     }
 
     // 逐块读取。
@@ -85,7 +85,7 @@ pub fn parse_eigenval(text: &str) -> Result<Eigenval> {
         }
         if energies.len() != nbands {
             bail!(
-                "EIGENVAL k 点块能量数量不符：期望 {nbands}，实际 {}",
+                "EIGENVAL k The amount of energy in the dots does not match: expectations {nbands},Actual {}",
                 energies.len()
             );
         }
@@ -114,7 +114,7 @@ pub fn parse_eigenval(text: &str) -> Result<Eigenval> {
     } else {
         let nk = blocks.len() / 2;
         if blocks.len() != nk * 2 {
-            bail!("EIGENVAL ISPIN=2 时 k 点块数量应为偶数");
+            bail!("EIGENVAL ISPIN=2 Time k The number of blocks should be even");
         }
         let mut kpoints = Vec::with_capacity(nk);
         for k in 0..nk {

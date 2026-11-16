@@ -42,12 +42,12 @@ fn split_generates_q_dirs_and_index_map() {
     let entries =
         qf_phonon::generate_split_inputs(dir.to_str().unwrap(), &cfg, "Si2", "split_assign_index", &structure)
             .unwrap();
-    assert_eq!(entries.len(), 4, "2x2x1 网格应生成 4 个 q 点");
+    assert_eq!(entries.len(), 4, "2x2x1 Grid should be generated 4 One q Points");
     for entry in &entries {
         let q_dir = dir.join(&entry.directory);
-        assert!(q_dir.join("split_ph.in").exists(), "缺少 {}/split_ph.in", entry.directory);
-        assert!(q_dir.join("scf.in").exists(), "缺少 {}/scf.in", entry.directory);
-        assert!(q_dir.join("run_split.sh").exists(), "缺少 {}/run_split.sh", entry.directory);
+        assert!(q_dir.join("split_ph.in").exists(), "Missing {}/split_ph.in", entry.directory);
+        assert!(q_dir.join("scf.in").exists(), "Missing {}/scf.in", entry.directory);
+        assert!(q_dir.join("run_split.sh").exists(), "Missing {}/run_split.sh", entry.directory);
     }
     assert!(dir.join("q_index_map.json").exists());
 }
@@ -71,7 +71,7 @@ fn dos_tables_sum_elements() {
     assert_eq!(atoms_rows.len(), 5);
     // 第一行元素分波列应等于两个 Si 原子之和 0.10
     let si_val: f64 = elements_rows[1][2].parse().unwrap();
-    assert!((si_val - 0.10).abs() < 1e-9, "元素 Si 分波应累加两个原子: {si_val}");
+    assert!((si_val - 0.10).abs() < 1e-9, "Elements Si Two atoms should be added to the wave: {si_val}");
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn band_tables_match_label_points() {
         qf_phonon::build_phonon_band_tables(dir.to_str().unwrap(), "Si2", &elements, &counts).unwrap();
     // 表头 + 4 个路径点
     assert_eq!(band_rows.len(), 5);
-    assert_eq!(band_rows[0].len(), 5 + 6, "应含 5 坐标列 + 6 模式列");
+    assert_eq!(band_rows[0].len(), 5 + 6, "Should contain 5 Coordinate Columns + 6 Mode Bar");
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn strict_merge_uses_configured_outdir_and_prechecks_all_points() {
     }
     fs::write(dir.join("02/Si.dyn"),"q = ( 0 0 0 )").unwrap();
     assert!(qf_phonon::merge::merge_split_results_with_outdir(dir.to_str().unwrap(),"Si",&map,"scratch").is_err());
-    assert!(!dir.join("Si.dyn1").exists(),"预检查失败不应产生部分合并");
+    assert!(!dir.join("Si.dyn1").exists(),"The failure of pre-check should not result in a partial merger");
     fs::write(dir.join("02/Si.dyn"),"q = ( 0.5 0.25 0 )\nfreq ( 1) = 1\n").unwrap();
     let merged=qf_phonon::merge::merge_split_results_with_outdir(dir.to_str().unwrap(),"Si",&map,"scratch").unwrap();
     assert!(merged.success);

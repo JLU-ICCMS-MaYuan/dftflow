@@ -36,14 +36,14 @@ impl BandData {
         let invalid = regex::Regex::new(r"(?i)\b(?:nan|inf|infinity)\b")?;
         ensure!(
             !invalid.is_match(&text) && !invalid.is_match(&labels),
-            "声子数据包含非有限数值"
+            "phonon data contains non-finite values"
         );
         let modes = crate::tables::detect_mode_count(&text);
         let frequencies = read_band_frequencies(&text, modes)?;
         if let Some(c) = regex::Regex::new(r"(?i)\bnks\s*=\s*(\d+)")?.captures(&text) {
             ensure!(
                 c[1].parse::<usize>()? == frequencies.len(),
-                "频率点数与 nks 不一致"
+                "Frequency points and nks Inconsistencies"
             );
         }
         Self::new(read_labelinfo(&labels), frequencies)
@@ -53,7 +53,7 @@ impl BandData {
         let count = frequencies.len();
         ensure!(
             labels.len() >= 2 && count >= 2,
-            "声子路径/频率数据为空或点数不足"
+            "Sound subroutine/frequency data empty or insufficient"
         );
         let modes = frequencies[0].len();
         ensure!(
@@ -61,21 +61,21 @@ impl BandData {
                 && frequencies
                     .iter()
                     .all(|row| row.len() == modes && row.iter().all(|v| v.is_finite())),
-            "声子频率模式数不一致或包含非有限数值"
+            "The number of audio subfrequency patterns is inconsistent or contains non-finite values"
         );
         ensure!(
             labels[0].point_index == 1 && labels.last().unwrap().point_index == count,
-            "声子路径端点索引与频率点数不一致"
+            "phonon routing endpoint index inconsistent with frequency points"
         );
         ensure!(
             labels
                 .iter()
                 .all(|l| [l.distance, l.kx, l.ky, l.kz].iter().all(|v| v.is_finite())),
-            "声子路径包含非有限数值"
+            "phonon subpaths contain non-finite values"
         );
         ensure!(
             labels[0].distance.abs() <= 1e-9 && labels.last().unwrap().distance > 0.,
-            "声子路径累计距离无效"
+            "The cumulative distance of the phonon subpath is invalid"
         );
         let mut points = Vec::with_capacity(count);
         let mut segments = Vec::new();
@@ -100,7 +100,7 @@ impl BandData {
                 right.point_index > left.point_index
                     && right.point_index <= count
                     && right.distance >= left.distance,
-                "声子路径索引须严格递增，距离须非递减"
+                "phonon sub-routing index must be strictly incremental and distance must not decrease"
             );
             let jump = (right.distance - left.distance).abs() <= 1e-9;
             if jump {
@@ -110,7 +110,7 @@ impl BandData {
                             + (right.ky - left.ky).abs()
                             + (right.kz - left.kz).abs())
                             > 1e-9,
-                    "零长度路径段不是有效跳段"
+                    "Zero length path is not a valid jump"
                 );
                 segments.push(start..left.point_index);
                 start = right.point_index - 1;
@@ -131,7 +131,7 @@ impl BandData {
         }
         points.push(labels.last().unwrap().clone());
         segments.push(start..count);
-        ensure!(points.len() == count, "声子路径点数与频率数量不一致");
+        ensure!(points.len() == count, "The number of phonon routing points does not match the frequency number");
         Ok(Self {
             labels,
             points,
@@ -146,11 +146,11 @@ pub(crate) fn frequency_range(values: impl Iterator<Item = f64>) -> Result<(f64,
     let mut low = f64::INFINITY;
     let mut high = f64::NEG_INFINITY;
     for v in values {
-        ensure!(v.is_finite(), "频率包含非有限数值");
+        ensure!(v.is_finite(), "Frequency contains non-finite values");
         low = low.min(v);
         high = high.max(v);
     }
-    ensure!(low.is_finite() && high.is_finite(), "频率数据为空");
+    ensure!(low.is_finite() && high.is_finite(), "Frequency data is empty");
     low = low.min(0.);
     high = high.max(0.);
     let margin = ((high - low) * 0.05).max(1.);

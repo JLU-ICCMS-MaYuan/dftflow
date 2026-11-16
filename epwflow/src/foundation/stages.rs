@@ -228,7 +228,7 @@ fn verify_outputs(
         let mut available = true;
         for result in results {
             for valid in
-                result.map_err(|_| anyhow::anyhow!("execution_failed: 产物核验线程失败"))??
+                result.map_err(|_| anyhow::anyhow!("execution_failed: The product has failed to verify the thread"))??
             {
                 available &= valid;
             }
@@ -245,7 +245,7 @@ impl Completion {
     pub fn available(&self) -> Result<bool> {
         ensure!(
             self.schema_version == 1 && !self.outputs.is_empty(),
-            "data_invalid: 阶段清单缺证据"
+            "data_invalid: Lack of evidence in the phase manifest"
         );
         // 缺少诊断文件由派生交付报告，不为补图重跑科学；存在但损坏仍拒绝。
         verify_outputs(&self.outputs, |id| {
@@ -255,7 +255,7 @@ impl Completion {
     pub fn verify(&self) -> Result<()> {
         ensure!(
             self.schema_version == 1 && !self.outputs.is_empty(),
-            "data_invalid: 阶段清单缺证据"
+            "data_invalid: Lack of evidence in the phase manifest"
         );
         verify_outputs(&self.outputs, |id| {
             if self.decay_diagnostic(id) {
@@ -297,8 +297,8 @@ pub fn upstream(cfg: &Config, step: Step) -> Result<BTreeMap<String, String>> {
             Ok((
                 s.name().into(),
                 super::readable_state::read(&cfg.work_dir, s)?
-                    .get("阶段", "批次")
-                    .unwrap_or("现有科学结果")
+                    .get("Stage", "Batch")
+                    .unwrap_or("Existing scientific results")
                     .into(),
             ))
         })
@@ -307,7 +307,7 @@ pub fn upstream(cfg: &Config, step: Step) -> Result<BTreeMap<String, String>> {
 pub fn reusable(cfg: &Config, step: Step) -> Result<bool> {
     use super::readable_state as log;
     let doc = log::read(&cfg.work_dir, step)?;
-    if doc.get("阶段", "科学状态") != Some("已完成") {
+    if doc.get("Stage", "Scientific status") != Some("completed") {
         return Ok(false);
     }
     let previous = match log::computation_config(&cfg.work_dir, step)
@@ -324,7 +324,7 @@ pub fn reusable(cfg: &Config, step: Step) -> Result<bool> {
             return Ok(false);
         }
         let upstream = log::read(&cfg.work_dir, dependency)?;
-        if doc.get("依赖", &format!("{} 批次", dependency.name())) != upstream.get("阶段", "批次")
+        if doc.get("Dependencies", &format!("{} batch", dependency.name())) != upstream.get("Stage", "Batch")
         {
             return Ok(false);
         }
@@ -357,17 +357,17 @@ pub fn finish(cfg: &Config, step: Step) -> Result<()> {
     let upstream = upstream(cfg, step)?;
     super::readable_state::update(&cfg.work_dir, step, |d| {
         let state = if scientific_valid {
-            "已完成"
+            "completed"
         } else {
-            "求解已结束，能隙数据无效"
+            "Solver finished; gap data invalid"
         };
-        d.set("阶段", "科学状态", state);
-        d.set("阶段", "状态", state);
-        d.remove("依赖");
+        d.set("Stage", "Scientific status", state);
+        d.set("Stage", "Status", state);
+        d.remove("Dependencies");
         for (name, batch) in upstream {
-            d.set("依赖", &format!("{name} 批次"), batch);
+            d.set("Dependencies", &format!("{name} batch"), batch);
         }
-        d.remove("问题");
+        d.remove("Problem");
         Ok(())
     })
 }
@@ -417,7 +417,7 @@ mod tests {
         std::fs::write(&paths[16], "damaged").unwrap();
         assert!(
             completion.available().is_err(),
-            "先发现缺失也必须拒绝另一产物损坏"
+            "We must also reject the damage to another product"
         );
         assert!(completion.verify().is_err());
         std::fs::write(&paths[16], "original").unwrap();
@@ -490,7 +490,7 @@ mod tests {
         store::write(&receipt(&root, Step::Scf), &c).unwrap();
         assert!(
             !reusable(&cfg, Step::Scf).unwrap(),
-            "旧 JSON 不能取代阶段日志和实际 SCF 输出"
+            "Old JSON Could not replace phase logs and actual SCF Output"
         );
         std::fs::remove_dir_all(root).unwrap();
     }

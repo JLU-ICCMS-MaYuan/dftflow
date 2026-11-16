@@ -69,7 +69,7 @@ fn missing_diagnostics_report_all_missing_without_invalidating_science_or_accept
     c.verify().unwrap();
     let error = collect(&receipt, &output).unwrap_err().to_string();
     assert!(
-        error.contains(NATIVE[0]) && error.contains(NATIVE[2]) && error.contains("不自动重跑 EPW"),
+        error.contains(NATIVE[0]) && error.contains(NATIVE[2]) && error.contains("EPW is not rerun automatically"),
         "{error}"
     );
     assert_eq!(fs::read(&receipt).unwrap(), original);
@@ -130,7 +130,7 @@ fn fifteen_figures_keep_native_samples_and_recover_after_moving_without_original
         .find(|f| f.relative_path == Path::new(DATA))
         .unwrap() = Artifact::capture(&moved, DATA).unwrap();
     store::write(&moved.join(MANIFEST), &m).unwrap();
-    assert!(redraw(&moved).unwrap_err().to_string().contains("不一致"));
+    assert!(redraw(&moved).unwrap_err().to_string().contains("inconsistent"));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -179,11 +179,11 @@ fn interrupted_decay_publication_resumes_from_journal_and_rejects_unknown_target
 }
 
 #[test]
-#[ignore = "需要显式指定真实粗网格回执及全新派生输出目录；只读科学数据"]
+#[ignore = "Requires an explicit real coarse-grid receipt and a fresh derived-output directory; scientific data are read-only"]
 fn real_bound_native_decay_files_render_without_scientific_calls() {
     let receipt =
-        PathBuf::from(std::env::var_os("DFTFLOW_DECAY_REAL_COMPLETION").expect("真实回执"));
-    let output = PathBuf::from(std::env::var_os("DFTFLOW_DECAY_REAL_OUTPUT").expect("全新输出"));
+        PathBuf::from(std::env::var_os("DFTFLOW_DECAY_REAL_COMPLETION").expect("real receipt"));
+    let output = PathBuf::from(std::env::var_os("DFTFLOW_DECAY_REAL_OUTPUT").expect("fresh output"));
     assert!(!output.exists());
     let c: Completion = store::read(&receipt).unwrap();
     let before = fs::read(&receipt).unwrap();
@@ -193,5 +193,5 @@ fn real_bound_native_decay_files_render_without_scientific_calls() {
         id.verify().unwrap();
     }
     assert_eq!(before, fs::read(&receipt).unwrap());
-    eprintln!("真实来源只读衰减图：{}", output.display());
+    eprintln!("Read-only decay plots from real data: {}", output.display());
 }

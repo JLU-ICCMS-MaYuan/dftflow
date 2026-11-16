@@ -31,22 +31,22 @@ pub struct Statistics {
 
 impl GapData {
     pub fn validate(&self) -> Result<()> {
-        ensure!(self.temperature_centikelvin > 0, "data_invalid: 无效温度");
+        ensure!(self.temperature_centikelvin > 0, "data_invalid: invalid temperature");
         let ns = self.states.len().max(1);
         let nf = self.frequencies_mev.len();
         ensure!(
             nf > 0
                 && nf.checked_mul(ns) == Some(self.delta_mev.len())
                 && self.z.len() == self.delta_mev.len(),
-            "data_invalid: Δ/Z 记录缺失或长度冲突"
+            "data_invalid: Delta/Z records missing or lengths inconsistent"
         );
         ensure!(
             self.delta_mev.iter().chain(&self.z).all(|x| x.is_finite()),
-            "data_invalid: Δ/Z 非有限"
+            "data_invalid: nonfinite Delta/Z"
         );
         ensure!(
             self.z.iter().all(|x| *x > 0.0),
-            "data_invalid: FSR Z 必须为正"
+            "data_invalid: FSR Z must be positive"
         );
         for (i, w) in self.frequencies_mev.iter().enumerate() {
             let expected = (2 * i + 1) as f64
@@ -56,28 +56,28 @@ impl GapData {
                 * 10.0;
             ensure!(
                 w.is_finite() && (*w - expected).abs() <= 1e-8 + expected.abs() * 1e-9,
-                "data_invalid: Matsubara 频率与实际温度/索引冲突"
+                "data_invalid: Matsubara frequency conflicts with actual temperature/index"
             );
         }
         let mut seen = BTreeSet::new();
         for s in &self.states {
             ensure!(
                 s.kpoint > 0 && s.band > 0 && seen.insert((s.kpoint, s.band)),
-                "data_invalid: 重复或无效 k/band 映射"
+                "data_invalid: duplicate or invalid k/band mapping"
             );
             ensure!(
                 s.energy_ev.is_finite() && s.weight.is_finite() && s.weight >= 0.0,
-                "data_invalid: 状态能量/权重无效"
+                "data_invalid: invalid state energy/weight"
             );
             ensure!(
                 s.k_crystal.is_none_or(|k| k.iter().all(|x| x.is_finite())),
-                "data_invalid: k 坐标非有限"
+                "data_invalid: nonfinite k coordinates"
             );
         }
         let weight_sum = self.states.iter().map(|s| s.weight).sum::<f64>();
         ensure!(
             self.states.is_empty() || (weight_sum.is_finite() && weight_sum > 0.0),
-            "data_invalid: 费米面权重全零或溢出"
+            "data_invalid: Fermi-surface weights are all zero or overflow"
         );
         Ok(())
     }
@@ -107,7 +107,7 @@ impl GapData {
             .into_iter()
             .map(|(band, xs)| {
                 let w = xs.iter().map(|(_, w)| w).sum::<f64>();
-                ensure!(w > 0.0, "data_invalid: 某带费米面权重为零，不能发布平均值");
+                ensure!(w > 0.0, "data_invalid: a band has zero Fermi-surface weight; averages cannot be published");
                 Ok((
                     band,
                     Statistics {
@@ -149,7 +149,7 @@ pub fn parse_native(
     };
     ensure!(
         header == expected_header,
-        "data_invalid: 非 EPW 5.9 FSR 虚频轴列/单位"
+        "data_invalid: columns/units do not match EPW 5.9 FSR imaginary-axis output"
     );
     let mut result = GapData {
         temperature_centikelvin: temperature,
@@ -161,14 +161,14 @@ pub fn parse_native(
     let ns = result.states.len().max(1);
     let expected = nfreq
         .checked_mul(ns)
-        .ok_or_else(|| anyhow::anyhow!("data_invalid: 数组溢出"))?;
-    ensure!(expected > 0, "data_invalid: 频率或状态为空");
+        .ok_or_else(|| anyhow::anyhow!("data_invalid: array overflow"))?;
+    ensure!(expected > 0, "data_invalid: empty frequencies or states");
     for (row, line) in lines.filter(|l| !l.trim().is_empty()).enumerate() {
-        ensure!(row < expected, "data_invalid: 原生能隙存在多余记录");
+        ensure!(row < expected, "data_invalid: native gap output contains extra records");
         let xs = super::parse::numbers(line)?;
         ensure!(
             xs.len() == if aniso { 4 } else { 3 },
-            "data_invalid: 原生 Δ/Z 列数不符"
+            "data_invalid: native Delta/Z column count mismatch"
         );
         let iw = row / ns;
         if row % ns == 0 {
@@ -176,13 +176,13 @@ pub fn parse_native(
         }
         ensure!(
             (xs[0] * 1000.0 - result.frequencies_mev[iw]).abs() <= 1e-8,
-            "data_invalid: 同一频率块错位"
+            "data_invalid: frequency-block alignment mismatch"
         );
         let offset = usize::from(aniso);
         if aniso {
             ensure!(
                 (xs[1] - result.states[row % ns].energy_ev).abs() <= 1e-9,
-                "data_invalid: egnv 与能隙状态能量不一致"
+                "data_invalid: egnv differs from gap-state energies"
             );
         }
         result.z.push(xs[1 + offset]);
@@ -190,7 +190,7 @@ pub fn parse_native(
     }
     ensure!(
         result.delta_mev.len() == expected,
-        "data_invalid: 原生能隙被截断"
+        "data_invalid: truncated native gap output"
     );
     result.validate()?;
     Ok(result)

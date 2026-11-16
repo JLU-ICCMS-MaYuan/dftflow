@@ -40,7 +40,7 @@ impl SuperconductivityManifest {
         let m: SuperconductivityManifest = store::read(path)?;
         if !matches!(m.schema_version, 1 | 2) {
             anyhow::bail!(
-                "data_invalid: 超导清单 schema_version={} 不支持",
+                "data_invalid: superconductivity manifest schema_version={} unsupported",
                 m.schema_version
             );
         }
@@ -49,7 +49,7 @@ impl SuperconductivityManifest {
                 "iso" => vec!["iso"],
                 "aniso" => vec!["aniso"],
                 "both" => vec!["aniso", "iso"],
-                _ => anyhow::bail!("data_invalid: 未知原生求解模式"),
+                _ => anyhow::bail!("data_invalid: unknown native solver mode"),
             };
             anyhow::ensure!(
                 m.native_modes
@@ -57,14 +57,14 @@ impl SuperconductivityManifest {
                     .map(String::as_str)
                     .collect::<Vec<_>>()
                     == expected,
-                "data_invalid: 原生交付的所选模式不完整"
+                "data_invalid: selected modes incomplete in native delivery"
             );
             for a in &m.artifacts {
                 a.verify()?;
             }
             anyhow::ensure!(
                 !m.native_modes.is_empty() && m.tc.is_none(),
-                "data_invalid: 原生交付必须按模式保存区间，不能压为旧 Tc 标量"
+                "data_invalid: native delivery must retain per-mode intervals; a legacy scalar Tc is insufficient"
             );
             for (mode, result) in &m.native_modes {
                 super::verify::mode(result, &m.interpolation_digest)?;
@@ -75,7 +75,7 @@ impl SuperconductivityManifest {
                             ("iso", crate::foundation::config::Mode::Iso)
                                 | ("aniso", crate::foundation::config::Mode::Aniso)
                         ),
-                    "data_invalid: 原生模式身份不符"
+                    "data_invalid: native mode identity mismatch"
                 );
                 for a in &result.attempts {
                     if let Some(record) = &a.record {
@@ -97,7 +97,7 @@ impl SuperconductivityManifest {
                             .values()
                             .all(|r| r.search.status == "located")
                     && (!m.validation.all_passed() || complete),
-                "data_invalid: 阶段状态与分模式证据冲突"
+                "data_invalid: stage status conflicts with per-mode evidence"
             );
         }
         Ok(m)

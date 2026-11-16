@@ -45,7 +45,7 @@ struct Completion {
 impl Completion {
     fn verify(&self) -> Result<()> {
         self.manifest.verify()?;
-        ensure!(!self.artifacts.is_empty(), "data_invalid: 阶段证据为空");
+        ensure!(!self.artifacts.is_empty(), "data_invalid: The evidence at the stage is empty");
         for a in &self.artifacts {
             a.verify()?;
         }
@@ -82,7 +82,7 @@ fn load(work: &Path) -> Result<Record> {
     let r: Record = store::read(&record_path(work))?;
     ensure!(
         r.schema_version == 1,
-        "unsupported_version: 工作流记录版本不受支持"
+        "unsupported_version: Workstream version not supported"
     );
     Ok(r)
 }
@@ -102,7 +102,7 @@ fn fixed(work: &Path) -> Result<(Config, RunBinding)> {
 }
 fn job_id() -> Result<u64> {
     let value =
-        std::env::var("SLURM_JOB_ID").context("allocation: run 需要计算资源内的 SLURM_JOB_ID")?;
+        std::env::var("SLURM_JOB_ID").context("allocation: run Within resources to be calculated SLURM_JOB_ID")?;
     Ok(slurm::parse_job_id(&value)?.job_id)
 }
 fn new_record(
@@ -145,33 +145,33 @@ fn previous(
     }
     match r.state.as_str() {
         "submission_pending" | "unknown" => bail!(
-            "scheduler_unknown: 尝试 {} 的提交未确认，保留预留，禁止重提",
+            "scheduler_unknown: Try {} No confirmation of submission, reservation reservation, prohibition of resubmission",
             r.attempt_id
         ),
         "submitted" | "running" => {
             ensure!(
                 until == r.until,
-                "input_conflict: 活动作业的 --until 不可更改"
+                "input_conflict: Active --until Unchangeable"
             );
-            let a = slurm::accounting(r.job_id.context("scheduler_unknown: 缺作业号")?)?;
+            let a = slurm::accounting(r.job_id.context("scheduler_unknown: Synchronising folder")?)?;
             ensure!(
                 !a.terminal,
-                "execution_failed: 作业已结束，请 status --refresh 后显式 resume"
+                "execution_failed: The operation is over, please status --refresh Post Rear resume"
             );
             return Ok((Some(r), BTreeMap::new()));
         }
         "succeeded" if r.until >= until => return Ok((Some(r), BTreeMap::new())),
-        "succeeded" => ensure!(retry, "execution_failed: 扩展执行边界请使用 resume"),
+        "succeeded" => ensure!(retry, "execution_failed: Expand Implementation Borders resume"),
         "failed" => ensure!(
             retry,
-            "execution_failed: 之前尝试失败，请用 resume 显式重试"
+            "execution_failed: Previous attempt failed. Please use resume Highlight Retry"
         ),
-        _ => bail!("data_invalid: 工作流状态无效 {}", r.state),
+        _ => bail!("data_invalid: Workflow status invalid {}", r.state),
     }
     if let Some(job) = r.job_id {
         ensure!(
             slurm::accounting(job)?.terminal,
-            "scheduler_unknown: 之前分配仍活动，禁止重试"
+            "scheduler_unknown: Previously assigned to activity, no retrying"
         );
     }
     store::write(
@@ -196,18 +196,18 @@ fn require_phase(work: &Path, until: Boundary, retry: bool) -> Result<()> {
         Boundary::QeData => None,
         Boundary::Interpolation => Some("qe-data"),
         Boundary::All => Some("wannier"),
-        _ => bail!("input_conflict: 三程序阶段边界无效"),
+        _ => bail!("input_conflict: Invalidity of the three-procedure boundary"),
     };
     if let Some(name) = prerequisite {
-        let r = load(work).context("required: 前一个程序尚未交付有效完成记录")?;
-        let done = r.completed.get(name).context("required: 前置阶段未完成，请先运行对应程序")?;
+        let r = load(work).context("required: The previous procedure had not been delivered for effective completion of the record")?;
+        let done = r.completed.get(name).context("required: The pre-phase is not completed, please run the corresponding application first")?;
         done.verify()?;
         verify_stage(name, &done.manifest.path, &cfg, &binding)?;
     }
     if record_path(work).exists() {
         let r = load(work)?;
-        ensure!(retry || r.state != "failed", "execution_failed: 上次失败，请显式 --resume");
-        ensure!(r.until <= until, "input_conflict: 禁止退回已经推进的阶段");
+        ensure!(retry || r.state != "failed", "execution_failed: Last failure, show off --resume");
+        ensure!(r.until <= until, "input_conflict: Prohibition of return to advanced stages");
     }
     Ok(())
 }
@@ -230,7 +230,7 @@ pub fn resume_phase_with_mpi(work: &Path, until: Boundary, submit: bool, resourc
 }
 
 pub fn execute_phase(work: &Path, attempt: &str, until: Boundary) -> Result<()> {
-    ensure!(load(work)?.until == until, "input_conflict: 工作程序与记录阶段不同");
+    ensure!(load(work)?.until == until, "input_conflict: Work processes differ from the recording stage");
     execute(work, attempt)
 }
 
@@ -247,7 +247,7 @@ struct Generated {
 pub(super) fn source_environment(path: &Path) -> Result<String> {
     Ok(format!(
         "source {} --force || exit $?\n",
-        slurm::shell_quote(path.to_str().context("环境脚本不是 UTF-8")?)
+        slurm::shell_quote(path.to_str().context("Environmental scripts are not UTF-8")?)
     ))
 }
 
@@ -267,14 +267,14 @@ pub(super) fn generate_phase_for(config: &Path, until: Boundary, executable_path
     let _lock = store::Lock::acquire(&target)?;
     if target.exists() {
         let g: Generated = store::read(&target)?;
-        ensure!(g.schema_version == 1 && g.until == until && g.executable.path == executable_path, "input_conflict: 已生成脚本身份不同");
+        ensure!(g.schema_version == 1 && g.until == until && g.executable.path == executable_path, "input_conflict: Created a different script identity");
         g.executable.verify()?;
         g.script.verify()?;
         return Ok(g.script.path);
     }
     let executable = store::Identity::capture(executable_path)?;
     let path = target.with_extension("sh");
-    ensure!(!path.exists(), "input_conflict: 已有未登记脚本，保留现场");
+    ensure!(!path.exists(), "input_conflict: Unregistered script, on-site");
     let quote = slurm::shell_quote;
     let mut body = slurm::script_header(&cfg, path.parent().unwrap(), &format!("epw-{}", until.name()), &format!("{}.%j.out", until.name()), &format!("{}.%j.err", until.name()));
     body.push_str(&format!("export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\ncd {} || exit $?\n", quote(&b.work_dir.to_string_lossy())));
@@ -290,13 +290,13 @@ pub(super) fn generate_phase_for(config: &Path, until: Boundary, executable_path
 pub fn run_generated(work: &Path, until: Boundary) -> Result<()> {
     let (cfg, b) = fixed(work)?;
     let g: Generated = store::read(&generated_path(&b.work_dir, until))?;
-    ensure!(g.schema_version == 1 && g.until == until && g.executable.path == std::env::current_exe()?, "input_conflict: 生成脚本身份不同");
+    ensure!(g.schema_version == 1 && g.until == until && g.executable.path == std::env::current_exe()?, "input_conflict: Generate Script Identity Different");
     g.executable.verify()?;
     g.script.verify()?;
     require_phase(&b.work_dir, until, false)?;
     let job = job_id()?;
     let a = slurm::running_allocation(job)?;
-    ensure!(!a.terminal && a.state == "RUNNING", "allocation: 当前分配未运行");
+    ensure!(!a.terminal && a.state == "RUNNING", "allocation: Current distribution is not running");
     budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
         budget::reconcile(ledger)?;
         budget::register_generated(ledger, job).map(|_| ())
@@ -311,7 +311,7 @@ pub fn resume(work: &Path, until: Option<Boundary>, submit: bool, resource: bool
 fn resume_with_mpi(work: &Path, until: Option<Boundary>, submit: bool, resource: bool, mpi: Option<u32>) -> Result<()> {
     ensure!(
         submit != resource,
-        "required: resume 必须且只能选择 -s 或 -r"
+        "required: resume There's got to be and only a choice -s or -r"
     );
     let (cfg, b) = fixed(work)?;
     let boundary = until.unwrap_or(if record_path(&b.work_dir).exists() {
@@ -351,10 +351,10 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
     let (mut cfg, b) = fixed(work)?;
     if let Some(mpi) = mpi {
         ensure!(retry && until == Boundary::Interpolation,
-            "input_conflict: --mpi 仅用于失败 Wannier/粗网格阶段的显式恢复");
+            "input_conflict: --mpi For failure only Wannier/Visible resumption of the coarse grid phase");
         let prior = load(work)?;
         ensure!(prior.state == "failed" && !prior.completed.contains_key("wannier"),
-            "input_conflict: 活动或已交付粗网格的运行不能改变并行布局");
+            "input_conflict: The running of active or delivered coarse grid cannot change the parallel layout");
         super::parallelism::apply(&mut cfg, mpi)?;
     }
     let direct_job = if submit { None } else { Some(job_id()?) };
@@ -364,7 +364,7 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
         if mpi.is_some() {
             let prior = load(work)?;
             ensure!(prior.state == "failed" && !prior.completed.contains_key("wannier"),
-                "input_conflict: 运行已推进，不能改变并行布局");
+                "input_conflict: Running advanced, cannot change the parallel layout");
         }
         let calculation_dir = if retry && record_path(work).exists() {
             let previous = load(work)?;
@@ -420,7 +420,7 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
         body.push_str("export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1\nulimit -s unlimited\n");
         body.push_str(&format!(
             "cd {} || exit $?\n",
-            quote(work.to_str().context("工作目录不是 UTF-8")?)
+            quote(work.to_str().context("_Other Organiser UTF-8")?)
         ));
         if let Some(env) = &cfg.programs.environment_script {
             body.push_str(&source_environment(env)?);
@@ -432,7 +432,7 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
                     .executable
                     .path
                     .to_str()
-                    .context("程序路径不是 UTF-8")?
+                    .context("Program path is not UTF-8")?
             ),
             quote(&record.attempt_id),
             quote(work.to_str().unwrap())
@@ -446,12 +446,12 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
             .arg(&script)
             .current_dir(work)
             .output()
-            .context("scheduler_unknown: 无法调用 sbatch；先核对提交尝试")?;
+            .context("scheduler_unknown: Unable to call sbatch ;Check submission attempts first")?;
         store::atomic_bytes(&script.with_extension("stdout"), &output.stdout)?;
         store::atomic_bytes(&script.with_extension("stderr"), &output.stderr)?;
         ensure!(
             output.status.success(),
-            "scheduler_unknown: sbatch 退出 {:?}: {}",
+            "scheduler_unknown: sbatch Exit {:?}: {}",
             output.status.code(),
             String::from_utf8_lossy(&output.stderr)
         );
@@ -464,11 +464,11 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
                 let mut current = load(work)?;
                 ensure!(
                     current.attempt_id == record.attempt_id,
-                    "input_conflict: 提交尝试已改变"
+                    "input_conflict: Submission attempt changed"
                 );
                 ensure!(
                     current.job_id.is_none_or(|id| id == job.job_id),
-                    "scheduler_unknown: 作业回执与计算节点身份不一致"
+                    "scheduler_unknown: This is not consistent with the count node identity"
                 );
                 budget::attach_once(ledger, &current.reservation, job.job_id)?;
                 current.job_id = Some(job.job_id);
@@ -508,7 +508,7 @@ fn files(path: &Path, identities: &mut Vec<store::Identity>) -> Result<()> {
         let id = store::Identity::capture(path)?;
         ensure!(
             id.bytes > 0,
-            "data_invalid: 必需产物为空 {}",
+            "data_invalid: The necessary product is empty {}",
             path.display()
         );
         identities.push(id);
@@ -531,48 +531,48 @@ fn verify_stage(
                 m.validation.all_passed()
                     && m.run_id == binding.run_id
                     && m.fingerprints.structure_sha256 == binding.structure.sha256,
-                "data_invalid: QE 清单未通过或来源不匹配"
+                "data_invalid: QE manifest not passed or source not matched"
             );
             for (el, id) in &binding.pseudos {
                 ensure!(
                     m.fingerprints.pseudo_sha256.get(el) == Some(&id.sha256),
-                    "input_conflict: QE 赝势来源不匹配"
+                    "input_conflict: QE The source doesn't match"
                 );
             }
-            let scf = m.scf.context("data_invalid: 缺少 SCF 数据")?;
+            let scf = m.scf.context("data_invalid: Missing SCF Data")?;
             ensure!(
                 scf.total_energy_ry.is_finite() && scf.success_count == 1,
-                "data_invalid: SCF 记录无效"
+                "data_invalid: SCF Record invalid"
             );
             files(&scf.snapshot_dir, &mut artifacts)?;
-            let s = m.states.context("data_invalid: 缺少 NSCF 数据")?;
+            let s = m.states.context("data_invalid: Missing NSCF Data")?;
             let count: usize = cfg.qe.nscf.k_grid.iter().map(|&n| n as usize).product();
             ensure!(
                 s.k_grid == cfg.qe.nscf.k_grid
                     && s.kpoints.len() == count
                     && s.nbnd == cfg.qe.nscf.nbnd as usize,
-                "data_invalid: 实际 NSCF 网格/带数不完整"
+                "data_invalid: Actual NSCF Grid/band incomplete"
             );
             files(&s.wavefunctions, &mut artifacts)?;
             ensure!(
                 !m.qpoints.is_empty() && m.qpoints.len() == m.phonon_files.len(),
-                "data_invalid: PH/q 映射不完整"
+                "data_invalid: PH/q Map incomplete"
             );
             for r in m.phonon_files {
                 for p in [
                     &r.dyn_file,
                     &r.patterns,
                     &r.control_metadata,
-                    r.dvscf.as_ref().context("data_invalid: 缺响应势")?,
+                    r.dvscf.as_ref().context("data_invalid: Lack of response")?,
                 ] {
                     files(p, &mut artifacts)?;
                 }
             }
         }
         "wannier" => {
-            let stage_work = manifest.parent().and_then(Path::parent).context("清单路径")?;
+            let stage_work = manifest.parent().and_then(Path::parent).context("Manifest path")?;
             let m = crate::interpolation::scheduler::verify_coarse(cfg, stage_work)?;
-            ensure!(m.run_id == binding.run_id, "input_conflict: 粗网格运行身份冲突");
+            ensure!(m.run_id == binding.run_id, "input_conflict: coarse Grid Runs Identity Conflict");
             for a in m.coarse.unwrap().artifacts {
                 files(&stage_work.join(a.relative_path), &mut artifacts)?;
             }
@@ -582,13 +582,13 @@ fn verify_stage(
             ensure!(
                 m.validation.all_passed()
                     && !m.spectra.is_empty(),
-                "data_invalid: 插值原生数据尚未通过"
+                "data_invalid: Plugin native data not yet passed"
             );
             // 清单本身不足以证明可重读，沿用专门适配器的校验。
-            let stage_work = manifest.parent().and_then(Path::parent).context("清单路径")?;
+            let stage_work = manifest.parent().and_then(Path::parent).context("Manifest path")?;
             crate::superconductivity::source::bind(stage_work, cfg, &m)?;
-            let coarse = m.coarse.context("data_invalid: 缺少粗网格数据")?;
-            let fine = m.fine.context("data_invalid: 缺少细网格数据")?;
+            let coarse = m.coarse.context("data_invalid: Missing coarse grid data")?;
+            let fine = m.fine.context("data_invalid: Missing fine grid data")?;
             for a in coarse.artifacts.iter().chain(fine.artifacts.iter()) {
                 let p = if a.relative_path.is_absolute() {
                     a.relative_path.clone()
@@ -596,13 +596,13 @@ fn verify_stage(
                     manifest
                         .parent()
                         .and_then(Path::parent)
-                        .context("清单路径")?
+                        .context("Manifest path")?
                         .join(&a.relative_path)
                 };
                 if qf_io::qe_payload::unchecked(&p) { continue; }
                 ensure!(
                     store::hash_file(&p)? == a.sha256,
-                    "input_conflict: 插值产物哈希不匹配"
+                    "input_conflict: The interpolation product Hash doesn't match"
                 );
                 files(&p, &mut artifacts)?;
             }
@@ -611,28 +611,28 @@ fn verify_stage(
             let work = manifest
                 .parent()
                 .and_then(Path::parent)
-                .context("清单路径")?;
+                .context("Manifest path")?;
             artifacts = crate::superconductivity::verify::complete(work, cfg, &binding.run_id)?;
         }
         "results" => {
-            let root = manifest.parent().context("结果根目录")?;
+            let root = manifest.parent().context("Results root")?;
             ensure!(
                 crate::delivery::check_results(root)?["workflow_complete"] == true,
-                "data_invalid: 交付未完成"
+                "data_invalid: Delivery not completed"
             );
             let (m, _) = crate::delivery::native::load(root)?;
             ensure!(
                 m.run_id == binding.run_id,
-                "input_conflict: 结果运行身份冲突"
+                "input_conflict: Resulting in identity conflict"
             );
             for file in &m.files {
                 artifacts.push(store::Identity::capture(&file.verify(root)?)?);
             }
             files(&root.join("figures"), &mut artifacts)?;
         }
-        _ => bail!("data_invalid: 未知阶段 {name}"),
+        _ => bail!("data_invalid: Unknown stage {name}"),
     }
-    ensure!(!artifacts.is_empty(), "data_invalid: 缺少阶段证据");
+    ensure!(!artifacts.is_empty(), "data_invalid: Lack of stage evidence");
     Ok(Completion {
         manifest: store::Identity::capture(manifest)?,
         artifacts,
@@ -649,7 +649,7 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
         ensure!(
             r.attempt_id == attempt
                 && matches!(r.state.as_str(), "submission_pending" | "submitted"),
-            "input_conflict: 尝试不匹配或已经启动"
+            "input_conflict: Try not to match or have started"
         );
         r.executable.verify()?;
         if let Some(s) = &r.script {
@@ -657,14 +657,14 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
         }
         ensure!(
             r.job_id.is_none_or(|id| id == job),
-            "allocation: 不是已登记的作业"
+            "allocation: Not a registered job"
         );
         budget::attach_once(ledger, &r.reservation, job)?;
         budget::registered_allocation(ledger, job)?;
         let a = slurm::running_allocation(job)?;
         ensure!(
             !a.terminal && a.state == "RUNNING",
-            "allocation: 当前分配未运行"
+            "allocation: Current distribution is not running"
         );
         r.job_id = Some(job);
         r.state = "running".into();
@@ -677,7 +677,7 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
         .unwrap_or_else(|| work.join("calculations").join(attempt));
     ensure!(
         calculation.starts_with(work.join("calculations")),
-        "data_invalid: 科学目录逃逸"
+        "data_invalid: Scientific catalogue escapes"
     );
     fs::create_dir_all(&calculation)?;
     let result = (|| -> Result<()> {
@@ -700,7 +700,7 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
                 done.verify()?;
                 ensure!(
                     manifest == done.manifest.path,
-                    "input_conflict: 恢复阶段目录改变"
+                    "input_conflict: Recover phase directory changes"
                 );
                 verify_stage(name, &manifest, &cfg, &binding)?;
                 continue;
@@ -799,7 +799,7 @@ pub fn status(work: &Path, refresh: bool) -> Result<serde_json::Value> {
                 if a.terminal && matches!(r.state.as_str(), "submitted" | "running") {
                     r.state = "failed".into();
                     r.error = Some(format!(
-                        "execution_failed: Slurm {}，缺少经过数值验证的阶段完成记录",
+                        "execution_failed: Slurm {},Lack of numerically validated stage completion records",
                         a.state
                     ));
                     save(work, &r)?;

@@ -9,6 +9,7 @@ use super::super::foundation::status;
 #[derive(Subcommand)]
 pub enum DeliveryCommand {
     /// 收集各阶段交付到 results/manifest.json。
+    #[command(about = "Collect stage deliveries into results/manifest.json", long_about = "Collect stage deliveries into results/manifest.json")]
     Collect {
         #[arg(short = 'w', long)]
         work: PathBuf,
@@ -16,6 +17,7 @@ pub enum DeliveryCommand {
         json: bool,
     },
     /// 读取 results/manifest.json 并核验六组合覆盖（FR-002/004）。
+    #[command(about = "Read results/manifest.json and verify coverage of all six combinations", long_about = "Read results/manifest.json and verify coverage of all six combinations")]
     Results {
         #[arg(short = 'w', long)]
         work: PathBuf,
@@ -23,6 +25,7 @@ pub enum DeliveryCommand {
         json: bool,
     },
     /// 读取配置并打印统一预算账本摘要（FR-005）。
+    #[command(about = "Read configuration and print the shared budget-ledger summary", long_about = "Read configuration and print the shared budget-ledger summary")]
     Budget {
         #[arg(long)]
         config: PathBuf,
@@ -50,7 +53,7 @@ fn results(work: &PathBuf, json: bool) -> Result<()> {
     if path.exists() && crate::foundation::store::read::<serde_json::Value>(&path)?["kind"] == "epwflow-native-results" {
         return print_native(&crate::foundation::layout::path(work,"results"), json);
     }
-    let b = ResultsBundle::load(&path).with_context(|| format!("data_invalid: 无法加载 {}", path.display()))?;
+    let b = ResultsBundle::load(&path).with_context(|| format!("data_invalid: Cannot Load {}", path.display()))?;
     print_bundle(&b, json);
     Ok(())
 }

@@ -12,14 +12,14 @@ pub fn numbers(line: &str) -> Result<Vec<f64>> {
                 static OMITTED_E: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
                 let pattern = OMITTED_E.get_or_init(|| regex::Regex::new(
                     r"^([+-]?(?:[0-9]+\.[0-9]*|\.[0-9]+))([+-][0-9]{3})$"
-                ).expect("固定 Fortran 指数表达式有效"));
+                ).expect("Fixed Fortran exponent expression"));
                 match pattern.captures(&normalized) {
                     Some(parts) => format!("{}E{}", &parts[1], &parts[2]).parse::<f64>(),
                     None => Err(error),
                 }
             })
-                .with_context(|| format!("data_invalid: 原生数值无效 {s}"))?;
-            ensure!(v.is_finite(), "data_invalid: 原生输出含非有限数");
+                .with_context(|| format!("data_invalid: invalid native number {s}"))?;
+            ensure!(v.is_finite(), "data_invalid: Native output is not finite");
             Ok(v)
         })
         .collect()
@@ -58,7 +58,7 @@ pub(crate) fn solve_segment(log: &str, request: &super::attempt::Request) -> Res
     };
     ensure!(
         log.lines().filter(|l| l.trim() == start).count() == 1,
-        "data_invalid: 缺失或重复目标求解段"
+        "data_invalid: target solver section missing or duplicated"
     );
     ensure!(
         log.matches("Solve isotropic Eliashberg equations on imaginary-axis")
@@ -68,7 +68,7 @@ pub(crate) fn solve_segment(log: &str, request: &super::attempt::Request) -> Res
                 .count()
             + log.matches("Start: Solving (isotropic) linearized").count()
             == 1,
-        "data_invalid: 多模式/多次求解日志"
+        "data_invalid: multiple modes/solver runs in one log"
     );
     let freq = regex::Regex::new(
         r"(?m)^\s*Total number of frequency points nsiw\(\s*1\)\s*=\s*(\d+)(?: for uniform\s+sampling)?\s*$",
@@ -81,7 +81,7 @@ pub(crate) fn solve_segment(log: &str, request: &super::attempt::Request) -> Res
     let nf = request.nfreq()?;
     ensure!(
         !counts.is_empty() && counts.len() <= 2 && counts.iter().all(|n| *n == nf),
-        "data_invalid: 原生频率数与固定截断不同"
+        "data_invalid: native frequency count differs from the fixed cutoff"
     );
     let temp = if linear {
         regex::Regex::new(r"(?m)^\s*For the first Temp\.\s+([0-9.]+)\s+K\s*$")?
@@ -93,7 +93,7 @@ pub(crate) fn solve_segment(log: &str, request: &super::attempt::Request) -> Res
         ts.len() == 1
             && (ts[0][1].parse::<f64>()? * 100.0 - request.temperature_centikelvin as f64).abs()
                 < 1e-5,
-        "data_invalid: 求解实际温度不符"
+        "data_invalid: actual solver temperature mismatch"
     );
     let mut result = SolveEvidence {
         temperature_centikelvin: request.temperature_centikelvin,
@@ -106,7 +106,7 @@ pub(crate) fn solve_segment(log: &str, request: &super::attempt::Request) -> Res
         let finish = "Finish: Solving (isotropic) linearized Eliashberg equation";
         ensure!(
             log.matches(finish).count() == 1,
-            "data_invalid: 线性 LAPACK 未完成"
+            "data_invalid: linear LAPACK solve incomplete"
         );
         let block = log
             .split_once(&start)
@@ -123,7 +123,7 @@ pub(crate) fn solve_segment(log: &str, request: &super::attempt::Request) -> Res
             })
             .map(numbers)
             .collect::<Result<Vec<_>>>()?;
-        ensure!(rows.len() == 1, "data_invalid: 线性本征值行缺失或多温度");
+        ensure!(rows.len() == 1, "data_invalid: linear eigenvalue row missing or contains multiple temperatures");
         let row = &rows[0];
         let wcut = (2 * nf + 1) as f64
             * std::f64::consts::PI
@@ -134,24 +134,24 @@ pub(crate) fn solve_segment(log: &str, request: &super::attempt::Request) -> Res
             (row[0] * 100.0 - request.temperature_centikelvin as f64).abs() < 1e-6
                 && row[2] == nf as f64
                 && (row[3] - wcut).abs() <= 5.1e-5,
-            "data_invalid: 线性温度/频率表冲突"
+            "data_invalid: inconsistent linear temperature/frequency table"
         );
         // EPW 的直接 LAPACK 路径 numiter=1，不是非线性迭代次数。
-        ensure!(row[4] == 1.0, "data_invalid: 非预期 LAPACK 求解记录");
+        ensure!(row[4] == 1.0, "data_invalid: unexpected LAPACK solve record");
         result.maximum_eigenvalue = Some(row[1]);
     } else {
         ensure!(
             !log.contains("Convergence was not reached"),
-            "solver_failed: 原生非线性未收敛"
+            "solver_failed: native nonlinear solver did not converge"
         );
         let reached =
             regex::Regex::new(r"(?m)^\s*Convergence was reached in nsiter =\s*(\d+)\s*$")?;
         let cs = reached.captures_iter(log).collect::<Vec<_>>();
-        ensure!(cs.len() == 1, "solver_failed: 缺少明确收敛证据");
+        ensure!(cs.len() == 1, "solver_failed: explicit convergence evidence missing");
         let iter = cs[0][1].parse::<u32>()?;
         ensure!(
             iter > 0 && iter <= request.max_iterations,
-            "solver_failed: 原生迭代次数无效"
+            "solver_failed: invalid native iteration count"
         );
         let block = log
             .split_once(&start)
@@ -162,7 +162,7 @@ pub(crate) fn solve_segment(log: &str, request: &super::attempt::Request) -> Res
             .0;
         let after_header = block
             .split_once("deltai [meV]")
-            .context("data_invalid: 缺少 FSR 迭代表头")?
+            .context("data_invalid: FSR iteration header missing")?
             .1;
         let mut last = None;
         for line in after_header.lines() {
@@ -171,15 +171,15 @@ pub(crate) fn solve_segment(log: &str, request: &super::attempt::Request) -> Res
                 let row = numbers(line)?;
                 ensure!(
                     row.len() == 4 && row[0] == last.map_or(1.0, |(n, _): (f64, f64)| n + 1.0),
-                    "data_invalid: 原生迭代缺失/重复/列冲突"
+                    "data_invalid: native iterations missing, duplicated or columns inconsistent"
                 );
                 last = Some((row[0], row[1]));
             }
         }
-        let (n, residual) = last.context("data_invalid: 缺少原生相对残差")?;
+        let (n, residual) = last.context("data_invalid: native relative residual missing")?;
         ensure!(
             n == iter as f64 && residual >= 0.0 && residual < request.convergence_relative,
-            "solver_failed: 最终相对残差不满足固定阈值"
+            "solver_failed: final relative residual does not satisfy the fixed threshold"
         );
         result.iterations = Some(iter);
         result.relative_residual = Some(residual);
@@ -205,15 +205,15 @@ pub fn parse_spectrum(
 ) -> Result<Spectrum> {
     let freq_cm1 = fine::read_f64_col(frequency_cm1_path).with_context(|| {
         format!(
-            "data_invalid: 无法读取频率 {}",
+            "data_invalid: cannot read frequency {}",
             frequency_cm1_path.display()
         )
     })?;
     let a2f = fine::read_f64_col(a2f_mev_path)
-        .with_context(|| format!("data_invalid: 无法读取 α²F {}", a2f_mev_path.display()))?;
+        .with_context(|| format!("data_invalid: cannot read alpha-squared F {}", a2f_mev_path.display()))?;
     ensure!(
         freq_cm1.len() == a2f.len() && !freq_cm1.is_empty(),
-        "data_invalid: 频率与 α²F 长度不一致"
+        "data_invalid: Frequency and α² F Inconsistent length"
     );
     let cm1_to_mev = 0.123984;
     let frequencies_mev: Vec<f64> = freq_cm1.iter().map(|w| *w * cm1_to_mev).collect();
@@ -241,7 +241,7 @@ pub fn compute_lambda(frequencies_mev: &[f64], a2f: &[f64], cutoff_mev: f64) -> 
         lambda += contrib;
         lognum += contrib * w.ln();
     }
-    ensure!(lambda > 0.0, "data_invalid: 有效耦合 λ 非正");
+    ensure!(lambda > 0.0, "data_invalid: effective coupling lambda is not positive");
     let omega_log_mev = (lognum / lambda).exp();
     let k2mev = 0.086173_f64;
     Ok(Spectrum {

@@ -50,7 +50,7 @@ impl Statistics {
         epw: (usize, f64),
     ) -> Result<()> {
         let difference = (qe.1 - epw.1).abs();
-        ensure!(difference.is_finite(), "data_invalid: 差值计算溢出");
+        ensure!(difference.is_finite(), "data_invalid: The margin calculation overspent");
         self.paired_states += 1;
         if self
             .maximum
@@ -74,7 +74,7 @@ impl Statistics {
     pub fn validate(&self) -> Result<()> {
         ensure!(
             (self.paired_states == 0) == self.maximum.is_none(),
-            "data_invalid: 最大差值与配对数量不符"
+            "data_invalid: Maximum margin does not match the number of pairs"
         );
         if let Some(m) = &self.maximum {
             ensure!(
@@ -88,7 +88,7 @@ impl Statistics {
                         .all(|v| v.is_finite())
                     && m.absolute_difference >= 0.0
                     && ((m.qe_value - m.epw_value).abs() - m.absolute_difference).abs() < 1e-8,
-                "data_invalid: 最大差值或位置无效"
+                "data_invalid: Maximum margin or position invalid"
             );
         }
         Ok(())
@@ -123,7 +123,7 @@ impl Differences {
                     } else {
                         "cm-1"
                     },
-                "data_invalid: 差值单位无效"
+                "data_invalid: The unit of margin is invalid"
             );
             stats.validate()?;
         }
@@ -138,7 +138,7 @@ impl Differences {
                     m.epw_index, m.epw_value, s.paired_states, s.unmatched_qe_states, s.unmatched_epw_states);
             } else {
                 println!(
-                    "{name}: 无可配对数据; paired=0 unmatched_qe={} unmatched_epw={}",
+                    "{name}: No matching data; paired=0 unmatched_qe={} unmatched_epw={}",
                     s.unmatched_qe_states, s.unmatched_epw_states
                 );
             }
@@ -167,12 +167,12 @@ fn pairs(qe: &[(usize, f64)], epw: &[(usize, f64)]) -> Result<Vec<(usize, usize)
     }
     ensure!(
         cost[small.len()][large.len()].is_finite(),
-        "data_invalid: 能量配对计算溢出"
+        "data_invalid: The energy pair calculates the spill"
     );
     let (mut a, mut b) = (small.len(), large.len());
     let mut out = Vec::with_capacity(a);
     while a > 0 {
-        ensure!(b > 0, "data_invalid: 能量配对不完整");
+        ensure!(b > 0, "data_invalid: Power pairs are incomplete");
         if take[a][b] {
             out.push(if swapped {
                 (b - 1, a - 1)
@@ -199,7 +199,7 @@ fn check_points(
             && distance.is_none_or(|d| d.len() == points.len() && d.iter().all(|v| v.is_finite()))
             && points.iter().flatten().all(|v| v.is_finite())
             && qe.iter().chain(epw).flatten().all(|v| v.is_finite()),
-        "data_invalid: 比较点数、坐标或数值无效"
+        "data_invalid: Invalid comparison of points, coordinates or values"
     );
     Ok(())
 }
@@ -215,7 +215,7 @@ pub fn electronic(
     check_points(points, distance, qe, epw)?;
     ensure!(
         fermi.is_finite() && window.iter().all(|v| v.is_finite()) && window[0] < window[1],
-        "data_invalid: 比较能窗或能量零点无效"
+        "data_invalid: It's more effective with windows or zero power"
     );
     let mut stats = Statistics::new("eV", points.len());
     for i in 0..points.len() {
@@ -223,7 +223,7 @@ pub fn electronic(
             let mut selected = Vec::new();
             for (index, e) in row.iter().enumerate() {
                 let relative = e - fermi;
-                ensure!(relative.is_finite(), "data_invalid: 能量零点换算溢出");
+                ensure!(relative.is_finite(), "data_invalid: Energy zero points converted into spills");
                 if window[0] <= relative && relative <= window[1] {
                     selected.push((index + 1, relative));
                 }
@@ -251,18 +251,18 @@ pub fn phonon(
     modes: usize,
 ) -> Result<Statistics> {
     check_points(points, distance, qe, epw_mev)?;
-    ensure!(modes > 0 && modes % 3 == 0, "data_invalid: 声子模式数无效");
+    ensure!(modes > 0 && modes % 3 == 0, "data_invalid: The number of sonics is invalid");
     let mut stats = Statistics::new("cm-1", points.len());
     for i in 0..points.len() {
         ensure!(
             qe[i].len() == modes && epw_mev[i].len() == modes,
-            "data_invalid: 缺少 3N 声子模式"
+            "data_invalid: Missing 3N Sound sub-module"
         );
         let mut r = qe[i].clone();
         let mut c: Vec<_> = epw_mev[i].iter().map(|v| v * MEV_CM1).collect();
         ensure!(
             c.iter().all(|v| v.is_finite()),
-            "data_invalid: 声子单位换算溢出"
+            "data_invalid: Voice subunit conversion spills"
         );
         r.sort_by(f64::total_cmp);
         c.sort_by(f64::total_cmp);

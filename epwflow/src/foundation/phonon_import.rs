@@ -35,7 +35,7 @@ pub fn bound(cfg: &Config) -> bool {
     binding(cfg).is_file()
         || super::readable_state::read(&cfg.work_dir, Step::Phonon)
             .ok()
-            .is_some_and(|d| d.get("工作区", "外部声子来源").is_some())
+            .is_some_and(|d| d.get("Workspace", "External phonon source").is_some())
 }
 
 fn load_config(path: &Path) -> Result<(Config, bool)> {
@@ -72,7 +72,7 @@ pub fn require_electronic(cfg: &Config) -> Result<()> {
                     ))
                 })
                 .unwrap_or_default();
-            anyhow::bail!("required: 导入需要已完成且可验证的 {}；本路径不会调用 PW/PH，请先单独解决电子数据。参数差异：{}",s.name(),if differences.is_empty(){"未发现配置差异，请检查科学输出".into()}else{differences.join("、")});
+            anyhow::bail!("required: import requires completed and verifiable {}; this path does not call PW/PH; resolve electronic data separately first. Parameter differences: {}",s.name(),if differences.is_empty(){"No configuration differences detected; inspect scientific output".into()}else{differences.join("、")});
         }
     }
     qe_data::nscf::verified_states(cfg, &cfg.work_dir)?;
@@ -117,7 +117,7 @@ fn source(root: &Path) -> Result<Source> {
         .collect::<Vec<_>>();
     ensure!(
         names.len() == 1,
-        "data_invalid: save 必须且只能有一个 prefix.phsave/control_ph.xml"
+        "data_invalid: save requires exactly one prefix.phsave/control_ph.xml"
     );
     Ok(Source {
         schema_version: 1,
@@ -143,13 +143,13 @@ fn dyn0(source: &Source, cfg: &Config) -> Result<String> {
     let grid = xml::numbers(xml::text(root, "MESH_DIMENSIONS")?)?;
     ensure!(
         grid == cfg.phonon.q_grid.map(f64::from),
-        "input_conflict: control_ph.xml q 网格与 TOML 不一致"
+        "input_conflict: control_ph.xml q grid differs from TOML"
     );
     let n: usize = xml::text(root, "NUMBER_OF_Q_POINTS")?.trim().parse()?;
     let coords = xml::numbers(xml::text(root, "Q-POINT_COORDINATES")?)?;
     ensure!(
         n > 0 && coords.len() == n * 3,
-        "data_invalid: control q 列表截断"
+        "data_invalid: truncated control q-point list"
     );
     let mut out = format!(
         "{} {} {}\n{n}\n",
@@ -172,7 +172,7 @@ fn dyn_path(s: &Source, n: usize) -> Result<PathBuf> {
         .map(|p| s.root.join(p))
         .filter(|p| p.is_file())
         .collect::<Vec<_>>();
-    ensure!(found.len() == 1, "data_invalid: q{n} 动力学矩阵缺失或重复");
+    ensure!(found.len() == 1, "data_invalid: q{n} dynamical matrix missing or duplicated");
     Ok(found[0].clone())
 }
 fn canonical_dyn(raw: &str, g: &Geometry) -> Result<(String, Vec<[f64; 3]>)> {
@@ -182,19 +182,19 @@ fn canonical_dyn(raw: &str, g: &Geometry) -> Result<(String, Vec<[f64; 3]>)> {
     let doc = roxmltree::Document::parse(raw)?;
     let root = doc.root_element();
     let n: usize = xml::text(root, "NUMBER_OF_Q")?.trim().parse()?;
-    ensure!(n > 0, "data_invalid: 空 q 星");
+    ensure!(n > 0, "data_invalid: empty q-point star");
     let mut qs = vec![];
     for i in 1..=n {
         let mat = root
             .children()
             .find(|v| v.has_tag_name(format!("DYNAMICAL_MAT_.{i}").as_str()))
-            .context("data_invalid: q 星截断")?;
+            .context("data_invalid: truncated q-point star")?;
         qs.push(xml::vector(xml::text(mat, "Q_POINT")?)?);
         for a in 1..=g.atoms.len() {
             for b in 1..=g.atoms.len() {
                 ensure!(
                     xml::numbers(xml::text(mat, &format!("PHI.{a}.{b}"))?)?.len() == 18,
-                    "data_invalid: q 星矩阵截断"
+                    "data_invalid: truncated q-star matrix"
                 );
             }
         }
@@ -203,24 +203,24 @@ fn canonical_dyn(raw: &str, g: &Geometry) -> Result<(String, Vec<[f64; 3]>)> {
         let node = root
             .descendants()
             .find(|v| v.has_tag_name(format!("ATOM.{a}").as_str()))
-            .context("data_invalid: 原子缺失")?;
+            .context("data_invalid: atoms missing")?;
         ensure!(
             node.attribute("SPECIES") == Some(g.atoms[a - 1].0.as_str()),
-            "data_invalid: XML 元素顺序不符"
+            "data_invalid: XML element order mismatch"
         );
     }
     for m in 1..=g.atoms.len() * 3 {
         ensure!(
             xml::numbers(xml::text(root, &format!("DISPLACEMENT.{m}"))?)?.len()
                 == g.atoms.len() * 6,
-            "data_invalid: XML 振型截断"
+            "data_invalid: truncated XML modes"
         );
     }
     Ok((raw.into(), qs))
 }
 
 pub fn command(config: &Path, root: &Path, check: bool, submit: bool, resume: bool) -> Result<()> {
-    ensure!(!resume || submit, "configuration: 导入恢复需要 --resume -s");
+    ensure!(!resume || submit, "configuration: import recovery requires --resume -s");
     let (old, nested) = load_config(config)?;
     let source_path = if root.is_absolute() {
         root.into()
@@ -235,7 +235,7 @@ pub fn command(config: &Path, root: &Path, check: bool, submit: bool, resume: bo
     ] {
         ensure!(
             !source_path.starts_with(&managed) && !managed.starts_with(&source_path),
-            "input_conflict: 声子来源与工作流写入路径重叠 {}",
+            "input_conflict: phonon source overlaps a workflow output path {}",
             managed.display()
         );
     }
@@ -243,7 +243,7 @@ pub fn command(config: &Path, root: &Path, check: bool, submit: bool, resume: bo
     let s = source(&source_path)?;
     ensure!(
         s.prefix == old.qe.prefix,
-        "input_conflict: save prefix 与当前电子数据不符"
+        "input_conflict: save prefix differs from current electronic data"
     );
     let _guard = if check {
         None
@@ -262,7 +262,7 @@ pub fn command(config: &Path, root: &Path, check: bool, submit: bool, resume: bo
         let previous: Source = store::read(&binding(&cfg))?;
         ensure!(
             previous == s,
-            "input_conflict: 导入来源路径或内容改变；保留当前现场，禁止混合声子"
+            "input_conflict: import source path or content changed; current data preserved; mixing phonon sources prohibited"
         );
     }
     let _ = dyn0(&s, &cfg)?;
@@ -280,7 +280,7 @@ pub fn command(config: &Path, root: &Path, check: bool, submit: bool, resume: bo
     super::native_jobs::check_groups(&cfg)?;
     store::write(&binding(&cfg), &s)?;
     super::readable_state::update(&cfg.work_dir, Step::Phonon, |d| {
-        d.set("工作区", "外部声子来源", s.root.display());
+        d.set("Workspace", "External phonon source", s.root.display());
         Ok(())
     })?;
     workspace::prepare_stage(config, Step::Phonon, resume, submit)
@@ -307,10 +307,10 @@ fn inspect(
                 let n: usize = tail
                     .trim_end_matches(".xml")
                     .parse()
-                    .context("data_invalid: 声子文件 q 编号无效")?;
+                    .context("data_invalid: invalid phonon-file q index")?;
                 ensure!(
                     (1..=points.len()).contains(&n),
-                    "data_invalid: 声子文件 q 编号超出 control 列表"
+                    "data_invalid: phonon-file q index exceeds the control list"
                 );
             }
         }
@@ -323,7 +323,7 @@ fn inspect(
     .map(|p| s.root.join(p))
     .filter(|p| p.exists())
     .collect::<Vec<_>>();
-    ensure!(lists.len() <= 1, "data_invalid: 重复 dyn0");
+    ensure!(lists.len() <= 1, "data_invalid: duplicate dyn0");
     if let Some(list) = lists.first() {
         let given = qe_data::qmap::parse_dyn0(list, &g, cfg.phonon.q_grid, false)?;
         ensure!(
@@ -333,7 +333,7 @@ fn inspect(
                     .iter()
                     .zip(b.cartesian)
                     .all(|(x, y)| (x - y).abs() < 1e-8)),
-            "data_invalid: 来源 dyn0 与 control_ph.xml 不符"
+            "data_invalid: source dyn0 differs from control_ph.xml"
         );
     }
     let mut responses = vec![];
@@ -349,7 +349,7 @@ fn inspect(
             .parse()?;
         ensure!(
             ntyp == cfg.pseudos.len(),
-            "data_invalid: dyn 元素种类数不符"
+            "data_invalid: dyn element-type count mismatch"
         );
         for n in 1..=ntyp {
             let element = xml::text(doc.root_element(), &format!("TYPE_NAME.{n}"))?.trim();
@@ -362,7 +362,7 @@ fn inspect(
                 cfg.pseudos.contains_key(element)
                     && mass.len() == 1
                     && (mass[0] - expected).abs() < 1e-5,
-                "input_conflict: dyn 元素/原子质量与当前输入不符"
+                "input_conflict: dyn elements/atomic masses differ from current input"
             );
         }
         for star in stars {
@@ -372,11 +372,11 @@ fn inspect(
                 let v = crystal[i] * cfg.phonon.q_grid[i] as f64;
                 ensure!(
                     (v - v.round()).abs() < 1e-7,
-                    "data_invalid: q 星不属于配置网格"
+                    "data_invalid: q-point star is outside the configured grid"
                 );
                 key[i] = (v.round() as i64).rem_euclid(cfg.phonon.q_grid[i] as i64);
             }
-            ensure!(covered.insert(key), "data_invalid: 重复物理 q 星");
+            ensure!(covered.insert(key), "data_invalid: duplicate physical q-point star");
         }
         let dyn_file = staging.join(format!("{}.dyn_q{}.xml", s.prefix, q.global_index));
         store::atomic_bytes(&dyn_file, canonical.as_bytes())?;
@@ -406,7 +406,7 @@ fn inspect(
                 .iter()
                 .map(|n| *n as usize)
                 .product::<usize>(),
-        "data_invalid: 全部 q 星没有覆盖完整粗网格"
+        "data_invalid: q-point stars do not cover the complete coarse grid"
     );
     qe_data::native_ph::control(&responses[0].control_metadata, &points)?;
     Ok((points, responses))
@@ -417,7 +417,7 @@ pub(crate) fn collect(cfg: &Config, qe: &qe_data::qe_config::QeSettings) -> Resu
     let s: Source = store::read(&binding(cfg))?;
     ensure!(
         s == source(&s.root)?,
-        "input_conflict: 提交后来源内容变化，禁止导入"
+        "input_conflict: source content changed after submission; import prohibited"
     );
     let staging = cfg.work_dir.join("epw-state/imports/canonical");
     let (points, responses) = inspect(cfg, &s, &staging)?;
@@ -469,7 +469,7 @@ pub(crate) fn collect(cfg: &Config, qe: &qe_data::qe_config::QeSettings) -> Resu
             {
                 ensure!(
                     store::hash_file(&target)? == file.sha256,
-                    "input_conflict: phsave 复制损坏"
+                    "input_conflict: phsave copy corrupted"
                 );
                 m.artifacts.push(qe_data::manifest::Artifact {
                     role: format!("external_phsave_{}", file.relative_path.display()),
@@ -485,7 +485,7 @@ pub(crate) fn collect(cfg: &Config, qe: &qe_data::qe_config::QeSettings) -> Resu
     }
     ensure!(
         s == source(&s.root)?,
-        "input_conflict: 导入期间来源集合或内容改变"
+        "input_conflict: source file set or content changed during import"
     );
     let report = cfg.work_dir.join("epw-state/imports/external-source.json");
     store::write(
@@ -510,7 +510,7 @@ pub(crate) fn collect(cfg: &Config, qe: &qe_data::qe_config::QeSettings) -> Resu
 mod tests {
     use super::*;
     #[test]
-    #[ignore = "仅供显式指定旧配置的只读接续诊断"]
+    #[ignore = "Read-only continuous diagnostics for visible only for old configurations"]
     fn historical_electronic_binding_diagnostic() {
         let path = PathBuf::from(std::env::var("EPWFLOW_IMPORT_DIAGNOSTIC").unwrap());
         let cfg = Config::load_nested(&path).unwrap();

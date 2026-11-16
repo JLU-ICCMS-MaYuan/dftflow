@@ -38,7 +38,7 @@ impl A2f {
                 .collect();
             if cols.len() < 2 {
                 anyhow::bail!(
-                    "a2F 行 {} 至少需要 2 列 (freq, a2f[total])，实际: {:?}",
+                    "a2F Okay {} At least 2 Columns (freq, a2f[total ]),Actual: {:?}",
                     lineno + 1,
                     cols
                 );
@@ -53,10 +53,10 @@ impl A2f {
             }
         }
         if freqs.len() < 2 {
-            anyhow::bail!("a2F 至少需要 2 个频率点");
+            anyhow::bail!("a2F At least 2 Frequency points");
         }
         if !(freqs.windows(2).all(|w| w[1] >= w[0])) {
-            anyhow::bail!("a2F 频率必须单调不减");
+            anyhow::bail!("a2F The frequency has to be singled out");
         }
         Ok(A2f {
             freqs,

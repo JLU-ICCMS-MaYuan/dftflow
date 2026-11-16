@@ -53,7 +53,7 @@ fn decay_is_published_before_comparison_failure_and_repairs_without_rerunning_sc
     // 模拟分配被终止后的遗留锁：只恢复原作业，错误所有者必须保留。
     let job = epwflow::foundation::readable_state::jobs(
         &c.root.join("run"), epwflow::foundation::stages::Step::Coarse,
-    ).unwrap()["阶段分配"];
+    ).unwrap()["Stage allocation"];
     let locks = [
         native.join("decay/decay-publication.lock"),
         result.join("stage-publication.lock"),

@@ -13,17 +13,17 @@ pub fn collect(work: &Path) -> Result<ResultsBundle> {
     let f4_path = crate::foundation::layout::path(&work, "superconductivity").join("manifest.json");
 
     let _f2 = if f2_path.exists() {
-        Some(QeManifest::load(&f2_path).context("data_invalid: 无法加载 qe-data 清单")?)
+        Some(QeManifest::load(&f2_path).context("data_invalid: Cannot Load qe-data manifest")?)
     } else {
         None
     };
     let f3 = if f3_path.exists() {
-        Some(InterpolationManifest::load(&f3_path).context("data_invalid: 无法加载插值清单")?)
+        Some(InterpolationManifest::load(&f3_path).context("data_invalid: Cannot load manifest of interpolation values")?)
     } else {
         None
     };
     let f4 = if f4_path.exists() {
-        Some(SuperconductivityManifest::load(&f4_path).context("data_invalid: 无法加载超导清单")?)
+        Some(SuperconductivityManifest::load(&f4_path).context("data_invalid: Could not load superconductor manifest")?)
     } else {
         None
     };
@@ -101,7 +101,7 @@ fn ensure_any_stage(
 ) -> Result<()> {
     anyhow::ensure!(
         f3.is_some() || f4.is_some(),
-        "data_invalid: 交付收集需要至少一个上游阶段清单（interpolation 或 superconductivity）"
+        "data_invalid: Delivery collection requires a manifest of at least one upstream phase(interpolation or superconductivity)"
     );
     Ok(())
 }

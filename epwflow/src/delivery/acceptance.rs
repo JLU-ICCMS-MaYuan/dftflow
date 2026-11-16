@@ -28,7 +28,7 @@ pub fn acceptance_table(actual: &ResultsBundle) -> Vec<ComparisonCell> {
                 metrics: Default::default(),
                 tolerances: Default::default(),
                 status: "not_run".to_string(),
-                evidence: vec!["未运行：本机小网格验收仅覆盖实际组合".to_string()],
+                evidence: vec!["Not run: local small-grid validation covers only the combinations actually tested".to_string()],
             });
         }
     }

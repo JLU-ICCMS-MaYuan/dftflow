@@ -74,9 +74,9 @@ impl StageAttempt {
     }
     pub fn load(work: &Path, stage_id: &str) -> Result<Self> {
         let p = Self::path(work, stage_id);
-        ensure!(p.exists(), "data_invalid: 阶段 {stage_id} 尚无记录");
+        ensure!(p.exists(), "data_invalid: Phase {stage_id} No record yet");
         let a: Self = store::read(&p)?;
-        ensure!(a.schema_version == 1, "unsupported_version: 阶段记录 schema_version 必须为 1");
+        ensure!(a.schema_version == 1, "unsupported_version: Phase record schema_version Must be 1");
         Ok(a)
     }
     pub fn save(&self, work: &Path) -> Result<()> {
@@ -108,7 +108,7 @@ impl StageAttempt {
                 | (Validating, Succeeded)
                 | (Validating, Failed)
         );
-        ensure!(ok, "data_invalid: 阶段 {} 不允许 {:?} -> {:?}", self.stage_id, self.state, next);
+        ensure!(ok, "data_invalid: Phase {} Not permitted {:?} -> {:?}", self.stage_id, self.state, next);
         self.state = next;
         Ok(())
     }
@@ -123,8 +123,8 @@ pub fn dependencies_satisfied(
     for d in deps {
         match states.get(d) {
             Some(StageState::Succeeded) => {}
-            Some(s) => bail!("data_invalid: 阶段 {stage_id} 依赖 {d} 状态为 {s:?}，未成功"),
-            None => bail!("data_invalid: 阶段 {stage_id} 依赖 {d} 不存在"),
+            Some(s) => bail!("data_invalid: Phase {stage_id} Dependency {d} Status as {s:?},Failed"),
+            None => bail!("data_invalid: Phase {stage_id} Dependency {d} does not exist"),
         }
     }
     Ok(())

@@ -37,17 +37,17 @@ impl Artifact {
             self.relative_path
                 .components()
                 .all(|c| matches!(c, Component::Normal(_))),
-            "data_invalid: 清单路径越界"
+            "data_invalid: manifest routes crossed the border"
         );
         let path = root.join(&self.relative_path);
         let canonical_root = root.canonicalize()?;
         ensure!(
             path.canonicalize()?.starts_with(canonical_root),
-            "data_invalid: 数据链接越界"
+            "data_invalid: Data links across borders"
         );
         ensure!(
             fs::metadata(&path)?.len() == self.byte_size && store::hash_file(&path)? == self.sha256,
-            "data_invalid: 文件指纹不符 {}",
+            "data_invalid: File prints don't match {}",
             path.display()
         );
         Ok(path)
@@ -148,29 +148,29 @@ fn table(path: &Path, header: &str) -> Result<Vec<Vec<String>>> {
     let mut lines = text.lines();
     ensure!(
         lines.next() == Some(header),
-        "data_invalid: CSV 列不符 {}",
+        "data_invalid: CSV Columns do not match {}",
         path.display()
     );
     let columns = header.split(',').count();
     lines
         .filter(|l| !l.is_empty())
         .map(|l| {
-            ensure!(!l.contains('"'), "data_invalid: 数值 CSV 不支持带引号字段");
+            ensure!(!l.contains('"'), "data_invalid: Value CSV Quoted fields are not supported");
             let row: Vec<String> = l.split(',').map(str::to_owned).collect();
-            ensure!(row.len() == columns, "data_invalid: CSV 字段数不符");
+            ensure!(row.len() == columns, "data_invalid: CSV Fields do not match");
             Ok(row)
         })
         .collect()
 }
 
 fn number(text: &str) -> Result<f64> {
-    let n: f64 = text.parse().context("data_invalid: 数值字段无效")?;
-    ensure!(n.is_finite(), "data_invalid: 非有限数值");
+    let n: f64 = text.parse().context("data_invalid: Numeric field invalid")?;
+    ensure!(n.is_finite(), "data_invalid: Non-finite values");
     Ok(n)
 }
 
 fn method(s: &str) -> Result<()> {
-    ensure!(matches!(s, "qe" | "epw"), "data_invalid: 未知比较方法");
+    ensure!(matches!(s, "qe" | "epw"), "data_invalid: Unknown method of comparison");
     Ok(())
 }
 
@@ -190,7 +190,7 @@ fn bands(root: &Path, phonon: bool) -> Result<Vec<Curve>> {
         if phonon {
             ensure!(
                 row[1] == if row[0] == "qe" { "qe_matdyn" } else { "epw" },
-                "data_invalid: 连续声子参考不能冒充直接 PH"
+                "data_invalid: phonon references cannot be assumed to be direct PH"
             );
         }
         let seg = &row[1 + offset];
@@ -198,7 +198,7 @@ fn bands(root: &Path, phonon: bool) -> Result<Vec<Curve>> {
         let branch = &row[4 + offset];
         ensure!(
             keys.insert((row[0].clone(), seg.clone(), id.clone(), branch.clone())),
-            "data_invalid: 重复路径记录"
+            "data_invalid: Repeat Path Record"
         );
         curves
             .entry((row[0].clone(), seg.clone(), branch.clone()))
@@ -234,20 +234,20 @@ fn dos(root: &Path, phonon: bool, metadata: &Metadata) -> Result<Vec<Curve>> {
         let kind = row[2].as_str();
         ensure!(
             matches!(kind, "total" | "element" | "orbital") && !(phonon && kind == "orbital"),
-            "data_invalid: 投影类别无效"
+            "data_invalid: Projection category invalid"
         );
         let projection = match kind {
             "total" => {
                 ensure!(
                     row[3].is_empty() && (phonon || row[4].is_empty()),
-                    "data_invalid: 总 DOS 不应带元素标签"
+                    "data_invalid: Total DOS No Element Label"
                 );
                 "total".to_string()
             }
             "element" => {
                 ensure!(
                     metadata.elements.contains(&row[3]) && (phonon || row[4].is_empty()),
-                    "data_invalid: 元素投影标签不符"
+                    "data_invalid: The element projection label does not match"
                 );
                 row[3].clone()
             }
@@ -255,7 +255,7 @@ fn dos(root: &Path, phonon: bool, metadata: &Metadata) -> Result<Vec<Curve>> {
                 let key = format!("{}:{}", row[3], row[4]);
                 ensure!(
                     metadata.orbitals.contains(&key),
-                    "data_invalid: 轨道标签不符"
+                    "data_invalid: Orbital tags don't match"
                 );
                 key
             }
@@ -267,11 +267,11 @@ fn dos(root: &Path, phonon: bool, metadata: &Metadata) -> Result<Vec<Curve>> {
                 } else {
                     metadata.electronic_projection == "atomic_projector_operator"
                 },
-                "data_invalid: 没有可靠投影定义，不能标为元素或轨道 DOS"
+                "data_invalid: There is no definition of a reliable projection, which cannot be marked as an element or orbit DOS"
             );
         }
         let density = number(row.last().unwrap())?;
-        ensure!(density >= -1e-12, "data_invalid: DOS 为负");
+        ensure!(density >= -1e-12, "data_invalid: DOS Negative");
         curves
             .entry((row[0].clone(), projection))
             .or_default()
@@ -295,7 +295,7 @@ fn paired_axes(curves: &[Curve], is_dos: bool) -> Result<()> {
     for curve in curves {
         ensure!(
             curve.points.len() >= 2 && curve.points.windows(2).all(|w| w[0].0 < w[1].0),
-            "data_invalid: 路径或 DOS 网格不严格递增"
+            "data_invalid: Path or DOS Grids are not strictly incremental"
         );
         let partner = curves.iter().find(|p| {
             p.method != curve.method
@@ -303,12 +303,12 @@ fn paired_axes(curves: &[Curve], is_dos: bool) -> Result<()> {
                 && p.segment == curve.segment
                 && (!is_dos || p.branch == curve.branch)
         });
-        let partner = partner.context("data_invalid: 成对方法或投影缺失")?;
+        let partner = partner.context("data_invalid: Loss of pairing method or projection")?;
         // 曲线各自保留原始采样，只核对同一物理段的起终位置。
         ensure!(
             is_dos || ((curve.points[0].0 - partner.points[0].0).abs() < 1e-8
                 && (curve.points.last().unwrap().0 - partner.points.last().unwrap().0).abs() < 1e-8),
-            "data_invalid: 两侧物理路径端点不一致"
+            "data_invalid: Inconsistent physical path endpoints on both sides"
         );
     }
     Ok(())
@@ -320,7 +320,7 @@ pub fn load(root: &Path) -> Result<Dataset> {
         matches!(manifest.schema_version, 1 | 2)
             && matches!(manifest.ph_mode.as_str(), "index" | "coords" | "nosplit")
             && manifest.upstream_digest.len() == 64,
-        "data_invalid: 比较清单版本或状态无效"
+        "data_invalid: Invalid comparison of manifest version or status"
     );
     let names: BTreeSet<_> = manifest
         .files
@@ -337,12 +337,12 @@ pub fn load(root: &Path) -> Result<Dataset> {
     } else {
         ensure!(
             manifest.quality_status.is_none(),
-            "data_invalid: 新比较包不允许质量评级"
+            "data_invalid: The new package does not allow quality ratings"
         );
     }
     ensure!(
         names == expected && names.len() == manifest.files.len(),
-        "data_invalid: 比较包文件集合不完整"
+        "data_invalid: Compare package file collection incomplete"
     );
     for f in &manifest.files {
         f.verify(root)?;
@@ -352,12 +352,12 @@ pub fn load(root: &Path) -> Result<Dataset> {
         ensure!(
             metrics["schema_version"] == 2
                 && metrics["electronic_matching"] == "ordered_minimum_squared_energy_pairs",
-            "data_invalid: 最大差值版本或配对定义不符"
+            "data_invalid: Maximum margin version or pair definition inconsistent"
         );
         let stats: super::differences::Differences = serde_json::from_value(
             metrics
                 .get("differences")
-                .context("data_invalid: 缺少四项最大差值")?
+                .context("data_invalid: Missing four maximum margin values")?
                 .clone(),
         )?;
         stats.validate()?;
@@ -368,7 +368,7 @@ pub fn load(root: &Path) -> Result<Dataset> {
     let metadata: Metadata = store::read(&root.join("metadata.json"))?;
     ensure!(
         manifest.schema_version == 1 || metadata.phonon_error_markers.is_empty(),
-        "data_invalid: 新比较包不允许抽样标注"
+        "data_invalid: The new package does not allow sampling"
     );
     if let Some(window) = metadata.disentanglement_window_ev {
         ensure!(
@@ -381,19 +381,19 @@ pub fn load(root: &Path) -> Result<Dataset> {
                         |(absolute, relative)| (absolute - metadata.fermi_ev - relative).abs()
                             < 1e-8
                     ),
-            "data_invalid: Wannier 外窗与共同 Fermi 能／显示窗不符"
+            "data_invalid: Wannier Outside and common Fermi Can/Show Windows Unmatched"
         );
     }
     if let Some(frozen) = metadata.frozen_window_ev {
         let outer = metadata
             .disentanglement_window_ev
-            .context("data_invalid: 冻结窗缺少对应的实际外窗")?;
+            .context("data_invalid: Frozen windows lack the corresponding actual windows")?;
         ensure!(
             frozen.iter().all(|v| v.is_finite())
                 && frozen[0] < frozen[1]
                 && frozen[0] >= outer[0]
                 && frozen[1] <= outer[1],
-            "data_invalid: 冻结窗必须有限、递增且包含于外窗"
+            "data_invalid: Freezing windows must be finite, incremental and included in the outer window"
         );
     }
     ensure!(
@@ -404,13 +404,13 @@ pub fn load(root: &Path) -> Result<Dataset> {
             && metadata.phonon_frequency_unit == "cm-1"
             && metadata.electronic_density_unit == "states/(eV*cell)"
             && metadata.phonon_density_unit == "states/(cm-1*cell)",
-        "data_invalid: 单位／共同能窗不符"
+        "data_invalid: Units/commons do not match"
     );
     for ticks in [&metadata.electronic_ticks, &metadata.phonon_ticks] {
         ensure!(
             ticks.iter().all(|t| t.distance.is_finite())
                 && ticks.windows(2).all(|w| w[0].distance < w[1].distance),
-            "data_invalid: 路径标记无效"
+            "data_invalid: Path mark invalid"
         );
     }
     let electronic = bands(root, false)?;
@@ -435,7 +435,7 @@ pub fn load(root: &Path) -> Result<Dataset> {
                 && ((marker.qe_cm1 - marker.epw_cm1).abs() - marker.error_cm1).abs() < 1e-8
                 && marker.path_distance.is_some() == marker.path_label.is_some()
                 && (marker.scope != "path_maximum" || marker.path_distance.is_some()),
-            "data_invalid: 声子误差标注的模式、数值或路径身份无效"
+            "data_invalid: Invalid mode, value or path identity for voice error"
         );
         if let Some(x) = marker.path_distance {
             ensure!(
@@ -443,7 +443,7 @@ pub fn load(root: &Path) -> Result<Dataset> {
                     && phonon
                         .iter()
                         .any(|c| c.points.iter().any(|p| (p.0 - x).abs() < 1e-8)),
-                "data_invalid: 声子误差标注不在路径采样点上"
+                "data_invalid: The sound error label is not on the path sample point"
             );
         }
     }
@@ -458,7 +458,7 @@ pub fn load(root: &Path) -> Result<Dataset> {
                     .points
                     .last()
                     .is_some_and(|p| p.0 >= metadata.window_ev[1] - 1e-8)),
-            "data_invalid: 电子 DOS 数据未覆盖实际 Wannier 外窗"
+            "data_invalid: Electronic DOS Actual data not covered Wannier Outside windows"
         );
     }
     let phonon_dos = dos(root, true, &metadata)?;
@@ -468,7 +468,7 @@ pub fn load(root: &Path) -> Result<Dataset> {
             &root.join("phonon_reference_points.csv"),
             "point_id,distance,mode,frequency_cm1,source",
         )? {
-            ensure!(!row[4].is_empty(), "data_invalid: 直接 PH 来源缺失");
+            ensure!(!row[4].is_empty(), "data_invalid: Direct PH Source Missing");
             direct.push((number(&row[1])?, number(&row[3])?));
         }
     }
@@ -489,18 +489,18 @@ pub fn load(root: &Path) -> Result<Dataset> {
                 && !data.phonon.is_empty()
                 && !data.electronic_dos.is_empty()
                 && !data.phonon_dos.is_empty(),
-            "data_invalid: 完整包缺少曲线"
+            "data_invalid: Full package missing curve"
         );
         for name in data.metadata.elements.iter().chain(&data.metadata.orbitals) {
             ensure!(
                 data.electronic_dos.iter().any(|c| &c.projection == name),
-                "data_invalid: 完整包缺少电子投影"
+                "data_invalid: The complete package lacks an electronic projection"
             );
         }
         for name in &data.metadata.elements {
             ensure!(
                 data.phonon_dos.iter().any(|c| &c.projection == name),
-                "data_invalid: 完整包缺少元素声子 DOS"
+                "data_invalid: Full package missing element sound DOS"
             );
         }
     }

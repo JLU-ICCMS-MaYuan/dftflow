@@ -70,7 +70,7 @@ pub fn fail(err: Error) -> ! {
 
 /// 输出带格式版本的结构化结果；区分操作成功与流程成功。
 pub fn print_json(v: &Value) {
-    println!("{}", serde_json::to_string_pretty(v).expect("序列化 JSON 失败"));
+    println!("{}", serde_json::to_string_pretty(v).expect("JSON serialization failed"));
 }
 
 /// 构造统一 JSON 信封（schema_version、operation_status、workflow_status、diagnostics）。

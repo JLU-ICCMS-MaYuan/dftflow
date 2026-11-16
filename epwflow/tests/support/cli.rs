@@ -32,7 +32,7 @@ pub fn command(args: &[&str], cwd: &Path) -> Command {
                         let i = args.iter().position(|s| s == "--source").unwrap();
                         args[i] = "--export-comparison".into();
                     }
-                    _ => panic!("未知测试动作 {action}"),
+                    _ => panic!("Unknown test action {action}"),
                 }
             }
             "delivery" => {
@@ -50,7 +50,7 @@ pub fn command(args: &[&str], cwd: &Path) -> Command {
                         .to_string_lossy()
                         .into();
                 } else {
-                    panic!("未知测试动作 {action}");
+                    panic!("Unknown test action {action}");
                 }
             }
             "budget" => {
@@ -77,7 +77,7 @@ pub fn command(args: &[&str], cwd: &Path) -> Command {
             "prepare" => args[0] = "--prepare-only".into(),
             "submit" => args[0] = "--submit".into(),
             "run" => args[0] = "--run".into(),
-            _ => panic!("未知测试动作 {first}"),
+            _ => panic!("Unknown test action {first}"),
         }
     }
     let binary = match phase.as_str() {

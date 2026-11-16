@@ -603,7 +603,7 @@ fn incomplete_fixture_cannot_publish_interpolation() {
     assert!(!case.work.join("interpolation/manifest.json").exists());
     assert!(
         !case.root.join("ledger.json").exists(),
-        "输入不完整时不能先预留资源"
+        "Cannot reserve resources when input is incomplete"
     );
 }
 
@@ -648,7 +648,7 @@ fn adapter_rejects_empty_and_invalid_f2() {
     let cfg = config::Config::load(&case.config_path).unwrap();
     assert!(
         adapter::bind_f2(&case.work.join("qe-data").join("manifest.json"), &cfg).is_err(),
-        "空 F2 不能凭自述 valid 放行"
+        "Empty F2 I can't tell myself valid Let go!"
     );
 
     // 篡改 F2 校验状态后必须拒绝。
@@ -775,7 +775,7 @@ fn interpolation_reuse_rejects_unvalidated_manifest() {
     std::fs::create_dir_all(&target).unwrap();
     assert!(
         reuse::import_from_run(&dir.join("source"), &target).is_err(),
-        "没有校验项不能仅凭 valid 导入"
+        "You can't just do it without a checkout valid Import"
     );
 }
 
