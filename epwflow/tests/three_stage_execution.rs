@@ -1717,7 +1717,7 @@ fn public_scf_reuse_ignores_raw_density_and_wavefunction_changes() {
     let before = c.calls();
     c.accounting(None);
     let out = c.numbered_cli(0, &["--stage", "scf", "-s"], None, "unchecked-scf-reuse");
-    assert!(String::from_utf8_lossy(&out.stdout).contains("复用：1.qe-scf"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("reuse: 1.qe-scf"));
     success(out);
     assert_eq!(before, c.calls(), "不得因原始大数据变化重跑 SCF");
 }

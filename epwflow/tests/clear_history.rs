@@ -114,7 +114,7 @@ fn default_and_explicit_preview_leave_every_file_unchanged() {
     for args in [vec![], vec!["--dry-run"]] {
         let output = c.run(&args);
         success(&output);
-        assert!(String::from_utf8_lossy(&output.stdout).contains("只读预览"));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("Read-only preview"));
         c.assert_all_histories_present();
     }
 }

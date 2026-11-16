@@ -15,7 +15,7 @@ pub fn migrate(cfg: &Config, input: &Path) -> Result<()> {
     let old = cfg.work_dir.join(".epwflow");
     if !old.exists() {
         recheck_converted_electronic(cfg)?;
-        println!("状态已采用八阶段日志，无需转换");
+        println!("State already uses eight stage logs; no migration needed");
         return Ok(());
     }
     let conversion = super::legacy_state::prepare_at(cfg, &old)?
@@ -45,7 +45,7 @@ pub fn migrate(cfg: &Config, input: &Path) -> Result<()> {
         fs::remove_dir_all(imports)?;
     }
     fs::remove_dir(&old)?;
-    println!("旧隐藏状态已转换为八份阶段日志；科学数据未重新计算");
+    println!("Legacy state migrated to eight stage logs; scientific calculations were not rerun");
     Ok(())
 }
 
@@ -95,6 +95,6 @@ fn recheck_converted_electronic(cfg: &Config) -> Result<()> {
         );
         Ok(())
     })?;
-    println!("第 3 步旧电子结果已重新核验；科学文件未改写，未提交计算");
+    println!("Stage 3 legacy electronic results revalidated; scientific files unchanged; no calculations submitted");
     Ok(())
 }

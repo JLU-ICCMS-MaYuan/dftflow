@@ -69,21 +69,42 @@ pub fn report(cfg: &Config) -> Result<serde_json::Value> {
         serde_json::json!({"schema_version":1,"operation_status":"ok","workflow_status":if complete {"complete"} else {"incomplete"},"workflow_complete":complete,"steps":steps,"native_task":native_jobs::status(cfg)?,"native_methods":native_jobs::groups_status(cfg)?}),
     )
 }
+fn english_state(state: &str) -> &str {
+    match state {
+        "未开始" => "not started",
+        "待计算" => "calculation pending",
+        "上游已更新，待计算" => "upstream updated; calculation pending",
+        "待检查" => "validation pending",
+        "作业已结束，计算未通过检查" => "job finished; scientific validation failed",
+
+        "已准备" => "prepared",
+        "提交中" => "submitting",
+        "已提交" => "submitted",
+        "提交未知" => "submission unknown",
+        "运行中" => "running",
+        "已完成" => "complete",
+        "失败" => "failed",
+        "阶段分配" => "stage allocation",
+        "已退出，待检查科学结果" => "exited; scientific validation pending",
+        "求解已结束，能隙数据无效" => "solver finished; gap data invalid",
+        other => other,
+    }
+}
 pub fn status(cfg: &Config) -> Result<()> {
     for step in Step::ALL {
         let doc = log::read(&cfg.work_dir, step)?;
         println!(
-            "{}：{}；科学结果{}",
+            "{}: {}; scientific results: {}",
             log::stage_name(step, log::mode(cfg)),
-            doc.get("阶段", "状态").unwrap_or("未开始"),
+            english_state(doc.get("阶段", "状态").unwrap_or("未开始")),
             if stages::reusable(cfg, step)? {
-                "可复用"
+                "reusable"
             } else {
-                "尚需检查或计算"
+                "validation or calculation required"
             }
         );
         for (name, job) in log::jobs(&cfg.work_dir, step)? {
-            println!("  {name}：Slurm {job}");
+            println!("  {}: Slurm {job}", english_state(&name));
         }
     }
     Ok(())
@@ -141,7 +162,7 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         }
     }
     if !pending && !super::workspace_science::post_pending(&cfg, target)? {
-        println!("阶段已完成，现有科学结果可复用");
+        println!("Stage complete; existing scientific results are reusable");
         return Ok(());
     }
     ensure!(
@@ -176,7 +197,7 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         Ok(())
     })?;
     if !submit {
-        println!("脚本：{}；尚未提交", script.display());
+        println!("script: {}; not submitted", script.display());
         return Ok(());
     }
     let reservation = budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
@@ -208,7 +229,7 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
     let _receipt = log::DirectoryGuard::acquire(&cfg.work_dir)?;
     let current = log::read(&cfg.work_dir, target)?;
     if current.get("阶段分配", "提交标识") != Some(id.as_str()) {
-        println!("此分配已收尾，阶段已推进到新的提交");
+        println!("Allocation finalized; the stage has advanced to a new submission");
         return Ok(());
     }
     match result {
@@ -227,7 +248,7 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
                 Ok(())
             })?;
             println!(
-                "Slurm 作业号：{}\n脚本：{}\n本阶段将在分配内自动推进",
+                "job_id: {}\nscript: {}\nThe stage will advance automatically within the allocation",
                 job.job_id,
                 script.display()
             );

@@ -44,7 +44,7 @@ fn check(work: &Path, json: bool) -> Result<()> {
             status::print_json(&v);
         } else {
             println!("workflow_status: no_data");
-            println!("reason: qe-data/manifest.json 不存在");
+            println!("reason: qe-data/manifest.json does not exist");
         }
         return Ok(());
     }

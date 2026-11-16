@@ -416,7 +416,7 @@ mod tests {
             qe.nscf_input("./out").unwrap(),
             old_qe.nscf_input("./out").unwrap()
         );
-        eprintln!("SiP2: 八主阶段，全部科学键与 SCF/NSCF 输入一致；零状态转换、零提交");
+        eprintln!("SiP2: eight stages; all scientific keys and SCF/NSCF inputs consistent; no state migration or submissions");
     }
 }
 

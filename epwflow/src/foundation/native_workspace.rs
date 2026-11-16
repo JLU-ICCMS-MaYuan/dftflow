@@ -18,8 +18,8 @@ pub fn advance(config: &Path, target: Step, submit: bool, resume: bool) -> Resul
                 .is_file()
             {
                 match super::wannier_diagnostics::generate(&cfg) {
-                    Ok(p) => println!("诊断图：{}", p.display()),
-                    Err(e) => eprintln!("诊断图：{e:#}"),
+                    Ok(p) => println!("diagnostic_plots: {}", p.display()),
+                    Err(e) => eprintln!("diagnostic_plots: {e:#}"),
                 }
             }
         }
@@ -95,7 +95,7 @@ fn advance_mode(
             Err(error) => return Err(error),
         };
         if !force_scf && reusable {
-            println!("复用：{}", log::stage_name(step, log::mode(&cfg)));
+            log::report_reuse(&cfg, step, None);
             if refresh_stage(&cfg, step, submit, resume, own)? {
                 return pending(&cfg, target);
             }
@@ -237,9 +237,9 @@ fn advance_mode(
             println!(
                 "{}\nstage_complete: {}\nworkflow_complete: {}",
                 if valid {
-                    "本阶段已完成，科学结果检查通过"
+                    "Stage complete; scientific result validation passed"
                 } else {
-                    "求解已结束，能隙数据无效"
+                    "Solver finished; gap data are invalid"
                 },
                 valid,
                 Step::ALL
@@ -306,6 +306,6 @@ fn pending(cfg: &Config, target: Step) -> Result<()> {
         );
         Ok(())
     })?;
-    println!("进度：{}", log::path(&cfg.work_dir, target)?.display());
+    println!("progress: {}", log::path(&cfg.work_dir, target)?.display());
     Ok(())
 }

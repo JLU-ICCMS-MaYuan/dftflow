@@ -540,7 +540,7 @@ fn collect_phonon(cfg: &Config, qe: &QeSettings) -> Result<qe_data::manifest::Qe
 fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
     let manifest = match partial_phonon(cfg)? {
         Some(m) => {
-            println!("reuse: PH 响应与 save 清单；继续 q2r/matdyn 后处理");
+            super::readable_state::report_reuse(cfg, Step::Phonon, Some("PH responses and save manifest; continuing q2r/matdyn"));
             m
         }
         None => collect_phonon(cfg, qe)?,
@@ -693,7 +693,7 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
     });
     if result.is_err() {
         if let Err(plot_error) = super::wannier_diagnostics::generate(cfg) {
-            eprintln!("Wannier 诊断图：{plot_error:#}");
+            eprintln!("Wannier diagnostic_plots: {plot_error:#}");
         }
     }
     result

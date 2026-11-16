@@ -412,7 +412,7 @@ pub fn clear(path: &Path, delete: bool) -> Result<()> {
     if work.join("epw-state/1.qe-scf.log").is_file() && !work.join("epw-state/layout.json").exists()
     {
         println!(
-            "{}：八阶段日志布局不再生成历史目录，无需清理。",
+            "{}: eight-stage log layout does not generate history directories; no cleanup needed",
             work.display()
         );
         return Ok(());
@@ -426,28 +426,28 @@ pub fn clear(path: &Path, delete: bool) -> Result<()> {
     let before = inventory(&roots)?;
     preflight(&work, &roots)?;
     println!(
-        "{}：{}",
+        "{}: {}",
         if delete {
-            "实际清理"
+            "Cleanup"
         } else {
-            "只读预览"
+            "Read-only preview"
         },
         work.display()
     );
     for (root, count) in roots.iter().zip(&before) {
         match count {
             Some(count) => println!(
-                "{}：{} 个目录，{} 个文件／链接，{} 逻辑字节",
+                "{}: {} directories, {} files/links, {} logical bytes",
                 root.display(),
                 count.directories,
                 count.files,
                 count.bytes
             ),
-            None => println!("{}：不存在，无需清理", root.display()),
+            None => println!("{}: absent; no cleanup needed", root.display()),
         }
     }
     if !delete {
-        println!("未修改文件；使用 --yes 实际清理上述三处历史。");
+        println!("No files changed; use --yes to clean the three history locations listed above");
         return Ok(());
     }
     // 预检可能耗时；删除前重验活动记录和目标，不能沿用过期的清单。
@@ -463,7 +463,7 @@ pub fn clear(path: &Path, delete: bool) -> Result<()> {
         }
         failures.extend(remove_contents(root));
         match children(root) {
-            Ok(remaining) if remaining.is_empty() => println!("已清空 {}", root.display()),
+            Ok(remaining) if remaining.is_empty() => println!("Cleared {}", root.display()),
             Ok(remaining) => failures.extend(
                 remaining
                     .iter()
@@ -477,6 +477,6 @@ pub fn clear(path: &Path, delete: bool) -> Result<()> {
         "execution_failed: 历史清理未全部完成：\n{}",
         failures.join("\n")
     );
-    println!("历史清理完成；现用计算、结果、任务记录和预算未改写。");
+    println!("History cleanup complete; current calculations, results, task records and budget unchanged");
     Ok(())
 }

@@ -239,7 +239,7 @@ pub fn command(config: &Path, root: &Path, check: bool, submit: bool, resume: bo
             managed.display()
         );
     }
-    println!("import: 只读核验来源与电子证据（大响应文件需要读取完整哈希）");
+    println!("import: read-only validation of source and electronic evidence");
     let s = source(&source_path)?;
     ensure!(
         s.prefix == old.qe.prefix,
@@ -273,7 +273,7 @@ pub fn command(config: &Path, root: &Path, check: bool, submit: bool, resume: bo
         let cleanup = fs::remove_dir_all(&tmp);
         result?;
         cleanup?;
-        println!("import_check: valid；历史 SCF 赝势/截断能未核验，由输入准备者负责一致性");
+        println!("import_check: valid; historical SCF pseudopotentials/cutoffs unverified; input preparer must ensure consistency");
         return Ok(());
     }
     workspace::check_active(&cfg, None)?;

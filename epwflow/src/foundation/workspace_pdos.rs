@@ -81,7 +81,7 @@ pub fn files(cfg: &Config) -> Result<Vec<PathBuf>> {
 }
 pub fn run(cfg: &Config) -> Result<()> {
     if !files(cfg)?.is_empty() {
-        println!("reuse: electronic/projwfc");
+        super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("projwfc"));
         return Ok(());
     }
     let root = dir(cfg);
@@ -141,7 +141,7 @@ pub fn run(cfg: &Config) -> Result<()> {
             "projwfc",
         )?;
     } else {
-        println!("reuse: electronic/projwfc 原生检查点");
+        super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("projwfc (native checkpoint)"));
     }
     for id in &ids {
         id.verify()?;

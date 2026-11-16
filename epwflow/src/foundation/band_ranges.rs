@@ -567,7 +567,7 @@ pub fn generate(cfg: &Config, step: Step) -> Result<()> {
                 .insert(name.clone(), store::hash_file(&dir.join(name))?);
         }
         store::write(&dir.join(&files[3]), &report)?;
-        println!("能带范围图：{}", dir.join(&files[0]).display());
+        println!("band_range_plots: {}", dir.join(&files[0]).display());
     }
     for source in &sources {
         source.verify()?;

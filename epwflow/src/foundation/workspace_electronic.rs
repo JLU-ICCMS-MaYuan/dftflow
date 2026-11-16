@@ -444,7 +444,7 @@ fn prepare_pw(cfg: &Config) -> Result<()> {
     if successful || done {
         let receipt = inspect_legacy(cfg)?;
         persist_receipt(cfg, "pw-bands", &receipt)?;
-        println!("reuse: electronic/pw-bands（旧冻结来源已校验）");
+        super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("pw-bands (validated legacy snapshot)"));
     }
     Ok(())
 }
@@ -532,7 +532,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
         "qe_eband" => {
             inputs(cfg, &QeSettings::from_config(cfg)?)?;
             if reusable(cfg, "pw-bands")? {
-                println!("reuse: electronic/pw-bands");
+                super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("pw-bands"));
             } else {
                 let mut old = logs(&dir, "eband");
                 old.push(dir.join("out"));
@@ -557,7 +557,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             // 路径本征值一经核验就画范围图，不等待 bands.x、DOS 或投影。
             super::band_ranges::generate(cfg, Step::Electronic)?;
             if reusable(cfg, "bands")? {
-                println!("reuse: electronic/bands");
+                super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("bands"));
             } else {
                 let mut paths = logs(&dir, "bands");
                 paths.extend([
@@ -597,7 +597,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
         "qe_eledos" => {
             dos_inputs(cfg)?;
             if reusable(cfg, "dos")? {
-                println!("reuse: electronic/dos");
+                super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("dos"));
                 return super::workspace_qe_plot::electronic(cfg, name);
             }
             let mut paths = logs(&dir, "dos");

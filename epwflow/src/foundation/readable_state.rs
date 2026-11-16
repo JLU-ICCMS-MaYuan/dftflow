@@ -90,6 +90,18 @@ pub fn stage_name(step: Step, mode: &str) -> String {
         Step::Superconductivity => "8.epw-superconductivity".into(),
     }
 }
+/// 复用提示统一使用实际编号阶段名，子任务与目录层级一致。
+pub fn reuse_message(cfg: &Config, step: Step, task: Option<&str>) -> String {
+    let stage = stage_name(step, mode(cfg));
+    match task {
+        Some(task) => format!("reuse: {stage} /{task}"),
+        None => format!("reuse: {stage}"),
+    }
+}
+pub fn report_reuse(cfg: &Config, step: Step, task: Option<&str>) {
+    println!("{}", reuse_message(cfg, step, task));
+}
+
 pub fn mode(cfg: &Config) -> &'static str {
     use super::config::PhMode;
     match cfg.phonon.mode {
@@ -525,6 +537,22 @@ pub fn next_command(cfg: &Config, step: Step, resume: bool) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reuse_messages_identify_every_numbered_stage() {
+        let root = root();
+        let cfg = cfg(&root);
+        for step in Step::ALL {
+            assert_eq!(
+                reuse_message(&cfg, step, None),
+                format!("reuse: {}", stage_name(step, mode(&cfg)))
+            );
+        }
+        assert_eq!(
+            reuse_message(&cfg, Step::Electronic, Some("projwfc")),
+            "reuse: 3.qe-electronic /projwfc"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
     fn root() -> PathBuf {
         let p = std::env::temp_dir().join(format!("readable-state-{}", store::token()));
         fs::create_dir_all(&p).unwrap();

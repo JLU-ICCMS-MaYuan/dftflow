@@ -240,7 +240,7 @@ fn check(config_path: &Path, json: bool) -> Result<()> {
         );
         status::print_json(&v);
     } else {
-        println!("configuration: 通过（schema_version={}）", cfg.schema_version);
+        println!("configuration: passed (schema_version={})", cfg.schema_version);
         println!("environment.runtime_version: unverified");
     }
     Ok(())
