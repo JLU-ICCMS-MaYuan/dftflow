@@ -336,3 +336,10 @@ mod smoothing_tests {
         assert!(gaussian_dos(vec![vec![0.0,1.0],vec![0.0,2.0]],10.0).is_err());
     }
 }
+
+/// 已有原子投影聚合与展宽的数值视图，供阶段组合图复用。
+pub fn combined_dos_data(workspace: &str, prefix: &str, elements: &[String], counts: &[usize], sigma: f64)
+    -> Result<(Vec<Vec<f64>>, Vec<String>)> {
+    let data = load_dos(workspace, prefix, elements, counts)?;
+    Ok((gaussian_dos(data.rows, sigma)?, data.names))
+}

@@ -110,3 +110,6 @@ epw_superconductivity -c "input.toml" --stage superconductivity -s
 外窗覆盖当前 NSCF 排除半芯带后的能谱并在两端各留 0.02 eV。Mori 第 19 页给出冻结上界 8.8 eV，第 20 页示例费米能为 7.469822726 eV；本次以其相对位置约 E_F＋1.330177274 eV 作为 PBE 初始窗口，平移到当前 NSCF E_F=9.183946302 eV。此平移是本次选窗起点，不代表不同赝势的能带严格刚性平移或拟合已经通过。
 
 对当前 32 个均匀 k 点，保留 12 条候选带，外窗每点 12 态，冻结窗每点 4～5 态，满足 frozen≤5≤outer，并包含 E_F±0.4 eV。原 SCF／NSCF 设置不变。本次没有执行拟合；仍需检查你后续运行的原生收敛与能带对比。
+
+
+组合图放在各阶段 plot/，并发布到 results 对应阶段的 plot/。第 3、5 步各两张电子图：electronic.png 使用 input.toml 中 [plot] 的两个独立上下限（默认 −3／＋3 eV，相对费米能），electronic-from-lowest-to-highest.png 使用 QE 路径全部能带极值。第 4、6 步各一张 phonon.png，声子谱与 DOS 共用 0 到最高路径频率的纵轴。逐带范围与衰减诊断保留。

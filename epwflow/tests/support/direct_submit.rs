@@ -420,7 +420,7 @@ pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
     let calls = c.calls();
     assert!(c
         .root
-        .join("run/results/3.qe-electronic/qe_eband/electronic-bands.png")
+        .join("run/results/3.qe-electronic/plot/electronic.png")
         .is_file());
     assert!(!c.stage_submit("wannier", false).status.success());
     fs::remove_file(c.root.join("fail-dos")).unwrap();

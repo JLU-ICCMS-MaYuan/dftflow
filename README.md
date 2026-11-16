@@ -202,6 +202,15 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 
 ## QE／EPW 编号工作区
 
+电子能带与 DOS 合并为共享能量纵轴的组合图。第 3、5 步的 plot/ 各有 electronic.png（默认 E_F±3 eV）与 electronic-from-lowest-to-highest.png（QE 路径全部能带极值）；第 4、6 步 plot/ 为共享频率纵轴的 phonon.png。结果同步发布到 results 对应阶段的 plot/。近费米范围在 input.toml 中独立调整：
+
+    [plot]
+    electronic_energy_min_ev = -3.0
+    electronic_energy_max_ev = 3.0
+
+上下限均相对 E_F，必须有限且下限小于上限；只改变绘图，不改变科学计算或拟合窗口。
+
+
 新 EPW 配置使用 `layout = "numbered"`、`work_dir = "."` 和根 `input.toml`。
 阶段重算覆盖旧内容，保留编号目录 inode 和当前打开的 Slurm 日志，不生成历史。`epw-state/` 保存八份中文阶段日志、编号原文配置及按需保留的 `imports/`；作业号保存在各计算目录同名 `.jobs`。输入原文变化时，在工作区 `epw-state/` 增加 `NNNN-config.toml` 版本。
 八日志布局执行 `epw_clear` 会报告无需清理；旧布局仍支持预览并清空三类历史。详见 [清理用法](docs/overview/epwflow/epw_clear.md)。

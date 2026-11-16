@@ -147,7 +147,9 @@ epw_superconductivity --results-check --results "results" --json
 
 ## 电子图的两种范围
 
-第 3 步：QE 能带两张、QE TDOS＋元素 PDOS 两张。第 5 步：QE／EPW 能带两张、TDOS 对比两张，共 8 张。普通文件名看费米能上下 5 eV，带 `-valence` 的文件看共同 QE 最低已计算占据态到费米能以上 5 eV。对应能带和 DOS 同窗，实际拟合窗另行标注。电子图全部画红色费米线，插值用蓝色，其他线和普通标签避开红蓝；PNG 为 3000×2100、至少 300 DPI。
+第 3、5 步各在 plot/ 生成两张能带＋DOS 组合图：electronic.png 默认显示 E_F±3 eV，electronic-from-lowest-to-highest.png 显示 QE 路径全部能带最低至最高能量。第 5 步叠加 QE 实线与 EPW 蓝色虚线，模型未覆盖区域留空；默认范围不再取 Wannier 外窗。左右面板共用能量纵轴，DOS 横轴为态密度；保留红色费米线和实际选窗标注。PNG 为 3600×2400、至少 300 DPI。
+
+input.toml 的 [plot].electronic_energy_min_ev 与 electronic_energy_max_ev 分别默认 −3／＋3，均相对 E_F，可独立配置。只改变显示，不改变科学输入、拟合窗和比较指标。第 4、6 步 plot/ 各输出一张声子谱＋DOS 的 phonon.png，共用频率纵轴，显示 0 到路径最高频率；负频数据与判断仍保留。对应图像和自包含图参即时发布到 results 对应阶段的 plot/。
 
 第 3 步元素投影缺失时，只从已有 NSCF 波函数的隔离副本补必要 projwfc；已有相容投影和成功原生检查点复用。TDOS 与元素投影读取同次原生网格，保留残差；第 5 步不增加元素投影。详见 [当前电子图行为](README.md#电子双能窗元素-pdos-与保留色)和 [0055 验收](../../specs/0055-electronic-plot-windows-pdos/acceptance.md)。
 

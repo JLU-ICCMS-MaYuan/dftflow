@@ -38,7 +38,7 @@ header 原文保留；默认作业名和日志指令位于它之前，用户同�
 
 第 3／4 步提交一个阶段分配，在分配内完成依赖、原生后处理、核验、绘图和发布。第 1／2 步及第 5～8 步的 `-s` 直接提交就绪的原生任务；作业结束后重复同一公开命令，核验并推进下一子任务或交付。指定温度 `task="gap"` 为每个方法独立提交原生多温度作业，后续公开调用归集结果。`-r` 在已有 Slurm 分配内同步推进所选阶段。各步交付可从工作区根 `results/` 查看。
 
-第 3 步两个 QE 子任务各完成即发布；第 5 步完成电子能带和总 DOS 叠图，不等待声子；第 6 步完成声子谱、声子 TDOS 和复用电子数据的总览。流程与恢复见 [0050](../docs/specs/0050-epw-stage-results/quickstart.md)及 [Overview 流程图](../docs/overview/epwflow/workflow.md)。
+第 3 步路径完成即保留逐带范围诊断，能带与 DOS 就绪后发布两张组合图；第 5 步发布同样两种范围的电子对比组合图，不等待声子；第 6 步发布一张声子谱＋总 DOS 对比组合图。流程与恢复见 [0050](../docs/specs/0050-epw-stage-results/quickstart.md)及 [Overview 流程图](../docs/overview/epwflow/workflow.md)。
 
 ```bash
 epw_phonon -c input.toml -s
@@ -161,7 +161,7 @@ run/
 
 Slurm 日志属于运行输出；旧原生输入记录中的标准 `slurm-数字.out/err` 项不作为固定科学输入核验。两种阶段归档共用当前日志同 inode 入口维护，见 [0035](../docs/specs/0035-native-retry-slurm-logs/acceptance.md)。EPW 会改写粗网格自己的 `out/prefix.wfcN` 工作副本；只从已冻结且校验通过的原生输入识别前缀与 `./out`，保留初始身份用于追溯，失败后归档并从已校验来源重建。原始 NSCF、portable SAVE、响应及其余输入仍严格核验，见 [0036](../docs/specs/0036-epw-mutable-wavefunction-scratch/acceptance.md)。
 
-第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，分别沿共同物理路径采用第 4 步 QE 密度和第 6 步 EPW 密度生成声子谱，保留各自原始点；生成声子 TDOS 叠图，并读取第 5 步电子数据生成四面板总览和事实最大差值。第 6 步不新增电子参考 PW；声子后处理核对 ASR，不相容时事前说明最少补算原因，成功力常数与频率分别缓存。第 7 步生成细网格矩阵元、α²F、λ；第 8 步根据 `stages."8.epw-superconductivity".workflow.task` 运行指定温度能隙或既有 Tc 搜索。第 3 步提供 QE 元素电子 PDOS；插值侧元素／轨道投影仍未提供。图表和差值只展示事实，科学合理性由用户判断。
+第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，分别沿共同物理路径采用第 4 步 QE 密度和第 6 步 EPW 密度生成声子谱，保留各自原始点；声子谱与总 DOS 合并为共享频率轴的一张图；比较数值与事实差值继续保留，不再输出重复电子总览。第 6 步不新增电子参考 PW；声子后处理核对 ASR，不相容时事前说明最少补算原因，成功力常数与频率分别缓存。第 7 步生成细网格矩阵元、α²F、λ；第 8 步根据 `stages."8.epw-superconductivity".workflow.task` 运行指定温度能隙或既有 Tc 搜索。第 3 步提供 QE 元素电子 PDOS；插值侧元素／轨道投影仍未提供。图表和差值只展示事实，科学合理性由用户判断。
 
 ## 声子后处理与作业日志
 
@@ -193,7 +193,7 @@ epw_wannier --stage wannier --resume -s
 
 每项包括坐标、带／排序模式编号和两侧原值；路径最大值标紫，DOS 图注明最大值的网格坐标。无配对时最大值为 null，终端显示“无可配对数据”。差值没有阈值、RMS、评级或告警，也不影响退出码、发布和下游执行。文件、来源、单位、坐标、有限数、作业登记、原生执行和求解收敛检查继续有效。
 
-新比较包使用版本 2，四张独立图和总览仍可自包含移动重绘；版本 1 历史包可只读重绘，不补算四项差值。历史工作区、冻结记录和旧报告保持；已有 SCF／NSCF／PH 可通过 `--import-work` 导入新编号工作区，导入不复制抽样参考。默认安装不随源码更新。设计及验证见 [0043](../docs/specs/0043-epw-comparison-max-differences/acceptance.md)，取代 [0040](../docs/specs/0040-interpolation-quality-warnings/spec.md) 的独立核验要求。
+历史比较包使用版本 2，原四张独立图与总览仍可按历史格式自包含重绘；当前编号工作区使用共享纵轴组合图；版本 1 历史包可只读重绘，不补算四项差值。历史工作区、冻结记录和旧报告保持；已有 SCF／NSCF／PH 可通过 `--import-work` 导入新编号工作区，导入不复制抽样参考。默认安装不随源码更新。设计及验证见 [0043](../docs/specs/0043-epw-comparison-max-differences/acceptance.md)，取代 [0040](../docs/specs/0040-interpolation-quality-warnings/spec.md) 的独立核验要求。
 
 指定温度能隙在第 8 步分别填写两个方法的完整原生输入。以下仅展示有关字段，其他开关、网格和求解参数也必须独立填写：
 
@@ -340,11 +340,7 @@ imports/                 # 外部声子导入时保留
 
 ## QE 分阶段即时出图（0047）
 
-第 3 步每个电子子任务校验成功即生成自己的 QE 单独图：`qe_eband/plots/electronic-bands.png` 与 `qe_eledos/plots/electronic-dos.png`，同时保存 CSV。电子来源使用已核验 NSCF 的 Fermi 零点，不等待声子或 Wannier，也不要求拟合能窗。能带保留断开路径与高对称点标签。
-
-第 4 步 q2r／matdyn 后处理结束后，在 `4.qe-phonon-<模式>/plots/` 生成 `phband/phonon_band.png`、`phdos/phonon_dos.png` 和联合图。声子 DOS 同时显示 TDOS 与按结构汇总的元素贡献，原子／元素 CSV 可追溯；必须有完整逐原子投影，缺列明确报错。
-
-第 5 步继续生成 QE／Wannier 电子能带和总 DOS 叠图。第 6 步声子谱继续比较 QE／EPW，声子 DOS 的独立图与总览仅比较 TDOS，不展示元素曲线或元素投影缺失占位。第 3／4 步的单独图保留。QE 元素电子 PDOS 已接入第 3 步；EPW 元素／轨道 PDOS 及插值侧元素声子投影仍未提供。
+第 3 步在能带和 DOS 就绪后，于 3.qe-electronic/plot/ 输出两张 QE 组合图；路径数据先完成时保留独立逐带范围诊断。第 4 步 q2r／matdyn 后处理就绪后，于阶段 plot/ 输出一张 QE 声子谱＋总量／元素 DOS 的 phonon.png。第 5 步输出两种范围的 QE／EPW 电子组合图，第 6 步输出一张 QE／EPW 声子谱＋总 DOS 组合图。组合图左侧为能带或声子谱，右侧为 DOS，共用纵轴。
 
 `-r` 在该子任务结束时绘图。第 3／4 步 `-s` 在阶段分配内完成后处理；第 5～8 步再次调用公开命令归集原生结果、补图并发布。失败恢复沿用 `--resume`，成功子任务和绘图位置进入阶段日志，不生成独立完成回执。状态查询不补图，配置内容变化仍会触发原文备份。
 
@@ -352,7 +348,7 @@ imports/                 # 外部声子导入时保留
 
 ## 逐阶段结果与独立重绘
 
-`results/` 位于计算工作区根，与编号目录同级。第 3 步的 `qe_eband/`、`qe_eledos/` 分别发布；第 4 步保存单侧声子谱、TDOS／元素 DOS；第 5 步是双窗电子四图；第 6 步是声子两图及四面板总览；第 8 步是已有超导图。第 7 步没有独立既有图，不创建空包或额外任务。每个包带表格、图参、来源和文件校验清单。
+`results/` 位于计算工作区根，与编号目录同级。第 3、5 步各发布两张电子组合图，第 4、6 步各发布一张声子组合图，均使用阶段 plot/；第 3、4 步保留 QE 元素投影；第 8 步是已有超导图。第 7 步没有独立既有图，不创建空包或额外任务。每个包带表格、图参、来源和文件校验清单。
 
 ```bash
 epw_superconductivity --results-check --results "results" --json
@@ -371,15 +367,16 @@ epw_superconductivity --plot --results "results"
 
 ## 电子图的默认双能窗与配色
 
-第 3 步交付 4 张 QE 图，第 5 步交付 4 张 QE／EPW 对比图，共 8 张。每阶段分别提供能带与 DOS 的两种范围：默认文件 `electronic-bands.png`／`electronic-dos.png` 在第 3 步使用 E_F±5 eV，第 5 步使用实际 dis_win_min−E_F～dis_win_max−E_F；`electronic-bands-valence.png`／`electronic-dos-valence.png` 使用共同 QE NSCF 最低占据态至 E_F＋5 eV。最低态包含赝势显式半芯态，表示已计算网格的最小值。显示范围不修改实际拟合能窗或原比较指标。
+第 3、5 步各输出 electronic.png 和 electronic-from-lowest-to-highest.png，位于阶段 plot/，同步发布到 results 对应阶段的 plot/。全范围取 QE 路径全部本征值极值；近费米范围在 input.toml 中设置：
 
-全部电子图、总览电子面板及独立重绘画出红色费米线；蓝色只表示 EPW／Wannier 插值。QE 用深灰，元素和窗口用绿／橙／褐／紫等其他颜色，普通文字黑色。四个实际窗口的值仍列在图例，超出显示范围的窗口不扩大坐标轴。默认电子 PNG 从数值矢量直接生成 3000×2100，PNG 密度为 300.0248 DPI，不放大旧图片。
+    [plot]
+    electronic_energy_min_ev = -3.0
+    electronic_energy_max_ev = 3.0
 
-QE 参考曲线统一使用深灰实线，涵盖能带、DOS、声子比较及总览；EPW／Wannier 使用蓝色短虚线后绘。第 3 步 TDOS 为实线，各元素 PDOS 使用不同长度的短虚线。多曲线图中参考／插值线宽为 4∶3（约粗 33%），图例同步；电子费米线仍为红色，重绘不改变科学数据。
+两项均相对 E_F，独立默认 −3／＋3，必须有限且严格递增；只改变绘图，不改变拟合窗口或科学比较范围。DOS 横轴为态密度，未覆盖能区留空。QE 实线先绘、EPW 蓝色短虚线后绘，元素 PDOS 使用既有区分线型，四窗口和红色费米线保留。PNG 至少 300 DPI。
 
-第 3 步 DOS 同图画 TDOS＋Mg／B 等真实元素 PDOS，第 5 步仍只比较 TDOS。投影缺失时，在已核验 NSCF 波函数的独立副本内运行必要 `projwfc -pd .true.`，不重算 PW／PH／Wannier／EPW；程序默认从 pw.x 同目录解析。TDOS 读取同次 projwfc `.pdos_tot` 的 DOS 列，保证与 PDOS 原生同网格；原 dos.x 表保留。逐 atom/wfc 的 LDOS 只累加一次，保留投影残差，不强制归一。当前仅支持非磁标量投影，缺波函数或不支持的自旋明确报错，不自动重算 NSCF。
+第 4、6 步使用 phonon.png，共用 0 到路径最高频率的纵轴；第 6 步取两侧最大值。负频原始数据与科学判断保留。新生成端不再输出分离图、-valence 图或重复比较总览；逐带范围与衰减诊断保留。历史结果包保持有界重绘兼容。
 
-投影失败时已成功的能带及 TDOS 图保留并注明缺项；修复后恢复只接续投影和派生产物。投影程序已成功而解析或发布失败时，从第 3 步日志和实际原生输出接续。独立重绘只读取包内 `.plot.json`，不调用原生程序。设计、调用证据和验证入口见 [0055 验收](../docs/specs/0055-electronic-plot-windows-pdos/acceptance.md)。
 
 ## NSCF 完整网格与 FFT 接续（0060）
 

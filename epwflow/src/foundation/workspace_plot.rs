@@ -91,25 +91,7 @@ pub fn dos(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
         &serde_json::json!({"qe_spin_degeneracy":2,"postw90_num_elec_per_state":electrons,"postw90_multiplier":1,"electronic_sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev,"raw_native_files_modified":false,"postw90_log":super::store::Identity::capture(&wpout)?,"native_dos":super::store::Identity::capture(wannier)?}),
     )?;
     let window = windows(cfg, dir, fermi)?;
-    let outer = outer_bounds(&window)?;
-    dos_figure(
-        &dir.join("electronic-dos.png"),
-        &qe,
-        Some(&wan),
-        &window,
-        &metrics_note(dir, "electronic_mesh")?,
-        Some(outer),
-        &[],
-    )?;
-    dos_figure(
-        &dir.join("electronic-dos-valence.png"),
-        &qe,
-        Some(&wan),
-        &window,
-        &metrics_note(dir, "electronic_mesh")?,
-        Some(display_bounds(cfg, dir, fermi, Some(outer))?),
-        &[],
-    )
+    save_dos(dir, &qe, Some(&wan), &window, &metrics_note(dir, "electronic_mesh")?, &[])
 }
 
 /// 窗口值已相对 E_F；必须按名字查找，不能混淆绝对窗或 frozen 边界。
@@ -406,27 +388,10 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
         "electronic_path":path,"electronic_mesh":mesh_stats,"matching":"ordered_minimum_squared_energy_pairs",
         "note":"Energy pairs do not establish eigenstate identity"}),
     )?;
-    bands_figure(
-        &dir.join("electronic-bands.png"),
-        &qe,
-        Some(&wan),
-        bounds,
-        &window,
-        &labels,
-        &metrics_note(dir, "electronic_path")?,
-    )?;
-    bands_figure(
-        &dir.join("electronic-bands-valence.png"),
-        &qe,
-        Some(&wan),
-        display_bounds(cfg, dir, fermi, Some(bounds))?,
-        &window,
-        &labels,
-        &metrics_note(dir, "electronic_path")?,
-    )
+    save_bands(dir, &qe, Some(&wan), &window, &labels, &metrics_note(dir, "electronic_path")?)
 }
 
-type Band = (Vec<f64>, Vec<f64>);
+pub(super) type Band = (Vec<f64>, Vec<f64>);
 pub(crate) fn bands_figure(
     file: &Path,
     qe: &[Band],
@@ -635,9 +600,8 @@ pub fn qe_dos(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         super::workspace_pdos::projected_total(cfg, fermi)?
     } else {
         table(
-            &dir.parent()
-                .unwrap()
-                .join(format!("{}.tdos", cfg.qe.prefix)),
+            &super::stages::Step::Electronic.directory(cfg)
+                .join("qe_eledos").join(format!("{}.tdos", cfg.qe.prefix)),
             fermi,
         )?
     };
@@ -652,28 +616,11 @@ pub fn qe_dos(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     } else {
         ""
     };
-    dos_figure(
-        &dir.join("electronic-dos.png"),
-        &rows,
-        None,
-        &[],
-        note,
-        Some([-5., 5.]),
-        &elements,
-    )?;
-    dos_figure(
-        &dir.join("electronic-dos-valence.png"),
-        &rows,
-        None,
-        &[],
-        note,
-        Some(display_bounds(cfg, dir, fermi, None)?),
-        &elements,
-    )
+    save_dos(dir, &rows, None, &[], note, &elements)
 }
 
 pub fn qe_bands(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
-    let leaf = dir.parent().unwrap();
+    let leaf = super::stages::Step::Electronic.directory(cfg).join("qe_eband");
     let xml = leaf.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix));
     let states = crate::qe_data::nscf::parse_xml(&xml)?;
     let geometry = crate::qe_data::xml::Geometry::read(&xml)?;
@@ -774,24 +721,7 @@ pub fn qe_bands(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         "data_invalid: Electronic energy is not finite"
     );
     fs::write(dir.join("electronic-bands.csv"), csv)?;
-    bands_figure(
-        &dir.join("electronic-bands.png"),
-        &bands,
-        None,
-        [-5., 5.],
-        &[],
-        &path_labels(&label_text)?,
-        "",
-    )?;
-    bands_figure(
-        &dir.join("electronic-bands-valence.png"),
-        &bands,
-        None,
-        display_bounds(cfg, dir, fermi, None)?,
-        &[],
-        &path_labels(&label_text)?,
-        "",
-    )
+    save_bands(dir, &bands, None, &[], &path_labels(&label_text)?, "")
 }
 
 fn path_sections(x: &[f64]) -> Vec<std::ops::Range<usize>> {
@@ -931,7 +861,7 @@ fn windows(cfg: &Config, dir: &Path, fermi: f64) -> Result<Vec<(f64, &'static st
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind")]
-enum PlotData {
+pub(super) enum PlotData {
     Bands {
         qe: Vec<Band>,
         wan: Option<Vec<Band>>,
@@ -964,28 +894,13 @@ fn plot_file(file: &Path) -> std::path::PathBuf {
 }
 /// 只使用现场保存的绘图参数覆盖原图，不运行科学程序或改变结果包。
 pub fn redraw_current(cfg: &Config) -> Result<Option<std::path::PathBuf>> {
-    let stage = super::stages::Step::Wannier.directory(cfg);
-    let dir = super::layout::path(&cfg.work_dir, "comparison-native/electron");
-    let names = [
-        "electronic-bands", "electronic-dos",
-        "electronic-bands-valence", "electronic-dos-valence",
-    ];
-    let inputs: Vec<_> = names.iter()
-        .map(|name| dir.join(format!("{name}.plot.json")))
-        .filter(|path| path.is_file())
-        .collect();
-    if inputs.is_empty() {
-        return Ok(None);
-    }
-    for input in inputs {
-        redraw(&input)?;
-    }
-    for name in ["electronic-bands.png", "electronic-dos.png"] {
-        let source = dir.join(name);
-        if source.is_file() {
-            fs::copy(&source, stage.join(name))?;
-        }
-    }
+    let dir = super::stages::Step::Wannier.directory(cfg).join("plot");
+    let file = dir.join("electronic.plot.json");
+    if !file.is_file() { return Ok(None); }
+    let mut near: super::combined_plot::Figure = super::store::read(&file)?;
+    near.bounds = cfg.plot.bounds();
+    super::combined_plot::write(&dir.join("electronic.png"),&near)?;
+    super::combined_plot::redraw(&dir.join("electronic-from-lowest-to-highest.plot.json"))?;
     Ok(Some(dir))
 }
 
@@ -1059,33 +974,6 @@ fn metrics_note(dir: &Path, kind: &str) -> Result<String> {
 }
 
 /// 显示下界只取共同 NSCF 有限采样中的最低占据态，不影响科学比较窗。
-fn display_bounds(cfg: &Config, dir: &Path, fermi: f64, default: Option<[f64; 2]>) -> Result<[f64; 2]> {
-    let xml = crate::interpolation::electronic_sampling::xml(cfg);
-    let states = crate::qe_data::nscf::parse_xml(&xml)?;
-    let minimum = states
-        .eigenvalues
-        .iter()
-        .flatten()
-        .copied()
-        .filter(|e| *e <= fermi)
-        .fold(f64::INFINITY, f64::min);
-    ensure!(
-        minimum.is_finite(),
-        "data_invalid: NSCF We can't find a minimum price zone without a occupation"
-    );
-    super::store::write(
-        &dir.join("electronic-display.json"),
-        &serde_json::json!({
-        "schema_version":1,"near_ev":[-5.,5.],"valence_ev":[minimum-fermi,5.],
-        "default_ev":default.unwrap_or([-5.,5.]),
-        "default_preset":if default.is_some() {"wannier_outer"} else {"fermi_pm5"},
-        "minimum_occupied_ev":minimum,"fermi_ev":fermi,"reference":super::store::Identity::capture(&xml)?,
-        "minimum_scope":"finite QE NSCF sampling, explicit pseudopotential valence states",
-        "pixels":[3000,2100],"dpi":300.0248,"fermi_color":[220,0,0],"interpolated_color":[0,70,210],
-        "display_window_is_not_metric_window":true}),
-    )?;
-    Ok([minimum - fermi, 5.])
-}
 
 fn dos_points(rows: &[(f64, f64)], lo: f64, hi: f64) -> Vec<(f64, f64)> {
     let swapped = rows.iter().map(|&(e, d)| (d, e)).collect::<Vec<_>>();
@@ -1258,4 +1146,25 @@ mod electronic_delivery_tests {
         }
         fs::remove_dir_all(root).unwrap();
     }
+}
+
+fn save_bands(dir: &Path, qe: &[Band], wan: Option<&[Band]>,
+    window: &[(f64, &str, RGBColor)], labels: &[(f64, String)], note: &str) -> Result<()> {
+    let bounds = [
+        qe.iter().flat_map(|b| &b.1).copied().fold(f64::INFINITY, f64::min),
+        qe.iter().flat_map(|b| &b.1).copied().fold(f64::NEG_INFINITY, f64::max),
+    ];
+    ensure!(bounds[0].is_finite() && bounds[1].is_finite() && bounds[0] < bounds[1],
+        "data_invalid: invalid QE path energy extrema");
+    super::store::write(&dir.join("electronic-bands.json"), &PlotData::Bands {
+        qe: qe.to_vec(), wan: wan.map(|v| v.to_vec()), bounds,
+        window: stored_window(window), labels: labels.to_vec(), note: note.into(),
+    })
+}
+fn save_dos(dir: &Path, qe: &[(f64, f64)], wan: Option<&[(f64, f64)]>,
+    window: &[(f64, &str, RGBColor)], note: &str, elements: &[(String, Vec<(f64, f64)>)]) -> Result<()> {
+    super::store::write(&dir.join("electronic-dos.json"), &PlotData::Dos {
+        qe: qe.to_vec(), wan: wan.map(|v| v.to_vec()), bounds: None,
+        window: stored_window(window), note: note.into(), elements: elements.to_vec(),
+    })
 }

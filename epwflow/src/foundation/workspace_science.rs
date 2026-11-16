@@ -105,7 +105,8 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
     }
     Ok(store::hash_bytes(&serde_json::to_vec(&(
         if step == Step::Coarse { 7 } else { 6 },
-        super::electronic_style::RENDERER_VERSION,
+        super::combined_plot::VERSION,
+        if step == Step::Wannier {Some(&cfg.plot)} else {None},
         keys,
         programs,
         cfg.comparison.clone().unwrap_or_default(),
@@ -224,6 +225,7 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                         &layout::path(&cfg.work_dir, "comparison-native/electron").join(n),
                     )
                 })
+                .chain(super::combined_plot::ELECTRONIC_FILES.iter().map(|n| Identity::capture(&dir.join("plot").join(n))))
                 .collect::<Result<Vec<_>>>()?
         } else {
             let previous = super::readable_state::checkpoint_config(cfg, step, "Comparison path")?;
@@ -308,11 +310,7 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                 crate::delivery::comparison::collect(&cfg.work_dir, None)?;
             }
             crate::delivery::comparison::collect(&cfg.work_dir, None)?;
-            crate::delivery::comparison_plot::plot(
-                &results,
-                None,
-                &["png".into(), "svg".into(), "pdf".into()],
-            )?;
+            super::combined_plot::coarse(cfg, &results)?;
             super::stage_results::tree(
                 cfg,
                 Step::Coarse,
@@ -839,25 +837,9 @@ fn check_wannier_post(
     Ok(())
 }
 
-fn electronic_files() -> [&'static str; 16] {
-    [
-        "electronic-bands.png",
-        "electronic-bands.csv",
-        "electronic-dos.png",
-        "electronic-dos.csv",
-        "electronic-bands.plot.json",
-        "electronic-dos.plot.json",
-        "electronic-dos-normalization.json",
-        "sampling.json",
-        "metrics.json",
-        "band.eig",
-        "band-origin.json",
-        "electronic-bands-valence.png",
-        "electronic-bands-valence.plot.json",
-        "electronic-dos-valence.png",
-        "electronic-dos-valence.plot.json",
-        "electronic-display.json",
-    ]
+fn electronic_files() -> [&'static str; 9] {
+    ["electronic-bands.csv","electronic-dos.csv","electronic-bands.json","electronic-dos.json",
+     "electronic-dos-normalization.json","sampling.json","metrics.json","band.eig","band-origin.json"]
 }
 
 pub(crate) fn verify_electronic_comparison(cfg: &Config) -> Result<()> {
@@ -904,16 +886,14 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         interpolation::electronic_sampling::legacy(cfg, &post)?;
     }
     electronic_comparison_inner(cfg, &post, fermi)?;
-    for name in [
-        "electronic-bands.png",
-        "electronic-bands.csv",
-        "electronic-dos.png",
-        "electronic-dos.csv",
-        "electronic-dos-normalization.json",
-    ] {
-        fs::copy(post.join(name), dir.join(name))?;
+    for name in ["electronic-bands.csv","electronic-dos.csv","electronic-dos-normalization.json"] {
+        fs::copy(post.join(name),dir.join(name))?;
     }
-    let names = electronic_files().map(str::to_owned);
+    let plot = dir.join("plot");
+    super::combined_plot::electronic(cfg,&post,&plot)?;
+    super::combined_plot::cleanup(&post)?;
+    super::combined_plot::cleanup(dir)?;
+    let names = electronic_files().map(str::to_owned).to_vec();
     let provenance = [
         interpolation::electronic_sampling::xml(cfg),
         Step::Electronic.directory(cfg).join(format!(
@@ -938,8 +918,12 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
             "frozen_window_ev":interpolation::comparison::parse_frozen_window(&log)?,
             "mesh":cfg.qe.nscf.k_grid,"mesh_weight":1.0/cfg.qe.nscf.k_grid.iter().product::<u32>() as f64,
             "spin_degeneracy":2,"electronic_sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev}),
-        provenance,
-    )
+        provenance.clone(),
+    )?;
+    super::stage_results::publish(cfg,Step::Wannier,"plot",&plot,
+        &super::combined_plot::ELECTRONIC_FILES.iter().map(|n|n.to_string()).collect::<Vec<_>>(),
+        json!({"kind":"electronic_combined","plot":cfg.plot}),provenance)
+
 }
 
 fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {

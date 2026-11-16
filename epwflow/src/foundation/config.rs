@@ -24,6 +24,7 @@ enumeration!(EnergyReference{QeZero,F2Fermi});
 enumeration!(FermiSource{F2,FineFixedElectrons});
 #[derive(Debug,Clone,Serialize,Deserialize)] #[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
+    #[serde(default)] pub plot: PlotConfig,
     #[serde(default, skip_serializing_if="Option::is_none")] pub layout:Option<String>,
     pub schema_version:u32,pub work_dir:PathBuf,
     #[serde(default="default_outdir")] pub outdir:PathBuf,
@@ -33,6 +34,20 @@ pub struct RuntimeConfig {
     #[serde(default)] pub atomic_masses:BTreeMap<String,f64>,
     pub slurm:qf_config::SlurmSection,pub budget:BudgetConfig,pub qe:Qe,pub phonon:Phonon,
     pub wannier:Wannier,pub interpolation:Interpolation,pub superconductivity:Superconductivity,
+}
+/// 仅控制显示，不参与任何科学阶段身份。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct PlotConfig {
+    pub electronic_energy_min_ev: f64,
+    pub electronic_energy_max_ev: f64,
+}
+impl Default for PlotConfig {
+    fn default() -> Self { Self { electronic_energy_min_ev: -3.0, electronic_energy_max_ev: 3.0 } }
+}
+impl PlotConfig {
+    pub fn bounds(&self) -> [f64; 2] { [self.electronic_energy_min_ev, self.electronic_energy_max_ev] }
+    pub fn validate(&self) -> Result<()> { interval(self.bounds(), "plot.electronic_energy_min_ev/electronic_energy_max_ev") }
 }
 fn default_outdir()->PathBuf{PathBuf::from("./tmp")}
 data!(Program{path:PathBuf,args:Vec<String>});
@@ -119,6 +134,7 @@ impl Config {
         Ok(c)
     }
     pub fn validate(&self)->Result<()>{
+        self.plot.validate()?;
         self.validate_impl().map_err(|e| self.config_error(e))
     }
     fn validate_impl(&self)->Result<()>{

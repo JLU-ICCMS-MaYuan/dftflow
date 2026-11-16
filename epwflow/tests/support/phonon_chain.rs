@@ -83,10 +83,10 @@ fn phonon_chain_single_submission_delivers_save_and_plots_without_downstream() {
     let dir = c.root.join("run/4.qe-phonon-nosplit");
     for file in [
         "save/scf.dvscf_q1",
-        "plots/phband/phonon_band.png",
-        "plots/phdos/phonon_dos.png",
-        "plots/phdos/phonon_dos_elements.csv",
-        "plots/phonon_combined.jpg",
+        "plot/phonon.png",
+        "plot/phonon.plot.json",
+        "plot/phdos/phonon_dos_elements.csv",
+        "plot/phband/phonon_band.csv",
     ] {
         assert!(dir.join(file).is_file(), "Missing {file}");
     }
@@ -155,7 +155,7 @@ fn phonon_chain_missing_plot_is_rebuilt_without_qe_and_tampered_save_is_rejected
     let calls = c.calls();
     fs::remove_file(
         c.root
-            .join("run/4.qe-phonon-nosplit/plots/phdos/phonon_dos.png"),
+            .join("run/4.qe-phonon-nosplit/plot/phonon.png"),
     )
     .unwrap();
     success(c.chain_submit(false));
@@ -228,7 +228,7 @@ fn phonon_chain_plot_failure_keeps_all_science_for_one_resume() {
     let c = Case::numbered();
     c.chain_setup();
     let p = c.root.join("qe_native_io.py");
-    let body = fs::read_to_string(&p).unwrap().replace("if value('fldos'):", "if value('fldos'):\n            if (ROOT/'plot-failure').exists():\n                Path('plots').mkdir(exist_ok=True)\n                Path('plots/phband').write_text('obstruction')");
+    let body = fs::read_to_string(&p).unwrap().replace("if value('fldos'):", "if value('fldos'):\n            if (ROOT/'plot-failure').exists():\n                Path('plot').mkdir(exist_ok=True)\n                Path('plot/phband').write_text('obstruction')");
     fs::write(p, body).unwrap();
     c.put("plot-failure", "block renderer");
     success(c.chain_submit(false));
@@ -238,7 +238,7 @@ fn phonon_chain_plot_failure_keeps_all_science_for_one_resume() {
     assert_eq!(c.chain_calls("q2r"), 1);
     assert_eq!(c.chain_calls("matdyn"), 2);
     fs::remove_file(c.root.join("plot-failure")).unwrap();
-    fs::remove_file(c.root.join("run/4.qe-phonon-nosplit/plots/phband")).unwrap();
+    fs::remove_file(c.root.join("run/4.qe-phonon-nosplit/plot/phband")).unwrap();
     success(c.chain_submit(true));
     success(c.chain_execute());
     assert_eq!(c.calls(), calls);

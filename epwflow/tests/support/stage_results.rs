@@ -128,8 +128,8 @@ fn wannier_allocation_publishes_without_phonons_and_repairs_only_derivatives() {
     success(c.stage_execute());
     let result = c.root.join("run/results/5.epw-wannier");
     for name in [
-        "electronic-bands.png",
-        "electronic-dos.png",
+        "plot/electronic.png",
+        "plot/electronic-from-lowest-to-highest.png",
         "electronic-bands.csv",
         "electronic-dos.csv",
         "sampling.json",
@@ -170,10 +170,10 @@ fn wannier_allocation_publishes_without_phonons_and_repairs_only_derivatives() {
     );
     let scientific = c.calls();
     let post = c.post_calls();
-    fs::remove_file(result.join("electronic-bands.png")).unwrap();
+    fs::remove_file(result.join("plot/electronic.png")).unwrap();
     fs::remove_file(
         c.root
-            .join("run/5.epw-wannier/comparison-native/electronic-dos.png"),
+            .join("run/5.epw-wannier/plot/electronic-from-lowest-to-highest.png"),
     )
     .unwrap();
     success(c.stage_submit("wannier", false));
@@ -186,7 +186,7 @@ fn wannier_allocation_publishes_without_phonons_and_repairs_only_derivatives() {
     assert_eq!(submissions, fs::read(c.root.join("submissions")).unwrap());
     let moved = c.root.join("portable-results");
     copy_results(&c.root.join("run/results"), &moved);
-    fs::remove_file(moved.join("5.epw-wannier/electronic-bands.png")).unwrap();
+    fs::remove_file(moved.join("5.epw-wannier/plot/electronic.png")).unwrap();
     let mut cmd = Command::new(BINS[1]);
     cmd.args(["--plot", "--results", moved.to_str().unwrap()])
         .env("PATH", "");
@@ -261,11 +261,11 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
         .exists());
     let results = c.root.join("run/results");
     epwflow::foundation::stage_results::check(&results).unwrap();
-    let figures = results.join("6.epw-coarse/figures");
-    assert!(figures.join("phonon_dispersion_comparison.png").is_file());
-    assert!(figures.join("phonon_dos_comparison.png").is_file());
+    let figures = results.join("6.epw-coarse/plot");
+    assert!(figures.join("phonon.png").is_file());
+    assert!(figures.join("phonon.png").is_file());
     let calls = c.calls();
-    fs::remove_file(figures.join("phonon_dispersion_comparison.png")).unwrap();
+    fs::remove_file(figures.join("phonon.png")).unwrap();
     success(c.stage_submit("coarse", false));
     success(c.stage_execute());
     assert_eq!(calls, c.calls());
@@ -477,11 +477,11 @@ fn sparse_high_symmetry_path_preserves_unequal_native_sampling_and_dos() {
     );
     assert_eq!(metrics["electronic_mesh"]["points"], 0);
     assert!(
-        !fs::read_to_string(result.join("electronic-bands.plot.json"))
+        !fs::read_to_string(result.join("electronic-bands.json"))
             .unwrap()
             .contains("coverage")
     );
-    assert!(result.join("electronic-dos.png").exists());
+    assert!(result.join("plot/electronic.png").exists());
     assert_eq!(c.post_calls(), "postw90\n");
     let bands_hash = store::hash_file(&result.join("electronic-bands.csv")).unwrap();
     success(c.stage_submit("coarse", false));
@@ -749,25 +749,24 @@ fn current_plot_overwrites_original_images_without_scientific_execution() {
     c.stage_setup();
     success(c.stage_submit("wannier", false));
     success(c.stage_execute());
-    let comparison = c.root.join("run/5.epw-wannier/comparison-native");
+    let comparison = c.root.join("run/5.epw-wannier/plot");
     let scientific = c.calls();
     let post = c.post_calls();
     let submissions = fs::read(c.root.join("submissions")).unwrap();
-    let source = store::Identity::capture(&comparison.join("band.eig")).unwrap();
+    let source = store::Identity::capture(&c.root.join("run/5.epw-wannier/comparison-native/band.eig")).unwrap();
     let model = store::Identity::capture(&c.root.join("run/5.epw-wannier/scf.chk")).unwrap();
-    let input = store::Identity::capture(&comparison.join("electronic-bands.plot.json")).unwrap();
-    let result_image = store::Identity::capture(&c.root.join("run/results/5.epw-wannier/electronic-bands.png")).unwrap();
-    for name in ["electronic-bands", "electronic-dos", "electronic-bands-valence", "electronic-dos-valence"] {
+    let input = store::Identity::capture(&comparison.join("electronic.plot.json")).unwrap();
+    let result_image = store::Identity::capture(&c.root.join("run/results/5.epw-wannier/plot/electronic.png")).unwrap();
+    for name in ["electronic", "electronic-from-lowest-to-highest"] {
         fs::remove_file(comparison.join(format!("{name}.png"))).unwrap();
     }
-    fs::remove_file(c.root.join("run/5.epw-wannier/electronic-bands.png")).unwrap();
     let out = c.numbered_cli(1, &["--plot"], None, "current-replot");
     assert!(String::from_utf8_lossy(&out.stdout).contains("plots:"));
     success(out);
-    for name in ["electronic-bands", "electronic-dos", "electronic-bands-valence", "electronic-dos-valence"] {
+    for name in ["electronic", "electronic-from-lowest-to-highest"] {
         assert!(comparison.join(format!("{name}.png")).is_file());
     }
-    assert!(c.root.join("run/5.epw-wannier/electronic-bands.png").is_file());
+    assert!(c.root.join("run/5.epw-wannier/plot/electronic.png").is_file());
     assert_eq!(scientific, c.calls());
     assert_eq!(post, c.post_calls());
     assert_eq!(submissions, fs::read(c.root.join("submissions")).unwrap());

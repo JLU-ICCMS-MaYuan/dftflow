@@ -72,7 +72,7 @@ SCF、NSCF、声子、q2r、matdyn 等已成对命名保留；第 8 步及自动
 
 ## 常规对比与最大差值（0043）
 
-源码已取消独立抽样核验：不再生成 quality-sources、额外参考 NSCF／直接 PH／dynmat、专用点文件／质量报告／绑定清单，也不读取 interpolation.quality。常规 QE 电子路径／均匀网格、q2r/matdyn 声子及 EPW 重读保留，生成四张独立图和总览。
+源码已取消独立抽样核验：不再生成 quality-sources、额外参考 NSCF／直接 PH／dynmat、专用点文件／质量报告／绑定清单，也不读取 interpolation.quality。常规 QE 电子路径／均匀网格、q2r/matdyn 声子及 EPW 重读保留，当前编号工作区按阶段生成共享纵轴组合图；历史分离图包保留只读重绘。
 
 comparison/metrics.json 的 differences 分别记录电子路径、电子 DOS 网格、声子路径、声子 DOS 网格最大绝对差值，包括坐标、两侧编号和原值、配对及未配对态数。电子使用共同 Fermi 零点和实际 Outer 窗，有序匹配较少一侧全部状态，使平方差之和最小；这不代表同一本征态。声子比较同 q 点全部 3N 排序频率，统一 cm⁻¹ 并保留虚频符号，QE 对照来自 q2r/matdyn。
 
@@ -129,7 +129,7 @@ epw_phonon 直接调用 qeflow 的 nosplit Rust 库（[说明](../qeflow/qe_phon
 
 失败且尚未交付 Wannier 的单 image 运行支持 `epw_wannier --resume -w WORK --mpi N -s`：同步调整 MPI、pool、Slurm 任务数和预算请求，pool 不超过完整粗 k 点数。并行设置保存在尝试记录，原固定输入和 QE 数据保持；后续阶段恢复继承该设置，状态显示 `effective_mpi`／`mpi_override`。活动／未知作业、已交付粗网格后的布局变化及不相容科学输入拒绝。独立进程回归已验证失败粗阶段恢复和旧来源不变；第二阶段尚未完成的比较路径 NSCF 等仍会补算，不代表重复第一阶段。见 [0008 T051](../../specs/0008-epwflow-foundation/three-programs.md#仅修改-mpi-的失败粗阶段恢复t051)。
 
-粗网格阶段独立发布 `wannier/manifest.json`，没有细网格或谱；细网格在第三阶段重验前者后另行发布 `interpolation/manifest.json`，绑定原粗清单哈希，保持其不变。进程回归证明阶段顺序、原生格式角色和失败阻断；四类比较图的自动生成已接入，当前不生成独立抽样参考；真实 PBE 全链与两模式 Tc 交付尚未完成。首条主路径采用 nosplit，不要求三来源六组合完成才交付。
+粗网格阶段独立发布 `wannier/manifest.json`，没有细网格或谱；细网格在第三阶段重验前者后另行发布 `interpolation/manifest.json`，绑定原粗清单哈希，保持其不变。进程回归证明阶段顺序、原生格式角色和失败阻断；阶段组合图的自动生成已接入，当前不生成独立抽样参考；真实 PBE 全链与两模式 Tc 交付尚未完成。首条主路径采用 nosplit，不要求三来源六组合完成才交付。
 
 结果按每个阶段即时发布到工作区根 results，以 index.json 导航；结果清单已存在而图表未完成时，显式恢复仍交由 F5 接续，不重新执行已验证的科学阶段。该根目录的原生结果／比较结果／两类图像锁复用现有 owner 与 Slurm 终态校验，不能清除未知锁。原生图与比较图共用同源格式保留逻辑；SVG 重绘保留已登记的 PNG／PDF，原生来源改变须重绘全部已有格式或新目录，比较来源改变须新目录。已由文件级与公开进程故障检查验证。
 
@@ -347,11 +347,11 @@ EPW 的 `wannier.selection_mode = "energy_only"` 使用共享 Rust 纯能量选�
 
 ## QE 分阶段即时出图（0047）
 
-第 3 步每个电子子任务校验成功即生成自己的 QE 单独图：`qe_eband/plots/electronic-bands.png` 与 `qe_eledos/plots/electronic-dos.png`，同时保存 CSV。电子来源使用已核验 NSCF 的 Fermi 零点，不等待声子或 Wannier，也不要求拟合能窗。能带保留断开路径与高对称点标签。
+第 3 步能带与 DOS 均就绪后，在 3.qe-electronic/plot/ 生成两张 QE 组合图：electronic.png 和 electronic-from-lowest-to-highest.png。路径科学数据完成后仍即时生成独立逐带范围诊断；DOS 失败保留能带数据，不发布缺失 DOS 的组合图。
 
-第 4 步 q2r／matdyn 后处理结束后，在 `4.qe-phonon-<模式>/plots/` 生成 `phband/phonon_band.png`、`phdos/phonon_dos.png` 和联合图。声子 DOS 同时显示 TDOS 与按结构汇总的元素贡献，原子／元素 CSV 可追溯；必须有完整逐原子投影，缺列明确报错。
+第 4 步 q2r／matdyn 后处理就绪后，在 4.qe-phonon-<模式>/plot/ 生成一张 phonon.png，左侧声子谱、右侧总量／元素 DOS，共用 0 到路径最高频率的纵轴。完整原子投影、元素聚合与 CSV 核验保留。
 
-第 5 步完成后立即发布 QE／EPW 电子能带和总 DOS 叠图，不依赖声子。第 6 步声子谱继续比较 QE／EPW，声子 DOS 的独立图与总览仅比较 TDOS，不展示元素曲线或元素投影缺失占位。第 3／4 步的单独图保留。第 3 步已提供 QE 元素电子 PDOS；EPW 元素／轨道 PDOS 及插值侧元素声子投影仍未提供。
+第 5 步的 plot/ 同样生成两张电子组合图，叠加 QE 实线与 EPW 蓝色虚线；第 6 步 plot/ 只生成一张声子谱＋总 DOS 的 phonon.png。新生成端不再输出分离图、-valence 图或比较总览，逐带范围与实空间衰减诊断保留。所有阶段组合图和自包含图参即时发布到 results 对应阶段的 plot/。
 
 `-r` 在该子任务结束时绘图。第 3～6 步的 `-s` 在一个阶段分配内推进：第 5 步自动完成拟合、核验、电子能带／DOS 后处理与绘图，第 6 步自动完成粗网格、路径插值与 QE／EPW 比较图；无需重复命令。第 7、8 步直接提交原生任务，再次执行公开命令检查、补齐后处理并发布。派生图与科学子任务的续算统一进入阶段日志；不再生成 `plots/completion.json`、`post-completion.json` 或 `qe-post-completion.json`。状态查询不补图，配置内容变化时仍保存原文版本。
 
@@ -376,17 +376,11 @@ examples 旧现场已移出归档，输入保持，当前目录可从全新 SCF 
 
 ## 电子双能窗、元素 PDOS 与保留色
 
-第 3 步各电子子任务完成后发布自己的两张图，第 5 步发布四张对比图，合计 8 张。每阶段能带和 DOS 对应范围相同：普通文件名在第 3 步为 E_F±5 eV，第 5 步为实际 dis_win_min−E_F～dis_win_max−E_F；`-valence` 文件为共同 QE NSCF 的最低已计算占据态至 E_F＋5 eV。该下界保留赝势显式半芯态，表示有限网格采样的最小值。实际 dis_win／dis_froz、原科学指标窗及完整 CSV 不因显示裁剪改变；四面板总览电子部分采用近费米范围。
+第 3、5 步各两张能带＋DOS 组合图，纵轴为 E−E_F。electronic.png 使用 [plot].electronic_energy_min_ev／electronic_energy_max_ev，独立默认 −3／＋3；electronic-from-lowest-to-highest.png 严格使用 QE 路径全部本征值极值。第 5 步的全范围同样以 QE 为准，不使用模型外窗或 DOS 网格替代。
 
-电子能带和 DOS 均画红色费米线。EPW／Wannier 插值专用蓝色，QE 深灰，元素及选窗边界用绿／橙／褐／紫等颜色，普通标签黑色。独立电子图例位于绘图区外，不遮挡峰和费米线。默认电子 PNG 为 3000×2100、300.0248 DPI，从数值矢量重新栅格化，内置字体确保计算节点不丢文字。短段间空隙的重叠端点标签合并显示，不跨段连接曲线或修改科学坐标。
+两个面板上下严格对齐，DOS 横轴为态密度，未覆盖范围留空。QE 实线先绘、EPW 蓝色虚线后绘，电子图费米线为红色，四窗口保留不同颜色虚线；至少 300 DPI。第 3 步保留 QE 元素投影语义，第 5 步只比较总 DOS。完整数值表与科学指标不随显示裁剪。
 
-QE 参考曲线统一使用深灰实线，涵盖能带、DOS、声子比较及总览；EPW／Wannier 使用蓝色短虚线后绘。第 3 步 TDOS 为实线，各元素 PDOS 使用不同长度的短虚线。多曲线图中参考／插值线宽为 4∶3（约粗 33%），图例同步；电子费米线仍为红色，重绘不改变科学数据。
-
-QE 元素电子 PDOS 只在第 3 步与 TDOS 同图；第 5 步仍仅比较 TDOS。缺投影时对 NSCF 的隔离副本运行最小 projwfc，原始波函数不参与核验，事前记录技术原因。投影完成图使用同次 `.pdos_tot` 的 DOS 列，与逐元素 LDOS 保持原生同网格；旧 dos.x 文件留存。LDOS 各计一次、容许原生打印舍入，投影和与 TDOS 的残差如实输出，不归一化。当前支持非磁标量投影，不支持的自旋明确报错；波函数是否可读由原生程序报告，不做预先核对，不自动重算 NSCF。
-
-成功原生投影先保存检查点，后续解析／发布失败只接续派生产物。缺投影时已完成的 QE 能带和 TDOS 仍交付并注明缺项。完整包可仅用包内数据重绘；旧包没有元素数据时不会伪装成新完整交付。已用真实 PBE MgB₂ 数据验证八图、来源不变和移动重绘；此验证不新增选窗、网格或 Tc 收敛结论。证据见 [0055 验收](../../specs/0055-electronic-plot-windows-pdos/acceptance.md)。
-
-NSCF 简写网格、实际输入／输出与 FFT 接续检查见 [NSCF 网格说明](nscf-grid.md)；其中工作树、提交及安装边界分别记录。
+修改范围或缺图时仅恢复绘图；现场 epw_wannier --plot 使用阶段 plot/ 图参，移动结果包从包内图参重绘。历史分离图包仍可按原格式读取，新生成端不产生旧分离图。详见 [0055 当前契约](../../specs/0055-electronic-plot-windows-pdos/contracts/electronic-results.md)。
 
 
 ## Wannier 未收敛诊断图

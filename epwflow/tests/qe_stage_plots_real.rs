@@ -39,20 +39,21 @@ fn existing_real_qe_data_plot_without_scientific_execution() {
     epwflow::foundation::layout::initialize(&cfg).unwrap();
     // 旧只读探针缺少波函数／投影，只重绘已存在的 TDOS，明确不完整；完整元素验收见 0055。
     let fermi=epwflow::qe_data::nscf::parse_xml(&output.join(format!("2.qe-nscf/out/{prefix}.save/data-file-schema.xml"))).unwrap().fermi;
-    for leaf in ["qe_eband","qe_eledos"] {fs::create_dir_all(output.join("3.qe-electronic").join(leaf).join("plots")).unwrap();}
-    epwflow::foundation::workspace_plot::qe_bands(&cfg,&output.join("3.qe-electronic/qe_eband/plots"),fermi).unwrap();
-    epwflow::foundation::workspace_plot::qe_dos(&cfg,&output.join("3.qe-electronic/qe_eledos/plots"),fermi).unwrap();
+    let plot=output.join("3.qe-electronic/plot");
+    fs::create_dir_all(&plot).unwrap();
+    epwflow::foundation::workspace_plot::qe_bands(&cfg,&plot,fermi).unwrap();
+    epwflow::foundation::workspace_plot::qe_dos(&cfg,&plot,fermi).unwrap();
+    epwflow::foundation::combined_plot::electronic(&cfg,&plot,&plot).unwrap();
     workspace_qe_plot::refresh(&cfg, Step::Phonon).unwrap();
     for p in [
-        "3.qe-electronic/qe_eband/plots/electronic-bands.png",
-        "3.qe-electronic/qe_eledos/plots/electronic-dos.png",
-        "4.qe-phonon-nosplit/plots/phband/phonon_band.png",
-        "4.qe-phonon-nosplit/plots/phdos/phonon_dos.png",
+        "3.qe-electronic/plot/electronic.png",
+        "3.qe-electronic/plot/electronic-from-lowest-to-highest.png",
+        "4.qe-phonon-nosplit/plot/phonon.png",
     ] {
         assert!(fs::read(output.join(p)).unwrap().starts_with(b"\x89PNG"));
     }
     let elements =
-        fs::read_to_string(output.join("4.qe-phonon-nosplit/plots/phdos/phonon_dos_elements.csv"))
+        fs::read_to_string(output.join("4.qe-phonon-nosplit/plot/phdos/phonon_dos_elements.csv"))
             .unwrap();
     assert!(elements.lines().next().unwrap().contains(",Mg,B"));
     // QE 原始逐原子投影是较低精度文本；用对应舍入精度核对可加性。

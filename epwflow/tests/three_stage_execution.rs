@@ -724,7 +724,7 @@ fn numbered_wannier_post_zero_exit_error_preserves_fit_and_resumes() {
     assert_eq!(receipt, fs::read(c.root.join("run/5.epw-wannier/scf.ukk")).unwrap());
     assert_eq!(wout, store::hash_file(&c.root.join("run/5.epw-wannier/scf.wout")).unwrap());
     assert!(!c.root.join("run/5.epw-wannier/scf.werr").exists());
-    assert!(c.root.join("run/5.epw-wannier/electronic-bands.png").is_file());
+    assert!(c.root.join("run/5.epw-wannier/plot/electronic.png").is_file());
     let norm: Value = store::read(&c.root.join("run/5.epw-wannier/electronic-dos-normalization.json")).unwrap();
     assert_eq!(norm["postw90_multiplier"], 1);
     assert_eq!(norm["postw90_num_elec_per_state"], 2);
@@ -1007,7 +1007,7 @@ fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
     c.put("input.toml","invalid pending edits must not affect submitted native job");
     success(c.stage_execute());
     assert_eq!(logs::read(&root,Step::Electronic).unwrap().get("Stage allocation","Status"),Some("completed"));
-    assert!(c.root.join("run/results/3.qe-electronic/qe_eband/electronic-bands.png").is_file());
+    assert!(c.root.join("run/results/3.qe-electronic/plot/electronic.png").is_file());
 }
 
 #[test]

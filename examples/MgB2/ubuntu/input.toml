@@ -8,6 +8,11 @@ structure = "../../../test_auto/MgB2/MgB2.vasp"
 schema_version = 2
 outdir = "scratch"
 
+# 电子组合图的纵轴范围，相对费米能级；第 3、5 步共用。
+[plot]
+electronic_energy_min_ev = -3.0
+electronic_energy_max_ev = 3.0
+
 [pseudos]
 Mg = "repair/pp/mg_pbe_v1.4.UPF"
 B = "repair/pp/b_pbe_v1.4.uspp.F.UPF"

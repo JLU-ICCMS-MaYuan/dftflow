@@ -42,4 +42,6 @@ pub mod wannier_diagnostics;
 pub mod legacy_state;
 pub mod scientific_logs;
 
+pub mod combined_plot;
+
 mod legacy_language;

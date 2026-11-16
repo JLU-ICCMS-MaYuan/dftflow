@@ -65,7 +65,7 @@ impl Request {
         let Some(old) = super::readable_state::checkpoint_config(&cfg, step, &label)? else {
             return Ok(false);
         };
-        if serde_json::to_value(&old.comparison)? != serde_json::to_value(&cfg.comparison)? {
+        if serde_json::to_value(&old.comparison)? != serde_json::to_value(&cfg.comparison)? || old.plot != cfg.plot {
             return Ok(false);
         }
         for output in &self.outputs {
@@ -107,87 +107,45 @@ fn nscf_xml(cfg: &Config) -> PathBuf {
     layout::path(&cfg.work_dir, "nscf/out")
         .join(format!("{}.save/data-file-schema.xml", cfg.qe.prefix))
 }
-fn electronic_request(cfg: &Config, leaf: &str) -> Result<Request> {
-    let dir = Step::Electronic.directory(cfg).join(leaf);
-    let mut inputs = vec![nscf_xml(cfg)];
-    let files: &[&str] = match leaf {
-        "qe_eband" => {
-            inputs.extend([
-                dir.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix)),
-                dir.join("path-points.json"),
-                cfg.kpath.clone().context("required: Electronic drawing needs KPATH")?,
-            ]);
-            &[
-                "electronic-bands.png",
-                "electronic-bands.csv",
-                "electronic-bands.plot.json",
-                "electronic-bands-valence.png",
-                "electronic-bands-valence.plot.json",
-                "electronic-display.json",
-            ]
-        }
-        "qe_eledos" => {
-            inputs.push(dir.join(format!("{}.tdos", cfg.qe.prefix)));
-            inputs.extend(super::workspace_pdos::files(cfg)?);
-            &[
-                "electronic-dos.png",
-                "electronic-dos.csv",
-                "electronic-dos.plot.json",
-                "electronic-dos-valence.png",
-                "electronic-dos-valence.plot.json",
-                "electronic-display.json",
-                "electronic-pdos.csv",
-                "electronic-pdos.json",
-            ]
-        }
-        _ => anyhow::bail!("configuration: Unknown QE Drawing Tasks {leaf}"),
-    };
-    Request::new(
-        dir.join("plots"),
-        inputs,
-        files,
-        serde_json::json!({"renderer_version":super::electronic_style::RENDERER_VERSION,"points_per_edge":cfg.comparison.clone().unwrap_or_default().points_per_edge}),
-    )
+fn electronic_request(cfg: &Config) -> Result<Request> {
+    let stage = Step::Electronic.directory(cfg);
+    let mut inputs = vec![nscf_xml(cfg),
+        stage.join(format!("qe_eband/out/{}.save/data-file-schema.xml",cfg.qe.prefix)),
+        stage.join("qe_eband/path-points.json"),
+        cfg.kpath.clone().context("required: electronic plots require KPATH")?,
+        stage.join(format!("qe_eledos/{}.tdos",cfg.qe.prefix))];
+    inputs.extend(super::workspace_pdos::files(cfg)?);
+    let mut files = super::combined_plot::ELECTRONIC_FILES.to_vec();
+    files.extend(["electronic-bands.csv","electronic-dos.csv",
+        "electronic-bands.json","electronic-dos.json","electronic-pdos.csv","electronic-pdos.json"]);
+    Request::new(stage.join("plot"), inputs, &files,
+        serde_json::json!({"renderer_version":super::combined_plot::VERSION,"plot":cfg.plot}))
 }
 
 pub fn electronic(cfg: &Config, leaf: &str) -> Result<()> {
     if leaf == "qe_eband" {
         super::band_ranges::generate(cfg, Step::Electronic)?;
+        return Ok(());
     }
-    let pdos = if leaf == "qe_eledos" {
-        super::workspace_pdos::run(cfg)
-    } else {
-        Ok(())
-    };
-    if pdos.as_ref().err().is_some_and(super::native_jobs::paused) {
-        return pdos;
-    }
-    let request = electronic_request(cfg, leaf)?;
+    let pdos = super::workspace_pdos::run(cfg);
+    if pdos.as_ref().err().is_some_and(super::native_jobs::paused) { return pdos; }
+    let request = electronic_request(cfg)?;
+    let fermi = nscf::parse_xml(&nscf_xml(cfg))?.fermi;
     request.run(|| {
-        let fermi = nscf::parse_xml(&nscf_xml(cfg))?.fermi;
-        match leaf {
-            "qe_eband" => workspace_plot::qe_bands(cfg, &request.dir, fermi),
-            "qe_eledos" => {
-                workspace_plot::qe_dos(cfg, &request.dir, fermi)?;
-                super::workspace_pdos::export(cfg, &request.dir, fermi)
-            }
-            _ => unreachable!(),
-        }
+        workspace_plot::qe_bands(cfg, &request.dir, fermi)?;
+        workspace_plot::qe_dos(cfg, &request.dir, fermi)?;
+        super::workspace_pdos::export(cfg, &request.dir, fermi)?;
+        super::combined_plot::electronic(cfg, &request.dir, &request.dir)
     })?;
-    let names = request
-        .outputs
-        .iter()
-        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
-        .collect::<Vec<_>>();
-    super::stage_results::publish(
-        cfg,
-        Step::Electronic,
-        leaf,
-        &request.dir,
-        &names,
-        serde_json::json!({"kind":leaf,"fermi_source":"NSCF","fermi_ev":nscf::parse_xml(&nscf_xml(cfg))?.fermi,"sigma_ev":cfg.native_value::<f64>(&[super::native_config::ELECTRONIC,"qe_eledos","dos","DOS","degauss"])?*13.605693122994}),
-        request.sources,
-    )?;
+    let names = request.outputs.iter().map(|p|p.file_name().unwrap().to_string_lossy().into_owned()).collect::<Vec<_>>();
+    super::stage_results::publish(cfg,Step::Electronic,"plot",&request.dir,&names,
+        serde_json::json!({"kind":"electronic_combined","plot":cfg.plot,"fermi_source":"NSCF",
+            "fermi_ev":fermi,"sigma_ev":cfg.native_value::<f64>(&[super::native_config::ELECTRONIC,"qe_eledos","dos","DOS","degauss"])?*13.605693122994}),
+        request.sources)?;
+    super::stage_results::retire_units(cfg,Step::Electronic,&["qe_eband","qe_eledos"])?;
+    for leaf in ["qe_eband","qe_eledos"] {
+        super::combined_plot::cleanup(&Step::Electronic.directory(cfg).join(leaf).join("plots"))?;
+    }
     pdos
 }
 
@@ -206,18 +164,17 @@ fn phonon_request(cfg: &Config) -> Result<Request> {
     let mut inputs: Vec<_> = phonon_inputs(cfg).into_iter().map(|(p, _)| p).collect();
     inputs.push(cfg.structure.clone());
     Request::new(
-        Step::Phonon.directory(cfg).join("plots"),
+        Step::Phonon.directory(cfg).join("plot"),
         inputs,
         &[
-            "phband/phonon_band.png",
             "phband/phonon_band.csv",
             "phband/phonon_band_labels.csv",
-            "phdos/phonon_dos.png",
             "phdos/phonon_dos_atoms.csv",
             "phdos/phonon_dos_elements.csv",
-            "phonon_combined.jpg",
+            "phonon.png",
+            "phonon.plot.json",
         ],
-        serde_json::json!(cfg.comparison.clone().unwrap_or_default().phonon_sigma_cm1),
+        serde_json::json!({"renderer_version":super::combined_plot::VERSION,"sigma":cfg.comparison.clone().unwrap_or_default().phonon_sigma_cm1}),
     )
 }
 
@@ -281,28 +238,19 @@ pub fn phonon(cfg: &Config) -> Result<()> {
             )?;
         }
         let sigma = cfg.comparison.clone().unwrap_or_default().phonon_sigma_cm1;
-        qf_phonon::plot::plot_phonon_band(work, &cfg.qe.prefix)?;
-        qf_phonon::plot::plot_phonon_dos(
-            work,
-            &cfg.qe.prefix,
-            &qe.cell.elements,
-            &qe.cell.counts,
-            sigma,
-        )?;
-        qf_phonon::plot::plot_phonon_combined(
-            work,
-            &cfg.qe.prefix,
-            &qe.cell.elements,
-            &qe.cell.counts,
-            sigma,
-        )?;
+        super::combined_plot::qe_phonon(cfg,&request.dir,&qe.cell.elements,&qe.cell.counts,sigma)?;
         Ok(())
     })?;
+    let old = Step::Phonon.directory(cfg).join("plots");
+    for name in ["phband/phonon_band.png","phdos/phonon_dos.png","phonon_combined.jpg"] {
+        let path=old.join(name); if path.is_file() { fs::remove_file(path)?; }
+    }
+    super::stage_results::retire_units(cfg,Step::Phonon,&["","phband","phdos"])?;
     let qe = QeSettings::from_config(cfg)?;
     super::stage_results::tree(
         cfg,
         Step::Phonon,
-        "",
+        "plot",
         &request.dir,
         serde_json::json!({"sources":request.sources,"kind":"qe_phonon","prefix":cfg.qe.prefix,"elements":qe.cell.elements,"counts":qe.cell.counts,"sigma_cm1":cfg.comparison.clone().unwrap_or_default().phonon_sigma_cm1}),
     )
@@ -335,10 +283,7 @@ pub fn pending(cfg: &Config, target: Step) -> Result<bool> {
             return Ok(true);
         }
         let requests = if step == Step::Electronic {
-            vec![
-                electronic_request(cfg, "qe_eband")?,
-                electronic_request(cfg, "qe_eledos")?,
-            ]
+            vec![electronic_request(cfg)?]
         } else {
             vec![phonon_request(cfg)?]
         };

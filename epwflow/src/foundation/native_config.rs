@@ -27,6 +27,8 @@ pub(crate) fn configuration_error(error: anyhow::Error) -> anyhow::Error {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Document {
+    #[serde(default)]
+    pub plot: config::PlotConfig,
     // 仅记录外部展示方式，不参与科学参数、序列化或阶段身份。
     #[serde(skip)]
     pub(crate) eight_stages: bool,
@@ -69,6 +71,7 @@ impl<'de> Deserialize<'de> for Config {
         let document = Document::deserialize(d)?;
         ensure_version(document.schema_version).map_err(serde::de::Error::custom)?;
         let document = flat::expand(document).map_err(serde::de::Error::custom)?;
+        document.plot.validate().map_err(serde::de::Error::custom)?;
         let runtime = decode(&document).map_err(|e| serde::de::Error::custom(flat::format_message(&format!("{e:#}"), document.eight_stages, &ph_name(&document).unwrap_or_default())))?;
         Ok(Self { runtime, document })
     }
@@ -442,6 +445,7 @@ impl Config {
         ensure_version(document.schema_version)?;
         ensure!(document.stages.get(SCF).is_some_and(|v| v.get("pw").is_some()),
             "configuration: controlled upgrade accepts only legacy nested version 2");
+        document.plot.validate()?;
         let runtime = decode(&document)?;
         let mut cfg = Self { runtime, document };
         cfg.validate()?;
@@ -515,6 +519,7 @@ fn decode(d: &Document) -> Result<RuntimeConfig> {
         phonon_sigma_cm1: get(&v, &[&ph, "workflow", "phonon_sigma_cm1"])?,
     };
     Ok(RuntimeConfig {
+        plot: d.plot.clone(),
         schema_version: 2,
         work_dir: d.work_dir.clone(),
         outdir: d.outdir.clone(),
@@ -1218,6 +1223,7 @@ impl Config {
     }
     fn document(&self) -> Result<Document> {
         let mut d = self.document.clone();
+        d.plot = self.plot.clone();
         d.schema_version = self.schema_version;
         d.work_dir = self.work_dir.clone();
         d.outdir = self.outdir.clone();

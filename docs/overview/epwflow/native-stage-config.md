@@ -55,3 +55,9 @@ TOML 无需填写 outdir、pseudo_dir、nat 等自动绑定项或 derived 表。
 ## 已有真实验证边界
 
 0059 在 2026-10-26 使用当时的多层配置完成 PBE MgB₂ 小网格八阶段重算，iso/aniso 的 20/30/40 K 六点收敛且数据有效。这是历史科学证据，不是本轮配置格式重算；不构成 Tc 或网格收敛验收，见 [0059 验收](../../specs/0059-epw-native-stage-config/acceptance.md)。
+
+## 组合图显示范围
+
+input.toml 的顶层 [plot] 提供 electronic_energy_min_ev 与 electronic_energy_max_ev，独立默认 −3／＋3，单位 eV、相对 E_F。两值必须有限且严格递增，第 3、5 步共用；不参与科学阶段身份，不改变任何原生程序输入或实际拟合窗。
+
+第 3、5 步 plot/ 各生成两张电子组合图；全范围取 QE 路径能带极值。第 4、6 步 plot/ 为 0 到最高路径频率的一张声子组合图。自包含 .plot.json 支持独立重绘。

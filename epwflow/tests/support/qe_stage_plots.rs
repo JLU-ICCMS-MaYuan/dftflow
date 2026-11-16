@@ -34,10 +34,8 @@ fn electronic_leaf_plot_survives_other_leaf_failure_without_phonons() {
         )
         .status
         .success());
-    png(
-        &c,
-        "run/3.qe-electronic/qe_eband/plots/electronic-bands.png",
-    );
+    assert!(!c.root.join("run/3.qe-electronic/plot/electronic.png").exists());
+    assert!(c.root.join("run/results/3.qe-electronic/band-ranges").is_dir());
     assert!(!c.root.join("run/4.qe-phonon-nosplit/ph.out").exists());
     assert!(!c.root.join("run/5.epw-wannier").exists());
     let calls = c.calls();
@@ -49,11 +47,11 @@ fn electronic_leaf_plot_survives_other_leaf_failure_without_phonons() {
         Some(202),
         "qe-plot-dos-resume",
     ));
-    png(&c, "run/3.qe-electronic/qe_eledos/plots/electronic-dos.png");
+    png(&c, "run/3.qe-electronic/plot/electronic.png");
     assert_eq!(calls, c.calls(), "Success PW Don't run again");
     let bands = c
         .root
-        .join("run/3.qe-electronic/qe_eband/plots/electronic-bands.png");
+        .join("run/3.qe-electronic/plot/electronic.png");
     let original = store::hash_file(&bands).unwrap();
     let electronic_calls = fs::read(c.root.join("electronic-calls")).unwrap();
     fs::remove_file(&bands).unwrap();
@@ -73,13 +71,13 @@ fn electronic_leaf_plot_survives_other_leaf_failure_without_phonons() {
 fn electronic_allocation_publishes_both_leaves_and_repairs_without_science() {
     let c=Case::numbered();c.stage_setup();
     success(c.stage_submit("electronic",false));success(c.stage_execute());
-    png(&c,"run/results/3.qe-electronic/qe_eband/electronic-bands.png");
-    png(&c,"run/results/3.qe-electronic/qe_eledos/electronic-dos.png");
+    png(&c,"run/results/3.qe-electronic/plot/electronic.png");
+    png(&c,"run/results/3.qe-electronic/plot/electronic.png");
     let calls=c.calls();
-    fs::remove_file(c.root.join("run/3.qe-electronic/qe_eledos/plots/electronic-dos.png")).unwrap();
+    fs::remove_file(c.root.join("run/3.qe-electronic/plot/electronic.png")).unwrap();
     success(c.stage_submit("electronic",false));success(c.stage_execute());
     assert_eq!(calls,c.calls());
-    png(&c,"run/results/3.qe-electronic/qe_eledos/electronic-dos.png");
+    png(&c,"run/results/3.qe-electronic/plot/electronic.png");
 }
 
 #[test]
@@ -95,11 +93,11 @@ fn phonon_plots_include_elements_and_repair_without_scientific_calls() {
     });
     c.accounting(Some(201));
     success(c.numbered_cli(0, &["-r"], Some(201), "qe-plot-phonon"));
-    png(&c, "run/4.qe-phonon-nosplit/plots/phband/phonon_band.png");
-    png(&c, "run/4.qe-phonon-nosplit/plots/phdos/phonon_dos.png");
+    png(&c, "run/4.qe-phonon-nosplit/plot/phonon.png");
+    png(&c, "run/4.qe-phonon-nosplit/plot/phonon.png");
     let csv = c
         .root
-        .join("run/4.qe-phonon-nosplit/plots/phdos/phonon_dos_elements.csv");
+        .join("run/4.qe-phonon-nosplit/plot/phdos/phonon_dos_elements.csv");
     let text = fs::read_to_string(csv).unwrap();
     assert!(text.starts_with("frequency_cm-1,TDOS,Si,C\n"));
     for line in text.lines().skip(1) {
@@ -112,12 +110,12 @@ fn phonon_plots_include_elements_and_repair_without_scientific_calls() {
     let science = fs::read(c.root.join("run/4.qe-phonon-nosplit/save/scf.dvscf_q2")).unwrap();
     fs::remove_file(
         c.root
-            .join("run/4.qe-phonon-nosplit/plots/phdos/phonon_dos.png"),
+            .join("run/4.qe-phonon-nosplit/plot/phonon.png"),
     )
     .unwrap();
     c.accounting(Some(202));
     success(c.numbered_cli(0, &["-r"], Some(202), "qe-plot-ph-repair"));
-    png(&c, "run/4.qe-phonon-nosplit/plots/phdos/phonon_dos.png");
+    png(&c, "run/4.qe-phonon-nosplit/plot/phonon.png");
     assert_eq!(calls, c.calls());
     assert_eq!(
         science,
@@ -141,10 +139,10 @@ fn incomplete_atomic_projection_is_rejected_without_fake_element_plots() {
         String::from_utf8_lossy(&o.stderr)
     );
     assert!(!c.root.join("run/4.qe-phonon-nosplit/qe-post-completion.json").exists());
-    assert!(!c.root.join("run/4.qe-phonon-nosplit/plots/completion.json").exists());
+    assert!(!c.root.join("run/4.qe-phonon-nosplit/plot/completion.json").exists());
     assert!(!c
         .root
-        .join("run/4.qe-phonon-nosplit/plots/phdos/phonon_dos.png")
+        .join("run/4.qe-phonon-nosplit/plot/phonon.png")
         .exists());
 }
 
@@ -153,11 +151,11 @@ fn phonon_plot_failure_resumes_from_numeric_checkpoint_without_rerunning_matdyn(
     let c = Case::numbered();
     let blocked = c
         .root
-        .join("run/4.qe-phonon-nosplit/plots/phband/phonon_band.png");
+        .join("run/4.qe-phonon-nosplit/plot/phonon.png");
     // 新阶段归档会移动旧文件，因此在 matdyn 替身结束时注入真实图片写入失败。
     let file = c.root.join("qe_native_io.py");
     let source = fs::read_to_string(&file).unwrap();
-    fs::write(&file, source.replace("if value('fldos'):", "if value('fldos'):\n            if (ROOT/'block-plot').exists(): Path('plots/phband/phonon_band.png').mkdir(parents=True,exist_ok=True)")).unwrap();
+    fs::write(&file, source.replace("if value('fldos'):", "if value('fldos'):\n            if (ROOT/'block-plot').exists(): Path('plot/phonon.png').mkdir(parents=True,exist_ok=True)")).unwrap();
     c.put("block-plot", "fail bitmap write");
     c.accounting(Some(201));
     let o = c.numbered_cli(0, &["-r"], Some(201), "qe-plot-ph-write-failed");
@@ -172,7 +170,7 @@ fn phonon_plot_failure_resumes_from_numeric_checkpoint_without_rerunning_matdyn(
     fs::remove_file(c.root.join("block-plot")).unwrap();
     c.accounting(Some(202));
     success(c.numbered_cli(0, &["--resume", "-r"], Some(202), "qe-plot-ph-write-resume"));
-    png(&c, "run/4.qe-phonon-nosplit/plots/phband/phonon_band.png");
+    png(&c, "run/4.qe-phonon-nosplit/plot/phonon.png");
     assert_eq!(calls, c.calls(), "PH、q2r、matdyn Don't run again");
 }
 
@@ -182,8 +180,8 @@ fn element_pdos_failure_preserves_tdos_and_bands_and_resumes_without_pw_or_dos()
     success(c.stage_submit("electronic",false));assert!(!c.stage_execute().status.success());
     let root=c.root.join("run");
     let dos=fs::read(root.join("3.qe-electronic/qe_eledos/scf.tdos")).unwrap();
-    assert!(root.join("results/3.qe-electronic/qe_eband/electronic-bands-valence.png").is_file());
-    let incomplete:Value=store::read(&root.join("results/3.qe-electronic/qe_eledos/electronic-pdos.json")).unwrap();
+    assert!(root.join("results/3.qe-electronic/band-ranges").is_dir());
+    let incomplete:Value=store::read(&root.join("results/3.qe-electronic/plot/electronic-pdos.json")).unwrap();
     assert_eq!(incomplete["complete"],false);
     let calls=c.calls();fs::remove_file(c.root.join("fail-pdos")).unwrap();
     success(c.stage_submit("electronic",true));success(c.stage_execute());
@@ -191,8 +189,40 @@ fn element_pdos_failure_preserves_tdos_and_bands_and_resumes_without_pw_or_dos()
     let pdos=c.root.join("pdos-calls");let native=fs::read(&pdos).unwrap();
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
     epwflow::foundation::readable_state::update(&cfg.work_dir, epwflow::foundation::stages::Step::Electronic, |d| { d.remove("Electronic Projection"); Ok(()) }).unwrap();
-    fs::remove_file(root.join("results/3.qe-electronic/qe_eledos/electronic-dos-valence.png")).unwrap();
+    fs::remove_file(root.join("results/3.qe-electronic/plot/electronic-from-lowest-to-highest.png")).unwrap();
     success(c.stage_submit("electronic",false));success(c.stage_execute());
     assert_eq!(native,fs::read(pdos).unwrap(),"The native projection has been completed and should not be recalculated because of the derivative receipts");
-    let complete:Value=store::read(&root.join("results/3.qe-electronic/qe_eledos/electronic-pdos.json")).unwrap();assert_eq!(complete["complete"],true);
+    let complete:Value=store::read(&root.join("results/3.qe-electronic/plot/electronic-pdos.json")).unwrap();assert_eq!(complete["complete"],true);
+}
+
+#[test]
+fn combined_plots_use_shared_config_and_qe_path_extrema_without_scientific_reruns() {
+    let c=Case::numbered();c.stage_setup();
+    success(c.stage_submit("wannier",false));success(c.stage_execute());
+    let root=c.root.join("run");
+    let read=|stage:&str,name:&str|->Value {
+        store::read(&root.join(stage).join("plot").join(format!("{name}.plot.json"))).unwrap()
+    };
+    let qe_full=read("3.qe-electronic","electronic-from-lowest-to-highest");
+    let epw_full=read("5.epw-wannier","electronic-from-lowest-to-highest");
+    assert_eq!(qe_full["bounds"],epw_full["bounds"]);
+    for stage in ["3.qe-electronic","5.epw-wannier"] {
+        assert_eq!(read(stage,"electronic")["bounds"],serde_json::json!([-3.,3.]));
+        let images=fs::read_dir(root.join(stage).join("plot")).unwrap()
+            .filter_map(|e|e.ok()).filter(|e|e.path().extension().is_some_and(|s|s=="png")).count();
+        assert_eq!(images,2);
+        assert!(!root.join(stage).join("electronic-bands.png").exists());
+    }
+    let calls=(c.calls(),c.post_calls());
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    let keys=epwflow::foundation::stages::Step::ALL.map(|s|epwflow::foundation::stages::scientific_key(&cfg,s).unwrap());
+    c.numbered_change(|cfg|{cfg.plot.electronic_energy_min_ev=-1.5;cfg.plot.electronic_energy_max_ev=4.0;});
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    assert_eq!(keys,epwflow::foundation::stages::Step::ALL.map(|s|epwflow::foundation::stages::scientific_key(&cfg,s).unwrap()));
+    success(c.stage_submit("wannier",false));success(c.stage_execute());
+    assert_eq!(calls,(c.calls(),c.post_calls()));
+    for stage in ["3.qe-electronic","5.epw-wannier"] {
+        assert_eq!(read(stage,"electronic")["bounds"],serde_json::json!([-1.5,4.]));
+        assert_eq!(read(stage,"electronic-from-lowest-to-highest")["bounds"],qe_full["bounds"]);
+    }
 }

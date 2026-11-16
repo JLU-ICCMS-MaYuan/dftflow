@@ -635,25 +635,29 @@ pub(crate) fn run(
         comparison::export(&source_path, &output)?;
     }
     let results = crate::delivery::comparison::collect(work, None)?;
-    let pending = results
-        .join("figures/.comparison-figures.json.publish.json")
-        .exists();
-    if pending
-        || !crate::delivery::comparison_plot::check_figure_formats(
-            &results,
-            &["png", "svg", "pdf"],
-        )?
-    {
-        crate::delivery::comparison_plot::plot(
-            &results,
-            None,
-            &["png".into(), "svg".into(), "pdf".into()],
-        )?;
+    if crate::foundation::layout::enabled(work) {
+        crate::foundation::combined_plot::coarse(cfg, &results)?;
+    } else {
+        let pending = results
+            .join("figures/.comparison-figures.json.publish.json")
+            .exists();
+        if pending
+            || !crate::delivery::comparison_plot::check_figure_formats(
+                &results,
+                &["png", "svg", "pdf"],
+            )?
+        {
+            crate::delivery::comparison_plot::plot(
+                &results,
+                None,
+                &["png".into(), "svg".into(), "pdf".into()],
+            )?;
+        }
+        ensure!(
+            crate::delivery::comparison_plot::check_figure_formats(&results, &["png", "svg", "pdf"])?,
+            "data_invalid: 比较图表未完整发布"
+        );
     }
-    ensure!(
-        crate::delivery::comparison_plot::check_figure_formats(&results, &["png", "svg", "pdf"])?,
-        "data_invalid: Comparison chart not fully published"
-    );
     Ok(())
 }
 

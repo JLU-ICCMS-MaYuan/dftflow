@@ -134,7 +134,7 @@ fn finish_index(results: &Path, destination: &Path) -> Result<()> {
     ensure!(index.schema_version == 1, "data_invalid: Stage Index Version");
     index
         .entries
-        .retain(|e| !(e.stage == entry.stage && e.unit == entry.unit));
+        .retain(|e| !(e.stage == entry.stage && Path::new(&e.unit) == Path::new(&entry.unit)));
     index.entries.push(entry);
     index
         .entries
@@ -207,7 +207,7 @@ pub fn publish(
     let old = if destination.join(MANIFEST).exists() {
         let m: Manifest = store::read(&destination.join(MANIFEST))?;
         ensure!(
-            m.stage == stage && m.unit == unit && m.schema_version == 1,
+            m.stage == stage && Path::new(&m.unit) == Path::new(unit) && m.schema_version == 1,
             "input_conflict: Phase delivery identity"
         );
         m.files
@@ -283,7 +283,7 @@ pub fn tree(cfg: &Config, step: Step, unit: &str, source: &Path, parameters: Val
             .collect::<Result<Vec<_>>>()?
     };
     for (parent, names) in groups {
-        let sub = Path::new(unit).join(&parent);
+        let sub: PathBuf = Path::new(unit).join(&parent).components().collect();
         publish(
             cfg,
             step,
@@ -314,20 +314,8 @@ pub fn pending(cfg: &Config, step: Step) -> Result<bool> {
     if step == Step::Coarse && !entries.iter().any(|e| e.unit == "decay") {
         return Ok(true);
     }
-    if step == Step::Electronic
-        && ["qe_eband", "qe_eledos"]
-            .iter()
-            .any(|u| !entries.iter().any(|e| e.unit == *u))
-    {
-        return Ok(true);
-    }
-    if step == Step::Phonon
-        && ["phband", "phdos", ""]
-            .iter()
-            .any(|u| !entries.iter().any(|e| e.unit == *u))
-    {
-        return Ok(true);
-    }
+    if matches!(step,Step::Electronic|Step::Phonon|Step::Wannier|Step::Coarse)
+        && !entries.iter().any(|e|Path::new(&e.unit)==Path::new("plot")) { return Ok(true); }
     for e in entries {
         let dir = root(cfg).join(&e.stage).join(&e.unit);
         if dir.join(INDEX_UPDATE).exists() || dir.join(format!(".{MANIFEST}.publish.json")).exists()
@@ -376,7 +364,7 @@ pub fn redraw(results: &Path) -> Result<PathBuf> {
         if dir.join("decay/decay-manifest.json").exists() {
             crate::delivery::decay::redraw(&dir.join("decay"))?;
         }
-        if dir.join("comparison/manifest.json").exists() {
+        if dir.join("comparison/manifest.json").exists() && !dir.join("plot/phonon.plot.json").exists() {
             crate::delivery::comparison_plot::plot(
                 &dir,
                 None,
@@ -392,12 +380,15 @@ pub fn redraw(results: &Path) -> Result<PathBuf> {
         }
         for f in crate::qe_data::save::files(&dir)? {
             if f.relative_path.to_string_lossy().ends_with(".plot.json") {
-                super::workspace_plot::redraw(&dir.join(f.relative_path))?;
+                let path = dir.join(f.relative_path);
+                let data: Value = store::read(&path)?;
+                if data["kind"] == "Combined" { super::combined_plot::redraw(&path)?; }
+                else { super::workspace_plot::redraw(&path)?; }
             } else if f.relative_path.to_string_lossy().ends_with("-band-ranges.json") {
                 super::band_ranges::redraw(&dir.join(f.relative_path))?;
             }
         }
-        if stage.starts_with("4.qe-phonon-") {
+        if stage.starts_with("4.qe-phonon-") && !dir.join("plot/phonon.plot.json").exists() {
             let m: Manifest = store::read(&dir.join(MANIFEST))?;
             let prefix = m.parameters["prefix"]
                 .as_str()
@@ -499,4 +490,38 @@ mod tests {
             fs::remove_dir_all(&results).unwrap();
         }
     }
+}
+
+/// 先从导航退休，再定向清理；中断后可从单元清单继续，未知文件保留。
+pub fn retire_units(cfg: &Config, step: Step, units: &[&str]) -> Result<()> {
+    let results = root(cfg);
+    let index_path = results.join("index.json");
+    if !index_path.exists() { return Ok(()); }
+    let _lock = store::Lock::acquire(&results.join("index"))?;
+    let mut index: Index = store::read(&index_path)?;
+    let stage = stage_name(cfg,step)?;
+    let mut retired = Vec::new();
+    for unit in units {
+        let dir = results.join(&stage).join(unit);
+        let path = dir.join(MANIFEST);
+        if !path.is_file() { continue; }
+        publication::ensure_finished(&dir,MANIFEST)?;
+        let manifest: Manifest = store::read(&path)?;
+        ensure!(manifest.schema_version==1 && manifest.stage==stage && manifest.unit==*unit,
+            "input_conflict: retired unit manifest does not match its location");
+        for artifact in &manifest.files {
+            if dir.join(&artifact.relative_path).exists() { artifact.verify(&dir)?; }
+        }
+        retired.push((dir,manifest));
+    }
+    index.entries.retain(|e|!(e.stage==stage && units.contains(&e.unit.as_str())));
+    store::write(&index_path,&index)?;
+    for (dir,manifest) in retired {
+        for artifact in manifest.files {
+            let path = dir.join(&artifact.relative_path);
+            if path.is_file() { fs::remove_file(path)?; }
+        }
+        fs::remove_file(dir.join(MANIFEST))?;
+    }
+    Ok(())
 }

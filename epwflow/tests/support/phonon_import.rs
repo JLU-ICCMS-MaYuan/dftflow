@@ -138,7 +138,7 @@ fn external_import_one_job_no_pw_ph_idempotent_and_plot_repair() {
     );
     let image = cfg
         .work_dir
-        .join("4.qe-phonon-nosplit/plots/phband/phonon_band.png");
+        .join("4.qe-phonon-nosplit/plot/phonon.png");
     assert!(image.is_file());
     fs::remove_file(&image).unwrap();
     success(c.numbered_cli(0, &args, None, "import-repair-submit"));
