@@ -170,6 +170,14 @@ description: 专业的软件工程师，严格遵循SOLID、KISS、DRY、YAGNI�
 
 ## 需求处理记录
 
+### [2026-11-16] 原目录安装最新 QE／EPW 与 Wannier90
+
+- **需求**：更新并编译 `external/q-e` 和 `external/wannier90`，确认 EPW 6.1，程序保留在各自 `bin`，将路径写入记忆文件。
+- **来源**：原 madegan/q-e 最新代码仍为 EPW 6.0，改用 EPW 官方 `https://gitlab.com/epw/q-e.git`；QE 7.6／EPW 6.1 固定提交 `34246ba0af9741aa90a06e4dcc7b80f26a5760c9`，独立 Wannier90 4.0.3 固定提交 `64309eec824c7d69c4b28981a6ad33d4f3222402`。EPW 内部保留其指定的 Wannier90 3.1.0 库。
+- **安装**：公开目录为 `/public/home/mayuan/code/dftflow/external/q-e/bin` 和 `/public/home/mayuan/code/dftflow/external/wannier90/bin`；使用 Intel ifort／MPI／MKL，Slurm cpu 分区 16 核编译，作业语言环境为 `C`。不修改全局环境或迁移程序。
+- **验证**：QE `make -j16 all epw` 成功，关键程序动态库依赖完整；2 路 MPI 硅 SCF 能量与官方参考一致，Γ 声子最大偏差 1.021064 cm⁻¹，满足官方 2 cm⁻¹ 容差；实际启动日志确认 EPW 6.1。独立 Wannier90 的 GaAs Wannier 化和 Cu DOS 两项官方样例共 106 个数值通过官方容差比较。未运行完整 EPW EPC／超导计算。
+- **记录**：路径与环境写入 `/public/home/mayuan/.codex/memories/MEMORY.md` 及摘要；原始日志、配置和构建／验证脚本保存在忽略目录 `external/build-logs/2026-11-16-install/`，构建产物不纳入 Git。
+
 ### [2026-10-16] Issue 0015：test_auto 中真实 MgB₂ EPW 冒烟
 - **授权与位置**：用户明确要求真实 EPW、MgB₂、test_auto；沿用 Rust/Bash 生产实现与 Python 测试例外，新输入/数据在忽略的 test_auto/MgB2/epwflow/local_run，历史来源只读。
 - **真实结果**：计算节点 EPW 5.9；三种实际 PH 来源均完成原生 Wannier、粗/细网格 EPC、500 点 α²F 和 λ；未执行新 SCF/PH，NSCF 共三次。三份来源共 1020 文件及文件集合保持不变。

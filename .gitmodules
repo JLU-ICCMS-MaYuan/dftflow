@@ -9,7 +9,7 @@
 	url = git@github.com:JLU-ICCMS-MaYuan/a2f.git
 [submodule "external/q-e"]
 	path = external/q-e
-	url = https://gitlab.com/madegan/q-e.git
+	url = https://gitlab.com/epw/q-e.git
 [submodule "external/vasp.6.4.3"]
 	path = external/vasp.6.4.3
 	url = git@gitee.com:mayuan_JLUPHY/vasp.6.4.3.git
