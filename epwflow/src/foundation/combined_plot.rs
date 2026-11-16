@@ -66,6 +66,60 @@ fn curve(name: &str, points: Vec<(f64, f64)>, color: RGBColor, dashed: bool) -> 
         dashed,
     }
 }
+/// 当前现场重绘只消费已保存数值；旧分离图参定向迁移，不执行科学后处理。
+pub fn redraw_stage(cfg: &Config, step: Step) -> Result<Option<std::path::PathBuf>> {
+    ensure!(
+        matches!(step, Step::Electronic | Step::Wannier),
+        "configuration: electronic redraw supports only stages 3 and 5"
+    );
+    let stage = step.directory(cfg);
+    let output = stage.join("plot");
+    let near = output.join("electronic.plot.json");
+    if near.is_file() {
+        let mut data: Figure = store::read(&near)?;
+        data.bounds = cfg.plot.bounds();
+        write(&output.join("electronic.png"), &data)?;
+        redraw(&output.join("electronic-from-lowest-to-highest.plot.json"))?;
+        let metadata = output.join("electronic-display.json");
+        if metadata.is_file() {
+            let mut data: serde_json::Value = store::read(&metadata)?;
+            data["near_ev"] = serde_json::json!(cfg.plot.bounds());
+            store::write(&metadata, &data)?;
+        }
+        return Ok(Some(output));
+    }
+    let sources = if step == Step::Electronic {
+        [stage.join("qe_eband/plots"), stage.join("qe_eledos/plots")]
+    } else {
+        let source = super::layout::path(&cfg.work_dir, "comparison-native/electron");
+        [source.clone(), source]
+    };
+    let mut inputs = Vec::new();
+    for (name, source) in ["electronic-bands", "electronic-dos"].iter().zip(&sources) {
+        let candidates = [
+            output.join(format!("{name}.json")),
+            source.join(format!("{name}.json")),
+            source.join(format!("{name}.plot.json")),
+        ];
+        let Some(path) = candidates.into_iter().find(|p| p.is_file()) else {
+            return Ok(None);
+        };
+        inputs.push((store::Identity::capture(&path)?, format!("{name}.json")));
+    }
+    fs::create_dir_all(&output)?;
+    for (id, name) in &inputs {
+        let target = output.join(name);
+        if id.path != target {
+            fs::copy(&id.path, &target)?;
+        }
+        id.verify()?;
+    }
+    electronic(cfg, &output, &output)?;
+    for source in sources {
+        cleanup(&source)?;
+    }
+    Ok(Some(output))
+}
 pub fn electronic(cfg: &Config, source: &Path, output: &Path) -> Result<()> {
     let PlotData::Bands {
         qe,

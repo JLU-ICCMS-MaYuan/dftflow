@@ -154,3 +154,6 @@ input.toml 的 [plot].electronic_energy_min_ev 与 electronic_energy_max_ev 分�
 第 3 步元素投影缺失时，只从已有 NSCF 波函数的隔离副本补必要 projwfc；已有相容投影和成功原生检查点复用。TDOS 与元素投影读取同次原生网格，保留残差；第 5 步不增加元素投影。详见 [当前电子图行为](README.md#电子双能窗元素-pdos-与保留色)和 [0055 验收](../../specs/0055-electronic-plot-windows-pdos/acceptance.md)。
 
 DFTFlow 不再额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。新生成的脚本及提交命令不添加时长限制；历史用量保留，作业身份和原有并发约束继续检查。旧配置字段的处理见 [EPW 总览](README.md)。
+
+
+第 3 步现场纯重绘使用 epw_phonon -c input.toml --stage electronic --plot，第 5 步使用 epw_wannier -c input.toml --plot；只读取保存的组合图数据或定向迁移旧分离图参，采用当前 [plot] 范围，不调用科学程序、不提交作业。输出到相应阶段 plot/，不改写独立 results 包。

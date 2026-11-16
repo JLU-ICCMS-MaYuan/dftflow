@@ -139,3 +139,7 @@ QE 元素 PDOS；第 5 步只比较总 DOS（推荐）
 /data/home/mayuan/code/dftflow/test_auto/MgB2/local_run/014-electronic-plots/band-solid-2r9ljckd/results/5.epw-wannier/electronic-dos.png
 都是一样的问题。
 ```
+
+## 现场重绘补充
+
+第 3、5 步分别提供 epw_phonon --stage electronic --plot 与 epw_wannier --plot，使用当前 [plot] 并定向迁移旧现场的已保存绘图数值；只绘图，不补科学计算。详细要求与完整补充原话见 Spec 的 FR-011／SC-006。

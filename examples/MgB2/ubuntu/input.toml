@@ -9,9 +9,10 @@ schema_version = 2
 outdir = "scratch"
 
 # 电子组合图的纵轴范围，相对费米能级；第 3、5 步共用。
+# 修改后只重绘：epw_phonon --stage electronic --plot；epw_wannier --plot。
 [plot]
-electronic_energy_min_ev = -3.0
-electronic_energy_max_ev = 3.0
+electronic_energy_min_ev = -3.0 # 下限：E_F - 3 eV
+electronic_energy_max_ev = 3.0 # 上限：E_F + 3 eV
 
 [pseudos]
 Mg = "repair/pp/mg_pbe_v1.4.UPF"

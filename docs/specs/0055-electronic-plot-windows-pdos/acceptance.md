@@ -170,3 +170,11 @@ EPW 单元 45 通过、2 个既有外部来源用例忽略，共享绘图 4 通�
 构建保留用户此前未提交的共享线宽设置；该样式差异不纳入本次提交。示例 input.toml 只提交新增 [plot]，原有注释排版修改保留在工作区。其他任务未提交的 VASP 测试修改不纳入。
 
 线上 Issue、远程双向链接与历史上传图片原文件仍由既有外部约定管理，本轮不宣称完成。真实重绘验证布局和数据来源，不新增物理收敛结论。
+
+## 第 3、5 步现场纯重绘入口补齐
+
+用户要求立即调整 input.toml 并试画第 3、5 步。现有 Ubuntu 配置保留 −3／＋3 eV，只补充独立上下限及重绘命令注释。补齐 epw_phonon --stage electronic --plot，且 epw_wannier --plot 支持旧现场保存的分离图参迁移；均只使用已有数值，不进入科学阶段推进或修改独立 results 包。
+
+公开回归 2 项通过：旧分离图参迁移到两张组合图，非对称区间生效，第 3 步不提前改第 5 步，科学／后处理调用及提交数不变；既有组合图缺图重绘仍通过。release 编译覆盖固定入口成功。
+
+在 examples/MgB2/ubuntu 实际运行上述两个命令成功，两个阶段 plot/ 各有 electronic.png 和 electronic-from-lowest-to-highest.png。指定 XML、原生 DOS、模型及来源表哈希不变；strace -f -e trace=execve 只记录两个绘图入口自身，无 QE、EPW、postw90、MPI 或 Slurm 子程序。证据在 docs/local/0055-current-replot-35/verification.json 及同目录调用记录。核验不枚举或读取原始电荷密度／波函数。

@@ -894,14 +894,7 @@ fn plot_file(file: &Path) -> std::path::PathBuf {
 }
 /// 只使用现场保存的绘图参数覆盖原图，不运行科学程序或改变结果包。
 pub fn redraw_current(cfg: &Config) -> Result<Option<std::path::PathBuf>> {
-    let dir = super::stages::Step::Wannier.directory(cfg).join("plot");
-    let file = dir.join("electronic.plot.json");
-    if !file.is_file() { return Ok(None); }
-    let mut near: super::combined_plot::Figure = super::store::read(&file)?;
-    near.bounds = cfg.plot.bounds();
-    super::combined_plot::write(&dir.join("electronic.png"),&near)?;
-    super::combined_plot::redraw(&dir.join("electronic-from-lowest-to-highest.plot.json"))?;
-    Ok(Some(dir))
+    super::combined_plot::redraw_stage(cfg,super::stages::Step::Wannier)
 }
 
 pub fn redraw(file: &Path) -> Result<()> {

@@ -380,7 +380,7 @@ examples 旧现场已移出归档，输入保持，当前目录可从全新 SCF 
 
 两个面板上下严格对齐，DOS 横轴为态密度，未覆盖范围留空。QE 实线先绘、EPW 蓝色虚线后绘，电子图费米线为红色，四窗口保留不同颜色虚线；至少 300 DPI。第 3 步保留 QE 元素投影语义，第 5 步只比较总 DOS。完整数值表与科学指标不随显示裁剪。
 
-修改范围或缺图时仅恢复绘图；现场 epw_wannier --plot 使用阶段 plot/ 图参，移动结果包从包内图参重绘。历史分离图包仍可按原格式读取，新生成端不产生旧分离图。详见 [0055 当前契约](../../specs/0055-electronic-plot-windows-pdos/contracts/electronic-results.md)。
+修改范围或缺图时仅恢复绘图；现场第 3 步用 epw_phonon --stage electronic --plot，第 5 步用 epw_wannier --plot，使用阶段 plot/ 图参并支持旧分离图参定向迁移，移动结果包从包内图参重绘。历史分离图包仍可按原格式读取，新生成端不产生旧分离图。详见 [0055 当前契约](../../specs/0055-electronic-plot-windows-pdos/contracts/electronic-results.md)。
 
 
 ## Wannier 未收敛诊断图

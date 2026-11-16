@@ -238,8 +238,15 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             false
         };
     if numbered && o.plot && o.results.is_none() {
+        if phase == Phase::Phonon && o.stage == Some(super::stages::Step::Electronic) {
+            let cfg=super::config::Config::load(&o.config)?;
+            let path=super::combined_plot::redraw_stage(&cfg,super::stages::Step::Electronic)?
+                .context("required: saved electronic bands and DOS are needed for stage 3 redraw")?;
+            println!("plots: {}",path.display());
+            return Ok(());
+        }
         ensure!(
-            phase == Phase::Wannier,
+            phase == Phase::Wannier && o.stage.is_none_or(|s|s==super::stages::Step::Wannier),
             "input_conflict: use epw_wannier --plot for current-workspace diagnostics; use --results to redraw a result package"
         );
         let cfg = super::config::Config::load(&o.config)?;

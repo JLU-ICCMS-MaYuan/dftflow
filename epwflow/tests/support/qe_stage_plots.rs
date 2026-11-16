@@ -226,3 +226,37 @@ fn combined_plots_use_shared_config_and_qe_path_extrema_without_scientific_rerun
         assert_eq!(read(stage,"electronic-from-lowest-to-highest")["bounds"],qe_full["bounds"]);
     }
 }
+
+#[test]
+fn stage_three_and_five_plot_commands_migrate_saved_legacy_curves_without_science() {
+    let c=Case::numbered();c.stage_setup();
+    success(c.stage_submit("wannier",false));success(c.stage_execute());
+    let root=c.root.join("run");
+    for stage in ["3.qe-electronic","5.epw-wannier"] {
+        let path=root.join(stage);
+        for (name,leaf) in [("electronic-bands","qe_eband"),("electronic-dos","qe_eledos")] {
+            let data=if stage.starts_with('3') {path.join("plot").join(format!("{name}.json"))}
+                else {path.join("comparison-native").join(format!("{name}.json"))};
+            let legacy=if stage.starts_with('3') {path.join(leaf).join("plots")}
+                else {path.join("comparison-native")};
+            fs::create_dir_all(&legacy).unwrap();
+            fs::copy(&data,legacy.join(format!("{name}.plot.json"))).unwrap();
+            fs::remove_file(data).unwrap();
+        }
+        for name in ["electronic","electronic-from-lowest-to-highest"] {
+            for ext in ["png","plot.json"] {fs::remove_file(path.join("plot").join(format!("{name}.{ext}"))).unwrap();}
+        }
+    }
+    c.numbered_change(|cfg|{cfg.plot.electronic_energy_min_ev=-2.0;cfg.plot.electronic_energy_max_ev=4.0;});
+    let before=(c.calls(),c.post_calls(),fs::read(c.root.join("submissions")).unwrap());
+    success(c.numbered_cli(0,&["--stage","electronic","--plot"],None,"plot-stage-three"));
+    assert!(!root.join("5.epw-wannier/plot/electronic.png").exists());
+    success(c.numbered_cli(1,&["--plot"],None,"plot-stage-five"));
+    assert_eq!(before,(c.calls(),c.post_calls(),fs::read(c.root.join("submissions")).unwrap()));
+    for stage in ["3.qe-electronic","5.epw-wannier"] {
+        let dir=root.join(stage).join("plot");
+        let data:Value=store::read(&dir.join("electronic.plot.json")).unwrap();
+        assert_eq!(data["bounds"],serde_json::json!([-2.,4.]));
+        assert_eq!(fs::read_dir(&dir).unwrap().filter_map(|f|f.ok()).filter(|f|f.path().extension().is_some_and(|e|e=="png")).count(),2);
+    }
+}
