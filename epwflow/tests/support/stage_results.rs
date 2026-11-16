@@ -742,3 +742,34 @@ fn wannier_and_coarse_single_allocation_freezes_config_and_automatically_plots()
         assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), count + 1);
     }
 }
+
+#[test]
+fn current_plot_overwrites_original_images_without_scientific_execution() {
+    let c = Case::numbered();
+    c.stage_setup();
+    success(c.stage_submit("wannier", false));
+    success(c.stage_execute());
+    let comparison = c.root.join("run/5.epw-wannier/comparison-native");
+    let scientific = c.calls();
+    let post = c.post_calls();
+    let submissions = fs::read(c.root.join("submissions")).unwrap();
+    let source = store::Identity::capture(&comparison.join("band.eig")).unwrap();
+    let model = store::Identity::capture(&c.root.join("run/5.epw-wannier/scf.chk")).unwrap();
+    let input = store::Identity::capture(&comparison.join("electronic-bands.plot.json")).unwrap();
+    let result_image = store::Identity::capture(&c.root.join("run/results/5.epw-wannier/electronic-bands.png")).unwrap();
+    for name in ["electronic-bands", "electronic-dos", "electronic-bands-valence", "electronic-dos-valence"] {
+        fs::remove_file(comparison.join(format!("{name}.png"))).unwrap();
+    }
+    fs::remove_file(c.root.join("run/5.epw-wannier/electronic-bands.png")).unwrap();
+    let out = c.numbered_cli(1, &["--plot"], None, "current-replot");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("plots:"));
+    success(out);
+    for name in ["electronic-bands", "electronic-dos", "electronic-bands-valence", "electronic-dos-valence"] {
+        assert!(comparison.join(format!("{name}.png")).is_file());
+    }
+    assert!(c.root.join("run/5.epw-wannier/electronic-bands.png").is_file());
+    assert_eq!(scientific, c.calls());
+    assert_eq!(post, c.post_calls());
+    assert_eq!(submissions, fs::read(c.root.join("submissions")).unwrap());
+    for id in [source, model, input, result_image] { id.verify().unwrap(); }
+}

@@ -165,3 +165,8 @@ flowchart TD
 集中修改 layout::path 编号映射，内部 electron／phonon 语义键保留但不再成为实体目录。第 6 步归档保留 force-constants／frequencies 及对应已核验检查点；原 PH 替换时清除这些检查点，防止跨来源复用。已有 Ubuntu 工作区通过本次一次性定向迁移处理，不引入常驻旧布局回退。
 
 第 6 步批次变更时，保留的 comparison-q2r／comparison-matdyn 检查点重新关联当前批次，再由 attempt 核验旧配置与当前参数；仅电子模型变化不重复计算，上游 SCF／PH 重建则清除检查点。
+
+
+## 原位重绘补充
+
+复用 workspace_plot::redraw；新增 redraw_current 聚合已有四份电子 plot.json 的原位重绘，将默认 --plot 从仅诊断分派改为优先现场图，无输入时才沿用 wannier_diagnostics。保存的绘图参数为唯一数值来源，不调用 electronic_comparison 或 postw90，不重新发布以当前配置标记的结果包。

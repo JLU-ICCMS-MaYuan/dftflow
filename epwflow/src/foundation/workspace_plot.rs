@@ -962,6 +962,33 @@ fn stored_window(window: &[(f64, &str, RGBColor)]) -> Vec<(f64, String, [u8; 3])
 fn plot_file(file: &Path) -> std::path::PathBuf {
     file.with_extension("plot.json")
 }
+/// 只使用现场保存的绘图参数覆盖原图，不运行科学程序或改变结果包。
+pub fn redraw_current(cfg: &Config) -> Result<Option<std::path::PathBuf>> {
+    let stage = super::stages::Step::Wannier.directory(cfg);
+    let dir = super::layout::path(&cfg.work_dir, "comparison-native/electron");
+    let names = [
+        "electronic-bands", "electronic-dos",
+        "electronic-bands-valence", "electronic-dos-valence",
+    ];
+    let inputs: Vec<_> = names.iter()
+        .map(|name| dir.join(format!("{name}.plot.json")))
+        .filter(|path| path.is_file())
+        .collect();
+    if inputs.is_empty() {
+        return Ok(None);
+    }
+    for input in inputs {
+        redraw(&input)?;
+    }
+    for name in ["electronic-bands.png", "electronic-dos.png"] {
+        let source = dir.join(name);
+        if source.is_file() {
+            fs::copy(&source, stage.join(name))?;
+        }
+    }
+    Ok(Some(dir))
+}
+
 pub fn redraw(file: &Path) -> Result<()> {
     let data: PlotData = super::store::read(file)?;
     let target = file.with_file_name(

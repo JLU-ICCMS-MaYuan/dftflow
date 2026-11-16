@@ -234,8 +234,12 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             "input_conflict: 当前现场诊断图使用 epw_wannier --plot；结果包重绘使用 --results"
         );
         let cfg = super::config::Config::load(&o.config)?;
-        let path = super::wannier_diagnostics::generate(&cfg)?;
-        println!("diagnostic_plots: {}", path.display());
+        if let Some(path) = super::workspace_plot::redraw_current(&cfg)? {
+            println!("plots: {}", path.display());
+        } else {
+            let path = super::wannier_diagnostics::generate(&cfg)?;
+            println!("diagnostic_plots: {}", path.display());
+        }
         return Ok(());
     }
     if numbered

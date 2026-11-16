@@ -420,3 +420,7 @@ SCF 使用自身 XML 和 E_F，NSCF 使用自身均匀采样，electronic 使用
 第 5、6 步默认生成和 `-s` 使用计算目录内 `wannier.sh`／`coarse.sh`，脚本从开始执行 `epw_wannier --allocated-stage … --allocation-id …`，读取已冻结配置；在同一 Slurm 分配内顺序运行原生计算、核验和后处理，不嵌套提交。第 5 步 DOS 和图表归本阶段交付，第 6 步路径声子插值是比较后处理，不等同第 7 步 EPC 细网格。
 
 失败返回非零，已核验科学结果保留，使用相同阶段 `--resume -s` 恢复；活动作业拒绝重复提交，完成且交付完整时不重算。旧冻结脚本不改写。实际阶段脚本一次执行生成图表、冻结配置及零嵌套提交的进程验证见 [0026 验收](../../specs/0026-epw-direct-native-submit/acceptance.md)；使用隔离科学程序替身，不代表新真实科学验收。
+
+### 第 5 步原位重绘
+
+`epw_wannier -c INPUT --plot` 优先用现场 comparison-native 中保存的四份电子绘图参数覆盖同目录 PNG，同时同步第 5 步根目录两张主图；不调用外部科学程序或 Slurm，不要求指定结果目录。无电子绘图参数时回退至已有未收敛／失败诊断。独立 results 包由显式 --results 操作，现场重绘不使用当前配置重新标记旧科学结果。

@@ -115,3 +115,15 @@ Issue、Spec、计划、研究、数据模型、CLI 契约、任务、需求检�
 ### 原则
 
 KISS／DRY：目录规则只改唯一映射，复用现有归档与检查点核验。YAGNI：不新增兼容入口、后台服务或迁移状态体系；一次性旧现场迁移与生产计算逻辑分开。科学数据、参数核验和程序职责保持原边界。
+
+## 2026-11-16 调线宽后的原位重绘
+
+用户要求编译后 epw_wannier 绘图仍覆盖原目录、不指定新输出目录。FR-017～018／SC-015 → workspace_plot::redraw_current 及 --plot 分派 → T094。优先从 comparison-native 的四份已有电子 plot.json 原位重绘 PNG，并同步第 5 步根目录主能带／DOS 图；没有绘图参数时保留原拟合诊断。显式 --results 行为不变，现场重绘不重新发布或标记独立结果包。
+
+针对性进程验证：current_plot_overwrites_original_images_without_scientific_execution 通过，删去原图后原位恢复，科学程序／postw90 调用与提交次数不变，模型、采样、绘图参数及独立结果包图片不变。unconverged_wannier_still_draws_bands_without_scientific_completion 和 wannier_allocation_publishes_without_phonons_and_repairs_only_derivatives 两项回归通过，覆盖诊断回退和可移动结果包重绘。共 **3 项通过**；未额外执行科学计算。
+
+release 构建并覆盖固定四个入口成功。构建明确包含用户已有、尚未提交的 crates/qf-plot/src/electronic.rs 线宽修改（QE 宽度 2；Wannier dash／gap／width 均 2）；本次提交不纳入或修改该文件，不将此工作树制品描述成仅由本次 Git 提交重现。
+
+实际执行新安装入口 `epw_wannier -c examples/MgB2/ubuntu/input.toml --plot`，输出原 comparison-native 路径，四张电子 PNG 均已按用户当前样式更新，第 5 步根目录两张主图与原位图一致。band.eig、MgB2-dos.dat、postw90.out、模型 checkpoint 及全部 plot.json 哈希保持不变；没有重新计算。证据留 docs/local/current-replot-20261116/verification.json，不纳入版本库。
+
+KISS／DRY：复用现有 plot.json 重绘函数，不引入科学后处理或新输出目录；只改现场 PNG，不使用当前配置重新标记旧结果包。模块说明及 Overview 同步，git diff --check 通过。线上 Issue 沿用自管，不推送。

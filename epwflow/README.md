@@ -447,3 +447,7 @@ epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
 
 
 编号布局的电子后处理直接位于 `5.epw-wannier/comparison-native/`；QE 声子比较的力常数和频率直接位于 `6.epw-coarse/comparison-native/{force-constants,frequencies}/`，不再套 electron／phonon 层。EPW 路径求值仍位于第 6 步的 epw 子目录。仅电子模型变化时复用相容声子比较检查点，原始 PH 来源重建时失效，避免跨来源复用。
+
+### 调整线宽后的原位重绘
+
+修改共享绘图样式并重新编译后，执行 `epw_wannier -c "input.toml" --plot`，无需指定输出目录。已有电子比较 plot.json 时，直接覆盖第 5 步 comparison-native 内的普通／完整价带能带与 DOS 图片，并同步第 5 步根目录两张主图；不执行科学程序或提交作业，采样和模型不变。没有电子比较绘图参数时保留 diagnostics 拟合诊断。独立 results 包不随现场重绘改写，显式 --results 仍用于结果包重绘。
