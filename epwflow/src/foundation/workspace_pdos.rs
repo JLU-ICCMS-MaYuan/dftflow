@@ -58,6 +58,10 @@ fn key(cfg: &Config, ids: &[Identity]) -> Result<String> {
     ))?))
 }
 pub fn files(cfg: &Config) -> Result<Vec<PathBuf>> {
+    super::electronic_reuse::projection(cfg, || checked_files(cfg))
+}
+
+fn checked_files(cfg: &Config) -> Result<Vec<PathBuf>> {
     let Some(ids) = super::readable_state::completed_files(
         cfg,
         super::stages::Step::Electronic,
@@ -81,9 +85,9 @@ pub fn files(cfg: &Config) -> Result<Vec<PathBuf>> {
 }
 pub fn run(cfg: &Config) -> Result<()> {
     if !files(cfg)?.is_empty() {
-        super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("projwfc"));
         return Ok(());
     }
+    super::electronic_reuse::invalidate(super::stages::Step::Electronic);
     let root = dir(cfg);
     fs::create_dir_all(&root)?;
     let ids = source_ids(cfg)?;
@@ -140,8 +144,6 @@ pub fn run(cfg: &Config) -> Result<()> {
             "projwfc.in",
             "projwfc",
         )?;
-    } else {
-        super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("projwfc (native checkpoint)"));
     }
     for id in &ids {
         id.verify()?;

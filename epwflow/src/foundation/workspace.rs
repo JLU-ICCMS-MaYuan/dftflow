@@ -100,6 +100,7 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
     }
     let cfg = super::readable_state::load_config(config)?;
     let operation = log::DirectoryGuard::acquire(&cfg.work_dir)?;
+    let electronic = super::electronic_reuse::Scope::enter(&cfg)?;
     super::run_state::ready(&cfg.work_dir)?;
     check_active(&cfg, None)?;
     native_jobs::check_groups(&cfg)?;
@@ -190,6 +191,7 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         Ok(())
     })?;
     // 状态已落盘；不能在等待提交回执时阻塞可能已经启动的分配进程。
+    drop(electronic);
     drop(operation);
     let result = Command::new("sbatch")
         .arg("--parsable")
@@ -320,6 +322,7 @@ pub fn start_allocated(config: &Path, target: Step, resume: bool) -> Result<()> 
 }
 /// 仅删除已确认不再运行的旧内容，保留阶段根 inode。
 pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
+    super::electronic_reuse::invalidate(step);
     check_active(cfg, None)?;
     native_jobs::check_groups(cfg)?;
     let dir = step.directory(cfg);

@@ -194,7 +194,11 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
     }
     for step in stages::execution_steps(cfg, target) {
         if matches!(step, Step::Scf | Step::Nscf | Step::Electronic | Step::Phonon) && stages::reusable(cfg, step)? {
-            super::workspace_qe_plot::refresh(cfg, step)?;
+            if step == Step::Electronic {
+                super::electronic_reuse::refresh(cfg, || super::workspace_qe_plot::refresh(cfg, step))?;
+            } else {
+                super::workspace_qe_plot::refresh(cfg, step)?;
+            }
         }
     }
     for step in [Step::Wannier, Step::Coarse] {
@@ -407,6 +411,7 @@ pub fn generate(cfg: &Config, target: Step) -> Result<()> {
 }
 
 pub fn run(cfg: &Config, step: Step) -> Result<()> {
+    super::electronic_reuse::invalidate(step);
     let root = &cfg.work_dir;
     let qe = QeSettings::from_config(cfg)?;
     match step {

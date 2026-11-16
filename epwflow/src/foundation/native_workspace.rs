@@ -54,6 +54,7 @@ fn advance_mode(
     };
     let _config = log::ExecutionConfig::enter(&cfg.work_dir, &version);
     let _operation = log::DirectoryGuard::acquire(&cfg.work_dir)?;
+    let _electronic = super::electronic_reuse::Scope::enter(&cfg)?;
     if target == Step::Phonon && super::phonon_import::bound(&cfg) {
         super::phonon_import::require_electronic(&cfg)?;
     }
@@ -95,9 +96,14 @@ fn advance_mode(
             Err(error) => return Err(error),
         };
         if !force_scf && reusable {
-            log::report_reuse(&cfg, step, None);
+            if step != Step::Electronic {
+                log::report_reuse(&cfg, step, None);
+            }
             if refresh_stage(&cfg, step, submit, resume, own)? {
                 return pending(&cfg, target);
+            }
+            if step == Step::Electronic {
+                log::report_reuse(&cfg, step, None);
             }
             continue;
         }

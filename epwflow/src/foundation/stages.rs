@@ -305,6 +305,20 @@ pub fn upstream(cfg: &Config, step: Step) -> Result<BTreeMap<String, String>> {
         .collect()
 }
 pub fn reusable(cfg: &Config, step: Step) -> Result<bool> {
+    if step == Step::Electronic {
+        return super::electronic_reuse::electronic(cfg, || {
+            let reusable = reusable_uncached(cfg, step)?;
+            if reusable && super::electronic_reuse::active(cfg)? {
+                // 持锁推进时一并确认已有 PDOS；缺失仍由本阶段后处理补齐。
+                super::workspace_pdos::files(cfg)?;
+            }
+            Ok(reusable)
+        });
+    }
+    reusable_uncached(cfg, step)
+}
+
+fn reusable_uncached(cfg: &Config, step: Step) -> Result<bool> {
     use super::readable_state as log;
     let doc = log::read(&cfg.work_dir, step)?;
     if doc.get("Stage", "Scientific status") != Some("completed") {

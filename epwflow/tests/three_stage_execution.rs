@@ -1876,3 +1876,40 @@ fn public_scf_legacy_chinese_state_reuses_science_and_writes_english() {
     assert!(!String::from_utf8_lossy(&status.stdout).chars().any(|c| ('\u{3400}'..='\u{9fff}').contains(&c)));
     success(status);
 }
+
+#[test]
+fn electronic_reuse_combines_projection_once_and_new_commands_revalidate() {
+    use epwflow::foundation::{readable_state as log, stages::Step};
+    let c = Case::numbered();
+    c.accounting(Some(201));
+    success(c.numbered_cli(1, &["--stage", "coarse", "-r"], Some(201), "reuse-once-initial"));
+    let before = (c.calls(), c.post_calls(), fs::read(c.root.join("pdos-calls")).unwrap());
+    let assert_combined = |output: Output| {
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        success(output);
+        assert_eq!(stdout.lines().filter(|line| *line == "reuse: 3.qe-electronic").count(), 1, "{stdout}");
+        assert!(!stdout.contains("/projwfc"), "{stdout}");
+    };
+    c.accounting(Some(202));
+    assert_combined(c.numbered_cli(1, &["--stage", "coarse", "-r"], Some(202), "reuse-once-cached"));
+    assert_eq!(before, (c.calls(), c.post_calls(), fs::read(c.root.join("pdos-calls")).unwrap()));
+
+    // 新命令必须检查新状态；解析检查点缺失时复用原生投影补齐，不能被旧确认遮蔽。
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    log::update(&cfg.work_dir, Step::Electronic, |doc| {
+        doc.remove("Electronic substep · projwfc");
+        Ok(())
+    }).unwrap();
+    fs::remove_file(cfg.work_dir.join("3.qe-electronic/plot/electronic.png")).unwrap();
+    c.accounting(Some(203));
+    assert_combined(c.numbered_cli(1, &["--stage", "coarse", "-r"], Some(203), "reuse-once-repair"));
+    assert_eq!(before, (c.calls(), c.post_calls(), fs::read(c.root.join("pdos-calls")).unwrap()));
+    assert!(log::completed_files(&cfg, Step::Electronic, "Electronic substep · projwfc").unwrap().is_some());
+
+    // 后续独立调用仍拒绝损坏的电子科学日志。
+    fs::write(cfg.work_dir.join("3.qe-electronic/qe_eband/elebanddata.out"), "Error in routine fixture: corrupted").unwrap();
+    c.accounting(None);
+    let failed = c.numbered_cli(1, &["--stage", "coarse", "-s"], None, "reuse-once-damaged");
+    assert!(!failed.status.success());
+    assert_eq!(before, (c.calls(), c.post_calls(), fs::read(c.root.join("pdos-calls")).unwrap()));
+}
