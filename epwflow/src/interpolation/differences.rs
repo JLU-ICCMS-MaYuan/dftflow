@@ -7,7 +7,7 @@ pub const MEV_CM1: f64 = 8.065543937;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Maximum {
-    /// 原始点顺序，零起始；带和排序模式编号一律一起始。
+    /// 已有共同点集合中的顺序，零起始；带和排序模式编号一律一起始。
     pub point_index: usize,
     pub crystal: [f64; 3],
     pub path_distance: Option<f64>,

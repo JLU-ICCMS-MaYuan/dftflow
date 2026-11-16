@@ -201,7 +201,7 @@ fn manual_and_derived_definitions_are_rejected_before_execution() {
         .unwrap();
     let error = format!("{:#}", c.cfg.validate().unwrap_err());
     assert!(
-        error.contains("1.qe-scf.outdir") && error.contains("Dual definition"),
+        error.contains("1.qe-scf.outdir") && error.contains("both explicit and internally derived definitions provided"),
         "{error}"
     );
 }

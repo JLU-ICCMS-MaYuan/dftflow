@@ -25,3 +25,5 @@ mod comparison_asr;
 pub mod differences;
 
 pub mod direct;
+
+pub(crate) mod native_sampling;

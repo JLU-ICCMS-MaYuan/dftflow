@@ -153,6 +153,8 @@ run/
 
 第 5 步由 EPW 内嵌 Wannier90 拟合并通过 `wdata` 声明真实高对称端点，保留原生 `*_band.kpt` 和标签给出的完整曲线；QE 与 EPW 可以使用不同内部密度，以同一倒空间度量显示，不为逐点配对补算、重采样或阻止出图。只有电子 DOS 使用 `[programs.postw90]`，缺省为 `pw.x` 同目录的 postw90；读取同次模型，不重新拟合。QE 路径参考读取第 3 步，DOS 参考读取第 2 步均匀网格；保留共同 Fermi 零点、Gaussian 核宽及非磁标量每态两电子计数。差值只使用已有共同坐标及同一路径位置，无共同点为空；比较图不再绘制紫色误差点、连线及图例。实际四个能窗及正常曲线保留。图和来源发布到 `results/5.epw-wannier/`，原始模型留在第 5 步。
 
+已有比较频率和电子曲线使用自身保存的原生请求／采样记录核验，不拿当前配置重新展开的点数替代。QE 215 点与当前计划 935 点可分别有效；两侧曲线保留自己的点数和值，只在已有共同点统计差值。QE matdyn 的缓存设置取第 4 步，EPW 比较取第 6 步；修改第 6 步绘图采样不重跑粗 EPC，仍保留原生执行、物理路径和自身输出一致性检查。
+
 独立拟合输入不声明粗网格插值使用的 `filkf/filqf`。后处理自动从校验后的同一 NSCF 提取晶格、原子、网格、原 k 点顺序及排除后的能带，补齐 DOS 所需 postw90 的 `.win/.eig`；无需用户维护另一份输入。原生 DOS 使用 `dos_smr_type = gauss`。除退出码外，还检查本次日志和 `.werr`，避免 Fortran 报错却零退出时错误放行。后处理失败保留拟合 `.wout/.chk/.ukk`，进度归第 5 步日志；下次公开命令只重试缺失后处理，直接替换失败产物，保留打开的 Slurm 日志，不创建归档。历史依据见 [0023 验收](../docs/specs/0023-epw-wannier-native-start/acceptance.md)，当前状态布局见 [0064](../docs/specs/0064-epw-readable-state-logs/acceptance.md)。
 
 `[stages."5.epw-wannier".wannier90] guiding_centres = true` 可显式启用原生 W90 的中心相位引导；`false` 显式关闭。不设置时保留原生默认值和旧科学身份。程序同时核对原生日志中的实际采用值；修改此项只使 Wannier 及依赖它的阶段更新，完整相容的 QE／PH 继续复用。它用于局域化数值控制，不代替原生收敛和数据完整性检查，也不保证任意材料收敛。依据见 [0030](../docs/specs/0030-wannier-guiding-centres/acceptance.md)。

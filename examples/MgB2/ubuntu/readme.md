@@ -113,3 +113,11 @@ epw_superconductivity -c "input.toml" --stage superconductivity -s
 
 
 组合图放在各阶段 plot/，并发布到 results 对应阶段的 plot/。第 3、5 步各两张电子图：electronic.png 使用 input.toml 中 [plot] 的两个独立上下限（默认 −3／＋3 eV，相对费米能），electronic-from-lowest-to-highest.png 使用 QE 路径全部能带极值。第 4、6 步各一张 phonon.png，声子谱与 DOS 共用 0 到最高路径频率的纵轴。逐带范围与衰减诊断保留。
+
+## 独立采样与已有频率复用（0043）
+
+QE 与 EPW 沿同一物理高对称路径，各自保留原生采样；不要求内部点一一对应。新生成 QE 声子比较采用第 4 步 `points_per_edge`，EPW 采用第 6 步。当前现场保存的 QE `matdyn.in` 与 `reference.freq` 为 215 点、9 模式，自身一致，可以复用；当前配置展开的 935 点不强加给这份旧结果。
+
+旧频率不为差值补点或重采样；仅已有共同坐标参与差值，空配对不阻止出图。改变比较密度不使已完成粗 EPC 失效，只有相应比较后处理按新请求更新。电子内嵌曲线由 `bands_num_points` 控制，不要求与第 3／6 步密度相同。比较图不绘制紫色误差标记，Wannier 窗口线保持。
+
+本次未执行新的科学作业。若现场尚缺普通 EPW 出图重读结果，继续使用公开 `epw_wannier -c "input.toml" --stage coarse -s` 补齐，再运行 `epw_superconductivity -c "input.toml" --stage fine -s`；这不表示需要重算 SCF、PH、Wannier 或粗 EPC。

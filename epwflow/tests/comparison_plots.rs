@@ -908,7 +908,7 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
         .err()
         .unwrap()
         .to_string()
-        .contains("Overwrite"));
+        .contains("not covered"));
     fs::write(root.join("test.wout"), "altered").unwrap();
     assert!(!cli(
         &[
@@ -938,7 +938,7 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
         &root,
     );
     assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("Coordinates"));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("coordinate"));
     assert!(!root.join("invalid/manifest.json").exists());
     sources.reciprocal[0][1] = 0.5;
     sources.mesh[1] = [0.0; 3];

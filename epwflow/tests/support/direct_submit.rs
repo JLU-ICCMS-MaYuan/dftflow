@@ -420,7 +420,7 @@ pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
     let calls = c.calls();
     assert!(c
         .root
-        .join("run/results/3.qe-electronic/plot/electronic.png")
+        .join("run/results/3.qe-electronic/band-ranges/electronic-band-ranges.png")
         .is_file());
     assert!(!c.stage_submit("wannier", false).status.success());
     fs::remove_file(c.root.join("fail-dos")).unwrap();
@@ -430,6 +430,7 @@ pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
     assert_eq!(bands, fs::read(receipts.join("scf_band.gnu")).unwrap());
     assert_eq!(calls.0, c.calls().0, "Success PW and PH Do not run again");
     assert!(c.root.join("run/3.qe-electronic/qe_eledos/scf.tdos").is_file());
+    assert!(c.root.join("run/results/3.qe-electronic/plot/electronic.png").is_file());
 }
 
 #[test]

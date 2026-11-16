@@ -82,7 +82,7 @@ fn deeply_nested_configuration_and_user_binding_registry_are_rejected() {
         .unwrap_err()
         .to_string();
     assert!(
-        error.contains("stages.1.qe-scf.pw") && error.contains("Do not support multilayers anymore"),
+        error.contains("stages.1.qe-scf.pw") && error.contains("nested configuration is no longer supported"),
         "{error}"
     );
     let mut document = serde_json::to_value(fixture()).unwrap();
@@ -90,7 +90,7 @@ fn deeply_nested_configuration_and_user_binding_registry_are_rejected() {
     assert!(serde_json::from_value::<Config>(document)
         .unwrap_err()
         .to_string()
-        .contains("Automatic binding by internal registration"));
+        .contains("automatic bindings are registered internally"));
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn manual_internal_bindings_and_aliases_are_rejected_with_real_toml_locations() 
     ] {
         let error = format!("{:#}", edited(call, key, value).validate().unwrap_err());
         assert!(
-            error.contains(&format!("stages.{call}.{key}")) && error.contains("Dual definition"),
+            error.contains(&format!("stages.{call}.{key}")) && error.contains("both explicit and internally derived definitions provided"),
             "{error}"
         );
         assert!(
@@ -190,7 +190,7 @@ fn all_native_namelists_keep_titles_and_cards_without_source_headers() {
         assert!(!clean.contains("Parameter Source"), "{task:?}");
         let legacy = original.replace(
             &format!("&{section}"),
-            &format!("! Parameter Source stages.old.parameter\n ! Parameter Source Internal extrapolation rules old\n&{section}"),
+            &format!("! 参数来源 stages.old.parameter\n! Parameter source internal derivation old\n&{section}"),
         );
         assert_eq!(cfg.apply_native(task, &legacy).unwrap(), clean, "{task:?}");
     }

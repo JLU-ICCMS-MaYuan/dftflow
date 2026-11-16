@@ -228,7 +228,7 @@ fn b01_resource_run_requires_registered_allocation() {
     assert!(String::from_utf8_lossy(&o.stderr).contains("allocation"));
     let o = c.execution(&["run", "-c", "input.toml", "--until", "qe-data"], 123);
     assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("Not registered"));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("not yet registered"));
     assert!(!c.root.join("scientific-calls").exists());
 }
 
@@ -313,12 +313,13 @@ fn b05_scf_consumes_stdout_and_rejects_nonconvergence() {
     let qe = QeSettings::from_config(&cfg).unwrap();
     let result = scf::run_scf(&qe, &c.root.join("work"), &[], Backend::Local);
     let err = format!("{:#}", result.expect_err("Failure to recover must fail"));
+    assert!(fs::read_to_string(c.root.join("work/scf/scf.out")).unwrap().contains("convergence NOT achieved"));
     assert!(
         !err.contains("Missing scf.out"),
         "Native stdout Created. Do not cover up check for log link failure:{err}"
     );
     assert!(
-        err.contains("Converged") || err.to_lowercase().contains("converg"),
+        err.contains("Unfinished") || err.to_lowercase().contains("converg"),
         "The value of the diagnosis should not be diminished:{err}"
     );
 }
@@ -604,7 +605,7 @@ fn qe_species_layout_keeps_explicit_files_and_rejects_native_filename_limit() {
     let long = c.root.join(format!("{}.upf", "x".repeat(81)));
     fs::copy(&cfg.pseudos["Mg"], &long).unwrap();
     cfg.pseudos.insert("Mg".into(), long);
-    assert!(QeSettings::from_config(&cfg).err().unwrap().to_string().contains("80 Bytes"));
+    assert!(QeSettings::from_config(&cfg).err().unwrap().to_string().contains("80 bytes"));
 }
 
 #[test]

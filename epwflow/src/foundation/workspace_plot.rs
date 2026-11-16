@@ -257,9 +257,9 @@ fn dos_figure(
 }
 
 pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()> {
-    let reference_sampling = crate::interpolation::electronic_sampling::plan(cfg)?;
+    let mut reference_sampling = crate::interpolation::electronic_sampling::plan(cfg)?;
     let independent = crate::interpolation::electronic_sampling::independent_sampling(dir)?;
-    let sampling: crate::interpolation::electronic_sampling::Sampling = if independent {
+    let mut sampling: crate::interpolation::electronic_sampling::Sampling = if dir.join("sampling.json").is_file() {
         super::store::read(&dir.join("sampling.json"))?
     } else {
         crate::interpolation::electronic_sampling::plan(cfg)?
@@ -274,8 +274,7 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
     let native = crate::interpolation::native::parse_bands(&fs::read_to_string(wannier)?)?;
     let n = sampling.path.len();
     ensure!(
-        states.kpoints.len() == reference_sampling.path.len()
-            && native.values.len()
+        native.values.len()
                 == if independent {
                     n
                 } else {
@@ -283,6 +282,25 @@ pub fn bands(cfg: &Config, dir: &Path, wannier: &Path, fermi: f64) -> Result<()>
                 },
         "data_invalid: The number of electronically compared paths or grid points does not match"
     );
+    let qe_path = crate::interpolation::comparison::native_path(
+        &reference_sampling.path, &states.kpoints, &reference_sampling.reciprocal)?;
+    sampling.path = crate::interpolation::comparison::native_path(
+        &reference_sampling.path, &native.points_cartesian[..n], &reference_sampling.reciprocal)?;
+    sampling.ticks = reference_sampling.ticks.iter().map(|t| crate::interpolation::comparison_data::Tick {
+        distance: t.distance, label: t.label.clone()
+    }).collect();
+    reference_sampling.path = qe_path;
+    ensure!(sampling.mesh.len()==reference_sampling.mesh.len()
+        && sampling.mesh.iter().zip(&reference_sampling.mesh).all(|(a,b)| a.iter().zip(b).all(|(a,b)|(a-b).abs()<1e-7)),
+        "input_conflict: saved Wannier DOS mesh has different source");
+    if !independent {
+        for (i,p) in sampling.mesh.iter().enumerate() {
+            let expected = crate::interpolation::electronic_sampling::cart(*p,&sampling.reciprocal);
+            ensure!(expected.iter().zip(native.points_cartesian[n+i]).all(|(a,b)|(a-b).abs()<1e-7),
+                "input_conflict: native electronic DOS point differs from own grid, point {i}");
+        }
+    }
+    super::store::write(&dir.join("sampling.json"), &sampling)?;
     for (path, coords) in [
         (&reference_sampling.path, &states.kpoints),
         (&sampling.path, &native.points_cartesian),

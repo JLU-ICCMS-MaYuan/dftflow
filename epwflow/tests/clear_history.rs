@@ -185,7 +185,7 @@ fn root_and_ancestor_symlinks_are_rejected_before_any_history_is_removed() {
         symlink(&external, &old).unwrap();
         let output = c.run(&["--yes"]);
         assert!(!output.status.success());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("Deny Link"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("rejecting links"));
         for name in HISTORIES {
             assert!(c.work.join(name).join("old/input.out").is_file());
         }

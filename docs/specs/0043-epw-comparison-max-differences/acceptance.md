@@ -41,3 +41,33 @@
 - 发布配置构建成功，通过项目构建脚本直接覆盖固定模块命令，未建立版本目录或备份；安装入口与构建产物核对一致。构建和测试基于含既有未提交修改的工作树，不声称仅由本次提交构成。
 - 真实 MgB₂ 仅用既有结果包重绘 `run/results/6.epw-coarse/figures/` 的 15 份 PNG／SVG／PDF。全部 SVG 无紫色误差标记／图例；实际查看总览 PNG 和 PDF 栅格化图。14 份明确选定的比较数据、科学输入和输出前后不变；未启动科学计算、提交 Slurm 或修改已有频率。当前已有科学差异和投影缺项不因重绘被改写为通过。
 - 测试与重绘证据：`docs/local/0043-independent-sampling/`（忽略目录）。Overview 按已验证行为更新；范围提交使用独立暂存区，并对原有修改文件只提交本次片段，不推送。
+
+## 2026-11-16：真实缓存与独立采样入口收敛
+
+此前导出／重绘通过，不能证明原生结果归集入口已经支持独立采样。本次补齐实际遗漏，并保留前文作为各次历史验证记录。
+
+### 实现与需求覆盖
+
+- FR-005/011／T012：QE `matdyn.in`、EPW `kpoints.dat`／`qpoints.dat` 和电子 PW 输入分别提供自身请求；输出仅与自己的坐标和带／模式数核对，再检查共同物理路径、端点、拐点、点序及自身 DOS 网格。不拿当前重新展开的点表核验旧输出。
+- FR-011/012／T013：matdyn 比较缓存读取第 4 步密度，EPW 比较读取第 6 步；q2r／matdyn 程序身份与实际 PH 程序目录一致。比较采样从 Wannier／粗 EPC 主科学参数移除，派生结果单独追踪各自设置；用户显式改变自身比较密度只更新对应派生计算。
+- FR-011／T014：电子历史来源、保存的 sampling 和已完成 QE PW 数据按实际采样恢复共同物理横轴；断段显示间隙不随采样密度变化。不改已有能量／频率，不替换 DOS 完整网格，不重拟合模型。
+- FR-009/012／T015：不同密度、非均匀点、断段、已有共同点、空能量配对、偏离物理路径拒绝、损坏输出拒绝及移动包重绘均通过。`point_index` 明确为共同点集合序号，并非两侧原文件行号；坐标、路径位置与原带／排序模式编号用于定位。
+
+### 复现与真实边界（T016）
+
+- 新增公开 CLI 回归 `stage_results::completed_matdyn_keeps_215_native_points_when_current_qe_plan_is_935`：正常生成 QE 903 路径点、EPW 183 路径点；隔离夹具构造自身完整的旧 215 点请求／输出，重新归集通过，频率与输入不变，matdyn 和主科学程序调用均不增加，并能准备 fine。再把 EPW 比较密度改为 40，只有 EPW 普通重读更新；QE 215 点和粗 EPC 主数据保留。夹具是 2 原子／6 模式，不冒称真实 MgB₂ 科学运行。
+- 新增公开 CLI 回归 `stage_results::legacy_electronic_native_points_are_not_replaced_by_current_density`：旧 EPW 两端点与 QE 三点并存，完整旧 DOS 网格保留，模型、旧 band 数据及科学调用不变。
+- 显式运行真实只读用例 `interpolation::native_sampling::tests::actual_cached_matdyn_uses_its_own_request_instead_of_current_density`，使用当前 Ubuntu MgB₂ 输入、XML、matdyn 请求及频率：`existing_request=215 current_plan=935 modes=9 accepted without recalculation`。不读取或核验原始电荷密度／波函数，不启动科学程序。
+- 新正式 CLI 执行 `epw_wannier -c ".../ubuntu/input.toml" --stage coarse`，返回当前 `6.epw-coarse/coarse.sh; not submitted`；脚本使用固定公开入口、当前环境脚本及 12 个 Slurm 任务。两份真实 matdyn 输入／频率前后不变。该动作是准备，不冒称实际完成 EPW 出图重读、fine 或超导。
+- 当前现场尚缺普通 EPW 比较频率；由用户继续执行 `epw_wannier -c "input.toml" --stage coarse -s` 补齐，再执行 fine。本次没有提交新的真实科学作业，也没有为配点重跑 QE。
+
+### 回归、图像与发布（T017）
+
+- 隔离候选基于已提交代码，只叠加本任务文件，排除已有 qf-io、qf-plot 及算例注释排版修改。执行 EPW 全量 release 回归，再逐组复测发现的旧断言，按目标去重的最终结果为 **401 通过、0 未解决失败、17 忽略**；真实只读用例另行 **1 通过**。忽略项不计通过。
+- 初轮 15 项失败保留在日志，主要为旧报错文字、已改变的诊断上下文、源注释测试夹具和 DOS 尚未完成时要求组合图。更新断言到当前错误及真实历史源注释，保留失败拒绝、数据保护和恢复后的最终图检查；未放宽生产校验。最后 `three_stage_execution` 为 116 通过、1 忽略；最终库测试 83 通过、5 忽略，比较绘图 10、平层配置 7、原生契约 21 全通过。
+- 本次重新生成四张独立图及总览各 PNG／SVG／PDF，移动包后重绘通过，所有 SVG XML 和单页 PDF 检查通过；实际查看总览 PNG，空配对有明确文字且无紫色误差标记。此图使用合成夹具，不当作 MgB₂ 科学图。
+- release 构建成功并经项目发布器直接覆盖 `bin/epwflow/` 四个固定命令；逐一核对与 Cargo 制品一致，入口帮助可运行。没有编译版本目录、旧命令备份或第二套公开入口。验证源码不包含其他任务未提交改动。
+- Spec／Plan／Research／Tasks、模块及算例说明和 Overview 同步，纠正算例“第 3／5／6 步密度必须相同”的过期注释，保留用户已有注释排版。线上 Gitee 仍由用户管理；不自动推送。
+- 完整全量、复测、真实只读、构建、发布及现场准备日志保存在忽略目录 `docs/local/0043-native-request/`。本轮结果替代初轮失败，不删除失败证据。
+
+实现将自身完整性核验集中在 `native_sampling`，复用已有实际路径与差值组件；未增加外部配置开关或 Schema，符合 KISS／DRY，且把主科学数据和比较派生参数分开。

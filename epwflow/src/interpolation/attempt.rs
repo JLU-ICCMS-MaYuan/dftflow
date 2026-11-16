@@ -148,11 +148,13 @@ fn parameters(
         if matches!(kind, "q2r" | "matdyn" | "epw") {
             let native: serde_json::Value =
                 cfg.native_value(&[crate::foundation::native_config::COARSE, "comparison", kind])?;
+            let owner = if kind == "matdyn" { cfg.phonon_stage() }
+                else { crate::foundation::native_config::COARSE.into() };
             let points = if kind == "q2r" {
                 None
             } else {
                 Some(cfg.native_value::<u32>(&[
-                    crate::foundation::native_config::COARSE,
+                    &owner,
                     "workflow",
                     "points_per_edge",
                 ])?)
@@ -178,7 +180,7 @@ fn parameters(
                 cfg.programs.epw.path.clone()
             } else {
                 cfg.programs
-                    .pw
+                    .ph
                     .path
                     .parent()
                     .unwrap()

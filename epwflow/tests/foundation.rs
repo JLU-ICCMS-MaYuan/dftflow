@@ -54,7 +54,7 @@ fn legacy_budget_read_is_immutable_and_first_write_preserves_spending_and_eviden
     assert_eq!(ledger["legacy_source"],source);
     assert_eq!(ledger["reservations"][0]["node_seconds"],0);
     let token=ledger["reservations"][0]["id"].as_str().unwrap();
-    fail(c.run(&["budget","attach","--ledger","legacy.json","--token",token,"--job","101"]),"History distribution settled");
+    fail(c.run(&["budget","attach","--ledger","legacy.json","--token",token,"--job","101"]),"historical allocation already settled");
     assert_eq!(epwflow::foundation::store::read::<serde_json::Value>(&c.root.join("legacy.json")).unwrap(),ledger);
 }
 
@@ -216,7 +216,7 @@ fn budget_reserve_attach_reconcile_and_reject_duplicate_allocation() {
     let id = output.trim().strip_prefix("reserved: token=").unwrap();
     assert!(c.run(&["budget", "attach", "--ledger", "ledger.json", "--token", id, "--job", "11"]).status.success());
     // 已绑定任务不能重复登记；结算仍依据实际终态而非预计时长。
-    fail(c.run(&["budget", "attach", "--ledger", "ledger.json", "--token", id, "--job", "11"]), "Distribution registered");
+    fail(c.run(&["budget", "attach", "--ledger", "ledger.json", "--token", id, "--job", "11"]), "allocation already registered");
     assert!(c.run(&["budget", "reconcile", "--ledger", "ledger.json"]).status.success());
     let st = c.json(&["budget", "status", "--ledger", "ledger.json", "--json"]);
     assert_eq!(st["lanes"], 0);

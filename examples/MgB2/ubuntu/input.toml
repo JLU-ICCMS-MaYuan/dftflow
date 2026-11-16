@@ -181,7 +181,7 @@ nq3 = 1
 
 [workflow."5.epw-wannier"]
 # 高对称路径每段划分为 20 个采样间隔（含两端为 21 点，相邻段共用端点）；
-# 用于 QE/Wannier 能带对比，必须与第 3 步及第 6 步的 points_per_edge 一致，不是 NSCF 网格。
+# 仅控制相应比较采样，不要求与第 3／6 步密度相同；内嵌 Wannier90 使用 bands_num_points，不是 NSCF 网格。
 points_per_edge = 20
 # 使用已绑定的 QE 电子态数据（F2）中的费米能，作为能量参考；
 # f2 是来源标识，不是数值 2；当前显式填写的绝对能窗仍以 QE 能量零点为准。

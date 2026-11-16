@@ -196,7 +196,7 @@ fn actual_input_and_reused_outputs_are_rechecked() {
         "{:#}",
         nscf::verified_states(&c.cfg, &c.cfg.work_dir).unwrap_err()
     )
-    .contains("Actual number of rows=36"));
+    .contains("actual coordinate rows=36"));
     fs::write(c.input(), &input).unwrap();
     let xml = fs::read_to_string(c.output()).unwrap();
     fs::write(c.output(), xml.replace("<nks>36</nks>", "<nks>40</nks>")).unwrap();

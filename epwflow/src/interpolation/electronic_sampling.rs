@@ -313,7 +313,7 @@ pub(crate) fn native_path_points(
         );
         if new_segment {
             if !points.is_empty() {
-                distance += size / gap_intervals as f64;
+                distance += size / 20.0;
             }
             ticks.push(Tick {
                 distance,
@@ -393,6 +393,20 @@ pub fn extract(cfg: &Config, dir: &Path) -> Result<()> {
         .join("embedded-sampling-decision.json");
     let sparse = decision.is_file()
         && store::read::<serde_json::Value>(&decision)?["path_format"] == "high_symmetry_endpoints";
+    if !sparse && decision.is_file() {
+        let recorded = store::read::<serde_json::Value>(&decision)?;
+        if let Some(value) = recorded.get("sampling") {
+            let mut own: Sampling = serde_json::from_value(value.clone())?;
+            ensure!(own.mesh.len() == sampling.mesh.len()
+                && own.mesh.iter().zip(&sampling.mesh).all(|(a,b)| same(a,b)),
+                "input_conflict: recorded electronic request has a different DOS grid");
+            let coords = own.path.iter().map(|p| cart(p.crystal, &own.reciprocal)).collect::<Vec<_>>();
+            own.path = super::comparison::native_path(&sampling.path, &coords, &sampling.reciprocal)?;
+            own.ticks = sampling.ticks;
+            own.reciprocal = sampling.reciprocal;
+            sampling = own;
+        }
+    }
     let targets: Vec<[f64; 3]> = if sparse {
         let edges = high_symmetry_edges(cfg.kpath.as_ref().context("required: Missing KPATH.in")?)?;
         let (path, ticks) = native_path_points(
@@ -534,17 +548,12 @@ pub fn legacy(cfg: &Config, dir: &Path) -> Result<()> {
     {
         f.checked_path(base)?;
     }
-    let sampling = plan(cfg)?;
-    ensure!(
-        serde_json::to_value(&sampling.path)? == serde_json::to_value(&source.path)?
-            && sampling.mesh.len() == source.mesh.len()
-            && sampling
-                .mesh
-                .iter()
-                .zip(&source.mesh)
-                .all(|(a, b)| same(a, b)),
-        "input_conflict: Old sample does not overwrite current path or grid"
-    );
+    let mut sampling = plan(cfg)?;
+    let reference_coords = source.path.iter().map(|p| cart(p.crystal, &source.reciprocal)).collect::<Vec<_>>();
+    super::comparison::native_path(&sampling.path, &reference_coords, &sampling.reciprocal)?;
+    ensure!(sampling.mesh.len() == source.mesh.len()
+        && sampling.mesh.iter().zip(&source.mesh).all(|(a,b)| same(a,b)),
+        "input_conflict: old electronic request has a different DOS grid");
     ensure!(
         store::hash_file(&xml(cfg))? == source.qe_mesh_xml.sha256,
         "input_conflict: The old electronic grid has different sources"
@@ -576,6 +585,16 @@ pub fn legacy(cfg: &Config, dir: &Path) -> Result<()> {
         "input_conflict: The old sample is not bound to the current ukk/chk ,You can't just identify with the same window log as the same model"
     );
     let native = source.epw_bands.checked_path(base)?;
+    let values = super::native::parse_bands(&fs::read_to_string(&native)?)?;
+    let count = values.values.len().checked_sub(sampling.mesh.len())
+        .context("data_invalid: old electronic request lacks DOS grid")?;
+    ensure!(count >= 2, "data_invalid: old electronic request lacks path endpoints");
+    sampling.path = super::comparison::native_path(&sampling.path,
+        &values.points_cartesian[..count], &sampling.reciprocal)?;
+    for (i, p) in sampling.mesh.iter().enumerate() {
+        ensure!(same(&cart(*p, &sampling.reciprocal), &values.points_cartesian[count+i]),
+            "input_conflict: old electronic DOS grid differs at point {i}");
+    }
     fs::copy(&native, dir.join("band.eig"))?;
     store::write(&dir.join("sampling.json"), &sampling)?;
     store::write(

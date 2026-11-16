@@ -160,7 +160,7 @@ fn generated_script_is_authenticated_and_registers_one_allocation() {
         .output()
         .unwrap();
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("Procedures differ from the recording stage"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Work processes differ from the recording stage"));
     fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
     let out = c
         .cmd(0)

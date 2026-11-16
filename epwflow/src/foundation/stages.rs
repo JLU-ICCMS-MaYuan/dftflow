@@ -151,6 +151,9 @@ pub fn parameters(cfg: &Config, step: Step) -> Result<Value> {
     }
     if let Some(workflow) = native.get_mut("workflow").and_then(Value::as_object_mut) {
         workflow.remove("phonon_sigma_cm1");
+        if matches!(step, Step::Wannier | Step::Coarse) {
+            workflow.remove("points_per_edge");
+        }
         if step == Step::Coarse {
             workflow.remove("onsite_asr");
         }

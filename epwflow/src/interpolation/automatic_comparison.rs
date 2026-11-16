@@ -12,7 +12,7 @@ use crate::{
         stage::Backend,
         store::{self, Identity},
     },
-    qe_data::{self, manifest::QeManifest, qe_config::QeSettings, save, xml::Geometry},
+    qe_data::{self, manifest::QeManifest, qe_config::QeSettings, save},
 };
 use anyhow::{ensure, Context, Result};
 use std::{fs, path::Path};
@@ -90,7 +90,7 @@ pub(crate) fn path_points(
             if edge == 0 {
                 // 断点保留独立段；留出可见空隙，但绝不跨段连曲线。
                 if !points.is_empty() {
-                    distance += length / intervals as f64;
+                    distance += length / 20.0;
                 }
                 points.push(comparison::PathPoint {
                     segment_id,
@@ -123,28 +123,6 @@ pub(crate) fn path_points(
     }
     ensure!(points.len() >= 2, "data_invalid: Compare Path to Empty");
     Ok((points, ticks))
-}
-
-fn check_points(
-    values: &native::NativeBands,
-    points: &[[f64; 3]],
-    geometry: &Geometry,
-    modes: usize,
-) -> Result<()> {
-    ensure!(
-        values.values.len() == points.len() && values.values.iter().all(|v| v.len() == modes),
-        "data_invalid: Number of points/bands/modes"
-    );
-    for (p, q) in points.iter().zip(&values.points_cartesian) {
-        ensure!(
-            cart(*p, &geometry.reciprocal)
-                .iter()
-                .zip(q)
-                .all(|(a, b)| (a - b).abs() < 1e-6),
-            "input_conflict: Compare native output coordinates or order of points"
-        );
-    }
-    Ok(())
 }
 
 /// KPATH 在公开第一阶段已冻结。旧无路径内部调用不改变粗网格接口。
@@ -197,6 +175,9 @@ pub(crate) fn run(
         })
         .collect();
     let path_crystal: Vec<_> = path.iter().map(|p| p.crystal).collect();
+    let (qe_electronic_path, _) = path_points(kpath, &geometry.reciprocal,
+        cfg.native_value::<u32>(&[crate::foundation::native_config::ELECTRONIC, "workflow", "points_per_edge"])? as usize)?;
+    let qe_electronic_crystal: Vec<_> = qe_electronic_path.iter().map(|p| p.crystal).collect();
     let all: Vec<_> = path_crystal.iter().chain(&mesh).copied().collect();
     // QE 声子密度由自身阶段设置，不为差值统计服从 EPW 的路径点。
     let (qe_path, _) = path_points(kpath, &geometry.reciprocal,
@@ -315,7 +296,7 @@ pub(crate) fn run(
                     &electron_input,
                     qe.path_input(
                         electron.join("out").to_str().context("The path isn't UTF-8")?,
-                        &path_crystal,
+                        &qe_electronic_crystal,
                     )?,
                 )?;
                 Ok(())
@@ -334,19 +315,12 @@ pub(crate) fn run(
             || {
                 qe_data::xml::validate_save(&electron.join("out"), &cfg.qe.prefix, &qe, None)?;
                 let data = qe_data::nscf::parse_xml(&electron_xml)?;
-                ensure!(
-                    data.nbnd == states.nbnd && data.kpoints.len() == path.len(),
-                    "data_invalid: Comparison NSCF Different points/bands"
-                );
-                for (expected, actual) in path_crystal.iter().zip(&data.kpoints) {
-                    ensure!(
-                        cart(*expected, &geometry.reciprocal)
-                            .iter()
-                            .zip(actual)
-                            .all(|(a, b)| (a - b).abs() < 1e-7),
-                        "input_conflict: Comparison NSCF Different coordinates or sequences"
-                    );
-                }
+                let request = super::native_sampling::pw(&fs::read_to_string(&electron_input)?)?;
+                let requested = request.iter().map(|p| cart(*p, &geometry.reciprocal)).collect::<Vec<_>>();
+                super::native_sampling::output(&native::NativeBands {
+                    points_cartesian: data.kpoints, values: data.eigenvalues
+                }, &requested, states.nbnd)?;
+                comparison::native_path(&path, &requested, &geometry.reciprocal)?;
                 Ok(())
             },
             |_| evidence(&electron),
@@ -496,12 +470,11 @@ pub(crate) fn run(
             )
         },
         || {
-            check_points(
-                &native::parse_matdyn_path(&fs::read_to_string(frequency.join("reference.freq"))?)?,
-                &qe_all,
-                &geometry,
-                modes,
-            )
+            let input = frequency.join("matdyn.in");
+            let request = super::native_sampling::matdyn(&fs::read_to_string(&input)?)?;
+            let values = native::parse_matdyn_path(&fs::read_to_string(frequency.join("reference.freq"))?)?;
+            super::native_sampling::phonon(&values, &request, &path, &mesh, &geometry, modes)
+                .with_context(|| format!("data_invalid: QE comparison output / own request {}", input.display()))
         },
         |_| evidence(&frequency),
     )?;
@@ -541,18 +514,15 @@ pub(crate) fn run(
         || super::coarse::run_epw(epw, &epw_dir, "epw.in", launcher, backend),
         || {
             native::checked_log(&fs::read_to_string(epw_dir.join("epw.out"))?, 0)?;
-            check_points(
-                &native::parse_bands(&fs::read_to_string(epw_dir.join("band.eig"))?)?,
-                if numbered { &all[..1] } else { &all },
-                &geometry,
-                nwann,
-            )?;
-            check_points(
+            let k = super::native_sampling::epw(&fs::read_to_string(epw_dir.join("kpoints.dat"))?)?;
+            let q = super::native_sampling::epw(&fs::read_to_string(epw_dir.join("qpoints.dat"))?)?;
+            let kc = k.iter().map(|p| cart(*p, &geometry.reciprocal)).collect::<Vec<_>>();
+            let qc = q.iter().map(|p| cart(*p, &geometry.reciprocal)).collect::<Vec<_>>();
+            super::native_sampling::output(
+                &native::parse_bands(&fs::read_to_string(epw_dir.join("band.eig"))?)?, &kc, nwann)?;
+            super::native_sampling::phonon(
                 &native::parse_bands(&fs::read_to_string(epw_dir.join("phband.freq"))?)?,
-                &all,
-                &geometry,
-                modes,
-            )
+                &qc, &path, &mesh, &geometry, modes)
         },
         |_| evidence(&epw_dir),
     )?;

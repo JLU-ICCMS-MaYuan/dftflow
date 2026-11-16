@@ -115,6 +115,10 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
         } else {
             cfg.native_value::<serde_json::Value>(&[super::native_config::COARSE, "comparison"])?
         },
+        if step == Step::Coarse { Some((
+            cfg.native_value::<u32>(&[super::native_config::COARSE, "workflow", "points_per_edge"])?,
+            cfg.native_value::<u32>(&[&cfg.phonon_stage(), "workflow", "points_per_edge"])?,
+        )) } else { None },
         cfg.native_value::<String>(&[super::native_config::COARSE, "workflow", "onsite_asr"])?,
         cfg.kpath
             .as_ref()
@@ -243,7 +247,11 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                         ])? != cfg.native_value::<serde_json::Value>(&[
                             super::native_config::COARSE,
                             "comparison",
-                        ])? || old.kpath != cfg.kpath,
+                        ])? || old.kpath != cfg.kpath
+                            || old.native_value::<u32>(&[super::native_config::COARSE, "workflow", "points_per_edge"])?
+                                != cfg.native_value::<u32>(&[super::native_config::COARSE, "workflow", "points_per_edge"])?
+                            || old.native_value::<u32>(&[&old.phonon_stage(), "workflow", "points_per_edge"])?
+                                != cfg.native_value::<u32>(&[&cfg.phonon_stage(), "workflow", "points_per_edge"])?,
                     )
                 })
                 .transpose()?

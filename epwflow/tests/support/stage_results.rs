@@ -772,3 +772,138 @@ fn current_plot_overwrites_original_images_without_scientific_execution() {
     assert_eq!(submissions, fs::read(c.root.join("submissions")).unwrap());
     for id in [source, model, input, result_image] { id.verify().unwrap(); }
 }
+
+#[test]
+fn completed_matdyn_keeps_215_native_points_when_current_qe_plan_is_935() {
+    use epwflow::foundation::{readable_state as log,stages::Step};
+    let c=Case::numbered();c.stage_setup();
+    c.put("KPATH.in",include_str!("../../../examples/MgB2/KPATH.in"));
+    c.numbered_change(|cfg| {
+        cfg.qe.scf.k_grid=[4,4,2];cfg.qe.nscf.k_grid=[4,4,2];
+        cfg.comparison.as_mut().unwrap().points_per_edge=20;
+        cfg.set_native(&[&cfg.phonon_stage(),"workflow","points_per_edge"],json!(100)).unwrap();
+        cfg.set_native(&[epwflow::foundation::native_config::WANNIER,"workflow","points_per_edge"],json!(20)).unwrap();
+        cfg.set_native(&[epwflow::foundation::native_config::COARSE,"workflow","points_per_edge"],json!(20)).unwrap();
+    });
+    success(c.stage_submit("coarse",false));
+    success(c.stage_execute());
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    let comparison=c.root.join("run/6.epw-coarse/comparison");
+    let xml=cfg.work_dir.join("2.qe-nscf/out").join(format!("{}.save/data-file-schema.xml",cfg.qe.prefix));
+    let modes=epwflow::qe_data::xml::Geometry::read(&xml).unwrap().atoms.len()*3;
+    let csv=fs::read_to_string(comparison.join("phonon_bands.csv")).unwrap();
+    assert_eq!(csv.lines().filter(|l|l.starts_with("qe,")).count(),903*modes);
+    assert_eq!(csv.lines().filter(|l|l.starts_with("epw,")).count(),183*modes);
+    let directory=c.root.join("run/6.epw-coarse/comparison-native/frequencies");
+    let input=fs::read_to_string(directory.join("matdyn.in")).unwrap();
+    let (header,body)=input.split_once("/\n").unwrap();
+    let rows=body.lines().filter(|l|!l.trim().is_empty()).skip(1).collect::<Vec<_>>();
+    assert_eq!(rows.len(),935);
+    let values=epwflow::interpolation::native::parse_matdyn_path(
+        &fs::read_to_string(directory.join("reference.freq")).unwrap()).unwrap();
+    let sampling=epwflow::interpolation::electronic_sampling::plan(&cfg).unwrap();
+    let mut indices=Vec::new();let mut cursor=0;
+    for point in &sampling.path {
+        let cart=epwflow::interpolation::electronic_sampling::cart(point.crystal,&sampling.reciprocal);
+        while cursor<903 {
+            let row=rows[cursor].split_whitespace().map(|x|x.parse::<f64>().unwrap()).collect::<Vec<_>>();
+            if cart.iter().zip(&row).all(|(a,b)|(a-b).abs()<1e-9) { break; }
+            cursor+=1;
+        }
+        assert!(cursor<903);indices.push(cursor);cursor+=1;
+    }
+    indices.extend(903..935);assert_eq!(indices.len(),215);
+    let mut old_input=format!("{header}/\n215\n");
+    let mut old_output=format!(" &plot nbnd= {modes}, nks= 215 /\n");
+    for &i in &indices {
+        old_input.push_str(rows[i]);old_input.push('\n');
+        let p=values.points_cartesian[i];
+        old_output.push_str(&format!(" {:.17} {:.17} {:.17} 0\n",p[0],p[1],p[2]));
+        old_output.push_str(&values.values[i].iter().map(|v|format!("{v:.17}")).collect::<Vec<_>>().join(" "));
+        old_output.push('\n');
+    }
+    fs::write(directory.join("matdyn.in"),old_input).unwrap();
+    fs::write(directory.join("reference.freq"),old_output).unwrap();
+    // 模拟旧程序已登记成功、但新程序按不同密度重新归集的实际场景。
+    fs::remove_file(c.root.join("run/6.epw-coarse/comparison-native/sources.json")).unwrap();
+    fs::remove_dir_all(&comparison).unwrap();
+    log::update(&cfg.work_dir,Step::Coarse,|d| {d.remove("Derived delivery");Ok(())}).unwrap();
+    let before=c.calls();let post=c.post_calls();
+    let frequency=store::hash_file(&directory.join("reference.freq")).unwrap();
+    let request=store::hash_file(&directory.join("matdyn.in")).unwrap();
+    success(c.stage_submit("coarse",false));
+    success(c.stage_execute());
+    assert_eq!(before,c.calls(),"已完成的主科学数据和比较 EPW 不得重跑");
+    assert_eq!(post,c.post_calls(),"不得为新推导点数补跑 matdyn 或其他后处理");
+    assert_eq!(frequency,store::hash_file(&directory.join("reference.freq")).unwrap());
+    assert_eq!(request,store::hash_file(&directory.join("matdyn.in")).unwrap());
+    let csv=fs::read_to_string(comparison.join("phonon_bands.csv")).unwrap();
+    assert_eq!(csv.lines().filter(|l|l.starts_with("qe,")).count(),183*modes);
+    assert_eq!(csv.lines().filter(|l|l.starts_with("epw,")).count(),183*modes);
+    // 下游只准备，不执行新科学作业；不能再被旧缓存点数阻断。
+    success(c.numbered_cli(2,&["--stage","fine"],None,"fine-after-own-sampling"));
+    assert_eq!(before,c.calls());
+    // 修改 EPW 自己的出图密度，只更新 EPW 重读；QE 旧点和粗 EPC 模型保持。
+    let coarse_model=store::hash_file(&c.root.join("run/6.epw-coarse/out/scf.epmatwp")).unwrap();
+    let coarse_log=store::hash_file(&c.root.join("run/6.epw-coarse/epw_coarse.out")).unwrap();
+    let mut changed=config::Config::load(&c.root.join("input.toml")).unwrap();
+    changed.set_native(&[epwflow::foundation::native_config::COARSE,"workflow","points_per_edge"],json!(40)).unwrap();
+    fs::write(c.root.join("input.toml"),toml::to_string_pretty(&changed).unwrap()).unwrap();
+    success(c.stage_submit("coarse",false));success(c.stage_execute());
+    assert_eq!(before.0,c.calls().0);
+    assert_eq!(post,c.post_calls());
+    assert_eq!(before.1.lines().filter(|l|*l=="coarse" || *l=="wannier").count(),
+        c.calls().1.lines().filter(|l|*l=="coarse" || *l=="wannier").count());
+    assert_eq!(coarse_model,store::hash_file(&c.root.join("run/6.epw-coarse/out/scf.epmatwp")).unwrap());
+    assert_eq!(coarse_log,store::hash_file(&c.root.join("run/6.epw-coarse/epw_coarse.out")).unwrap());
+    assert_eq!(frequency,store::hash_file(&directory.join("reference.freq")).unwrap());
+    let csv=fs::read_to_string(comparison.join("phonon_bands.csv")).unwrap();
+    assert_eq!(csv.lines().filter(|l|l.starts_with("qe,")).count(),183*modes);
+    assert_eq!(csv.lines().filter(|l|l.starts_with("epw,")).count(),363*modes);
+}
+
+#[test]
+fn legacy_electronic_native_points_are_not_replaced_by_current_density() {
+    use epwflow::foundation::{readable_state as log,stages::Step};
+    let c=Case::numbered();c.stage_setup();
+    success(c.stage_submit("wannier",false));success(c.stage_execute());
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    let sampling=epwflow::interpolation::electronic_sampling::plan(&cfg).unwrap();
+    let fit=c.root.join("run/5.epw-wannier");let post=fit.join("comparison-native");
+    let old=c.root.join("run/6.epw-coarse/comparison-native");
+    fs::create_dir_all(old.join("epw")).unwrap();
+    let raw=epwflow::interpolation::native::parse_bands(&fs::read_to_string(post.join("band.eig")).unwrap()).unwrap();
+    let energies=raw.values[0].iter().map(|x|x.to_string()).collect::<Vec<_>>().join(" ");
+    let endpoints=[sampling.path.first().unwrap().crystal,sampling.path.last().unwrap().crystal];
+    let mut band=format!(" &plot nbnd={}, nks={} /\n",raw.values[0].len(),endpoints.len()+sampling.mesh.len());
+    for p in endpoints.iter().chain(&sampling.mesh) {
+        let p=epwflow::interpolation::electronic_sampling::cart(*p,&sampling.reciprocal);
+        band.push_str(&format!("{} {} {}\n{energies}\n",p[0],p[1],p[2]));
+    }
+    let native=old.join("epw/band.eig");fs::write(&native,band).unwrap();
+    let source=|p:PathBuf|json!({"path":p,"sha256":store::hash_file(&p).unwrap()});
+    let xml=cfg.work_dir.join("2.qe-nscf/out/scf.save/data-file-schema.xml");
+    let sources=json!({"schema_version":2,"run_id":"legacy","ph_mode":"nosplit",
+        "fermi_reference":source(xml.clone()),"qe_mesh_xml":source(xml),
+        "qe_bands_xml":source(cfg.work_dir.join("3.qe-electronic/qe_eband/out/scf.save/data-file-schema.xml")),
+        "epw_bands":source(native.clone()),"qe_phonon_bands":source(native.clone()),"epw_phonon_bands":source(native.clone()),
+        "epw_log":source(fit.join("epw_wannier.out")),"provenance":[source(fit.join("scf.chk"))],
+        "path":sampling.path,"ticks":sampling.ticks,"mesh":sampling.mesh,"mesh_shape":cfg.qe.nscf.k_grid,
+        "reciprocal":sampling.reciprocal,"window_ev":[-2.,2.],"wannier_wout":source(fit.join("scf.wout")),
+        "electronic_sigma_ev":0.1,"phonon_sigma_cm1":10.});
+    store::write(&old.join("sources.json"),&sources).unwrap();
+    fs::remove_file(fit.join("embedded-bands.json")).unwrap();
+    let before=c.calls();let post_calls=c.post_calls();
+    let model=store::hash_file(&fit.join("scf.chk")).unwrap();
+    let original=store::hash_file(&native).unwrap();
+    log::update(&cfg.work_dir,Step::Wannier,|d|{d.remove("Derived delivery");Ok(())}).unwrap();
+    success(c.stage_submit("wannier",false));success(c.stage_execute());
+    assert_eq!(before,c.calls());assert_eq!(post_calls,c.post_calls());
+    assert_eq!(model,store::hash_file(&fit.join("scf.chk")).unwrap());
+    assert_eq!(original,store::hash_file(&native).unwrap());
+    let csv=fs::read_to_string(post.join("electronic-bands.csv")).unwrap();
+    let qe=csv.lines().filter(|l|l.starts_with("qe,")).count();
+    let epw=csv.lines().filter(|l|l.starts_with("epw,")).count();
+    assert!(qe>epw && epw>0,"旧原生稀疏点保留，不凑成 QE 密度");
+    assert_eq!(store::read::<Value>(&post.join("band-origin.json")).unwrap()["driver"],"legacy_epw_readonly");
+}

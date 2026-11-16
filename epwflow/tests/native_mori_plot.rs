@@ -185,7 +185,7 @@ fn partial_redraw_retains_formats_and_requires_full_redraw_after_source_change()
     write_bundle(&data);
     let figures = store::Identity::capture(&root.join("figures/native-figures.json")).unwrap();
     let err = native_plot::plot(&root, None, &["svg".into()]).unwrap_err();
-    assert!(err.to_string().contains("Change in data sources"));
+    assert!(err.to_string().contains("Change of data source"));
     figures.verify().unwrap();
     native_plot::plot(&root, None, &formats).unwrap();
     assert!(native_plot::check(&root).unwrap());

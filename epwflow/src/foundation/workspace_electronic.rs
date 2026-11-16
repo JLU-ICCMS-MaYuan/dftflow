@@ -374,27 +374,18 @@ fn validate_pw(cfg: &Config) -> Result<()> {
     );
     qf_io::qe_completion::checked_log(&dir.join("eband.out"), false)?;
     let qe = QeSettings::from_config(cfg)?;
-    pw_reuse::validate(
-        &fs::read_to_string(dir.join("eband.in"))?,
-        &qe.path_input("./out", &path_points(cfg)?)?,
-        &dir.join(format!("out/{}.save", cfg.qe.prefix)),
-        &cfg.pseudos,
-    )?;
+    let actual_input = fs::read_to_string(dir.join("eband.in"))?;
+    let requested = crate::interpolation::native_sampling::pw(&actual_input)?;
+    pw_reuse::validate(&actual_input, &qe.path_input("./out", &requested)?,
+        &dir.join(format!("out/{}.save", cfg.qe.prefix)), &cfg.pseudos)?;
     let geo = crate::qe_data::xml::validate_save(&dir.join("out"), &cfg.qe.prefix, &qe, None)?;
-    let states = crate::qe_data::nscf::parse_xml(
-        &dir.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix)),
-    )?;
-    let points: Vec<[f64; 3]> = store::read(&dir.join("path-points.json"))?;
-    let expected = path_points(cfg)?;
-    ensure!(
-        points.len() == expected.len()
-            && points
-                .iter()
-                .flatten()
-                .zip(expected.iter().flatten())
-                .all(|(a, b)| (a - b).abs() < 1e-10),
-        "input_conflict: Existing PW Can lead path and current KPATH Inconsistent, please recalculate the electronic phase"
-    );
+    let states = crate::qe_data::nscf::parse_xml(&dir.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix)))?;
+    let points: Vec<[f64;3]> = store::read(&dir.join("path-points.json"))?;
+    ensure!(points.len()==requested.len()
+        && points.iter().flatten().zip(requested.iter().flatten()).all(|(a,b)|(a-b).abs()<1e-10),
+        "input_conflict: saved QE path differs from its own input");
+    let reference = crate::interpolation::electronic_sampling::plan(cfg)?;
+    crate::interpolation::comparison::native_path(&reference.path, &states.kpoints, &reference.reciprocal)?;
     ensure!(
         states.nbnd == cfg.qe.nscf.nbnd as usize && states.kpoints.len() == points.len(),
         "data_invalid: PW Can carry a number or k The points don't match"
