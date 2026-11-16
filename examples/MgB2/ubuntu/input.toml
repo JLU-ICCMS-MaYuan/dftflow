@@ -174,8 +174,14 @@ nq2 = 2
 nq3 = 1
 
 [workflow."5.epw-wannier"]
+# 高对称路径每段划分为 20 个采样间隔（含两端为 21 点，相邻段共用端点）；
+# 用于 QE/Wannier 能带对比，必须与第 3 步及第 6 步的 points_per_edge 一致，不是 NSCF 网格。
 points_per_edge = 20
+# 使用已绑定的 QE 电子态数据（F2）中的费米能，作为能量参考；
+# f2 是来源标识，不是数值 2；当前显式填写的绝对能窗仍以 QE 能量零点为准。
 fermi_source = "f2"
+# 纯能量选窗：按 dis_win_* 外窗和 dis_froz_* 冻结窗筛选能带，
+# 不启用投影度冻结（dis_proj_*）；projections 初始投影仍用于构建 Wannier 函数。
 selection_mode = "energy_only"
 
 [stages."5.wannier90"]
