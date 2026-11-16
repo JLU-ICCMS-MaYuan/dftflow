@@ -33,7 +33,7 @@ pub fn plan(cfg: &Config) -> Result<Sampling> {
         cfg.kpath.as_ref().context("required: 电子比较需要 KPATH")?,
         &geo.reciprocal,
         cfg.native_value::<u32>(&[
-            crate::foundation::native_config::WANNIER,
+            crate::foundation::native_config::ELECTRONIC,
             "workflow",
             "points_per_edge",
         ])? as usize,
@@ -401,7 +401,7 @@ pub fn extract(cfg: &Config, dir: &Path) -> Result<()> {
             &fs::read_to_string(dir.join(format!("{}_band.labelinfo.dat", cfg.qe.prefix)))?,
             &coords,
             cfg.native_value(&[
-                crate::foundation::native_config::WANNIER,
+                crate::foundation::native_config::ELECTRONIC,
                 "workflow",
                 "points_per_edge",
             ])?,

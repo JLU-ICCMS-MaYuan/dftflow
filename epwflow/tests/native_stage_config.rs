@@ -292,3 +292,11 @@ fn wannier_iterations_default_to_500_and_preserve_explicit_values() {
     let cfg:Config=toml::from_str(&toml::to_string(&document).unwrap()).unwrap();
     assert_eq!(cfg.wannier.localization.max_iterations,750);
 }
+
+#[test]
+fn comparison_stages_allow_independent_path_densities() {
+    let mut c = Case::new();
+    c.cfg.set_native(&[WANNIER, "workflow", "points_per_edge"], json!(13)).unwrap();
+    c.cfg.set_native(&[COARSE, "workflow", "points_per_edge"], json!(37)).unwrap();
+    c.cfg.validate().unwrap();
+}

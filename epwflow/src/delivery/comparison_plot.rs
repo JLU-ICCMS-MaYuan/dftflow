@@ -15,7 +15,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const ERROR_PURPLE: RGBColor = RGBColor(138, 43, 226);
 
 /// 只合并屏幕上挤在一起的文字；原始高对称点竖线和曲线坐标保持。
 fn axis_labels<'a>(ticks: impl Iterator<Item = (i32, i32, &'a str)>) -> Vec<(i32, i32, String)> {
@@ -51,79 +50,6 @@ fn coordinate(value: f64) -> String {
     format!("{value:.6}")
 }
 
-/// 路径外最大误差单独展示，不投影到无关的高对称点或覆盖连续色散。
-fn phonon_panel<DB: DrawingBackend>(area: &DrawingArea<DB, Shift>, data: &Dataset) -> Result<()>
-where
-    DB::ErrorType: 'static,
-{
-    let markers = &data.metadata.phonon_error_markers;
-    if markers.is_empty() {
-        return chart(area, &data.phonon, data, 2, "total");
-    }
-    let (_, height) = area.dim_in_pixel();
-    let (main, footer) = area.split_vertically(height.saturating_sub(155));
-    chart(&main, &data.phonon, data, 2, "total")?;
-    for (card, marker) in footer.split_evenly((1, markers.len())).iter().zip(markers) {
-        let (width, _) = card.dim_in_pixel();
-        let title = if marker.scope == "sampled_maximum" {
-            if marker.path_distance.is_some() {
-                "Sampled maximum (on path)"
-            } else {
-                "Sampled maximum (OFF PATH)"
-            }
-        } else {
-            "On-path sampled maximum"
-        };
-        let label = marker
-            .path_label
-            .as_deref()
-            .unwrap_or("Not a point on this high-symmetry path");
-        let q = marker
-            .q_crystal
-            .iter()
-            .map(|v| coordinate(*v))
-            .collect::<Vec<_>>()
-            .join(", ");
-        for (y, text, size) in [
-            (20, format!("{title}: {:.2} cm^-1", marker.error_cm1), 16),
-            (43, format!("q(crystal) = ({q})"), 14),
-            (
-                65,
-                format!("mode {} (frequency sorted); {label}", marker.mode_sorted),
-                13,
-            ),
-            (90, format!("QE ph.x: {:.6} cm^-1", marker.qe_cm1), 14),
-            (113, format!("EPW: {:.6} cm^-1", marker.epw_cm1), 14),
-            (
-                137,
-                "Maximum over verified samples; not the entire Brillouin zone".into(),
-                12,
-            ),
-        ] {
-            card.draw(&Text::new(
-                text,
-                (12, y),
-                ("sans-serif", size).into_font().color(&ERROR_PURPLE),
-            ))?;
-        }
-        // 两个紫点分别对应参考和插值频率；连线长度不代表主图的路径距离。
-        let x = width as i32 - 42;
-        let (qe_y, epw_y) = if marker.qe_cm1 <= marker.epw_cm1 {
-            (111, 87)
-        } else {
-            (87, 111)
-        };
-        card.draw(&PathElement::new(
-            vec![(x, qe_y), (x, epw_y)],
-            ERROR_PURPLE.stroke_width(2),
-        ))?;
-        for y in [qe_y, epw_y] {
-            card.draw(&Circle::new((x, y), 5, ERROR_PURPLE.filled()))?;
-        }
-    }
-    Ok(())
-}
-
 /// 每张常规图只展示自己已有数据的最大差值，不作质量判断。
 fn comparison_panel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
@@ -139,11 +65,7 @@ where
         return chart(area, curves, data, kind, projection);
     }
     let Some(differences) = &data.differences else {
-        return if kind == 2 {
-            phonon_panel(area, data)
-        } else {
-            chart(area, curves, data, kind, projection)
-        };
+        return chart(area, curves, data, kind, projection);
     };
     let stats = match kind {
         0 => &differences.electronic_path,
@@ -216,7 +138,7 @@ where
         footer.draw(&Text::new(
             line,
             (12, 18 + i as i32 * 25),
-            ("sans-serif", 14).into_font().color(&ERROR_PURPLE),
+            ("sans-serif", 14).into_font().color(&BLACK),
         ))?;
     }
     Ok(())
@@ -493,52 +415,6 @@ where
         )?
         .label("QE ph.x (direct points)")
         .legend(|(x, y)| Circle::new((x + 15, y), 4, style::WINDOWS[1].filled()));
-    }
-    if kind == 2 {
-        if let Some(marker) = data
-            .metadata
-            .phonon_error_markers
-            .iter()
-            .find(|m| m.scope == "path_maximum")
-        {
-            if let Some(x) = marker.path_distance {
-                ctx.draw_series(std::iter::once(PathElement::new(
-                    vec![(x, marker.qe_cm1), (x, marker.epw_cm1)],
-                    ERROR_PURPLE.stroke_width(3),
-                )))?;
-                ctx.draw_series(
-                    [marker.qe_cm1, marker.epw_cm1]
-                        .into_iter()
-                        .map(|y| Circle::new((x, y), 6, ERROR_PURPLE.filled())),
-                )?
-                .label("Purple: max direct PH / EPW error on path")
-                .legend(|(x, y)| Circle::new((x + 15, y), 5, ERROR_PURPLE.filled()));
-                ctx.draw_series(std::iter::once(
-                    EmptyElement::at((x, marker.qe_cm1.max(marker.epw_cm1)))
-                        + Text::new(
-                            format!("mode {}: {:.2} cm^-1", marker.mode_sorted, marker.error_cm1),
-                            (10, -13),
-                            ("sans-serif", 14).into_font().color(&ERROR_PURPLE),
-                        ),
-                ))?;
-            }
-        }
-    }
-    if kind == 0 || kind == 2 {
-        if let Some(d) = &data.differences {
-            let stats=if kind==0 {&d.electronic_path} else {&d.phonon_path};
-            if let Some(m)=&stats.maximum {
-                if let Some(x)=m.path_distance {
-                    ctx.draw_series(std::iter::once(PathElement::new(
-                        vec![(x,m.qe_value),(x,m.epw_value)],ERROR_PURPLE.stroke_width(3))))?;
-                    ctx.draw_series([m.qe_value,m.epw_value].into_iter()
-                        .filter(|y| *y >= ymin && *y <= ymax)
-                        .map(|y|Circle::new((x,y),6,ERROR_PURPLE.filled())))?
-                        .label("Purple: path maximum difference")
-                        .legend(|(x,y)|Circle::new((x+15,y),5,ERROR_PURPLE.filled()));
-                }
-            }
-        }
     }
     if kind == 0 || kind == 1 {
         // 电子能量已经是 E−E_F；零点参考与四个物理窗口边界分别标识。

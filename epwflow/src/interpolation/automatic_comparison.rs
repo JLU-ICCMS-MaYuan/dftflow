@@ -198,6 +198,10 @@ pub(crate) fn run(
         .collect();
     let path_crystal: Vec<_> = path.iter().map(|p| p.crystal).collect();
     let all: Vec<_> = path_crystal.iter().chain(&mesh).copied().collect();
+    // QE 声子密度由自身阶段设置，不为差值统计服从 EPW 的路径点。
+    let (qe_path, _) = path_points(kpath, &geometry.reciprocal,
+        cfg.native_value::<u32>(&[&cfg.phonon_stage(), "workflow", "points_per_edge"])? as usize)?;
+    let qe_all: Vec<_> = qe_path.iter().map(|p| p.crystal).chain(mesh.iter().copied()).collect();
     let post_dir = cfg
         .programs
         .ph
@@ -455,7 +459,7 @@ pub(crate) fn run(
                 &serde_json::json!({
                     "required_programs":["matdyn.x"],
                     "reason":"第 4 步频率采用不同 ASR，且不包含完整路径加 DOS 网格；读取已完成的比较力常数，在所需 q 点补频率，不重跑 q2r/PW/PH。",
-                    "force_constants":force_identity,"qpoints":all
+                    "force_constants":force_identity,"qpoints":qe_all
                 }),
             )?;
             let mut input = String::from("&input\n flfrc='reference.fc.xml'\n flfrq='reference.freq'\n asr='no'\n q_in_cryst_coord=.false.\n q_in_band_form=.false.\n");
@@ -464,8 +468,8 @@ pub(crate) fn run(
                     qf_input::species::get_atomic_mass(el, cfg.atomic_masses.get(el).copied());
                 input.push_str(&format!(" amass({})={mass:.17e}\n", i + 1));
             }
-            input.push_str(&format!("/\n{}\n", all.len()));
-            for p in &all {
+            input.push_str(&format!("/\n{}\n", qe_all.len()));
+            for p in &qe_all {
                 let p = cart(*p, &geometry.reciprocal);
                 input.push_str(&format!("{:.17e} {:.17e} {:.17e}\n", p[0], p[1], p[2]));
             }
@@ -494,7 +498,7 @@ pub(crate) fn run(
         || {
             check_points(
                 &native::parse_matdyn_path(&fs::read_to_string(frequency.join("reference.freq"))?)?,
-                &all,
+                &qe_all,
                 &geometry,
                 modes,
             )

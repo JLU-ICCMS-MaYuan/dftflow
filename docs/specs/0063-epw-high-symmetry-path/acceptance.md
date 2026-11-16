@@ -124,3 +124,7 @@ CARGO_PROFILE_TEST_DEBUG=0 bash "scripts/build-native.sh" test -p epwflow --test
 - 配置：`examples/MgB2/ubuntu/input.toml` 的 `[stages."5.wannier90"]`、`examples/SiP2/epwinput.toml` 的 `[stages."5.epw-wannier".wannier90]` 均为 `bands_num_points = 50`；数值已由提交 `d250d34d` 更新，本次补充中文注释与需求文档。
 - 验证：使用 Python `tomllib` 解析两份配置，断言两个实际参数所有者的值均为 50；对照提交前配置确认新增注释不改变任何配置值。检查 FR-013／SC-009／T014 和契约、快速说明一致，`git diff --check` 通过。
 - 边界：默认设置指用户示例，不新增省略字段自动补值机制，不覆盖用户显式设置；首段间隔和其余段按长度取整的原生规则保持不变。历史记录中的 1 不修改。仅文档和示例注释维护，无源码修改、编译、安装、科学运行或线上 Issue 操作。
+
+## 2026-11-16：比较行为衔接
+
+本需求电子独立采样边界已与声子比较及无紫色误差标记统一，证据见 [0043 验收](../0043-epw-comparison-max-differences/acceptance.md)。首段采样默认 50 的既有决定未改变；只统计已有共同坐标，无配对不补算、不重采样、不阻止出图。

@@ -922,14 +922,7 @@ impl Config {
             );
             Ok(())
         };
-        // 下游叠图复用第 3 步点位，分别声明并核对，不能暗中继承。
-        for stage in [WANNIER, COARSE] {
-            same(
-                &[stage, "workflow", "points_per_edge"],
-                at(&v, &[ELECTRONIC, "workflow", "points_per_edge"])?.clone(),
-                &format!("stages.{ELECTRONIC}.workflow.points_per_edge（同一电子参考路径）"),
-            )?;
-        }
+        // 各阶段独立选择路径密度；物理路径身份在读取原生坐标时核对。
         same(
             &[WANNIER, "epw", "INPUTEPW", "num_iter"],
             at(&v, &[WANNIER, "wannier90", "num_iter"])?.clone(),

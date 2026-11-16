@@ -174,7 +174,7 @@ fn method(s: &str) -> Result<()> {
     Ok(())
 }
 
-fn bands(root: &Path, phonon: bool, independent: bool) -> Result<Vec<Curve>> {
+fn bands(root: &Path, phonon: bool) -> Result<Vec<Curve>> {
     let name = if phonon { TABLES[1] } else { TABLES[0] };
     let header = if phonon {
         "method,reference_kind,segment_id,point_id,distance,mode,frequency_cm1"
@@ -215,7 +215,7 @@ fn bands(root: &Path, phonon: bool, independent: bool) -> Result<Vec<Curve>> {
             points,
         })
         .collect();
-    paired_axes(&out, false, independent)?;
+    paired_axes(&out, false)?;
     Ok(out)
 }
 
@@ -287,15 +287,11 @@ fn dos(root: &Path, phonon: bool, metadata: &Metadata) -> Result<Vec<Curve>> {
             points,
         })
         .collect();
-    paired_axes(
-        &out,
-        true,
-        !phonon && metadata.electronic_independent_sampling,
-    )?;
+    paired_axes(&out, true)?;
     Ok(out)
 }
 
-fn paired_axes(curves: &[Curve], is_dos: bool, independent: bool) -> Result<()> {
+fn paired_axes(curves: &[Curve], is_dos: bool) -> Result<()> {
     for curve in curves {
         ensure!(
             curve.points.len() >= 2 && curve.points.windows(2).all(|w| w[0].0 < w[1].0),
@@ -308,20 +304,11 @@ fn paired_axes(curves: &[Curve], is_dos: bool, independent: bool) -> Result<()> 
                 && (!is_dos || p.branch == curve.branch)
         });
         let partner = partner.context("data_invalid: 成对方法或投影缺失")?;
+        // 曲线各自保留原始采样，只核对同一物理段的起终位置。
         ensure!(
-            (independent
-                && (is_dos
-                    || ((curve.points[0].0 - partner.points[0].0).abs() < 1e-8
-                        && (curve.points.last().unwrap().0 - partner.points.last().unwrap().0)
-                            .abs()
-                            < 1e-8)))
-                || (curve.points.len() == partner.points.len()
-                    && curve
-                        .points
-                        .iter()
-                        .zip(&partner.points)
-                        .all(|(a, b)| (a.0 - b.0).abs() < 1e-10)),
-            "data_invalid: 两侧路径／DOS 轴不一致"
+            is_dos || ((curve.points[0].0 - partner.points[0].0).abs() < 1e-8
+                && (curve.points.last().unwrap().0 - partner.points.last().unwrap().0).abs() < 1e-8),
+            "data_invalid: 两侧物理路径端点不一致"
         );
     }
     Ok(())
@@ -426,8 +413,8 @@ pub fn load(root: &Path) -> Result<Dataset> {
             "data_invalid: 路径标记无效"
         );
     }
-    let electronic = bands(root, false, metadata.electronic_independent_sampling)?;
-    let phonon = bands(root, true, false)?;
+    let electronic = bands(root, false)?;
+    let phonon = bands(root, true)?;
     let mut scopes = BTreeSet::new();
     let mode_count = phonon
         .iter()

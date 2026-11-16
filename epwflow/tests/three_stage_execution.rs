@@ -834,13 +834,11 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     fs::write(&config_path,toml::to_string_pretty(&changed).unwrap()).unwrap();
     c.accounting(Some(212));
     let changed_path=c.numbered_cli(1,&["--stage","coarse","--check"],None,"numbered-path-density");
-    assert!(!changed_path.status.success());
-    let error=String::from_utf8_lossy(&changed_path.stderr);
-    assert!(error.contains("workflow.6.epw-coarse.points_per_edge") && error.contains("workflow.3.qe-bands.points_per_edge"),"{error}");
-    assert_eq!(coarse_calls,c.calls().1.matches("coarse ").count(),"冲突检查不能重算 EPC");
+    success(changed_path);
+    assert_eq!(coarse_calls,c.calls().1.matches("coarse ").count(),"独立密度检查不能重算 EPC");
     assert_eq!(c.calls().1.matches("wannier ").count(),1);
     assert!(stages::reusable(&original,Step::Fine).unwrap());
-    // 恢复本阶段的原始配置，成功科学数据不能因被拒绝的请求而改变。
+    // 恢复原始密度；只读检查不能改变已成功的科学数据。
     fs::write(&config_path,original_config).unwrap();c.accounting(Some(213));
     success(c.numbered_cli(1,&["--stage","coarse","--resume","-r"],Some(213),"numbered-path-restore"));
     let before=c.calls();

@@ -74,7 +74,7 @@ fn phonon_chain_single_submission_delivers_save_and_plots_without_downstream() {
     let c = Case::numbered();
     c.chain_setup();
     let out = c.chain_submit(false);
-    assert!(String::from_utf8_lossy(&out.stdout).contains("自动推进"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("advance automatically within the allocation"));
     success(out);
     assert_eq!(c.submission_count(), 1);
     assert!(!c.chain_submit(false).status.success());
