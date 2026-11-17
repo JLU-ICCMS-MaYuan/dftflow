@@ -376,16 +376,61 @@ pub fn run(cfg: &Config, step: Step) -> Result<()> {
     match step {
         Step::Scf => {
             qe_data::scf::run_scf(&qe, root, &cfg.programs.launcher, Backend::Local)?;
+            // 自动绘制 SCF 能带范围图
+            if let Err(e) = super::workspace_qe_plot::refresh(cfg, step) {
+                eprintln!("Warning: SCF plotting failed: {:#}", e);
+                let _ = super::readable_state::update(root, step, |d| {
+                    d.set("Plot · SCF", "Status", "failed");
+                    d.set("Plot · SCF", "Failure", format!("{:#}", e));
+                    Ok(())
+                });
+            }
         }
         Step::Nscf => {
             qe_data::nscf::run_nscf(&qe, root, &cfg.programs.launcher, Backend::Local)?;
+            // 自动绘制 NSCF 能带范围图
+            if let Err(e) = super::workspace_qe_plot::refresh(cfg, step) {
+                eprintln!("Warning: NSCF plotting failed: {:#}", e);
+                let _ = super::readable_state::update(root, step, |d| {
+                    d.set("Plot · NSCF", "Status", "failed");
+                    d.set("Plot · NSCF", "Failure", format!("{:#}", e));
+                    Ok(())
+                });
+            }
         }
         Step::Electronic => {
             run_electronic_leaf(cfg, "qe_eband")?;
             run_electronic_leaf(cfg, "qe_eledos")?;
+            // 自动绘制 Electronic 全部图（能带范围、能带、DOS、PDOS）
+            if let Err(e) = super::workspace_qe_plot::refresh(cfg, step) {
+                eprintln!("Warning: Electronic plotting failed: {:#}", e);
+                let _ = super::readable_state::update(root, step, |d| {
+                    d.set("Plot · Electronic", "Status", "failed");
+                    d.set("Plot · Electronic", "Failure", format!("{:#}", e));
+                    Ok(())
+                });
+            }
         }
-        Step::Phonon => run_phonon(cfg, &qe)?,
-        Step::Wannier => run_wannier(cfg, &qe)?,
+        Step::Phonon => {
+            run_phonon(cfg, &qe)?;
+            // 自动绘制声子能带图 + 声子 DOS 图
+            if let Err(e) = super::workspace_qe_plot::refresh(cfg, step) {
+                eprintln!("Warning: Phonon plotting failed: {:#}", e);
+                let _ = super::readable_state::update(root, step, |d| {
+                    d.set("Plot · Phonon", "Status", "failed");
+                    d.set("Plot · Phonon", "Failure", format!("{:#}", e));
+                    Ok(())
+                });
+            }
+        }
+        Step::Wannier => {
+            run_wannier(cfg, &qe)?;
+            // 自动绘制四类对比图
+            if let Err(e) = refresh_post(cfg, step) {
+                eprintln!("Warning: Wannier plotting failed: {:#}", e);
+                // refresh_post 内部已处理失败状态记录
+            }
+        }
         Step::Coarse => {
             interpolation::scheduler::run_coarse_with_retry(
                 cfg,
@@ -395,6 +440,11 @@ pub fn run(cfg: &Config, step: Step) -> Result<()> {
                 root,
                 true,
             )?;
+            // 自动绘制四类对比图 + 实空间衰减图
+            if let Err(e) = refresh_post(cfg, step) {
+                eprintln!("Warning: Coarse plotting failed: {:#}", e);
+                // refresh_post 内部已处理失败状态记录
+            }
         }
         Step::Fine => {
             interpolation::scheduler::run_fine_with_retry(
