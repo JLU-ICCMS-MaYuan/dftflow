@@ -51,7 +51,11 @@ pub fn plot_results(
     formats: &[String],
 ) -> anyhow::Result<std::path::PathBuf> {
     if results.join("native.plot.json").is_file() { return native_plot::plot(results,output,formats); }
-    if results.join("index.json").exists() || crate::qe_data::save::files(results)?.iter().any(|f| f.relative_path.to_string_lossy().ends_with(".plot.json")) {
+    // Issue #72 B04: 识别能带范围图结果包
+    if results.join("index.json").exists() || crate::qe_data::save::files(results)?.iter().any(|f| {
+        let path = f.relative_path.to_string_lossy();
+        path.ends_with(".plot.json") || path.ends_with("-band-ranges.json")
+    }) {
         let target=if let Some(output)=output {
             anyhow::ensure!(!output.exists(),"input_conflict: Repaint output already exists");
             crate::qe_data::save::copy_tree(results,output)?;
@@ -82,7 +86,11 @@ pub fn check_results(results: &std::path::Path) -> anyhow::Result<serde_json::Va
         report["workflow_complete"]=(report["native_complete"]==true && figures).into();return Ok(report);
     }
 
-    if results.join("index.json").exists() || crate::qe_data::save::files(results)?.iter().any(|f| f.relative_path.to_string_lossy().ends_with(".plot.json")) {
+    // Issue #72 B04: check_results 也要识别能带范围图
+    if results.join("index.json").exists() || crate::qe_data::save::files(results)?.iter().any(|f| {
+        let path = f.relative_path.to_string_lossy();
+        path.ends_with(".plot.json") || path.ends_with("-band-ranges.json")
+    }) {
         let index=crate::foundation::stage_results::check(results)?;
         return Ok(serde_json::json!({"schema_version":1,"operation_status":"ok","stage_results_verified":true,"entries":index.entries,"workflow_complete":false}));
     }

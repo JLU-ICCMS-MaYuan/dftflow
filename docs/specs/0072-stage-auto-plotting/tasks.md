@@ -87,15 +87,12 @@ ls -la phonon/plots/*.png
 - [ ] 在 `workspace_science.rs` 的 `Step::Wannier` 分支，`run_wannier` 完成后调用 `refresh_post(cfg, step)`
 - [ ] 验证 `refresh_post` 内部已处理绘图失败状态记录
 - [ ] 验证：执行 `epw_wannier --stage wannier -s`，检查以下图片存在：
-  - 电子能带对比图
-  - 电子 DOS 对比图
-  - 声子能带对比图
-  - 声子 DOS 对比图
+  - 电子能带对比图和电子 DOS 对比图（组合为 electronic.png）
 
 **验证命令**：
 ```bash
 epw_wannier -c input.toml --stage wannier -s
-ls -la 5.epw-wannier/*.png
+ls -la 5.epw-wannier/electronic.png
 ```
 
 ### T008：Coarse 阶段完成后自动绘图
@@ -103,22 +100,24 @@ ls -la 5.epw-wannier/*.png
 - [ ] 在 `workspace_science.rs` 的 `Step::Coarse` 分支，`run_coarse_with_retry` 完成后调用 `refresh_post(cfg, step)`
 - [ ] 验证 `refresh_post` 内部已处理绘图失败状态记录
 - [ ] 验证：执行 `epw_wannier --stage coarse -s`，检查以下图片存在：
-  - 同 Wannier 的四类对比图
+  - 声子能带对比图和声子 DOS 对比图（组合为 phonon.png）
   - 实空间衰减图
 
 **验证命令**：
 ```bash
 epw_wannier -c input.toml --stage coarse -s
-ls -la 6.epw-coarse/*.png
+ls -la 6.epw-coarse/phonon.png
+ls -la 6.epw-coarse/decay-*.png
 ```
 
 ### T009：确认 refresh_post 覆盖 Wannier/Coarse 绘图
 
 - [ ] 阅读 `workspace_science::refresh_post_inner` 函数
-- [ ] 确认 Wannier/Coarse 阶段调用了 `delivery/comparison_plot.rs` 和 `delivery/decay.rs`
-- [ ] 验证：查看代码逻辑，确认四类对比图和衰减图都会生成
+- [ ] 确认 Wannier 阶段调用了电子对比绘图
+- [ ] 确认 Coarse 阶段调用了声子对比绘图和实空间衰减图绘图
+- [ ] 验证：查看代码逻辑，确认对比图和衰减图都会生成
 
-**代码位置**：`epwflow/src/foundation/workspace_science.rs:146-201`
+**代码位置**：`epwflow/src/foundation/workspace_science.rs:146-245`
 
 ## 通用任务
 
@@ -139,35 +138,37 @@ epw_phonon -c input.toml --stage nscf -s
 
 ### T011：保留 --plot 选项用于显式重绘
 
-- [ ] 确认 `--plot` 选项逻辑不变
-- [ ] 确认 `--plot` 调用的绘图函数与自动绘图使用同一函数
-- [ ] 验证：删除图片后，使用 `--plot` 重新生成
+- [x] 确认 `--plot --results <阶段结果目录>` 逻辑正确
+- [x] 确认能识别 `*-band-ranges.json` 结果包（Issue #72 B04 已修复）
+- [ ] 验证：删除图片后，使用 `--plot --results` 重新生成
 
 **验证命令**：
 ```bash
-rm -f scf/plots/scf-band-ranges.png
-epw_phonon -c input.toml -w <work_dir> --plot
-ls -la scf/plots/scf-band-ranges.png
+rm -f results/1.qe-scf/scf-band-ranges.png
+epw_phonon --plot --results results/1.qe-scf
+ls -la results/1.qe-scf/scf-band-ranges.png
 ```
 
-### T012：复用结果时补齐缺失图片
+### T012：当前阶段复用时补齐自己的缺失图片
 
 - [ ] 确认 `refresh_post_inner` 检查图片文件存在性
 - [ ] 确认缺失时调用绘图函数补齐
 - [ ] 确认不触发科学程序重新计算
-- [ ] 验证：复用已有结果，删除图片，确认自动补齐
+- [ ] 验证：复用已有结果，删除当前阶段的图片，确认自动补齐
 
 **验证方式**：
 ```bash
-# 第一次完整执行
+# 第一次完整执行 SCF
 epw_phonon -c input.toml --stage scf -s
-# 删除图片
-rm -f scf/plots/scf-band-ranges.png
-# 复用结果（不重新计算 SCF）
-epw_phonon -c input.toml --stage nscf -s
+# 删除 SCF 图片
+rm -f results/1.qe-scf/scf-band-ranges.png
+# 再次执行 SCF（复用结果）
+epw_phonon -c input.toml --stage scf -s
 # 检查 SCF 图片自动补齐
-ls -la scf/plots/scf-band-ranges.png
+ls -la results/1.qe-scf/scf-band-ranges.png
 ```
+
+**说明**：各阶段只负责补齐自己的图片。例如，执行 NSCF 时不会补齐 SCF 的图片，只有重新执行 SCF 时才会补齐。
 
 ## 文档更新任务
 

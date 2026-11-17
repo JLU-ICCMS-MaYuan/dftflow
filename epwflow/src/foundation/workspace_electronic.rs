@@ -622,5 +622,14 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
         }
         _ => anyhow::bail!("configuration: Unknown electron subphase {name}"),
     }
-    super::workspace_qe_plot::electronic(cfg, name)
+    // 绘图失败不影响科学数据交付 (Issue #72 B01)
+    if let Err(e) = super::workspace_qe_plot::electronic(cfg, name) {
+        eprintln!("Warning: Electronic leaf plotting failed: {:#}", e);
+        let _ = super::readable_state::update(&cfg.work_dir, super::stages::Step::Electronic, |d| {
+            d.set(&format!("Plot · {}", name), "Status", "failed");
+            d.set(&format!("Plot · {}", name), "Failure", format!("{:#}", e));
+            Ok(())
+        });
+    }
+    Ok(())
 }
