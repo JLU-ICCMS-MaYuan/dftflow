@@ -58,7 +58,7 @@ flowchart LR
 
 ## 三程序选项约定
 
-三个入口均使用 `-c inputepw.toml`，默认固定输入并生成本阶段 Slurm 脚本，`-s` 提交，`-r` 在已登记分配中执行，`--resume -w <运行目录> -s/-r` 从固定快照恢复。`--check` 检查配置；结合 `-w` 检查本阶段数据。`--status -w` 查询共享状态，`--probe -s/-r` 探测环境，`--prepare-only` 只固定输入。`--import <清单>`、`--collect -w`、`--plot --results` 和 `--results-check --results` 复用现有校验／重绘能力，第一阶段禁止绘图和比较导出。账本通过 `--budget status|reserve|attach|reconcile` 操作。旧多层子命令不作为第四个程序保留。第二、三阶段在前置完成证据缺失时明确拒绝，不替代前一个独立程序启动计算。
+三个入口均使用 `-c inputepw.toml`，默认固定输入并生成本阶段 Slurm 脚本，`-s` 提交，`-r` 在已登记分配中执行，`--resume -w <运行目录> -s/-r` 从固定快照恢复。`--check` 检查配置；结合 `-w` 检查本阶段数据。`--status -w` 查询共享状态，`--probe -s/-r` 探测环境，`--prepare-only` 只固定输入。`--import <清单>`、`--collect -w`、`--plot --results` 和 `--results-check --results` 复用现有校验／重绘能力。第 1～4 步在科学数据核验后自动绘制对应 QE 图，结果包可显式重绘；比较导出归属后续 EPW 阶段，具体见 [0072](../0072-stage-auto-plotting/spec.md)。账本通过 `--budget status|reserve|attach|reconcile` 操作。旧多层子命令不作为第四个程序保留。第二、三阶段在前置完成证据缺失时明确拒绝，不替代前一个独立程序启动计算。
 
 ## 一条命令生成总提交脚本
 

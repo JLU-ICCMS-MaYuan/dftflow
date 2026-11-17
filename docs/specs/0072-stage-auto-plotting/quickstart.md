@@ -1,226 +1,56 @@
-# 快速验证：各阶段计算完成后自动绘图
+# 自动绘图验收与重绘
 
-## 前提条件
-
-- Rust/Cargo 环境就绪
-- epwflow 已构建（`cargo build --release`）
-- 有效的测试目录（例如 MgB₂）
-- 输入配置文件 `input.toml` 准备好
-
-## 验证步骤
-
-### 1. SCF 阶段自动绘图
+## 隔离契约测试
 
 ```bash
-cd /home/mayuan/code/dftflow/test_auto/MgB2/local_run
-epw_phonon -c input.toml --stage scf -s
-
-# 验证图片存在
-ls -la scf/plots/scf-band-ranges.png
+DFTFLOW_THREE_STAGE_TEST_ROOT="/home/mayuan/code/dftflow/docs/local/0072-stage-auto-plotting/retest/cases" \
+  bash "scripts/build-native.sh" test -j 2 -p epwflow --locked \
+  --test three_stage_execution issue_0072_ -- --nocapture --test-threads=2
 ```
 
-**预期结果**：
-- SCF 计算成功完成
-- `scf/plots/scf-band-ranges.png` 文件存在
-- 图片尺寸合理（至少 300 DPI）
+探针复用既有进程夹具，保存在 `epwflow/tests/support/stage_auto_plotting_0072.rs`。首次临时目标 `issue_0072_acceptance` 的复测日志保留为证据，正式入口改为现有 `three_stage_execution` 测试目标，避免复制整套夹具。替身测试不启动真实科学程序或 Slurm，不称为 12 路科学计算。
 
-### 2. NSCF 阶段自动绘图
+## 构建固定入口
 
 ```bash
-epw_phonon -c input.toml --stage nscf -s
-
-# 验证图片存在
-ls -la nscf/plots/nscf-band-ranges.png
+bash "scripts/build-native.sh" build --release -j 2 -p epwflow --bins --locked
 ```
 
-**预期结果**：
-- NSCF 计算成功完成
-- `nscf/plots/nscf-band-ranges.png` 文件存在
+成功后自动覆盖仓库 `bin/epwflow/` 固定入口；不使用 `target/release` 或额外版本目录。构建失败时不能把旧安装认作本次制品。
 
-### 3. Electronic 阶段自动绘图
+## 真实六阶段
+
+使用新的测试目录及其 `input.toml`，依次执行下面六条命令。**每一条提交之后先等对应作业结束，核对退出码、科学完成状态及图片，再执行下一条。** `-s` 返回成功只说明提交成功。
 
 ```bash
-epw_phonon -c input.toml --stage electronic -s
-
-# 验证所有图片
-ls -la 3.qe-electronic/*.png
+epw_phonon -c "input.toml" --stage scf -s
+epw_phonon -c "input.toml" --stage nscf -s
+epw_phonon -c "input.toml" --stage electronic -s
+epw_phonon -c "input.toml" --stage phonon -s
+epw_wannier -c "input.toml" --stage wannier -s
+epw_wannier -c "input.toml" --stage coarse -s
 ```
 
-**预期结果**：
-- Electronic 计算成功完成
-- 以下图片存在：
-  - `electronic-band-ranges.png`
-  - `electronic_band.png`
-  - `electronic_dos.png`
-  - `electronic_pdos.png`
+| 阶段 | 当前图片目录及内容 |
+| --- | --- |
+| 1 | `run/results/1.qe-scf/scf-band-ranges.png` |
+| 2 | `run/results/2.qe-nscf/nscf-band-ranges.png` |
+| 3 | `run/results/3.qe-electronic/`：范围图、近费米能及全能窗电子组合图；正常图含元素 PDOS |
+| 4 | `run/results/4.qe-phonon-<模式>/phonon.png`：声子能带／DOS |
+| 5 | `run/results/5.epw-wannier/`：近费米能及全能窗电子对比组合图 |
+| 6 | `run/results/6.epw-coarse/`：声子对比组合图及实空间衰减图 |
 
-### 4. Phonon 阶段自动绘图
+本机科学程序使用 `mpirun -np 12`、Slurm `--ntasks=12`，EPW `-nk 12`；OMP／MKL 线程为 1。小网格出图验收不替代网格收敛或 Tc 验收。
+
+## 仅重绘和当前阶段补图
 
 ```bash
-epw_phonon -c input.toml --stage phonon -s
-
-# 验证图片
-ls -la phonon/plots/*.png
+epw_phonon --plot --results "run/results/1.qe-scf"
+epw_phonon --plot --results "run/results/2.qe-nscf"
+epw_phonon -c "input.toml" --stage electronic --plot
+epw_wannier -c "input.toml" --stage wannier --plot
 ```
 
-**预期结果**：
-- Phonon 计算成功完成
-- 以下图片存在：
-  - `phonon_band.png`
-  - `phonon_dos.png`
+SCF／NSCF 现场 `--plot` 不支持，使用显式结果目录。结果重绘只读保存的图参，不补算科学数据。自动补图则重复当前阶段命令；缺图不使科学数据失效，也不隐式补上游图片。
 
-### 5. Wannier 阶段自动绘图
-
-```bash
-epw_wannier -c input.toml --stage wannier -s
-
-# 验证对比图
-ls -la 5.epw-wannier/*.png
-```
-
-**预期结果**：
-- Wannier 计算成功完成
-- 四类对比图存在：
-  - 电子能带对比图
-  - 电子 DOS 对比图
-  - 声子能带对比图
-  - 声子 DOS 对比图
-
-### 6. Coarse 阶段自动绘图
-
-```bash
-epw_wannier -c input.toml --stage coarse -s
-
-# 验证对比图和衰减图
-ls -la 6.epw-coarse/*.png
-```
-
-**预期结果**：
-- Coarse 计算成功完成
-- 四类对比图 + 实空间衰减图存在
-
-## 绘图失败测试
-
-### 模拟绘图失败
-
-```bash
-# 删除绘图依赖文件
-rm -f nscf/out/*.xml
-
-# 执行计算
-epw_phonon -c input.toml --stage nscf -s
-
-# 检查状态
-cat readable-state.json | jq '.nscf."Plot · NSCF"'
-```
-
-**预期结果**：
-- NSCF 计算成功完成（科学数据标记为完成）
-- 绘图失败，readable_state 中记录失败原因
-- 不阻断后续阶段
-
-### 使用 --plot 重新绘图
-
-```bash
-# 恢复依赖文件
-# ...
-
-# 显式重绘
-epw_phonon -c input.toml -w <work_dir> --plot
-
-# 验证图片
-ls -la nscf/plots/nscf-band-ranges.png
-```
-
-**预期结果**：
-- 绘图成功
-- 图片文件存在
-- 不触发 NSCF 重新计算
-
-## 复用结果补图测试
-
-```bash
-# 第一次执行
-epw_phonon -c input.toml --stage scf -s
-
-# 删除图片
-rm -f scf/plots/scf-band-ranges.png
-
-# 执行下一阶段（复用 SCF）
-epw_phonon -c input.toml --stage nscf -s
-
-# 检查 SCF 图片
-ls -la scf/plots/scf-band-ranges.png
-```
-
-**预期结果**：
-- NSCF 复用 SCF 结果（不重新计算 SCF）
-- SCF 图片自动补齐
-- SCF 科学数据保持不变
-
-## 完整流程验证
-
-```bash
-# 清空工作目录
-rm -rf /tmp/mgb2_test
-mkdir -p /tmp/mgb2_test
-cd /tmp/mgb2_test
-cp /path/to/input.toml .
-cp /path/to/POSCAR .
-
-# 执行完整流程
-epw_phonon -c input.toml --stage scf -s
-epw_phonon -c input.toml --stage nscf -s
-epw_phonon -c input.toml --stage electronic -s
-epw_phonon -c input.toml --stage phonon -s
-epw_wannier -c input.toml --stage wannier -s
-epw_wannier -c input.toml --stage coarse -s
-
-# 统计图片数量
-find . -name "*.png" -type f | wc -l
-```
-
-**预期结果**：
-- 所有阶段成功完成
-- 所有图片自动生成
-- 图片总数符合预期（至少 15 张）
-
-## 性能测试
-
-### 测量绘图耗时
-
-```bash
-time epw_phonon -c input.toml --stage scf -s
-```
-
-**预期结果**：
-- 绘图增加的时间 < 10% 总时间
-- 用户体验改善（无需手动绘图）
-
-## 回归测试
-
-### 验证 --plot 选项保持兼容
-
-```bash
-# 不使用自动绘图（假设临时禁用）
-# ...
-
-# 手动调用 --plot
-epw_phonon -c input.toml -w <work_dir> --plot
-```
-
-**预期结果**：
-- `--plot` 选项功能不变
-- 图片正常生成
-
-## 失败场景
-
-如果验证失败，检查：
-1. readable_state.json 中的失败原因
-2. 绘图依赖文件是否存在
-3. 绘图函数是否正确调用
-4. 异常是否被正确捕获
-
-## 验收输出
-
-按 tasks.md 覆盖全部 FR/SC，实际证据存 `docs/specs/0072-stage-auto-plotting/acceptance.md`。先记录未运行，不能通过脚本存在或帮助输出完成数值验收。
+仅在测试副本中删除图片或将 PNG 目标替换成目录注入写入失败。不要删除 XML、原始电荷密度或波函数模拟绘图错误。错误路径验收科学完成标记和科学数据是否保留；作业及绘图状态分别记录，不将原生 PDOS 程序失败误报为 PNG 错误。

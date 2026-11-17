@@ -1868,3 +1868,6 @@ fn reuse_0052_linearized_matrix_route_links_qmap_metadata_without_fine_rerun() {
     assert!(dir.join("scf.a2f").is_file());
     assert!(!dir.join("source.a2f").exists());
 }
+
+#[path = "support/stage_auto_plotting_0072.rs"]
+mod stage_auto_plotting_0072;

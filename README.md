@@ -219,7 +219,7 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 各 flow 统一采用 `[slurm].header` 多行字符串填写 Slurm 文件头，MPI 启动参数由 launcher／现有程序启动命令指定。EPW 已删除整个 `[resources]`，不再自动补写或通过 sbatch 参数覆盖分区、节点数和任务数。旧输入须迁移，历史冻结快照不手改；示例见 [EPW 配置说明](epwflow/README.md#slurm-文件头)。
 
 SCF／NSCF 的原始电荷密度和波函数不做哈希、大小、非空、存在性或文件集合核对，实际复制和原生读取保留；其他科学证据照常验证，见 [0067](docs/specs/0067-unchecked-density-wavefunctions/spec.md)。
-修改当前配置后执行 `epw_wannier --stage wannier -s`，直接读取必要的既有 NSCF 数据，缺失时停止，不补算上游。第 5 步在一个 Slurm 分配内自动完成拟合、核验、能带／DOS 后处理和绘图；`--stage coarse -s` 同样自动完成第 6 步粗网格、路径插值与 QE／EPW 比较绘图。两步脚本从开始调用阶段 CLI，无需重复命令推进后处理。
+修改当前配置后执行 `epw_wannier --stage wannier -s`，直接读取必要的既有 NSCF 数据，缺失时停止，不补算上游。第 1～4 步也在当前阶段完成后自动生成各自的 QE 图，第 3 步正常图含元素 PDOS；SCF／NSCF 的独立结果使用 `epw_phonon --plot --results "run/results/1.qe-scf"` 等形式重绘。第 5 步在一个 Slurm 分配内自动完成拟合、核验、能带／DOS 后处理和绘图；`--stage coarse -s` 同样自动完成第 6 步粗网格、路径插值与 QE／EPW 比较绘图。两步脚本从开始调用阶段 CLI，无需重复命令推进后处理。
 `--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
 
 各阶段 `reuse` 按来源列出实际接续文件，续行缩进 7 空格；不递归核验历史阶段或刷新其他阶段图表。第 7 步即使只有一组参数，也使用 `7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/` 这样的子目录；第 8 步逐文件软链接所选组的细矩阵。详见 [当前文件接续规则](docs/overview/epwflow/preflight-and-reuse.md)。

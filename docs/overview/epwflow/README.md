@@ -123,6 +123,14 @@ epw_superconductivity --results-check --results "run/results" --json
 
 SCF／NSCF 及 electronic 路径完成后还会生成逐带范围诊断，不等待下游；诊断图不放宽正式 Wannier 检查。参见 [0068 验收](../../specs/0068-epw-stage-band-ranges/acceptance.md)。
 
+## 各阶段自动绘图（0072）
+
+第 1～6 步的当前阶段分配在科学任务结束后执行对应绘图，无需另提绘图作业。第 1／2 步生成逐带范围图；第 3 步生成范围图和近费米能、全能窗电子组合图，正常 DOS 面板包含元素 PDOS；第 4 步生成声子能带／DOS 组合图；第 5 步只比较电子能带／总 DOS；第 6 步比较声子能带／DOS，并生成实空间衰减图。
+
+图像位于 `run/results/<编号阶段>/`。当前阶段复用时补齐本阶段缺图，不检查或补画上游图片，不因缺图重跑科学程序。SCF／NSCF 的独立目录可使用 `epw_phonon --plot --results "run/results/1.qe-scf"` 等形式重绘；第 3／5 步也保留既有现场重绘命令。
+
+PNG 写入失败与科学计算失败分开记录：已核验科学数据和完成标记保留，绘图／后处理及 Slurm 作业仍可能标记失败并返回非零。修复绘图原因后显式重绘，不把作业失败等同于科学数据丢失，也不把保留数据等同于图片交付完成。验证范围见 [0072 验收](../../specs/0072-stage-auto-plotting/acceptance.md)。
+
 ## 科学输入与输出文件名
 
 | 科学调用 | 输入／执行输出 |
