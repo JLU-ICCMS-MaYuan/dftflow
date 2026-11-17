@@ -2,13 +2,13 @@
 use super::{
     attempt, comparison,
     comparison::SourceFile,
-    comparison_asr, comparison_data,
+    comparison_data,
     epw_config::{EpwConfig, NativeStage},
     native, restart,
 };
 use crate::{
     foundation::{
-        config::{Config, Program},
+        config::Config,
         stage::Backend,
         store::{self, Identity},
     },
@@ -179,30 +179,11 @@ pub(crate) fn run(
         cfg.native_value::<u32>(&[crate::foundation::native_config::ELECTRONIC, "workflow", "points_per_edge"])? as usize)?;
     let qe_electronic_crystal: Vec<_> = qe_electronic_path.iter().map(|p| p.crystal).collect();
     let all: Vec<_> = path_crystal.iter().chain(&mesh).copied().collect();
-    // QE 声子密度由自身阶段设置，不为差值统计服从 EPW 的路径点。
-    let (qe_path, _) = path_points(kpath, &geometry.reciprocal,
-        cfg.native_value::<u32>(&[&cfg.phonon_stage(), "workflow", "points_per_edge"])? as usize)?;
-    let qe_all: Vec<_> = qe_path.iter().map(|p| p.crystal).chain(mesh.iter().copied()).collect();
-    let post_dir = cfg
-        .programs
-        .ph
-        .path
-        .parent()
-        .context("configuration: PH Missing Parent Directory")?;
-    let q2r = Program {
-        path: post_dir.join("q2r.x"),
-        args: vec![],
-    };
-    let matdyn = Program {
-        path: post_dir.join("matdyn.x"),
-        args: vec![],
-    };
-    for (role, program) in [("q2r", &q2r), ("matdyn", &matdyn)] {
-        ensure!(
-            f2.fingerprints.program_sha256.get(role) == Some(&store::hash_file(&program.path)?),
-            "input_conflict: Autocomparison {role}.x Not here F1 Freezing or changed"
-        );
-    }
+    let phonon = crate::foundation::stages::Step::Phonon.directory_in(f2_work);
+    let qe_frequency = phonon.join(format!("{}.phband.freq", cfg.qe.prefix));
+    let qe_dos = phonon.join(format!("{}.phdos.dat", cfg.qe.prefix));
+    // 缺少第 4 步产物时报告缺项；不再为比较执行 QE 或改写动力学矩阵。
+    for path in [&qe_frequency, &qe_dos] { save::nonempty(path)?; }
     let coarse_dir = crate::foundation::layout::path(&work, "coarse");
     let modes = geometry.atoms.len() * 3;
     let nwann = cfg.wannier.num_wann as usize;
@@ -213,8 +194,8 @@ pub(crate) fn run(
             Identity::capture(&f2_path)?
         },
         Identity::capture(kpath)?,
-        Identity::capture(&q2r.path)?,
-        Identity::capture(&matdyn.path)?,
+        Identity::capture(&qe_frequency)?,
+        Identity::capture(&qe_dos)?,
         Identity::capture(&cfg.programs.pw.path)?,
         Identity::capture(&cfg.programs.epw.path)?,
         Identity::capture(&std::env::current_exe()?)?,
@@ -326,159 +307,6 @@ pub(crate) fn run(
             |_| evidence(&electron),
         )?;
     }
-    let phonon = crate::foundation::layout::path(work, "comparison-native/phonon");
-    let gamma_q = f2
-        .qpoints
-        .iter()
-        .find(|q| q.crystal.iter().all(|x| x.abs() < 1e-9))
-        .context("data_invalid: Missing Γ")?;
-    let gamma = &f2
-        .phonon_files
-        .iter()
-        .find(|p| p.q_id == gamma_q.global_index)
-        .context("data_invalid: Deficiencies and mapping")?
-        .dyn_file;
-    let force = phonon.join("force-constants");
-    let force_file = force.join("reference.fc.xml");
-    let onsite: String = cfg.native_value(&[
-        crate::foundation::native_config::COARSE,
-        "workflow",
-        "onsite_asr",
-    ])?;
-    ensure!(
-        onsite == "gamma_hermitian",
-        "configuration: stages.6.epw-coarse.workflow.onsite_asr: Current only support gamma_hermitian"
-    );
-    attempt::run_with_inputs(
-        work,
-        "comparison-q2r",
-        &force,
-        store::hash_bytes(format!("{digest}:gamma-onsite-force").as_bytes()),
-        retry,
-        "q2r.exitcode",
-        None,
-        || {
-            fs::create_dir_all(&force)?;
-            store::write(
-                &force.join("reuse-decision.json"),
-                &serde_json::json!({
-                    "required_programs":["q2r.x"],
-                    "reference_mode":cfg.phonon.mode,
-                    "reason":"I don't think so 4 Step q2r/matdyn Use simple ASR;EPW More so Γ onsite Add Hermitian Amended、q2r/matdyn No more impositions ASR .The current power constant does not meet the caliber; only the verified power matrix is converted and completed q2r ,Do Not Run PW/PH.",
-                    "sources":f2.phonon_files
-                }),
-            )?;
-            fs::copy(
-                &gamma_q.source_dyn0,
-                force.join(format!("{}.dyn0", cfg.qe.prefix)),
-            )?;
-            let gamma_text = fs::read_to_string(gamma)?;
-            for p in &f2.phonon_files {
-                fs::write(
-                    force.join(format!("{}.dyn{}.xml", cfg.qe.prefix, p.q_id)),
-                    comparison_asr::qe_xml_records(&comparison_asr::corrected_stars(
-                        &fs::read_to_string(&p.dyn_file)?,
-                        &gamma_text,
-                        geometry.atoms.len(),
-                    )?)?,
-                )?;
-            }
-            fs::write(
-                force.join("q2r.in"),
-                format!(
-                    "&input\n fildyn='{}.dyn.xml'\n flfrc='reference.fc'\n zasr='no'\n/\n",
-                    cfg.qe.prefix
-                ),
-            )?;
-            cfg.configure_file(
-                &[
-                    crate::foundation::native_config::COARSE,
-                    "comparison",
-                    "q2r",
-                ],
-                &force.join("q2r.in"),
-            )?;
-            Ok(())
-        },
-        || {
-            qe_data::execution::run(
-                &q2r,
-                &force.join("q2r.in"),
-                &force,
-                launcher,
-                backend,
-                "q2r",
-                false,
-            )
-        },
-        || save::nonempty(&force_file),
-        |_| evidence(&force),
-    )?;
-    let frequency = phonon.join("frequencies");
-    let force_identity = Identity::capture(&force_file)?;
-    attempt::run_with_inputs(
-        work,
-        "comparison-matdyn",
-        &frequency,
-        store::hash_bytes(format!("{digest}:frequencies:{}", force_identity.sha256).as_bytes()),
-        retry,
-        "matdyn.exitcode",
-        None,
-        || {
-            fs::create_dir_all(&frequency)?;
-            fs::copy(&force_file, frequency.join("reference.fc.xml"))?;
-            force_identity.verify()?;
-            store::write(
-                &frequency.join("reuse-decision.json"),
-                &serde_json::json!({
-                    "required_programs":["matdyn.x"],
-                    "reason":"I don't think so 4 We're using different steps ASR ,and does not contain the complete path plus DOS grids;read completed comparative strength constants, as required q Dot the frequency. Do not run again q2r/PW/PH.",
-                    "force_constants":force_identity,"qpoints":qe_all
-                }),
-            )?;
-            let mut input = String::from("&input\n flfrc='reference.fc.xml'\n flfrq='reference.freq'\n asr='no'\n q_in_cryst_coord=.false.\n q_in_band_form=.false.\n");
-            for (i, el) in qe.cell.elements.iter().enumerate() {
-                let mass =
-                    qf_input::species::get_atomic_mass(el, cfg.atomic_masses.get(el).copied());
-                input.push_str(&format!(" amass({})={mass:.17e}\n", i + 1));
-            }
-            input.push_str(&format!("/\n{}\n", qe_all.len()));
-            for p in &qe_all {
-                let p = cart(*p, &geometry.reciprocal);
-                input.push_str(&format!("{:.17e} {:.17e} {:.17e}\n", p[0], p[1], p[2]));
-            }
-            fs::write(frequency.join("matdyn.in"), input)?;
-            cfg.configure_file(
-                &[
-                    crate::foundation::native_config::COARSE,
-                    "comparison",
-                    "matdyn",
-                ],
-                &frequency.join("matdyn.in"),
-            )?;
-            Ok(())
-        },
-        || {
-            qe_data::execution::run(
-                &matdyn,
-                &frequency.join("matdyn.in"),
-                &frequency,
-                launcher,
-                backend,
-                "matdyn",
-                false,
-            )
-        },
-        || {
-            let input = frequency.join("matdyn.in");
-            let request = super::native_sampling::matdyn(&fs::read_to_string(&input)?)?;
-            let values = native::parse_matdyn_path(&fs::read_to_string(frequency.join("reference.freq"))?)?;
-            super::native_sampling::phonon(&values, &request, &path, &mesh, &geometry, modes)
-                .with_context(|| format!("data_invalid: QE comparison output / own request {}", input.display()))
-        },
-        |_| evidence(&frequency),
-    )?;
-
     let epw_dir = root.join("epw");
     attempt::run(
         work,
@@ -532,9 +360,9 @@ pub(crate) fn run(
     }
     let mut provenance = vec![];
     let provenance_dirs = if numbered {
-        vec![&phonon, &epw_dir]
+        vec![&epw_dir]
     } else {
-        vec![&electron, &phonon, &epw_dir]
+        vec![&electron, &epw_dir]
     };
     if numbered {
         for n in ["band.eig", "sampling.json", "metrics.json"] {
@@ -548,6 +376,10 @@ pub(crate) fn run(
                 .map(|id| file(&id.path))
                 .collect::<Result<Vec<_>>>()?,
         );
+    }
+    for name in ["q2r.in", "matdyn_phband.in", "matdyn_phdos.in"] {
+        let input = phonon.join(name);
+        if input.is_file() { provenance.push(file(&input)?); }
     }
     let sources = comparison::Sources {
         schema_version: 2,
@@ -566,7 +398,8 @@ pub(crate) fn run(
         } else {
             None
         },
-        qe_phonon_bands: file(&frequency.join("reference.freq"))?,
+        qe_phonon_bands: file(&qe_frequency)?,
+        qe_phonon_dos: Some(file(&qe_dos)?),
         epw_phonon_bands: file(&epw_dir.join("phband.freq"))?,
         epw_log: file(&epw_dir.join("epw.out"))?,
         provenance,

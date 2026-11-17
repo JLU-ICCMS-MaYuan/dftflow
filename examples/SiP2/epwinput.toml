@@ -479,7 +479,6 @@ selection_mode = "energy_only"
 [workflow."6.epw-coarse"]
 points_per_edge = 20
 fermi_source = "f2"
-onsite_asr = "gamma_hermitian"
 
 [workflow."7.epw-fine"]
 fermi_source = "f2"

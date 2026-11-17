@@ -154,9 +154,6 @@ pub fn parameters(cfg: &Config, step: Step) -> Result<Value> {
         if matches!(step, Step::Wannier | Step::Coarse) {
             workflow.remove("points_per_edge");
         }
-        if step == Step::Coarse {
-            workflow.remove("onsite_asr");
-        }
         if let Some(derived) = workflow.get_mut("derived").and_then(Value::as_object_mut) {
             derived.retain(|key, _| {
                 !(step == Step::Wannier && key.starts_with("electron_dos."))

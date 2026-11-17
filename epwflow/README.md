@@ -163,7 +163,7 @@ run/
 
 Slurm 日志属于运行输出；旧原生输入记录中的标准 `slurm-数字.out/err` 项不作为固定科学输入核验。两种阶段归档共用当前日志同 inode 入口维护，见 [0035](../docs/specs/0035-native-retry-slurm-logs/acceptance.md)。EPW 会改写粗网格自己的 `out/prefix.wfcN` 工作副本；只从已冻结且校验通过的原生输入识别前缀与 `./out`，保留初始身份用于追溯，失败后归档并从已校验来源重建。原始 NSCF、portable SAVE、响应及其余输入仍严格核验，见 [0036](../docs/specs/0036-epw-mutable-wavefunction-scratch/acceptance.md)。
 
-第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，分别沿共同物理路径采用第 4 步 QE 密度和第 6 步 EPW 密度生成声子谱，保留各自原始点；声子谱与总 DOS 合并为共享频率轴的一张图；比较数值与事实差值继续保留，不再输出重复电子总览。第 6 步不新增电子参考 PW；声子后处理核对 ASR，不相容时事前说明最少补算原因，成功力常数与频率分别缓存。第 7 步生成细网格矩阵元、α²F、λ；第 8 步根据 `stages."8.epw-superconductivity".workflow.task` 运行指定温度能隙或既有 Tc 搜索。第 3 步提供 QE 元素电子 PDOS；插值侧元素／轨道投影仍未提供。图表和差值只展示事实，科学合理性由用户判断。
+第 6 步核验并复制第 5 步 `.ukk`，设置 `wannierize=false` 执行粗网格 EPC，分别沿共同物理路径采用第 4 步 QE 密度和第 6 步 EPW 密度生成声子谱，保留各自原始点；声子谱与总 DOS 合并为共享频率轴的一张图；比较数值与事实差值继续保留，不再输出重复电子总览。第 6 步不新增电子参考 PW；直接复用第 4 步已有 QE 声子谱和原生 DOS，不再自行修正动力学矩阵或运行比较专用 q2r／matdyn；保留双方各自原生处理，记录 ASR、采样与展宽差异。第 7 步生成细网格矩阵元、α²F、λ；第 8 步根据 `stages."8.epw-superconductivity".workflow.task` 运行指定温度能隙或既有 Tc 搜索。第 3 步提供 QE 元素电子 PDOS；插值侧元素／轨道投影仍未提供。图表和差值只展示事实，科学合理性由用户判断。
 
 ## 声子后处理与作业日志
 

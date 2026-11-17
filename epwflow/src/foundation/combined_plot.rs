@@ -535,6 +535,12 @@ pub fn coarse(cfg: &Config, results: &Path) -> Result<()> {
     ensure!(maximum > 0., "data_invalid: no positive phonon frequency");
     let mut notes =
         vec!["QE q2r/matdyn / EPW; negative frequencies retained in data and validation".into()];
+    let treatment = data.metadata.notes.iter().filter(|s|s.starts_with("QE stage 4 ")).cloned().collect::<Vec<_>>();
+    if !treatment.is_empty() {
+        notes.push(treatment.join("; "));
+        notes.push(format!("QE native stage-4 DOS; EPW Gaussian sigma={} cm-1. Differences include treatment/sampling effects.",
+            cfg.comparison.clone().unwrap_or_default().phonon_sigma_cm1));
+    }
     if let Some(d) = data.differences {
         if let Some(m) = d.phonon_path.maximum {
             notes.push(format!(

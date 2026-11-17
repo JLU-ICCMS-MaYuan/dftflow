@@ -18,8 +18,6 @@ fn path(call: &Call) -> Vec<String> {
         "4.qe-phdos" => vec![owner, "dos"],
         "5.wannier90" => vec![WANNIER, "wannier90"],
         "5.postw90-dos" => vec![WANNIER, "postw90"],
-        "6.qe-q2r" => vec![COARSE, "q2r"],
-        "6.qe-matdyn" => vec![COARSE, "matdyn"],
         "6.epw-comparison" => vec![COARSE, "comparison"],
         "8.epw-iso" => vec![SUPER, "iso"],
         "8.epw-aniso" => vec![SUPER, "aniso"],

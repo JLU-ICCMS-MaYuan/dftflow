@@ -145,53 +145,13 @@ fn parameters(
     step: Step,
 ) -> Result<serde_json::Value> {
     if let Some(kind) = label.strip_prefix("comparison-") {
-        if matches!(kind, "q2r" | "matdyn" | "epw") {
-            let native: serde_json::Value =
-                cfg.native_value(&[crate::foundation::native_config::COARSE, "comparison", kind])?;
-            let owner = if kind == "matdyn" { cfg.phonon_stage() }
-                else { crate::foundation::native_config::COARSE.into() };
-            let points = if kind == "q2r" {
-                None
-            } else {
-                Some(cfg.native_value::<u32>(&[
-                    &owner,
-                    "workflow",
-                    "points_per_edge",
-                ])?)
-            };
-            let kpath = if kind == "matdyn" {
-                cfg.kpath
-                    .as_ref()
-                    .map(|p| crate::foundation::store::hash_file(p))
-                    .transpose()?
-            } else {
-                None
-            };
-            let onsite = if kind == "q2r" {
-                Some(cfg.native_value::<String>(&[
-                    crate::foundation::native_config::COARSE,
-                    "workflow",
-                    "onsite_asr",
-                ])?)
-            } else {
-                None
-            };
-            let program = if kind == "epw" {
-                cfg.programs.epw.path.clone()
-            } else {
-                cfg.programs
-                    .ph
-                    .path
-                    .parent()
-                    .unwrap()
-                    .join(format!("{kind}.x"))
-            };
+        if kind == "epw" {
             return Ok(serde_json::json!([
-                native,
-                points,
-                kpath,
-                onsite,
-                crate::foundation::store::hash_file(&program)?
+                cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::COARSE, "comparison", "epw"])?,
+                Some(cfg.native_value::<u32>(&[crate::foundation::native_config::COARSE, "workflow", "points_per_edge"]) ?),
+                Option::<String>::None,
+                Option::<String>::None,
+                crate::foundation::store::hash_file(&cfg.programs.epw.path)?
             ]));
         }
     }

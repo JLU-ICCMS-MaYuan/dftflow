@@ -17,7 +17,7 @@ fn decay_is_published_before_comparison_failure_and_repairs_without_rerunning_sc
     c.put("submissions", "allocated preparation\n");
     success(c.stage_submit("wannier", false));
     success(c.stage_execute());
-    c.put("comparison-failure", "matdyn");
+    c.put("comparison-failure", "epw");
     success(c.stage_submit("coarse", false));
     assert!(!c.stage_execute().status.success());
     let science = c.root.join("run/6.epw-coarse/epwdata.fmt");

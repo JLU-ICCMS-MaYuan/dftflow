@@ -335,21 +335,6 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
         if name.ends_with(".jobs") || name.ends_with(".sh") || slurm_log(&path) {
             continue;
         }
-        if step == Step::Coarse && name == "comparison-native" {
-            // QE 声子比较与电子模型独立；保留其已核验现场，其他派生数据正常重建。
-            for child in fs::read_dir(&path)? {
-                let child = child?;
-                if matches!(child.file_name().to_str(), Some("force-constants" | "frequencies")) {
-                    continue;
-                }
-                if child.file_type()?.is_dir() {
-                    fs::remove_dir_all(child.path())?;
-                } else {
-                    fs::remove_file(child.path())?;
-                }
-            }
-            continue;
-        }
         if entry.file_type()?.is_dir() {
             fs::remove_dir_all(&path)?;
         } else {
@@ -363,13 +348,8 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
                     d.sections.retain(|name, _| {
                         matches!(name.as_str(), "Workspace" | "Stage" | "Stage allocation" | "Next step")
                             || name.starts_with("Configuration snapshot · ")
-                            || (step == Step::Coarse
-                                && matches!(name.as_str(), "Substep · comparison-q2r" | "Substep · comparison-matdyn"))
+
                     });
-                }
-                if affected == Step::Coarse && step <= Step::Phonon {
-                    d.remove("Substep · comparison-q2r");
-                    d.remove("Substep · comparison-matdyn");
                 }
                 d.set("Stage", "Scientific status", "calculation pending");
                 d.set(

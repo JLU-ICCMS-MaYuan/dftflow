@@ -81,7 +81,7 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
     let dependencies = if step == Step::Wannier {
         vec![Step::Wannier, Step::Electronic]
     } else {
-        vec![Step::Coarse]
+        vec![Step::Coarse, Step::Phonon]
     };
     let keys = dependencies
         .iter()
@@ -104,7 +104,7 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
         }
     }
     Ok(store::hash_bytes(&serde_json::to_vec(&(
-        if step == Step::Coarse { 7 } else { 6 },
+        if step == Step::Coarse { 8 } else { 6 },
         super::combined_plot::VERSION,
         if step == Step::Wannier {Some(&cfg.plot)} else {None},
         keys,
@@ -119,7 +119,6 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
             cfg.native_value::<u32>(&[super::native_config::COARSE, "workflow", "points_per_edge"])?,
             cfg.native_value::<u32>(&[&cfg.phonon_stage(), "workflow", "points_per_edge"])?,
         )) } else { None },
-        cfg.native_value::<String>(&[super::native_config::COARSE, "workflow", "onsite_asr"])?,
         cfg.kpath
             .as_ref()
             .map(|p| store::hash_file(p))
@@ -256,7 +255,10 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                 })
                 .transpose()?
                 .unwrap_or(false);
-            if changed {
+            let source_file = layout::path(&cfg.work_dir, "comparison-native/sources.json");
+            let old_qe_reference = source_file.is_file()
+                && store::read::<interpolation::comparison::Sources>(&source_file)?.qe_phonon_dos.is_none();
+            if changed || old_qe_reference {
                 for relative in ["comparison-native/sources.json", "interpolation/comparison"] {
                     let p = layout::path(&cfg.work_dir, relative);
                     if p.is_dir() {

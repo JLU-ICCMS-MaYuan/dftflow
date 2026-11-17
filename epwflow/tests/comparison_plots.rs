@@ -797,6 +797,7 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
         epw_bands: file("epw-path.eig"),
         electronic_stage: None,
         qe_phonon_bands: file("qe-path.freq"),
+        qe_phonon_dos: None,
         epw_phonon_bands: file("epw-path.freq"),
         epw_log: file("epw.out"),
         provenance: vec![file("plan.txt")],
@@ -1005,6 +1006,26 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
     assert!(!svg.contains("quality:"));
     assert!(!svg.contains("Purple:"));
     assert!(!svg.contains("#8A2BE2"));
+    // 第 4 步独立原生 DOS：保留非均匀频率轴及原始密度，不做 Gaussian 重累计。
+    let native_freq = bands(&qe_sparse, &frequencies).lines().map(|line| {
+        if line.split_whitespace().count() == 3 { format!("{line} 0\n") }
+        else { format!("{line}\n") }
+    }).collect::<String>();
+    fs::write(root.join("native-qe.freq"), native_freq).unwrap();
+    fs::write(root.join("native-qe.dos"), "# Frequency DOS PDOS\n-10 0 0\n0 0.25 0.1\n13.5 0.125 0.1\n1000 0 0\n").unwrap();
+    sources.qe_phonon_bands = file("native-qe.freq");
+    sources.qe_phonon_dos = Some(file("native-qe.dos"));
+    store::write(&config, &sources).unwrap();
+    let direct = root.join("native-qe-export");
+    success(cli(&["interpolation", "export-comparison", "--source", config.to_str().unwrap(),
+        "--output", direct.to_str().unwrap()], &root));
+    let data = comparison::load(&direct).unwrap();
+    assert_eq!(data.phonon_dos.iter().find(|c|c.method=="qe").unwrap().points,
+        vec![(-10.,0.),(0.,0.25),(13.5,0.125),(1000.,0.)]);
+    assert!(data.differences.unwrap().phonon_mesh.maximum.is_none());
+    fs::write(root.join("native-qe.dos"), "0 1\n1 1\n").unwrap();
+    assert!(!cli(&["interpolation", "export-comparison", "--source", config.to_str().unwrap(),
+        "--output", root.join("tampered-qe-dos").to_str().unwrap()], &root).status.success());
     if let Ok(destination)=std::env::var("DFTFLOW_COMPARISON_VISUAL_ROOT") {
         fs::write(Path::new(&destination),results.to_string_lossy().as_bytes()).unwrap();
     }

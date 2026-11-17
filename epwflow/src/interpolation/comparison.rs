@@ -53,6 +53,9 @@ pub struct Sources {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub electronic_stage: Option<ElectronicStage>,
     pub qe_phonon_bands: SourceFile,
+    /// 新流程直接消费第 4 步原生 DOS；旧只读来源没有此字段。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qe_phonon_dos: Option<SourceFile>,
     pub epw_phonon_bands: SourceFile,
     pub epw_log: SourceFile,
     pub provenance: Vec<SourceFile>,
@@ -339,6 +342,21 @@ fn axis(lo: f64, hi: f64, n: usize) -> Vec<f64> {
         .map(|i| lo + (hi - lo) * i as f64 / (n - 1) as f64)
         .collect()
 }
+/// 保留 QE 原生频率轴和总 DOS；其余原子投影列不在这里重新累计。
+fn qe_dos(text: &str) -> Result<(Vec<f64>, Vec<f64>)> {
+    let mut axis = Vec::new();
+    let mut density = Vec::new();
+    for line in text.lines().map(str::trim).filter(|s| !s.is_empty() && !s.starts_with('#')) {
+        let values = crate::qe_data::xml::numbers(line)?;
+        ensure!(values.len() >= 2 && values.iter().all(|v| v.is_finite()) && values[1] >= 0.,
+            "data_invalid: QE phonon DOS has invalid values");
+        axis.push(values[0]); density.push(values[1]);
+    }
+    ensure!(axis.len() >= 2 && axis.windows(2).all(|w| w[0] < w[1]),
+        "data_invalid: QE phonon DOS axis is incomplete or unordered");
+    Ok((axis, density))
+}
+
 fn integral(x: &[f64], y: &[f64]) -> f64 {
     x.windows(2)
         .zip(y.windows(2))
@@ -399,7 +417,10 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         ensure!(count >= 2, "data_invalid: Native Path Endpoint Incomplete");
         Ok(count)
     };
-    let nq = path_count(qph.values.len())?;
+    let native_qe_dos = s.qe_phonon_dos.as_ref().map(|file| {
+        qe_dos(&fs::read_to_string(file.checked_path(base)?)?)
+    }).transpose()?;
+    let nq = if native_qe_dos.is_some() { qph.values.len() } else { path_count(qph.values.len())? };
     let ne = path_count(eph.values.len())?;
     let qe_ph_path = native_path(&s.path, &qph.points_cartesian[..nq], &s.reciprocal)?;
     let epw_ph_path = native_path(&s.path, &eph.points_cartesian[..ne], &s.reciprocal)?;
@@ -439,7 +460,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     // DOS 使用自身完整均匀网格；路径采样独立，不参与网格身份检查。
     for (i, p) in s.mesh.iter().enumerate() {
         let expected = cart(*p, &s.reciprocal);
-        ensure!(same(&expected, &qph.points_cartesian[nq+i])
+        ensure!((native_qe_dos.is_some() || same(&expected, &qph.points_cartesian[nq+i]))
             && same(&expected, &eph.points_cartesian[ne+i])
             && electronic_paths.as_ref().is_none_or(|(_, path)| same(&expected, &epw.points_cartesian[path.len()+i])),
             "data_invalid: Native DOS Grid coordinates don't match, point {i}");
@@ -579,33 +600,25 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         .iter()
         .map(|r| r.iter().map(|v| v * MEV_CM1).collect())
         .collect();
-    let lo = qph.values[nq..]
-        .iter()
-        .flatten()
-        .chain(epw_freq.iter().flatten())
-        .copied()
-        .fold(0.0, f64::min)
-        - 8.0 * s.phonon_sigma_cm1;
-    let hi = qph.values[nq..]
-        .iter()
-        .flatten()
-        .chain(epw_freq.iter().flatten())
-        .copied()
-        .fold(0.0, f64::max)
-        + 8.0 * s.phonon_sigma_cm1;
+    let qe_mesh_frequency = &qph.values[nq..];
+    let lo = qe_mesh_frequency.iter().flatten().chain(epw_freq.iter().flatten())
+        .copied().fold(0.0, f64::min) - 8.0 * s.phonon_sigma_cm1;
+    let hi = qe_mesh_frequency.iter().flatten().chain(epw_freq.iter().flatten())
+        .copied().fold(0.0, f64::max) + 8.0 * s.phonon_sigma_cm1;
     let px = axis(lo, hi, 2001);
     let pw = vec![1.0 / s.mesh.len() as f64; s.mesh.len()];
-    let pdos = [
-        gaussian_dos(&px, &qph.values[nq..], &pw, s.phonon_sigma_cm1)?,
-        gaussian_dos(&px, &epw_freq, &pw, s.phonon_sigma_cm1)?,
-    ];
+    let qe_density = if let Some(data) = native_qe_dos { data } else {
+        (px.clone(), gaussian_dos(&px, qe_mesh_frequency, &pw, s.phonon_sigma_cm1)?)
+    };
+    let epw_density = gaussian_dos(&px, &epw_freq, &pw, s.phonon_sigma_cm1)?;
     let mut e_csv = String::from("method,energy_ev,projection_kind,element,orbital,density\n");
     let mut p_csv = String::from("method,frequency_cm1,projection_kind,element,density\n");
     for (idx, method) in ["qe", "epw"].iter().enumerate() {
         for (x, y) in ex.iter().zip(&edos[idx]) {
             e_csv.push_str(&format!("{method},{x},total,,,{y}\n"));
         }
-        for (x, y) in px.iter().zip(&pdos[idx]) {
+        let (x_axis, density) = if idx == 0 { (&qe_density.0, &qe_density.1) } else { (&px, &epw_density) };
+        for (x, y) in x_axis.iter().zip(density) {
             p_csv.push_str(&format!("{method},{x},total,,{y}\n"));
         }
     }
@@ -615,11 +628,6 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     let delta: Vec<f64> = edos[0]
         .iter()
         .zip(&edos[1])
-        .map(|(a, b)| (a - b).abs())
-        .collect();
-    let pdelta: Vec<f64> = pdos[0]
-        .iter()
-        .zip(&pdos[1])
         .map(|(a, b)| (a - b).abs())
         .collect();
     let differences = super::differences::Differences {
@@ -637,24 +645,23 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         },
         phonon_path: common_phonon_difference(&qe_ph_path, &qph.values[..nq],
             &epw_ph_path, &eph.values[..ne], modes)?,
-        phonon_mesh: super::differences::phonon(
-            &s.mesh,
-            None,
-            &qph.values[nq..],
-            &eph.values[ne..],
-            modes,
-        )?,
+        phonon_mesh: if s.qe_phonon_dos.is_some() {
+            // 第 4 步没有相同网格上的逐模频率，不补算或伪造网格差值。
+            super::differences::phonon(&[], None, &[], &[], modes)?
+        } else {
+            super::differences::phonon(&s.mesh, None, qe_mesh_frequency, &eph.values[ne..], modes)?
+        },
     };
     differences.validate()?;
     differences.print();
-    let mut metrics = serde_json::json!({"schema_version":2,"differences":differences,"electronic_matching":"ordered_minimum_squared_energy_pairs","electronic_dos":{"qe_integral":integral(&ex,&edos[0]),"epw_integral":integral(&ex,&edos[1]),"absolute_l1":integral(&ex,&delta),"normalized_l1":(integral(&ex,&edos[0])>0.0).then(||integral(&ex,&delta)/integral(&ex,&edos[0]))},"phonon_dos":{"qe_integral":integral(&px,&pdos[0]),"epw_integral":integral(&px,&pdos[1]),"expected_integral":modes,"absolute_l1":integral(&px,&pdelta),"normalized_l1":(integral(&px,&pdos[0])>0.0).then(||integral(&px,&pdelta)/integral(&px,&pdos[0]))},"kernel":"exp[-(x/sigma)^2]/(sigma*sqrt(pi))","electronic_sigma_ev":s.electronic_sigma_ev,"phonon_sigma_cm1":s.phonon_sigma_cm1,"source_manifest_sha256":store::hash_file(source)?});
+    let mut metrics = serde_json::json!({"schema_version":2,"differences":differences,"electronic_matching":"ordered_minimum_squared_energy_pairs","electronic_dos":{"qe_integral":integral(&ex,&edos[0]),"epw_integral":integral(&ex,&edos[1]),"absolute_l1":integral(&ex,&delta),"normalized_l1":(integral(&ex,&edos[0])>0.0).then(||integral(&ex,&delta)/integral(&ex,&edos[0]))},"phonon_dos":{"qe_integral":integral(&qe_density.0,&qe_density.1),"epw_integral":integral(&px,&epw_density),"expected_integral":modes},"kernel":"exp[-(x/sigma)^2]/(sigma*sqrt(pi))","electronic_sigma_ev":s.electronic_sigma_ev,"phonon_sigma_cm1":s.phonon_sigma_cm1,"source_manifest_sha256":store::hash_file(source)?});
     if let Some((bands, dos, _, _)) = &electronic_stage {
         electronic = bands.clone();
         e_csv = dos.clone();
         // DOS 直接复用原生表格，不以占位网格造出差值或归一化结论。
         metrics.as_object_mut().unwrap().remove("electronic_dos");
     }
-    let metadata = Metadata {
+    let mut metadata = Metadata {
         title: format!("{} QE / EPW diagnostic", atoms.join(" ")),
         fermi_ev: fermi,
         window_ev: s.window_ev,
@@ -687,10 +694,28 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
                 s.electronic_sigma_ev,
                 s.phonon_sigma_cm1
             ),
-            "QE: direct PW bands / q2r-matdyn phonons. Energy pairs do not establish eigenstate identity."
+            if s.qe_phonon_dos.is_some() {
+                "QE phonons/DOS reused unchanged from stage 4 (its native ASR and DOS method); EPW uses native interpolation and its own Gaussian DOS. Differences can include treatment and sampling effects."
+            } else { "QE: direct PW bands / q2r-matdyn phonons. Energy pairs do not establish eigenstate identity." }
                 .into(),
         ],
     };
+    if s.qe_phonon_dos.is_some() {
+        metadata.notes[0] = format!("EPW phonon DOS: {}x{}x{} mesh; Gaussian sigma={} cm-1. QE DOS: unchanged stage-4 native integration.",
+            s.mesh_shape[0], s.mesh_shape[1], s.mesh_shape[2], s.phonon_sigma_cm1);
+        let asr = regex::Regex::new(r"(?im)^\s*(zasr|asr)\s*=\s*([^,!\n/]+)")?;
+        let owner = base.join(&s.qe_phonon_bands.path);
+        for input in &s.provenance {
+            let path = base.join(&input.path);
+            let name = path.file_name().and_then(|n|n.to_str()).unwrap_or("");
+            if path.parent() == owner.parent() && matches!(name, "q2r.in" | "matdyn_phband.in" | "matdyn_phdos.in") {
+                let text = fs::read_to_string(&path)?;
+                let setting = asr.captures(&text).map(|c|format!("{}={}", &c[1], c[2].trim()))
+                    .unwrap_or_else(|| "ASR not specified; native default".into());
+                metadata.notes.push(format!("QE stage 4 {name}: {setting}"));
+            }
+        }
+    }
     let destination = output;
     let _lock = store::Lock::acquire(destination)?;
     ensure!(!destination.exists(), "input_conflict: Compare Output Exists");

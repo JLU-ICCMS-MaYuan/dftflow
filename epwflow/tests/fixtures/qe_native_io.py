@@ -58,7 +58,7 @@ if kind in ('q2r', 'matdyn'):
             # QE 7.4.1 显式路径的 wq 未初始化；原生固定宽度会把星号紧接第三坐标。
             records=[]
             for p in points:
-                coords = ' '*10+''.join(f'{x:10.6f}' for x in p[:3])+'**********' if explicit_path else ' '.join(map(str,p))
+                coords = ' '*10+''.join(f'{x:10.6f}' for x in p[:3])+'**********' if explicit_path else ' '.join(map(str,p))+' 0'
                 freq=['100']*(3*nat)
                 if explicit_path and (ROOT/'bad-path-frequencies').exists(): freq[0]='NaN'
                 records.append(coords+'\n'+' '.join(freq)+'\n')

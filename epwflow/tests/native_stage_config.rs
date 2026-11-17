@@ -300,3 +300,18 @@ fn comparison_stages_allow_independent_path_densities() {
     c.cfg.set_native(&[COARSE, "workflow", "points_per_edge"], json!(37)).unwrap();
     c.cfg.validate().unwrap();
 }
+
+#[test]
+fn obsolete_comparison_qe_options_cannot_restore_deleted_asr_pipeline() {
+    let c = Case::new();
+    let grouped: toml::Value = toml::from_str(&c.cfg.to_stage_toml().unwrap()).unwrap();
+    let mut v = serde_json::to_value(grouped).unwrap();
+    v["stages"][COARSE]["q2r"] = json!({"zasr":"no"});
+    v["stages"][COARSE]["matdyn"] = json!({"asr":"no"});
+    v["workflow"][COARSE]["onsite_asr"] = json!("gamma_hermitian");
+    let old: Config = serde_json::from_value(v).unwrap();
+    old.validate().unwrap();
+    assert!(old.native_value::<serde_json::Value>(&[COARSE,"comparison","q2r"]).is_err());
+    assert!(old.native_value::<serde_json::Value>(&[COARSE,"workflow","onsite_asr"]).is_err());
+    assert!(!old.to_stage_toml().unwrap().contains("onsite_asr"));
+}

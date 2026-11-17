@@ -680,7 +680,6 @@ fn validate_task_node(node: &Value, path: &str) -> Result<()> {
                         "phonon_sigma_cm1",
                         "fermi_source",
                         "selection_mode",
-                        "onsite_asr",
                         "task",
                         "mode",
                         "spectrum_index",

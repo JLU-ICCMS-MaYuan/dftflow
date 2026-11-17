@@ -37,25 +37,6 @@ fn points(lines: &[&str], count: usize, columns: usize) -> Result<Vec<[f64; 3]>>
         })
         .collect()
 }
-pub(super) fn matdyn(text: &str) -> Result<Vec<[f64; 3]>> {
-    let lines = rows(text);
-    for name in ["q_in_band_form", "q_in_cryst_coord"] {
-        let re = regex::Regex::new(&format!(r"(?im)^\s*{name}\s*=\s*\.false\."))?;
-        ensure!(
-            re.is_match(text),
-            "data_invalid: comparison matdyn requires explicit {name}=.false."
-        );
-    }
-    let end = lines
-        .iter()
-        .position(|line| *line == "/")
-        .context("data_invalid: missing matdyn input namelist terminator")?;
-    let count: usize = lines
-        .get(end + 1)
-        .context("data_invalid: missing matdyn request count")?
-        .parse()?;
-    points(&lines[end + 2..], count, 3)
-}
 pub(super) fn epw(text: &str) -> Result<Vec<[f64; 3]>> {
     let lines = rows(text);
     let header = lines
@@ -194,12 +175,6 @@ mod tests {
     }
     #[test]
     fn saved_requests_reject_missing_rows_wrong_coordinate_space_and_nan() {
-        let input =
-            "&input\n q_in_cryst_coord=.false.\n q_in_band_form=.false.\n/\n2\n0 0 0\n1D0 0 0\n";
-        assert_eq!(matdyn(input).unwrap(), vec![[0., 0., 0.], [1., 0., 0.]]);
-        assert!(matdyn(&input.replace("\n2\n", "\n3\n")).is_err());
-        assert!(matdyn(&input.replace("1D0", "NaN")).is_err());
-        assert!(matdyn(&input.replace("q_in_band_form=.false.", "q_in_band_form=.true.")).is_err());
         assert_eq!(epw("2 crystal\n0 0 0 0.5\n1 0 0 0.5\n").unwrap().len(), 2);
         assert!(epw("2 cartesian\n0 0 0 1\n1 0 0 1\n").is_err());
         assert!(epw("2 crystal\n0 0 0 1\n").is_err());
@@ -208,56 +183,6 @@ mod tests {
                 .unwrap()
                 .len(),
             2
-        );
-    }
-    #[test]
-    #[ignore = "requires DFTFLOW_REAL_COMPARISON_INPUT; reads existing metadata only"]
-    fn actual_cached_matdyn_uses_its_own_request_instead_of_current_density() {
-        let input =
-            std::path::PathBuf::from(std::env::var("DFTFLOW_REAL_COMPARISON_INPUT").unwrap());
-        let cfg = crate::foundation::config::Config::load(&input).unwrap();
-        let root = cfg
-            .work_dir
-            .join("6.epw-coarse/comparison-native/frequencies");
-        let own = matdyn(&std::fs::read_to_string(root.join("matdyn.in")).unwrap()).unwrap();
-        let values = super::super::native::parse_matdyn_path(
-            &std::fs::read_to_string(root.join("reference.freq")).unwrap(),
-        )
-        .unwrap();
-        let xml = cfg
-            .work_dir
-            .join("2.qe-nscf/out")
-            .join(format!("{}.save/data-file-schema.xml", cfg.qe.prefix));
-        let g = Geometry::read(&xml).unwrap();
-        let states = crate::qe_data::nscf::parse_xml(&xml).unwrap();
-        let mesh = states
-            .kpoints
-            .iter()
-            .map(|p| {
-                let p = g.crystal(*p);
-                std::array::from_fn(|i| {
-                    (p[i] * cfg.qe.nscf.k_grid[i] as f64).round() / cfg.qe.nscf.k_grid[i] as f64
-                })
-            })
-            .collect::<Vec<_>>();
-        let (reference, _) = super::super::automatic_comparison::path_points(
-            cfg.kpath.as_ref().unwrap(),
-            &g.reciprocal,
-            cfg.native_value::<u32>(&[&cfg.phonon_stage(), "workflow", "points_per_edge"])
-                .unwrap() as usize,
-        )
-        .unwrap();
-        assert_ne!(
-            own.len(),
-            reference.len() + mesh.len(),
-            "本例须确实重现新计划与旧原生采样不同"
-        );
-        phonon(&values, &own, &reference, &mesh, &g, g.atoms.len() * 3).unwrap();
-        println!(
-            "existing_request={} current_plan={} modes={} accepted without recalculation",
-            own.len(),
-            reference.len() + mesh.len(),
-            g.atoms.len() * 3
         );
     }
 }

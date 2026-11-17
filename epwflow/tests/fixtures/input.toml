@@ -244,7 +244,6 @@ dos_smr_type = "gauss"
 [workflow."6.epw-coarse"]
 points_per_edge = 20
 fermi_source = "f2"
-onsite_asr = "gamma_hermitian"
 
 [stages."6.epw-coarse"]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
@@ -284,15 +283,6 @@ nkf3 = 2
 nqf1 = 2
 nqf2 = 2
 nqf3 = 1
-
-[stages."6.qe-q2r"]
-zasr = "no"
-
-[stages."6.qe-matdyn"]
-asr = "no"
-q_in_cryst_coord = false
-q_in_band_form = false
-amass = [ 24.305, 10.811,]
 
 [stages."6.epw-comparison"]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。

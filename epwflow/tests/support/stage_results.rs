@@ -289,8 +289,8 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
         "Electronic model changes cannot be repeated PW/PH/q2r/matdyn"
     );
     let phonon = c.root.join("run/6.epw-coarse/comparison-native");
-    assert!(phonon.join("force-constants/reference.fc.xml").is_file());
-    assert!(phonon.join("frequencies/reference.freq").is_file());
+    assert!(!phonon.join("force-constants").exists());
+    assert!(!phonon.join("frequencies").exists());
     // 显式重建上游 SCF 时，原 PH 来源即失效，不能跨来源保留比较检查点。
     success(c.stage_submit("scf", true));
     let coarse = epwflow::foundation::readable_state::read(
@@ -301,7 +301,7 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
 }
 
 #[test]
-fn matdyn_recovery_reuses_successful_force_constants_and_native_coarse() {
+fn epw_comparison_recovery_reuses_stage_four_phonons_and_native_coarse() {
     let c = Case::numbered();
     c.accounting(Some(201));
     success(c.numbered_cli(
@@ -315,7 +315,7 @@ fn matdyn_recovery_reuses_successful_force_constants_and_native_coarse() {
     c.put("submissions", "allocated preparation\n");
     success(c.stage_submit("wannier", false));
     success(c.stage_execute());
-    c.put("comparison-failure", "matdyn");
+    c.put("comparison-failure", "epw");
     success(c.stage_submit("coarse", false));
     assert!(!c.stage_execute().status.success());
     let before = c.calls();
@@ -323,7 +323,7 @@ fn matdyn_recovery_reuses_successful_force_constants_and_native_coarse() {
     assert!(epwflow::foundation::stages::reusable(&cfg, epwflow::foundation::stages::Step::Coarse).unwrap());
     let force = c
         .root
-        .join("run/6.epw-coarse/comparison-native/force-constants/reference.fc.xml");
+        .join("run/4.qe-phonon-nosplit/scf.phband.freq");
     let hash = store::hash_file(&force).unwrap();
     fs::remove_file(c.root.join("comparison-failure")).unwrap();
     success(c.stage_submit("coarse", true));
@@ -349,12 +349,8 @@ fn matdyn_recovery_reuses_successful_force_constants_and_native_coarse() {
         before.0.lines().filter(|s| *s == "pw").count(),
         c.calls().0.lines().filter(|s| *s == "pw").count()
     );
-    let reason: Value = store::read(&force.parent().unwrap().join("reuse-decision.json")).unwrap();
-    assert_eq!(
-        reason["required_programs"],
-        json!(["q2r.x"])
-    );
-    assert!(reason["reason"].as_str().unwrap().contains("ASR"));
+    assert!(!c.root.join("run/6.epw-coarse/comparison-native/force-constants").exists());
+    assert!(!c.root.join("run/6.epw-coarse/comparison-native/frequencies").exists());
 }
 
 #[test]
@@ -730,8 +726,8 @@ fn wannier_and_coarse_single_allocation_freezes_config_and_automatically_plots()
             assert!(comparison.join("postw90.out").is_file());
             assert!(comparison.join("band.eig").is_file());
         } else {
-            assert!(comparison.join("force-constants/reference.fc.xml").is_file());
-            assert!(comparison.join("frequencies/reference.freq").is_file());
+            assert!(!comparison.join("force-constants").exists());
+            assert!(!comparison.join("frequencies").exists());
         }
         assert!(result.join("stage-manifest.json").is_file());
         let files = epwflow::qe_data::save::files(&result).unwrap();
@@ -774,92 +770,37 @@ fn current_plot_overwrites_original_images_without_scientific_execution() {
 }
 
 #[test]
-fn completed_matdyn_keeps_215_native_points_when_current_qe_plan_is_935() {
-    use epwflow::foundation::{readable_state as log,stages::Step};
-    let c=Case::numbered();c.stage_setup();
+fn stage_four_phonons_and_original_dos_are_reused_when_epw_sampling_changes() {
+    let c=Case::numbered(); c.stage_setup();
     c.put("KPATH.in",include_str!("../../../examples/MgB2/KPATH.in"));
     c.numbered_change(|cfg| {
-        cfg.qe.scf.k_grid=[4,4,2];cfg.qe.nscf.k_grid=[4,4,2];
+        cfg.qe.scf.k_grid=[4,4,2]; cfg.qe.nscf.k_grid=[4,4,2];
         cfg.comparison.as_mut().unwrap().points_per_edge=20;
         cfg.set_native(&[&cfg.phonon_stage(),"workflow","points_per_edge"],json!(100)).unwrap();
-        cfg.set_native(&[epwflow::foundation::native_config::WANNIER,"workflow","points_per_edge"],json!(20)).unwrap();
         cfg.set_native(&[epwflow::foundation::native_config::COARSE,"workflow","points_per_edge"],json!(20)).unwrap();
     });
-    success(c.stage_submit("coarse",false));
-    success(c.stage_execute());
-    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    success(c.stage_submit("coarse",false)); success(c.stage_execute());
     let comparison=c.root.join("run/6.epw-coarse/comparison");
-    let xml=cfg.work_dir.join("2.qe-nscf/out").join(format!("{}.save/data-file-schema.xml",cfg.qe.prefix));
-    let modes=epwflow::qe_data::xml::Geometry::read(&xml).unwrap().atoms.len()*3;
-    let csv=fs::read_to_string(comparison.join("phonon_bands.csv")).unwrap();
-    assert_eq!(csv.lines().filter(|l|l.starts_with("qe,")).count(),903*modes);
-    assert_eq!(csv.lines().filter(|l|l.starts_with("epw,")).count(),183*modes);
-    let directory=c.root.join("run/6.epw-coarse/comparison-native/frequencies");
-    let input=fs::read_to_string(directory.join("matdyn.in")).unwrap();
-    let (header,body)=input.split_once("/\n").unwrap();
-    let rows=body.lines().filter(|l|!l.trim().is_empty()).skip(1).collect::<Vec<_>>();
-    assert_eq!(rows.len(),935);
-    let values=epwflow::interpolation::native::parse_matdyn_path(
-        &fs::read_to_string(directory.join("reference.freq")).unwrap()).unwrap();
-    let sampling=epwflow::interpolation::electronic_sampling::plan(&cfg).unwrap();
-    let mut indices=Vec::new();let mut cursor=0;
-    for point in &sampling.path {
-        let cart=epwflow::interpolation::electronic_sampling::cart(point.crystal,&sampling.reciprocal);
-        while cursor<903 {
-            let row=rows[cursor].split_whitespace().map(|x|x.parse::<f64>().unwrap()).collect::<Vec<_>>();
-            if cart.iter().zip(&row).all(|(a,b)|(a-b).abs()<1e-9) { break; }
-            cursor+=1;
-        }
-        assert!(cursor<903);indices.push(cursor);cursor+=1;
-    }
-    indices.extend(903..935);assert_eq!(indices.len(),215);
-    let mut old_input=format!("{header}/\n215\n");
-    let mut old_output=format!(" &plot nbnd= {modes}, nks= 215 /\n");
-    for &i in &indices {
-        old_input.push_str(rows[i]);old_input.push('\n');
-        let p=values.points_cartesian[i];
-        old_output.push_str(&format!(" {:.17} {:.17} {:.17} 0\n",p[0],p[1],p[2]));
-        old_output.push_str(&values.values[i].iter().map(|v|format!("{v:.17}")).collect::<Vec<_>>().join(" "));
-        old_output.push('\n');
-    }
-    fs::write(directory.join("matdyn.in"),old_input).unwrap();
-    fs::write(directory.join("reference.freq"),old_output).unwrap();
-    // 模拟旧程序已登记成功、但新程序按不同密度重新归集的实际场景。
-    fs::remove_file(c.root.join("run/6.epw-coarse/comparison-native/sources.json")).unwrap();
-    fs::remove_dir_all(&comparison).unwrap();
-    log::update(&cfg.work_dir,Step::Coarse,|d| {d.remove("Derived delivery");Ok(())}).unwrap();
-    let before=c.calls();let post=c.post_calls();
-    let frequency=store::hash_file(&directory.join("reference.freq")).unwrap();
-    let request=store::hash_file(&directory.join("matdyn.in")).unwrap();
-    success(c.stage_submit("coarse",false));
-    success(c.stage_execute());
-    assert_eq!(before,c.calls(),"已完成的主科学数据和比较 EPW 不得重跑");
-    assert_eq!(post,c.post_calls(),"不得为新推导点数补跑 matdyn 或其他后处理");
-    assert_eq!(frequency,store::hash_file(&directory.join("reference.freq")).unwrap());
-    assert_eq!(request,store::hash_file(&directory.join("matdyn.in")).unwrap());
-    let csv=fs::read_to_string(comparison.join("phonon_bands.csv")).unwrap();
-    assert_eq!(csv.lines().filter(|l|l.starts_with("qe,")).count(),183*modes);
-    assert_eq!(csv.lines().filter(|l|l.starts_with("epw,")).count(),183*modes);
-    // 下游只准备，不执行新科学作业；不能再被旧缓存点数阻断。
-    success(c.numbered_cli(2,&["--stage","fine"],None,"fine-after-own-sampling"));
-    assert_eq!(before,c.calls());
-    // 修改 EPW 自己的出图密度，只更新 EPW 重读；QE 旧点和粗 EPC 模型保持。
-    let coarse_model=store::hash_file(&c.root.join("run/6.epw-coarse/out/scf.epmatwp")).unwrap();
-    let coarse_log=store::hash_file(&c.root.join("run/6.epw-coarse/epw_coarse.out")).unwrap();
-    let mut changed=config::Config::load(&c.root.join("input.toml")).unwrap();
-    changed.set_native(&[epwflow::foundation::native_config::COARSE,"workflow","points_per_edge"],json!(40)).unwrap();
-    fs::write(c.root.join("input.toml"),toml::to_string_pretty(&changed).unwrap()).unwrap();
-    success(c.stage_submit("coarse",false));success(c.stage_execute());
-    assert_eq!(before.0,c.calls().0);
-    assert_eq!(post,c.post_calls());
-    assert_eq!(before.1.lines().filter(|l|*l=="coarse" || *l=="wannier").count(),
-        c.calls().1.lines().filter(|l|*l=="coarse" || *l=="wannier").count());
-    assert_eq!(coarse_model,store::hash_file(&c.root.join("run/6.epw-coarse/out/scf.epmatwp")).unwrap());
-    assert_eq!(coarse_log,store::hash_file(&c.root.join("run/6.epw-coarse/epw_coarse.out")).unwrap());
-    assert_eq!(frequency,store::hash_file(&directory.join("reference.freq")).unwrap());
-    let csv=fs::read_to_string(comparison.join("phonon_bands.csv")).unwrap();
-    assert_eq!(csv.lines().filter(|l|l.starts_with("qe,")).count(),183*modes);
-    assert_eq!(csv.lines().filter(|l|l.starts_with("epw,")).count(),363*modes);
+    let source: epwflow::interpolation::comparison::Sources=store::read(&c.root.join("run/6.epw-coarse/comparison-native/sources.json")).unwrap();
+    assert!(source.qe_phonon_bands.path.ends_with("4.qe-phonon-nosplit/scf.phband.freq"));
+    let dos=source.qe_phonon_dos.as_ref().unwrap();
+    let before=c.calls(); let post=c.post_calls();
+    let frequency=store::hash_file(&source.qe_phonon_bands.path).unwrap();
+    let density=store::hash_file(&dos.path).unwrap();
+    let data=epwflow::delivery::comparison::load(&comparison).unwrap();
+    assert!(data.differences.unwrap().phonon_mesh.maximum.is_none());
+    let raw=fs::read_to_string(&dos.path).unwrap();
+    let expected=raw.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with('#'))
+        .map(|l| l.split_whitespace().take(2).map(|s|s.parse::<f64>().unwrap()).collect::<Vec<_>>())
+        .map(|v|(v[0],v[1])).collect::<Vec<_>>();
+    assert_eq!(data.phonon_dos.iter().find(|c|c.method=="qe").unwrap().points,expected);
+    c.numbered_change(|cfg|cfg.set_native(&[epwflow::foundation::native_config::COARSE,"workflow","points_per_edge"],json!(40)).unwrap());
+    success(c.stage_submit("coarse",false)); success(c.stage_execute());
+    assert_eq!(before.0,c.calls().0); assert_eq!(post,c.post_calls());
+    assert_eq!(frequency,store::hash_file(&source.qe_phonon_bands.path).unwrap());
+    assert_eq!(density,store::hash_file(&dos.path).unwrap());
+    assert!(!c.root.join("run/6.epw-coarse/comparison-native/force-constants").exists());
+    assert!(!c.root.join("run/6.epw-coarse/comparison-native/frequencies").exists());
 }
 
 #[test]

@@ -21,7 +21,6 @@ pub mod restart;
 
 pub(crate) mod automatic_comparison;
 
-mod comparison_asr;
 pub mod differences;
 
 pub mod direct;

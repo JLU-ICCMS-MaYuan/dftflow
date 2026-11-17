@@ -122,18 +122,6 @@ fn calls(ph: &str, spectra: &[String]) -> Vec<Call> {
         ),
         Call::new(COARSE, &[COARSE, "epw"], &["INPUTEPW"], &epw_derived),
         Call::new(
-            "6.qe-q2r",
-            &[COARSE, "comparison", "q2r"],
-            &["INPUT"],
-            &["fildyn", "flfrc"],
-        ),
-        Call::new(
-            "6.qe-matdyn",
-            &[COARSE, "comparison", "matdyn"],
-            &["INPUT"],
-            &["flfrc", "flfrq"],
-        ),
-        Call::new(
             "6.epw-comparison",
             &[COARSE, "comparison", "epw"],
             &["INPUTEPW"],
@@ -228,6 +216,17 @@ fn phonon_name(d: &Document, flat: bool) -> Result<String> {
 }
 
 pub(super) fn expand(mut d: Document) -> Result<Document> {
+    // 历史冻结配置仅在读取边界丢弃已删除的比较专用选项，不能恢复执行。
+    for name in ["6.qe-q2r", "6.qe-matdyn"] { d.stages.remove(name); }
+    if let Some(stage) = d.stages.get_mut(COARSE).and_then(Value::as_object_mut) {
+        stage.remove("q2r"); stage.remove("matdyn");
+        if let Some(v) = stage.get_mut("comparison").and_then(Value::as_object_mut) {
+            v.remove("q2r"); v.remove("matdyn");
+        }
+        if let Some(v) = stage.get_mut("workflow").and_then(Value::as_object_mut) { v.remove("onsite_asr"); }
+    }
+    if let Some(v) = d.workflow.get_mut(COARSE).and_then(Value::as_object_mut) { v.remove("onsite_asr"); }
+
     d.eight_stages = d.stages.contains_key(ELECTRONIC) || d.stages.contains_key(SUPER);
     let grouped = d.eight_stages;
     let ph = phonon_name(&d, false).unwrap_or_default();

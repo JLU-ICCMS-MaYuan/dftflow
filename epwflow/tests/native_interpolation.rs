@@ -130,6 +130,15 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
         &cfg.work_dir,
     )
     .unwrap();
+    if compare {
+        // 合成的第 4 步已完成产物；比较入口不得调用 QE 去制造另一份参考。
+        let ph = cfg.work_dir.join("qe-phonon"); fs::create_dir_all(&ph).unwrap();
+        let points = [[0.,0.,0.],[0.25,0.,0.],[0.5,0.,0.],[0.,0.5,0.],[0.25,0.5,0.],[0.5,0.5,0.]];
+        let mut text = String::from("&plot nbnd=6, nks=6 /\n");
+        for p in points { text.push_str(&format!("{} {} {} 0\n100 100 100 100 100 100\n",p[0],p[1],p[2])); }
+        fs::write(ph.join("scf.phband.freq"),text).unwrap();
+        fs::write(ph.join("scf.phdos.dat"),"# Frequency[cm^-1] DOS PDOS\n0 0 0\n100 0.06 0.03\n200 0 0\n").unwrap();
+    }
     fs::write(root.join("epw-failure"), failure).unwrap();
     Case { root, cfg, preserve }
 }
@@ -338,17 +347,16 @@ fn automatic_comparison_delivers_stage_two_figures_from_native_path_and_mesh() {
     let source: interpolation::comparison::Sources = store::read(&work.join("comparison-native/sources.json")).unwrap();
     assert_eq!(source.path.len(),6);
     assert_eq!(source.mesh.len(),8);
-    assert!(work.join("comparison-native/phonon/force-constants/reference.fc.xml").is_file());
-    let matdyn_input=fs::read_to_string(work.join("comparison-native/phonon/frequencies/matdyn.in")).unwrap();
-    assert!(matdyn_input.contains("flfrc = 'reference.fc.xml'"));
-    assert!(matdyn_input.contains("asr = 'no'") && matdyn_input.contains("q_in_band_form = .false."));
+    assert!(!work.join("comparison-native/phonon").exists());
+    assert!(source.qe_phonon_bands.path.ends_with("qe-phonon/scf.phband.freq"));
+    assert!(source.qe_phonon_dos.is_some());
     let epw = interpolation::native::parse_bands(&fs::read_to_string(&source.epw_bands.path).unwrap()).unwrap();
     assert_eq!(epw.values.len(),14);
     assert_eq!(calls(&c).lines().filter(|l|l.starts_with("coarse ")).count(),2);
     assert_eq!(calls(&c).lines().filter(|l|l.starts_with("reread ")).count(),1);
     let qe_calls=fs::read_to_string(c.root.join("scientific-calls")).unwrap();
-    assert_eq!(qe_calls.lines().filter(|l|*l=="q2r").count(),1);
-    assert_eq!(qe_calls.lines().filter(|l|*l=="matdyn").count(),1);
+    assert_eq!(qe_calls.lines().filter(|l|*l=="q2r").count(),0);
+    assert_eq!(qe_calls.lines().filter(|l|*l=="matdyn").count(),0);
     let path_input=fs::read_to_string(work.join("comparison-native/electron/reference.in")).unwrap();
     assert!(path_input.contains("'bands'"));
     assert!(!path_input.contains("'nscf'"));
@@ -384,7 +392,7 @@ fn automatic_comparison_delivers_stage_two_figures_from_native_path_and_mesh() {
 fn automatic_comparison_resume_only_retries_failed_native_task_and_rejects_tamper() {
     let c=case_options("",true,true);
     let work=&c.cfg.work_dir;
-    fs::write(c.root.join("comparison-failure"),"matdyn").unwrap();
+    fs::write(c.root.join("comparison-failure"),"epw").unwrap();
     assert!(interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).is_err());
     assert!(!work.join("wannier/manifest.json").exists());
     let qe_before=fs::read_to_string(c.root.join("scientific-calls")).unwrap();

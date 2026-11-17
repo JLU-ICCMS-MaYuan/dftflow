@@ -148,14 +148,6 @@ fn advance_mode(
             d.set("Stage", "Status", "advancing");
             d.set("Stage", "Scientific status", "validation pending");
             d.set("Stage", "Batch", &generation);
-            if step == Step::Coarse {
-                // 目录保留的 QE 声子检查点仍由 attempt 核验参数后复用。
-                for section in ["Substep · comparison-q2r", "Substep · comparison-matdyn"] {
-                    if d.get(section, "Status") == Some("completed") {
-                        d.set(section, "Owning batch", &generation);
-                    }
-                }
-            }
             d.set("Stage", "Calculation configuration", log::relative(&cfg.work_dir, &version));
             d.remove("Problem");
             Ok(())
