@@ -121,3 +121,7 @@ QE 与 EPW 沿同一物理高对称路径，各自保留原生采样；不要求
 旧频率不为差值补点或重采样；仅已有共同坐标参与差值，空配对不阻止出图。改变比较密度不使已完成粗 EPC 失效，只有相应比较后处理按新请求更新。电子内嵌曲线由 `bands_num_points` 控制，不要求与第 3／6 步密度相同。比较图不绘制紫色误差标记，Wannier 窗口线保持。
 
 本次未执行新的科学作业。若现场尚缺普通 EPW 出图重读结果，继续使用公开 `epw_wannier -c "input.toml" --stage coarse -s` 补齐，再运行 `epw_superconductivity -c "input.toml" --stage fine -s`；这不表示需要重算 SCF、PH、Wannier 或粗 EPC。
+
+## 程序路径与参数
+
+活动 `input.toml` 使用 `[programs]` 下的 `pw_x`／`pw_args` 等平铺字段，后处理路径逐个显式声明。各 args 独立，空列表不追加参数；需要 pencil 时在对应程序明确设置 `-pd`、`.true.`。本机 launcher 仍为 12 路 MPI，EPW pool 为 12，全部 EPW 阶段仅允许单 image。已有 run 内冻结输入和脚本没有自动改写，不能将活动配置检查视为旧工作区续算或科学验收通过。

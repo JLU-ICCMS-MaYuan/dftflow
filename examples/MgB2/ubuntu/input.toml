@@ -21,19 +21,24 @@ B = "repair/pp/b_pbe_v1.4.uspp.F.UPF"
 [programs]
 launcher = ["mpirun", "-np", "12"]
 environment_script = "/home/mayuan/bin/dftflow-env.sh"
-
-[programs.pw]
-path = "/home/mayuan/soft/dftflow-external/bin/pw.x"
-args = []
-
-[programs.ph]
-path = "/home/mayuan/soft/dftflow-external/bin/ph.x"
-args = []
-
-[programs.epw]
-path = "/home/mayuan/soft/dftflow-external/bin/epw.x"
-args = ["-nk", "12"]
-
+pw_x = "/home/mayuan/soft/dftflow-external/bin/pw.x"
+pw_args = []
+ph_x = "/home/mayuan/soft/dftflow-external/bin/ph.x"
+ph_args = []
+epw_x = "/home/mayuan/soft/dftflow-external/bin/epw.x"
+epw_args = ["-nk", "12"]
+bands_x = "/home/mayuan/soft/dftflow-external/bin/bands.x"
+bands_args = ["-pd", ".true."]
+dos_x = "/home/mayuan/soft/dftflow-external/bin/dos.x"
+dos_args = ["-pd", ".true."]
+projwfc_x = "/home/mayuan/soft/dftflow-external/bin/projwfc.x"
+projwfc_args = ["-pd", ".true."]
+q2r_x = "/home/mayuan/soft/dftflow-external/bin/q2r.x"
+q2r_args = []
+matdyn_x = "/home/mayuan/soft/dftflow-external/bin/matdyn.x"
+matdyn_args = []
+postw90_x = "/home/mayuan/soft/dftflow-external/bin/postw90.x"
+postw90_args = []
 
 [slurm]
 header = """

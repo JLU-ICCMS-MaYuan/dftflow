@@ -300,6 +300,7 @@ pub fn run_attempt(
     launcher: &[String],
     dir: &Path,
 ) -> Result<AttemptResult> {
+    crate::foundation::parallelism::check_epw_images(&program.args)?;
     request.validate()?;
     inputs.verify(request.mode)?;
     ensure!(
@@ -307,7 +308,7 @@ pub fn run_attempt(
             .args
             .iter()
             .any(|a| matches!(a.as_str(), "-in" | "-inp" | "-input")),
-        "configuration: programs.epw.args must not override single-temperature input"
+        "configuration: programs.epw_args must not override single-temperature input"
     );
     if crate::foundation::native_jobs::continuing(dir, "epw")? {
         let record: AttemptResult = store::read(&dir.join("attempt.json"))?;

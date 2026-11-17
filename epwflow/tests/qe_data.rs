@@ -78,7 +78,24 @@ Si = "{structure}"
 
 [programs]
 launcher = []
-
+pw_x = "{pw}"
+pw_args = []
+ph_x = "{ph}"
+ph_args = []
+epw_x = "{epw}"
+epw_args = []
+bands_x = "{pw}"
+bands_args = []
+dos_x = "{pw}"
+dos_args = []
+projwfc_x = "{pw}"
+projwfc_args = []
+q2r_x = "{pw}"
+q2r_args = []
+matdyn_x = "{pw}"
+matdyn_args = []
+postw90_x = "{pw}"
+postw90_args = []
 
 [slurm]
 header = """
@@ -90,19 +107,6 @@ header = """
 [budget]
 campaign_id = "epic-0007"
 ledger = "{ledger}"
-
-[programs.pw]
-path = "{pw}"
-args = []
-
-[programs.ph]
-path = "{ph}"
-args = []
-
-[programs.epw]
-path = "{epw}"
-args = []
-
 
 [stages."1.qe-scf"]
 K_POINTS = "automatic\n2 2 2 0 0 0"
@@ -1018,12 +1022,26 @@ fn actual_lda_native_layout() {
 }
 
 fn shared_case() -> (Case, config::Config, snapshot::RunBinding) {
+    shared_case_with_args(false)
+}
+
+fn shared_case_with_args(explicit_args: bool) -> (Case, config::Config, snapshot::RunBinding) {
     let case = make_case("nosplit");
     std::fs::write(case.root.join("KPATH.in"), "0 0 0 G\n0.5 0 0 X\n").unwrap();
     for name in ["q2r", "matdyn"] {
         make_script(&format!("{name}.x"), &case.root, &format!("#!/bin/sh\nexec /usr/bin/python3 '{}' {name} \"$@\"\n", case.root.join("qe-native.py").display()));
     }
     let mut cfg = config::Config::load(&case.config_path).unwrap();
+    cfg.programs.q2r = Some(config::Program { path: case.root.join("q2r.x"), args: vec![] });
+    cfg.programs.matdyn = Some(config::Program { path: case.root.join("matdyn.x"), args: vec![] });
+    if explicit_args {
+        for name in ["q2r", "matdyn"] {
+            let args = vec![format!("--{name}-only"), "value with spaces".into()];
+            make_script(&format!("{name}.x"), &case.root, &format!("#!/bin/sh\n[ \"$1\" = '--{name}-only' ] && [ \"$2\" = 'value with spaces' ] || exit 81\nprintf '%s\\n' '{name}' >> '{}'\nshift 2\nexec /usr/bin/python3 '{}' {name} \"$@\"\n", case.root.join("explicit-post-args").display(), case.root.join("qe-native.py").display()));
+            if name == "q2r" { cfg.programs.q2r.as_mut().unwrap().args = args; }
+            else { cfg.programs.matdyn.as_mut().unwrap().args = args; }
+        }
+    }
     cfg.atomic_masses.insert("Si".into(), 29.1234);
     cfg.qe.scf.k_shift = [0; 3];
     native_fixture::matrix(&mut cfg);
@@ -1122,4 +1140,12 @@ fn missing_nscf_wavefunction_does_not_trigger_integrity_rejection() {
     std::fs::write(case.root.join("fixture-failure"), "missing_wfc").unwrap();
     let manifest = run_pipeline(&case);
     manifest.verify().unwrap();
+}
+
+#[test]
+fn shared_qeflow_passes_each_explicit_postprocessor_argument_list() {
+    let (case, cfg, binding) = shared_case_with_args(true);
+    let qe = QeSettings::from_config(&cfg).unwrap();
+    scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).unwrap().verify().unwrap();
+    assert_eq!(std::fs::read_to_string(case.root.join("explicit-post-args")).unwrap(), "q2r\nmatdyn\nmatdyn\n");
 }

@@ -128,21 +128,8 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
         ] {
             programs.insert(n.to_string(), store::Identity::capture(&p.path)?);
         }
-        if config.phonon.mode == config::PhMode::Nosplit {
-            if let Some(dir) = config.programs.ph.path.parent() {
-                for name in ["q2r", "matdyn"] {
-                    let path = dir.join(format!("{name}.x"));
-                    if path.is_file() { programs.insert(name.into(), store::Identity::capture(&path)?); }
-                }
-            }
-        }
-        for (n, p) in [
-            ("wannier90", &config.programs.wannier90),
-            ("pw2wannier90", &config.programs.pw2wannier90),
-        ] {
-            if let Some(p) = p {
-                programs.insert(n.to_owned(), store::Identity::capture(&p.path)?);
-            }
+        for (n, p) in config.programs.iter().filter(|(n, _)| !["pw", "ph", "epw"].contains(n)) {
+            programs.insert(n.to_owned(), store::Identity::capture(&p.path)?);
         }
         if let Some(p) = &config.programs.environment_script {
             programs.insert("environment_script".into(), store::Identity::capture(p)?);

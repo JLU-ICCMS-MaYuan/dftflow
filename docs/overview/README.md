@@ -64,7 +64,7 @@ DFTFlow 自有任务脚本生成器及跟踪的构建、安装、自测脚本不
 
 Overview 只维护当前功能事实，不承担 Issue/任务状态管理。CLI 总览重写阶段仅修改 docs/overview、未运行程序测试或提交；后续代码变更的验证与交付另见相应 Feature 验收记录。0006 的默认 outdir 统一为 ./tmp，显式配置优先，已有结果保留。实际机器配置、软件路径和原始运行证据仍保存在本地忽略目录；这里不复制它们。
 
-编号 QE／EPW 工作区的电子参考支持 PW、bands、DOS 各任务校验和失败局部恢复；bands／DOS 各自启用 pencil 分解，重提旧作业脚本会提示公开命令生成新尝试；并行启动及旧数据接入边界见 [EPW 总览](epwflow/README.md#编号工作区的电子后处理续算)。
+编号 QE／EPW 工作区的电子参考支持 PW、bands、DOS 各任务校验和失败局部恢复；bands／DOS 可通过各自的 args 显式启用 pencil 分解，不再自动添加参数。重提旧作业脚本会提示公开命令生成新尝试；并行启动及旧数据接入边界见 [EPW 总览](epwflow/README.md#编号工作区的电子后处理续算)。
 
 独立 Wannier 输入及独立 W90／postw90 数据衔接、零退出错误检查、后处理失败保留拟合证据和并发命令锁诊断见 [EPW 总览](epwflow/README.md#编号工作区的电子后处理续算)与 [0023 验收](../specs/0023-epw-wannier-native-start/acceptance.md)。
 

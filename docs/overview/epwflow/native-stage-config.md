@@ -61,3 +61,39 @@ TOML 无需填写 outdir、pseudo_dir、nat 等自动绑定项或 derived 表。
 input.toml 的顶层 [plot] 提供 electronic_energy_min_ev 与 electronic_energy_max_ev，独立默认 −3／＋3，单位 eV、相对 E_F。两值必须有限且严格递增，第 3、5 步共用；不参与科学阶段身份，不改变任何原生程序输入或实际拟合窗。
 
 第 3、5 步 plot/ 各生成两张电子组合图；全范围取 QE 路径能带极值。第 4、6 步 plot/ 为 0 到最高路径频率的一张声子组合图。自包含 .plot.json 支持独立重绘。
+
+## 外部程序路径与命令行参数
+
+全部外部程序在一个 `[programs]` 内平铺配置，路径与参数分别使用 `*_x`、`*_args`；不使用 `[programs.pw]` 等子表。每个后处理程序必须有自己的显式路径，不从 pw／ph 目录或 PATH 推导。
+
+```toml
+[programs]
+launcher = ["mpirun", "-np", "12"]
+environment_script = "/path/to/environment.sh"
+pw_x = "/path/to/qe/pw.x"
+pw_args = []
+ph_x = "/path/to/phonon/ph.x"
+ph_args = []
+epw_x = "/path/to/epw/epw.x"
+epw_args = ["-npool", "12"]
+bands_x = "/path/to/postprocessing/bands.x"
+bands_args = []
+dos_x = "/path/to/postprocessing/dos.x"
+dos_args = []
+projwfc_x = "/path/to/postprocessing/projwfc.x"
+projwfc_args = []
+q2r_x = "/path/to/phonon/q2r.x"
+q2r_args = []
+matdyn_x = "/path/to/phonon/matdyn.x"
+matdyn_args = []
+postw90_x = "/path/to/wannier/postw90.x"
+postw90_args = []
+```
+
+路径示例须替换为实际安装位置，程序可以分布在不同目录。可选独立程序使用 `wannier90_x`／`wannier90_args` 和 `pw2wannier90_x`／`pw2wannier90_args`；EPW 内嵌 Wannier90 不需要独立可执行文件。未使用的可选程序可不填路径；实际消费时缺少路径会返回对应字段名，有非空 args 而无路径则直接拒绝。所有已配置路径按配置文件所在位置解析并检查可执行性。
+
+空列表或省略 args 表示不追加额外命令行参数；不会生成空占位参数，不继承其他程序 args，也不再自动添加 pencil 的 `-pd .true.`。如需该选项，用户在对应程序的 args 中明确填写。launcher 和计算必需的输入／种子参数仍保留，原生程序并行限制仍适用。
+
+EPW 从 Wannier、粗网格到细网格、超导求解全部禁用多 image；省略 image 或显式 `-nimage 1` 可用，`-ni`／`-nimage`／`-nimages` 多 image 均拒绝。PH image 参数保留自身规则。`-nk`／`-npool`／`-npools` 为 pool 参数别名，只能选择一个填写。当前单 image EPW 仍要求每 pool 一个 MPI 进程。
+
+旧程序子表需要用户改为平铺字段；不自动改写历史配置快照、已生成脚本或计算数据，不保证旧工作区透明续算。源码、回归及安装边界见 [0065 验收](../../specs/0065-slurm-header-launcher/acceptance.md)。

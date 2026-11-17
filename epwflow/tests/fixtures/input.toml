@@ -11,19 +11,24 @@ B = "B.upf"
 
 [programs]
 launcher = [ "./launcher", "-np", "1",]
-
-[programs.pw]
-path = "./pw.x"
-args = []
-
-[programs.ph]
-path = "./ph.x"
-args = []
-
-[programs.epw]
-path = "./epw.x"
-args = []
-
+pw_x = "./pw.x"
+pw_args = []
+ph_x = "./ph.x"
+ph_args = []
+epw_x = "./epw.x"
+epw_args = []
+bands_x = "./pw.x"
+bands_args = []
+dos_x = "./pw.x"
+dos_args = []
+projwfc_x = "./pw.x"
+projwfc_args = []
+q2r_x = "./pw.x"
+q2r_args = []
+matdyn_x = "./pw.x"
+matdyn_args = []
+postw90_x = "./pw.x"
+postw90_args = []
 
 [slurm]
 header = """

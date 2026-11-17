@@ -51,13 +51,7 @@ impl PlotConfig {
 }
 fn default_outdir()->PathBuf{PathBuf::from("./tmp")}
 data!(Program{path:PathBuf,args:Vec<String>});
-#[derive(Debug,Clone,Serialize,Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Programs {
-    pub pw:Program, pub ph:Program, pub epw:Program, pub launcher:Vec<String>,
-    pub environment_script:Option<PathBuf>, pub wannier90:Option<Program>, pub pw2wannier90:Option<Program>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub postw90:Option<Program>,
-}
+pub use super::programs::Programs;
 data!(BudgetConfig{campaign_id:String,ledger:PathBuf});
 data!(Qe{prefix:String,ecutwfc_ry:f64,ecutrho_ry:f64,occupations:Occupations,smearing:Option<Smearing>,degauss_ry:Option<f64>,scf:Scf,nscf:Nscf});
 data!(Scf{k_grid:[u32;3],k_shift:[u32;3],conv_thr_ry:f64});
@@ -126,6 +120,8 @@ impl Config {
         let mut c:Self=toml::from_str(&raw).map_err(|e: toml::de::Error| {
             let migration = if e.to_string().contains("unknown field `resources`") {
                 "; legacy [resources] was removed; use [slurm].header and programs.launcher"
+            } else if ["pw", "ph", "epw", "bands", "dos", "projwfc", "q2r", "matdyn", "postw90", "wannier90", "pw2wannier90"].iter().any(|n| e.to_string().contains(&format!("unknown field `{n}`"))) {
+                "; legacy [programs.xx] tables were removed; use flat programs.xx_x and programs.xx_args fields with explicit executable paths"
             } else { "" };
             anyhow::anyhow!("configuration: {}: TOML field/type error{migration}: {e}", path.display())
         })?;
@@ -151,9 +147,10 @@ impl Config {
         ensure!(self.budget.campaign_id=="epic-0007","configuration: budget.campaign_id: this run must share epic-0007");
         ensure!(!self.pseudos.is_empty()&&self.pseudos.keys().all(|s|!s.is_empty()&&s.chars().all(|c|c.is_ascii_alphabetic())),"configuration: pseudos: requires a nonempty element-to-file mapping");
         for (el,mass) in &self.atomic_masses {ensure!(self.pseudos.contains_key(el),"configuration: stages.1.qe-scf.pw.ATOMIC_SPECIES: {el} has no declared pseudopotential element");positive(*mass,&format!("stages.1.qe-scf.pw.ATOMIC_SPECIES.{el}"))?;}
-        for (n,p) in [("pw",&self.programs.pw),("ph",&self.programs.ph),("epw",&self.programs.epw)] {
-            ensure!(p.args.iter().all(|s|!s.contains('\0')),"configuration: programs.{n}.args: NUL");
+        for (n,p) in self.programs.iter() {
+            ensure!(p.args.iter().all(|s|!s.contains('\0')),"configuration: programs.{n}_args: NUL");
         }
+        super::parallelism::check_epw_images(&self.programs.epw.args)?;
         ensure!(self.programs.launcher.iter().all(|s|!s.contains('\0')),"configuration: programs.launcher: NUL");
         let q=&self.qe;
         ensure!(!q.prefix.is_empty()&&q.prefix.chars().all(|c|c.is_ascii_alphanumeric()||"_-".contains(c)),"configuration: stages.1.qe-scf.pw.CONTROL.prefix: invalid identifier");
@@ -222,10 +219,7 @@ impl Config {
         if self.kpath.is_none() && base.join("KPATH.in").is_file() { self.kpath=Some(base.join("KPATH.in")); }
         if let Some(p)=&mut self.kpath { *p=paths::existing(base,p,"kpath",false)?; }
         for (el,p) in &mut self.pseudos {*p=paths::existing(base,p,&format!("pseudos.{el}"),false)?;}
-        for (n,p) in [("pw",&mut self.runtime.programs.pw),("ph",&mut self.runtime.programs.ph),("epw",&mut self.runtime.programs.epw)] {p.path=paths::existing(base,&p.path,&format!("programs.{n}.path"),true)?;}
-        for (n,p) in [("wannier90",&mut self.runtime.programs.wannier90),("pw2wannier90",&mut self.runtime.programs.pw2wannier90),("postw90",&mut self.runtime.programs.postw90)] {
-            if let Some(pr)=p { pr.path=paths::existing(base,&pr.path,&format!("programs.{n}.path"),true)?; }
-        }
+        self.runtime.programs.resolve(base)?;
         // mpirun 在作业加载环境后定位；保留配置原文，避免重写历史请求身份。
         if let Some(p)=self.programs.launcher.first_mut(){
             if !qf_runner::is_mpirun(p) {*p=paths::command(base,p)?.to_string_lossy().into_owned();}

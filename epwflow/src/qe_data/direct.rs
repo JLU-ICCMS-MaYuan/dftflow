@@ -89,13 +89,7 @@ pub fn load(cfg: &Config) -> Result<QeManifest> {
         programs.insert(name.into(), store::hash_file(p)?);
     }
     for name in ["q2r", "matdyn"] {
-        let p = cfg
-            .programs
-            .pw
-            .path
-            .parent()
-            .context("configuration: QE Synchronising folder")?
-            .join(format!("{name}.x"));
+        let p = &cfg.programs.get(name)?.path;
         programs.insert(name.into(), store::hash_file(&p)?);
     }
     let result = QeManifest {

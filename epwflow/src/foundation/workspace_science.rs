@@ -25,20 +25,7 @@ fn states(cfg: &Config) -> Result<qe_data::manifest::ElectronicStates> {
     qe_data::nscf::verified_states(cfg, &cfg.work_dir)
 }
 pub(super) fn post_program(cfg: &Config, name: &str) -> Result<Program> {
-    Ok(Program {
-        path: cfg
-            .programs
-            .pw
-            .path
-            .parent()
-            .context("configuration: QE Synchronising folder")?
-            .join(format!("{name}.x")),
-        args: if matches!(name, "bands" | "dos" | "projwfc") {
-            vec!["-pd".into(), ".true.".into()]
-        } else {
-            vec![]
-        },
-    })
+    Ok(cfg.programs.get(name)?.clone())
 }
 pub(super) fn qe_run(
     cfg: &Config,
@@ -94,10 +81,7 @@ fn post_key(cfg: &Config, step: Step) -> Result<String> {
     let mut programs = vec![];
     if step == Step::Wannier {
         for p in [
-            cfg.programs
-                .postw90
-                .clone()
-                .unwrap_or(post_program(cfg, "postw90")?),
+            post_program(cfg, "postw90")?,
             post_program(cfg, "dos")?,
         ] {
             programs.push((store::hash_file(&p.path)?, p.args));
@@ -969,11 +953,7 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
     let updated = regex::Regex::new(r"(?m)^\s*restart\s*=[^\n]*\n?")?
         .replace_all(&updated, "")
         .into_owned();
-    let program = cfg
-        .programs
-        .postw90
-        .clone()
-        .unwrap_or(post_program(cfg, "postw90")?);
+    let program = post_program(cfg, "postw90")?;
     let dos = PathBuf::from(wannier90flow::post::resolve_dos_output(
         dir.to_str().unwrap(),
         prefix,
@@ -1200,32 +1180,20 @@ mod post_program_tests {
     use super::*;
 
     #[test]
-    fn pencil_is_limited_to_electronic_postprocessing_without_inherited_pools() {
+    fn postprocessors_use_only_their_explicit_paths_and_arguments() {
         let mut cfg: Config =
             toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
-        cfg.programs.pw.path = PathBuf::from("/qe with spaces/bin/pw.x");
+        cfg.programs.pw.path = PathBuf::from("/unrelated/pw.x");
         cfg.programs.pw.args = vec!["-nk".into(), "8".into()];
-        for name in [
-            "bands",
-            "dos",
-            "projwfc",
-            "q2r",
-            "matdyn",
-            "wannier90",
-            "postw90",
-        ] {
-            let p = post_program(&cfg, name).unwrap();
-            assert_eq!(
-                p.path,
-                PathBuf::from(format!("/qe with spaces/bin/{name}.x"))
-            );
-            let expected = if matches!(name, "bands" | "dos" | "projwfc") {
-                vec!["-pd".to_string(), ".true.".to_string()]
-            } else {
-                vec![]
-            };
-            assert_eq!(p.args, expected, "{name}");
-        }
-        assert_eq!(cfg.programs.pw.args, vec!["-nk", "8"]);
+        cfg.programs.bands = Some(Program {
+            path: PathBuf::from("/separate directory/bands.x"),
+            args: vec!["-pd".into(), ".true.".into()],
+        });
+        let bands = post_program(&cfg, "bands").unwrap();
+        assert_eq!(bands.path, PathBuf::from("/separate directory/bands.x"));
+        assert_eq!(bands.args, ["-pd", ".true."]);
+        assert!(post_program(&cfg, "dos").unwrap().args.is_empty());
+        cfg.programs.matdyn = None;
+        assert!(post_program(&cfg, "matdyn").unwrap_err().to_string().contains("programs.matdyn_x"));
     }
 }

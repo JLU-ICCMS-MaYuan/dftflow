@@ -6,6 +6,8 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 开发中的 [epwflow](epwflow/README.md) 提供 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个阶段程序和历史清理工具 `epw_clear`，支持检查、脚本生成、提交和恢复；完整真实原生超导链仍在验收。qeflow 的 nosplit 流程现可通过 `[qe_phonon].retain_epw_data=true` 归档 EPW 所需声子数据，见 [保留数据说明](qeflow/README.md#为-epw-保留声子数据)。MgB₂ 运行数据位于 `test_auto/MgB2/local_run/` 的编号目录；源码、受测构建和当前安装分别核对。
 
+EPW 的外部程序在 `[programs]` 中使用 `pw_x`／`pw_args` 等平铺字段，后处理程序也逐个显式配置；空 args 不追加参数，EPW 全阶段只使用单 image。旧程序子表需要迁移，详见[程序路径与参数](docs/overview/epwflow/native-stage-config.md#外部程序路径与命令行参数)。
+
 EPW 的 SCF、NSCF 及 electronic 路径数据完成核验后即时生成 `*-band-ranges.png`，用于检查逐带能量范围、四窗口和冻结态容量；位置及补图方式见 [三阶段诊断说明](epwflow/README.md)。
 
 ## 分支约定

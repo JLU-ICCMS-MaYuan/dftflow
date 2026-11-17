@@ -7,6 +7,15 @@ pub fn mpi_count(cfg: &Config) -> Result<u32> {
     read_count(&cfg.programs.launcher, &["-np", "-n", "--np", "--ntasks"], 1)
 }
 
+const IMAGE_FLAGS: &[&str] = &["-ni", "-nimage", "-nimages", "-npot", "--nimage", "--nimages"];
+
+/// EPW 所有阶段统一使用单 image，不按科学模式放行多 image。
+pub fn check_epw_images(args: &[String]) -> Result<()> {
+    ensure!(read_count(args, IMAGE_FLAGS, 1)? == 1,
+        "configuration: programs.epw_args: EPW multi-image parallelism is disabled for all stages; omit -nimage or use -nimage 1");
+    Ok(())
+}
+
 /// 仅读取显式数量，不替用户修正或补充并行参数。
 pub(super) fn read_count(args: &[String], flags: &[&str], default: u32) -> Result<u32> {
     let mut found = None;
@@ -31,7 +40,8 @@ pub fn preflight(cfg: &Config, step: super::stages::Step, allocation: bool) -> R
     let epw=step.epw();
     let args=if epw { &cfg.programs.epw.args } else if step==super::stages::Step::Phonon { &cfg.programs.ph.args } else { &cfg.programs.pw.args };
     let pools=read_count(args,&["-nk","-npool","--npool","-npools"],1)?;
-    let images=read_count(args,&["-ni","-nimage","--nimage"],1)?;
+    let images=read_count(args,IMAGE_FLAGS,1)?;
+    if epw { check_epw_images(args)?; }
     ensure!(mpi%images==0 && (mpi/images)%pools==0,"configuration: MPI={mpi}, image={images}, pool={pools} are not divisible");
     if epw {
         let grid=if step>=super::stages::Step::Fine {cfg.interpolation.k_grid} else {cfg.qe.nscf.k_grid};
@@ -92,7 +102,7 @@ pub fn apply(cfg: &mut Config, mpi: u32) -> Result<()> {
         "configuration: pool count exceeds the complete coarse k-point count; empty pools prohibited"
     );
     for args in [&cfg.programs.launcher, &cfg.programs.epw.args] {
-        let image_flags = ["-ni", "-nimage", "--nimage"];
+        let image_flags = IMAGE_FLAGS;
         ensure!(
             !args.iter().any(|s| !image_flags.contains(&s.as_str())
                 && image_flags.iter().any(|flag| s.starts_with(flag))),

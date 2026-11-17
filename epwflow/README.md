@@ -151,7 +151,7 @@ run/
 
 第 1～4 步复用 qeflow／共享输入、执行及后处理组件，SCF 只做一次并保留独立快照。NSCF 为 EPW 所需的完整均匀网格。`qe_eband` 使用 `pw.x bands` 和 `bands.x`，`qe_eledos` 使用 `dos.x`。PH 三种模式都严格校验 q 点、动力学矩阵、dvscf 和 phsave 后归集到第 4 步 `save/`。
 
-第 5 步由 EPW 内嵌 Wannier90 拟合并通过 `wdata` 声明真实高对称端点，保留原生 `*_band.kpt` 和标签给出的完整曲线；QE 与 EPW 可以使用不同内部密度，以同一倒空间度量显示，不为逐点配对补算、重采样或阻止出图。只有电子 DOS 使用 `[programs.postw90]`，缺省为 `pw.x` 同目录的 postw90；读取同次模型，不重新拟合。QE 路径参考读取第 3 步，DOS 参考读取第 2 步均匀网格；保留共同 Fermi 零点、Gaussian 核宽及非磁标量每态两电子计数。差值只使用已有共同坐标及同一路径位置，无共同点为空；比较图不再绘制紫色误差点、连线及图例。实际四个能窗及正常曲线保留。图和来源发布到 `results/5.epw-wannier/`，原始模型留在第 5 步。
+第 5 步由 EPW 内嵌 Wannier90 拟合并通过 `wdata` 声明真实高对称端点，保留原生 `*_band.kpt` 和标签给出的完整曲线；QE 与 EPW 可以使用不同内部密度，以同一倒空间度量显示，不为逐点配对补算、重采样或阻止出图。只有电子 DOS 使用显式的 `programs.postw90_x` 和独立 `postw90_args`；读取同次模型，不重新拟合。QE 路径参考读取第 3 步，DOS 参考读取第 2 步均匀网格；保留共同 Fermi 零点、Gaussian 核宽及非磁标量每态两电子计数。差值只使用已有共同坐标及同一路径位置，无共同点为空；比较图不再绘制紫色误差点、连线及图例。实际四个能窗及正常曲线保留。图和来源发布到 `results/5.epw-wannier/`，原始模型留在第 5 步。
 
 已有比较频率和电子曲线使用自身保存的原生请求／采样记录核验，不拿当前配置重新展开的点数替代。QE 215 点与当前计划 935 点可分别有效；两侧曲线保留自己的点数和值，只在已有共同点统计差值。QE matdyn 的缓存设置取第 4 步，EPW 比较取第 6 步；修改第 6 步绘图采样不重跑粗 EPC，仍保留原生执行、物理路径和自身输出一致性检查。
 
@@ -450,3 +450,9 @@ epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
 ### 调整线宽后的原位重绘
 
 修改共享绘图样式并重新编译后，执行 `epw_wannier -c "input.toml" --plot`，无需指定输出目录。已有电子比较 plot.json 时，直接覆盖第 5 步 comparison-native 内的普通／完整价带能带与 DOS 图片，并同步第 5 步根目录两张主图；不执行科学程序或提交作业，采样和模型不变。没有电子比较绘图参数时保留 diagnostics 拟合诊断。独立 results 包不随现场重绘改写，显式 --results 仍用于结果包重绘。
+
+## 程序路径与参数
+
+`[programs]` 统一使用 `pw_x`／`pw_args` 等平铺字段。PW、PH、EPW、bands、DOS、projwfc、q2r、matdyn、postw90 各自配置路径和参数，不推导同目录程序。空 args 不追加参数，不自动补入 `-pd`；需要 pencil 时由用户显式配置。旧 `[programs.xx]` 子表明确拒绝并提示迁移。
+
+EPW 所有阶段禁用多 image，默认或显式单 image 可用；PH 保留自身规则。完整字段和示例见[原生配置说明](../docs/overview/epwflow/native-stage-config.md#外部程序路径与命令行参数)。历史输入、脚本和科学文件不自动迁移。

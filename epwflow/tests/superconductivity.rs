@@ -48,7 +48,28 @@ Si = "{structure}"
 
 [programs]
 launcher = []
-
+pw_x = "{pw}"
+pw_args = []
+ph_x = "{ph}"
+ph_args = []
+epw_x = "{epw}"
+epw_args = []
+wannier90_x = "{wan}"
+wannier90_args = []
+pw2wannier90_x = "{pw2}"
+pw2wannier90_args = []
+bands_x = "{pw}"
+bands_args = []
+dos_x = "{pw}"
+dos_args = []
+projwfc_x = "{pw}"
+projwfc_args = []
+q2r_x = "{pw}"
+q2r_args = []
+matdyn_x = "{pw}"
+matdyn_args = []
+postw90_x = "{pw}"
+postw90_args = []
 
 [slurm]
 header = """
@@ -60,27 +81,6 @@ header = """
 [budget]
 campaign_id = "epic-0007"
 ledger = "{ledger}"
-
-[programs.pw]
-path = "{pw}"
-args = []
-
-[programs.ph]
-path = "{ph}"
-args = []
-
-[programs.epw]
-path = "{epw}"
-args = []
-
-[programs.wannier90]
-path = "{wan}"
-args = []
-
-[programs.pw2wannier90]
-path = "{pw2}"
-args = []
-
 
 [stages."1.qe-scf"]
 K_POINTS = "automatic\n2 2 2 0 0 0"

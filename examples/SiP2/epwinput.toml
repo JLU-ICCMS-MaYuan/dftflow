@@ -19,30 +19,26 @@ launcher = [
     "36",
 ]
 environment_script = "/data/home/mayuan/intel-2024/oneapi/intel2024_setvars.sh"
-
-[programs.pw]
-path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/pw.x"
-args = []
-
-[programs.ph]
-path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/ph.x"
-args = []
-
-[programs.epw]
-path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/EPW/src/epw.x"
-args = [
-    "-nk",
-    "36",
-]
-
-[programs.wannier90]
-path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/wannier90.x"
-args = []
-
-[programs.postw90]
-path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/postw90.x"
-args = []
-
+pw_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/pw.x"
+pw_args = []
+ph_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/ph.x"
+ph_args = []
+epw_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/EPW/src/epw.x"
+epw_args = ["-nk", "36"]
+wannier90_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/wannier90.x"
+wannier90_args = []
+postw90_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/postw90.x"
+postw90_args = []
+bands_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/bands.x"
+bands_args = ["-pd", ".true."]
+dos_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/dos.x"
+dos_args = ["-pd", ".true."]
+projwfc_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/projwfc.x"
+projwfc_args = ["-pd", ".true."]
+q2r_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/q2r.x"
+q2r_args = []
+matdyn_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/matdyn.x"
+matdyn_args = []
 
 [slurm]
 header = """

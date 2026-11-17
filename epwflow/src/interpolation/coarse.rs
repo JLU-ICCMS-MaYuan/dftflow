@@ -88,6 +88,7 @@ pub fn run_epw(
         "allocation: EPW To be in F1 Synchronize in registered distribution"
     );
     let program = &epw_cfg.cfg.programs.epw;
+    crate::foundation::parallelism::check_epw_images(&program.args)?;
     let stem = Path::new(input_name).file_stem().and_then(|s| s.to_str())
         .context("configuration: EPW Enter missing master name")?;
     crate::foundation::workspace::native_script(

@@ -77,6 +77,10 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
             cfg.programs.pw = prog
         } else if name == "ph" {
             cfg.programs.ph = prog
+        } else if name == "q2r" {
+            cfg.programs.q2r = Some(prog)
+        } else if name == "matdyn" {
+            cfg.programs.matdyn = Some(prog)
         };
     }
     let ep = root.join("epw.x");
@@ -93,6 +97,10 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
     cfg.programs.launcher.clear();
     cfg.programs.wannier90 = None;
     cfg.programs.pw2wannier90 = None;
+    cfg.programs.bands = None;
+    cfg.programs.dos = None;
+    cfg.programs.projwfc = None;
+    cfg.programs.postw90 = None;
     cfg.qe.scf.k_grid = [2; 3];
     cfg.qe.nscf.k_grid = [2; 3];
     cfg.phonon.q_grid = [2; 3];

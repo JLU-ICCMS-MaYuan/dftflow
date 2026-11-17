@@ -4,6 +4,7 @@ pub mod chain;
 pub mod clear;
 pub mod cli;
 pub mod config;
+mod programs;
 pub mod environment;
 pub mod layout;
 pub mod parallelism;

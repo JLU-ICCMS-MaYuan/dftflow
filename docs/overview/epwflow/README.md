@@ -428,3 +428,7 @@ SCF 使用自身 XML 和 E_F，NSCF 使用自身均匀采样，electronic 使用
 ### 第 5 步原位重绘
 
 `epw_wannier -c INPUT --plot` 优先用现场 comparison-native 中保存的四份电子绘图参数覆盖同目录 PNG，同时同步第 5 步根目录两张主图；不调用外部科学程序或 Slurm，不要求指定结果目录。无电子绘图参数时回退至已有未收敛／失败诊断。独立 results 包由显式 --results 操作，现场重绘不使用当前配置重新标记旧科学结果。
+
+## 显式程序配置
+
+外部路径和 argv 使用 `[programs]` 下的 `*_x`／`*_args` 平铺字段，每个程序分别配置。后处理不再推导同目录路径或自动附加 pencil 参数；空 args 不追加参数。EPW 所有阶段禁用多 image，PH 的 image 配置独立。字段、迁移和历史数据边界见[原生配置说明](native-stage-config.md#外部程序路径与命令行参数)。

@@ -4,6 +4,8 @@
 mod native_fixture;
 #[path = "support/nscf_grid_contract.rs"]
 mod nscf_grid_contract;
+#[path = "support/explicit_programs.rs"]
+mod explicit_programs;
 use epwflow::foundation::{config, slurm::shell_quote, store};
 use serde_json::{json, Value};
 use std::{
@@ -82,6 +84,9 @@ runpy.run_path(str(root/name),run_name='__main__')
         c.script("scontrol", include_str!("fixtures/slurm_controller.py"));
         c.script("squeue", "#!/bin/sh\nexit 0\n");
         c.script("sbatch", &format!("#!/bin/bash\nprintf '%s\\n' \"$*\" >> {calls}\nn=$(wc -l < {calls})\nprintf '%s\\n' \"$((200+n))\"\n", calls=shell_quote(c.root.join("submissions").to_str().unwrap())));
+        for name in ["bands", "dos", "projwfc", "postw90"] {
+            c.script(&format!("{name}.x"), "#!/bin/sh\nexit 91\n");
+        }
         let mut cfg: config::Config = toml::from_str(include_str!("fixtures/input.toml")).unwrap();
         cfg.work_dir = c.root.join("run");
         cfg.outdir = c.root.join("scratch");
@@ -102,6 +107,18 @@ runpy.run_path(str(root/name),run_name='__main__')
             program.args.clear();
         }
         cfg.programs.epw.args = vec!["--io-contract".into()];
+        let programs = &mut cfg.programs;
+        for (program, name) in [
+            (&mut programs.bands, "bands"),
+            (&mut programs.dos, "dos"),
+            (&mut programs.projwfc, "projwfc"),
+            (&mut programs.q2r, "q2r"),
+            (&mut programs.matdyn, "matdyn"),
+            (&mut programs.postw90, "postw90"),
+        ] {
+            *program = Some(config::Program { path: c.root.join(format!("{name}.x")), args: vec![] });
+        }
+
         cfg.programs.wannier90 = None;
         cfg.programs.pw2wannier90 = None;
         cfg.qe.prefix = "scf".into();
@@ -1164,6 +1181,10 @@ fn numbered_failed_coarse_resume_changes_resources_and_preserves_qe() {
 // 0020：原生 bands 后处理失败与 PW 保存树的粒度恢复。
 impl Case {
     fn fail_bands(&self) {
+        self.numbered_change(|cfg| {
+            cfg.programs.bands.as_mut().unwrap().args = vec!["-pd".into(), ".true.".into()];
+            cfg.programs.dos.as_mut().unwrap().args = vec!["-pd".into(), ".true.".into()];
+        });
         let p = self.root.join("bands.x");
         let s = fs::read_to_string(&p).unwrap();
         let probe = format!(r#"

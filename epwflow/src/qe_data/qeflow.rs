@@ -97,16 +97,10 @@ pub fn run(
     } else {
         None
     };
-    let post_dir = cfg
-        .programs
-        .ph
-        .path
-        .parent()
-        .context("configuration: PH Missing program directory")?;
-    let q2r =
-        Identity::capture(&post_dir.join("q2r.x")).context("environment: PH The same directory is missing q2r.x")?;
-    let matdyn = Identity::capture(&post_dir.join("matdyn.x"))
-        .context("environment: PH The same directory is missing matdyn.x")?;
+    let q2r_program = cfg.programs.get("q2r")?;
+    let matdyn_program = cfg.programs.get("matdyn")?;
+    let q2r = Identity::capture(&q2r_program.path)?;
+    let matdyn = Identity::capture(&matdyn_program.path)?;
     let pseudo_ids: BTreeMap<_, _> = cfg
         .pseudos
         .iter()
@@ -134,8 +128,8 @@ pub fn run(
                 &cfg.programs.ph.path,
                 cfg.programs.ph.args.as_slice(),
             ),
-            ("q2r.x", &q2r.path, &[][..]),
-            ("matdyn.x", &matdyn.path, &[][..]),
+            ("q2r.x", &q2r.path, q2r_program.args.as_slice()),
+            ("matdyn.x", &matdyn.path, matdyn_program.args.as_slice()),
         ] {
             let mut argv = launcher.to_vec();
             argv.push(program.to_string_lossy().into_owned());
