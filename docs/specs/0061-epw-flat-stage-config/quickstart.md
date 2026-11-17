@@ -53,3 +53,11 @@ CARGO_PROFILE_TEST_DEBUG=0 bash "scripts/build-native.sh" test -p epwflow --lib 
 ```
 
 公开 CLI 与恢复、旧状态转换测试使用隔离临时目录及科学替身，实际 SiP₂ 的状态转换由用户按 [算例说明](../../../examples/SiP2/README.md) 显式执行。
+
+## 公共参数与网格数组检查
+
+Ubuntu MgB₂ 当前输入集中填写 `[baseparams]`，使用八主阶段和阶段数组。`common_stage_config` 覆盖公用／逐阶段配置、原生／数组表达、科学键、原生输入与错误拒绝。
+
+真实对照用例需设置 `DFTFLOW_MGB2_BEFORE_INPUT` 与 `DFTFLOW_MGB2_CURRENT_INPUT`，再显式执行 `actual_mgb2_public_defaults_preserve_science_without_reading_calculation_data -- --exact --ignored`；此用例只解析两个 TOML，不读取计算数据。入口配置检查使用临时工作区副本，避免旧现场的配置版本机制产生写入。
+
+当前输入依赖 `repair/pp/mg_pbe_v1.4.UPF` 同模型转换文件及 B 原文件链接；不要只删除此赝势目录。修改后须使用重新编译覆盖的 CLI，旧 CLI 可能拒绝公共字段或网格数组。

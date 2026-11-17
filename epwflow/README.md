@@ -423,3 +423,9 @@ epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
 EPW 所有阶段禁用多 image，默认或显式单 image 可用；PH 保留自身规则。完整字段和示例见[原生配置说明](../docs/overview/epwflow/native-stage-config.md#外部程序路径与命令行参数)。历史输入、脚本和科学文件不自动迁移。
 
 预算功能已彻底移除：源输入中删除整个 `[budget]` 区段，三个程序不再接受预算参数，也不再读取或生成 `campaign/ledger.json`、`campaigns.json`。旧账本可以留作历史资料，不影响计算；旧字段直接报错，带哈希的冻结快照和已提交脚本不自动改写，应从清理后的源输入重新生成脚本。设计及验收见 [0058](../docs/specs/0058-epw-remove-resource-limits/spec.md)。
+
+## 公共参数与阶段网格简写
+
+顶层 `[baseparams]` 支持物种二维数组 `ATOMIC_SPECIES`、`prefix`、`ecutwfc/ecutrho` 及 QE DOS／PDOS 的 `Emin/Emax/DeltaE`。仅回填适用调用，阶段显式值优先，非法值不回退；公共能量采样参数不等同绘图范围或 Wannier 能窗。
+
+阶段内可用 `nk/nq/nkf/nqf` 三正整数数组，按对应原生方向展开；不能与自身方向字段混写，不能放进公共表。SCF／NSCF 的 `K_POINTS` 和 postw90 的 `dos_kmesh` 保留原接口。相同科学参数的新旧写法保持原生输入和科学身份一致；Ubuntu MgB₂ 当前输入已同步，实际计算仍由用户执行。

@@ -32,11 +32,19 @@ conv_thr = 1e-6 # Ry
 
 历史平层调用到用途子段的唯一映射在读取、导出和错误位置转换中复用，内部科学视图、输入生成和复用键不变；同名参数保留各自原生名。完整配置必须包含全部八个主阶段；不支持的子段即使为空也报错。
 
+## 公共参数与阶段网格简写
+
+`[baseparams]` 仅支持 `ATOMIC_SPECIES`、`prefix`、`ecutwfc`、`ecutrho`、`Emin`、`Emax`、`DeltaE`。按原生调用的参数所有权回填：阶段显式值优先，未填写时才用公共值；非法显式值直接报错。物种可用 `[["Mg",24.305,"Mg.upf"],["B",10.811,"B.upf"]]`，整组取值，保留顺序、质量和文件名。历史卡片正文仍可读取。
+
+`nk/nq/nkf/nqf` 可在支持对应三个方向字段的阶段或用途子段写成三正整数数组，例如 PH `nq=[2,2,1]`、EPW `nk=[4,4,2]`、`nkf=[8,8,4]`。同一数组不能与自身方向字段混写；所有网格都禁止放进 `[baseparams]`，包括 `K_POINTS`、`dos_kmesh` 和方向字段。SCF／NSCF 的 `K_POINTS` 与 postw90 的 `dos_kmesh` 不改名。
+
+公共字段只用于支持它的调用，不把 QE DOS 的 `Emin/Emax/DeltaE` 注入 postw90 或 Wannier90；相同有效参数的科学标识不依赖表内字段顺序。Ubuntu MgB₂ 当前输入已采用八主阶段及此简写，原科学数值保留。来源定位与数组表达仅作为内存元数据，不参与科学身份或生成独立参数记录。
+
 ## 单位、数组和卡片
 
 QE 的 ecutwfc/ecutrho/degauss/conv_thr 使用 Ry；DOS/PROJWFC 的 Emin/Emax/DeltaE 使用 eV，其 degauss 仍为 Ry。EPW fsthick/degaussw/wscut/gap_edge 为 eV，degaussq 为 meV，eps_acoustic 为 cm⁻¹，temps 为 K。Wannier90 能窗为绝对 eV，conv_tol 为 Å²。单位写在注释，不加字段别名。
 
-amass、temps 等数组保持原生名字，输入生成 Fortran 下标；nstemp 必须与自身 temps 长度一致。ATOMIC_SPECIES 保存卡片正文；SCF 的 K_POINTS 保存类型及正文。NSCF 沿用 0060 三整数网格，由 Rust 展开，要求与 SCF 同维度且零位移，完成及复用时核对实际输入和输出，详见 [NSCF 网格与 FFT](nscf-grid.md)。
+amass、temps 等数组保持原生名字，输入生成 Fortran 下标；nstemp 必须与自身 temps 长度一致。ATOMIC_SPECIES 支持卡片正文或上述物种二维数组；SCF 的 K_POINTS 保存类型及正文。NSCF 沿用 0060 三整数网格，由 Rust 展开，要求与 SCF 同维度且零位移，完成及复用时核对实际输入和输出，详见 [NSCF 网格与 FFT](nscf-grid.md)。
 
 ## 工作流与自动绑定
 

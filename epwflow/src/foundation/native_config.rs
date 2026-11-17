@@ -32,6 +32,13 @@ pub struct Document {
     // 仅记录外部展示方式，不参与科学参数、序列化或阶段身份。
     #[serde(skip)]
     pub(crate) eight_stages: bool,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub baseparams: BTreeMap<String, Value>,
+    // 外部表达的来源与数组写法仅用于诊断和往返，不进入科学阶段身份。
+    #[serde(skip)]
+    pub(crate) input_locations: BTreeMap<String, String>,
+    #[serde(skip)]
+    pub(crate) input_arrays: BTreeMap<String, Value>,
     pub schema_version: u32,
     pub work_dir: PathBuf,
     pub outdir: PathBuf,
@@ -71,7 +78,7 @@ impl<'de> Deserialize<'de> for Config {
         ensure_version(document.schema_version).map_err(serde::de::Error::custom)?;
         let document = flat::expand(document).map_err(serde::de::Error::custom)?;
         document.plot.validate().map_err(serde::de::Error::custom)?;
-        let runtime = decode(&document).map_err(|e| serde::de::Error::custom(flat::format_message(&format!("{e:#}"), document.eight_stages, &ph_name(&document).unwrap_or_default())))?;
+        let runtime = decode(&document).map_err(|e| serde::de::Error::custom(flat::document_message(&format!("{e:#}"), &document)))?;
         Ok(Self { runtime, document })
     }
 }
@@ -427,7 +434,7 @@ fn apply_impl(v: &Value, task: &[&str], input: &str) -> Result<String> {
 
 impl Config {
     pub(crate) fn config_error(&self, error: anyhow::Error) -> anyhow::Error {
-        anyhow::anyhow!(flat::format_message(&format!("{error:#}"), self.document.eight_stages, &self.phonon_stage()))
+        anyhow::anyhow!(flat::document_message(&format!("{error:#}"), &self.document))
     }
 
     /// 导出八主阶段表达，不修改运行参数、旧配置版本或计算现场。
@@ -1191,6 +1198,7 @@ impl Config {
         let mut d = self.document()?;
         let mut v = stages(&d);
         put(&mut v, path, value);
+        d.input_locations.remove(&flat::location(&format!("stages.{}", path.join("."))));
         if path.last().is_some_and(|k|["fermi_energy","fila2f"].contains(k)) && path.len()>1 {
             let location=path[1..].join(".");
             if let Some(derived)=v.get_mut(path[0]).and_then(|s|s.get_mut("workflow")).and_then(|s|s.get_mut("derived")).and_then(Value::as_object_mut) {

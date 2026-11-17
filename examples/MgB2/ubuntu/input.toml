@@ -1,5 +1,5 @@
 # Ubuntu MgB₂ 小网格功能测试；不是数值收敛或 Tc 验收。
-# 版本 2：各阶段独立设置；不兼容旧版。
+# 版本 2：八个主阶段、独立用途子段；公共参数按 0061 回填。
 # 科学参数保留原生名称和单位；workflow 独立记录执行设置；自动绑定由程序内部确认。
 layout = "numbered"
 work_dir = "run"
@@ -47,36 +47,37 @@ header = """
 #SBATCH --ntasks=12
 """
 
+# 仅回填给支持相应字段的调用；阶段显式值优先。网格留在各自阶段。
+[baseparams]
+ATOMIC_SPECIES = [["Mg", 24.305, "mg_pbe_v1.4.UPF"], ["B", 10.811, "b_pbe_v1.4.uspp.F.UPF"]]
+prefix = "MgB2"
+ecutwfc = 40.0 # Ry
+ecutrho = 320.0 # Ry
+# QE DOS／PDOS 的能量采样，单位 eV；不是绘图范围或 Wannier 能窗。
+Emin = -100.0
+Emax = 100.0
+DeltaE = 0.01
+
 [stages."1.qe-scf"]
 K_POINTS = '''automatic
 4 4 2 0 0 0'''
-ATOMIC_SPECIES = '''Mg 24.305 mg_pbe_v1.4.UPF
-B 10.811 b_pbe_v1.4.uspp.F.UPF'''
 
 calculation = "scf"
-prefix = "MgB2"
 
-# ecutwfc、ecutrho、degauss：Ry。
-ecutwfc = 40.0
-ecutrho = 320.0
+# degauss：Ry；截断能继承 baseparams。
 occupations = "smearing"
 smearing = "mv"
 degauss = 0.02
 
-# conv_thr：Ry；mixing_beta 为无量纲。
+# conv_thr：Ry。
 conv_thr = 1e-10
 
 [stages."2.qe-nscf"]
 K_POINTS = [4, 4, 2]
-ATOMIC_SPECIES = '''Mg 24.305 mg_pbe_v1.4.UPF
-B 10.811 b_pbe_v1.4.uspp.F.UPF'''
 
 calculation = "nscf"
-prefix = "MgB2"
 
-# ecutwfc、ecutrho、degauss：Ry。
-ecutwfc = 40.0
-ecutrho = 320.0
+# degauss：Ry；截断能继承 baseparams。
 occupations = "smearing"
 smearing = "mv"
 degauss = 0.02
@@ -84,22 +85,17 @@ nbnd = 16
 nosym = false
 noinv = false
 
-# conv_thr：Ry；mixing_beta 为无量纲。
+# conv_thr：Ry。
 conv_thr = 1e-12
 
-[workflow."3.qe-bands"]
+[workflow."3.qe-electronic"]
 points_per_edge = 20
 
-[stages."3.qe-bands"]
-ATOMIC_SPECIES = '''Mg 24.305 mg_pbe_v1.4.UPF
-B 10.811 b_pbe_v1.4.uspp.F.UPF'''
+[stages."3.qe-electronic"]
 
 calculation = "bands"
-prefix = "MgB2"
 
-# ecutwfc、ecutrho、degauss：Ry。
-ecutwfc = 40.0
-ecutrho = 320.0
+# degauss：Ry；截断能继承 baseparams。
 occupations = "smearing"
 smearing = "mv"
 degauss = 0.02
@@ -107,37 +103,28 @@ nbnd = 16
 nosym = true
 noinv = true
 
-# conv_thr：Ry；mixing_beta 为无量纲。
+# conv_thr：Ry。
 conv_thr = 1e-12
 
-[stages."3.qe-bands-post"]
-prefix = "MgB2"
+[stages."3.qe-electronic".bands]
 lsym = false
 
-[stages."3.qe-dos"]
+[stages."3.qe-electronic".dos]
 # degauss：Ry；Emin/Emax/DeltaE：eV。
-prefix = "MgB2"
 ngauss = 0
 degauss = 0.007349864435130998
-Emin = -100.0
-Emax = 100.0
-DeltaE = 0.01
 
-[stages."3.qe-pdos"]
+[stages."3.qe-electronic".projwfc]
 # degauss：Ry；Emin/Emax/DeltaE：eV。
-prefix = "MgB2"
 ngauss = 0
 degauss = 0.007349864435130998
-Emin = -100.0
-Emax = 100.0
-DeltaE = 0.01
 
 [workflow."4.qe-phonon-index"]
+# 仅控制 QE 声子路径密度；EPW 比较密度由第 6 步独立设置。
 phonon_sigma_cm1 = 10.0
 points_per_edge = 100
 
 [stages."4.qe-phonon-index"]
-prefix = "MgB2"
 tr2_ph = 1e-12
 ldisp = true
 only_init = true
@@ -145,28 +132,23 @@ lqdir = true
 recover = false
 only_wfc = false
 fildvscf = "dvscf"
-nq1 = 2
-nq2 = 2
-nq3 = 1
+nq = [2, 2, 1]
 
-[stages."4.qe-q2r"]
+[stages."4.qe-phonon-index".q2r]
 zasr = "simple"
 
-[stages."4.qe-dispersion"]
+[stages."4.qe-phonon-index".dispersion]
 asr = "simple"
 q_in_cryst_coord = true
 q_in_band_form = true
 
-[stages."4.qe-phdos"]
+[stages."4.qe-phonon-index".dos]
 asr = "simple"
 dos = true
 ndos = 200
-nk1 = 8
-nk2 = 8
-nk3 = 4
+nk = [8, 8, 4]
 
-[stages."4.qe-phonon-index-q"]
-prefix = "MgB2"
+[stages."4.qe-phonon-index".q]
 tr2_ph = 1e-12
 ldisp = true
 only_init = false
@@ -174,9 +156,7 @@ lqdir = true
 recover = false
 only_wfc = false
 fildvscf = "dvscf"
-nq1 = 2
-nq2 = 2
-nq3 = 1
+nq = [2, 2, 1]
 
 [workflow."5.epw-wannier"]
 # 高对称路径每段划分为 20 个采样间隔（含两端为 21 点，相邻段共用端点）；
@@ -189,7 +169,36 @@ fermi_source = "f2"
 # 不启用投影度冻结（dis_proj_*）；projections 初始投影仍用于构建 Wannier 函数。
 selection_mode = "energy_only"
 
-[stages."5.wannier90"]
+[stages."5.epw-wannier"]
+# fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
+ep_coupling = true
+elph = false
+etf_mem = 0
+nbndsub = 5
+iverbosity = 2
+amass = [ 24.305, 10.811,]
+fsthick = 0.4
+degaussw = 0.1
+degaussq = 0.5
+nqstep = 500
+nqsmear = 1
+eps_acoustic = 1.0
+elecselfen = false
+phonselfen = false
+a2f = false
+ngaussw = 0
+efermi_read = true
+nk = [4, 4, 2]
+nq = [2, 2, 1]
+epwread = false
+epwwrite = true
+wannierize = true
+ephwrite = false
+eliashberg = false
+band_plot = false
+num_iter = 1000
+
+[stages."5.epw-wannier".wannier90]
 bands_plot = true
 # 默认首段采样间隔数为 50（含两端为 51 点），可按需调整；其余段由 Wannier90 按段长比例取整。
 bands_num_points = 50
@@ -212,41 +221,7 @@ dis_num_iter = 1000
 dis_conv_tol = 1e-10
 dis_conv_window = 5
 
-[stages."5.epw-wannier"]
-# fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
-prefix = "MgB2"
-ep_coupling = true
-elph = false
-etf_mem = 0
-nbndsub = 5
-iverbosity = 2
-amass = [ 24.305, 10.811,]
-fsthick = 0.4
-degaussw = 0.1
-degaussq = 0.5
-nqstep = 500
-nqsmear = 1
-eps_acoustic = 1.0
-elecselfen = false
-phonselfen = false
-a2f = false
-ngaussw = 0
-efermi_read = true
-nk1 = 4
-nk2 = 4
-nk3 = 2
-nq1 = 2
-nq2 = 2
-nq3 = 1
-epwread = false
-epwwrite = true
-wannierize = true
-ephwrite = false
-eliashberg = false
-band_plot = false
-num_iter = 1000
-
-[stages."5.postw90-dos"]
+[stages."5.epw-wannier".postw90]
 # dos_energy_step、dos_smr_fixed_en_width：eV。
 write_hr = false
 write_bvec = false
@@ -260,12 +235,12 @@ dos_smr_fixed_en_width = 0.1
 dos_smr_type = "gauss"
 
 [workflow."6.epw-coarse"]
+# EPW 声子比较独立采样，不为差值统计匹配 QE 点数（0043）。
 points_per_edge = 20
 fermi_source = "f2"
 
 [stages."6.epw-coarse"]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
-prefix = "MgB2"
 ep_coupling = true
 elph = true
 etf_mem = 0
@@ -283,28 +258,19 @@ phonselfen = false
 a2f = false
 ngaussw = 0
 efermi_read = true
-nk1 = 4
-nk2 = 4
-nk3 = 2
-nq1 = 2
-nq2 = 2
-nq3 = 1
+nk = [4, 4, 2]
+nq = [2, 2, 1]
 epwread = false
 epwwrite = true
 wannierize = false
 ephwrite = false
 eliashberg = false
 band_plot = false
-nkf1 = 4
-nkf2 = 4
-nkf3 = 2
-nqf1 = 2
-nqf2 = 2
-nqf3 = 1
+nkf = [4, 4, 2]
+nqf = [2, 2, 1]
 
-[stages."6.epw-comparison"]
+[stages."6.epw-coarse".comparison]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
-prefix = "MgB2"
 ep_coupling = true
 elph = true
 etf_mem = 0
@@ -322,12 +288,8 @@ phonselfen = false
 a2f = false
 ngaussw = 0
 efermi_read = true
-nk1 = 4
-nk2 = 4
-nk3 = 2
-nq1 = 2
-nq2 = 2
-nq3 = 1
+nk = [4, 4, 2]
+nq = [2, 2, 1]
 epwread = true
 epwwrite = false
 wannierize = false
@@ -344,7 +306,6 @@ fermi_source = "f2"
 
 [stages."7.epw-fine"]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
-prefix = "MgB2"
 ep_coupling = true
 elph = true
 etf_mem = 0
@@ -362,12 +323,8 @@ phonselfen = false
 a2f = false
 ngaussw = 0
 efermi_read = true
-nk1 = 4
-nk2 = 4
-nk3 = 2
-nq1 = 2
-nq2 = 2
-nq3 = 1
+nk = [4, 4, 2]
+nq = [2, 2, 1]
 epwread = true
 epwwrite = false
 wannierize = false
@@ -378,40 +335,18 @@ laniso = false
 mp_mesh_k = true
 nstemp = 1
 temps = [ 5.0,]
-nkf1 = 8
-nkf2 = 8
-nkf3 = 4
-nqf1 = 4
-nqf2 = 4
-nqf3 = 2
+nkf = [8, 8, 4]
+nqf = [4, 4, 2]
 
 [workflow."8.epw-superconductivity"]
 task = "gap"
 mode = "both"
 spectrum_index = 0
-initial_gaps = [ 0.001, 0.01,]
 
-[workflow."8.epw-superconductivity".iso]
-min_k = 1.0
-max_k = 80.0
-precision_k = 0.5
-max_solves = 64
-eigen_margin = 1e-6
-normal_gap_mev = 0.0001
-super_gap_mev = 0.001
 
-[workflow."8.epw-superconductivity".aniso]
-min_k = 1.0
-max_k = 80.0
-precision_k = 0.5
-max_solves = 64
-eigen_margin = 1e-6
-normal_gap_mev = 0.0001
-super_gap_mev = 0.001
 
-[stages."8.epw-iso"]
+[stages."8.epw-superconductivity".iso]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
-prefix = "MgB2"
 epwread = true
 epbread = false
 epwwrite = false
@@ -446,16 +381,11 @@ nqstep = 500
 iverbosity = 2
 eps_acoustic = 1.0
 mp_mesh_k = true
-nkf1 = 8
-nkf2 = 8
-nkf3 = 4
-nqf1 = 4
-nqf2 = 4
-nqf3 = 2
+nkf = [8, 8, 4]
+nqf = [4, 4, 2]
 
-[stages."8.epw-aniso"]
+[stages."8.epw-superconductivity".aniso]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
-prefix = "MgB2"
 epwread = true
 epbread = false
 epwwrite = false
@@ -490,9 +420,5 @@ nqstep = 500
 iverbosity = 2
 eps_acoustic = 1.0
 mp_mesh_k = true
-nkf1 = 8
-nkf2 = 8
-nkf3 = 4
-nqf1 = 4
-nqf2 = 4
-nqf3 = 2
+nkf = [8, 8, 4]
+nqf = [4, 4, 2]

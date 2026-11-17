@@ -171,10 +171,13 @@ pub fn scientific_key(cfg: &Config, step: Step) -> Result<String> {
         .iter()
         .map(|&d| Ok((d.name(), scientific_key(cfg, d)?)))
         .collect::<Result<BTreeMap<_, _>>>()?;
+    let mut parameters = parameters(cfg, step)?;
+    // 公共回填和阶段显式值可能具有不同的表内顺序，顺序不是科学参数。
+    parameters.sort_all_objects();
     Ok(store::hash_bytes(&serde_json::to_vec(&(
         1,
         step,
-        parameters(cfg, step)?,
+        parameters,
         deps,
     ))?))
 }

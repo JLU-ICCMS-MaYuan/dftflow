@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 
 #[path = "native_config_groups.rs"]
 mod groups;
+#[path = "native_config_defaults.rs"]
+mod defaults;
 
 struct Call {
     name: String,
@@ -267,6 +269,7 @@ fn expand_calls(mut d: Document) -> Result<Document> {
         );
     }
     let calls = calls(&ph, &spectra);
+    defaults::expand(&mut d, &calls)?;
     let mut expanded = json!({});
     for (public, internal) in workflow_names(&ph) {
         let settings = d.workflow.remove(public).unwrap_or_else(|| json!({}));
@@ -385,6 +388,7 @@ pub(super) fn flatten(mut d: Document) -> Result<Document> {
         }
     }
     d.stages = flat;
+    defaults::compact(&mut d)?;
     if d.eight_stages { groups::group(d) } else { Ok(d) }
 }
 
@@ -439,7 +443,13 @@ pub(super) fn message(text: &str) -> String {
         .replace("workflow.derived", "Internal derivation rule")
 }
 
-pub(super) fn format_message(text: &str, grouped: bool, ph: &str) -> String {
+pub(super) fn document_message(text: &str, document: &Document) -> String {
     let text = message(text);
-    if grouped { groups::message(&text, ph) } else { text }
+    let re = regex::Regex::new(r"stages\.[A-Za-z0-9_.-]+").expect("fixed parameter location");
+    let text = re.replace_all(&text, |c: &regex::Captures<'_>| {
+        document.input_locations.get(&c[0]).cloned().unwrap_or_else(|| c[0].into())
+    });
+    if document.eight_stages {
+        groups::message(&text, &phonon_name(document, false).unwrap_or_default())
+    } else { text.into_owned() }
 }

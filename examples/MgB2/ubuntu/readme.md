@@ -4,7 +4,7 @@
 
 ## 输入与测试范围
 
-- 复用仓库 test_auto/MgB2/MgB2.vasp 结构和 test_auto/MgB2/pp/ 的 PBE 赝势模型。当前输入读取 repair/pp/：Mg 为原二进制势的同模型 UPF 转换，B 为原文件的逐字节副本；均不跟踪。
+- 复用仓库 test_auto/MgB2/MgB2.vasp 结构和 test_auto/MgB2/pp/ 的 PBE 赝势模型。当前输入读取 repair/pp/：Mg 为原二进制势的同模型 UPF 转换，B 通过相对链接引用原文件；均不跟踪。
 - SCF／NSCF 网格 4×4×2，16 条带；PH 为 index 模式、2×2×1；细网格 k 为 8×8×4、q 为 4×4×2。截断能为 40／320 Ry。
 - 5 个 Wannier 函数，B:pz 与三个键中心 s 初始投影；使用 `energy_only` 自动选窗，实际能窗须查看本次原生日志。
 - 第 8 阶段为 iso／aniso 的 20／30／40 K 能隙计算，μ*=0.1，不执行 Tc 搜索。
@@ -125,3 +125,13 @@ QE 与 EPW 沿同一物理高对称路径，各自保留原生采样；不要求
 ## 程序路径与参数
 
 活动 `input.toml` 使用 `[programs]` 下的 `pw_x`／`pw_args` 等平铺字段，后处理路径逐个显式声明。各 args 独立，空列表不追加参数；需要 pencil 时在对应程序明确设置 `-pd`、`.true.`。本机 launcher 仍为 12 路 MPI，EPW pool 为 12，全部 EPW 阶段仅允许单 image。已有 run 内冻结输入和脚本没有自动改写，不能将活动配置检查视为旧工作区续算或科学验收通过。
+
+## 当前输入格式与公共参数（0061）
+
+当前 `input.toml` 使用八个主阶段及独立用途子段。`[baseparams]` 集中填写 `ATOMIC_SPECIES` 二维数组、`prefix`、`ecutwfc/ecutrho` 和 QE DOS／PDOS 的 `Emin/Emax/DeltaE`；仅适用调用回填，阶段显式值优先。截断能单位 Ry，后三项单位 eV；它们不是 `[plot]` 显示范围或 Wannier 能窗。
+
+`nk/nq/nkf/nqf` 各为三个正整数，只放所属阶段或用途子段；不得与同一网格的 `nk1` 等方向字段混写，不在公共表继承。SCF 的 `K_POINTS` 原生卡片、NSCF 的 `K_POINTS=[4,4,2]` 及 postw90 的 `dos_kmesh` 保持各自接口。当前 PH 为 `nq=[2,2,1]`，EPW 粗 k/q 为 `[4,4,2]`／`[2,2,1]`，细 k/q 为 `[8,8,4]`／`[4,4,2]`。
+
+本次只调整配置表达并删除不再消费的双初值／温度搜索 workflow 设置；保留 num_wann=5、排除带 1～4、四个绝对能窗、12 MPI、QE／EPW 独立路径密度及 20／30／40 K 原生多温度列表，不触发科学计算或改写历史配置。
+
+本次检查发现原 `repair/pp/` 已缺失，已按 0066 恢复：Mg 从原二进制势以 QE 原生 readvan／write_upf 转换为 UPF，再用原生 read_ps_new 读取核对，主要物理数组的最大归一化差为 1.54×10⁻¹⁵，小于 10⁻¹²；B 使用原文件的相对链接。`repair/pp/` 是实际赝势输入，运行前需保留，不跟踪转换产物。未执行 SCF 或其他科学计算。
