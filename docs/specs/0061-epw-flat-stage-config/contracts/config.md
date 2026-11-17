@@ -47,3 +47,53 @@ QE `ecutwfc/ecutrho/degauss/conv_thr` 为 Ry；DOS/PROJWFC `degauss` 仍为 Ry�
 新配置只用八个主阶段名。SCF/NSCF 保持平铺；3.qe-electronic 父表为能带 PW，子段为 bands、dos、projwfc。PH 父表为主 PH，子段为 q、q2r、dispersion、dos；nosplit 不设置 q。5.epw-wannier 父表为 EPW，子段为 wannier90、postw90。6.epw-coarse 父表为 EPW，子段为 q2r、matdyn、comparison。7.epw-fine 父表为 EPW，可选 spectra.名称。8.epw-superconductivity 使用 iso、aniso 子段。
 
 子段内仍直接填写原生参数，不再嵌套 pw/CONTROL/SYSTEM/INPUTEPW 等层级。workflow 使用八阶段主名，第 3 步为 3.qe-electronic。历史版本 2 平层调用配置继续读取并保留原格式序列化；新旧段或 workflow 名混写拒绝。科学视图、原生参数数值及身份不随展示格式变化。
+
+## 2026-11-17 公共参数与网格数组契约（待实现）
+
+本节是新增配置需求，覆盖前文对本次公共参数禁止继承、物种仅允许卡片正文的限制；不表示当前解析器已支持。以下为片段示例，未列出完整八阶段配置：
+
+```toml
+[baseparams]
+ATOMIC_SPECIES = [
+  ["Mg", 24.305, "mg_pbe_v1.4.UPF"],
+  ["B", 10.811, "b_pbe_v1.4.uspp.F.UPF"],
+]
+prefix = "MgB2"
+ecutwfc = 40.0 # Ry
+ecutrho = 320.0 # Ry
+Emin = -100.0 # eV，QE DOS／PROJWFC 原生能量轴
+Emax = 100.0 # eV
+DeltaE = 0.01 # eV
+
+[stages."3.qe-electronic".dos]
+DeltaE = 0.02 # 本调用显式覆盖；projwfc 未填写时仍用公共 0.01
+
+[stages."4.qe-phonon-index"]
+nq = [2, 2, 1]
+
+[stages."4.qe-phonon-index".dos]
+nk = [8, 8, 4]
+
+[stages."6.epw-coarse"]
+nk = [4, 4, 2]
+nq = [2, 2, 1]
+nkf = [4, 4, 2]
+nqf = [2, 2, 1]
+```
+
+| 公共字段 | 消费边界 |
+| --- | --- |
+| `ATOMIC_SPECIES` | PW 物种卡片；不替代 `pseudos` 的文件绑定或改写结构 |
+| `prefix` | 原生支持 `prefix` 的调用；原有必须一致的前缀仍核验 |
+| `ecutwfc/ecutrho` | PW 的 SYSTEM；保持 Ry，不发给 PH／EPW 等不支持的段 |
+| `Emin/Emax/DeltaE` | QE DOS／PROJWFC；保持 eV，不转成 postw90 或绘图参数 |
+
+物种每行是 `[元素字符串, 有限正数质量, 非空赝势文件字符串]`；顺序保留。赝势路径仍遵循既有绑定和 QE 字符串引用规则，不新增文件发现机制。
+
+`nk/nq/nkf/nqf` 只在对应原生调用支持完整方向字段时使用，各为三个正整数，分别展开为 `nk1/2/3`、`nq1/2/3`、`nkf1/2/3`、`nqf1/2/3`；不将简写直接写入 Fortran namelist。新示例统一写数组；数组与对应方向字段混写报错，不静默选取一方。
+
+网格只能留在所属阶段／用途子段，`baseparams` 中的上述简写、方向字段以及原有 `K_POINTS/dos_kmesh` 均拒绝；不把 NSCF `K_POINTS` 或路径改名为 `nk`。不同调用继续使用自己的网格。公共表仅接受本次七项字段，不推广为任意参数继承；跨阶段科学约束保留。
+
+按用户确认，阶段或用途子段的同名显式值优先，仅在未填写该字段时使用公共值；两处都未填时沿用既有必填或默认规则。物种数组整体覆盖，不逐行合并；阶段显式非法值直接报错，不回退到公共值。公共值与阶段值同时出现本身不算冲突，但展开后的有效值仍须满足科学一致性及自动绑定约束。
+
+内部生成、指纹和恢复必须共用展开后的有效配置，诊断能指向公共或阶段来源。仅改变已被阶段值覆盖的公共字段，不应改变该阶段有效科学参数或触发其重算。原文配置快照继续保存用户实际原文，不用展开配置替换。
