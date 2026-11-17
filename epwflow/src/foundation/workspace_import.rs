@@ -215,7 +215,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
                 .context("data_invalid: Missing SCF")?
                 .snapshot_dir
                 .clone(),
-            PathBuf::from("1.qe-scf/snapshot"),
+            PathBuf::from("1.qe-scf/out"),
         ),
         (
             old.states
@@ -247,7 +247,7 @@ pub fn import(config: &Path, source: &Path) -> Result<()> {
         }
     }
     // 新的直接校验同时读取原生日志，旧共享清单未把 NSCF 日志列为交付角色。
-    for name in ["nscf.out", "nscf.exitcode"] {
+    for name in ["nscf.out"] {
         let from = calc.join("nscf").join(name);
         if from.is_file() {
             fs::copy(from, partial.join("2.qe-nscf").join(name))?;

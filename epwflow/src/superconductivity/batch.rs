@@ -266,16 +266,16 @@ fn prepare(
     }
     let input = dir.join("epw.in");
     store::atomic_bytes(&input, render(&requests, source)?.as_bytes())?;
-    fs::copy(&source.crystal.path, dir.join("crystal.fmt"))?;
-    fs::copy(&source.a2f.path, dir.join("source.a2f"))?;
+    crate::foundation::workspace_data::link(&source.crystal.path,&dir.join("crystal.fmt"))?;
+    crate::foundation::workspace_data::link(&source.a2f.path,&dir.join("source.a2f"))?;
     if mode == Mode::Aniso {
-        fs::copy(
+        crate::foundation::workspace_data::link(
             &source
                 .selecq
                 .as_ref()
                 .context("data_invalid: selecq missing")?
                 .path,
-            dir.join("selecq.fmt"),
+            &dir.join("selecq.fmt"),
         )?;
     }
     let mut command = cfg.programs.launcher.clone();
@@ -641,12 +641,12 @@ pub(crate) fn run_mode(
         return Err(native_jobs::Paused.into());
     }
     ensure!(run.execution_complete, "partial: specified temperatures are not all complete");
-    crate::delivery::finalize_to(&cfg.work_dir, Some(&root.join("results")))?;
+    let plotted=crate::delivery::finalize_to(&cfg.work_dir, Some(&root.join("results")))?;
     crate::foundation::stage_results::tree(
         cfg,
         Step::Superconductivity,
         "",
-        &root.join("results"),
+        &plotted,
         serde_json::json!({"kind":"native_superconductivity"}),
     )?;
     Ok(())

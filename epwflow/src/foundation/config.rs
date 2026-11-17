@@ -1,4 +1,4 @@
-use anyhow::{bail,ensure,Context,Result};
+use anyhow::{ensure,Context,Result};
 use serde::{Deserialize,Serialize};
 use std::{collections::{BTreeMap,BTreeSet},fs,path::{Path,PathBuf}};
 use super::paths;
@@ -101,15 +101,7 @@ pub fn temperature(x:f64,field:&str)->Result<i64>{
     ensure!(x<=99999.99 && (x*100.0-(x*100.0).round()).abs()<1e-7,"configuration: {field}: temperature must use 0.01 K increments and fit the output range");Ok((x*100.0).round() as i64)
 }
 impl Convergence {fn validate(&self,f:&str,dis:bool)->Result<()>{let (tol,window,iterations)=if dis {("dis_conv_tol","dis_conv_window","dis_num_iter")}else{("conv_tol","conv_window","num_iter")};positive(self.tolerance_angstrom2,&format!("{f}.{tol}"))?;ensure!(self.window_iterations>0&&self.window_iterations<=self.max_iterations,"configuration: {f}.{window}/{iterations}: invalid iteration window");Ok(())}}
-impl Tc {fn validate(&self,f:&str)->Result<()>{
-    let lo=temperature(self.min_k,&format!("{f}.min_k"))?;let hi=temperature(self.max_k,&format!("{f}.max_k"))?;
-    let p=temperature(self.precision_k,&format!("{f}.precision_k"))?;
-    ensure!(lo<hi && p<=hi-lo,"configuration: {f}: conflicting temperature range/resolution");
-    ensure!(self.max_solves>0,"configuration: {f}.max_solves: must be positive");
-    ensure!(self.eigen_margin.is_finite()&&self.eigen_margin>0.5e-7,"configuration: {f}.eigen_margin: too small to distinguish output rounding");
-    positive(self.normal_gap_mev,&format!("{f}.normal_gap_mev"))?;positive(self.super_gap_mev,&format!("{f}.super_gap_mev"))?;
-    ensure!(self.normal_gap_mev<self.super_gap_mev,"configuration: {f}: gap thresholds must be distinct");Ok(())
-}}
+
 impl Config {
     pub fn load(path:&Path)->Result<Self>{Self::load_impl(path)}
     /// 数据导入与普通加载使用同一版本 2 协议，不接受旧科学配置。
@@ -192,17 +184,10 @@ impl Config {
         for (n,x) in [("wscut",s.frequency_cutoff_ev),("conv_thr_iaxis",s.convergence_relative),("a_gap0",s.initial_shape)]{positive(x,&format!("stages.8.epw-superconductivity.{owner}.epw.INPUTEPW.{n}"))?;}
         ensure!(s.mixing_beta.is_finite()&&s.mixing_beta.abs()>0.0&&s.mixing_beta.abs()<=1.0&&s.max_iterations>0&&(1..=8).contains(&s.mixing_history),"configuration: stages.8.epw-superconductivity.{owner}.epw.INPUTEPW.nsiter/broyden_beta/broyden_ndim: iteration/mixing parameters out of range (target EPW Broyden history length must be in 1..8)");
         ensure!((s.spectrum_index as usize)<i.phonon_smearings_mev.len(),"configuration: stages.8.epw-superconductivity.workflow.spectrum_index: spectrum does not exist");
-        if s.task==SuperconductivityTask::Tc {
-        for x in s.initial_gaps_mev {positive(x,"stages.8.epw-superconductivity.workflow.initial_gaps")?;}
-        ensure!(s.initial_gaps_mev[0]!=s.initial_gaps_mev[1],"configuration: stages.8.epw-superconductivity.workflow.initial_gaps: distinct initial gaps required");
-        } else {positive(s.initial_gap(),&format!("stages.8.epw-superconductivity.{owner}.epw.INPUTEPW.gap_edge"))?;}
+        if s.task==SuperconductivityTask::Gap {positive(s.initial_gap(),&format!("stages.8.epw-superconductivity.{owner}.epw.INPUTEPW.gap_edge"))?;}
         ensure!(!s.gap_temperatures_k.is_empty(),format!("configuration: stages.8.epw-superconductivity.{owner}.epw.INPUTEPW.temps: empty"));
         ensure!(s.task!=SuperconductivityTask::Gap || s.gap_temperatures_k.len()<=50,"configuration: native multitemperature solver supports at most 50 points");
         let mut seen=BTreeSet::new();for t in &s.gap_temperatures_k {ensure!(seen.insert(temperature(*t,&format!("stages.8.epw-superconductivity.{owner}.epw.INPUTEPW.temps"))?),format!("configuration: stages.8.epw-superconductivity.{owner}.epw.INPUTEPW.temps: duplicate temperature"));}
-        for (name,tc,required) in [("iso",&s.iso,s.mode!=Mode::Aniso),("aniso",&s.aniso,s.mode!=Mode::Iso)]{
-            if s.task==SuperconductivityTask::Tc && required && tc.is_none(){bail!("configuration: stages.8.epw-superconductivity.workflow.{name}: missing");}
-            if s.task==SuperconductivityTask::Tc {if let Some(t)=tc {t.validate(&format!("stages.8.epw-superconductivity.workflow.{name}"))?;if required {ensure!(s.gap_temperatures_k.iter().all(|x|*x>=t.min_k&&*x<=t.max_k),"configuration: stages.8.epw-superconductivity.workflow.{name}: gap temperature out of range");}}}
-        }
         if s.task==SuperconductivityTask::Gap {
             for &t in &s.gap_temperatures_k {
                 let temperature=temperature(t,&format!("stages.8.epw-superconductivity.{owner}.epw.INPUTEPW.temps"))?;

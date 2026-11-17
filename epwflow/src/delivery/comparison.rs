@@ -29,6 +29,7 @@ pub fn result_dir(work: &Path) -> PathBuf {
 pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
     let source = crate::foundation::layout::path(&work, "interpolation/comparison");
     let data = load(&source)?;
+    if crate::foundation::layout::enabled(work) { return Ok(source.parent().unwrap().into()); }
     let output = output
         .map(PathBuf::from)
         .unwrap_or_else(|| result_dir(work));

@@ -461,9 +461,7 @@ fn b03_rejects_superconductivity_without_successful_native_solver() {
     );
     let mut cfg = c.config();
     cfg.superconductivity.mode = Mode::Iso;
-    let iso = cfg.superconductivity.iso.as_mut().unwrap();
-    iso.max_k = 10.0;
-    iso.precision_k = 0.1;
+    cfg.superconductivity.task = epwflow::foundation::config::SuperconductivityTask::Gap;
     cfg.superconductivity.gap_temperatures_k = vec![2.0, 5.0, 8.0];
     let work = c.root.join("superconductivity-run");
     // 明确是用来检测错误放行的合成清单，没有原生求解或矩阵元来源。
@@ -478,7 +476,7 @@ fn b03_rejects_superconductivity_without_successful_native_solver() {
         "validation": {"status": "valid", "checks": [{"name":"fixture_claim", "passed":true, "detail":"not scientific evidence"}], "units": {}, "thresholds": {}, "evidence": []}
     });
     store::write(&work.join("interpolation/manifest.json"), &f3).unwrap();
-    let result = scheduler::run(&cfg, &work, &[], Backend::Local);
+    let result = scheduler::run_configured(&cfg, &work, &[], Backend::Local, false);
     assert!(
         result.is_err(),
         "Unsuccessful natives EPW Solution cannot be delivered Tc/ Can't stop :{result:?}"

@@ -55,7 +55,7 @@ pub(crate) fn empty_execution_directory(path: &Path) -> Result<bool> {
     }
     for entry in fs::read_dir(path)? {
         let entry = entry?;
-        if !is_log(&entry.path()) && !entry.path().extension().is_some_and(|e| e == "jobs") {
+        if !is_log(&entry.path()) && !entry.path().extension().is_some_and(|e| e == "jobs" || e == "sh") {
             return Ok(false);
         }
     }
@@ -596,12 +596,6 @@ pub fn reconcile_task(cfg: &Config, _resume: bool, task: &mut Task) -> Result<()
         } else {
             task.state = "failed".into();
         }
-        if task.directory.is_dir() {
-            store::atomic_bytes(
-                &task.directory.join(format!("{}.exitcode", task.stem)),
-                task.exit_status.unwrap().to_string().as_bytes(),
-            )?;
-        }
         persist(cfg, task)?;
     }
     Ok(())
@@ -784,6 +778,11 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
             .status()?;
         task.duration_secs = start.elapsed().as_secs_f64();
         task.exit_status = status.code();
+        #[cfg(unix)]
+        if task.exit_status.is_none() {
+            use std::os::unix::process::ExitStatusExt;
+            task.exit_status = status.signal().map(|signal| 128 + signal);
+        }
         let capture = capture_logs(&mut task);
         task.state = if status.success() && capture.is_ok() {
             "awaiting_validation"
@@ -791,10 +790,6 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
             "failed"
         }
         .into();
-        store::atomic_bytes(
-            &work.join(format!("{stem}.exitcode")),
-            task.exit_status.unwrap_or(128).to_string().as_bytes(),
-        )?;
         persist(&cfg, &task)?;
         capture?;
         SESSION.with(|s| {
@@ -901,10 +896,6 @@ pub fn allocated_group_exit(cfg: &Config, task: &mut Task, exit: i32) -> Result<
         "failed"
     }
     .into();
-    store::atomic_bytes(
-        &task.directory.join("epw.exitcode"),
-        exit.to_string().as_bytes(),
-    )?;
     persist(cfg, task)
 }
 
@@ -1098,4 +1089,14 @@ fn prepare_mode(
     };
     persist(cfg, &task)?;
     Ok(task)
+}
+
+/// 交接成功后释放已清理工作树的输入引用；正式上游来源与输出记录不动。
+pub(crate) fn forget_work_inputs(cfg: &Config, directory: &Path) -> Result<()> {
+    for mut task in tasks(cfg)? {
+        let before=task.inputs.len();
+        task.inputs.retain(|id|!id.path.starts_with(directory));
+        if before!=task.inputs.len() { persist(cfg,&task)?; }
+    }
+    Ok(())
 }

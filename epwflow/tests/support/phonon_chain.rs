@@ -81,14 +81,9 @@ fn phonon_chain_single_submission_delivers_save_and_plots_without_downstream() {
     success(c.chain_execute());
     assert_eq!(c.chain_attempt()["state"], "succeeded");
     let dir = c.root.join("run/4.qe-phonon-nosplit");
-    for file in [
-        "save/scf.dvscf_q1",
-        "plot/phonon.png",
-        "plot/phonon.plot.json",
-        "plot/phdos/phonon_dos_elements.csv",
-        "plot/phband/phonon_band.csv",
-    ] {
-        assert!(dir.join(file).is_file(), "Missing {file}");
+    assert!(dir.join("save/scf.dvscf_q1").is_file());
+    for file in ["phonon.png","phonon.plot.json"] {
+        assert!(c.root.join("run/results/4.qe-phonon-nosplit").join(file).is_file());
     }
     assert_eq!(c.chain_calls("ph"), 1);
     assert_eq!(c.chain_calls("q2r"), 1);
@@ -155,7 +150,7 @@ fn phonon_chain_missing_plot_is_rebuilt_without_qe_and_tampered_save_is_rejected
     let calls = c.calls();
     fs::remove_file(
         c.root
-            .join("run/4.qe-phonon-nosplit/plot/phonon.png"),
+            .join("run/results/4.qe-phonon-nosplit/phonon.png"),
     )
     .unwrap();
     success(c.chain_submit(false));
@@ -228,7 +223,7 @@ fn phonon_chain_plot_failure_keeps_all_science_for_one_resume() {
     let c = Case::numbered();
     c.chain_setup();
     let p = c.root.join("qe_native_io.py");
-    let body = fs::read_to_string(&p).unwrap().replace("if value('fldos'):", "if value('fldos'):\n            if (ROOT/'plot-failure').exists():\n                Path('plot').mkdir(exist_ok=True)\n                Path('plot/phband').write_text('obstruction')");
+    let body = fs::read_to_string(&p).unwrap().replace("if value('fldos'):", "if value('fldos'):\n            if (ROOT/'plot-failure').exists():\n                (ROOT/'run/results/4.qe-phonon-nosplit/phonon.png').mkdir(parents=True,exist_ok=True)");
     fs::write(p, body).unwrap();
     c.put("plot-failure", "block renderer");
     success(c.chain_submit(false));
@@ -238,7 +233,8 @@ fn phonon_chain_plot_failure_keeps_all_science_for_one_resume() {
     assert_eq!(c.chain_calls("q2r"), 1);
     assert_eq!(c.chain_calls("matdyn"), 2);
     fs::remove_file(c.root.join("plot-failure")).unwrap();
-    fs::remove_file(c.root.join("run/4.qe-phonon-nosplit/plot/phband")).unwrap();
+    fs::remove_dir(c.root.join("run/results/4.qe-phonon-nosplit/phonon.png")).unwrap();
+    success(c.numbered_cli(0,&["--plot","--results",c.root.join("run/results/4.qe-phonon-nosplit").to_str().unwrap()],None,"chain-explicit-plot"));
     success(c.chain_submit(true));
     success(c.chain_execute());
     assert_eq!(c.calls(), calls);

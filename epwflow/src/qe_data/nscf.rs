@@ -111,7 +111,7 @@ pub fn run_nscf(
     std::fs::create_dir_all(&dir)?;
     let outdir = dir.join("out");
     if !crate::foundation::native_jobs::continuing(&dir, "nscf")? {
-        super::save::stage_scf(work, &outdir, &qe.config.qe.prefix)?;
+        super::save::stage_ground_state(work, &outdir, &qe.config.qe.prefix)?;
         let input = qe.nscf_input(outdir.to_str().unwrap())?;
         std::fs::write(dir.join("nscf.in"), &input)?;
     }

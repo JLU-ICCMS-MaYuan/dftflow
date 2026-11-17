@@ -6,7 +6,6 @@
 
 - Rust 2021，复用 Plotters、svg2pdf、现有 Artifact／Identity 与发布 journal。只新增衰减图模块，不增加公开程序、配置项或依赖。
 - 从第 6 步 Completion 已绑定的四份 decay 身份读取，不在后处理时追认任意新文件。原文件、逐行样本、图参和来源进入自包含结果单元。
-- 阶段内目录为 `6.epw-coarse/decay/`，发布目录为 `results/6.epw-coarse/decay/`。四张独立图命名为 `decay-H`、`decay-dynmat`、`decay-epmate`、`decay-epmatp`，总览为 `decay-overview`，各有 PNG／SVG／PDF。
 - `decay-data.json` 保存版本、坐标／单位／样式参数、四组逐行数据、原生文件身份及粗网格回执身份；`decay-manifest.json` 绑定四个原文件副本、数据和 15 图。重绘只读取包内文件，原路径只用于审计。
 - 在 `refresh_post` 开始且粗网格检查点有效时先交付衰减图，早于其他图像后处理。阶段 pending 检查要求 decay 单元，防止已有对比图掩盖新增交付。
 - 绘图与发布沿用暂存和 journal；缺图只重绘派生结果，不重新拟合或执行 EPW。缺失原始 decay 数据不能触发科学重算：Completion 对已绑定 decay 缺失只保留科学复用资格，衰减交付明确报缺项；已存在但内容／链接损坏仍拒绝。其他科学文件维持原检查。

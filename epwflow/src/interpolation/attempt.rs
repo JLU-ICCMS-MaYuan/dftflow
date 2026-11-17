@@ -77,17 +77,20 @@ pub(super) fn run_with_inputs<T>(
             if compatible {
                 return collect();
             }
-            native_jobs::retire(dir)?;
-            replace_outputs(dir)?;
+            if !label.starts_with("fine-smearing-") && (label!="comparison-epw" || dir!=Step::Coarse.directory(cfg)) {
+                native_jobs::retire(dir)?; replace_outputs(dir)?;
+            }
             log::update(&cfg.work_dir, step, |doc| {
                 doc.remove(&section);
                 Ok(())
             })?;
         }
     }
-    let continuing = native_jobs::continuing_directory(dir)?;
+    let shared_coarse = label=="comparison-epw" && cfg.as_ref().is_some_and(|c|dir==Step::Coarse.directory(c));
+    let continuing = if shared_coarse {false} else {native_jobs::continuing_directory(dir)?};
     if let Some(cfg) = &cfg {
         if !continuing
+            && !shared_coarse
             && native_jobs::retry_enabled()
             && native_jobs::tasks(cfg)?
                 .iter()
@@ -109,21 +112,28 @@ pub(super) fn run_with_inputs<T>(
             ensure!(retry, "execution_failed: The birthbaby mission failed. It needs a visible recovery");
             replace_outputs(dir)?;
         } else {
-            ensure!(
-                std::fs::read_dir(dir)?.next().is_none(),
-                "scheduler_unknown: No exit code confirmed for the native directory {}",
-                dir.display()
-            );
+            if let Ok(result)=collect() {
+                for id in evidence(&result)? {id.verify()?;}
+                return Ok(result);
+            }
+            let output=exit_path().with_extension("out");
+            if output.is_file() {
+                ensure!(retry,"execution_failed: prior native output failed; resume explicitly");
+                replace_outputs(dir)?;
+            } else {
+                ensure!(std::fs::read_dir(dir)?.next().is_none(),
+                    "scheduler_unknown: native directory has no validated output {}",dir.display());
+            }
         }
     }
     if !continuing {
         prepare()?;
     }
     execute()?;
-    ensure!(
-        std::fs::read_to_string(exit_path())?.trim() == "0",
-        "execution_failed: native exit failed"
-    );
+    // execute 已从实际进程退出状态拒绝失败；编号入口由阶段日志持久化退出证据。
+    if cfg.is_none() && exit_path().is_file() {
+        ensure!(std::fs::read_to_string(exit_path())?.trim()=="0","execution_failed: native exit failed");
+    }
     let result = collect()?;
     let ids = evidence(&result)?;
     for id in &ids {

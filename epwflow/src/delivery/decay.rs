@@ -330,6 +330,17 @@ pub fn collect(completion_path: &Path, output: &Path) -> Result<()> {
         parameters: Parameters::default(),
         panels,
     };
+    if let Some(root)=crate::qe_data::direct::workspace(completion_path) {
+        let cfg=crate::qe_data::direct::current(&root)?;
+        if crate::foundation::layout::enabled(&root) {
+            let dir=stage_results::root(&cfg).join("6.epw-coarse");fs::create_dir_all(&dir)?;
+            // 只保存绘图所需的相对原始文件引用；数值仍唯一保存在第 6 步。
+            let sources=data.sources.iter().map(|id| crate::foundation::workspace_data::relative(&dir,&id.path)).collect::<Result<Vec<_>>>()?;
+            store::write(&dir.join("decay.plot.json"),&serde_json::json!({"kind":"Decay","sources":sources}))?;
+            render_all(&dir,&data).map_err(|e|anyhow::anyhow!("plot_failed: decay: {e:#}"))?;
+            return Ok(());
+        }
+    }
     fs::create_dir_all(output)?;
     let _lock = store::Lock::acquire(&output.join("decay-publication"))?;
     publication::recover(output, MANIFEST)?;
@@ -387,6 +398,14 @@ fn redraw_locked(dir: &Path, data: &Data, old: Vec<Artifact>) -> Result<()> {
 }
 
 pub fn redraw(dir: &Path) -> Result<()> {
+    if dir.join("decay.plot.json").is_file() {
+        let saved:serde_json::Value=store::read(&dir.join("decay.plot.json"))?;
+        let paths:Vec<PathBuf>=serde_json::from_value(saved["sources"].clone())?;
+        ensure!(paths.len()==NATIVE.len(),"data_invalid: decay source count");
+        let panels=paths.iter().zip(NATIVE).map(|(path,name)|parse(&fs::read_to_string(dir.join(path))?,name)).collect::<Result<Vec<_>>>()?;
+        let data=Data {schema_version:1,scientific_key:String::new(),completion:Identity::capture(&dir.join("decay.plot.json"))?,sources:vec![],parameters:Parameters::default(),panels};
+        return render_all(dir,&data).map_err(|e|anyhow::anyhow!("plot_failed: decay: {e:#}"));
+    }
     let _lock = store::Lock::acquire(&dir.join("decay-publication"))?;
     publication::recover(dir, MANIFEST)?;
     let (data, manifest) = load(dir, false)?;
@@ -440,6 +459,12 @@ pub fn pending(cfg: &Config) -> Result<bool> {
     if !bound_sources(&receipt, &source)?.1.is_empty() {
         return Ok(true);
     }
+    if crate::foundation::layout::enabled(&cfg.work_dir) {
+        let dir=stage_results::root(cfg).join("6.epw-coarse");
+        if !dir.join("decay.plot.json").is_file() {return Ok(true);}
+        let outputs=crate::foundation::readable_state::completed_files(cfg,Step::Coarse,"Published plots · decay")?;
+        return Ok(outputs.is_none() || FIGURES.iter().any(|name| FORMATS.iter().any(|ext|!dir.join(format!("{name}.{ext}")).is_file())));
+    }
     let dir = source.join("decay");
     if !dir.join(MANIFEST).exists() {
         return Ok(true);
@@ -459,6 +484,17 @@ pub fn pending(cfg: &Config) -> Result<bool> {
 }
 
 pub fn refresh(cfg: &Config) -> Result<()> {
+    if crate::foundation::layout::enabled(&cfg.work_dir) {
+        if !pending(cfg)? {return Ok(());}
+        let receipt=Step::Coarse.directory(cfg).join("epw_coarse.in");
+        let output=stage_results::root(cfg).join("6.epw-coarse");
+        collect(&receipt,&output)?;
+        let mut files=Vec::new();
+        for name in FIGURES { for ext in ["png","svg","pdf"] { files.push(output.join(format!("{name}.{ext}"))); } }
+        crate::foundation::readable_state::complete_files(cfg,Step::Coarse,"Published plots · decay",&files)?;
+        return Ok(());
+    }
+
     let receipt = Step::Coarse.directory(cfg).join("epw_coarse.in");
     let c = stages::completion(cfg, Step::Coarse)?;
     ensure!(

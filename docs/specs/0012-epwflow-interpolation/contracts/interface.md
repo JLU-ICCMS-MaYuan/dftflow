@@ -25,7 +25,7 @@ F1 返回配置/运行绑定与阶段协议，F2 返回 qe-data/manifest.json，
 
 ## 权限、兼容与副作用
 
-仅使用当前用户已有权限。不得自动修改系统库、清除预算、覆盖来源、取消无关作业或推送仓库。默认 outdir 是按配置目录解析的基址；实际保存树为 <outdir>/<run_id>/<stage_id>。同一绑定内路径一经准备不变，用户自定义优先，工作目录与保存目录分别显示。
+仅使用当前用户已有权限。不得自动修改系统库、清除预算、覆盖来源、取消无关作业或推送仓库。
 
 文件接口升级须新版本并提供显式兼容检查，不能静默读取未知格式。失败输出可保留用于诊断，但不能充作下游成功数据。查询和错误输出不得泄露无关配置或认证内容。
 
@@ -114,7 +114,6 @@ quality.energy_window_ev 为相对已绑定 F2 Fermi 的 eV；QualitySources.win
 
 粗网格格式标识 epw5.9-coarse-le-c16；必需重启角色是 coarse_epmatwp、coarse_epwdata、coarse_crystal、coarse_wigner、coarse_vmedata、coarse_dmedata，另记录输入、日志、Wannier 日志和独立验证输出。epmatwp 位于 coarse/out，文本重启文件位于 coarse 根。只支持已核验的小端 REAL(8) 复数布局，未知布局拒绝。
 
-每个展宽在 fine/smearing-NNNN 独立运行；fine 主数据来自 spectrum_index 所选目录，其余展宽的产物角色以 smearing_NNNN_ 前缀保存于同一 artifacts 列表，所有文件均须验源。F4 仅使用未加前缀的所选谱／矩阵角色，不再要求所选谱恰为最后一个展宽。版本 1 的清单外壳不变；本细化不允许旧简化文本进入原生生产路径。
 
 
 ## 粗／细尝试恢复契约

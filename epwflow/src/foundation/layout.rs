@@ -32,6 +32,9 @@ pub fn path(root: &Path, relative: &str) -> PathBuf {
     if !enabled(root) {
         return root.join(relative);
     }
+    if relative == "scf/snapshot" || relative.starts_with("scf/snapshot/") {
+        return root.join("1.qe-scf/out").join(relative.strip_prefix("scf/snapshot").unwrap().trim_start_matches('/'));
+    }
     let mode = super::readable_state::mode_in(root).expect("workspace phonon mode initialized at entry");
     let (head, tail) = relative.split_once('/').unwrap_or((relative, ""));
     let ph = format!("4.qe-phonon-{mode}");
@@ -50,13 +53,13 @@ pub fn path(root: &Path, relative: &str) -> PathBuf {
         }
         "qe-data" => root.join(&ph),
         "interpolation" if tail == "comparison" || tail.starts_with("comparison/") => {
-            return root.join("6.epw-coarse").join(tail);
+            return root.join("6.epw-coarse/comparison-native").join(tail.strip_prefix("comparison").unwrap().trim_start_matches('/'));
         }
         "interpolation" => root.join("7.epw-fine"),
         "superconductivity" => root.join("8.epw-superconductivity"),
         "comparison-native" if tail == "electron" || tail.starts_with("electron/") => {
             return root
-                .join("5.epw-wannier/comparison-native")
+                .join("5.epw-wannier")
                 .join(tail.strip_prefix("electron").unwrap().trim_start_matches('/'));
         }
         "comparison-native" if tail == "phonon" || tail.starts_with("phonon/") => {

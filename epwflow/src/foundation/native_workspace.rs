@@ -10,7 +10,7 @@ use std::path::Path;
 
 pub fn advance(config: &Path, target: Step, submit: bool, resume: bool) -> Result<()> {
     let result = advance_mode(config, target, submit, resume, None);
-    if result.is_err() && target >= Step::Wannier {
+    if result.as_ref().is_err_and(|e| !format!("{e:#}").contains("plot_failed:")) && target >= Step::Wannier {
         if let Ok(cfg) = super::readable_state::load_config(config) {
             if Step::Wannier
                 .directory(&cfg)
@@ -109,6 +109,7 @@ fn advance_mode(
         }
         parallelism::preflight(&cfg, step, own.is_some())?;
         let previous = log::read(&cfg.work_dir, step)?;
+        if let Some(reason)=previous.get("Plot failure","Reason") {anyhow::bail!("plot_failed: {reason}; automatic retry disabled; request plotting explicitly");}
         let compatible = previous
             .get("Stage", "Calculation configuration")
             .and_then(|p| super::readable_state::load_config(&log::resolve(&cfg.work_dir, p)).ok())
@@ -184,6 +185,7 @@ fn advance_mode(
                 native_jobs::reject(&cfg, &generation)?;
                 log::update(&cfg.work_dir, step, |d| {
                     d.set("Stage", "Status", "failed");
+                    if format!("{e:#}").contains("plot_failed:") {d.set("Plot failure","Reason",format!("{e:#}"));}
                     d.set("Problem", "Reason", format!("{e:#}"));
                     d.set(
                         "Next step",

@@ -100,6 +100,8 @@ fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
         outputs,
         save_root: if task == "bands" {
             None
+        } else if task=="dos" {
+            Some(super::layout::path(&cfg.work_dir,"nscf/out").join(format!("{}.save",cfg.qe.prefix)))
         } else {
             Some(dir.join(format!("out/{}.save", cfg.qe.prefix)))
         },
@@ -116,11 +118,11 @@ fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
         "dos" => {
             qf_io::qe_completion::checked_log(&super::scientific_logs::output(&dir, "eletdos"), false)?;
             validate_table(&dir.join(format!("{}.tdos", cfg.qe.prefix)), true)?;
-            ensure!(
-                save::files(&super::layout::path(&cfg.work_dir, "nscf/out"))?
-                    == save::files(&dir.join("out"))?,
-                "data_invalid: DOS Data and Current NSCF Inconsistencies"
-            );
+            let saved=fs::read_to_string(dir.join("eletdos.in"))?;
+            let source=super::layout::path(&cfg.work_dir,"nscf/out");
+            let relative=super::workspace_data::relative(&dir,&source)?;
+            ensure!(saved.contains(relative.to_string_lossy().as_ref()) || saved.contains(source.to_string_lossy().as_ref()),
+                "input_conflict: DOS does not reference its native NSCF source");
         }
         _ => unreachable!(),
     }
@@ -347,7 +349,7 @@ fn capture(
 }
 
 fn logs(dir: &Path, stem: &str) -> Vec<PathBuf> {
-    ["out", "err", "exitcode"]
+    ["out", "err"]
         .iter()
         .map(|ext| dir.join(format!("{stem}.{ext}")))
         .collect()
@@ -368,10 +370,6 @@ fn archive_task(_cfg: &Config, _task: &str, paths: &[PathBuf]) -> Result<()> {
 fn validate_pw(cfg: &Config) -> Result<()> {
     let dir = Step::Electronic.directory(cfg).join("qe_eband");
     save::verify_snapshot(&cfg.work_dir)?;
-    ensure!(
-        fs::read_to_string(dir.join("eband.exitcode"))?.trim() == "0",
-        "data_invalid: PW Zero exit code"
-    );
     qf_io::qe_completion::checked_log(&dir.join("eband.out"), false)?;
     let qe = QeSettings::from_config(cfg)?;
     let actual_input = fs::read_to_string(dir.join("eband.in"))?;
@@ -494,7 +492,7 @@ fn dos_inputs(cfg: &Config) -> Result<()> {
     let dos = Step::Electronic.directory(cfg).join("qe_eledos");
     fs::create_dir_all(&dos)?;
     let shared: qf_config::Config = serde_json::from_value(
-        json!({"qe_eledos":{"CONTROL":{"outdir":"./out"},"eledos":{"emin":-100,"emax":100,"DeltaE":0.01}}}),
+        json!({"qe_eledos":{"CONTROL":{"outdir":super::workspace_data::relative(&dos,&super::layout::path(&cfg.work_dir,"nscf/out"))?.to_string_lossy()},"eledos":{"emin":-100,"emax":100,"DeltaE":0.01}}}),
     )?;
     qf_input::electronic::write_eledos_inputs(dos.to_str().unwrap(), &shared, &cfg.qe.prefix)?;
     let file = dos.join("eletdos.in");
@@ -529,7 +527,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                 old.push(dir.join("out"));
                 if !super::native_jobs::continuing(&dir, "eband")? {
                     archive_task(cfg, "pw-bands", &old)?;
-                    save::stage_scf(&cfg.work_dir, &dir.join("out"), &cfg.qe.prefix)?;
+                    save::stage_ground_state(&cfg.work_dir, &dir.join("out"), &cfg.qe.prefix)?;
                 }
                 qe_run(cfg, &dir, &cfg.programs.pw, "eband.in", "eband")?;
                 validate_pw(cfg)?;
@@ -566,7 +564,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                     "elebanddata",
                 )?;
                 let actual = super::scientific_logs::output(&dir, "elebanddata");
-                paths.splice(..3, ["out", "err", "exitcode"].map(|ext| actual.with_extension(ext)));
+                paths.splice(..2, ["out", "err"].map(|ext| actual.with_extension(ext)));
                 for p in &paths {
                     if p.extension().is_none_or(|ext| ext != "err") {
                         save::nonempty(p)?;
@@ -598,18 +596,10 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             if !super::native_jobs::continuing(&dir, "eletdos")? {
                 archive_task(cfg, "dos", &paths)?;
             }
-            let source = super::layout::path(&cfg.work_dir, "nscf/out");
-            let out = dir.join("out");
-            if !out.exists() {
-                save::copy_tree(&source, &out)?;
-            }
-            ensure!(
-                save::files(&source)? == save::files(&out)?,
-                "input_conflict: DOS Copy with NSCF Sources are inconsistent"
-            );
+            let out = super::layout::path(&cfg.work_dir,"nscf/out");
             qe_run(cfg, &dir, &post_program(cfg, "dos")?, "eletdos.in", "eletdos")?;
             let actual = super::scientific_logs::output(&dir, "eletdos");
-            paths.splice(..3, ["out", "err", "exitcode"].map(|ext| actual.with_extension(ext)));
+            paths.splice(..2, ["out", "err"].map(|ext| actual.with_extension(ext)));
             save::nonempty(&dir.join(format!("{}.tdos", cfg.qe.prefix)))?;
             let receipt = capture(
                 cfg,

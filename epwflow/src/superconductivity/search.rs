@@ -98,45 +98,5 @@ impl Search {
         Ok(())
     }
 
-    pub fn next_temperature(&mut self) -> Option<i64> {
-        if !matches!(self.status.as_str(), "pending" | "running") {
-            return None;
-        }
-        for t in [self.min_centikelvin, self.max_centikelvin] {
-            if !self.points.contains_key(&t) {
-                return Some(t);
-            }
-        }
-        if self.points[&self.min_centikelvin] != Side::Superconducting
-            || self.points[&self.max_centikelvin] != Side::Normal
-        {
-            let uncertain = self.points[&self.min_centikelvin] == Side::Uncertain
-                || self.points[&self.max_centikelvin] == Side::Uncertain;
-            self.stop(
-                if uncertain {
-                    "classification_uncertain"
-                } else {
-                    "not_bracketed"
-                },
-                "Fixed endpoints do not bracket low-temperature superconducting and high-temperature normal states",
-            );
-            return None;
-        }
-        let [lo, hi] = self.interval_centikelvin.unwrap();
-        if hi - lo <= self.precision_centikelvin {
-            self.stop("located", "Valid interval reached target width");
-            return None;
-        }
-        let width = hi - lo;
-        for t in [lo + width / 2, lo + width / 4, lo + 3 * width / 4] {
-            if t > lo && t < hi && !self.points.contains_key(&t) {
-                return Some(t);
-            }
-        }
-        self.stop(
-            "classification_uncertain",
-            "Midpoint and fixed quartile points attempted; valid classifications cannot narrow the interval further",
-        );
-        None
-    }
+
 }

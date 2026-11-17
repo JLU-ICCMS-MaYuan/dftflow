@@ -470,6 +470,11 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
                 .all(|s| matches!(s.as_str(), "png" | "svg" | "pdf")),
         "data_invalid: Format only for png,svg,pdf"
     );
+    if results.join("native.plot.json").is_file() {
+        let data:Data=store::read(&results.join("native.plot.json"))?;
+        render_saved(results,&data,formats).map_err(|e|anyhow::anyhow!("plot_failed: native figure output failed: {e:#}"))?;
+        return Ok(results.into());
+    }
     let (_, data) = native::load(results)?;
     let output = output
         .map(PathBuf::from)
@@ -580,6 +585,12 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
     Ok(output)
 }
 pub fn check(results: &Path) -> Result<bool> {
+    if results.join("native.plot.json").is_file() {
+        let data:Data=store::read(&results.join("native.plot.json"))?;
+        return Ok(KINDS.iter().enumerate().filter(|(i,_)|!(*i==4 && data.gap_run.is_some())).all(|(_,name)|
+            ["png","svg","pdf"].iter().all(|ext|results.join(format!("{name}.{ext}")).is_file())));
+    }
+
     super::publication::ensure_finished(&results.join("figures"), "native-figures.json")?;
     let path = results.join("figures/native-figures.json");
     if !path.exists() {
@@ -606,4 +617,26 @@ pub fn check(results: &Path) -> Result<bool> {
                     == 1
             })
         }))
+}
+
+/// 显式请求或首次阶段绘图；失败直接传播，不生成发布清单或自动重画。
+pub fn render_saved(output:&Path,data:&Data,formats:&[String])->Result<()> {
+    for (i,name) in KINDS.iter().enumerate() {
+        if i==4 && data.gap_run.is_some(){continue;}
+        let size=if i==5 {(1800,1800)} else {(1300,900)};
+        let mut svg=String::new();
+        if formats.iter().any(|f|f=="svg" || f=="pdf") {
+            render(SVGBackend::with_string(&mut svg,size).into_drawing_area(),data,i)?;
+            if formats.iter().any(|f|f=="svg"){fs::write(output.join(format!("{name}.svg")),&svg)?;}
+            if formats.iter().any(|f|f=="pdf") {
+                let mut options=svg2pdf::usvg::Options::default();options.fontdb_mut().load_system_fonts();
+                let tree=svg2pdf::usvg::Tree::from_str(&svg,&options)?;
+                fs::write(output.join(format!("{name}.pdf")),svg2pdf::to_pdf(&tree,Default::default(),Default::default()).map_err(|e|anyhow::anyhow!("plot_failed: {e}"))?)?;
+            }
+        }
+        if formats.iter().any(|f|f=="png") {
+            render(BitMapBackend::new(&output.join(format!("{name}.png")),size).into_drawing_area(),data,i)?;
+        }
+    }
+    Ok(())
 }

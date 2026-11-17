@@ -157,6 +157,13 @@ fn stage_name(cfg: &Config, step: Step) -> Result<String> {
         .into())
 }
 pub fn check(results: &Path) -> Result<Index> {
+    if !results.join("index.json").is_file() {
+        let files=crate::qe_data::save::files(results)?;
+        ensure!(files.iter().any(|f|f.relative_path.extension().is_some_and(|e|matches!(e.to_str(),Some("png"|"svg"|"pdf"|"jpg")))),
+            "data_invalid: no result images");
+        return Ok(Index{schema_version:1,entries:vec![]});
+    }
+
     let index: Index = store::read(&results.join("index.json"))?;
     ensure!(index.schema_version == 1, "data_invalid: Stage Index Version");
     ensure!(!index.entries.is_empty(), "data_invalid: Results index is empty");
@@ -191,6 +198,25 @@ pub fn publish(
     parameters: Value,
     sources: Vec<Identity>,
 ) -> Result<()> {
+    if super::layout::enabled(&cfg.work_dir) {
+        let base=root(cfg).join(stage_name(cfg,step)?);
+        let destination=if source.starts_with(&base) {source.to_path_buf()} else {base.join(unit)};
+        let mut outputs=Vec::new();
+        for name in names {
+            let needed=name.ends_with(".png") || name.ends_with(".svg") || name.ends_with(".pdf")
+                || name.ends_with(".jpg") || name.ends_with(".plot.json")
+                || name.ends_with("-band-ranges.json");
+            if !needed {continue;}
+            let src=source.join(name); let dst=destination.join(name);
+            fs::create_dir_all(dst.parent().unwrap())?;
+            if src!=dst { fs::copy(&src,&dst)?; }
+            outputs.push(dst);
+        }
+        if !outputs.is_empty() {
+            super::readable_state::complete_files(cfg,step,&format!("Published plots · {unit}"),&outputs)?;
+        }
+        return Ok(());
+    }
     let stage = stage_name(cfg, step)?;
     ensure!(
         Path::new(unit)
@@ -297,6 +323,18 @@ pub fn tree(cfg: &Config, step: Step, unit: &str, source: &Path, parameters: Val
     Ok(())
 }
 pub fn pending(cfg: &Config, step: Step) -> Result<bool> {
+    if super::layout::enabled(&cfg.work_dir) {
+        let doc=super::readable_state::read(&cfg.work_dir,step)?;
+        let sections=doc.sections.iter().filter(|(name,_)|name.starts_with("Published plots · ")).collect::<Vec<_>>();
+        if sections.is_empty() {return Ok(true);}
+        for (_,fields) in sections {
+            for (key,value) in fields {
+                if key.starts_with("Artifact") && !super::readable_state::resolve(&cfg.work_dir,value).is_file() {return Ok(true);}
+            }
+        }
+        return Ok(false);
+    }
+
     let index_path = root(cfg).join("index.json");
     if !index_path.exists() {
         return Ok(true);
@@ -342,6 +380,47 @@ pub fn pending(cfg: &Config, step: Step) -> Result<bool> {
 
 /// 重绘只使用包内数值及参数；来源绝对路径只用于审计，不作运行依赖。
 pub fn redraw(results: &Path) -> Result<PathBuf> {
+    if !results.join("index.json").is_file() {
+        let mut count=0;
+        for f in crate::qe_data::save::files(results)? {
+            let path=results.join(f.relative_path);
+            if path.file_name().is_some_and(|n| n=="native.plot.json") {
+                crate::delivery::native_plot::plot(path.parent().unwrap(),None,&["png".into(),"svg".into(),"pdf".into()])?; count+=1;
+            } else if path.to_string_lossy().ends_with(".plot.json") {
+                let data:Value=store::read(&path)?;
+                if data["kind"]=="Decay" {crate::delivery::decay::redraw(path.parent().unwrap())?;}
+                else if data["kind"]=="Combined" {super::combined_plot::redraw(&path)?;}
+                else {super::workspace_plot::redraw(&path)?;}
+                if path.file_name().is_some_and(|name|name=="phonon.plot.json") {
+                    for name in ["phband","phdos"] {
+                        let temporary=path.parent().unwrap().join(name);
+                        if temporary.is_dir(){fs::remove_dir_all(temporary)?;}
+                    }
+                }
+                count+=1;
+            } else if path.to_string_lossy().ends_with("-band-ranges.json") {
+                super::band_ranges::redraw(&path)?; count+=1;
+            }
+        }
+        ensure!(count>0,"data_invalid: no saved plot data; automatic scientific generation is disabled");
+        if let Some(root)=crate::qe_data::direct::workspace(results) {
+            let cfg=crate::qe_data::direct::current(&root)?;
+            for step in Step::ALL {
+                let dir=root.join("results").join(step.directory(&cfg).file_name().unwrap());
+                if dir.starts_with(results) || results.starts_with(&dir) {
+                    super::readable_state::update(&root,step,|doc| {
+                        doc.remove("Plot failure");
+                        for (name,fields) in &mut doc.sections {
+                            if name.starts_with("Plot · ") {fields.remove("Failure");}
+                        }
+                        Ok(())
+                    })?;
+                }
+            }
+        }
+        return Ok(results.into());
+    }
+
     let mut index: Index = store::read(&results.join("index.json"))?;
     ensure!(index.schema_version == 1, "data_invalid: Stage Index Version");
     let mut stages = std::collections::BTreeSet::new();

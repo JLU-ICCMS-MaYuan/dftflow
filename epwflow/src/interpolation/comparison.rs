@@ -371,7 +371,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         "data_invalid: Source version or PH Mode invalid"
     );
     let base = source.parent().context("data_invalid: Source directory missing")?;
-    ensure!(!output.exists(), "input_conflict: Compare Output Exists");
+    ensure!(!output.join("manifest.json").exists(), "input_conflict: Compare Output Exists");
     ensure!(
         s.path.len() >= 2
             && s.path
@@ -718,7 +718,7 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
     }
     let destination = output;
     let _lock = store::Lock::acquire(destination)?;
-    ensure!(!destination.exists(), "input_conflict: Compare Output Exists");
+    ensure!(!destination.join("manifest.json").exists(), "input_conflict: Compare Output Exists");
     let stage = destination
         .parent()
         .context("data_invalid: Compare output missing parent directory")?
@@ -753,7 +753,10 @@ pub fn export(source: &Path, output: &Path) -> Result<()> {
         },
     )?;
     super::comparison_data::load(output)?;
-    fs::rename(output, destination)?;
+    if destination.is_dir() {
+        for entry in fs::read_dir(output)? { let entry=entry?; fs::rename(entry.path(),destination.join(entry.file_name()))?; }
+        fs::remove_dir(output)?;
+    } else { fs::rename(output,destination)?; }
     Ok(())
 }
 

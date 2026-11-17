@@ -47,3 +47,5 @@ pub mod combined_plot;
 
 mod legacy_language;
 mod electronic_reuse;
+
+pub mod workspace_data;

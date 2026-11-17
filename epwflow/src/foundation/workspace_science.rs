@@ -174,7 +174,23 @@ pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
 }
 
 /// 展宽及图像独立于拟合/EPC 的科学清单，不能改写下游已绑定的原生数据。
-pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
+pub fn refresh_post(cfg: &Config,target:Step)->Result<()> {
+    let doc=super::readable_state::read(&cfg.work_dir,target)?;
+    if let Some(reason)=doc.get("Plot failure","Reason") {
+        anyhow::bail!("plot_failed: {reason}; automatic retry disabled; request plotting explicitly");
+    }
+    let result=refresh_post_inner(cfg,target);
+    if let Err(error)=&result {
+        if format!("{error:#}").contains("plot_failed:") {
+            super::readable_state::update(&cfg.work_dir,target,|d|{
+                d.set("Plot failure","Reason",format!("{error:#}"));
+                d.set("Stage","Status","plot failed; scientific results retained");Ok(())
+            })?;
+        }
+    }
+    result
+}
+fn refresh_post_inner(cfg: &Config, target: Step) -> Result<()> {
     // 原生粗网格回执先落盘；衰减交付不等待电子／声子比较收尾。
     if target >= Step::Coarse && stages::reusable(cfg, Step::Coarse)? {
         crate::delivery::decay::refresh(cfg)?;
@@ -216,7 +232,7 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                         &layout::path(&cfg.work_dir, "comparison-native/electron").join(n),
                     )
                 })
-                .chain(super::combined_plot::ELECTRONIC_FILES.iter().map(|n| Identity::capture(&dir.join("plot").join(n))))
+                .chain(super::combined_plot::ELECTRONIC_FILES.iter().map(|n| Identity::capture(&super::stage_results::root(cfg).join("5.epw-wannier").join(n))))
                 .collect::<Result<Vec<_>>>()?
         } else {
             let previous = super::readable_state::checkpoint_config(cfg, step, "Comparison path")?;
@@ -246,10 +262,10 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
                 for relative in ["comparison-native/sources.json", "interpolation/comparison"] {
                     let p = layout::path(&cfg.work_dir, relative);
                     if p.is_dir() {
-                        fs::remove_dir_all(p)?;
-                    } else if p.exists() {
-                        fs::remove_file(p)?;
-                    }
+                        for name in ["electronic_bands.csv","electronic_dos.csv","phonon_bands.csv","phonon_dos.csv","metadata.json","metrics.json","manifest.json"] {
+                            let file=p.join(name);if file.is_file(){fs::remove_file(file)?;}
+                        }
+                    } else if p.exists() { fs::remove_file(p)?; }
                 }
             }
             if !layout::path(&cfg.work_dir, "comparison-native/sources.json").exists() {
@@ -301,7 +317,9 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
             if current.manifest.upstream_digest != store::hash_file(&source)? {
                 for p in [&output, &results] {
                     if p.is_dir() {
-                        fs::remove_dir_all(p)?;
+                        for name in ["electronic_bands.csv","electronic_dos.csv","phonon_bands.csv","phonon_dos.csv","metadata.json","metrics.json","manifest.json"] {
+                            let file=p.join(name);if file.is_file(){fs::remove_file(file)?;}
+                        }
                     }
                 }
                 interpolation::comparison::export(&source, &output)?;
@@ -309,22 +327,15 @@ pub fn refresh_post(cfg: &Config, target: Step) -> Result<()> {
             }
             crate::delivery::comparison::collect(&cfg.work_dir, None)?;
             super::combined_plot::coarse(cfg, &results)?;
-            super::stage_results::tree(
-                cfg,
-                Step::Coarse,
-                "",
-                &results,
-                json!({"kind":"qe_epw_comparison","source":Identity::capture(&source)?}),
-            )?;
             vec![
                 Identity::capture(&output.join("manifest.json"))?,
-                Identity::capture(&results.join("comparison/manifest.json"))?,
+                Identity::capture(&super::stage_results::root(cfg).join("6.epw-coarse/phonon.plot.json"))?,
             ]
         };
         save_post(cfg, step, &outputs)?;
     }
-    if target == Step::Superconductivity && stages::reusable(cfg, Step::Superconductivity)? {
-        let result = Step::Superconductivity.directory(cfg).join("results");
+    if target == Step::Superconductivity && cfg.superconductivity.task==super::config::SuperconductivityTask::Gap && stages::reusable(cfg, Step::Superconductivity)? {
+        let result = super::stage_results::root(cfg).join("8.epw-superconductivity");
         crate::delivery::finalize_to(&cfg.work_dir, Some(&result))?;
         super::stage_results::tree(
             cfg,
@@ -388,17 +399,13 @@ pub fn generate(cfg: &Config, target: Step) -> Result<()> {
                         epw.native_input(
                             native,
                             "./out",
-                            "./save",
+                            &if step==Step::Coarse {super::workspace_data::relative(&dir,&Step::Phonon.directory(cfg).join("save"))?.to_string_lossy().into_owned()} else {"./save".into()},
                             cfg.interpolation.phonon_smearings_mev[0],
                         )?,
                     )?;
                 }
             }
-            Step::Superconductivity => {
-                for mode in ["iso", "aniso"] {
-                    fs::create_dir_all(dir.join(mode))?;
-                }
-            }
+            Step::Superconductivity => {}
         }
     }
     Ok(())
@@ -422,7 +429,6 @@ pub fn run(cfg: &Config, step: Step) -> Result<()> {
         Step::Phonon => run_phonon(cfg, &qe)?,
         Step::Wannier => run_wannier(cfg, &qe)?,
         Step::Coarse => {
-            refresh_qe_manifest(cfg)?;
             interpolation::scheduler::run_coarse_with_retry(
                 cfg,
                 Backend::Local,
@@ -449,15 +455,13 @@ pub fn run(cfg: &Config, step: Step) -> Result<()> {
                 Backend::Local,
                 true,
             )?;
-            crate::delivery::finalize_to(
-                root,
-                Some(&Step::Superconductivity.directory(cfg).join("results")),
-            )?;
+            if cfg.superconductivity.task==super::config::SuperconductivityTask::Tc {return Ok(());}
+            let result=crate::delivery::finalize_to(root,Some(&super::stage_results::root(cfg).join("8.epw-superconductivity")))?;
             super::stage_results::tree(
                 cfg,
                 Step::Superconductivity,
                 "",
-                &Step::Superconductivity.directory(cfg).join("results"),
+                &result,
                 json!({"kind":"native_superconductivity"}),
             )?;
         }
@@ -465,10 +469,6 @@ pub fn run(cfg: &Config, step: Step) -> Result<()> {
     Ok(())
 }
 
-/// 仅从实际 PH 保存树重建内存数据，不读取历史清单。
-fn refresh_qe_manifest(cfg: &Config) -> Result<()> {
-    qe_data::direct::load(cfg).map(|_| ())
-}
 pub(super) fn partial_phonon(cfg: &Config) -> Result<Option<qe_data::manifest::QeManifest>> {
     if !Step::Phonon.directory(cfg).join("save").is_dir() {
         return Ok(None);
@@ -545,28 +545,6 @@ fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
     let dir = Step::Phonon.directory(cfg);
     // q2r 消费严格归集的同一组 XML；coords 局部编号已在 save 中规范化。
     fs::create_dir_all(&dir)?;
-    let dyn0_source = manifest
-        .artifact_root
-        .as_ref()
-        .context("data_invalid: PH Synchronising folder")?
-        .join(
-            &manifest
-                .artifacts
-                .iter()
-                .find(|a| a.role == "dyn0")
-                .context("data_invalid: PH Synchronising folder dyn0")?
-                .relative_path,
-        );
-    let dyn0_target = dir.join(format!("{}.dyn0", cfg.qe.prefix));
-    if !dyn0_target.exists() || dyn0_source.canonicalize()? != dyn0_target.canonicalize()? {
-        fs::copy(&dyn0_source, &dyn0_target)?;
-    }
-    for r in &manifest.phonon_files {
-        fs::copy(
-            &r.dyn_file,
-            dir.join(format!("{}.dyn{}.xml", cfg.qe.prefix, r.q_id)),
-        )?;
-    }
     let mut shared = qf_config::Config::default();
     shared.qe_phonon.retain_epw_data = true;
     shared.qe_phonon.q2r.insert("zasr".into(), json!("simple"));
@@ -597,6 +575,17 @@ fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
     qf_input::matdyn::write_matdyn_phdos_input(dir.to_str().unwrap(), &shared, &cfg.qe.prefix)?;
     let stage = cfg.phonon_stage();
     cfg.configure_file(&[&stage, "q2r"], &dir.join("q2r.in"))?;
+    // 显式列表直接消费归集的 dyn_q XML；不存在该标识的 dyn0，q2r 从输入读取网格。
+    let q2r=fs::read_to_string(dir.join("q2r.in"))?;
+    let field=regex::Regex::new(r"(?im)^\s*fildyn\s*=.*$")?;
+    let mut q2r=field.replace(&q2r," fildyn='save/explicit-dynamical-matrices.xml'").into_owned();
+    q2r.push_str(&format!("{} {} {}\n{}\n",cfg.phonon.q_grid[0],cfg.phonon.q_grid[1],cfg.phonon.q_grid[2],manifest.phonon_files.len()));
+    for response in &manifest.phonon_files {
+        let name=super::workspace_data::relative(&dir,&response.dyn_file)?;
+        q2r.push_str(&format!("{}\n",name.with_extension("").display()));
+    }
+    fs::write(dir.join("q2r.in"),q2r)?;
+
     cfg.configure_file(
         &[&stage, "dispersion", "matdyn"],
         &dir.join("matdyn_phband.in"),
@@ -645,7 +634,7 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
                 "sampling":interpolation::electronic_sampling::plan(cfg)?
             }),
         )?;
-        save::copy_tree(&layout::path(&cfg.work_dir, "nscf/out"), &dir.join("out"))?;
+        super::workspace_data::stage_electronic_work(&layout::path(&cfg.work_dir,"nscf/out"),&dir.join("out"),&cfg.qe.prefix)?;
         fs::write(
             dir.join("epw_wannier.in"),
             epw.native_input(
@@ -686,6 +675,7 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
             .map(|suffix| Identity::capture(&dir.join(format!("{prefix}{suffix}"))))
             .collect::<Result<Vec<_>>>()?;
         store::write(&dir.join("embedded-bands.json"), &bands)?;
+        super::workspace_data::release_electronic_work(cfg,&dir)?;
         Ok(())
     });
     if result.is_err() {
@@ -878,7 +868,7 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
             let source = dir.join(&name);
             ensure!(source.is_file(),
             "required: Existing contracts are missing EPW Embedded can lead to output {};Retain the model, not recalculated by the directory migration, check the original EPW Output",source.display());
-            fs::copy(&source, post.join(&name))?;
+            if source != post.join(&name) { fs::copy(&source, post.join(&name))?; }
         }
         interpolation::electronic_sampling::extract(cfg, &post)?;
     } else {
@@ -886,13 +876,12 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     }
     electronic_comparison_inner(cfg, &post, fermi)?;
     for name in ["electronic-bands.csv","electronic-dos.csv","electronic-dos-normalization.json"] {
-        fs::copy(post.join(name),dir.join(name))?;
+        if post.join(name)!=dir.join(name) {fs::copy(post.join(name),dir.join(name))?;}
     }
-    let plot = dir.join("plot");
+    let plot = super::stage_results::root(cfg).join("5.epw-wannier");
     super::combined_plot::electronic(cfg,&post,&plot)?;
     super::combined_plot::cleanup(&post)?;
     super::combined_plot::cleanup(dir)?;
-    let names = electronic_files().map(str::to_owned).to_vec();
     let provenance = [
         interpolation::electronic_sampling::xml(cfg),
         Step::Electronic.directory(cfg).join(format!(
@@ -905,20 +894,6 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     .iter()
     .map(|p| Identity::capture(p))
     .collect::<Result<Vec<_>>>()?;
-    let log = fs::read_to_string(dir.join(format!("{}.wout", cfg.qe.prefix)))?;
-    super::stage_results::publish(
-        cfg,
-        Step::Wannier,
-        "",
-        &post,
-        &names,
-        json!({"band_driver":"epw.x/wdata","dos_driver":"postw90",
-            "fermi_ev":fermi,"outer_window_ev":interpolation::comparison::parse_outer_window(&log)?,
-            "frozen_window_ev":interpolation::comparison::parse_frozen_window(&log)?,
-            "mesh":cfg.qe.nscf.k_grid,"mesh_weight":1.0/cfg.qe.nscf.k_grid.iter().product::<u32>() as f64,
-            "spin_degeneracy":2,"electronic_sigma_ev":cfg.comparison.clone().unwrap_or_default().electronic_sigma_ev}),
-        provenance.clone(),
-    )?;
     super::stage_results::publish(cfg,Step::Wannier,"plot",&plot,
         &super::combined_plot::ELECTRONIC_FILES.iter().map(|n|n.to_string()).collect::<Vec<_>>(),
         json!({"kind":"electronic_combined","plot":cfg.plot}),provenance)
@@ -1032,7 +1007,7 @@ pub fn validate(cfg: &Config, step: Step) -> Result<()> {
             save::verify_snapshot(&cfg.work_dir)?;
             let energy = qe_data::scf::parse_scf_energy(&fs::read_to_string(output)?)?;
             qe_data::xml::validate_save(
-                &dir.join("snapshot"),
+                &layout::path(&cfg.work_dir,"scf/snapshot"),
                 &cfg.qe.prefix,
                 &QeSettings::from_config(cfg)?,
                 Some(energy),
@@ -1098,9 +1073,14 @@ pub fn validate(cfg: &Config, step: Step) -> Result<()> {
             );
         }
         Step::Superconductivity => {
+            if cfg.superconductivity.task==super::config::SuperconductivityTask::Tc {
+                let dir=step.directory(cfg).join(crate::superconductivity::batch::directory_name(cfg,super::config::Mode::Iso));
+                crate::superconductivity::linear::validate(cfg,&fs::read_to_string(dir.join("epw.out"))?)?;
+                return Ok(());
+            }
             let fine = interpolation::direct::fine(cfg)?;
             crate::superconductivity::verify::complete(&cfg.work_dir, cfg, &fine.run_id)?;
-            crate::delivery::native::check(&dir.join("results"))?;
+            crate::delivery::native::check(&super::stage_results::root(cfg).join("8.epw-superconductivity"))?;
         }
     }
     Ok(())
@@ -1149,6 +1129,7 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
             {
                 return false;
             }
+            if step==Step::Coarse && (name.starts_with("epw_compare") || matches!(name.as_ref(),"phband.freq"|"band.eig"|"kpoints.dat"|"qpoints.dat"|"reuse-decision.json")) {return false;}
             if matches!(step, Step::Coarse | Step::Superconductivity)
                 && (rel.starts_with("batch-finalization.lock/")
                     || rel.starts_with("comparison/")

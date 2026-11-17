@@ -58,10 +58,10 @@ fn paths(cfg: &Config, step: Step) -> Result<(PathBuf, Vec<PathBuf>)> {
     let xml = format!("{}.save/data-file-schema.xml", cfg.qe.prefix);
     let dir = step.directory(cfg);
     Ok(match step {
-        Step::Scf => (dir.join("plots"), vec![dir.join("snapshot").join(xml)]),
-        Step::Nscf => (dir.join("plots"), vec![dir.join("out").join(xml)]),
+        Step::Scf => (super::stage_results::root(cfg).join("1.qe-scf"), vec![super::layout::path(&cfg.work_dir,"scf/snapshot").join(xml)]),
+        Step::Nscf => (super::stage_results::root(cfg).join("2.qe-nscf"), vec![dir.join("out").join(xml)]),
         Step::Electronic => (
-            dir.join("qe_eband/plots"),
+            super::stage_results::root(cfg).join("3.qe-electronic"),
             vec![
                 dir.join("qe_eband/out").join(&xml),
                 Step::Nscf.directory(cfg).join("out").join(xml),
@@ -90,8 +90,8 @@ fn current(dir: &Path, stem: &str, key: &str) -> bool {
         return false;
     };
     old.request_key == key
-        && old.output_sha256.len() == 3
-        && ["png", "svg", "csv"].iter().all(|ext| {
+        && old.output_sha256.len() == 2
+        && ["png", "svg"].iter().all(|ext| {
             let name = format!("{stem}.{ext}");
             old.output_sha256
                 .get(&name)
@@ -531,7 +531,7 @@ fn render(r: &Report) -> (String, u32, u32) {
 pub fn generate(cfg: &Config, step: Step) -> Result<()> {
     let (dir, sources, key) = request(cfg, step)?;
     let stem = format!("{}-band-ranges", step.name());
-    let files = ["png", "svg", "csv", "json"].map(|ext| format!("{stem}.{ext}"));
+    let files = ["png", "svg", "json"].map(|ext| format!("{stem}.{ext}"));
     if !current(&dir, &stem, &key) {
         fs::create_dir_all(&dir)?;
         let mut report = summarize(cfg, step, sources.clone(), key)?;
@@ -544,29 +544,12 @@ pub fn generate(cfg: &Config, step: Step) -> Result<()> {
             return Err(error).context("plot_failed: band-range plot generation failed; scientific results preserved");
         }
         fs::rename(temporary, dir.join(&files[0]))?;
-        let mut csv =
-            "band,min_ev,max_ev,min_minus_fermi_ev,max_minus_fermi_ev,crosses_fermi,excluded\n"
-                .to_string();
-        for b in &report.band_ranges {
-            writeln!(
-                csv,
-                "{},{:.12},{:.12},{:.12},{:.12},{},{}",
-                b.band,
-                b.min_ev,
-                b.max_ev,
-                b.min_ev - report.fermi_ev,
-                b.max_ev - report.fermi_ev,
-                b.crosses_fermi,
-                b.excluded
-            )?;
-        }
-        store::atomic_bytes(&dir.join(&files[2]), csv.as_bytes())?;
-        for name in &files[..3] {
+        for name in &files[..2] {
             report
                 .output_sha256
                 .insert(name.clone(), store::hash_file(&dir.join(name))?);
         }
-        store::write(&dir.join(&files[3]), &report)?;
+        store::write(&dir.join(&files[2]), &report)?;
         println!("band_range_plots: {}", dir.join(&files[0]).display());
     }
     for source in &sources {

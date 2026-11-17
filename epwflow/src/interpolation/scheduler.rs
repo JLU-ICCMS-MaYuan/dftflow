@@ -294,8 +294,8 @@ pub fn run_fine_with_retry(
                 "input_conflict: coarse grid source changed before fine grid implementation"
             );
         }
-        let dir = crate::foundation::layout::path(&work, "fine")
-            .join(format!("smearing-{:04}", index + 1));
+        let root=crate::foundation::layout::path(work,"fine");
+        let dir=if cfg.interpolation.phonon_smearings_mev.len()==1 {root}else{root.join(format!("smearing-{:04}",index+1))};
         let digest = attempt_digest(
             cfg,
             launcher,

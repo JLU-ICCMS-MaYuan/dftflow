@@ -76,7 +76,7 @@ pub fn load(cfg: &Config) -> Result<QeManifest> {
     }
     add(
         "scf_snapshot_identity".into(),
-        layout::path(root, "scf/snapshot-files.json"),
+        if crate::foundation::layout::enabled(root) { crate::foundation::layout::path(root,"scf/snapshot").join(format!("{}.save/data-file-schema.xml",cfg.qe.prefix)) } else { layout::path(root, "scf/snapshot-files.json") },
         "scf",
     )?;
     artifacts.push(nscf_input_artifact(root)?);

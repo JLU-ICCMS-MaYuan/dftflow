@@ -16,3 +16,5 @@ pub mod search;
 pub mod solver_config;
 pub mod source;
 pub mod verify;
+
+pub mod linear;

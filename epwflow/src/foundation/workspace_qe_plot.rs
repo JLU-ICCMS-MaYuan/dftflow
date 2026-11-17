@@ -44,7 +44,7 @@ impl Request {
         let cfg = crate::qe_data::direct::current(&root)?;
         let step = Step::ALL
             .into_iter()
-            .find(|s| self.dir.starts_with(s.directory(&cfg)))
+            .find(|s| self.dir.starts_with(s.directory(&cfg)) || self.dir.starts_with(super::stage_results::root(&cfg).join(s.directory(&cfg).file_name().unwrap())))
             .context("configuration: The drawing phase is unknown")?;
         let label = format!(
             "Plot · {}",
@@ -82,17 +82,30 @@ impl Request {
         Ok(true)
     }
     fn run(&self, render: impl FnOnce() -> Result<()>) -> Result<()> {
+        let (cfg,step,label)=self.location()?;
+        if let Some(reason)=super::readable_state::read(&cfg.work_dir,step)?.get(&label,"Failure") {
+            anyhow::bail!("plot_failed: {reason}; automatic retry is disabled; request plotting explicitly");
+        }
+
         if self.complete()? {
             return Ok(());
         }
-        fs::create_dir_all(&self.dir)?;
-        render().with_context(|| {
-            format!(
-                "plot_failed: QE Image not finished {};The scientific results have been retained and can be restored",
-                self.dir.display()
-            )
-        })?;
+        let rendered=fs::create_dir_all(&self.dir).map_err(anyhow::Error::from).and_then(|_|render());
+        if let Err(error)=rendered {
+            super::readable_state::update(&cfg.work_dir,step,|d| {
+                d.set(&label,"Status","failed"); d.set(&label,"Failure",format!("{error:#}")); Ok(())
+            })?;
+            anyhow::bail!("plot_failed: {error:#}; scientific results retained; automatic retry is disabled");
+        }
         let (cfg, step, label) = self.location()?;
+        for name in ["electronic-bands.csv","electronic-dos.csv","electronic-bands.json","electronic-dos.json","electronic-pdos.csv","electronic-pdos.json","electronic-display.json"] {
+            let path=self.dir.join(name); if path.is_file(){fs::remove_file(path)?;}
+        }
+        if step==Step::Phonon {
+            for name in ["phband","phdos"] {
+                let path=self.dir.join(name); if path.is_dir(){fs::remove_dir_all(path)?;}
+            }
+        }
         super::readable_state::complete_files(&cfg, step, &label, &self.outputs)?;
         super::readable_state::update(&cfg.work_dir, step, |doc| {
             doc.set(&label, "Plot version", &self.renderer);
@@ -115,10 +128,8 @@ fn electronic_request(cfg: &Config) -> Result<Request> {
         cfg.kpath.clone().context("required: electronic plots require KPATH")?,
         stage.join(format!("qe_eledos/{}.tdos",cfg.qe.prefix))];
     inputs.extend(super::workspace_pdos::files(cfg)?);
-    let mut files = super::combined_plot::ELECTRONIC_FILES.to_vec();
-    files.extend(["electronic-bands.csv","electronic-dos.csv",
-        "electronic-bands.json","electronic-dos.json","electronic-pdos.csv","electronic-pdos.json"]);
-    Request::new(stage.join("plot"), inputs, &files,
+    let files=super::combined_plot::ELECTRONIC_FILES.to_vec();
+    Request::new(super::stage_results::root(cfg).join("3.qe-electronic"), inputs, &files,
         serde_json::json!({"renderer_version":super::combined_plot::VERSION,"plot":cfg.plot}))
 }
 
@@ -164,13 +175,9 @@ fn phonon_request(cfg: &Config) -> Result<Request> {
     let mut inputs: Vec<_> = phonon_inputs(cfg).into_iter().map(|(p, _)| p).collect();
     inputs.push(cfg.structure.clone());
     Request::new(
-        Step::Phonon.directory(cfg).join("plot"),
+        super::stage_results::root(cfg).join(Step::Phonon.directory(cfg).file_name().unwrap()),
         inputs,
         &[
-            "phband/phonon_band.csv",
-            "phband/phonon_band_labels.csv",
-            "phdos/phonon_dos_atoms.csv",
-            "phdos/phonon_dos_elements.csv",
             "phonon.png",
             "phonon.plot.json",
         ],

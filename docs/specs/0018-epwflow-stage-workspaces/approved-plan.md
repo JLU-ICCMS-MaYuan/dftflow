@@ -12,42 +12,6 @@
 
 使用 `big-project-issue-manager`、`big-project-spec-runner` 新建独立 Feature。沿用项目“本地需求与 Spec 落档、线上 Gitee 由用户管理”的约定，暂定编号 **0018**，落档时检查编号是否被占用。完整保存本次需求原文、澄清结果、设计、任务及验收标准，关联既有 QE／EPW Feature。
 
-## 2. 目录和计算阶段
-
-新布局直接放在本例 `run/` 下：
-
-```text
-run/
-├── input.toml
-├── POSCAR
-├── pp/
-├── KPATH.in
-├── submit_all.sh
-├── 1.qe-scf/
-├── 2.qe-nscf/
-├── 3.qe-electronic/
-│   ├── qe_eband/
-│   └── qe_eledos/
-├── 4.qe-phonon-nosplit/          # 或 coords、index
-│   └── save/
-├── 5.epw-wannier/
-├── 6.epw-coarse/
-├── 7.epw-fine/
-├── 8.epw-superconductivity/
-│   ├── iso/
-│   └── aniso/
-└── .epwflow/                    # 内部状态与历史记录
-```
-
-- **输入与脚本同目录**：每个实际计算目录都有对应的原生输入、`submit.sh` 和日志；分 q、分温度等子任务同样遵守。批量提交脚本只负责组织依赖，放在这些目录的上层。
-- **第 1～4 步**：复用 qeflow 的输入、执行及后处理能力；电子能带与 DOS 保留 `qe_eband`、`qe_eledos` 名称。PH 复用第 1 步的 SCF，不另做一套 SCF。
-- **第 4 步**：同时支持 nosplit、coords、index 的 EPW 数据归集，真正生成可校验的 `save/`，包括动力学矩阵、响应势和 phsave。
-- **第 5 步**：独立进行 Wannier 拟合，输出与 QE 对比的电子能带、总电子 DOS；复用原生 Wannier90／postw90 及现有绘图能力。
-- **第 6 步**：复用第 5 步已验证的 Wannier 变换，计算粗网格电声耦合，并输出电子、声子对比图及质量报告。
-- **第 7、8 步**：分别负责细网格 EPC／α²F／λ，以及超导求解。此前暂缓的严格元素／轨道投影仍保持暂缓。
-
-编号帮助阅读；实际执行依赖由程序管理。
-
 ## 3. 配置读取、续算与命令接口
 
 **根目录的 `input.toml` 是日常修改入口。** 各阶段的原生输入由它生成，不要求用户维护多份 TOML。

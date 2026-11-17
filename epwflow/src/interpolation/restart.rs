@@ -247,7 +247,8 @@ pub fn stage(
         } else {
             target.join(src.file_name().unwrap())
         };
-        fs::copy(&src, &dst)?;
+        if target.ancestors().any(crate::foundation::layout::enabled) {crate::foundation::workspace_data::link(&src,&dst)?;}
+        else {fs::copy(&src,&dst)?;}
         ensure!(
             store::hash_file(&src)? == hash && store::hash_file(&dst)? == hash,
             "input_conflict: coarse Grid Copy Identity Change"

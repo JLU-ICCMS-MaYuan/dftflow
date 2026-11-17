@@ -146,7 +146,7 @@ runpy.run_path(str(root/name),run_name='__main__')
         cfg.superconductivity.mode = config::Mode::Both;
         cfg.superconductivity.frequency_cutoff_ev = 0.03;
         cfg.superconductivity.gap_temperatures_k = vec![5., 20.];
-        let tc = cfg.superconductivity.iso.as_mut().unwrap();
+        let tc = cfg.superconductivity.iso.get_or_insert(config::Tc{min_k:5.,max_k:50.,precision_k:0.5,max_solves:100,eigen_margin:1e-5,normal_gap_mev:1e-4,super_gap_mev:1e-3});
         tc.min_k = 5.;
         tc.max_k = 50.;
         cfg.superconductivity.aniso = cfg.superconductivity.iso.clone();
@@ -300,326 +300,6 @@ fn legacy_submit_requires_explicit_migration_without_submitting_a_wrapper() {
     assert_eq!(c.calls(), (String::new(), String::new(), String::new()));
 }
 
-#[test]
-fn public_chain_resumes_partial_solver_then_only_unfinished_delivery() {
-    let c = Case::new();
-    success(c.cli(0, &["--all"], "generate"));
-    let generated = c.root.join("run/epw-state/generated");
-    success(c.bash(generated.join("submit-all.sh"), None, "submit-chain"));
-    assert_eq!(
-        fs::read_to_string(c.root.join("submissions"))
-            .unwrap()
-            .lines()
-            .count(),
-        3
-    );
-    assert!(!c.root.join("fixture-ledger.json").exists());
-    c.accounting(Some(201));
-    success(c.bash(generated.join("qe-data.sh"), Some(201), "phonon"));
-    let calc = PathBuf::from(c.workflow()["calculation_dir"].as_str().unwrap());
-    assert!(calc.join("qe-data/manifest.json").is_file());
-    assert!(calc.join("scf/snapshot-files.json").is_file());
-    let scf = store::Identity::capture(&calc.join("scf/snapshot-files.json")).unwrap();
-    assert_eq!(c.workflow()["completed"].as_object().unwrap().len(), 1);
-    c.accounting(Some(202));
-    success(c.bash(generated.join("interpolation.sh"), Some(202), "wannier"));
-    assert_eq!(calc.to_str().unwrap(), c.workflow()["calculation_dir"]);
-    let coarse = store::Identity::capture(&calc.join("wannier/manifest.json")).unwrap();
-    assert!(epwflow::delivery::comparison_plot::check_figure_formats(
-        &calc.join("results"),
-        &["png", "svg", "pdf"]
-    )
-    .unwrap());
-    assert!(!calc.join("interpolation/manifest.json").exists());
-    assert!(!calc.join("superconductivity").exists());
-    assert!(!c.calls().1.lines().any(|l| l.starts_with("fine ")));
-    // 最终输出发生可恢复的用户文件冲突；生产代码必须保留该文件并拒绝覆盖。
-    let conflict = c.root.join("run/results/figures/a2f_coupling.svg");
-    fs::create_dir_all(conflict.parent().unwrap()).unwrap();
-    fs::write(&conflict, "test-owned conflict").unwrap();
-    c.accounting(Some(203));
-    c.put("tc-failure", "test-owned transient failure");
-    let o = c.bash(generated.join("all.sh"), Some(203), "partial-solver");
-    assert!(!o.status.success());
-    assert_eq!(c.workflow()["current_stage"], "superconductivity");
-    assert!(c.workflow()["completed"].get("superconductivity").is_none());
-    let fine = store::Identity::capture(&calc.join("interpolation/manifest.json")).unwrap();
-    let partial_path = calc.join("superconductivity/manifest.json");
-    let partial: Value = store::read(&partial_path).unwrap();
-    assert_eq!(partial["converged"], false);
-    assert_eq!(partial["native_modes"]["iso"]["complete"], false);
-    assert_eq!(partial["native_modes"]["aniso"]["complete"], true);
-    let failed_iso = partial["native_modes"]["iso"]["attempts"]
-        .as_array()
-        .unwrap();
-    assert_eq!(failed_iso.len(), 1);
-    assert_eq!(failed_iso[0]["status"], "failed");
-    let mut retained = vec![];
-    for mode in ["iso", "aniso"] {
-        for a in partial["native_modes"][mode]["attempts"]
-            .as_array()
-            .unwrap()
-        {
-            let id: store::Identity = serde_json::from_value(a["record"].clone()).unwrap();
-            retained.push(id);
-        }
-    }
-    // 通过实际生产者发布的 partial 重验，检查本身不得启动进程或修补状态。
-    let cfg = config::Config::load(&c.root.join("inputepw.toml")).unwrap();
-    let run_id = partial["run_id"].as_str().unwrap();
-    let inspect = || epwflow::superconductivity::verify::published_complete(&calc, &cfg, run_id);
-    assert!(!inspect().unwrap());
-    assert!(epwflow::superconductivity::verify::complete(&calc, &cfg, run_id).is_err());
-    assert!(
-        epwflow::superconductivity::verify::published_complete(&calc, &cfg, "wrong-run").is_err()
-    );
-    let mut changed_cfg = cfg.clone();
-    changed_cfg.superconductivity.max_iterations += 1;
-    assert!(
-        epwflow::superconductivity::verify::published_complete(&calc, &changed_cfg, run_id)
-            .is_err()
-    );
-    let original_manifest = fs::read(&partial_path).unwrap();
-    let mut missing_mode = partial.clone();
-    missing_mode["native_modes"]
-        .as_object_mut()
-        .unwrap()
-        .remove("aniso");
-    store::write(&partial_path, &missing_mode).unwrap();
-    assert!(inspect().is_err());
-    fs::write(&partial_path, &original_manifest).unwrap();
-    for path in [
-        calc.join("superconductivity/temperatures.csv"),
-        fine.path.clone(),
-    ] {
-        let original = fs::read(&path).unwrap();
-        fs::write(&path, "tampered").unwrap();
-        assert!(inspect().is_err());
-        fs::write(&path, original).unwrap();
-    }
-    let search_path = calc.join("superconductivity/iso/search.json");
-    let original_search = fs::read(&search_path).unwrap();
-    fs::remove_file(&search_path).unwrap();
-    assert!(inspect().is_err());
-    assert!(!search_path.exists(), "Read-only checks cannot recreate missing search files");
-    fs::write(&search_path, &original_search).unwrap();
-    // 预算拒绝等前置错误可产生零尝试；仍由当前 F3 原生角色核验其绑定。
-    let f3 = epwflow::interpolation::manifest::InterpolationManifest::load(&fine.path).unwrap();
-    let source = epwflow::superconductivity::source::bind(&calc, &cfg, &f3).unwrap();
-    let empty_root = c.root.join("empty-search-binding");
-    let empty = epwflow::superconductivity::engine::Engine::open(
-        &cfg,
-        &source,
-        &cfg.programs.launcher,
-        &empty_root,
-        config::Mode::Iso,
-    )
-    .unwrap()
-    .result;
-    let saved_outputs: Vec<_> = ["manifest.json", "tc.json", "temperatures.csv"]
-        .into_iter()
-        .map(|name| {
-            let path = calc.join("superconductivity").join(name);
-            let bytes = fs::read(&path).unwrap();
-            (path, bytes)
-        })
-        .collect();
-    let mut modes: std::collections::BTreeMap<
-        String,
-        epwflow::superconductivity::engine::ModeResult,
-    > = serde_json::from_value(partial["native_modes"].clone()).unwrap();
-    store::write(&search_path, &empty).unwrap();
-    modes.insert("iso".into(), empty);
-    epwflow::superconductivity::scheduler::publish(
-        &calc.join("superconductivity"),
-        run_id.into(),
-        fine.sha256.clone(),
-        config::Mode::Both,
-        modes,
-    )
-    .unwrap();
-    assert!(!inspect().unwrap());
-    fs::write(&search_path, &original_search).unwrap();
-    for (path, bytes) in saved_outputs {
-        fs::write(path, bytes).unwrap();
-    }
-    assert!(!inspect().unwrap());
-    let partial_calls = c.calls();
-    fs::remove_file(c.root.join("tc-failure")).unwrap();
-    c.accounting(None);
-    c.accounting(Some(204));
-    let o = c.allocated_cli(2, &["--resume", "-w", "run", "-r"], 204, "superconductivity-conflict");
-    assert!(!o.status.success());
-    let failed = c.workflow();
-    assert_eq!(
-        failed["current_stage"],
-        "results",
-        "{}",
-        String::from_utf8_lossy(&o.stderr)
-    );
-    assert_eq!(failed["state"], "failed");
-    assert!(failed["completed"].get("superconductivity").is_some());
-    assert!(failed["completed"].get("results").is_none());
-    assert_eq!(
-        fs::read_to_string(&conflict).unwrap(),
-        "test-owned conflict"
-    );
-    assert!(c.root.join("run/results/manifest.json").exists());
-    let before = c.calls();
-    assert!(before.1.lines().any(|l| l.starts_with("fine ")));
-    fine.verify().unwrap();
-    let superconductivity =
-        store::Identity::capture(&calc.join("superconductivity/manifest.json")).unwrap();
-    let f4: Value = store::read(&superconductivity.path).unwrap();
-    assert_eq!(f4["converged"], true);
-    assert_eq!(partial_calls.0, before.0, "SCF/PH Don't repeat");
-    assert_eq!(partial_calls.1, before.1, "Crude/Line Grid Not Repeat");
-    let aniso_calls = |s: &str| {
-        s.lines()
-            .filter(|l| serde_json::from_str::<Value>(l).unwrap()["mode"] == "aniso")
-            .count()
-    };
-    assert_eq!(aniso_calls(&partial_calls.2), aniso_calls(&before.2));
-    assert_eq!(
-        f4["native_modes"]["aniso"],
-        partial["native_modes"]["aniso"]
-    );
-    let iso_attempts = f4["native_modes"]["iso"]["attempts"].as_array().unwrap();
-    assert!(iso_attempts.len() > failed_iso.len());
-    assert_eq!(&iso_attempts[..failed_iso.len()], failed_iso);
-    for id in &retained {
-        id.verify().unwrap();
-    }
-    assert_eq!(f4["native_modes"].as_object().unwrap().len(), 2);
-    for (mode, boundary) in [("iso", 3200), ("aniso", 3600)] {
-        let search = &f4["native_modes"][mode]["search"];
-        let interval = search["interval_centikelvin"].as_array().unwrap();
-        assert_eq!(search["status"], "located");
-        assert!(
-            interval[0].as_i64().unwrap() < boundary && interval[1].as_i64().unwrap() >= boundary
-        );
-        assert!(interval[1].as_i64().unwrap() - interval[0].as_i64().unwrap() <= 50);
-    }
-    // 仅移除本测试创建的冲突。所有科学数据由生产恢复链重新验证。
-    fs::remove_file(&conflict).unwrap();
-    // 模拟原分配被终止后遗留的 F5 锁；只能凭该分配的终态证据回收。
-    let final_locks = [
-        "native-results.lock",
-        "comparison.lock",
-        "figures/native-figures.lock",
-        "figures/comparison-figures.lock",
-    ];
-    for name in final_locks {
-        let lock = c.root.join("run/results").join(name);
-        fs::create_dir(&lock).unwrap();
-        store::write(
-            &lock.join("owner.json"),
-            &json!({
-                "host":"fixture", "pid":u32::MAX, "token":"test-owned-final-lock",
-                "created_unix":0, "job_id":204,
-            }),
-        )
-        .unwrap();
-    }
-    c.accounting(None);
-    c.accounting(Some(205));
-    success(c.allocated_cli(2, &["--resume", "-w", "run", "-r"], 205, "resume-delivery"));
-    for name in final_locks {
-        assert!(!c.root.join("run/results").join(name).exists());
-    }
-    assert_eq!(before, c.calls(), "Restoring delivery cannot be re-executed by science");
-    for id in [&scf, &coarse, &fine, &superconductivity] {
-        id.verify().unwrap();
-    }
-    assert_eq!(calc.to_str().unwrap(), c.workflow()["calculation_dir"]);
-    assert_eq!(c.workflow()["completed"].as_object().unwrap().len(), 5);
-    c.accounting(None);
-    let o = c.cli(
-        2,
-        &["--status", "-w", "run", "--refresh", "--json"],
-        "status",
-    );
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    let status: Value = serde_json::from_slice(&o.stdout).unwrap();
-    assert_eq!(status["workflow_complete"], true);
-    let results = c.root.join("run/results");
-    assert_eq!(
-        epwflow::delivery::check_results(&results).unwrap()["workflow_complete"],
-        true
-    );
-    for name in epwflow::delivery::native_plot::KINDS
-        .iter()
-        .chain(epwflow::delivery::comparison::KINDS.iter())
-    {
-        for format in ["png", "svg", "pdf"] {
-            assert!(results
-                .join("figures")
-                .join(format!("{name}.{format}"))
-                .is_file());
-        }
-    }
-    let ledger: Value = store::read(&c.root.join("fixture-ledger.json")).unwrap();
-    assert_eq!(ledger["spent_node_seconds"], 5);
-    assert_eq!(ledger["allocations"].as_array().unwrap().len(), 0);
-    assert_eq!(ledger["reservations"].as_array().unwrap().len(), 0);
-    assert_eq!(ledger["limits"], json!({"max_lanes": 2}), "New books do not generate time or storage caps");
-    c.assert_scripts_without_time_limits();
-    assert_eq!(
-        fs::read_to_string(c.root.join("submissions"))
-            .unwrap()
-            .lines()
-            .count(),
-        3
-    );
-    // 复制到新位置后独立重绘；保留原包的工作流完成证据，篡改副本必须拒绝。
-    let moved = c.root.join("moved-results");
-    copy_results(&results, &moved);
-    success(c.cli(
-        2,
-        &[
-            "--plot",
-            "--results",
-            moved.to_str().unwrap(),
-            "--formats",
-            "svg",
-        ],
-        "moved-plot",
-    ));
-    success(c.cli(
-        2,
-        &[
-            "--results-check",
-            "--results",
-            moved.to_str().unwrap(),
-            "--json",
-        ],
-        "moved-check",
-    ));
-    let image = moved.join("figures/a2f_coupling.svg");
-    let original = fs::read(&image).unwrap();
-    fs::write(&image, "tampered").unwrap();
-    assert!(!c
-        .cli(
-            2,
-            &[
-                "--results-check",
-                "--results",
-                moved.to_str().unwrap(),
-                "--json"
-            ],
-            "tampered-check"
-        )
-        .status
-        .success());
-    fs::write(&image, original).unwrap();
-    assert_eq!(before, c.calls());
-    store::write(
-        &c.root.join("verification.json"),
-        &json!({"kind":"synthetic process contract","scientific_validation":false}),
-    )
-    .unwrap();
-}
-
 // 0018：编号工作区协议；替身仍仅验证 IO、命令、依赖与复用，不作科学验收。
 impl Case {
     fn numbered() -> Self {
@@ -631,7 +311,7 @@ impl Case {
         cfg.programs.epw.args.extend(["-nk".into(),"1".into()]);
         c.put("input.toml",&toml::to_string_pretty(&cfg).unwrap());
         let qe=include_str!("fixtures/qe_native_io.py").replace("nscf=value('calculation')=='nscf'","nscf=value('calculation') in ('nscf','bands')")
-            .replace("nat = len(ET.parse(Path('out')/(prefix+'.save')/'data-file-schema.xml').getroot().findall('output/atomic_structure/atomic_positions/atom'))", "nat = int(ET.parse(next(iter(list(Path.cwd().glob('*.dyn*.xml'))+list(Path.cwd().parent.glob('force-constants/*.dyn*.xml'))))).getroot().find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)");
+            .replace("nat = len(ET.parse(Path(value('outdir','./out'))/(prefix+'.save')/'data-file-schema.xml').getroot().findall('output/atomic_structure/atomic_positions/atom'))", "nat = int(ET.parse(next(iter(list(Path.cwd().glob('*.dyn*.xml'))+list(Path.cwd().glob('save/*.dyn_q*.xml'))))).getroot().find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)");
         c.put("qe_native_io.py",&qe);
         let epw=include_str!("fixtures/epw_native_io.py")
             .replace("coarse=value('epwread')=='.false.'","coarse=value('epwread')=='.false.'\nwannier_only='elph = .false.' in text\nreuse=coarse and 'wannierize = .false.' in text")
@@ -640,7 +320,7 @@ impl Case {
             .replace("kpoints=[cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]", "kpoints=kpoints if wannier_only else [cart(list(map(float,l.split()[:3]))) for l in Path('kpoints.dat').read_text().splitlines()[1:]]")
             .replace("qcr=[list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]", "qcr=[[0,0,0]] if wannier_only else [list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]")
             .replace("if coarse:\n        lower=window_min()", "if coarse and not reuse:\n        lower=window_min()")
-            .replace("if not coarse or value('wannierize')=='.true.': Path(prefix+'.wout').write_text(wout)","if not reuse:Path(prefix+'.wout').write_text(wout)\n    if wannier_only:\n        Path(prefix+'.win').write_text('num_wann = '+str(n)+'\\n'+'\\n'.join(re.findall(r\"(?m)^\\s*wdata\\(\\d+\\)\\s*=\\s*'([^']*)'\",text))+'\\n')\n        Path(prefix+'.chk').write_text('fixture checkpoint')")
+            .replace("if coarse and value('wannierize')=='.true.': Path(prefix+'.wout').write_text(wout)","if coarse and not reuse:Path(prefix+'.wout').write_text(wout)\n    if wannier_only:\n        Path(prefix+'.win').write_text('num_wann = '+str(n)+'\\n'+'\\n'.join(re.findall(r\"(?m)^\\s*wdata\\(\\d+\\)\\s*=\\s*'([^']*)'\",text))+'\\n')\n        Path(prefix+'.chk').write_text('fixture checkpoint')")
             .replace("kept=list(range(8,17));nk=coarse_nk", "kept=list(range(8,17));nk=coarse_nk\n    if wannier_only:\n        Path(prefix+'.bvec').write_text('native bvec\\n'+str(nk)+' 1\\n'+'1 0 0 1\\n'*nk)\n        Path(prefix+'.mmn').write_text('(0,0)\\n'*(9*9*nk))\n    if reuse:\n        assert Path(prefix+'.bvec').read_text().splitlines()[1].split()==[str(nk),'1'], '粗网格缺同一拟合 bvec'\n        assert len(Path(prefix+'.mmn').read_text().splitlines())==9*9*nk, '粗网格缺同一拟合 mmn'")
             .replace("parent/'nscf/out'", "parent/'2.qe-nscf/out'")
             .replace("ROOT/'run/nscf/out'", "ROOT/'run/2.qe-nscf/out'");
@@ -665,14 +345,15 @@ if kind in ['wannier90','postw90']:
     eig=[line.split() for line in Path(prefix+'.eig').read_text().splitlines()]
     assert len(eig)==len(points)*9 and all(int(row[0])==i%9+1 and int(row[1])==i//9+1 for i,row in enumerate(eig)), 'eig 必须绑定原 NSCF 点序和排除后带序'
     if kind=='postw90' and (Path(__file__).parent/'post-failure').exists():
-        Path(prefix+'.wout').write_text('overwritten failed plot log')
+        Path(prefix+'.wpout').write_text('failed postprocessing log')
         Path(prefix+'.werr').write_text('Error: standalone post failed despite STOP zero')
         print('Error: standalone post failed despite STOP zero')
         sys.exit(0)
 if kind in ['bands','dos','projwfc']:
     text=Path(sys.argv[sys.argv.index('-inp')+1]).read_text() if '-inp' in sys.argv else sys.stdin.read()
     prefix=re.search(r"prefix\s*=\s*'([^']+)'",text).group(1)
-    xml=ET.parse(Path('out')/(prefix+'.save')/'data-file-schema.xml').getroot()
+    outdir=re.search(r"outdir\s*=\s*'([^']+)'",text).group(1)
+    xml=ET.parse(Path(outdir)/(prefix+'.save')/'data-file-schema.xml').getroot()
     ks=xml.findall('output/band_structure/ks_energies')
     if kind=='bands':
         Path(prefix+'_band').write_text('fixture band file')
@@ -741,7 +422,7 @@ fn numbered_wannier_post_zero_exit_error_preserves_fit_and_resumes() {
     assert_eq!(receipt, fs::read(c.root.join("run/5.epw-wannier/scf.ukk")).unwrap());
     assert_eq!(wout, store::hash_file(&c.root.join("run/5.epw-wannier/scf.wout")).unwrap());
     assert!(!c.root.join("run/5.epw-wannier/scf.werr").exists());
-    assert!(c.root.join("run/5.epw-wannier/plot/electronic.png").is_file());
+    assert!(c.root.join("run/results/5.epw-wannier/electronic.png").is_file());
     let norm: Value = store::read(&c.root.join("run/5.epw-wannier/electronic-dos-normalization.json")).unwrap();
     assert_eq!(norm["postw90_multiplier"], 1);
     assert_eq!(norm["postw90_num_elec_per_state"], 2);
@@ -784,7 +465,7 @@ fn numbered_scripts_leave_shell_options_unset_and_source_environment_directly() 
 #[test]
 fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     use epwflow::foundation::{stages::{self,Step},layout};
-    let c=Case::numbered();c.accounting(Some(201));
+    let c=Case::numbered();c.numbered_change(|cfg|{cfg.superconductivity.task=config::SuperconductivityTask::Gap;cfg.superconductivity.gap_temperatures_k=vec![20.,30.];});c.accounting(Some(201));
     success(c.numbered_cli(0,&["-r"],Some(201),"numbered-qe"));
     let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
     for step in [Step::Scf,Step::Nscf,Step::Electronic,Step::Phonon] {assert!(stages::reusable(&cfg,step).unwrap());}
@@ -816,12 +497,12 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
         ("3.qe-electronic/qe_eledos", "eletdos"),
         ("5.epw-wannier", "epw_wannier"),
         ("6.epw-coarse", "epw_coarse"),
-        ("7.epw-fine/smearing-0001", "epw_fine"),
+        ("7.epw-fine", "epw_fine"),
     ] {
         let dir = cfg.work_dir.join(directory);
         assert!(dir.join(format!("{stem}.in")).is_file());
         assert!(dir.join(format!("{stem}.out")).is_file());
-        assert_eq!(fs::read_to_string(dir.join(format!("{stem}.exitcode"))).unwrap().trim(), "0");
+        assert!(!dir.join(format!("{stem}.exitcode")).exists());
         let script = fs::read_to_string(dir.join(format!("{stem}.sh"))).unwrap();
         assert!(script.contains(&format!("> {stem}.out 2>&1")), "{script}");
         for old in ["epw.out", "bands.out", "dos.out"] {
@@ -834,7 +515,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     success(c.numbered_cli(2,&["--stage","fine","-r"],Some(205),"numbered-fine-new-grid"));
     assert_eq!(c.calls().0,calls.0,"The fine grid change cannot be executed QE");
     assert_eq!(c.calls().1.matches("wannier ").count(),1,"The fine grid changes cannot be repeated");
-    assert!(c.root.join("run/7.epw-fine/smearing-0001/epw_fine.sh").is_file());
+    assert!(c.root.join("run/7.epw-fine/epw_fine.sh").is_file());
     let before=c.calls();
     c.script("launcher","#!/bin/sh\nshift 2\nexec \"$@\"\n");
     c.numbered_change(|cfg|{cfg.programs.launcher=vec![c.root.join("launcher").to_string_lossy().into(),"-np".into(),"2".into()];cfg.programs.epw.args[2]="2".into();});
@@ -850,15 +531,16 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
     success(c.numbered_cli(1,&["--stage","coarse","-r"],Some(211),"numbered-post-revert"));assert_eq!(before,c.calls());
     assert!(!c.root.join("run/epw-state/post").exists());
     c.accounting(Some(207));
-    c.put("tc-failure","test failure");
-    let failed=c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(207),"numbered-superconductivity-partial");assert!(!failed.status.success());
-    let partial:Value=store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();assert_ne!(partial["validation"]["status"],"valid");
+    success(c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(207),"numbered-native-gap"));
+    let completed_calls=c.calls();
+    let completed:Value=store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();
+    assert_eq!(completed["execution_complete"],true);
     c.numbered_change(|cfg|{cfg.programs.launcher[2]="3".into();cfg.programs.epw.args[2]="3".into();});
-    fs::remove_file(c.root.join("tc-failure")).unwrap();c.accounting(Some(210));
-    success(c.numbered_cli(2,&["--stage","superconductivity","--resume","-r"],Some(210),"numbered-superconductivity"));
+    c.accounting(Some(210));
+    success(c.numbered_cli(2,&["--stage","superconductivity","--resume","-r"],Some(210),"numbered-superconductivity-reuse"));
     c.assert_scripts_without_time_limits();
+    assert_eq!(completed_calls,c.calls());
     assert_eq!(before.0,c.calls().0);assert!(!c.calls().2.is_empty());
-    let completed:Value=store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();assert_eq!(partial["native_modes"]["aniso"],completed["native_modes"]["aniso"]);
     let coarse_calls=c.calls().1.matches("coarse ").count();
     let config_path=c.root.join("input.toml");
     let original_config=fs::read(&config_path).unwrap();
@@ -900,6 +582,7 @@ fn numbered_public_qe_wannier_coarse_and_fine_are_distinct_and_reusable() {
 fn numbered_large_differences_continue_to_native_fine_and_both_solvers_but_reject_damage() {
     use epwflow::foundation::{layout, stages::{self, Step}};
     let c = Case::numbered();
+    c.numbered_change(|cfg| {cfg.superconductivity.task=config::SuperconductivityTask::Gap;cfg.superconductivity.gap_temperatures_k=vec![20.,30.];});
     c.put("epw-failure", "large-difference");
     c.accounting(Some(201));
     let coarse = c.numbered_cli(1, &["--stage", "coarse", "-r"], Some(201), "warning-coarse");
@@ -936,16 +619,15 @@ fn numbered_large_differences_continue_to_native_fine_and_both_solvers_but_rejec
     success(c.numbered_cli(2, &["--stage", "superconductivity", "--resume", "-r"], Some(204), "warning-both-solvers"));
     assert_eq!(calls.0, c.calls().0);
     let modes: Value = store::read(&Step::Superconductivity.directory(&cfg).join("manifest.json")).unwrap();
-    assert!(modes["native_modes"].get("iso").is_some());
-    assert!(modes["native_modes"].get("aniso").is_some());
+    assert_eq!(modes["plan"].as_array().unwrap().len(),4);
     assert!(!c.calls().2.is_empty());
     let results = epwflow::delivery::check_results(
-        &Step::Superconductivity.directory(&cfg).join("results"),
+        &cfg.work_dir.join("results/8.epw-superconductivity"),
     ).unwrap();
     assert!(results.get("quality_status").is_none());
     assert!(results.get("quality_warning").is_none());
     let comparison_results=epwflow::delivery::check_results(&cfg.work_dir.join("results/6.epw-coarse")).unwrap();
-    assert!(comparison_results.get("differences").is_some());
+    assert_eq!(comparison_results["stage_results_verified"],true);
     assert_eq!(results["workflow_complete"], true,
         "The margin does not change the execution completion status");
 }
@@ -1024,7 +706,7 @@ fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
     c.put("input.toml","invalid pending edits must not affect submitted native job");
     success(c.stage_execute());
     assert_eq!(logs::read(&root,Step::Electronic).unwrap().get("Stage allocation","Status"),Some("completed"));
-    assert!(c.root.join("run/results/3.qe-electronic/plot/electronic.png").is_file());
+    assert!(c.root.join("run/results/3.qe-electronic/electronic.png").is_file());
 }
 
 #[test]
@@ -1054,12 +736,13 @@ fn numbered_phonon_post_retry_reuses_verified_responses_and_restores_dyn0() {
     assert!(!saved.is_empty());
     let before = c.calls();
     let manifest = fs::read(c.root.join("run/4.qe-phonon-nosplit/save/scf.dvscf_q1")).unwrap();
-    // 复现旧版本的自复制截断；已校验的归集副本仍可恢复原生后处理。
-    fs::write(ph.join("scf.dyn0"), "").unwrap();
+    // 后处理直接使用正式矩阵列表，不需要根目录 dyn0。
+    assert!(!ph.join("scf.dyn0").exists());
     fs::remove_file(c.root.join("post-failure")).unwrap();
     c.accounting(Some(202));
     success(c.numbered_cli(0, &["--resume", "-r"], Some(202), "ph-post-resume"));
-    assert_eq!(saved, fs::read(ph.join("scf.dyn0")).unwrap());
+    assert_eq!(saved, fs::read(ph.join("save/scf.dyn0.xml")).unwrap());
+    assert!(!ph.join("scf.dyn0").exists());
     assert_eq!(manifest, fs::read(c.root.join("run/4.qe-phonon-nosplit/save/scf.dvscf_q1")).unwrap());
     assert_eq!(before.0.lines().filter(|s| *s == "ph" || *s == "pw").collect::<Vec<_>>(),
         c.calls().0.lines().filter(|s| *s == "ph" || *s == "pw").collect::<Vec<_>>(),
@@ -1262,8 +945,7 @@ fn numbered_electronic_receipt_rejects_corrupted_save_and_adopts_verified_old_pw
     fs::remove_file(&wfc).unwrap();
     epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).unwrap();
     fs::write(&wfc,b"fixture-wfc").unwrap();
-    let exit=c.root.join("run/3.qe-electronic/qe_eband/eband.exitcode");
-    fs::write(&exit,"6").unwrap();assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());fs::write(exit,"0").unwrap();
+
     let input=c.root.join("run/3.qe-electronic/qe_eband/eband.in");let original=fs::read(&input).unwrap();
     fs::write(&input,"&CONTROL calculation='bands' /\n").unwrap();assert!(epwflow::foundation::workspace_electronic::inspect_legacy(&cfg).is_err());fs::write(input,original).unwrap();
     fs::remove_file(c.root.join("fail-bands")).unwrap();c.accounting(Some(203));
@@ -1620,7 +1302,7 @@ fn gap_points_report_invalid_data_and_resume_failed_point_without_repeating_succ
         let r=epwflow::superconductivity::points::Run::load(&root.join("manifest.json")).unwrap();
         assert!(r.execution_complete);assert!(!r.data_complete);assert_eq!(r.attempts.len(),3);
         for a in r.attempts{let record=epwflow::superconductivity::verify::record(&a.record.unwrap().path).unwrap();assert!(record.gap.is_none());assert_eq!(record.gap_status.unwrap().data_status,status);}
-        let (_,data)=epwflow::delivery::native::load(&root.join("results")).unwrap();assert!(data.gaps.is_empty()&&data.states.is_empty());
+        let (_,data)=epwflow::delivery::native::load(&c.root.join("run/results/8.epw-superconductivity")).unwrap();assert!(data.gaps.is_empty()&&data.states.is_empty());
         assert_eq!(c.calls().2.lines().count(),3);
     }
     let c=Case::numbered();c.numbered_change(|cfg|{let s=&mut cfg.superconductivity;s.task=config::SuperconductivityTask::Gap;s.mode=config::Mode::Iso;s.gap_temperatures_k=vec![20.,30.,40.];s.iso=None;s.aniso=None;});
@@ -1745,7 +1427,7 @@ fn public_scf_reuse_ignores_raw_density_and_wavefunction_changes() {
     c.accounting(Some(201));
     success(c.numbered_cli(0, &["--stage", "scf", "-r"], Some(201), "scf-for-unchecked"));
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
-    let snapshot = c.root.join("run/1.qe-scf/snapshot").join(format!("{}.save", cfg.qe.prefix));
+    let snapshot = c.root.join("run/1.qe-scf/out").join(format!("{}.save", cfg.qe.prefix));
     fs::remove_file(snapshot.join("wfc1.dat")).unwrap();
     let density = snapshot.join("charge-density.dat");
     fs::set_permissions(&density, fs::Permissions::from_mode(0o600)).unwrap();
@@ -1816,7 +1498,7 @@ fn legacy_wannier_log_and_registered_task_resume_without_refitting() {
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
     let dir = cfg.work_dir.join("5.epw-wannier");
     // 重建旧版记录的形状，输入与原生数据保持不变。
-    for ext in ["out", "exitcode"] {
+    for ext in ["out"] {
         fs::rename(dir.join(format!("epw_wannier.{ext}")), dir.join(format!("epw.{ext}"))).unwrap();
     }
     let script = dir.join("epw_wannier.sh");
@@ -1921,7 +1603,7 @@ fn electronic_reuse_combines_projection_once_and_new_commands_revalidate() {
         doc.remove("Electronic substep · projwfc");
         Ok(())
     }).unwrap();
-    fs::remove_file(cfg.work_dir.join("3.qe-electronic/plot/electronic.png")).unwrap();
+    fs::remove_file(cfg.work_dir.join("results/3.qe-electronic/electronic.png")).unwrap();
     c.accounting(Some(203));
     assert_combined(c.numbered_cli(1, &["--stage", "coarse", "-r"], Some(203), "reuse-once-repair"));
     assert_eq!(before, (c.calls(), c.post_calls(), fs::read(c.root.join("pdos-calls")).unwrap()));
@@ -1934,3 +1616,61 @@ fn electronic_reuse_combines_projection_once_and_new_commands_revalidate() {
     assert!(!failed.status.success());
     assert_eq!(before, (c.calls(), c.post_calls(), fs::read(c.root.join("pdos-calls")).unwrap()));
 }
+
+#[test]
+fn layout_0070_native_upstream_uses_single_sources_and_no_exitcode() {
+    let c=Case::numbered();
+    c.numbered_change(|cfg| {cfg.superconductivity.task=config::SuperconductivityTask::Gap;cfg.superconductivity.gap_temperatures_k=vec![20.,30.];cfg.superconductivity.iso=None;cfg.superconductivity.aniso=None;});
+    c.accounting(Some(201));
+    for (program,stage) in [(0,"scf"),(0,"nscf"),(0,"electronic"),(0,"phonon"),(1,"wannier"),(1,"coarse")] {
+        success(c.numbered_cli(program,&["--stage",stage,"-r"],Some(201),&format!("layout-0070-{stage}")));
+    }
+    let root=c.root.join("run");
+    assert!(root.join("1.qe-scf/out/scf.save/data-file-schema.xml").is_file());
+    assert!(!root.join("1.qe-scf/snapshot").exists());
+    assert!(!root.join("1.qe-scf/snapshot-files.json").exists());
+    assert!(!root.join("3.qe-electronic/qe_eledos/out").exists());
+    assert!(!root.join("6.epw-coarse/save").exists());
+    assert!(!root.join("6.epw-coarse/comparison").exists());
+    assert!(!root.join("6.epw-coarse/comparison-native/epw").exists());
+    assert!(!root.join("6.epw-coarse/decay").exists());
+    for name in ["scf.ukk","scf.bvec","scf.mmn"] {
+        assert!(fs::symlink_metadata(root.join("6.epw-coarse").join(name)).unwrap().file_type().is_symlink());
+    }
+    fn walk(dir:&std::path::Path){for entry in fs::read_dir(dir).unwrap(){let entry=entry.unwrap();if entry.file_type().unwrap().is_dir(){walk(&entry.path());}else{assert_ne!(entry.path().extension().and_then(|x|x.to_str()),Some("exitcode"));}}}
+    walk(&root);
+    assert!(!root.join("4.qe-phonon-nosplit/out").exists());
+    assert!(!root.join("4.qe-phonon-nosplit/scf.dyn0").exists());
+    for file in epwflow::qe_data::save::files(&root.join("results")).unwrap() {
+        let name=file.relative_path.to_string_lossy();
+        assert!(name.ends_with(".png") || name.ends_with(".svg") || name.ends_with(".pdf") || name.ends_with(".plot.json") || name.ends_with("-band-ranges.json"), "unneeded result file: {name}");
+    }
+}
+
+#[test]
+fn layout_0070_single_fine_grid_and_native_temperature_batch_share_inputs() {
+    let c=Case::numbered();
+    c.numbered_change(|cfg|{cfg.superconductivity.task=config::SuperconductivityTask::Gap;cfg.superconductivity.mode=config::Mode::Both;cfg.superconductivity.gap_temperatures_k=vec![20.,30.];cfg.superconductivity.iso=None;cfg.superconductivity.aniso=None;});
+    c.accounting(Some(201));
+    for (program,stage) in [(0,"scf"),(0,"nscf"),(0,"electronic"),(0,"phonon"),(1,"wannier"),(1,"coarse"),(2,"fine")] {
+        success(c.numbered_cli(program,&["--stage",stage,"-r"],Some(201),&format!("layout-0070-{stage}")));
+    }
+    let root=c.root.join("run");
+    assert!(root.join("7.epw-fine/out/scf.ephmat/egnv").is_file());
+    assert!(!root.join("7.epw-fine/smearing-0001").exists());
+    assert!(fs::symlink_metadata(root.join("7.epw-fine/out/scf.epmatwp")).unwrap().file_type().is_symlink());
+    let before=c.calls();
+    c.accounting(Some(202));
+    success(c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(202),"layout-0070-gap"));
+    assert_eq!(before.0,c.calls().0);
+    for method in ["iso","aniso"] {
+        let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+        let mode=if method=="iso"{config::Mode::Iso}else{config::Mode::Aniso};
+        let dir=root.join("8.epw-superconductivity").join(epwflow::superconductivity::batch::directory_name(&cfg,mode));
+        assert!(fs::symlink_metadata(dir.join("source.a2f")).unwrap().file_type().is_symlink());
+        assert!(fs::read_to_string(dir.join("epw.in")).unwrap().contains("nstemp = 2"));
+    }
+    assert!(!root.join("results/index.json").exists());
+}
+
+// 0052：直接文件接续，不使用历史阶段回执或全链补算。

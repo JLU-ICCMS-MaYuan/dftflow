@@ -453,8 +453,8 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         }
     } else if o.collect || o.plot || o.results_check {
         ensure!(
-            phase != Phase::Phonon,
-            "input_conflict: phase one does not support EPW plotting"
+            phase != Phase::Phonon || (o.plot && o.results.is_some()) || (o.results_check && o.results.is_some()),
+            "input_conflict: phase one plotting requires explicit saved results"
         );
         if o.collect && o.json {
             return crate::delivery::cli::run(crate::delivery::cli::DeliveryCommand::Collect {

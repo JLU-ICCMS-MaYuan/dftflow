@@ -58,7 +58,8 @@ pub fn fine(cfg: &Config) -> Result<InterpolationManifest> {
         .with_species(&structure.cell.elements)?;
     let mut other = vec![];
     for (index, smearing) in cfg.interpolation.phonon_smearings_mev.iter().enumerate() {
-        let dir = layout::path(&cfg.work_dir, "fine").join(format!("smearing-{:04}", index + 1));
+        let root=layout::path(&cfg.work_dir,"fine");
+        let dir=if cfg.interpolation.phonon_smearings_mev.len()==1 {root}else{root.join(format!("smearing-{:04}",index+1))};
         let result = fine::collect_native_fine_at(&cfg.work_dir, &dir, &epw)?;
         let raw = native::NativeSpectrum::read(
             &dir.join(format!("{}.a2f", cfg.qe.prefix)),

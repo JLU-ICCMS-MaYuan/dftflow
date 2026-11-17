@@ -1,0 +1,11 @@
+# 随功能删除的专用搜索测试
+
+用户已明确取消额外搜索与双初值核验，因此删除其专用执行测试，不以 ignored 隐藏失败。原生单初值、多温度、线性化输出、收敛与无效数据拒绝继续验证。历史科学结果保留。
+
+- `epwflow/tests/superconductivity.rs:native_engine_persists_counts_reuses_valid_and_does_not_retry_failed`
+- `epwflow/tests/superconductivity.rs:native_engine_both_modes_use_process_results_and_keep_independent_intervals`
+- `epwflow/tests/superconductivity.rs:native_explicit_resume_preserves_failed_evidence_and_counts_unknown_attempts`
+- `epwflow/tests/superconductivity.rs:centikelvin_search_brackets_handles_uncertain_and_detects_inconsistent`
+- `epwflow/tests/superconductivity.rs:dual_seed_uses_full_distribution_and_only_global_sign`
+- `epwflow/tests/three_stage_execution.rs:public_chain_resumes_partial_solver_then_only_unfinished_delivery`
+- `epwflow/tests/real_tc.rs`

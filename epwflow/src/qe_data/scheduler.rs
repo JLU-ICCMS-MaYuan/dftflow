@@ -265,7 +265,7 @@ pub(crate) fn publish_data(
             });
         }
     }
-    let identity = crate::foundation::layout::path(&work, "scf/snapshot-files.json");
+    let identity = if crate::foundation::layout::enabled(work) { crate::foundation::layout::path(work,"scf/snapshot").join(format!("{}.save/data-file-schema.xml",qe.config.qe.prefix)) } else { crate::foundation::layout::path(&work, "scf/snapshot-files.json") };
     artifacts.push(super::manifest::Artifact {
         role: "scf_snapshot_identity".into(),
         relative_path: identity.strip_prefix(work)?.into(),
@@ -305,6 +305,27 @@ pub(crate) fn publish_data(
         );
     }
 
+    if crate::foundation::layout::enabled(work) {
+        let cfg=crate::qe_data::direct::current(work)?;
+        let stage=crate::foundation::stages::Step::Phonon.directory(&cfg);
+        let mut directories=vec![stage.join("out"),stage.join("init/out")];
+        let q=stage.join("q");
+        if q.is_dir() {for entry in std::fs::read_dir(q)? {let entry=entry?;if entry.file_type()?.is_dir(){directories.push(entry.path().join("out"));}}}
+        // 已归集并完整核验后移除原始工作矩阵；正式 save 保持唯一。
+        let mut originals=std::collections::BTreeSet::new();
+        for response in &responses { originals.insert(response.dyn_file.clone()); }
+        for point in &manifest.qpoints { originals.insert(point.source_dyn0.clone()); }
+        for original in originals {
+            if original.starts_with(&stage) && !original.starts_with(stage.join("save")) && original.is_file() {
+                crate::foundation::native_jobs::forget_work_inputs(&cfg,&original)?;
+                std::fs::remove_file(original)?;
+            }
+        }
+        for directory in directories {
+            crate::foundation::native_jobs::forget_work_inputs(&cfg,&directory)?;
+            crate::foundation::workspace_data::remove_work_tree(work,&directory)?;
+        }
+    }
     Ok(manifest)
 }
 

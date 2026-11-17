@@ -239,6 +239,10 @@ pub(super) fn expand(mut d: Document) -> Result<Document> {
 }
 
 fn expand_calls(mut d: Document) -> Result<Document> {
+    if let Some(workflow)=d.workflow.get_mut(SUPER).and_then(Value::as_object_mut) {
+        for name in ["initial_gaps","iso","aniso"] {workflow.remove(name);}
+    }
+
     // 未指定时限制为 500 轮；EPW 与内嵌 Wannier90 使用同一次拟合的迭代数。
     if let Some(wannier) = d.stages.get_mut("5.wannier90").and_then(Value::as_object_mut) {
         wannier.entry("num_iter").or_insert(json!(500));

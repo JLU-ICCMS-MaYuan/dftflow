@@ -339,20 +339,20 @@ pub fn run_attempt(
         false,
         false,
     )?;
-    fs::copy(&inputs.crystal.path, dir.join("crystal.fmt"))?;
-    fs::copy(&inputs.a2f.path, dir.join("source.a2f"))?;
+    crate::foundation::workspace_data::link(&inputs.crystal.path,&dir.join("crystal.fmt"))?;
+    crate::foundation::workspace_data::link(&inputs.a2f.path,&dir.join("source.a2f"))?;
     ensure!(
         store::hash_file(&dir.join("source.a2f"))? == inputs.a2f.sha256,
         "input_conflict: native spectrum copy differs from its source"
     );
     if request.mode == Mode::Aniso {
-        fs::copy(
+        crate::foundation::workspace_data::link(
             &inputs
                 .selecq
                 .as_ref()
                 .context("data_invalid: selecq missing")?
                 .path,
-            dir.join("selecq.fmt"),
+            &dir.join("selecq.fmt"),
         )?;
     }
     let mut command = launcher.to_vec();

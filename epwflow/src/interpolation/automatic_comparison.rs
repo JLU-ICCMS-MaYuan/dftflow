@@ -272,7 +272,7 @@ pub(crate) fn run(
             Some(&inputs),
             || {
                 fs::create_dir_all(&electron)?;
-                save::stage_scf(f2_work, &electron.join("out"), &cfg.qe.prefix)?;
+                save::stage_ground_state(f2_work, &electron.join("out"), &cfg.qe.prefix)?;
                 fs::write(
                     &electron_input,
                     qe.path_input(
@@ -307,7 +307,7 @@ pub(crate) fn run(
             |_| evidence(&electron),
         )?;
     }
-    let epw_dir = root.join("epw");
+    let epw_dir = if numbered {coarse_dir.clone()} else {root.join("epw")};
     attempt::run(
         work,
         "comparison-epw",
@@ -315,21 +315,14 @@ pub(crate) fn run(
         store::hash_bytes(format!("{digest}:epw").as_bytes()),
         retry,
         || {
-            restart::stage(
-                &coarse_dir,
-                &coarse_dir.join("out"),
-                &cfg.qe.prefix,
-                nwann,
-                modes,
-                &epw_dir,
-            )?;
+            if !numbered { restart::stage(&coarse_dir,&coarse_dir.join("out"),&cfg.qe.prefix,nwann,modes,&epw_dir)?; }
             store::write(
                 &epw_dir.join("reuse-decision.json"),
                 &serde_json::json!({"required_programs":["epw.x"],"reason":"There are coarse grid real-space data that do not contain paths and DOS q interpolation frequency of points;using epwread Reads the model, only for acoustics. native band_plot At the same time, it requires electronics k Table, give a place-holder point, the output is not used for electronic comparison; the electronic comparison is reused 5 Step.","qpoints":all}),
             )?;
             EpwConfig::write_points(&epw_dir, if numbered { &all[..1] } else { &all }, &all)?;
             fs::write(
-                epw_dir.join("epw.in"),
+                epw_dir.join(if numbered {"epw_compare.in"} else {"epw.in"}),
                 epw.native_input(
                     NativeStage::Comparison,
                     "./out",
@@ -339,9 +332,9 @@ pub(crate) fn run(
             )?;
             Ok(())
         },
-        || super::coarse::run_epw(epw, &epw_dir, "epw.in", launcher, backend),
+        || super::coarse::run_epw(epw, &epw_dir, if numbered {"epw_compare.in"} else {"epw.in"}, launcher, backend),
         || {
-            native::checked_log(&fs::read_to_string(epw_dir.join("epw.out"))?, 0)?;
+            native::checked_log(&fs::read_to_string(epw_dir.join(if numbered {"epw_compare.out"} else {"epw.out"}))?, 0)?;
             let k = super::native_sampling::epw(&fs::read_to_string(epw_dir.join("kpoints.dat"))?)?;
             let q = super::native_sampling::epw(&fs::read_to_string(epw_dir.join("qpoints.dat"))?)?;
             let kc = k.iter().map(|p| cart(*p, &geometry.reciprocal)).collect::<Vec<_>>();
@@ -352,7 +345,10 @@ pub(crate) fn run(
                 &native::parse_bands(&fs::read_to_string(epw_dir.join("phband.freq"))?)?,
                 &qc, &path, &mesh, &geometry, modes)
         },
-        |_| evidence(&epw_dir),
+        |_| if numbered {
+            ["epw_compare.in","epw_compare.out","phband.freq","band.eig","kpoints.dat","qpoints.dat"].iter()
+                .map(|name|Identity::capture(&epw_dir.join(name))).collect()
+        } else {evidence(&epw_dir)},
     )?;
     f2.verify()?;
     for id in &identities {
@@ -370,6 +366,10 @@ pub(crate) fn run(
         }
     }
     for dir in provenance_dirs {
+        if numbered && dir==&coarse_dir {
+            for name in ["epw_compare.in","epw_compare.out","phband.freq","kpoints.dat","qpoints.dat"] {provenance.push(file(&dir.join(name))?);}
+            continue;
+        }
         provenance.extend(
             evidence(dir)?
                 .iter()
@@ -401,7 +401,7 @@ pub(crate) fn run(
         qe_phonon_bands: file(&qe_frequency)?,
         qe_phonon_dos: Some(file(&qe_dos)?),
         epw_phonon_bands: file(&epw_dir.join("phband.freq"))?,
-        epw_log: file(&epw_dir.join("epw.out"))?,
+        epw_log: file(&epw_dir.join(if numbered {"epw_compare.out"} else {"epw.out"}))?,
         provenance,
         path,
         ticks,
@@ -427,7 +427,7 @@ pub(crate) fn run(
         store::write(&source_path, &sources)?;
     }
     let output = crate::foundation::layout::path(&work, "interpolation/comparison");
-    if output.exists() {
+    if output.join("manifest.json").is_file() {
         let data = comparison_data::load(&output)?;
         ensure!(
             data.manifest.upstream_digest == store::hash_file(&source_path)?,

@@ -25,10 +25,16 @@ if kind in ('q2r', 'matdyn'):
         print('Error in routine fixture'); sys.exit(2)
     if kind == 'q2r':
         grid_file = Path(value('fildyn').replace('.dyn.xml', '.dyn0'))
-        grid_lines = grid_file.read_text().splitlines()
-        assert len(grid_lines) >= 2 and len(grid_lines[0].split()) == 3, 'q2r 必须读取非空的原生 dyn0 网格'
-        assert len(grid_lines) >= int(grid_lines[1]) + 2, 'dyn0 必须包含完整 q 点列表'
-        for path in Path.cwd().glob('*.dyn*.xml'): matrix_records(ET.parse(path).getroot())
+        if grid_file.is_file():
+            grid_lines = grid_file.read_text().splitlines()
+            assert len(grid_lines) >= 2 and len(grid_lines[0].split()) == 3
+            assert len(grid_lines) >= int(grid_lines[1]) + 2
+            for path in Path.cwd().glob('*.dyn*.xml'): matrix_records(ET.parse(path).getroot())
+        else:
+            cards=text.split('/\n',1)[1].strip().splitlines()
+            assert len(cards[0].split())==3 and len(cards[2:])==int(cards[1])
+            for name in cards[2:]:
+                path=Path(name+'.xml'); assert path.is_file(); matrix_records(ET.parse(path).getroot())
         target = Path(value('flfrc'))
         if value('fildyn').endswith('.xml'): target=Path(str(target)+'.xml')
         target.write_text('fixture force constants')
@@ -37,10 +43,10 @@ if kind in ('q2r', 'matdyn'):
         assert force.is_file()
         prefix = force.name.split('.fc')[0]
         if Path('matdyn.in').exists():
-            nat = int(ET.parse(next(iter(list(Path.cwd().glob('*.dyn*.xml'))+list(Path.cwd().parent.glob('force-constants/*.dyn*.xml'))))).getroot().find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)
+            nat = int(ET.parse(next(iter(list(Path.cwd().glob('*.dyn*.xml'))+list(Path.cwd().glob('save/*.dyn_q*.xml'))+list(Path.cwd().parent.glob('force-constants/*.dyn*.xml'))))).getroot().find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)
             assert value('asr') == 'no' and value('amass\\(1\\)') is not None
         else:
-            nat = len(ET.parse(Path('out')/(prefix+'.save')/'data-file-schema.xml').getroot().findall('output/atomic_structure/atomic_positions/atom'))
+            nat = int(ET.parse(next(iter(list(Path.cwd().glob('save/*.dyn_q*.xml'))+list(Path.cwd().glob('*.dyn*.xml'))))).getroot().find('GEOMETRY_INFO/NUMBER_OF_ATOMS').text)
         if value('fldos'):
             Path(value('fldos')).write_text(''.join(str(i)+' '+str(nat*.1)+' '+' '.join(['0.1']*nat)+'\n' for i in range(3)))
         else:
@@ -146,6 +152,7 @@ if kind=='pw':
     print('convergence has been achieved\n! total energy = -10.0 Ry\nJOB DONE.')
 else:
     assert (save/'charge-density.dat').read_bytes()==b'fixture-density', 'PH 未收到 SCF 电荷'
+    assert (save/'wfc1.dat').read_bytes()==b'fixture-wfc', 'PH 未收到必要 SCF 波函数'
     xml=ET.parse(save/'data-file-schema.xml').getroot().find('output')
     structure=xml.find('atomic_structure');alat=float(structure.attrib['alat']);lattice=[[float(x) for x in structure.find('cell').find('a'+str(i)).text.split()] for i in (1,2,3)]
     bg=[[float(x) for x in xml.find('basis_set/reciprocal_lattice').find('b'+str(i)).text.split()] for i in (1,2,3)]

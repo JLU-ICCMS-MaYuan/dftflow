@@ -305,12 +305,11 @@ fn published(
             crate::foundation::layout::enabled(work) || root.join("search.json").is_file(),
             "data_invalid: published search record missing"
         );
-        let current =
-            super::engine::Engine::open(cfg, &source, &cfg.programs.launcher, &root, r.mode)?;
-        ensure!(
-            serde_json::to_value(current.result)? == serde_json::to_value(r)?,
-            "input_conflict: search record conflicts with fixed configuration/delivery manifest"
-        );
+        source.verify(r.mode)?;
+        if root.join("search.json").is_file() {
+            let saved:super::engine::ModeResult=store::read(&root.join("search.json"))?;
+            ensure!(serde_json::to_value(saved)?==serde_json::to_value(r)?,"input_conflict: historical search result differs from delivery");
+        }
         for a in &r.attempts {
             if let Some(id) = &a.record {
                 artifacts.push(id.clone());

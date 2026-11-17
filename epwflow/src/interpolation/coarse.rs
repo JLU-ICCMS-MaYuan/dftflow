@@ -28,21 +28,14 @@ pub fn stage_f2(f2: &QeManifest, work: &Path) -> Result<()> {
         "input_conflict: The coarse grid target is in place. Keep it on site"
     );
     let states = f2.states.as_ref().context("data_invalid: Missing F2 NSCF")?;
-    save::copy_tree(
-        states
-            .wavefunctions
-            .parent()
-            .context("data_invalid: NSCF Missing Parent Directory")?,
-        &dir.join("out"),
-    )?;
-    let ph_dir = f2
-        .phonon_files
-        .first()
-        .context("data_invalid: Missing F2 PH")?
-        .dyn_file
-        .parent()
-        .context("data_invalid: PH Missing Parent Directory")?;
-    save::copy_tree(ph_dir, &dir.join("save"))?;
+    if crate::foundation::layout::enabled(work) {
+        crate::foundation::workspace_data::stage_electronic_work(
+            states.wavefunctions.parent().context("NSCF root missing")?,&dir.join("out"),&states.wavefunctions.file_stem().context("NSCF prefix missing")?.to_string_lossy())?;
+    } else {
+        save::copy_tree(states.wavefunctions.parent().context("NSCF root missing")?,&dir.join("out"))?;
+        let ph_dir=f2.phonon_files.first().context("PH data missing")?.dyn_file.parent().context("PH root missing")?;
+        save::copy_tree(ph_dir,&dir.join("save"))?;
+    }
     if crate::foundation::layout::enabled(work) {
         let source = work.join("5.epw-wannier");
         let completion = crate::foundation::stages::completion(
@@ -66,7 +59,7 @@ pub fn stage_f2(f2: &QeManifest, work: &Path) -> Result<()> {
                 })?;
             identity.verify()?;
             save::nonempty(&source.join(&name))?;
-            fs::copy(source.join(&name), dir.join(&name))?;
+            crate::foundation::workspace_data::link(&source.join(&name),&dir.join(&name))?;
             ensure!(
                 store::hash_file(&dir.join(&name))? == identity.sha256,
                 "data_invalid: Wannier The identity does not match after copying the supporting file:{name}"
@@ -114,13 +107,6 @@ pub fn run_epw(
     let output = if crate::foundation::native_jobs::enabled() {
         report.stdout_path.clone()
     } else { dir.join(format!("{stem}.out")) };
-    fs::write(
-        output.with_extension("exitcode"),
-        report
-            .exit_status
-            .map(|x| x.to_string())
-            .unwrap_or_else(|| "signal".into()),
-    )?;
     ensure!(
         report.exit_status == Some(0),
         "execution_failed: EPW Quit Status {:?}",
@@ -153,7 +139,7 @@ pub fn run_coarse(
 pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
     let dir = crate::foundation::layout::path(&work, "coarse");
     ensure!(
-        dir.join("out").is_dir() && dir.join("save").is_dir(),
+        dir.join("out").is_dir() && (crate::foundation::layout::enabled(work)||dir.join("save").is_dir()),
         "data_invalid: coarse Grid Missing native F2 Save Data"
     );
     ensure!(
@@ -171,7 +157,7 @@ pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
             epw_cfg.native_input(
                 super::epw_config::NativeStage::WannierOnly,
                 "./out",
-                "./save",
+                &if crate::foundation::layout::enabled(work) {crate::foundation::workspace_data::relative(&dir,&crate::foundation::stages::Step::Phonon.directory_in(work).join("save"))?.to_string_lossy().into_owned()}else{"./save".into()},
                 epw_cfg.cfg.interpolation.phonon_smearings_mev[0],
             )?,
         )?;
@@ -181,7 +167,7 @@ pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
         epw_cfg.native_input(
             super::epw_config::NativeStage::ReuseWannier,
             "./out",
-            "./save",
+            &if crate::foundation::layout::enabled(work) {crate::foundation::workspace_data::relative(&dir,&crate::foundation::stages::Step::Phonon.directory_in(work).join("save"))?.to_string_lossy().into_owned()}else{"./save".into()},
             epw_cfg.cfg.interpolation.phonon_smearings_mev[0],
         )?,
     )?;
@@ -190,7 +176,7 @@ pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
 
 pub fn collect_coarse(work: &Path, epw_cfg: &EpwConfig) -> Result<CoarseResult> {
     let dir = crate::foundation::layout::path(&work, "coarse");
-    let expected = epw_cfg.native_input(super::epw_config::NativeStage::ReuseWannier, "./out", "./save", epw_cfg.cfg.interpolation.phonon_smearings_mev[0])?;
+    let expected = epw_cfg.native_input(super::epw_config::NativeStage::ReuseWannier, "./out", &if crate::foundation::layout::enabled(work) {crate::foundation::workspace_data::relative(&dir,&crate::foundation::stages::Step::Phonon.directory_in(work).join("save"))?.to_string_lossy().into_owned()}else{"./save".into()}, epw_cfg.cfg.interpolation.phonon_smearings_mev[0])?;
     let normalize = |text: &str| text.lines().map(|line| line.split('!').next().unwrap_or("")).flat_map(str::split_whitespace).collect::<Vec<_>>().join(" ");
     ensure!(normalize(&fs::read_to_string(dir.join("epw_coarse.in"))?) == normalize(&expected),
         "input_conflict: The coarse grid actually entered does not match the current parameter");
@@ -220,6 +206,7 @@ pub fn collect_coarse(work: &Path, epw_cfg: &EpwConfig) -> Result<CoarseResult> 
     epw_cfg.check_native_windows(&fs::read_to_string(
         dir.join(format!("{}.wout", cfg.qe.prefix)),
     )?)?;
+    if crate::foundation::layout::enabled(work) {crate::foundation::workspace_data::release_electronic_work(epw_cfg.cfg,&dir)?;}
     let digest = store::hash_file(&dir.join("epw_coarse.in"))?;
     let artifacts = paths
         .into_iter()

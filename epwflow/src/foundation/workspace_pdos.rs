@@ -1,4 +1,4 @@
-//! QE 原子投影后处理及元素汇总。只操作 NSCF 副本，不修改科学检查点。
+//! QE 原子投影后处理及元素汇总。读取正式 NSCF，归集原生附加输出。
 use super::{
     config::Config,
     layout,
@@ -21,7 +21,7 @@ struct Receipt {
     outputs: Vec<Identity>,
 }
 fn dir(cfg: &Config) -> PathBuf {
-    cfg.work_dir.join("3.qe-electronic/qe_eledos/pdos")
+    cfg.work_dir.join("3.qe-electronic/qe_eledos")
 }
 fn source(cfg: &Config) -> PathBuf {
     layout::path(&cfg.work_dir, "nscf/out")
@@ -44,7 +44,7 @@ fn input(cfg: &Config) -> Result<String> {
     let text=format!("&projwfc\n prefix='{}', outdir='./out', filpdos='{}.pdos',\n ngauss=0, degauss={sigma:.15}, Emin=-100, Emax=100, DeltaE=0.01,\n/\n",cfg.qe.prefix,cfg.qe.prefix);
     cfg.apply_native(
         &[super::native_config::ELECTRONIC, "qe_eledos", "projwfc"],
-        &text,
+        &text.replace("outdir='./out'", &format!("outdir='{}'",super::workspace_data::relative(&dir(cfg),&source(cfg))?.display())),
     )
 }
 fn key(cfg: &Config, ids: &[Identity]) -> Result<String> {
@@ -118,18 +118,6 @@ pub fn run(cfg: &Config) -> Result<()> {
             "reason":"Lack of atomic projection compatible with current state/extension,TDOS without decomposition information;from completed NSCF The wave function seeks to project atoms, not by TDOS or Wannier Initial orbital restoration element contribution",
             "program":post_program(cfg,"projwfc")?,"sources":ids,"input":input(cfg)?,"recalculate_scf_nscf_ph_wannier_epw":false}),
         )?;
-        if !root.join("out").exists() {
-            save::copy_tree(&source(cfg), &root.join("out"))?;
-        }
-        // 失败重试不得复用被原生程序改写的输入副本。
-        for id in &ids {
-            let p = root.join("out").join(id.path.strip_prefix(source(cfg))?);
-            ensure!(
-                p.is_file() && store::hash_file(&p)? == id.sha256,
-                "input_conflict: PDOS The quarantine copy is damaged {}",
-                p.display()
-            );
-        }
         fs::write(root.join("projwfc.in"), input(cfg)?)?;
     }
     ensure!(
@@ -148,6 +136,8 @@ pub fn run(cfg: &Config) -> Result<()> {
     for id in &ids {
         id.verify()?;
     }
+    let projection=source(cfg).join(format!("{}.save/atomic_proj.xml",cfg.qe.prefix));
+    if projection.is_file() { fs::rename(&projection,root.join("atomic_proj.xml"))?; }
     let paths = raw_files(cfg)?;
     let mut outputs = paths.clone();
     outputs.extend([

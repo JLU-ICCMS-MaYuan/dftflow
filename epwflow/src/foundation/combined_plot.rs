@@ -16,7 +16,6 @@ pub const ELECTRONIC_FILES: &[&str] = &[
     "electronic.plot.json",
     "electronic-from-lowest-to-highest.png",
     "electronic-from-lowest-to-highest.plot.json",
-    "electronic-display.json",
 ];
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Curve {
@@ -73,7 +72,7 @@ pub fn redraw_stage(cfg: &Config, step: Step) -> Result<Option<std::path::PathBu
         "configuration: electronic redraw supports only stages 3 and 5"
     );
     let stage = step.directory(cfg);
-    let output = stage.join("plot");
+    let output = super::stage_results::root(cfg).join(step.directory(cfg).file_name().unwrap());
     let near = output.join("electronic.plot.json");
     if near.is_file() {
         let mut data: Figure = store::read(&near)?;
@@ -86,6 +85,7 @@ pub fn redraw_stage(cfg: &Config, step: Step) -> Result<Option<std::path::PathBu
             data["near_ev"] = serde_json::json!(cfg.plot.bounds());
             store::write(&metadata, &data)?;
         }
+        super::readable_state::update(&cfg.work_dir,step,|doc| {doc.remove("Plot failure");Ok(())})?;
         return Ok(Some(output));
     }
     let sources = if step == Step::Electronic {
@@ -217,24 +217,20 @@ pub fn electronic(cfg: &Config, source: &Path, output: &Path) -> Result<()> {
         notes,
     };
     fs::create_dir_all(output)?;
+    let mut full=fig.clone(); full.bounds=[lo,hi];
+    store::write(&output.join("electronic-from-lowest-to-highest.plot.json"),&full)?;
     write(&output.join("electronic.png"), &fig)?;
     fig.bounds = [lo, hi];
     write(&output.join("electronic-from-lowest-to-highest.png"), &fig)?;
-    store::write(
-        &output.join("electronic-display.json"),
-        &serde_json::json!({
-            "schema_version":2, "near_ev":cfg.plot.bounds(), "from_lowest_to_highest_ev":[lo,hi],
-            "range_source":"QE path eigenvalues", "energy_reference":"E - E_F (eV)",
-            "display_window_is_not_metric_window":true
-        }),
-    )?;
     cleanup(output)?;
     Ok(())
 }
 pub fn write(file: &Path, data: &Figure) -> Result<()> {
-    let svg = svg(data)?;
-    style::png(&svg, file, 3600, 2400)?;
-    store::write(&file.with_extension("plot.json"), data)
+    // 正常绘制只有一次；异常由所属阶段报告，不自行降级或重试。
+
+    store::write(&file.with_extension("plot.json"), data).context("plot_failed: plot data output failed")?;
+    let svg = svg(data).context("plot_failed: combined figure rendering failed")?;
+    style::png(&svg, file, 3600, 2400).context("plot_failed: PNG output failed")
 }
 pub fn redraw(file: &Path) -> Result<()> {
     let data: Figure = store::read(file)?;
@@ -502,10 +498,10 @@ pub fn cleanup(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn coarse(cfg: &Config, results: &Path) -> Result<()> {
+pub fn coarse(cfg: &Config, _results: &Path) -> Result<()> {
     super::stage_results::retire_units(cfg, Step::Coarse, &["figures"])?;
-    retire_comparison_figures(&results.join("figures"))?;
-    let data = crate::interpolation::comparison_data::load(&results.join("comparison"))?;
+    retire_comparison_figures(&super::stage_results::root(cfg).join("6.epw-coarse/figures"))?;
+    let data = crate::interpolation::comparison_data::load(&super::layout::path(&cfg.work_dir,"interpolation/comparison"))?;
     let mut bands = vec![];
     let mut dos = vec![];
     for (target, curves) in [(&mut bands, &data.phonon), (&mut dos, &data.phonon_dos)] {
@@ -565,7 +561,7 @@ pub fn coarse(cfg: &Config, results: &Path) -> Result<()> {
         window: vec![],
         notes,
     };
-    let dir = Step::Coarse.directory(cfg).join("plot");
+    let dir = super::stage_results::root(cfg).join("6.epw-coarse");
     fs::create_dir_all(&dir)?;
     write(&dir.join("phonon.png"), &fig)?;
     super::stage_results::publish(

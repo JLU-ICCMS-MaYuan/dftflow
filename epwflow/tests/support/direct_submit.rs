@@ -196,6 +196,7 @@ fn direct_mpirun_comes_from_job_environment_and_keeps_exit_status() {
 #[test]
 fn stage_allocations_complete_upstream_once_then_both_native_solvers() {
     let c = Case::numbered();
+    c.numbered_change(|cfg| {cfg.superconductivity.task=config::SuperconductivityTask::Gap;cfg.superconductivity.gap_temperatures_k=vec![20.,30.];});
     c.stage_setup();
     // 所有原生阶段都实际写两路日志，证明归集读取的是执行中的同一 .out。
     let programs = [
@@ -213,18 +214,18 @@ fn stage_allocations_complete_upstream_once_then_both_native_solvers() {
         success(c.stage_execute());
     }
     success(c.direct_advance(2, &["--stage", "superconductivity", "-s"], "solver-stage"));
-    success(c.stage_execute());
+    for mode in ["iso","aniso"] {assert_eq!(c.execute_record(c.method_task(mode)),0);}
+    success(c.direct_advance(2, &["--stage", "superconductivity", "-s"], "solver-collect"));
     let result: Value =
         store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();
-    for mode in ["iso", "aniso"] {
-        assert_eq!(result["native_modes"][mode]["complete"], true);
-    }
+    assert_eq!(result["execution_complete"],true);
+    assert_eq!(result["plan"].as_array().unwrap().len(),4);
     assert_eq!(c.calls().0.lines().filter(|s| *s == "pw").count(), 3);
     assert_eq!(c.calls().0.lines().filter(|s| *s == "ph").count(), 1);
     assert_eq!(c.post_calls(), "postw90\n");
     assert!(c
         .root
-        .join("run/results/8.epw-superconductivity/stage-manifest.json")
+        .join("run/results/8.epw-superconductivity/native.plot.json")
         .is_file());
     let mut seen = std::collections::BTreeSet::new();
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
@@ -333,7 +334,7 @@ fn explicit_scf_resume_recomputes_success_each_time_and_blocks_running_jobs() {
         success(c.direct_advance(0, &args, "force-scf-reuse"));
         let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
         assert!(epwflow::foundation::stages::reusable(&cfg, epwflow::foundation::stages::Step::Scf).unwrap());
-        assert!(dir.join("snapshot").is_dir());
+        assert!(dir.join("out").is_dir());
         assert!(!dir.join("scf.err").exists());
     }
     assert_eq!(
@@ -420,7 +421,7 @@ pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
     let calls = c.calls();
     assert!(c
         .root
-        .join("run/results/3.qe-electronic/band-ranges/electronic-band-ranges.png")
+        .join("run/results/3.qe-electronic/electronic-band-ranges.png")
         .is_file());
     assert!(!c.stage_submit("wannier", false).status.success());
     fs::remove_file(c.root.join("fail-dos")).unwrap();
@@ -430,7 +431,7 @@ pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
     assert_eq!(bands, fs::read(receipts.join("scf_band.gnu")).unwrap());
     assert_eq!(calls.0, c.calls().0, "Success PW and PH Do not run again");
     assert!(c.root.join("run/3.qe-electronic/qe_eledos/scf.tdos").is_file());
-    assert!(c.root.join("run/results/3.qe-electronic/plot/electronic.png").is_file());
+    assert!(c.root.join("run/results/3.qe-electronic/electronic.png").is_file());
 }
 
 #[test]
@@ -559,18 +560,18 @@ fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
     assert_eq!(c.execute_record(aniso), 0);
     assert!(!c
         .root
-        .join("run/results/8.epw-superconductivity/points.csv")
+        .join("run/results/8.epw-superconductivity/native.plot.json")
         .exists());
     assert_eq!(c.execute_record(iso), 0);
     // 原生作业只计算；公开命令归集核验后才发布。
     assert!(!c
         .root
-        .join("run/results/8.epw-superconductivity/points.csv")
+        .join("run/results/8.epw-superconductivity/native.plot.json")
         .exists());
     success(c.direct_advance(2, &args, "gap-both-collect"));
     assert!(c
         .root
-        .join("run/results/8.epw-superconductivity/points.csv")
+        .join("run/results/8.epw-superconductivity/native.plot.json")
         .is_file());
     epwflow::foundation::stage_results::check(&c.root.join("run/results")).unwrap();
     let launches: Vec<Value> = fs::read_to_string(c.root.join("epw-invocations.jsonl"))
@@ -615,8 +616,8 @@ fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
     let before = c.calls();
     success(c.direct_advance(2, &["--stage", "superconductivity", "-s"], "gap-reuse"));
     assert_eq!(before, c.calls());
-    let results = root.join("results");
-    assert!(results.join("points.csv").is_file());
+    let results = c.root.join("run/results/8.epw-superconductivity");
+    assert!(results.join("native.plot.json").is_file());
     assert!(!results.join("tc.csv").exists());
     assert!(!results.join("figures/tc_interval.svg").exists());
     assert_eq!(
@@ -636,7 +637,7 @@ fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
     for f in epwflow::delivery::native::load(&results).unwrap().0.files {
         fs::copy(results.join(&f.relative_path), moved.join(&f.relative_path)).unwrap();
     }
-    fs::copy(results.join("manifest.json"), moved.join("manifest.json")).unwrap();
+    assert!(!results.join("manifest.json").exists());
     let matrix = &run.attempts[0].record.as_ref().unwrap().path;
     let record: epwflow::superconductivity::attempt::AttemptResult = store::read(matrix).unwrap();
     let id = &record.source.matrix_files[0];

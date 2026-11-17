@@ -120,6 +120,16 @@ pub struct Manifest {
     pub sources: Vec<Identity>,
 }
 pub fn load(root: &Path) -> Result<(Manifest, Data)> {
+    if root.join("native.plot.json").is_file() {
+        let data:Data=store::read(&root.join("native.plot.json"))?;
+        ensure!(data.schema_version==1,"data_invalid: native plotting data version");
+        for state in &data.states {ensure!([state.delta_mev,state.z,state.weight,state.energy_ev].iter().all(|v|v.is_finite()),"data_invalid: invalid native plot state");}
+        for spectrum in &data.spectra {validate_spectrum(spectrum)?;}
+        let manifest=Manifest {schema_version:1,kind:"native-plot-data".into(),run_id:data.run_id.clone(),complete:data.complete,
+            files:vec![Artifact::capture(root,"native.plot.json")?],sources:vec![]};
+        return Ok((manifest,data));
+    }
+
     super::publication::ensure_finished(root, "manifest.json")?;
     let m: Manifest = store::read(&root.join("manifest.json"))?;
     ensure!(
@@ -380,6 +390,12 @@ fn publish(
     data: Data,
     mut sources: Vec<Identity>,
 ) -> Result<PathBuf> {
+    if crate::foundation::layout::enabled(work) {
+        let output=work.join("results/8.epw-superconductivity");fs::create_dir_all(&output)?;
+        // 这是绘制所请求原生图所需的投影数据，不复制原生大矩阵或完整Delta/Z。
+        store::write(&output.join("native.plot.json"),&data)?;
+        return Ok(output);
+    }
     sources.sort_by(|a, b| a.path.cmp(&b.path).then(a.sha256.cmp(&b.sha256)));
     sources.dedup_by(|a, b| a.path == b.path && a.sha256 == b.sha256);
     ensure!(
@@ -590,6 +606,11 @@ fn publish(
 }
 
 pub fn check(root: &Path) -> Result<serde_json::Value> {
+    if root.join("native.plot.json").is_file() {
+        let data:Data=store::read(&root.join("native.plot.json"))?;
+        return Ok(serde_json::json!({"schema_version":1,"native_complete":data.complete,"workflow_complete":false}));
+    }
+
     let (m, d) = load(root)?;
     let mut source_verification = "verified";
     for s in &m.sources {

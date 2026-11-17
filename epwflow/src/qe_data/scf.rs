@@ -63,6 +63,11 @@ pub fn run_scf(
 
 /// 复用已验证 SCF 快照：仅当来源、参数、版本与布局一致时登记，否则拒绝。
 pub fn reuse_scf(source_save: &Path, work: &Path) -> Result<std::path::PathBuf> {
+    if crate::foundation::layout::enabled(work) {
+        let target=crate::foundation::layout::path(work,"scf/out");
+        super::save::copy_tree(source_save,&target)?;
+        return super::save::snapshot(&target,work);
+    }
     let snapshot = crate::foundation::layout::path(&work, "scf").join("snapshot");
     let entries = super::save::copy_tree(source_save, &snapshot)?;
     super::super::foundation::store::write(

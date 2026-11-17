@@ -30,6 +30,7 @@ pub fn collect_results(
         .unwrap_or_else(|| crate::foundation::layout::path(work,"results"));
     let mut found = false;
     if crate::foundation::layout::path(&work, "superconductivity/manifest.json").exists() {
+        if crate::foundation::layout::enabled(work) {return native::collect(work,Some(&result));}
         native::collect(work, Some(&result))?;
         found = true;
     }
@@ -47,7 +48,8 @@ pub fn plot_results(
     output: Option<&std::path::Path>,
     formats: &[String],
 ) -> anyhow::Result<std::path::PathBuf> {
-    if results.join("index.json").exists() {
+    if results.join("native.plot.json").is_file() { return native_plot::plot(results,output,formats); }
+    if results.join("index.json").exists() || crate::qe_data::save::files(results)?.iter().any(|f| f.relative_path.to_string_lossy().ends_with(".plot.json")) {
         let target=if let Some(output)=output {
             anyhow::ensure!(!output.exists(),"input_conflict: Repaint output already exists");
             crate::qe_data::save::copy_tree(results,output)?;
@@ -72,7 +74,13 @@ pub fn plot_results(
 }
 
 pub fn check_results(results: &std::path::Path) -> anyhow::Result<serde_json::Value> {
-    if results.join("index.json").exists() {
+    if results.join("native.plot.json").is_file() {
+        let mut report=native::check(results)?;
+        let figures=native_plot::check(results)?;
+        report["workflow_complete"]=(report["native_complete"]==true && figures).into();return Ok(report);
+    }
+
+    if results.join("index.json").exists() || crate::qe_data::save::files(results)?.iter().any(|f| f.relative_path.to_string_lossy().ends_with(".plot.json")) {
         let index=crate::foundation::stage_results::check(results)?;
         return Ok(serde_json::json!({"schema_version":1,"operation_status":"ok","stage_results_verified":true,"entries":index.entries,"workflow_complete":false}));
     }

@@ -56,7 +56,6 @@ source "/path/to/oneapi/setvars.sh" --force
 mpirun -np 32 /path/to/pw.x < scf.in > scf.out 2>&1
 ```
 
-当前任务、科学检查和续算记录统一写 `epw-state/` 八份中文阶段日志，Slurm 作业号仅放各计算目录同名 `.jobs`。电子后处理位于 `5.epw-wannier/comparison-native/`，能带由 EPW 内嵌 Wannier90 输出，DOS 调用 postw90，原模型保持只读。
 
 `epw_phonon --all` 只准备下一就绪脚本与 `native-plan.json` 待完成清单，零提交，不生成自动全流程总脚本。`--status [--json]` 只读区分运行中、已结束待核验、失败及已核验。
 
@@ -119,33 +118,6 @@ ecutwfc = 40.0  # 此次 pw.x 独立设置，不从 SCF 继承
 
 数组使用原生名，例如 `amass`、`temps`，生成 Fortran 索引数组；`ATOMIC_SPECIES` 保存原生卡片文本；SCF 的 `K_POINTS` 保存类型及正文，NSCF 的 `K_POINTS = [A, B, C]` 仅填写三个正整数。Rust 按官方 `kmesh.pl` 的公式、顺序及精度展开到实际 `nscf.in`，配置中不保存长点表。SCF 与 NSCF 必须同维度、零位移。输入文件不再前置参数来源注释；原文配置使用编号版本保存，当前及计算使用的版本由阶段日志说明；内部算法类型不是另一份用户配置。
 
-```text
-run/
-├── input.toml、POSCAR、pp/、KPATH.in
-├── 1.qe-scf/
-├── 2.qe-nscf/
-├── 3.qe-electronic/
-│   ├── qe_eband/
-│   └── qe_eledos/
-├── 4.qe-phonon-nosplit/       # 也可为 coords 或 index
-│   └── save/
-├── 5.epw-wannier/
-├── 6.epw-coarse/
-│   ├── comparison-native/
-│   ├── comparison/
-├── 7.epw-fine/
-├── 8.epw-superconductivity/
-│   ├── iso/
-│   └── aniso/
-├── results/                 # 按阶段即时发布图、数据、参数及来源
-│   ├── index.json
-│   ├── 3.qe-electronic/
-│   ├── 4.qe-phonon-nosplit/
-│   ├── 5.epw-wannier/
-│   ├── 6.epw-coarse/
-│   └── 8.epw-superconductivity/
-└── epw-state/
-```
 
 实际计算目录保存运行到该任务时生成的原生输入、功能脚本和日志。分 q、细网格展宽及各温度尝试也在自己的目录生成提交脚本。依赖上游产物才能确定的输入和子任务在运行到该阶段时生成；未得到 NSCF 时不会伪造 EPW 选窗。脚本固定工作目录，能够从其他目录提交。一个阶段分配只执行目标范围内缺少的任务，不生成自动推进全部物理阶段的总提交脚本。
 
@@ -223,13 +195,6 @@ broyden_beta = -0.3
 
 `muc`、`gap_edge` 和求解控制必须显式配置，程序不注入科学默认值。两种方法独立读取自己的参数与温度；第 7 步也有自己的 `nstemp/temps`。温度列表为 1～50 个互不重复的 0.01～999.99 K 值，按配置顺序传递；频率截断须容纳首个 Matsubara 频率。负 `broyden_beta` 为原生线性混合、正值为 Broyden，绝对值须在 `(0,1]`。
 
-```text
-8.epw-superconductivity/
-├── iso-mu0.13-20-40/     # epw.in、epw.sh、epw.out/err 与所有温度原生输出
-├── aniso-mu0.13-20-40/
-├── manifest.json
-└── results/
-```
 
 目录使用实际 μ* 和配置列表首尾温度，去掉数值冗余零，不按温度建立子目录。新点清单为 schema 4，旧 schema 3 继续核验；结果包保留 `points.csv`、有效的 `gap_summary.csv`／`gap_states.csv` 与图，不生成 Tc 表。执行完成、收敛和数据有效性分别记录，缺失或 NaN 不补零。
 
@@ -308,7 +273,7 @@ bash scripts/build-native.sh test -p epwflow -p qeflow --locked
 
 构建会先完成本机配置要求的兼容打包与启动检查，活动引用存在时拒绝替换；测试不更新已发布 CLI。详见 [0017](../docs/specs/0017-build-binaries-layout/quickstart.md)。`bin/` 已被 Git 忽略，按 `epwflow`、`qeflow`、`scflow`、`substitutionflow`、`vaspflow`、`wannierflow` 分组。`scripts/env.sh` 将模块路径加入当前终端 PATH，不要求在测试目录寻找可执行文件。
 
-公开进程及脚本测试使用隔离替身，证明调度、布局、复用和数据防护，不认证科学数值。后续授权的真实 MgB₂ PBE 八阶段及 iso／aniso 三温度 gap 已完成，见 [联合验收](../docs/specs/0050-epw-stage-results/real-chain-validation.md)；原生 Tc 搜索不在该轮验收范围。作业登记、来源保护及原生收敛检查继续有效，历史科学证据见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
+公开进程及脚本测试使用隔离替身，证明调度、布局、复用和数据防护，不认证科学数值。后续授权的真实 MgB₂ PBE 八阶段及 iso／aniso 三温度 gap 已完成，见 [联合验收](../docs/specs/0050-epw-stage-results/real-chain-validation.md)；原生线性化 Tc 不在该轮验收范围。作业登记、来源保护及原生收敛检查继续有效，历史科学证据见 [0015 验收](../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)。
 
 
 ## 八阶段可读状态与重建
@@ -350,7 +315,7 @@ imports/                 # 外部声子导入时保留
 
 ## 逐阶段结果与独立重绘
 
-`results/` 位于计算工作区根，与编号目录同级。第 3、5 步各发布两张电子组合图，第 4、6 步各发布一张声子组合图，均使用阶段 plot/；第 3、4 步保留 QE 元素投影；第 8 步是已有超导图。第 7 步没有独立既有图，不创建空包或额外任务。每个包带表格、图参、来源和文件校验清单。
+各阶段只发布所请求图片及绘图必需数据，不复制原始科学大文件，不生成额外索引、报告或清单。绘图失败报告原因并保留科学结果；普通运行／恢复不自动重试，显式 `--plot --results` 才重绘已有数据。
 
 ```bash
 epw_superconductivity --results-check --results "results" --json
@@ -363,7 +328,7 @@ epw_superconductivity --plot --results "results"
 
 第 6 步原生核验成功后，同一阶段分配独立生成 `decay.H`、`decay.dynmat`、`decay.epmate`、`decay.epmatp` 的四张图和 2×2 总览，先于其他比较后处理。第 5 步只拟合 Wannier，尚不产生完整四类量；不等待第 7 步，也不新增科学计算或作业。
 
-查看 `results/6.epw-coarse/decay/decay-overview.png`，独立图主体为 `decay-H`、`decay-dynmat`、`decay-epmate`、`decay-epmatp`，全部提供 PNG／SVG／PDF。横轴为实空间距离 Å，纵轴按原生文件为 Ry，使用紫色散点和十进制对数。重复距离逐行保留，零值保留在数据并注明未绘制，坏数和来源冲突拒绝。
+查看 `results/6.epw-coarse/decay-overview.png`，独立图主体为 `decay-H`、`decay-dynmat`、`decay-epmate`、`decay-epmatp`，全部提供 PNG／SVG／PDF。横轴为实空间距离 Å，纵轴按原生文件为 Ry，使用紫色散点和十进制对数。重复距离逐行保留，零值保留在数据并注明未绘制，坏数和来源冲突拒绝。
 
 阶段内派生目录为 `6.epw-coarse/decay/`；发布包附原始副本、逐行绘图数据、参数及来源。完整 `results/` 移动后可用上面的 `--plot --results` 独立重绘。图像失败后原目标加 `--resume -s` 仅补派生结果，缺原生 decay 文件则列缺项，不自动重跑 EPW。图仅供人工判断，不提供阈值、评级或放行门。使用与验收见 [0051 快速说明](../docs/specs/0051-epw-real-space-decay/quickstart.md)和[验收记录](../docs/specs/0051-epw-real-space-decay/acceptance.md)；后续合并版已完成真实联合验收并部署默认安装，详见 [联合交付记录](../docs/specs/0050-epw-stage-results/real-chain-validation.md)。
 

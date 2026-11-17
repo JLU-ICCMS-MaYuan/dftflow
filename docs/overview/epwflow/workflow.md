@@ -46,26 +46,6 @@ flowchart TD
 
 ## 比较用的数据从哪里来
 
-```text
-计算工作区/
-├── 3.qe-electronic/{qe_eband,qe_eledos}/
-├── 4.qe-phonon-<当前模式>/
-├── 5.epw-wannier/
-│   ├── <prefix>_band.dat、<prefix>_band.kpt
-│   └── comparison-native/            # 第 5 步电子数据、postw90 与来源
-├── 6.epw-coarse/
-│   ├── epw_coarse.in、epw_coarse.out
-│   ├── comparison-native/
-│   │   └── epw/                     # 读取已有模型补声子频率
-│   └── comparison/                  # 整理表格与数值差
-└── results/
-    ├── index.json
-    ├── 3.qe-electronic/{qe_eband,qe_eledos}/
-    ├── 4.qe-phonon-<当前模式>/
-    ├── 5.epw-wannier/
-    ├── 6.epw-coarse/{comparison,figures}/
-    └── 8.epw-superconductivity/
-```
 
 `results` 与编号目录同级。子目录保存图片、数值表、绘图参数、来源和 `stage-manifest.json`；根 `index.json` 是导航，不代替科学回执。原始科学文件仍留在阶段目录。第 7 步当前没有独立最终图片，不创建空结果包或新增科学任务。
 

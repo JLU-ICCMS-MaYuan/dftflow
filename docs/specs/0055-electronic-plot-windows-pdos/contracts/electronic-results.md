@@ -1,12 +1,5 @@
 # 组合图数据与交付契约
 
-## 目录与文件
-
-- 第 3、5 步的 plot/ 各生成 electronic.png 和 electronic-from-lowest-to-highest.png，各自对应自包含 .plot.json。
-- 第 4、6 步的 plot/ 各生成 phonon.png 和 phonon.plot.json。
-- results 对应阶段的 plot/ 发布相同图片与图参。数值 CSV、指标、归一化和科学来源继续独立保留。
-- 新生成端不输出分离能带／DOS 图片、-valence 图片或比较总览；逐带范围和衰减诊断保留。
-
 ## 能量与频率
 
 电子图纵轴为 E−E_F（eV）。近费米范围读取 [plot] 的 electronic_energy_min_ev／electronic_energy_max_ev，独立默认 −3／＋3。全范围严格由 QE 路径全部本征值的最小和最大值确定。
