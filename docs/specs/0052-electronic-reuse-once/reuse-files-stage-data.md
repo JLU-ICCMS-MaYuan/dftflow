@@ -270,6 +270,156 @@ reuse: 6.epw-coarse
 
 第 5 步主计算和比较都开展时，可分别出现第 2 步电子数据、第 3 步曲线；只拟合就不显示第 3 步。第 6 步粗 EPC 取第 2、4、5 步，声子比较额外读取第 4 步曲线；不应再显示第 1 步。第 8 步只显示所选第 7 步文件，不列全链。
 
+## 第 1～8 步 reuse 输出示例
+
+以下按 `prefix="MgB2"` 展示目标输出，不表示当前实现已生效。`wfc*.dat`、`ephmatXX`、`N` 是文件族或编号占位，运行时必须展开为实际取用的真实文件路径。电荷密度／波函数仍免核验，列出接续路径不构成额外预检。各阶段赝势始终使用用户指定目录，不列入 reuse。
+
+### 第 1 步：SCF
+
+无前序数据，不显示 reuse。
+
+### 第 2 步：NSCF
+
+```text
+reuse: 1.qe-scf
+       1.qe-scf/out/MgB2.save/charge-density.dat
+       1.qe-scf/out/MgB2.save/data-file-schema.xml
+```
+
+### 第 3 步：QE 电子参考
+
+路径能带计算：
+
+```text
+reuse: 1.qe-scf
+       1.qe-scf/out/MgB2.save/charge-density.dat
+       1.qe-scf/out/MgB2.save/data-file-schema.xml
+```
+
+总 DOS：
+
+```text
+reuse: 2.qe-nscf
+       2.qe-nscf/out/MgB2.save/data-file-schema.xml
+```
+
+执行原子／轨道投影时：
+
+```text
+reuse: 2.qe-nscf
+       2.qe-nscf/out/MgB2.save/data-file-schema.xml
+       2.qe-nscf/out/MgB2.save/wfc*.dat
+```
+
+只显示实际执行子任务所需文件；同一次调用的同一来源、同一文件只列一次。
+
+### 第 4 步：QE 声子
+
+```text
+reuse: 1.qe-scf
+       1.qe-scf/out/MgB2.save/data-file-schema.xml
+       1.qe-scf/out/MgB2.save/charge-density.dat
+       1.qe-scf/out/MgB2.save/wfc*.dat
+```
+
+### 第 5 步：Wannier 拟合
+
+```text
+reuse: 2.qe-nscf
+       2.qe-nscf/out/MgB2.save/data-file-schema.xml
+       2.qe-nscf/out/MgB2.save/wfc*.dat
+```
+
+若原生初始化实际读取电荷密度，再在同组追加：
+
+```text
+       2.qe-nscf/out/MgB2.save/charge-density.dat
+```
+
+本阶段绘制电子对比图时，另列第 3 步参考数据。以下沿用本文拟议输出名，尚待确认：
+
+```text
+reuse: 3.qe-electronic
+       3.qe-electronic/qe_eband/MgB2.bands.dat
+       3.qe-electronic/qe_eledos/MgB2.dos
+```
+
+### 第 6 步：粗网格 EPC
+
+以 index 声子来源为例；N 展开为所有实际使用的 q 点编号，其他声子模式使用各自来源目录，不混用。
+
+```text
+reuse: 2.qe-nscf
+       2.qe-nscf/out/MgB2.save/data-file-schema.xml
+       2.qe-nscf/out/MgB2.save/wfc*.dat
+reuse: 4.qe-phonon-index
+       4.qe-phonon-index/save/MgB2.dyn0.xml
+       4.qe-phonon-index/save/MgB2.dyn_qN.xml
+       4.qe-phonon-index/save/MgB2.dvscf_qN
+       4.qe-phonon-index/save/MgB2.phsave/patterns.N.xml
+       4.qe-phonon-index/save/MgB2.phsave/control_ph.xml
+reuse: 5.epw-wannier
+       5.epw-wannier/MgB2.ukk
+       5.epw-wannier/MgB2.mmn
+       5.epw-wannier/MgB2.bvec
+```
+
+若原生初始化实际读取第 2 步电荷密度，将其加入第 2 步分组。本阶段做声子比较时，在第 4 步分组中追加：
+
+```text
+       4.qe-phonon-index/MgB2.phband.freq
+       4.qe-phonon-index/MgB2.phdos
+```
+
+不读取第 5 步电子曲线。声子归集与绘图文件名沿用本文草案，不是所有 QE 版本的统一默认名。
+
+### 第 7 步：细网格 EPC
+
+下面假设实际使用 vmedata.fmt，且读取 wigner.fmt：
+
+```text
+reuse: 6.epw-coarse
+       6.epw-coarse/out/MgB2.epmatwp
+       6.epw-coarse/MgB2.ukk
+       6.epw-coarse/epwdata.fmt
+       6.epw-coarse/crystal.fmt
+       6.epw-coarse/vmedata.fmt
+       6.epw-coarse/wigner.fmt
+```
+
+若原生路线读取 dmedata.fmt，则按实际情况列出；不机械要求两种矩阵文件都有。没有读取 wigner.fmt 就不显示该文件。
+
+### 第 8 步：超导求解
+
+读取细网格矩阵求解，包括各向异性方程。示例选择第一个展宽目录：
+
+```text
+reuse: 7.epw-fine
+       7.epw-fine/smearing-0001/out/MgB2.ephmat/ephmatXX
+       7.epw-fine/smearing-0001/out/MgB2.ephmat/egnv
+       7.epw-fine/smearing-0001/out/MgB2.ephmat/freq
+       7.epw-fine/smearing-0001/out/MgB2.ephmat/ikmap
+       7.epw-fine/smearing-0001/out/MgB2.ephmat/npool
+       7.epw-fine/smearing-0001/out/MgB2.dos
+       7.epw-fine/smearing-0001/crystal.fmt
+       7.epw-fine/smearing-0001/selecq.fmt
+```
+
+若实际读取已有总 α²F，再在同组追加：
+
+```text
+       7.epw-fine/smearing-0001/MgB2.a2f
+```
+
+选择 8B 各向同性方程直接读取 α²F 的路线时，仅显示：
+
+```text
+reuse: 7.epw-fine
+       7.epw-fine/smearing-0001/MgB2.a2f
+```
+
+以上没有列入尚未查明具体名字的 PAW 辅助文件；这些仍是待核对项，不能据此宣称已列全所有版本及选项的文件。源数据为 HDF5 等格式时显示实际文件名，不硬编码 `.dat`。
+
 ## 数据流
 
 ```mermaid
