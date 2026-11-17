@@ -1,5 +1,7 @@
 # 需求规格
 
+> **协作入口（2026-11-17）**：[GitHub Issue #41](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/41)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 ## 原始需求记录
 
 我想你能在/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow目录下进行全方位的 debug 和代码例子的运行。需要你用到的结构为：/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/POSCAR.
@@ -9,7 +11,7 @@
 
 如果有 bug 就新建 issue 和 spec 进行 debug。
 
-入口：[Issue](issue-draft.md)。无附件，images: []。
+入口：[GitHub Issue #41](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/41)。无附件，images: []。
 
 US1：用户提交已完成多阶段的工作区时，完整核验产物但减少串行等待。
 

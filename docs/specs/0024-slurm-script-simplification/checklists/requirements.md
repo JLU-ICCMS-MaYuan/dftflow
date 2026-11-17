@@ -1,6 +1,6 @@
 # 0024 需求质量检查表
 
-创建日期：2026-10-21。关联 [Spec 草稿](../spec.md) 和 [Issue 草稿](../issue-draft.md)。本表只检查需求，不代表代码验收。
+创建日期：2026-10-21。关联 [Spec 草稿](../spec.md) 和 [GitHub Issue #24](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/24)。本表只检查需求，不代表代码验收。
 
 - [x] CHK001 原始需求逐字保留并与 AI 建议分开：Issue／Spec 的“原始需求记录”均包含完整三段请求和用户对失败处理选择的原话；“附件与推断来源”单列 AI 实施建议。
 - [x] CHK002 用户场景覆盖日志名、日志位置和脚本简化：US1／US2 对应 FR-001～005，SC-001～003 给出可检查条件。

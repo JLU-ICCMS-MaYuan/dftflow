@@ -3,7 +3,7 @@
 > 当前绘图输出以 [0055 组合图契约](../0055-electronic-plot-windows-pdos/spec.md) 为准；旧分离图、总览、±5 eV 和根目录图片要求均已替代。历史原话与验收记录保留。
 
 
-**Issue**：[0047 本地草案](issue-draft.md)；线上由用户管理。
+**Issue**：[GitHub Issue #47](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/47)；线上由用户管理。
 **日期**：2026-10-22
 **Spec**：[spec.md](spec.md)
 

@@ -1,6 +1,8 @@
 # 需求规格：常规对比、独立路径采样与已有共同点差值
 
-**Issue**：[本地 0043](issue-draft.md)，线上 Gitee 由用户管理，远程链接待验证。
+> **协作入口（2026-11-17）**：[GitHub Issue #43](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/43)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #43](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/43)，线上 Gitee 由用户管理，远程链接待验证。
 **创建日期**：2026-10-21。**实施基线**：用户已完整引用最终计划并要求实施。
 
 ## 当前实施结果（2026-11-17）

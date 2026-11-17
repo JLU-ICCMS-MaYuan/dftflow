@@ -1,11 +1,13 @@
 # Feature 规格：电子对比在 Wannier 阶段交付、复用已有数据并即时发布阶段结果
 
+> **协作入口（2026-11-17）**：[GitHub Issue #50](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/50)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 > 当前绘图输出以 [0055 组合图契约](../0055-electronic-plot-windows-pdos/spec.md) 为准；旧分离图、总览、±5 eV 和根目录图片要求均已替代。历史原话与验收记录保留。
 
 
 
 
-**Issue**：[0050 本地 Issue 草案](issue-draft.md)；本地暂定编号，线上 Gitee 由用户管理，平台登记及远程双向链接待验证。
+**Issue**：[GitHub Issue #50](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/50)；本地暂定编号，线上 Gitee 由用户管理，平台登记及远程双向链接待验证。
 
 **创建日期**：2026-10-22。
 

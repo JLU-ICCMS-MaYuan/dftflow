@@ -1,6 +1,8 @@
 # 需求规格
 
-原文见 [Issue](issue-draft.md)。
+> **协作入口（2026-11-17）**：[GitHub Issue #36](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/36)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+原文见 [GitHub Issue #36](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/36)。
 
 - FR-001：原生 coarse 输入本身必须先通过冻结身份核验；只有其中 prefix、outdir=./out 所对应的 out/prefix.wfc正整数 工作副本可在执行后改变，初始身份仍保留。
 - FR-002：原始 F2、portable SAVE、响应、变换、物理参数与其余输入保持严格；复制过程验证完整集合和哈希，失败工作区按已有协议归档后重建，不就地信任修改后的副本。

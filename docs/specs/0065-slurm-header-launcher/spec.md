@@ -1,6 +1,8 @@
 # 0065：统一 Slurm header 与 launcher 配置
 
-本地暂定编号；线上 Issue 由用户管理，未操作当前 origin。关联 [Issue 草稿](issue-draft.md)。用户已确认统一方案并要求“开始修改”，本版作为实施基线。
+> **协作入口（2026-11-17）**：[GitHub Issue #65](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/65)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+本地暂定编号；线上 Issue 由用户管理，未操作当前 origin。关联 [GitHub Issue #65](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/65)。用户已确认统一方案并要求“开始修改”，本版作为实施基线。
 
 ## 原始需求记录
 

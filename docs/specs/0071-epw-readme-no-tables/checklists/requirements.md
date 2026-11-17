@@ -4,7 +4,7 @@
 
 **创建日期**：2026-10-23。
 
-**规格**：[Spec](../spec.md)；**需求入口**：[本地 Issue 草稿](../issue-draft.md)。
+**规格**：[Spec](../spec.md)；**需求入口**：[GitHub Issue #71](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/71)。
 
 ## 完整性、清晰度与覆盖
 

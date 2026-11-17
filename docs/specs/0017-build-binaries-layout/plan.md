@@ -1,6 +1,6 @@
 # 0017：仓库构建与唯一程序入口实施计划
 
-**输入**：[规格](spec.md)、[研究](research.md)、[Issue](issue-draft.md)。用户明确授权合并后实施。
+**输入**：[规格](spec.md)、[研究](research.md)、[GitHub Issue #17](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/17)。用户明确授权合并后实施。
 
 ## 结构与职责
 

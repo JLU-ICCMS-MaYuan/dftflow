@@ -1,6 +1,8 @@
 # 0055：统一能带与 DOS 组合图
 
-**Issue**：[本地 Issue 草案](issue-draft.md)，沿用线上用户管理约定。
+> **协作入口（2026-11-17）**：[GitHub Issue #55](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/55)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #55](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/55)，沿用线上用户管理约定。
 
 ## 当前有效需求
 

@@ -1,6 +1,6 @@
 # 实施计划：QE 分 q 点声子一次提交完成
 
-**Issue**：[0006](issue-draft.md)；**Spec**：[spec.md](spec.md)；日期 2026-10-14。
+**Issue**：[GitHub Issue #6](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/6)；**Spec**：[spec.md](spec.md)；日期 2026-10-14。
 
 ## 摘要与用户批准方案
 

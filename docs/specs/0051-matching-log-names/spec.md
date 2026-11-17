@@ -1,5 +1,7 @@
 # 科学输入与执行输出同名
 
+> **协作入口（2026-11-17）**：[GitHub Issue #51](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/51)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 Issue：[GitHub #51](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/51)；创建日期：2026-11-16。
 
 ## 原始需求记录

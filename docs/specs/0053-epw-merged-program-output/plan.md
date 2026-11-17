@@ -1,6 +1,6 @@
 # 0053：实施计划
 
-**Issue**：[0053](issue-draft.md)。**规格**：[spec.md](spec.md)。日期：2026-10-23。
+**Issue**：[GitHub Issue #53](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/53)。**规格**：[spec.md](spec.md)。日期：2026-10-23。
 
 ## 技术上下文与质量门
 

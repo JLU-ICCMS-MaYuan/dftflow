@@ -1,6 +1,8 @@
 # 文档规格：MgB₂ EPW 手动测试说明取消表格
 
-**Issue**：[0052 本地需求草稿](issue-draft.md)；本地暂定编号，线上 Gitee 由用户管理，远程双向链接待验证。
+> **协作入口（2026-11-17）**：[GitHub Issue #71](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/71)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #71](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/71)；本地暂定编号，线上 Gitee 由用户管理，远程双向链接待验证。
 
 **创建日期**：2026-10-23。
 
@@ -93,7 +95,7 @@ shell 命令写成命令行的形式。不要表格。新增这个需求然后�
 
 ## 假设与依赖
 
-- 以现场读取的 README 为内容基线；[0050](../0050-epw-stage-results/spec.md) 与 [0051](../0051-epw-real-space-decay/spec.md) 仅作已有能力参考，不在本项扩展功能。
+- 以现场读取的 README 为内容基线；[0050](../0050-epw-stage-results/spec.md) 与 [0054](../0054-epw-real-space-decay/spec.md) 仅作已有能力参考，不在本项扩展功能。
 - 沿用仓库的本地 Issue 草稿约定；0052 不是已核验的线上 Issue number。
 
 ## 待确认决策

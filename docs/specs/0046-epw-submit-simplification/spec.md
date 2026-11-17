@@ -1,8 +1,10 @@
 # 功能规格：移除 EPW 工作区控制／执行锁并简化提交脚本
 
+> **协作入口（2026-11-17）**：[GitHub Issue #46](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/46)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 > 2026-11-17 最新约定：预算账本功能已按用户要求彻底撤销。本文件涉及账本、campaign 身份、预算预留／结算及全局两个作业限制的旧条款均已失效；当前计算只依赖工作流记录、Slurm 作业身份及科学核验。历史消耗与验收记录不改写。详见 [0058 最新需求](../0058-epw-remove-resource-limits/spec.md)。
 
-**Issue**：[本地 0046 草案](issue-draft.md)，线上 Issue 未创建，远程链接待验证。
+**Issue**：[GitHub Issue #46](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/46)，线上 Issue 未创建，远程链接待验证。
 
 **创建／修订日期**：2026-10-22。
 

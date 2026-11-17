@@ -1,6 +1,6 @@
 # 实施计划：八阶段可读日志
 
-日期：2026-10-27。Issue：[0064](issue-draft.md)。需求：[Spec](spec.md)。用户已明确要求“开始落地”，按当前需求和两项已确认澄清实施，不重复申请实施授权。
+日期：2026-10-27。Issue：[GitHub Issue #64](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/64)。需求：[Spec](spec.md)。用户已明确要求“开始落地”，按当前需求和两项已确认澄清实施，不重复申请实施授权。
 
 ## 技术上下文与边界
 

@@ -1,5 +1,7 @@
 # 按实际文件需求接续计算：需求修订草案
 
+> **协作入口（2026-11-17）**：[GitHub Issue #52](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/52)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 日期：2026-11-17。关联：[既有 Issue #52](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/52)。
 
 本文是既有复用需求的后续修订草案，不替换历史验收记录。用户已确认下列五项行为边界，并授权本轮文档落档；用户随后明确要求按 0052 开始实现，实施授权见下文追加记录。线上 Issue 沿用用户自管约定，未写入、未查询其当前状态，不宣称远程链接有效。
@@ -110,7 +112,7 @@
 
 实施后使用 overview-maintainer 更新 docs/overview/epwflow/preflight-and-reuse.md、workflow.md 及相关入口说明；当前不把拟议行为写成已实现事实。根 README 仅在实际使用说明变化时同步。
 
-已获用户按 0052 实施的明确授权；线上 Issue 状态及双向远程链接未验证。配套见 [修改范围与验收计划](reuse-files-plan.md)、[技术任务](reuse-files-tasks.md)、[Issue 正文草案](reuse-files-issue-draft.md)。
+已获用户按 0052 实施的明确授权；线上 Issue 状态及双向远程链接未验证。配套见 [修改范围与验收计划](reuse-files-plan.md)、[技术任务](reuse-files-tasks.md)、[GitHub Issue #52](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/52)。
 
 ## 第 1～8 步数据草案
 

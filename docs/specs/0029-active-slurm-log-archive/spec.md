@@ -1,6 +1,8 @@
 # 需求规格：阶段归档后保留当前作业 Slurm 日志入口
 
-原始需求及范围见 [Issue](issue-draft.md)，沿用用户已授权的真实运行、配置修改与自动修复。
+> **协作入口（2026-11-17）**：[GitHub Issue #29](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/29)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+原始需求及范围见 [GitHub Issue #29](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/29)，沿用用户已授权的真实运行、配置修改与自动修复。
 
 ## 用户场景
 

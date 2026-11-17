@@ -2,7 +2,7 @@
 
 日期：2026-10-22。本表检查本轮需求文档，不验证业务实现。
 
-依据：[Issue 正文](../issue-draft.md)、[Spec 草案](../spec.md)及本轮用户展示并要求执行的完整计划。
+依据：[GitHub Issue #54](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/54)、[Spec 草案](../spec.md)及本轮用户展示并要求执行的完整计划。
 
 ## 原始需求与材料
 

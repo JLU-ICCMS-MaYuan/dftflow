@@ -1,6 +1,8 @@
 # 需求规格
 
-原始需求与数值证据见 [Issue](issue-draft.md)。本项是已授权 debug 中的最小参数衔接，不需要新增材料选择或物理参数决策。
+> **协作入口（2026-11-17）**：[GitHub Issue #30](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/30)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+原始需求与数值证据见 [GitHub Issue #30](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/30)。本项是已授权 debug 中的最小参数衔接，不需要新增材料选择或物理参数决策。
 
 - FR-001：可选 bool wannier.guiding_centres；缺省序列化省略，旧配置与科学键保持；true/false 都须明确传递，其他类型拒绝。
 - FR-002：独立 W90 片段及 EPW 拟合 wdata 采用同一配置，重读／细网格不重新拟合；原生日志必须报告匹配的中心相位引导值，不能仅凭输入字符串放行。

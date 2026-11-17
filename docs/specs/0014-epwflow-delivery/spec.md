@@ -1,5 +1,7 @@
 # Feature 规格：epwflow 的图表、真实对照与安装交付
 
+> **协作入口（2026-11-17）**：[GitHub Issue #14](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/14)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 > 2026-11-17 最新约定：预算账本功能已按用户要求彻底撤销。本文件涉及账本、campaign 身份、预算预留／结算及全局两个作业限制的旧条款均已失效；当前计算只依赖工作流记录、Slurm 作业身份及科学核验。历史消耗与验收记录不改写。详见 [0058 最新需求](../0058-epw-remove-resource-limits/spec.md)。
 
 > 2026-10-21：本文保留原设计语境。独立抽样核验、质量参考／阈值／告警及相关依赖要求由 [0043](../0043-epw-comparison-max-differences/spec.md) 取代；常规图表继续保留，最大差值仅展示事实。历史验收与报告不改写。
@@ -435,7 +437,7 @@ Linux x86_64、macOS arm64 配置与产物继续分离，既有 musl 方式保�
 
 ## 正式落档与确认记录
 
-对应本地 [Issue 草稿](issue-draft.md)；父级 [Epic 0007](../0007-epwflow-superconductivity/issue-draft.md)。以上完整正文来自对话展示版，状态性措辞在落档时更新，FR/SC 不变。
+对应本地 [GitHub Issue #14](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/14)；父级 [GitHub Issue #7](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/7)。以上完整正文来自对话展示版，状态性措辞在落档时更新，FR/SC 不变。
 
 0008、0010、0012、0013 已逐项确认。0014 曾选择“修改本版 Spec 后再确认”，在询问具体修改后用户答复“开始实施”；未提出替代条款，按已展示正文授权执行，前述待确认状态已解除。
 

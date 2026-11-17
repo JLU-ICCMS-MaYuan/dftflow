@@ -1,10 +1,12 @@
 # 0061 需求规格
 
+> **协作入口（2026-11-17）**：[GitHub Issue #61](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/61)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 说明：前部保留最初平层版本的需求及验收记录；2026-10-28 已确认的八主阶段方案见本文后部追加章节，旧的“所有段禁止子表”限制已由该方案替代。
 
 ## 原始需求记录
 
-完整原话逐字保存在 [Issue 草案](issue-draft.md#原始需求记录)，本文件同步保存如下。
+完整原话逐字保存在 [GitHub Issue #61](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/61)，本文件同步保存如下。
 
 > 我希望的是只区分到[stages."1.qe-scf"]就行，至于 1.qe-scf又有什么分类，我觉得就不别再细分，像[stages."1.qe-scf".pw.ELECTRONS]在1.qe-scf的基础上又细分了 2 层，太复杂了。同样的道理也应用到 2.qe-nscf, 3.qe-xxx, 4.xxx, 5.xxx, 6.xxx, 7.xxx
 >

@@ -1,6 +1,8 @@
 # Spec：dftflow 全量 Rust 重写（qeflow / vaspflow / wannier90flow / substitutionflow / scflow / public）
 
-> 由 `big-project-spec-runner` 维护（specify 模式）。本文件写 WHAT/WHY；HOW 见 `plan.md`；任务见 `tasks.md`；技术决策见 `research.md`；验收见 `acceptance.md`；Issue 拆分见 `issue-draft.md`。
+> **协作入口（2026-11-17）**：[GitHub Issue #4](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/4)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+> 由 `big-project-spec-runner` 维护（specify 模式）。本文件写 WHAT/WHY；HOW 见 `plan.md`；任务见 `tasks.md`；技术决策见 `research.md`；验收见 `acceptance.md`；Issue 拆分见 [GitHub Issue #4](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/4)。
 
 ## 原始需求记录（用户原话，逐字，禁止改写/删减）
 

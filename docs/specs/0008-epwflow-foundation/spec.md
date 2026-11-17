@@ -1,5 +1,7 @@
 # Feature 规格：epwflow 配置、环境检查与受控执行基础
 
+> **协作入口（2026-11-17）**：[GitHub Issue #8](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/8)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 > 2026-11-17 最新约定：预算账本功能已按用户要求彻底撤销。本文件涉及账本、campaign 身份、预算预留／结算及全局两个作业限制的旧条款均已失效；当前计算只依赖工作流记录、Slurm 作业身份及科学核验。历史消耗与验收记录不改写。详见 [0058 最新需求](../0058-epw-remove-resource-limits/spec.md)。
 
 **Issue**：本地 0008，父级 Epic 0007；线上 Issue 由用户管理。
@@ -306,7 +308,7 @@ F1 不生成或运行真实 QE/PH/EPW 科学阶段，不做 Wannier 化、插值
 
 ## 正式落档与确认记录
 
-对应本地 [Issue 草稿](issue-draft.md)；父级 [Epic 0007](../0007-epwflow-superconductivity/issue-draft.md)。以上完整正文来自对话展示版，状态性措辞在落档时更新，FR/SC 不变。
+对应本地 [GitHub Issue #8](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/8)；父级 [GitHub Issue #7](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/7)。以上完整正文来自对话展示版，状态性措辞在落档时更新，FR/SC 不变。
 
 确认依据见本地 Issue 的“详细 Spec 审查进度”，不得把文档确认当作科学验收。
 

@@ -1,6 +1,6 @@
 # 实施计划：DOS pencil 与重提提示
 
-**Issue**：[本地 0021](issue-draft.md)。**Spec**：[spec.md](spec.md)。日期：2026-10-20。
+**Issue**：[GitHub Issue #21](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/21)。**Spec**：[spec.md](spec.md)。日期：2026-10-20。
 
 ## 技术上下文与职责
 

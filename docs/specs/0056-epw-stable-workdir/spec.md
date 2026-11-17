@@ -1,6 +1,8 @@
 # 0056：EPW 重算归档保留阶段工作目录
 
-**Issue**：[本地 Issue 草案](issue-draft.md)，远程链接待用户登记。
+> **协作入口（2026-11-17）**：[GitHub Issue #56](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/56)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #56](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/56)，远程链接待用户登记。
 
 **创建日期**：2026-10-26。**状态**：实现与定向回归完成；默认安装随 0057 交付，线上用户自管。
 

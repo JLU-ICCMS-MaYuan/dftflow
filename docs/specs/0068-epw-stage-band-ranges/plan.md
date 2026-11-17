@@ -1,6 +1,6 @@
 # 实施计划：三阶段能带范围诊断
 
-日期：2026-11-13。需求：[spec.md](spec.md)，Issue：[本地正文](issue-draft.md)。
+日期：2026-11-13。需求：[spec.md](spec.md)，Issue：[GitHub Issue #68](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/68)。
 
 ## 技术上下文与设计
 

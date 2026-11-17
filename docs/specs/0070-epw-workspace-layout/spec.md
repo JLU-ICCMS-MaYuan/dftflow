@@ -1,6 +1,8 @@
 # 0070：EPW 八阶段目录与文件单一归属
 
-**Issue**：[本地 Issue 草案](issue-draft.md)。唯一类型 `type:feature`；沿用线上 Gitee 由用户管理的约定。0070 是本地目录查重编号，不冒充已发布的平台 Issue number，远程链接未验证。
+> **协作入口（2026-11-17）**：[GitHub Issue #70](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/70)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #70](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/70)。唯一类型 `type:feature`；沿用线上 Gitee 由用户管理的约定。0070 是本地目录查重编号，不冒充已发布的平台 Issue number，远程链接未验证。
 
 **创建日期**：2026-11-17。
 

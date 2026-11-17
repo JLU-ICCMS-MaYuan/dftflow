@@ -1,6 +1,8 @@
 # 0068：三个电子前置阶段即时绘制能带能量范围
 
-**Issue**：[本地待发布正文](issue-draft.md)。0068 是沿用仓库约定的本地暂定编号，线上状态由用户管理。当前 origin 指向不匹配的上游 wannier-developers/wannier90，未向其创建 Issue。
+> **协作入口（2026-11-17）**：[GitHub Issue #68](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/68)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #68](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/68)。0068 是沿用仓库约定的本地暂定编号，线上状态由用户管理。当前 origin 指向不匹配的上游 wannier-developers/wannier90，未向其创建 Issue。
 
 **创建日期**：2026-11-13
 

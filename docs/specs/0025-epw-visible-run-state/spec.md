@@ -1,8 +1,10 @@
 # 0025：EPW 可见运行状态与阶段重建
 
+> **协作入口（2026-11-17）**：[GitHub Issue #25](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/25)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 > 2026-11-17 最新约定：预算账本功能已按用户要求彻底撤销。本文件涉及账本、campaign 身份、预算预留／结算及全局两个作业限制的旧条款均已失效；当前计算只依赖工作流记录、Slurm 作业身份及科学核验。历史消耗与验收记录不改写。详见 [0058 最新需求](../0058-epw-remove-resource-limits/spec.md)。
 
-关联：[本地维护 Issue](issue-draft.md)。用户在需求落档后回复“开始”，授权按该目标实施；不操作线上 Gitee，不切换默认安装。本文件细化已授权维护范围，不另行扩大 Feature。
+关联：[GitHub Issue #25](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/25)。用户在需求落档后回复“开始”，授权按该目标实施；不操作线上 Gitee，不切换默认安装。本文件细化已授权维护范围，不另行扩大 Feature。
 
 ## 原始需求记录
 

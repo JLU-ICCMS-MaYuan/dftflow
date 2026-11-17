@@ -222,7 +222,7 @@ chain_inputs.json 绑定原配置、结构和模式；chain_jobs.json 保存阶�
 
 [0006 验收](../../specs/0006-qe-phonon-submit-chain/acceptance.md) 记录了 QE 7.4.1 下 MgB2 的 index、coords 与显式脚本 nosplit 对照，以及真实 only_init 验证；固定标准为对应频率差 ≤0.1 cm⁻¹、总 DOS 积分相对差 ≤10⁻³，同 MPI 配置对照通过。该记录不证明所有材料/机器或参数已收敛。其他机器的配置仍须单独补齐与验证。
 
-本页只回写已查证的当前行为；需求背景见 [本地 Issue 草稿](../../specs/0006-qe-phonon-submit-chain/issue-draft.md)、[Spec](../../specs/0006-qe-phonon-submit-chain/spec.md)、[CLI 契约](../../specs/0006-qe-phonon-submit-chain/contracts/cli.md)。本次未重跑计算，也未修改这些需求文件。
+本页只回写已查证的当前行为；需求背景见 [GitHub Issue #6](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/6)、[Spec](../../specs/0006-qe-phonon-submit-chain/spec.md)、[CLI 契约](../../specs/0006-qe-phonon-submit-chain/contracts/cli.md)。本次未重跑计算，也未修改这些需求文件。
 
 ## 声子谱路径与仅重绘
 

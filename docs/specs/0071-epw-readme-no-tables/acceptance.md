@@ -2,7 +2,7 @@
 
 **日期**：2026-10-23。
 
-**需求**：[Spec](spec.md)；**实施授权**：用户原话“shell 命令写成命令行的形式。不要表格。新增这个需求然后开始落地。”，完整记录亦见 [本地 Issue](issue-draft.md)。
+**需求**：[Spec](spec.md)；**实施授权**：用户原话“shell 命令写成命令行的形式。不要表格。新增这个需求然后开始落地。”，完整记录亦见 [GitHub Issue #71](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/71)。
 
 ## 变更结果
 

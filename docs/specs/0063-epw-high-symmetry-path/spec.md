@@ -1,6 +1,8 @@
 # Feature 规格：第 5 步 Wannier 路径仅声明高对称端点
 
-**Issue**：[本地 0063 草案](issue-draft.md)，线上 Gitee 用户自管，远程链接待验证。
+> **协作入口（2026-11-17）**：[GitHub Issue #63](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/63)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #63](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/63)，线上 Gitee 用户自管，远程链接待验证。
 
 **创建日期**：2026-10-27。**状态**：本地实现、自定义文件头修复、相关回归及正式 CLI 发布完成，详见 [验收记录](acceptance.md)；未进行真实科学运行。
 

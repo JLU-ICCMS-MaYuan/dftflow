@@ -1,5 +1,7 @@
 # 需求规格
 
+> **协作入口（2026-11-17）**：[GitHub Issue #40](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/40)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 ## 本次验收范围调整
 
 用户最新要求：
@@ -14,7 +16,7 @@
 
 我建议取消数值检查的阻断阈值。保留数值校验逻辑，但当检测值超出预设理想阈值时，**仅做告警提示，不中断后续计算流程**。我希望对此新建一个 issue，然后继续往后测试，因为很有可能当前的数值检查超过阈值是因为你设置的参数不合理，但是不影响你往后进行，先把代码逻辑跑通了。
 
-需求入口：[Issue](issue-draft.md)。无附件，images: []。
+需求入口：[GitHub Issue #40](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/40)。无附件，images: []。
 
 ## 用户故事
 

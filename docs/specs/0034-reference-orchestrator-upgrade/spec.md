@@ -1,8 +1,10 @@
 # 需求规格
 
+> **协作入口（2026-11-17）**：[GitHub Issue #34](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/34)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 > 2026-10-21：本文保留原设计语境。独立抽样核验、质量参考／阈值／告警及相关依赖要求由 [0043](../0043-epw-comparison-max-differences/spec.md) 取代；常规图表继续保留，最大差值仅展示事实。历史验收与报告不改写。
 
-原始需求见 [Issue](issue-draft.md)。
+原始需求见 [GitHub Issue #34](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/34)。
 
 - FR-001：编号参考恢复仅允许编排器原路径升级；必须显式恢复、保持原请求及其 digest、前五科学来源身份和当前科学参数，原生子任务继续严格校验。
 - FR-002：原编排器路径／哈希作为历史来源保留在原请求和参考清单中，不再作为必须在线且原路径不变的科学数据。冻结科学参考时，只有受本地 request 精确绑定的这一项可以从活动文件依赖中排除；请求文件本身及其余来源仍验证。

@@ -4,7 +4,7 @@
 
 **创建日期**：2026-10-21。
 
-**规格**：[Spec 草稿](../spec.md)；**需求入口**：[本地 Issue 草稿](../issue-draft.md)。
+**规格**：[Spec 草稿](../spec.md)；**需求入口**：[GitHub Issue #26](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/26)。
 
 ## 完整性与一致性
 

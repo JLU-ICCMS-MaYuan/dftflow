@@ -1,6 +1,6 @@
 # 实施计划：高对称端点路径
 
-**Issue**：[0063 本地草案](issue-draft.md)。**Spec**：[spec.md](spec.md)。日期：2026-10-27。
+**Issue**：[GitHub Issue #63](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/63)。**Spec**：[spec.md](spec.md)。日期：2026-10-27。
 
 ## 授权与阶段门
 

@@ -1,6 +1,8 @@
 # 规格：MgB₂ 指定目录的真实 EPW 验证
 
-Issue：[本地 0027](issue-draft.md)，type:bug。无附件，images: []。用户直接授权修改指定 TOML、运行和 debug，不重复请求确认；不虚构已审阅本文。
+> **协作入口（2026-11-17）**：[GitHub Issue #27](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/27)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+Issue：[GitHub Issue #27](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/27)，type:bug。无附件，images: []。用户直接授权修改指定 TOML、运行和 debug，不重复请求确认；不虚构已审阅本文。
 
 ## 原始需求记录
 

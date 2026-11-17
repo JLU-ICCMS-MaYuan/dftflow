@@ -1,6 +1,6 @@
 # 验收说明与证据边界
 
-日期：2026-10-22。关联：[Issue](issue-draft.md)、[Spec](spec.md)、[任务](tasks.md)。
+日期：2026-10-22。关联：[GitHub Issue #50](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/50)、[Spec](spec.md)、[任务](tasks.md)。
 
 ## 最新联合验收入口
 

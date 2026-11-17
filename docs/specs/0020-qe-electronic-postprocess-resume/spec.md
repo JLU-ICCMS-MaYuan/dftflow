@@ -1,5 +1,7 @@
 # 0020：QE 电子后处理并行与续算
 
+> **协作入口（2026-11-17）**：[GitHub Issue #20](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/20)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 ## 本次验收范围调整
 
 用户最新要求：
@@ -8,7 +10,7 @@
 
 已从本项测试、补跑任务和验收条件中删除[七项历史专项](../0027-mgb2-epwflow-example-debug/spec.md#已移除的专项验收)，不再因它们未执行而保留待完成项或阻止本项验收。现有原生数据完整性、错误拒绝及公开命令续算的通用要求继续适用；历史测试计数与科学结果仅作已发生事实，不构成补跑要求。
 
-关联 [本地 Issue](issue-draft.md)；线上链接由用户管理。原始需求完整保存在 [原文](original-request.md)，本页通过引用复用，不以转述替代原文。
+关联 [GitHub Issue #20](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/20)；线上链接由用户管理。原始需求完整保存在 [原文](original-request.md)，本页通过引用复用，不以转述替代原文。
 
 ## 用户故事与验收场景
 

@@ -1,8 +1,10 @@
 # 删除 EPW 的资源限制与预算账本
 
+> **协作入口（2026-11-17）**：[GitHub Issue #58](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/58)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 > 2026-11-17 用户追加授权：彻底移除预算账本功能。本文件此前保留账本、项目身份和并发登记的条款均已被下述新要求替代；历史验收仅说明当时行为。线上 Gitee 仍由用户管理。
 
-**Issue**：[本地 0058 草案](issue-draft.md)，线上 Gitee 用户自管。
+**Issue**：[GitHub Issue #58](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/58)，线上 Gitee 用户自管。
 
 **历史交付日期**：2026-10-26。**当前状态（2026-11-17）**：预算功能已彻底删除，395 项隔离回归通过，固定命令已重新编译覆盖；线上 Issue 仍由用户管理。
 
