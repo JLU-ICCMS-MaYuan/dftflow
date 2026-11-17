@@ -111,3 +111,7 @@
 实施后使用 overview-maintainer 更新 docs/overview/epwflow/preflight-and-reuse.md、workflow.md 及相关入口说明；当前不把拟议行为写成已实现事实。根 README 仅在实际使用说明变化时同步。
 
 本版完整草案待审查，实施门未通过；线上 Issue 状态及双向远程链接未验证。配套见 [修改范围与验收计划](reuse-files-plan.md)、[技术任务](reuse-files-tasks.md)、[Issue 正文草案](reuse-files-issue-draft.md)。
+
+## 第 1～8 步数据草案
+
+用户要求整体列出各步文件名和用途供检查，见 [前序数据接续表](reuse-files-stage-data.md)。该表依照新要求描述目标数据流，尚未逐项确认，不替代本文的实施门。
