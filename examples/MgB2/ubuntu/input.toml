@@ -74,10 +74,7 @@ conv_thr = 1e-10
 
 [stages."2.qe-nscf"]
 K_POINTS = [4, 4, 2]
-
 calculation = "nscf"
-
-# degauss：Ry；截断能继承 baseparams。
 occupations = "smearing"
 smearing = "mv"
 degauss = 0.02
@@ -159,15 +156,9 @@ fildvscf = "dvscf"
 nq = [2, 2, 1]
 
 [workflow."5.epw-wannier"]
-# 高对称路径每段划分为 20 个采样间隔（含两端为 21 点，相邻段共用端点）；
-# 仅控制相应比较采样，不要求与第 3／6 步密度相同；内嵌 Wannier90 使用 bands_num_points，不是 NSCF 网格。
-points_per_edge = 20
-# 使用已绑定的 QE 电子态数据（F2）中的费米能，作为能量参考；
-# f2 是来源标识，不是数值 2；当前显式填写的绝对能窗仍以 QE 能量零点为准。
-fermi_source = "f2"
-# 纯能量选窗：按 dis_win_* 外窗和 dis_froz_* 冻结窗筛选能带，
-# 不启用投影度冻结（dis_proj_*）；projections 初始投影仍用于构建 Wannier 函数。
-selection_mode = "energy_only"
+points_per_edge = 20 # 高对称路径每段划分为 20 个采样间隔（含两端为 21 点，相邻段共用端点） # 仅控制相应比较采样，不要求与第 3／6 步密度相同；内嵌 Wannier90 使用 bands_num_points，不是 NSCF 网格。
+fermi_source = "f2" # 使用已绑定的 QE 电子态数据（F2）中的费米能，作为能量参考；# f2 是来源标识，不是数值 2；当前显式填写的绝对能窗仍以 QE 能量零点为准。
+selection_mode = "energy_only" # 纯能量选窗：按 dis_win_* 外窗和 dis_froz_* 冻结窗筛选能带， # 不启用投影度冻结（dis_proj_*）；projections 初始投影仍用于构建 Wannier 函数。
 
 [stages."5.epw-wannier"]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。

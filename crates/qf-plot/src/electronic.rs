@@ -11,11 +11,11 @@ pub struct ComparisonStroke {
     pub width: u32,
 }
 /// QE 参考始终为实线；仅共享粗细，不提供可误用于参考线的虚线样式。
-pub const REFERENCE_WIDTH: u32 = 4;
+pub const REFERENCE_WIDTH: u32 = 2;
 pub const INTERPOLATED_STROKE: ComparisonStroke = ComparisonStroke {
-    dash: 6,
-    gap: 6,
-    width: 3,
+    dash: 2,
+    gap: 2,
+    width: 2,
 };
 /// 元素投影使用不同短虚线周期，防止多条完全重合时后绘元素完全覆盖先绘元素。
 pub fn element_stroke(index: usize) -> ComparisonStroke {

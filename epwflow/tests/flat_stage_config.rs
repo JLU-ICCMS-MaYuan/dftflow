@@ -98,7 +98,6 @@ fn manual_internal_bindings_and_aliases_are_rejected_with_real_toml_locations() 
     for (call, key, value) in [
         (SCF, "outdir", json!("./other")),
         (SCF, "nat", json!(3)),
-        (WANNIER, "fermi_energy", json!(1.)),
     ] {
         let error = format!("{:#}", edited(call, key, value).validate().unwrap_err());
         assert!(
@@ -110,6 +109,15 @@ fn manual_internal_bindings_and_aliases_are_rejected_with_real_toml_locations() 
             "{error}"
         );
     }
+    // 显式费米能按 0052 接续约定保留，不再与内部派生冲突。
+    let explicit_fermi = edited(WANNIER, "fermi_energy", json!(1.));
+    explicit_fermi.validate().unwrap();
+    assert_eq!(
+        explicit_fermi
+            .native_value::<f64>(&[WANNIER, "epw", "INPUTEPW", "fermi_energy"])
+            .unwrap(),
+        1.
+    );
     let mut document = serde_json::to_value(fixture()).unwrap();
     document["stages"][SCF]["ecutwfc_ry"] = json!(40.);
     assert!(serde_json::from_value::<Config>(document)
