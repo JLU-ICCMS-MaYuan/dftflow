@@ -294,7 +294,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             return Ok(());
         }
         if o.submit {
-            if matches!(target, Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse) {
+            if matches!(target, Step::Scf | Step::Nscf | Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse) {
                 return super::workspace::start_stage(&o.config, target, o.resume);
             }
             return super::native_workspace::advance(&o.config, target, true, o.resume);
@@ -302,7 +302,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         if o.run {
             return super::workspace::start_allocated(&o.config, target, o.resume);
         }
-        if matches!(target, Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse) && !o.all {
+        if matches!(target, Step::Scf | Step::Nscf | Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse) && !o.all {
             return super::workspace::prepare_stage(&o.config, target, false, false);
         }
         super::native_workspace::advance(

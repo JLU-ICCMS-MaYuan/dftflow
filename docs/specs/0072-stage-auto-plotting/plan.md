@@ -6,12 +6,14 @@
 
 ## 组件职责
 
-- `program::dispatch` 将第 1～6 步的 `-s` 一律交给阶段分配入口，默认准备也生成阶段脚本。只提交原生 PW 脚本无法在同一作业内核验和绘图。
+- `program::dispatch` 将第 1～6 步的 `-s` 一律交给阶段分配入口，默认准备也生成阶段脚本。只提交原生 PW 脚本无法在同一作业内核验和绘图。前两步阶段脚本使用 `stage-scf.sh`／`stage-nscf.sh`，避免被原生同名脚本覆盖。
 
 - `workspace_science` 顺序执行阶段科学任务并请求派生图；`native_workspace` 在核验后持久化科学完成和后处理状态。
 - `workspace_electronic::run_leaf` 的叶任务可能已触发绘图，必须在这个边界捕获绘图失败，不能只在叶任务返回之后捕获。
 - `workspace_qe_plot`、`band_ranges` 与已有交付组件负责图像及失败记录；图片不成为科学数据身份。
 - 公开 `delivery::plot_results` 识别 `*.plot.json` 和 `*-band-ranges.json`，然后使用包内数值重绘，不启动科学程序。
+
+- `phonon_comparison` 按原生数值字段读取 `crystal.fmt` 的矩阵，不以文本换行作为物理矩阵边界；兼容实际 Fortran 分行输出，有限性检查保留。
 
 ## 需求与证据映射
 

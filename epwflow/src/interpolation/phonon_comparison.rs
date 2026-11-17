@@ -24,6 +24,14 @@ fn numbers(line: &str) -> Result<Vec<f64>> {
         })
         .collect()
 }
+
+fn reciprocal_lattice(crystal: &str) -> Result<[[f64; 3]; 3]> {
+    // 前四个标量后依次为实格和倒格矩阵；Fortran 格式化输出可将矩阵分行。
+    let header = crystal.split_whitespace().take(22).collect::<Vec<_>>();
+    ensure!(header.len() == 22, "data_invalid: crystal.fmt lattice data incomplete");
+    let bg = numbers(&header[13..22].join(" "))?;
+    Ok(std::array::from_fn(|i| std::array::from_fn(|j| bg[3 * i + j])))
+}
 fn curve(name: &str, points: Vec<(f64, f64)>) -> Curve {
     Curve {
         name: name.into(),
@@ -52,19 +60,8 @@ pub fn run(cfg: &Config) -> Result<()> {
     let density = fs::read_to_string(&qe_dos)
         .with_context(|| format!("data_invalid: missing {}", qe_dos.display()))?;
     crate::foundation::reuse_files::report(&cfg.work_dir, [qe_band, qe_dos]);
-    // crystal.fmt 第五条记录为 Fortran 列主序的倒格矩阵，坐标单位与原生 phband.freq 一致。
     let crystal = fs::read_to_string(dir.join("crystal.fmt"))?;
-    let bg = numbers(
-        crystal
-            .lines()
-            .nth(4)
-            .context("data_invalid: crystal.fmt reciprocal lattice missing")?,
-    )?;
-    ensure!(
-        bg.len() == 9,
-        "data_invalid: crystal.fmt reciprocal lattice requires 9 values"
-    );
-    let reciprocal = std::array::from_fn(|i| std::array::from_fn(|j| bg[3 * i + j]));
+    let reciprocal = reciprocal_lattice(&crystal)?;
     let (path, ticks) = super::automatic_comparison::path_points(
         kpath,
         &reciprocal,
@@ -231,4 +228,23 @@ pub fn run(cfg: &Config) -> Result<()> {
         },
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_crystal_lattice_accepts_wrapped_fortran_matrices() {
+        let scalars = "3\n9\n16.0 4\n";
+        let at = "1 0 0\n-0.5 0.866025403768109 0\n0 0 1.14988451781708\n";
+        let bg = "1 0.577350269200512 0\n0 1.15470053840102 0\n0 0 0.869652547282210\n";
+        let native = format!("{scalars}{at}{bg}195.148793266901\n5.80845109704360\nF\n");
+        let matrix = reciprocal_lattice(&native).unwrap();
+        assert_eq!(matrix, [[1., 0.577350269200512, 0.], [0., 1.15470053840102, 0.], [0., 0., 0.869652547282210]]);
+        let packed = format!("{scalars}{}\n{}\nF\n", at.replace('\n', " "), bg.replace('\n', " "));
+        assert_eq!(reciprocal_lattice(&packed).unwrap(), matrix);
+        assert!(reciprocal_lattice(&format!("{scalars}{at}1 0 0\n")).is_err());
+        assert!(reciprocal_lattice(&native.replace("1.15470053840102", "NaN")).is_err());
+    }
 }

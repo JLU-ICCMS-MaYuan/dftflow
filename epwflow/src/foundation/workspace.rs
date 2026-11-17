@@ -154,7 +154,12 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         q(&id),
         if resume { " --resume" } else { "" }
     ));
-    let script = dir.join(format!("{}.sh", target.name()));
+    let script_name = if matches!(target, Step::Scf | Step::Nscf) {
+        format!("stage-{}.sh", target.name())
+    } else {
+        format!("{}.sh", target.name())
+    };
+    let script = dir.join(script_name);
     store::atomic_bytes(&script, body.as_bytes())?;
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
     log::update(&cfg.work_dir, target, |d| {

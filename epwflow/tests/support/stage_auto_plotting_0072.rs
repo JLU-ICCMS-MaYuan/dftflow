@@ -7,6 +7,12 @@ use super::*;
 fn issue_0072_six_stage_image_inventory() {
     let c = Case::numbered();
     c.stage_setup();
+    // 真实 EPW 的列表定向输出将矩阵分成三行，不能只测试打包成一行的替身。
+    let file = c.root.join("epw_native_io.py");
+    let native = fs::read_to_string(&file).unwrap();
+    let packed = "' '.join(str(x) for row in bg for x in row)";
+    assert!(native.contains(packed));
+    fs::write(file, native.replace(packed, "'\\n'.join(' '.join(str(x) for x in row) for row in bg)")).unwrap();
     let mut inventory = serde_json::Map::new();
     for (stage, folder) in [
         ("scf", "1.qe-scf"), ("nscf", "2.qe-nscf"),
@@ -106,7 +112,7 @@ fn issue_0072_phonon_renderer_failure_keeps_scientific_completion() {
 }
 
 fn issue_0072_seed(c: &Case, stages: &[&str]) {
-    for stage in stages {
+    for &stage in stages {
         success(c.stage_submit(stage, false));
         let step = epwflow::foundation::stages::Step::ALL.into_iter().find(|s| s.name() == stage).unwrap();
         let doc = epwflow::foundation::readable_state::read(&c.root.join("run"), step).unwrap();
