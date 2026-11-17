@@ -201,7 +201,35 @@ EPW 侧沿路径插值及声子 DOS 计算使用本阶段刚形成的实空间�
 
 新细网格计算不把旧 restart.fmt、selecq.fmt 当成必需；同一细网格任务中断续跑时，restart.fmt 保存已算进度，selecq.fmt 保存已选 q 点，按原生设置读取。这是第 7 步内部续跑，不是第 6 步交付。
 
-多展宽时使用各自计算目录，前序来源相同，不能互相误取其他展宽的矩阵／谱。
+多组 k／q 网格、fsthick、degaussw 参数使用各自编号目录，前序来源相同，不能互相误取其他参数组的矩阵／谱。
+
+### 第 7 步参数组合目录命名
+
+每组细网格计算使用独立子目录，格式为：
+
+```text
+7.epw-fine/<编号>.k<nkf1>x<nkf2>x<nkf3>-q<nqf1>x<nqf2>x<nqf3>-fsthick<数值>eV-degaussw<数值>eV/
+```
+
+编号从 `01` 开始，按 `01.`、`02.`、`03.` 顺序标识各参数组，至少两位；超过两位时保留完整数字。**即使只有一组参数，也必须使用编号和完整参数名，不能直接在 7.epw-fine/ 根目录计算或使用仅含展宽序号的名字。** 示例：
+
+```text
+7.epw-fine/
+├── 01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/
+├── 02.k60x60x60-q20x20x20-fsthick0.4eV-degaussw0.1eV/
+└── 03.k40x40x40-q20x20x20-fsthick1.0eV-degaussw0.02eV/
+```
+
+- `k`：细电子网格的 nkf1／nkf2／nkf3。
+- `q`：细声子网格的 nqf1／nqf2／nqf3。
+- `fsthick`：参与电声计算的费米窗口，单位 eV，不是 Wannier 拟合窗口。
+- `degaussw`：电子能量积分展宽，单位 eV。
+
+改变上述参数需重新进行对应第 7 步细网格计算；各组独立保留自己的输入、输出、细矩阵和谱，不覆盖其他参数组。不新增自动参数扫描功能。
+
+`degaussq` 是声子谱展宽，不作为上述细矩阵目录的分组字段；按已讨论路线，第 8 步可读取同一组细矩阵，重新生成对应声子谱展宽的 α²F，再求各向同性 Tc。不能继续读取另一展宽的旧谱来冒充重算；不据此声称各向异性虚频轴 Tc 必然随 degaussq 变化。温度、muc、wscut 和求解收敛参数属于第 8 步，不放入第 7 步目录名。
+
+第 8 步的软链接、8B 的谱来源和 reuse 输出都必须指向实际选中的完整参数目录；编号不替代参数含义。本文示例统一使用第一组目录，实际值随用户输入变化。
 
 ## 第 8 步：超导能隙或 Tc
 
@@ -218,7 +246,7 @@ EPW 侧沿路径插值及声子 DOS 计算使用本阶段刚形成的实空间�
 | selecq.fmt | 被选择的 q 点及对应数据关系 |
 | MgB2.a2f（可选） | 已算 α²F；有则按所选路线读取，没有时允许原生程序用细矩阵重新计算，不等于补算上游 |
 
-以上路径相对第 7 步实际选定展宽目录，不是笼统读取整个 7.epw-fine。npool 等版本性辅助文件若原生实际需要，一并列出真实名称；不能凭包装层旧要求将其强制推广到所有版本。
+以上路径相对第 7 步实际选定参数组合目录，不是笼统读取整个 7.epw-fine。npool 等版本性辅助文件若原生实际需要，一并列出真实名称；不能凭包装层旧要求将其强制推广到所有版本。
 
 第 8 步不需要第 6 步 epmatwp、Wannier 窗口、原始 QE 波函数或响应势。温度、muc、求解方法与收敛参数由本步输入提供；不同温度解的续接属于本阶段原生求解，不新增历史依赖检查。
 
@@ -226,9 +254,9 @@ EPW 侧沿路径插值及声子 DOS 计算使用本阶段刚形成的实空间�
 
 | 第 7 步来源文件名／路径 | 第 8 步读取位置／设置 | 文件作用 |
 |---|---|---|
-| 7.epw-fine/smearing-0001/MgB2.a2f（或用户指定的实际谱文件） | `fila2f` 指向该实际谱文件路径 | 已有的能量／频率与 α²F 数值，直接构成各向同性 Eliashberg 方程或线性化 Tc 方程的谱输入，不重新计算细网格电声矩阵 |
+| 7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/MgB2.a2f（或用户指定的实际谱文件） | `fila2f` 指向该实际谱文件路径 | 已有的能量／频率与 α²F 数值，直接构成各向同性 Eliashberg 方程或线性化 Tc 方程的谱输入，不重新计算细网格电声矩阵 |
 
-`smearing-0001` 只是示例，必须使用用户实际选定展宽的结果，不混用其他展宽。温度、muc、频率截断和收敛参数由第 8 步输入提供，不属于前序文件复用。8B 不读取 MgB2.ephmat/，因此不为这条谱输入路线建立无用的矩阵文件链接。
+`01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV` 只是示例，必须使用用户实际选定参数组合的结果，不混用其他网格、窗口或电子展宽。温度、muc、频率截断和收敛参数由第 8 步输入提供，不属于前序文件复用。8B 不读取 MgB2.ephmat/，因此不为这条谱输入路线建立无用的矩阵文件链接。
 
 这条路线不要求先读取 ephmatXX、egnv、freq、ikmap；不能用于替代各向异性矩阵求解。谱文件的列格式必须与原生 fila2f 接口相容，不把绘图 CSV 改名后冒充。选择此路线不表示新增求解能力，只说明其数据依赖；最终交付支持哪条路线待用户审查。
 
@@ -236,7 +264,7 @@ EPW 侧沿路径插值及声子 DOS 计算使用本阶段刚形成的实空间�
 
 **直接复用第 7 步已生成的细网格电声数据，不重新计算电声耦合矩阵元，也不能只用总 α²F 谱替代。** 各向异性求解需要保留不同电子态之间的耦合信息，总 α²F 已对这些信息做了平均。
 
-下表采用已核对的 EPW 6.0 原生矩阵读取路线。路径相对第 7 步实际选定展宽的计算目录；例如该目录为 `7.epw-fine/smearing-0001/`，则在表中路径前加上此前缀。`out/` 对应原生 outdir，随实际输入变化。
+下表采用已核对的 EPW 6.0 原生矩阵读取路线。路径相对第 7 步实际选定参数组合的计算目录；例如该目录为 `7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/`，则在表中路径前加上此前缀。`out/` 对应原生 outdir，随实际输入变化。
 
 | 第 7 步来源文件名／路径 | 文件作用 |
 |---|---|
@@ -258,15 +286,15 @@ EPW 侧沿路径插值及声子 DOS 计算使用本阶段刚形成的实空间�
 
 ### 第 8 步矩阵文件的软链接交接（适用于 8A／8C）
 
-第 8 步建立自己的 `out/MgB2.ephmat/` 目录，将以下每个所需文件分别软链接到第 7 步选定展宽的原始文件，**不复制、不重新生成细网格矩阵数据**。本表采用 EPW 6.0，`out/` 按实际 outdir 调整。
+第 8 步建立自己的 `out/MgB2.ephmat/` 目录，将以下每个所需文件分别软链接到第 7 步选定参数组合的原始文件，**不复制、不重新生成细网格矩阵数据**。本表采用 EPW 6.0，`out/` 按实际 outdir 调整。
 
 | 第 8 步的软链接位置（相对本次求解目录） | 链接目标：第 7 步已有文件（相对工作区根目录） | 用途 |
 |---|---|---|
-| out/MgB2.ephmat/egnv | 7.epw-fine/smearing-0001/out/MgB2.ephmat/egnv | 电子能量及配套网格信息 |
-| out/MgB2.ephmat/freq | 7.epw-fine/smearing-0001/out/MgB2.ephmat/freq | 声子频率 |
-| out/MgB2.ephmat/ikmap | 7.epw-fine/smearing-0001/out/MgB2.ephmat/ikmap | 电子 k 点映射 |
-| out/MgB2.ephmat/npool | 7.epw-fine/smearing-0001/out/MgB2.ephmat/npool | 原矩阵分片的 pool 数 |
-| out/MgB2.ephmat/ephmatXX | 7.epw-fine/smearing-0001/out/MgB2.ephmat/ephmatXX | 每个实际电声矩阵分片均单独建立软链接，XX 替换为实际编号 |
+| out/MgB2.ephmat/egnv | 7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/out/MgB2.ephmat/egnv | 电子能量及配套网格信息 |
+| out/MgB2.ephmat/freq | 7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/out/MgB2.ephmat/freq | 声子频率 |
+| out/MgB2.ephmat/ikmap | 7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/out/MgB2.ephmat/ikmap | 电子 k 点映射 |
+| out/MgB2.ephmat/npool | 7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/out/MgB2.ephmat/npool | 原矩阵分片的 pool 数 |
+| out/MgB2.ephmat/ephmatXX | 7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/out/MgB2.ephmat/ephmatXX | 每个实际电声矩阵分片均单独建立软链接，XX 替换为实际编号 |
 
 同一次求解的这些链接全部来自同一份第 7 步结果；iso／aniso 各自求解目录均按需建立链接，共享第 7 步源数据。链接目标必须按求解目录正确解析，不将上表相对工作区根目录的展示路径误当作相对链接字符串。
 
@@ -411,31 +439,31 @@ reuse: 6.epw-coarse
 
 ### 第 8 步：超导求解
 
-读取细网格矩阵求解，包括各向异性方程。示例选择第一个展宽目录：
+读取细网格矩阵求解，包括各向异性方程。示例选择编号 01 的参数组合目录：
 
 ```text
 reuse: 7.epw-fine
-       7.epw-fine/smearing-0001/out/MgB2.ephmat/ephmatXX
-       7.epw-fine/smearing-0001/out/MgB2.ephmat/egnv
-       7.epw-fine/smearing-0001/out/MgB2.ephmat/freq
-       7.epw-fine/smearing-0001/out/MgB2.ephmat/ikmap
-       7.epw-fine/smearing-0001/out/MgB2.ephmat/npool
-       7.epw-fine/smearing-0001/out/MgB2.dos
-       7.epw-fine/smearing-0001/crystal.fmt
-       7.epw-fine/smearing-0001/selecq.fmt
+       7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/out/MgB2.ephmat/ephmatXX
+       7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/out/MgB2.ephmat/egnv
+       7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/out/MgB2.ephmat/freq
+       7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/out/MgB2.ephmat/ikmap
+       7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/out/MgB2.ephmat/npool
+       7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/out/MgB2.dos
+       7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/crystal.fmt
+       7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/selecq.fmt
 ```
 
 若实际读取已有总 α²F，再在同组追加：
 
 ```text
-       7.epw-fine/smearing-0001/MgB2.a2f
+       7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/MgB2.a2f
 ```
 
 选择 8B 各向同性方程直接读取 α²F 的路线时，仅显示：
 
 ```text
 reuse: 7.epw-fine
-       7.epw-fine/smearing-0001/MgB2.a2f
+       7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/MgB2.a2f
 ```
 
 以上没有列入尚未查明具体名字的 PAW 辅助文件；这些仍是待核对项，不能据此宣称已列全所有版本及选项的文件。源数据为 HDF5 等格式时显示实际文件名，不硬编码 `.dat`。
