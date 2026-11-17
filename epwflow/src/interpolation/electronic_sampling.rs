@@ -391,8 +391,8 @@ pub fn extract(cfg: &Config, dir: &Path) -> Result<()> {
     let decision = crate::foundation::stages::Step::Wannier
         .directory(cfg)
         .join("embedded-sampling-decision.json");
-    let sparse = decision.is_file()
-        && store::read::<serde_json::Value>(&decision)?["path_format"] == "high_symmetry_endpoints";
+    let sparse = layout::enabled(&cfg.work_dir) || (decision.is_file()
+        && store::read::<serde_json::Value>(&decision)?["path_format"] == "high_symmetry_endpoints");
     if !sparse && decision.is_file() {
         let recorded = store::read::<serde_json::Value>(&decision)?;
         if let Some(value) = recorded.get("sampling") {
@@ -469,10 +469,14 @@ pub fn extract(cfg: &Config, dir: &Path) -> Result<()> {
     }
     fs::write(dir.join("band.eig"), output)?;
     store::write(&dir.join("sampling.json"), &sampling)?;
+    if layout::enabled(&cfg.work_dir) {
+        store::write(&dir.join("band-origin.json"),&serde_json::json!({"driver":"epw.x/wdata","path_format":"high_symmetry_endpoints"}))?;
+    }else {
     store::write(
         &dir.join("band-origin.json"),
         &serde_json::json!({"driver":"epw.x/wdata","path_format":if sparse {"high_symmetry_endpoints"} else {"legacy_samples"},"coordinates":store::Identity::capture(&dir.join(format!("{}_band.kpt",cfg.qe.prefix)))?,"energies":store::Identity::capture(&band)?,"labels":store::Identity::capture(&dir.join(format!("{}_band.labelinfo.dat",cfg.qe.prefix)))?}),
     )?;
+    }
     Ok(())
 }
 

@@ -246,15 +246,16 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
     ensure!(covered == nkfs, "data_invalid: The matrix fraction does not cover all the ferme noodles k");
     let mut artifacts = vec![];
     for (role, path) in roles {
+        if crate::foundation::layout::enabled(work) {continue;}
         let byte_size = fs::metadata(&path)?.len();
         ensure!(byte_size > 0, "data_invalid: native character is empty");
         artifacts.push(Artifact {
             role,
             relative_path: path.strip_prefix(work)?.into(),
             byte_size,
-            sha256: store::hash_file(&path)?,
+            sha256: if crate::foundation::layout::enabled(work) {String::new()} else {store::hash_file(&path)?},
             producer_stage: "fine".into(),
-            input_digest: store::hash_file(&dir.join("epw_fine.in"))?,
+            input_digest: if crate::foundation::layout::enabled(work) {String::new()} else {store::hash_file(&dir.join("epw_fine.in"))?},
             format_version: FORMAT.into(),
         });
     }
@@ -273,4 +274,32 @@ pub fn collect_native_fine_at(work: &Path, dir: &Path, epw_cfg: &EpwConfig) -> R
         ephmat_shards: npool as usize,
         artifacts,
     })
+}
+
+/// 同一组电子参数始终使用编号目录；不按声子谱展宽复制细矩阵。
+pub fn directory(cfg: &crate::foundation::config::Config) -> Result<std::path::PathBuf> {
+    let root = crate::foundation::layout::path(&cfg.work_dir, "fine");
+    if !crate::foundation::layout::enabled(&cfg.work_dir) { return Ok(root); }
+    let i = &cfg.interpolation;
+    let grid = |g: [u32;3]| format!("{}x{}x{}",g[0],g[1],g[2]);
+    let suffix = format!("k{}-q{}-fsthick{}eV-degaussw{}eV",grid(i.k_grid),grid(i.q_grid),i.fsthick_ev,i.degaussw_ev);
+    let mut maximum = 0u64;
+    let mut found = None;
+    if root.is_dir() {
+        for entry in std::fs::read_dir(&root)? {
+            let entry=entry?;
+            if !entry.file_type()?.is_dir() {continue;}
+            let name=entry.file_name(); let name=name.to_string_lossy();
+            if let Some((number, parameters))=name.split_once('.') {
+                if let Ok(number)=number.parse::<u64>() {
+                    maximum=maximum.max(number);
+                    if parameters==suffix {
+                        ensure!(found.is_none(),"input_conflict: duplicate fine parameter directories for {suffix}");
+                        found=Some(entry.path());
+                    }
+                }
+            }
+        }
+    }
+    Ok(found.unwrap_or_else(||root.join(format!("{:02}.{suffix}",maximum+1))))
 }

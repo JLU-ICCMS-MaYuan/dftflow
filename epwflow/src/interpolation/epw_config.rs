@@ -251,11 +251,14 @@ impl<'a> EpwConfig<'a> {
         let efermi_read:bool=if matches!(stage,NativeStage::Comparison) {
             self.cfg.native_value(&[COARSE,"comparison","epw","INPUTEPW","efermi_read"])?
         } else {self.cfg.native_value(&[stage_name,"epw","INPUTEPW","efermi_read"])?};
+        let explicit_fermi = if matches!(stage,NativeStage::Comparison) {
+            self.cfg.native_value::<f64>(&[COARSE,"comparison","epw","INPUTEPW","fermi_energy"]).ok()
+        }else{self.cfg.native_value::<f64>(&[stage_name,"epw","INPUTEPW","fermi_energy"]).ok()};
+        let efermi_read = efermi_read && (explicit_fermi.is_some() || self.fermi_ev.is_some());
         match efermi_read {
             true => s.push_str(&format!(
                 " efermi_read = .true.\n fermi_energy = {:.16e}\n",
-                self.fermi_ev
-                    .context("data_invalid: Lack of bindings F2 Fermi Yes")?
+                explicit_fermi.or(self.fermi_ev).context("configuration: efermi_read requires fermi_energy")?
             )),
             false => s.push_str(" efermi_read = .false.\n"),
         }
@@ -375,7 +378,10 @@ impl<'a> EpwConfig<'a> {
             NativeStage::Comparison=>&[COARSE,"comparison","epw"],
             NativeStage::FineMatrices=>&fine_parts,
         };
-        self.cfg.apply_native(task,&s)
+        let mut native_cfg=self.cfg.clone();
+        let mut flag=task.to_vec();flag.extend(["INPUTEPW","efermi_read"]);
+        native_cfg.set_native(&flag,serde_json::json!(efermi_read))?;
+        native_cfg.apply_native(task,&s)
     }
 
     /// 常规比较路径及 DOS 网格；显式选全 q，避免 Fermi 筛选遗漏频率。
@@ -409,5 +415,25 @@ impl<'a> EpwConfig<'a> {
             ),
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod direct_fine_tests {
+    use super::*;
+    #[test]
+    fn existing_model_fine_input_needs_no_window_binding_and_honors_explicit_fermi() {
+        let mut cfg:config::Config=toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
+        cfg.set_native(&[crate::foundation::native_config::FINE,"epw","INPUTEPW","efermi_read"],serde_json::json!(true)).unwrap();
+        let epw=EpwConfig::from_config(&cfg).unwrap().with_species(&cfg.pseudos.keys().cloned().collect::<Vec<_>>()).unwrap();
+        let input=epw.epw_fine_input("./out",cfg.interpolation.phonon_smearings_mev[0]).unwrap();
+        assert!(input.contains("efermi_read = .false."));
+        assert!(!input.contains("dis_win_max"));
+        cfg.set_native(&[crate::foundation::native_config::FINE,"epw","INPUTEPW","fermi_energy"],serde_json::json!(6.25)).unwrap();
+        let epw=EpwConfig::from_config(&cfg).unwrap().with_species(&cfg.pseudos.keys().cloned().collect::<Vec<_>>()).unwrap();
+        let input=epw.epw_fine_input("./out",cfg.interpolation.phonon_smearings_mev[0]).unwrap();
+        assert!(input.contains("efermi_read = .true."));
+        let value=regex::Regex::new(r"(?m)^\s*fermi_energy\s*=\s*([0-9.eE+-]+)").unwrap().captures(&input).unwrap()[1].parse::<f64>().unwrap();
+        assert_eq!(value,6.25);
     }
 }

@@ -279,7 +279,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             return super::workspace::status(&cfg);
         }
         if o.check {
-            for s in target.closure() {
+            for s in super::stages::execution_steps(&cfg, target) {
                 if s == target || !super::stages::reusable(&cfg, s)? {
                     super::parallelism::preflight(&cfg, s, false)?;
                 }

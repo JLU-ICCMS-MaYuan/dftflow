@@ -62,10 +62,10 @@ pub fn all_files(root: &Path) -> Result<Vec<PathBuf>> {
                 continue;
             }
             let kind = entry.file_type()?;
-            ensure!(!kind.is_symlink(), "data_invalid: Save tree does not contain links {}", path.display());
+            ensure!(!kind.is_symlink() || !path.is_dir(), "data_invalid: directory link in save tree {}", path.display());
             if kind.is_dir() { visit(root, &path, result)?; }
             else {
-                ensure!(kind.is_file(), "data_invalid: Save the unknown type of tree contents {}", path.display());
+                ensure!(kind.is_file() || kind.is_symlink(), "data_invalid: Save the unknown type of tree contents {}", path.display());
                 result.push(path.strip_prefix(root)?.into());
             }
         }
@@ -140,6 +140,10 @@ pub fn verify_snapshot(work: &Path) -> Result<()> {
 
 /// PH 需要完整的收敛 SCF 电子态；此副本只用于可写工作区，归集后清理。
 pub fn stage_scf(work:&Path,outdir:&Path,prefix:&str)->Result<()> {
+    if crate::foundation::layout::enabled(work) {
+        let cfg=crate::qe_data::direct::current(work)?;
+        return crate::foundation::reuse_files::electronic(&cfg,&crate::foundation::layout::path(work,"scf/snapshot"),outdir,true);
+    }
     verify_snapshot(work)?;
     copy_tree(&crate::foundation::layout::path(work,"scf/snapshot"),outdir)?;
     nonempty(&outdir.join(format!("{prefix}.save/data-file-schema.xml")))?;
@@ -148,6 +152,10 @@ pub fn stage_scf(work:&Path,outdir:&Path,prefix:&str)->Result<()> {
 
 /// NSCF／路径能带重新生成电子态，不复制旧波函数。
 pub fn stage_ground_state(work:&Path,outdir:&Path,prefix:&str)->Result<()> {
+    if crate::foundation::layout::enabled(work) {
+        let cfg=crate::qe_data::direct::current(work)?;
+        return crate::foundation::reuse_files::electronic(&cfg,&crate::foundation::layout::path(work,"scf/snapshot"),outdir,false);
+    }
     verify_snapshot(work)?;
     let source=crate::foundation::layout::path(work,"scf/snapshot");
     if crate::foundation::layout::enabled(work) {crate::foundation::workspace_data::stage_ground_state(&source,outdir,prefix)?;}

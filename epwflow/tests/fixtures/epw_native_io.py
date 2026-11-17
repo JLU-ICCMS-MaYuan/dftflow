@@ -98,7 +98,7 @@ if coarse or reread:
     modes=6
     if coarse:
         Path('epwdata.fmt').write_text('0.2\n'+f'{n} 1 {modes} 1 1\n'+'0\n'*27+'(0,0)\n'*(n*n+modes*modes))
-        Path('crystal.fmt').write_text('2\n6\nfixture-IO\n')
+        Path('crystal.fmt').write_text('2\n6\n2 0\n'+' '.join(map(str,[1.,0.,0.,0.,1.,0.,0.,0.,1.]))+'\n'+' '.join(str(x) for row in bg for x in row)+'\n1\n1\n')
         Path('wigner.fmt').write_text('1 1 1 1 1\n'+('0 0 0 0\n1\n')*3)
         Path('vmedata.fmt').write_text('(0,0)\n'*(6*n*n));Path('dmedata.fmt').write_text('(0,0)\n'*(3*n*n))
         (out/(prefix+'.epmatwp')).write_bytes(real([0.]*(2*n*n*modes)))

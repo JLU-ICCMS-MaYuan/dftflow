@@ -150,6 +150,19 @@ pub(crate) fn publish_data(
         &phonon::geometry(qe, work)?,
     )?;
     collect_ph::write_q_index_map(work, &qpoints)?;
+    if crate::foundation::layout::enabled(work) {
+        let mut validation=Validation{status:"valid".into(),checks:Vec::new(),units:BTreeMap::new(),thresholds:BTreeMap::new(),evidence:Vec::new()};
+        validation.check("scf_energy_finite",scf_res.energy_ry.is_finite(),"Native SCF energy is finite");
+        validation.check("nscf_complete",!states.kpoints.is_empty() && states.nbnd>0,"Imported electronic metadata is complete");
+        validation.check("phonon_complete",!qpoints.is_empty() && qpoints.len()==collected.responses.len(),"Native PH delivery parsed successfully");
+        ensure!(validation.all_passed(),"data_invalid: imported native PH validation failed");
+        let result=QeManifest{schema_version:2,artifact_root:Some(work.to_path_buf()),artifacts:Vec::new(),run_id:run_id.into(),
+            fingerprints:Fingerprints{structure_sha256:String::new(),pseudo_sha256:BTreeMap::new(),program_sha256:BTreeMap::new()},
+            scf:Some(ScfRecord{total_energy_ry:scf_res.energy_ry,attempt_count:scf_res.attempt_count,success_count:scf_res.success_count,snapshot_dir:scf_res.snapshot_dir}),
+            states:Some(states),qpoints,phonon_files:collected.responses,validation};
+        result.verify()?;
+        return Ok(result);
+    }
 
     let scf_record = ScfRecord {
         total_energy_ry: scf_res.energy_ry,

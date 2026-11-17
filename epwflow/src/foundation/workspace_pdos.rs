@@ -27,11 +27,10 @@ fn source(cfg: &Config) -> PathBuf {
     layout::path(&cfg.work_dir, "nscf/out")
 }
 fn source_ids(cfg: &Config) -> Result<Vec<Identity>> {
-    let root = source(cfg);
-    save::files(&root)?
-        .iter()
-        .map(|f| Identity::capture(&root.join(&f.relative_path)))
-        .collect()
+    let root=source(cfg);
+    let paths=save::all_files(&root)?.into_iter().filter(|p|p.file_name().is_some_and(|n|n=="data-file-schema.xml") || qf_io::qe_payload::unchecked(p)).map(|p|root.join(p)).collect::<Vec<_>>();
+    super::reuse_files::report(&cfg.work_dir,paths.clone());
+    Ok(paths.iter().map(|p|Identity::reference(p)).collect())
 }
 fn input(cfg: &Config) -> Result<String> {
     let sigma: f64 = cfg.native_value(&[
@@ -62,7 +61,7 @@ pub fn files(cfg: &Config) -> Result<Vec<PathBuf>> {
 }
 
 fn checked_files(cfg: &Config) -> Result<Vec<PathBuf>> {
-    let Some(ids) = super::readable_state::completed_files(
+    let Some(_ids) = super::readable_state::completed_files(
         cfg,
         super::stages::Step::Electronic,
         "Electronic substep · projwfc",
@@ -81,7 +80,7 @@ fn checked_files(cfg: &Config) -> Result<Vec<PathBuf>> {
     if input(&old)? != input(cfg)? {
         return Ok(vec![]);
     }
-    Ok(ids.into_iter().map(|id| id.path).collect())
+    raw_files(cfg)
 }
 pub fn run(cfg: &Config) -> Result<()> {
     if !files(cfg)?.is_empty() {
@@ -150,7 +149,7 @@ pub fn run(cfg: &Config) -> Result<()> {
         sources: ids,
         outputs: outputs
             .iter()
-            .map(|p| Identity::capture(p))
+            .map(|p| native_reference(p))
             .collect::<Result<_>>()?,
     };
     // 科学执行检查点先保存；解析失败或派生收据缺失可以重验，不能重新执行成功投影。
@@ -355,7 +354,7 @@ pub fn export(cfg: &Config, out: &Path, fermi: f64) -> Result<()> {
     fs::write(out.join("electronic-pdos.csv"), csv)?;
     store::write(
         &out.join("electronic-pdos.json"),
-        &serde_json::json!({"complete":!elements.is_empty(),"elements":elements.iter().map(|(n,_)|n).collect::<Vec<_>>(),"aggregation":"sum each atom/wfc LDOS once; do not add m components twice","maximum_tdos_projection_residual":maximum,"fermi_ev":fermi,"sigma_ev":cfg.native_value::<f64>(&[super::native_config::ELECTRONIC,"qe_eledos","projwfc","PROJWFC","degauss"])?*13.605693122994,"sources":files(cfg)?.iter().map(|p|Identity::capture(p)).collect::<Result<Vec<_>>>()?,"rescale":false,"total_source":"projwfc pdos_tot DOS column when complete; dos.x otherwise","dos_x_reference":Identity::capture(&cfg.work_dir.join("3.qe-electronic/qe_eledos").join(format!("{}.tdos",cfg.qe.prefix)))?}),
+        &serde_json::json!({"complete":!elements.is_empty(),"elements":elements.iter().map(|(n,_)|n).collect::<Vec<_>>(),"aggregation":"sum each atom/wfc LDOS once; do not add m components twice","maximum_tdos_projection_residual":maximum,"fermi_ev":fermi,"sigma_ev":cfg.native_value::<f64>(&[super::native_config::ELECTRONIC,"qe_eledos","projwfc","PROJWFC","degauss"])?*13.605693122994,"sources":files(cfg)?.iter().map(|p|native_reference(p)).collect::<Result<Vec<_>>>()?,"rescale":false,"total_source":"projwfc pdos_tot DOS column when complete; dos.x otherwise","dos_x_reference":native_reference(&cfg.work_dir.join("3.qe-electronic/qe_eledos").join(format!("{}.tdos",cfg.qe.prefix)))?}),
     )
 }
 
@@ -396,3 +395,5 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+fn native_reference(path:&Path)->Result<Identity> {Ok(Identity::reference(path))}

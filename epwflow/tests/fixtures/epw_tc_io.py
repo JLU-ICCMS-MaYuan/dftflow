@@ -10,8 +10,23 @@ assert 1<=len(temperatures)<=50
 assert value('imag_read')=='.false.'
 assert value('epwread')=='.true.' and value('epbread')=='.false.'
 assert value('epwwrite')=='.false.' and value('wannierize')=='.false.'
-assert value('fila2f')=="'source.a2f'"
-assert pathlib.Path('source.a2f').is_file(), '必须重读已有谱，不能重算谱'
+spectrum=re.search(r"(?m)^\s*fila2f\s*=\s*([^\n]+)",text)
+spectrum=spectrum.group(1).strip().strip("'") if spectrum else ''
+if spectrum:
+    assert spectrum=='source.a2f'
+    assert pathlib.Path(spectrum).is_file(), '显式谱路线必须有输入谱'
+else:
+    # 仅模拟原生矩阵路线的 I/O；此数值标签不是科学参考。
+    matrix=pathlib.Path(value('outdir').strip("'"))/(prefix+'.ephmat')
+    for name in ['egnv','freq','ikmap','npool','ephmat1']: assert (matrix/name).is_file()
+    for name in ['crystal.fmt','selecq.fmt']: assert pathlib.Path(name).is_file()
+    width=re.search(r'(?m)^\s*degaussq\s*=\s*([^\n]+)',text)
+    scale=float(width.group(1)) if width else .5
+    count=int(value('nqstep'))
+    content='w[meV] a2f and integrated 2*a2f/w for 1 smearing values\n'
+    for i in range(1,count+1): content+=f'{i} {i*scale} {2*i*scale}\n'
+    content+=f'Integrated el-ph coupling\n # {2*count*scale}\nSummed el-ph coupling {2*count*scale}\n'
+    pathlib.Path(prefix+'.a2f').write_text(content)
 iso=value('liso')=='.true.'
 linear=value('tc_linear')=='.true.'
 kb=1.380649e-23/1.602176634e-19

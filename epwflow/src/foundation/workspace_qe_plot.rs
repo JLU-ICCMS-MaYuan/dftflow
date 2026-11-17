@@ -25,7 +25,7 @@ impl Request {
     ) -> Result<Self> {
         let identities = inputs
             .iter()
-            .map(|p| Identity::capture(p))
+            .map(|p| Ok(Identity::reference(p)))
             .collect::<Result<Vec<_>>>()?;
         let outputs = files.iter().map(|p| dir.join(p)).collect();
         Ok(Self {

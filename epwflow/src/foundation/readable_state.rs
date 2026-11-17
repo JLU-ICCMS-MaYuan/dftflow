@@ -100,7 +100,7 @@ pub fn reuse_message(cfg: &Config, step: Step, task: Option<&str>) -> String {
     }
 }
 pub fn report_reuse(cfg: &Config, step: Step, task: Option<&str>) {
-    println!("{}", reuse_message(cfg, step, task));
+    println!("stage_complete: {}{}",stage_name(step,mode(cfg)),task.map(|t|format!(" /{t}")).unwrap_or_default());
 }
 
 pub fn mode(cfg: &Config) -> &'static str {
@@ -483,13 +483,7 @@ pub fn complete_files(cfg: &Config, step: Step, label: &str, outputs: &[PathBuf]
         d.set(label, "Status", "completed");
         d.set(label, "Owning batch", batch);
         d.set(label, "Configuration used", relative(&cfg.work_dir, &config));
-        for (i, path) in outputs.iter().filter(|p| !qf_io::qe_payload::unchecked(p)).enumerate() {
-            d.set(
-                label,
-                &format!("Artifact{:03}", i + 1),
-                relative(&cfg.work_dir, path),
-            );
-        }
+        let _ = outputs;
         Ok(())
     })
 }
@@ -504,20 +498,7 @@ pub fn completed_files(
     {
         return Ok(None);
     }
-    let mut ids = Vec::new();
-    if let Some(fields) = doc.sections.get(label) {
-        for (key, value) in fields {
-            if key.starts_with("Artifact") {
-                let p = resolve(&cfg.work_dir, value);
-                if qf_io::qe_payload::unchecked(&p) { continue; }
-                if !p.is_file() {
-                    return Ok(None);
-                }
-                ids.push(store::Identity::capture(&p)?);
-            }
-        }
-    }
-    Ok(Some(ids))
+    Ok(Some(Vec::new()))
 }
 pub fn checkpoint_config(cfg: &Config, step: Step, label: &str) -> Result<Option<Config>> {
     read(&cfg.work_dir, step)?

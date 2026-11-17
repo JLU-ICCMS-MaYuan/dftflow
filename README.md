@@ -57,7 +57,7 @@ epw_phonon --help
 
 确认显示的是仓库 `bin/<模块>/` 下的入口后，进入计算目录直接执行命令，例如 `epw_phonon -c epwinput.toml`。添加 `PATH` 本身不提交计算，也不迁移已有运行绑定。
 
-更新按程序逐文件原子替换，不保证所有程序同时切换；应在没有活动计算链时更新。生成脚本和 EPW 身份记录可能固定了程序绝对路径、链接目标和哈希，仅复制到新目录不会自动迁移这些绑定；已有运行按其恢复约定处理，新运行使用 `bin/<模块>/`。
+更新按程序逐文件原子替换，不保证所有程序同时切换；应在没有活动计算链时更新。生成脚本可能固定程序绝对路径，已有运行按其恢复约定处理；当前编号 EPW 不再用科学文件指纹清单追溯整条来源链，新运行使用 `bin/<模块>/`。
 
 本次唯一入口与依赖迁移见 [0017 操作指南](docs/specs/0017-build-binaries-layout/quickstart.md)；旧安装清理的历史说明保留在 [0011](docs/specs/0011-build-history-cleanup/quickstart.md)，不作为新的安装契约。
 
@@ -214,13 +214,16 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 
 
 新 EPW 配置使用 `layout = "numbered"`、`work_dir = "."` 和根 `input.toml`。
-阶段重算覆盖旧内容，保留编号目录 inode 和当前打开的 Slurm 日志，不生成历史。`epw-state/` 保存八份中文阶段日志、编号原文配置及按需保留的 `imports/`；作业号保存在各计算目录同名 `.jobs`。输入原文变化时，在工作区 `epw-state/` 增加 `NNNN-config.toml` 版本。
+阶段重算保留编号目录 inode 和当前打开的 Slurm 日志；第 7 步按编号参数组保留不同网格、费米窗口和电子展宽的数据，新增组不覆盖旧组。`epw-state/` 保存八份英文阶段日志、编号原文配置及按需保留的 `imports/`；作业号保存在各计算目录同名 `.jobs`。输入原文变化时，在工作区 `epw-state/` 增加 `NNNN-config.toml` 版本。
 八日志布局执行 `epw_clear` 会报告无需清理；旧布局仍支持预览并清空三类历史。详见 [清理用法](docs/overview/epwflow/epw_clear.md)。
 各 flow 统一采用 `[slurm].header` 多行字符串填写 Slurm 文件头，MPI 启动参数由 launcher／现有程序启动命令指定。EPW 已删除整个 `[resources]`，不再自动补写或通过 sbatch 参数覆盖分区、节点数和任务数。旧输入须迁移，历史冻结快照不手改；示例见 [EPW 配置说明](epwflow/README.md#slurm-文件头)。
 
 SCF／NSCF 的原始电荷密度和波函数不做哈希、大小、非空、存在性或文件集合核对，实际复制和原生读取保留；其他科学证据照常验证，见 [0067](docs/specs/0067-unchecked-density-wavefunctions/spec.md)。
-修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。第 5 步在一个 Slurm 分配内自动完成拟合、核验、能带／DOS 后处理和绘图；`--stage coarse -s` 同样自动完成第 6 步粗网格、路径插值与 QE／EPW 比较绘图。两步脚本从开始调用阶段 CLI，无需重复命令推进后处理。
+修改当前配置后执行 `epw_wannier --stage wannier -s`，直接读取必要的既有 NSCF 数据，缺失时停止，不补算上游。第 5 步在一个 Slurm 分配内自动完成拟合、核验、能带／DOS 后处理和绘图；`--stage coarse -s` 同样自动完成第 6 步粗网格、路径插值与 QE／EPW 比较绘图。两步脚本从开始调用阶段 CLI，无需重复命令推进后处理。
 `--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
+
+各阶段 `reuse` 按来源列出实际接续文件，续行缩进 7 空格；不递归核验历史阶段或刷新其他阶段图表。第 7 步即使只有一组参数，也使用 `7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/` 这样的子目录；第 8 步逐文件软链接所选组的细矩阵。详见 [当前文件接续规则](docs/overview/epwflow/preflight-and-reuse.md)。
+
 第 3 步 QE 子任务完成即发布单侧图；第 5 步完成电子能带／总 DOS 对比，第 6 步完成声子谱／TDOS 对比及总览，图片、数据和来源按阶段保存在工作区根 `results/`。
 第 3／4 步在阶段分配内完成后处理；第 5～8 步直接提交原生任务，作业结束后再次执行相同公开命令核验和推进；第 5 步不等待声子。详见[阶段结果说明](docs/specs/0050-epw-stage-results/quickstart.md)。
 输入、按目的命名的 `.sh` 和科学输出位于各实际计算目录，空 pool 在生成、提交及脚本启动时阻断。

@@ -96,6 +96,7 @@ pub fn files(
     nwann: usize,
     modes: usize,
 ) -> Result<Vec<(String, PathBuf)>> {
+    for path in [dir.join(format!("{prefix}.ukk")),dir.join("epwdata.fmt"),dir.join("crystal.fmt"),out.join(format!("{prefix}.epmatwp"))] {save::nonempty(&path)?;}
     band_manifold(&dir.join(format!("{prefix}.ukk")), nwann)?;
     let text = fs::read_to_string(dir.join("epwdata.fmt"))?;
     let mut lines = text.lines();
@@ -131,6 +132,7 @@ pub fn files(
         dims == [modes / 3, modes],
         "data_invalid: crystal.fmt Atoms/Models do not match"
     );
+    if !dir.ancestors().any(crate::foundation::layout::enabled) {
     let wigner = fs::read_to_string(dir.join("wigner.fmt"))?;
     let mut rows = wigner.lines();
     let dims = rows
@@ -171,6 +173,7 @@ pub fn files(
         rows.all(|s| s.trim().is_empty()),
         "data_invalid: Wigner Extra data"
     );
+    }
     for (name, factor) in [("vmedata.fmt", 12), ("dmedata.fmt", 6)] {
         ensure!(
             numbers(&fs::read_to_string(dir.join(name))?)?.len() == factor * nwann * nwann * nk,
@@ -217,10 +220,10 @@ pub fn files(
         "vmedata.fmt",
         "dmedata.fmt",
     ] {
-        result.push((
-            format!("coarse_{}", name.trim_end_matches(".fmt")),
-            dir.join(name),
-        ));
+        if name=="wigner.fmt" && dir.ancestors().any(crate::foundation::layout::enabled) {continue;}
+        if dir.join(name).is_file() || matches!(name,"epwdata.fmt"|"crystal.fmt") {
+            result.push((format!("coarse_{}", name.trim_end_matches(".fmt")),dir.join(name)));
+        }
     }
     Ok(result)
 }
@@ -239,6 +242,17 @@ pub fn stage(
         crate::foundation::native_jobs::empty_execution_directory(target)?,
         "input_conflict: A fine grid target exists. Stay on site"
     );
+    if target.ancestors().any(crate::foundation::layout::enabled) {
+        fs::create_dir_all(target.join("out"))?;
+        let paths=sources.iter().map(|(_,p)|p.clone()).collect::<Vec<_>>();
+        for (_,src) in sources {
+            let dst=if src.parent()==Some(out) {target.join("out").join(src.file_name().unwrap())}else{target.join(src.file_name().unwrap())};
+            crate::foundation::reuse_files::link(&src,&dst)?;
+        }
+        let root=target.ancestors().find(|p|crate::foundation::layout::enabled(p)).unwrap();
+        crate::foundation::reuse_files::report(root,paths);
+        return Ok(());
+    }
     fs::create_dir_all(target.join("out"))?;
     for (_, src) in sources {
         let hash = store::hash_file(&src)?;

@@ -32,7 +32,9 @@ fn execute(
         if crate::foundation::native_jobs::retry_enabled() && dir.join("out").exists() {
             std::fs::remove_dir_all(dir.join("out"))?;
         }
-        save::stage_scf(work, &dir.join("out"), &qe.config.qe.prefix)?;
+        if crate::foundation::layout::enabled(work) {
+            crate::foundation::reuse_files::electronic(qe.config,&crate::foundation::layout::path(work,"scf/snapshot"),&dir.join("out"),true)?;
+        } else {save::stage_scf(work, &dir.join("out"), &qe.config.qe.prefix)?;}
         std::fs::write(&file, input)?;
     }
     super::execution::run(

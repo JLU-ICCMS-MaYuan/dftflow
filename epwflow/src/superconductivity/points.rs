@@ -197,9 +197,8 @@ pub(crate) fn binding(cfg: &Config, input: &NativeInputs, launcher: &[String]) -
 }
 pub fn published(work: &Path, cfg: &Config, run_id: &str) -> Result<Run> {
     if crate::foundation::layout::enabled(work) {
-        let f3 = crate::interpolation::direct::fine(cfg)?;
-        let source = super::source::bind(work, cfg, &f3)?;
-        return super::batch::current(cfg, &source, run_id);
+        let source=super::source::selected(cfg)?;
+        return super::batch::current(cfg,&source,run_id);
     }
     let path = crate::foundation::layout::path(work, "superconductivity/manifest.json");
     let r = Run::load(&path)?;

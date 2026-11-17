@@ -1,5 +1,7 @@
 # 合并电子参考与 PDOS 复用核验
 
+后续语义已按用户要求改为实际文件接续，见 [修订需求](reuse-files-spec.md)、[八步文件说明](reuse-files-stage-data.md) 和 [实施验收](reuse-files-acceptance.md)。下文为原电子核验合并方案的历史记录，不恢复已取消的递归来源核验。
+
 Issue：[GitHub #52](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/52)；日期：2026-11-16。
 
 ## 原始需求记录

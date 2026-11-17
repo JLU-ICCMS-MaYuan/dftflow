@@ -54,7 +54,7 @@ pub fn collect(
             &r.control_metadata,
             r.dvscf.as_ref().unwrap(),
         ] {
-            source_checks.insert(p.clone(), store::hash_file(p)?);
+            if !crate::foundation::layout::enabled(work) {source_checks.insert(p.clone(), store::hash_file(p)?);}
         }
     }
     let dest = crate::foundation::layout::path(&work, "qe-data/save");
@@ -120,6 +120,7 @@ pub fn collect(
             perturbations: geometry.atoms.len() * 3,
         });
     }
+    if crate::foundation::layout::enabled(work) {return Ok(CollectedPh{responses:output,total_q:qpoints.len(),artifacts:Vec::new()});}
     let mut artifacts = vec![];
     let mut unique = BTreeSet::new();
     for (role, p) in paths {
@@ -149,6 +150,11 @@ pub fn collect(
 
 /// 部分导入可恢复；存在的目标必须逐字相同，不覆盖损坏或冲突证据。
 pub(crate) fn independent_copy(source: &Path, target: &Path) -> Result<()> {
+    if target.ancestors().any(crate::foundation::layout::enabled) {
+        ensure!(!fs::symlink_metadata(target).is_ok_and(|m|m.file_type().is_symlink()),"input_conflict: PH destination must be independent, not a link {}",target.display());
+        if source!=target {fs::copy(source,target).with_context(||format!("execution_failed: copy {}",source.display()))?;}
+        return Ok(());
+    }
     if target.exists() {
         #[cfg(unix)]
         {

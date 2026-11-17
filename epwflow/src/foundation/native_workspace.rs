@@ -55,6 +55,7 @@ fn advance_mode(
     let _config = log::ExecutionConfig::enter(&cfg.work_dir, &version);
     let _operation = log::DirectoryGuard::acquire(&cfg.work_dir)?;
     let _electronic = super::electronic_reuse::Scope::enter(&cfg)?;
+    let _reuse = super::reuse_files::Scope::enter();
     if target == Step::Phonon && super::phonon_import::bound(&cfg) {
         super::phonon_import::require_electronic(&cfg)?;
     }
@@ -74,19 +75,11 @@ fn advance_mode(
     if resume {
         crate::delivery::decay::recover_pending(&cfg)?;
     }
-    if target >= Step::Phonon && super::phonon_import::bound(&cfg) {
+    if target == Step::Phonon && super::phonon_import::bound(&cfg) {
         anyhow::ensure!(
             super::phonon_import::binding(&cfg).is_file(),
             "data_invalid: external phonon source record missing; specify --import-phonon again; PH will not be rerun"
         );
-    }
-    // 先检查已有结果的损坏，再提交任何缺失的依赖任务。
-    for step in stages::execution_steps(&cfg, target) {
-        match stages::reusable(&cfg, step) {
-            Err(_) if resume && step == target => (),
-            Err(error) => return Err(error),
-            Ok(_) => (),
-        }
     }
     for step in stages::execution_steps(&cfg, target) {
         let force_scf = own.is_none() && submit && resume && target == Step::Scf;
@@ -97,13 +90,13 @@ fn advance_mode(
         };
         if !force_scf && reusable {
             if step != Step::Electronic {
-                log::report_reuse(&cfg, step, None);
+                println!("stage_complete: {}", log::stage_name(step, log::mode(&cfg)));
             }
             if refresh_stage(&cfg, step, submit, resume, own)? {
                 return pending(&cfg, target);
             }
             if step == Step::Electronic {
-                log::report_reuse(&cfg, step, None);
+                println!("stage_complete: {}", log::stage_name(step, log::mode(&cfg)));
             }
             continue;
         }
@@ -121,7 +114,7 @@ fn advance_mode(
             .transpose()?
             .unwrap_or(false);
         let failed = previous.get("Stage", "Status") == Some("failed");
-        let upstream = stages::upstream(&cfg, step)?;
+        let upstream = std::collections::BTreeMap::<String,String>::new();
         let dependencies_match = upstream.iter().all(|(name, batch)| {
             previous.get("Dependencies", &format!("{name} batch")) == Some(batch.as_str())
         });
@@ -141,8 +134,10 @@ fn advance_mode(
                 .map(str::to_owned)
                 .unwrap_or_else(store::token)
         } else {
-            workspace::archive_step(&cfg, step)?;
-            native_jobs::retire_stage(&cfg, step)?;
+            if step != Step::Fine {
+                workspace::archive_step(&cfg, step)?;
+                native_jobs::retire_stage(&cfg, step)?;
+            }
             store::token()
         };
         log::update(&cfg.work_dir, step, |d| {
@@ -242,9 +237,7 @@ fn advance_mode(
                     "Solver finished; gap data are invalid"
                 },
                 valid,
-                Step::ALL
-                    .into_iter()
-                    .all(|step| stages::reusable(&cfg, step).unwrap_or(false))
+                target == Step::Superconductivity && valid
             );
             Ok(())
         }

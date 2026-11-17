@@ -16,7 +16,6 @@ use crate::{
 use anyhow::{ensure, Context, Result};
 use serde_json::json;
 use std::{
-    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -56,58 +55,8 @@ struct PostReceipt {
 }
 
 fn post_key(cfg: &Config, step: Step) -> Result<String> {
-    if step == Step::Wannier {
-        let receipt = Step::Wannier.directory(cfg).join("embedded-bands.json");
-        if receipt.exists() {
-            let sources: Vec<Identity> = store::read(&receipt)?;
-            for id in sources {
-                id.verify()?;
-            }
-        }
-    }
-    let dependencies = if step == Step::Wannier {
-        vec![Step::Wannier, Step::Electronic]
-    } else {
-        vec![Step::Coarse, Step::Phonon]
-    };
-    let keys = dependencies
-        .iter()
-        .map(|s| {
-            let c = stages::completion(cfg, *s)?;
-            c.verify()?;
-            c.output_key()
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let mut programs = vec![];
-    if step == Step::Wannier {
-        for p in [
-            post_program(cfg, "postw90")?,
-            post_program(cfg, "dos")?,
-        ] {
-            programs.push((store::hash_file(&p.path)?, p.args));
-        }
-    }
-    Ok(store::hash_bytes(&serde_json::to_vec(&(
-        if step == Step::Coarse { 8 } else { 6 },
-        super::combined_plot::VERSION,
-        if step == Step::Wannier {Some(&cfg.plot)} else {None},
-        keys,
-        programs,
-        cfg.comparison.clone().unwrap_or_default(),
-        if step == Step::Wannier {
-            cfg.native_value::<serde_json::Value>(&[super::native_config::WANNIER, "electron_dos"])?
-        } else {
-            cfg.native_value::<serde_json::Value>(&[super::native_config::COARSE, "comparison"])?
-        },
-        if step == Step::Coarse { Some((
-            cfg.native_value::<u32>(&[super::native_config::COARSE, "workflow", "points_per_edge"])?,
-            cfg.native_value::<u32>(&[&cfg.phonon_stage(), "workflow", "points_per_edge"])?,
-        )) } else { None },
-        cfg.kpath
-            .as_ref()
-            .map(|p| store::hash_file(p))
-            .transpose()?,
-    ))?))
+    Ok(serde_json::to_string(&json!({"stage":step.name(),"plot":cfg.plot,"comparison":cfg.comparison,
+        "request": cfg.native_value::<serde_json::Value>(&[if step==Step::Wannier {super::native_config::WANNIER}else{super::native_config::COARSE}])?}))?)
 }
 fn read_post(cfg: &Config, step: Step) -> Result<Option<PostReceipt>> {
     let Some(outputs) = super::readable_state::completed_files(cfg, step, "Derived delivery")? else {
@@ -131,7 +80,11 @@ fn save_post(cfg: &Config, step: Step, outputs: &[Identity]) -> Result<()> {
 }
 
 pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
-    if target >= Step::Coarse
+    if target==Step::Coarse && layout::enabled(&cfg.work_dir) {
+        return Ok(crate::delivery::decay::pending(cfg)? || (cfg.kpath.is_some() && !super::stage_results::root(cfg).join("6.epw-coarse/phonon.png").is_file()));
+    }
+
+    if target == Step::Coarse
         && stages::reusable(cfg, Step::Coarse)?
         && crate::delivery::decay::pending(cfg)?
     {
@@ -155,7 +108,7 @@ pub fn post_pending(cfg: &Config, target: Step) -> Result<bool> {
         }
     }
     for step in [Step::Wannier, Step::Coarse] {
-        if target < step || !stages::reusable(cfg, step)? {
+        if target != step || !stages::reusable(cfg, step)? {
             continue;
         }
         let Some(r) = read_post(cfg, step)? else {
@@ -191,8 +144,13 @@ pub fn refresh_post(cfg: &Config,target:Step)->Result<()> {
     result
 }
 fn refresh_post_inner(cfg: &Config, target: Step) -> Result<()> {
+    if target==Step::Coarse && layout::enabled(&cfg.work_dir) {
+        crate::delivery::decay::refresh(cfg)?;
+        return interpolation::phonon_comparison::run(cfg);
+    }
+
     // 原生粗网格回执先落盘；衰减交付不等待电子／声子比较收尾。
-    if target >= Step::Coarse && stages::reusable(cfg, Step::Coarse)? {
+    if target == Step::Coarse && stages::reusable(cfg, Step::Coarse)? {
         crate::delivery::decay::refresh(cfg)?;
     }
     for step in stages::execution_steps(cfg, target) {
@@ -205,7 +163,7 @@ fn refresh_post_inner(cfg: &Config, target: Step) -> Result<()> {
         }
     }
     for step in [Step::Wannier, Step::Coarse] {
-        if target < step {
+        if target != step {
             continue;
         }
         let key = post_key(cfg, step)?;
@@ -228,11 +186,11 @@ fn refresh_post_inner(cfg: &Config, target: Step) -> Result<()> {
             electronic_files()
                 .iter()
                 .map(|n| {
-                    Identity::capture(
+                    native_reference(
                         &layout::path(&cfg.work_dir, "comparison-native/electron").join(n),
                     )
                 })
-                .chain(super::combined_plot::ELECTRONIC_FILES.iter().map(|n| Identity::capture(&super::stage_results::root(cfg).join("5.epw-wannier").join(n))))
+                .chain(super::combined_plot::ELECTRONIC_FILES.iter().map(|n| native_reference(&super::stage_results::root(cfg).join("5.epw-wannier").join(n))))
                 .collect::<Result<Vec<_>>>()?
         } else {
             let previous = super::readable_state::checkpoint_config(cfg, step, "Comparison path")?;
@@ -328,8 +286,8 @@ fn refresh_post_inner(cfg: &Config, target: Step) -> Result<()> {
             crate::delivery::comparison::collect(&cfg.work_dir, None)?;
             super::combined_plot::coarse(cfg, &results)?;
             vec![
-                Identity::capture(&output.join("manifest.json"))?,
-                Identity::capture(&super::stage_results::root(cfg).join("6.epw-coarse/phonon.plot.json"))?,
+                native_reference(&output.join("manifest.json"))?,
+                native_reference(&super::stage_results::root(cfg).join("6.epw-coarse/phonon.plot.json"))?,
             ]
         };
         save_post(cfg, step, &outputs)?;
@@ -469,16 +427,16 @@ pub fn run(cfg: &Config, step: Step) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn partial_phonon(cfg: &Config) -> Result<Option<qe_data::manifest::QeManifest>> {
+pub(super) fn partial_phonon(cfg: &Config) -> Result<Option<qe_data::direct::PhononData>> {
     if !Step::Phonon.directory(cfg).join("save").is_dir() {
         return Ok(None);
     }
-    qe_data::direct::load(cfg).map(Some)
+    qe_data::direct::phonon(cfg).map(Some)
 }
 
-fn collect_phonon(cfg: &Config, qe: &QeSettings) -> Result<qe_data::manifest::QeManifest> {
+fn collect_phonon(cfg: &Config, qe: &QeSettings) -> Result<qe_data::direct::PhononData> {
     if super::phonon_import::bound(cfg) {
-        return super::phonon_import::collect(cfg, qe);
+        return super::phonon_import::collect(cfg, qe).map(|m| qe_data::direct::PhononData{phonon_files:m.phonon_files});
     }
     let root = &cfg.work_dir;
     let (points, responses) = if cfg.phonon.mode == PhMode::Nosplit {
@@ -494,44 +452,8 @@ fn collect_phonon(cfg: &Config, qe: &QeSettings) -> Result<qe_data::manifest::Qe
             .collect::<Result<Vec<_>>>()?;
         (points, responses)
     };
-    let scf = qe_data::scf::ScfResult {
-        energy_ry: qe_data::scf::parse_scf_energy(&fs::read_to_string(layout::path(
-            root,
-            "scf/scf.out",
-        ))?)?,
-        snapshot_dir: layout::path(root, "scf/snapshot"),
-        attempt_count: 1,
-        success_count: 1,
-    };
-    let mut programs = BTreeMap::new();
-    for (name, p) in [
-        ("pw", cfg.programs.pw.path.clone()),
-        ("ph", cfg.programs.ph.path.clone()),
-        ("epw", cfg.programs.epw.path.clone()),
-        ("q2r", post_program(cfg, "q2r")?.path),
-        ("matdyn", post_program(cfg, "matdyn")?.path),
-    ] {
-        programs.insert(name.into(), store::hash_file(&p)?);
-    }
-    let fingerprints = qe_data::manifest::Fingerprints {
-        structure_sha256: store::hash_file(&cfg.structure)?,
-        pseudo_sha256: cfg
-            .pseudos
-            .iter()
-            .map(|(e, p)| Ok((e.clone(), store::hash_file(p)?)))
-            .collect::<Result<_>>()?,
-        program_sha256: programs,
-    };
-    qe_data::scheduler::publish_data(
-        &stages::scientific_key(cfg, Step::Phonon)?,
-        fingerprints,
-        qe,
-        root,
-        scf,
-        states(cfg)?,
-        points,
-        responses,
-    )
+    let data=qe_data::collect_ph::collect(root,&points,&responses,&cfg.qe.prefix,&qe_data::phonon::geometry(qe,root)?)?;
+    Ok(qe_data::direct::PhononData{phonon_files:data.responses})
 }
 
 fn run_phonon(cfg: &Config, qe: &QeSettings) -> Result<()> {
@@ -626,15 +548,7 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
         .with_bands(&s.eigenvalues)?
         .with_species(&qe.cell.elements)?;
     if !super::native_jobs::continuing(&dir, "epw_wannier")? {
-        store::write(
-            &dir.join("embedded-sampling-decision.json"),
-            &json!({
-                "program":"epw.x","path_format":"high_symmetry_endpoints","reason":"This time it's ready wdata Declares only true high symmetrical endpoints; embedded from Wannier90 It's the native kpt and labelinfo Read Path,DOS Continue postw90 ,Do Not Run Again Wannier90/PW.",
-                "nscf":Identity::capture(&interpolation::electronic_sampling::xml(cfg))?,
-                "sampling":interpolation::electronic_sampling::plan(cfg)?
-            }),
-        )?;
-        super::workspace_data::stage_electronic_work(&layout::path(&cfg.work_dir,"nscf/out"),&dir.join("out"),&cfg.qe.prefix)?;
+        super::reuse_files::electronic(cfg,&layout::path(&cfg.work_dir,"nscf/out"),&dir.join("out"),true)?;
         fs::write(
             dir.join("epw_wannier.in"),
             epw.native_input(
@@ -670,11 +584,6 @@ fn run_wannier(cfg: &Config, qe: &QeSettings) -> Result<()> {
             cfg.qe.nscf.nbnd as usize - cfg.wannier.exclude_bands.len(),
         )?;
 
-        let bands = ["_band.dat", "_band.kpt", "_band.labelinfo.dat"]
-            .iter()
-            .map(|suffix| Identity::capture(&dir.join(format!("{prefix}{suffix}"))))
-            .collect::<Result<Vec<_>>>()?;
-        store::write(&dir.join("embedded-bands.json"), &bands)?;
         super::workspace_data::release_electronic_work(cfg,&dir)?;
         Ok(())
     });
@@ -850,30 +759,18 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
     for ext in ["win", "wout", "chk", "mmn", "amn", "nnkp"] {
         let name = format!("{}.{ext}", cfg.qe.prefix);
         if dir.join(&name).exists() {
-            let source = Identity::capture(&dir.join(&name))?;
-            if !post.join(&name).exists() || store::hash_file(&post.join(&name))? != source.sha256 {
+            let source = native_reference(&dir.join(&name))?;
+            if post!=dir && !post.join(&name).exists() {
                 fs::copy(&source.path, post.join(&name))?;
                 source.verify()?;
             }
         }
     }
-    if dir.join("embedded-bands.json").exists() {
-        let embedded: Vec<Identity> = store::read(&dir.join("embedded-bands.json"))
-            .context("required: The old model lacks embedded energy belt back-to-back from the source; the scientific model is retained and cannot be recomposed for migration")?;
-        for id in embedded {
-            id.verify()?;
-        }
-        for suffix in ["_band.dat", "_band.kpt", "_band.labelinfo.dat"] {
-            let name = format!("{}{suffix}", cfg.qe.prefix);
-            let source = dir.join(&name);
-            ensure!(source.is_file(),
-            "required: Existing contracts are missing EPW Embedded can lead to output {};Retain the model, not recalculated by the directory migration, check the original EPW Output",source.display());
-            if source != post.join(&name) { fs::copy(&source, post.join(&name))?; }
-        }
-        interpolation::electronic_sampling::extract(cfg, &post)?;
-    } else {
-        interpolation::electronic_sampling::legacy(cfg, &post)?;
+    for suffix in ["_band.dat","_band.kpt","_band.labelinfo.dat"] {
+        let source=dir.join(format!("{}{suffix}",cfg.qe.prefix));save::nonempty(&source)?;
+        if post!=dir {fs::copy(&source,post.join(source.file_name().unwrap()))?;}
     }
+    interpolation::electronic_sampling::extract(cfg,&post)?;
     electronic_comparison_inner(cfg, &post, fermi)?;
     for name in ["electronic-bands.csv","electronic-dos.csv","electronic-dos-normalization.json"] {
         if post.join(name)!=dir.join(name) {fs::copy(post.join(name),dir.join(name))?;}
@@ -892,7 +789,7 @@ fn electronic_comparison(cfg: &Config, dir: &Path, fermi: f64) -> Result<()> {
         dir.join(format!("{}.wout", cfg.qe.prefix)),
     ]
     .iter()
-    .map(|p| Identity::capture(p))
+    .map(|p| native_reference(p))
     .collect::<Result<Vec<_>>>()?;
     super::stage_results::publish(cfg,Step::Wannier,"plot",&plot,
         &super::combined_plot::ELECTRONIC_FILES.iter().map(|n|n.to_string()).collect::<Vec<_>>(),
@@ -960,7 +857,7 @@ fn electronic_comparison_inner(cfg: &Config, dir: &Path, fermi: f64) -> Result<(
     if !reusable {
         let reason = json!({"schema_version":1,"decision":"necessary_postprocessing",
             "reason":"Existing electronic models do not provide compatible postw90 DOS ;Only the existing flat grid total DOS ,Do Not Rewrite",
-            "program":program.path,"model":Identity::capture(&dir.join(format!("{prefix}.chk")))?,
+            "program":program.path,"model":native_reference(&dir.join(format!("{prefix}.chk")))?,
             "mesh":cfg.qe.nscf.k_grid,"sigma_ev":options.electronic_sigma_ev,"expected_output":dos});
         store::write(&dir.join("dos-decision.json"), &reason)?;
         if !super::native_jobs::continuing(dir, "postw90")? {
@@ -1024,7 +921,7 @@ pub fn validate(cfg: &Config, step: Step) -> Result<()> {
             );
         }
         Step::Phonon => {
-            qe_data::direct::load(cfg)?;
+            qe_data::direct::phonon(cfg)?;
             for stem in ["q2r", "matdyn_phband", "matdyn_phdos"] {
                 qf_io::qe_completion::checked_log(&dir.join(format!("{stem}.out")), false)?;
             }
@@ -1051,11 +948,11 @@ pub fn validate(cfg: &Config, step: Step) -> Result<()> {
             validate_ukk(&dir.join(format!("{}.ukk", cfg.qe.prefix)), cfg)
                 .context("data_invalid: Wannier UKK Format Invalid")?;
             save::nonempty(&dir.join(format!("{}.chk", cfg.qe.prefix)))?;
-            let states = states(cfg)?;
+            let (points,_)=interpolation::restart::manifold_dimensions(&dir.join(format!("{}.ukk",cfg.qe.prefix)),cfg.wannier.num_wann as usize)?;
             interpolation::restart::velocity_files(
                 &dir,
                 &cfg.qe.prefix,
-                states.kpoints.len(),
+                points,
                 cfg.qe.nscf.nbnd as usize - cfg.wannier.exclude_bands.len(),
             )?;
         }
@@ -1078,8 +975,7 @@ pub fn validate(cfg: &Config, step: Step) -> Result<()> {
                 crate::superconductivity::linear::validate(cfg,&fs::read_to_string(dir.join("epw.out"))?)?;
                 return Ok(());
             }
-            let fine = interpolation::direct::fine(cfg)?;
-            crate::superconductivity::verify::complete(&cfg.work_dir, cfg, &fine.run_id)?;
+            crate::superconductivity::verify::complete(&cfg.work_dir,cfg,"native")?;
             crate::delivery::native::check(&super::stage_results::root(cfg).join("8.epw-superconductivity"))?;
         }
     }
@@ -1087,6 +983,7 @@ pub fn validate(cfg: &Config, step: Step) -> Result<()> {
 }
 
 pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
+    if layout::enabled(&cfg.work_dir) {return Ok(Vec::new());}
     if step == Step::Nscf {
         states(cfg)?;
     }
@@ -1150,7 +1047,7 @@ pub fn evidence(cfg: &Config, step: Step) -> Result<Vec<Identity>> {
                 && !name.starts_with(".epw-")
                 && !(step == Step::Phonon && name == "manifest.json")
         })
-        .map(|f| Identity::capture(&dir.join(&f.relative_path)))
+        .map(|f| native_reference(&dir.join(&f.relative_path)))
         .collect::<Result<Vec<_>>>()?;
     ensure!(!ids.is_empty(), "data_invalid: There's no scientific evidence at the stage");
     Ok(ids)
@@ -1178,3 +1075,5 @@ mod post_program_tests {
         assert!(post_program(&cfg, "matdyn").unwrap_err().to_string().contains("programs.matdyn_x"));
     }
 }
+
+fn native_reference(path:&Path)->Result<Identity> {Ok(Identity::reference(path))}

@@ -1191,6 +1191,12 @@ impl Config {
         let mut d = self.document()?;
         let mut v = stages(&d);
         put(&mut v, path, value);
+        if path.last().is_some_and(|k|["fermi_energy","fila2f"].contains(k)) && path.len()>1 {
+            let location=path[1..].join(".");
+            if let Some(derived)=v.get_mut(path[0]).and_then(|s|s.get_mut("workflow")).and_then(|s|s.get_mut("derived")).and_then(Value::as_object_mut) {
+                derived.remove(&location);
+            }
+        }
         d.stages = serde_json::from_value(v)?;
         let runtime = decode(&d).map_err(|e| self.config_error(e))?;
         self.document = d;

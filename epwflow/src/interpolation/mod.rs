@@ -26,3 +26,5 @@ pub mod differences;
 pub mod direct;
 
 pub(crate) mod native_sampling;
+
+pub(crate) mod phonon_comparison;

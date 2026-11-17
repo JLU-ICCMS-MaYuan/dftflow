@@ -28,6 +28,7 @@ pub fn artifact_path(work: &Path, a: &Artifact) -> Result<std::path::PathBuf> {
         target.starts_with(fs::canonicalize(work)?),
         "data_invalid: artifact symlink escapes its root"
     );
+    if crate::foundation::layout::enabled(work) {return Ok(path);}
     ensure!(
         fs::metadata(&path)?.len() == a.byte_size && store::hash_file(&path)? == a.sha256,
         "input_conflict: F3 artifact changed {}",
@@ -38,6 +39,8 @@ pub fn artifact_path(work: &Path, a: &Artifact) -> Result<std::path::PathBuf> {
 
 /// F3 清单必须交付原生角色；旧的简化 fine 文本不能伪装成 EPW 二进制数据。
 pub fn bind(work: &Path, cfg: &Config, f3: &InterpolationManifest) -> Result<NativeInputs> {
+    if crate::foundation::layout::enabled(work) {return native_selected(cfg);}
+
     let fine = f3
         .fine
         .as_ref()
@@ -48,7 +51,7 @@ pub fn bind(work: &Path, cfg: &Config, f3: &InterpolationManifest) -> Result<Nat
             .iter()
             .find(|a| a.role == "fine_log")
             .context("data_invalid: native fine-grid log missing")?;
-        Identity::capture(&artifact_path(work, file)?)?
+        Identity::reference(&artifact_path(work, file)?)
     } else {
         Identity::capture(&crate::foundation::layout::path(
             work,
@@ -114,7 +117,7 @@ pub fn bind_native_roles(
         &a2f,
         cfg.interpolation.spectral_points as usize,
     )?;
-    let selected = cfg.superconductivity.spectrum_index as usize;
+    let selected = if crate::foundation::layout::enabled(work) {0} else {cfg.superconductivity.spectrum_index as usize};
     ensure!(
         selected < spectra.len() && spectrum.a2f.len() == 1,
         "data_invalid: selected F3 spectrum out of range or native spectrum column count invalid"
@@ -143,22 +146,22 @@ pub fn bind_native_roles(
     );
     let ids = files
         .iter()
-        .map(|p| Identity::capture(p))
+        .map(|p| if crate::foundation::layout::enabled(work) {Ok(Identity::reference(p))}else{Identity::capture(p)})
         .collect::<Result<Vec<_>>>()?;
     evidence.verify()?;
     Ok(NativeInputs {
         configured_stages: Some(
             serde_json::json!({"8.epw-superconductivity":cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::SUPER])?}),
         ),
-        interpolation_digest: evidence.sha256.clone(),
+        interpolation_digest: if crate::foundation::layout::enabled(work) {"native".into()}else{evidence.sha256.clone()},
         prefix: cfg.qe.prefix.clone(),
         k_grid: cfg.interpolation.k_grid,
         q_grid: cfg.interpolation.q_grid,
         spectral_points: cfg.interpolation.spectral_points as usize,
         eps_acoustic_cm1: cfg.interpolation.eps_acoustic_cm1,
-        a2f: Identity::capture(&a2f)?,
-        crystal: Identity::capture(&get("fine_crystal")?)?,
-        selecq: Some(Identity::capture(&get("fine_selecq")?)?),
+        a2f: if crate::foundation::layout::enabled(work) {Identity::reference(&a2f)}else{Identity::capture(&a2f)?},
+        crystal: if crate::foundation::layout::enabled(work) {Identity::reference(&get("fine_crystal")?)}else{Identity::capture(&get("fine_crystal")?)?},
+        selecq: Some(if crate::foundation::layout::enabled(work) {Identity::reference(&get("fine_selecq")?)}else{Identity::capture(&get("fine_selecq")?)?}),
         matrix_outdir: matrix_dir
             .parent()
             .context("data_invalid: outdir missing")?
@@ -166,4 +169,49 @@ pub fn bind_native_roles(
         matrix_files: ids,
         states: data.states,
     })
+}
+
+/// 仅各向同性谱路线不读取细网格矩阵、原生日志或更早阶段。
+pub fn selected(cfg:&Config)->Result<NativeInputs> {
+    let matrix_iso=cfg.native_value::<String>(&[crate::foundation::native_config::SUPER,"iso","epw","INPUTEPW","fila2f"]).ok().is_some_and(|s|s.trim().is_empty());
+    if cfg.superconductivity.mode!=crate::foundation::config::Mode::Iso || matrix_iso {
+        return native_selected(cfg);
+    }
+    let dir=crate::interpolation::fine::directory(cfg)?;
+    let explicit=cfg.native_value::<String>(&[crate::foundation::native_config::SUPER,"iso","epw","INPUTEPW","fila2f"]).ok().filter(|s|!s.trim().is_empty());
+    let path=explicit.map(|s| {let p=std::path::PathBuf::from(s);if p.is_absolute(){p}else{cfg.work_dir.join(p)}}).unwrap_or_else(||dir.join(format!("{}.a2f",cfg.qe.prefix)));
+    let samples=cfg.native_value::<usize>(&[crate::foundation::native_config::SUPER,"iso","epw","INPUTEPW","nqstep"]).unwrap_or(cfg.interpolation.spectral_points as usize);
+    crate::interpolation::native::NativeSpectrum::read(&path,samples)?;
+    Ok(NativeInputs {
+        configured_stages:Some(serde_json::json!({"8.epw-superconductivity":cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::SUPER])?})),
+        interpolation_digest:"native-spectrum".into(),prefix:cfg.qe.prefix.clone(),k_grid:cfg.interpolation.k_grid,q_grid:cfg.interpolation.q_grid,
+        spectral_points:samples,eps_acoustic_cm1:cfg.interpolation.eps_acoustic_cm1,
+        a2f:Identity::reference(&path),crystal:Identity::reference(&dir.join("crystal.fmt")),selecq:None,
+        matrix_outdir:dir.join("out"),matrix_files:Vec::new(),states:Vec::new(),
+    })
+}
+
+/// 原生矩阵按实际名称读取并交接，不构建 F2/F3 产物登记。
+fn native_selected(cfg:&Config)->Result<NativeInputs> {
+    let dir=crate::interpolation::fine::directory(cfg)?;
+    let qe=crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
+    let epw=crate::interpolation::epw_config::EpwConfig::from_config(cfg)?.with_species(&qe.cell.elements)?;
+    let result=crate::interpolation::fine::collect_native_fine_at(&cfg.work_dir,&dir,&epw)?;
+    let out=dir.join("out");let matrix=out.join(format!("{}.ephmat",cfg.qe.prefix));
+    let mut data=eigenvalues(&fs::read(matrix.join("egnv"))?)?;
+    ensure!((data.fsthick_ev-cfg.interpolation.fsthick_ev).abs()<1e-8 && (data.degaussw_ev-cfg.interpolation.degaussw_ev).abs()<1e-8,"input_conflict: selected fine data differs from Fermi-window or electron-smearing settings");
+    let log=fs::read_to_string(crate::foundation::scientific_logs::output(&dir,"epw_fine"))?;
+    let offset=crate::interpolation::native_matrices::band_offset(&log,data.bands)?;
+    ensure!(offset+data.bands<=cfg.wannier.num_wann as usize,"data_invalid: fine band range exceeds Wannier subspace");
+    for state in &mut data.states {state.band+=offset;}
+    let mut paths=["egnv","freq","ikmap","npool"].iter().map(|n|matrix.join(n)).collect::<Vec<_>>();
+    let mut shards=fs::read_dir(&matrix)?.filter_map(|e|e.ok()).map(|e|e.path()).filter(|p|p.file_name().is_some_and(|n|n.to_string_lossy().starts_with("ephmat"))).collect::<Vec<_>>();shards.sort();paths.extend(shards);
+    ensure!(paths.len()==result.ephmat_shards+4,"data_invalid: inconsistent matrix shard count");
+    let a2f=dir.join(format!("{}.a2f",cfg.qe.prefix));
+
+    Ok(NativeInputs{configured_stages:Some(serde_json::json!({"8.epw-superconductivity":cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::SUPER])?})),
+        interpolation_digest:"native".into(),prefix:cfg.qe.prefix.clone(),k_grid:cfg.interpolation.k_grid,q_grid:cfg.interpolation.q_grid,
+        spectral_points:cfg.interpolation.spectral_points as usize,eps_acoustic_cm1:cfg.interpolation.eps_acoustic_cm1,
+        a2f:Identity::reference(&a2f),crystal:Identity::reference(&dir.join("crystal.fmt")),selecq:Some(Identity::reference(&dir.join("selecq.fmt"))),
+        matrix_outdir:out,matrix_files:paths.iter().map(|p|Identity::reference(p)).collect(),states:data.states})
 }

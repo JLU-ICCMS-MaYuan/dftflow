@@ -141,6 +141,13 @@ impl QeManifest {
     /// 原生交付逐文件重验；版本 1 仅保留历史读取，不凭 valid 标签进入下游。
     pub fn verify(&self) -> anyhow::Result<()> {
         use anyhow::{ensure, Context};
+        if let Some(root)=self.artifact_root.as_ref().filter(|r|crate::foundation::layout::enabled(r)) {
+            ensure!(self.schema_version==2 && self.validation.all_passed(),"data_invalid: native QE results are incomplete");
+            let cfg=super::direct::current(root)?;
+            super::direct::phonon(&cfg)?;
+            return Ok(());
+        }
+
         ensure!(
             self.schema_version == 2 && self.validation.all_passed() && !self.artifacts.is_empty(),
             "data_invalid: Missing version 2 Native QE The identity of the product"

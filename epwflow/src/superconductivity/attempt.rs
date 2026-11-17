@@ -177,6 +177,60 @@ pub struct NativeInputs {
 }
 
 impl NativeInputs {
+    pub(crate) fn for_mode(&self,cfg:&Config,mode:Mode)->Result<Self> {
+        let mut result=self.clone();
+        let method=if mode==Mode::Iso {"iso"}else{"aniso"};
+        result.spectral_points=cfg.native_value::<usize>(&[crate::foundation::native_config::SUPER,method,"epw","INPUTEPW","nqstep"]).unwrap_or(self.spectral_points);
+        if let Ok(path)=cfg.native_value::<String>(&[crate::foundation::native_config::SUPER,method,"epw","INPUTEPW","fila2f"]) {
+            if !path.trim().is_empty() {
+                let path=PathBuf::from(path);let path=if path.is_absolute(){path}else{cfg.work_dir.join(path)};
+                super::super::interpolation::native::NativeSpectrum::read(&path,result.spectral_points)?;
+                result.a2f=Identity::reference(&path);
+            }
+        }
+        if result.reuse_spectrum(mode) && result.a2f.path.is_file() {
+            crate::interpolation::native::NativeSpectrum::read(&result.a2f.path,result.spectral_points)?;
+        }
+        Ok(result)
+    }
+    pub(crate) fn reuse_spectrum(&self,mode:Mode)->bool {
+        let method=if mode==Mode::Iso {"iso"}else{"aniso"};
+        !self.configured_stages.as_ref().and_then(|v|v[crate::foundation::native_config::SUPER][method]["epw"]["INPUTEPW"]["fila2f"].as_str()).is_some_and(|s|s.trim().is_empty())
+    }
+    fn matrix_route(&self,mode:Mode)->bool {
+        self.interpolation_digest=="native" && (mode==Mode::Aniso || !self.reuse_spectrum(mode))
+    }
+    /// 每个求解目录持有自己的链接，所有矩阵仍由第七步保存。
+    pub(crate) fn stage_matrix_links(&self, dir:&Path, mode:Mode)->Result<()> {
+        if !self.matrix_route(mode) {
+            if let Some(root)=self.a2f.path.ancestors().find(|p|crate::foundation::layout::enabled(p)) {
+                crate::foundation::reuse_files::report(root,[self.a2f.path.clone()]);
+            }
+            return Ok(());
+        }
+        let target=dir.join("out").join(format!("{}.ephmat",self.prefix));
+        let mut paths=Vec::new();
+        for file in &self.matrix_files {
+            crate::foundation::reuse_files::link(&file.path,&target.join(file.path.file_name().context("data_invalid: matrix filename missing")?))?;
+            paths.push(file.path.clone());
+        }
+        crate::foundation::reuse_files::link(&self.crystal.path,&dir.join("crystal.fmt"))?;
+        if let Some(selecq)=&self.selecq {
+            selecq.verify()?;
+            crate::foundation::reuse_files::link(&selecq.path,&dir.join("selecq.fmt"))?;
+        }else {anyhow::bail!("data_invalid: matrix solve requires selecq.fmt");}
+        let dos=self.matrix_outdir.join(format!("{}.dos",self.prefix));
+        crate::qe_data::save::nonempty(&dos)?;
+        crate::foundation::reuse_files::link(&dos,&dir.join("out").join(format!("{}.dos",self.prefix)))?;
+        paths.push(dos);
+        if let Some(root)=self.matrix_outdir.ancestors().find(|p|crate::foundation::layout::enabled(p)) {
+            paths.push(self.crystal.path.clone());
+            if let Some(selecq)=&self.selecq {paths.push(selecq.path.clone());}
+            if self.reuse_spectrum(mode) && self.a2f.path.is_file() {paths.push(self.a2f.path.clone());}
+            crate::foundation::reuse_files::report(root,paths);
+        }
+        Ok(())
+    }
     pub fn verify(&self, mode: Mode) -> Result<()> {
         ensure!(
             self.prefix
@@ -193,8 +247,8 @@ impl NativeInputs {
             self.eps_acoustic_cm1.is_finite() && self.eps_acoustic_cm1 >= 0.0,
             "data_invalid: invalid low-frequency rule"
         );
-        self.a2f.verify()?;
-        self.crystal.verify()?;
+        if self.reuse_spectrum(mode) && (mode!=Mode::Aniso || self.a2f.path.is_file()) {self.a2f.verify()?;}
+        if self.interpolation_digest!="native-spectrum" {self.crystal.verify()?;}
         if mode == Mode::Aniso {
             self.selecq
                 .as_ref()
@@ -241,21 +295,25 @@ pub(crate) fn configured(request:&Request,input:&NativeInputs,text:&str)->Result
     // 温度/初值来自请求，不从另一个方法或第七步继承。
     let mut values=stages.clone();let section=&mut values[crate::foundation::native_config::SUPER][method]["epw"]["INPUTEPW"];
     for key in ["temps","nstemp"] {section.as_object_mut().unwrap().remove(key);}
+    if input.reuse_spectrum(request.mode) {
+        values[crate::foundation::native_config::SUPER][method]["epw"]["INPUTEPW"].as_object_mut().unwrap().remove("fila2f");
+    }
     let derived=&mut values[crate::foundation::native_config::SUPER]["workflow"]["derived"];
     for key in ["temps","nstemp"] {derived[format!("{method}.epw.INPUTEPW.{key}")]=serde_json::json!("Current validated request/recovery subset of this method fixed-temperature plan");}
+    if input.reuse_spectrum(request.mode) {derived[format!("{method}.epw.INPUTEPW.fila2f")]=serde_json::json!("Selected spectrum linked in the current method directory");}
     crate::foundation::native_config::apply(&values,&[crate::foundation::native_config::SUPER,method,"epw"],text)
 }
 pub(crate) fn render_base(request: &Request, input: &NativeInputs) -> Result<String> {
     request.validate()?;
     let iso = request.mode == Mode::Iso;
     let mut s = format!("DFTFlow EPW 5.9 single-temperature solve\n&inputepw\n prefix = '{}'\n outdir = {}\n epwread = .true.\n epbread = .false.\n epwwrite = .false.\n wannierize = .false.\n ep_coupling = .false.\n elph = .false.\n eliashberg = .true.\n liso = {}\n laniso = {}\n tc_linear = {}\n tc_linear_solver = 'lapack'\n limag = .true.\n lreal = .false.\n lpade = .false.\n lacon = .false.\n imag_read = .false.\n fbw = .false.\n positive_matsu = .true.\n gridsamp = 0\n nswi = 0\n nstemp = 1\n temps(1) = {:.2}\n muc = {:.16e}\n wscut = {:.16e}\n nsiter = {}\n conv_thr_iaxis = {:.16e}\n broyden_beta = {:.16e}\n broyden_ndim = {}\n a_gap0 = {:.16e}\n nqstep = {}\n iverbosity = 2\n",
-        input.prefix, quoted(&input.matrix_outdir)?, if iso { ".true." } else { ".false." },
+        input.prefix, if input.matrix_route(request.mode) {"'./out'".into()}else{quoted(&input.matrix_outdir)?}, if iso { ".true." } else { ".false." },
         if iso { ".false." } else { ".true." }, if request.kind == SolveKind::Linear { ".true." } else { ".false." },
         request.temperature_centikelvin as f64 / 100.0, request.mu_star, request.cutoff_ev,
         request.max_iterations, request.convergence_relative, request.mixing_beta,
         request.mixing_history, request.initial_shape, input.spectral_points);
     // 目标版本 fila2f 只有 80 字符；副本属于本次尝试，避免绝对路径被静默截断。
-    s.push_str(" fila2f = 'source.a2f'\n");
+    if input.reuse_spectrum(request.mode) {s.push_str(" fila2f = 'source.a2f'\n");}
     s.push_str(&format!(
         " eps_acoustic = {:.16e}\n",
         input.eps_acoustic_cm1
@@ -339,13 +397,16 @@ pub fn run_attempt(
         false,
         false,
     )?;
-    crate::foundation::workspace_data::link(&inputs.crystal.path,&dir.join("crystal.fmt"))?;
-    crate::foundation::workspace_data::link(&inputs.a2f.path,&dir.join("source.a2f"))?;
-    ensure!(
-        store::hash_file(&dir.join("source.a2f"))? == inputs.a2f.sha256,
-        "input_conflict: native spectrum copy differs from its source"
-    );
-    if request.mode == Mode::Aniso {
+    if inputs.interpolation_digest!="native-spectrum" {
+        crate::foundation::workspace_data::link(&inputs.crystal.path,&dir.join("crystal.fmt"))?;
+    }
+    if inputs.reuse_spectrum(request.mode) && inputs.a2f.path.is_file() {crate::foundation::workspace_data::link(&inputs.a2f.path,&dir.join("source.a2f"))?;}
+    if inputs.reuse_spectrum(request.mode) && !inputs.a2f.sha256.is_empty() {
+        ensure!(store::hash_file(&dir.join("source.a2f"))? == inputs.a2f.sha256,
+            "input_conflict: native spectrum copy differs from its source");
+    }
+    inputs.stage_matrix_links(dir,request.mode)?;
+    if inputs.matrix_route(request.mode) {
         crate::foundation::workspace_data::link(
             &inputs
                 .selecq

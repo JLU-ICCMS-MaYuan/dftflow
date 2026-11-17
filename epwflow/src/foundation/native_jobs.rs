@@ -195,7 +195,7 @@ fn state_code(state: &str) -> &str {
     }
 }
 fn optional_identity(path: &Path) -> Identity {
-    Identity::capture(path).unwrap_or_else(|_| Identity {
+    native_reference(path).unwrap_or_else(|_| Identity {
         path: path.into(),
         target: path.into(),
         sha256: String::new(),
@@ -456,8 +456,8 @@ fn log_paths(task: &Task) -> Result<(PathBuf, PathBuf)> {
 }
 fn capture_logs(task: &mut Task) -> Result<()> {
     let (out, err) = log_paths(task)?;
-    task.stdout = Some(Identity::capture(&out)?);
-    task.stderr = Some(Identity::capture(&err)?);
+    task.stdout = Some(native_reference(&out)?);
+    task.stderr = Some(native_reference(&err)?);
     Ok(())
 }
 pub fn status(cfg: &Config) -> Result<Option<serde_json::Value>> {
@@ -970,18 +970,18 @@ fn prepare_mode(
     );
     let log = format!("slurm-{purpose}.log");
     let mut text = slurm::script_header(cfg, work, &format!("epw-{purpose}"), &log, &log);
-    let mut sources = vec![Identity::capture(&cfg.structure)?];
+    let mut sources = vec![native_reference(&cfg.structure)?];
     sources.extend(
         cfg.pseudos
             .values()
-            .map(|p| Identity::capture(p))
+            .map(|p| native_reference(p))
             .collect::<Result<Vec<_>>>()?,
     );
     if let Some(p) = &cfg.kpath {
-        sources.push(Identity::capture(p)?);
+        sources.push(native_reference(p)?);
     }
     if let Some(env) = &cfg.programs.environment_script {
-        sources.push(Identity::capture(env)?);
+        sources.push(native_reference(env)?);
         text.push_str(&format!(
             "source {} --force\n",
             double_quote(&env.to_string_lossy())
@@ -993,14 +993,14 @@ fn prepare_mode(
             && Path::new(arg).is_file()
             && fs::metadata(arg)?.permissions().mode() & 0o111 != 0
         {
-            sources.push(Identity::capture(Path::new(arg))?);
+            sources.push(native_reference(Path::new(arg))?);
         }
     }
     let mut inputs = vec![];
     for pair in command.windows(2) {
         if matches!(pair[0].as_str(), "-inp" | "-in") {
             let path = Path::new(&pair[1]);
-            inputs.push(Identity::capture(&if path.is_absolute() {
+            inputs.push(native_reference(&if path.is_absolute() {
                 path.into()
             } else {
                 work.join(path)
@@ -1011,7 +1011,7 @@ fn prepare_mode(
         if let Some(seed) = command.last() {
             let win = work.join(format!("{seed}.win"));
             if win.is_file() {
-                inputs.push(Identity::capture(&win)?);
+                inputs.push(native_reference(&win)?);
             }
         }
     }
@@ -1042,7 +1042,7 @@ fn prepare_mode(
         directory: work.into(),
         command: invocation,
         stem: stem.into(),
-        script: Identity::capture(&script)?,
+        script: native_reference(&script)?,
         inputs,
         sources,
         state: "prepared".into(),
@@ -1065,3 +1065,5 @@ pub(crate) fn forget_work_inputs(cfg: &Config, directory: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+fn native_reference(path:&Path)->Result<Identity> {Ok(Identity::reference(path))}

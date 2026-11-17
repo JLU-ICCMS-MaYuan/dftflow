@@ -4,11 +4,10 @@ use super::{attempt::{Request,SolveKind},source};
 use anyhow::{ensure,Context,Result};
 use std::{fs,path::Path};
 
-pub fn run(cfg:&Config,work:&Path,launcher:&[String],backend:Backend)->Result<()> {
+pub fn run(cfg:&Config,_work:&Path,launcher:&[String],backend:Backend)->Result<()> {
     ensure!(cfg.superconductivity.mode==Mode::Iso,"configuration: native linearized Tc currently requires mode=iso; anisotropic gap uses the native temperature list");
     ensure!(backend==Backend::Local,"allocation: native linearized solve requires allocated execution");
-    let manifest=crate::interpolation::manifest::InterpolationManifest::load(&crate::foundation::layout::path(work,"interpolation/manifest.json"))?;
-    let input=source::bind(work,cfg,&manifest)?;
+    let input=source::selected(cfg)?;
     let settings=cfg.solver_for(Mode::Iso)?;
     let first=*settings.gap_temperatures_k.first().context("configuration: native temperatures missing")?;
     let request=Request {
@@ -26,8 +25,13 @@ pub fn run(cfg:&Config,work:&Path,launcher:&[String],backend:Backend)->Result<()
     ensure!(regex::Regex::new(r"(?im)^\s*tc_linear\s*=\s*\.true\.")?.is_match(&text),
         "configuration: explicit native linearized task requires tc_linear=.true.");
     let dir=Step::Superconductivity.directory(cfg).join(super::batch::directory_name(cfg,Mode::Iso));fs::create_dir_all(&dir)?;
-    workspace_data::link(&input.a2f.path,&dir.join("source.a2f"))?;
-    workspace_data::link(&input.crystal.path,&dir.join("crystal.fmt"))?;
+    input.stage_matrix_links(&dir,Mode::Iso)?;
+    if input.reuse_spectrum(Mode::Iso) {
+        workspace_data::link(&input.a2f.path,&dir.join("source.a2f"))?;
+        crate::foundation::reuse_files::report(&cfg.work_dir,[input.a2f.path.clone()]);
+    }
+    if input.interpolation_digest!="native-spectrum" {workspace_data::link(&input.crystal.path,&dir.join("crystal.fmt"))?;}
+    text=super::attempt::configured(&request,&input,&text)?;
     let file=dir.join("epw.in");store::atomic_bytes(&file,text.as_bytes())?;
     let epw=crate::interpolation::epw_config::EpwConfig::from_config(cfg)?;
     crate::interpolation::coarse::run_epw(&epw,&dir,"epw.in",launcher,backend)?;

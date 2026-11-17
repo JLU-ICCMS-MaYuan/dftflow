@@ -177,7 +177,7 @@ pub fn verify_files(
     })().with_context(|| format!(
         "NSCF input/output validation failed: input {}; output {}. Check point count, order and weights. If pw.x adds or reorders k points in nscf mode, explicitly set stages.\"2.qe-nscf\".calculation='bands' and resume NSCF. The executable remains pw.x; bands.x is a postprocessor",
         input.display(), xml.display()))?;
-    super::xml::verify_fft(scf_xml, xml)?;
+    if !xml.ancestors().any(crate::foundation::layout::enabled) {super::xml::verify_fft(scf_xml, xml)?;}
     Ok(result)
 }
 

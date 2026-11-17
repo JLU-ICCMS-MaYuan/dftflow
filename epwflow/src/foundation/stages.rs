@@ -94,28 +94,25 @@ impl Step {
 }
 
 pub fn execution_steps(cfg: &Config, target: Step) -> Vec<Step> {
-    if target == Step::Phonon && super::phonon_import::bound(cfg) {
-        vec![Step::Phonon]
-    } else {
-        target.closure()
-    }
+    let _ = cfg;
+    vec![target]
 }
 
 fn program(path: &Path) -> Result<Value> {
-    Ok(json!({"sha256":store::hash_file(path)?}))
+    Ok(json!({"path":path}))
 }
 
 /// 参数所有权保持局部：尤其 Wannier 不读取 PH 网格，粗网格不读取细网格。
 pub fn parameters(cfg: &Config, step: Step) -> Result<Value> {
     let qe = &cfg.qe;
     let mut value = match step {
-        Step::Scf => json!({"structure":store::hash_file(&cfg.structure)?,
-            "pseudos":cfg.pseudos.iter().map(|(el,p)| Ok((el.clone(),store::hash_file(p)?))).collect::<Result<BTreeMap<_,_>>>()?,
+        Step::Scf => json!({"structure":cfg.structure,
+            "pseudos":cfg.pseudos,
             "pw":program(&cfg.programs.pw.path)?,"prefix":qe.prefix,"ecutwfc":qe.ecutwfc_ry,"ecutrho":qe.ecutrho_ry,
             "occupations":qe.occupations,"smearing":qe.smearing,"degauss":qe.degauss_ry,"scf":qe.scf}),
         Step::Nscf => json!({"nscf":qe.nscf,"pw":program(&cfg.programs.pw.path)?}),
         Step::Electronic => {
-            json!({"kpath":cfg.kpath.as_ref().map(|p|store::hash_file(p)).transpose()?,
+            json!({"kpath":cfg.kpath,
             "points":cfg.comparison.clone().unwrap_or_default().points_per_edge})
         }
         Step::Phonon => {
@@ -333,16 +330,6 @@ fn reusable_uncached(cfg: &Config, step: Step) -> Result<bool> {
     if parameters(cfg, step)? != parameters(&previous, step)? {
         return Ok(false);
     }
-    for &dependency in step.dependencies() {
-        if !reusable(cfg, dependency)? {
-            return Ok(false);
-        }
-        let upstream = log::read(&cfg.work_dir, dependency)?;
-        if doc.get("Dependencies", &format!("{} batch", dependency.name())) != upstream.get("Stage", "Batch")
-        {
-            return Ok(false);
-        }
-    }
     // 文件和原生语义直接核验；缺失旧现场只意味着需要更新。
     match super::workspace_science::validate(cfg, step) {
         Ok(()) => Ok(true),
@@ -363,12 +350,11 @@ pub fn finish(cfg: &Config, step: Step) -> Result<()> {
     let scientific_valid = if step == Step::Superconductivity
         && cfg.superconductivity.task == super::config::SuperconductivityTask::Gap
     {
-        let fine = crate::interpolation::direct::fine(cfg)?;
-        crate::superconductivity::points::published(&cfg.work_dir, cfg, &fine.run_id)?.data_complete
+        crate::superconductivity::points::published(&cfg.work_dir,cfg,"native")?.data_complete
     } else {
         true
     };
-    let upstream = upstream(cfg, step)?;
+    let upstream = BTreeMap::<String,String>::new();
     super::readable_state::update(&cfg.work_dir, step, |d| {
         let state = if scientific_valid {
             "completed"

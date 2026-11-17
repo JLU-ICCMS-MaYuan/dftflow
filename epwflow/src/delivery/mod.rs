@@ -27,6 +27,9 @@ pub fn collect_results(
     let result = output
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| crate::foundation::layout::path(work,"results"));
+    if crate::foundation::layout::enabled(work) {
+        return native::collect(work,Some(&result));
+    }
     let mut found = false;
     if crate::foundation::layout::path(&work, "superconductivity/manifest.json").exists() {
         if crate::foundation::layout::enabled(work) {return native::collect(work,Some(&result));}

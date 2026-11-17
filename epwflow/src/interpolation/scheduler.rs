@@ -103,6 +103,16 @@ fn run_coarse_stages(
     f2_work: &Path,
     retry: bool,
 ) -> Result<InterpolationManifest> {
+    if crate::foundation::layout::enabled(work) {
+        let structure=crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
+        let epw=epw_config::EpwConfig::from_config(cfg)?.with_species(&structure.cell.elements)?;
+        super::attempt::run(work,"coarse",&crate::foundation::layout::path(work,"coarse"),String::new(),retry,
+            || {coarse::stage_native(cfg)?;coarse::prepare_coarse(&epw,work)},
+            || coarse::run_epw(&epw,&crate::foundation::layout::path(work,"coarse"),"epw_coarse.in",launcher,backend),
+            || coarse::collect_coarse(work,&epw), |_| Ok(vec![]))?;
+        crate::foundation::workspace_data::release_electronic_work(cfg,&crate::foundation::layout::path(work,"coarse"))?;
+        return super::direct::coarse(cfg);
+    }
     let f2_manifest_path =
         crate::foundation::layout::path(&f2_work, "qe-data").join("manifest.json");
     let binding = adapter::bind_f2(&f2_manifest_path, cfg)?;
@@ -232,6 +242,17 @@ pub fn run_fine_with_retry(
     work: &Path,
     retry: bool,
 ) -> Result<InterpolationManifest> {
+    if crate::foundation::layout::enabled(work) {
+        let structure=crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
+        let epw=epw_config::EpwConfig::from_config(cfg)?.with_species(&structure.cell.elements)?;
+        let dir=super::fine::directory(cfg)?;
+        let width=cfg.interpolation.phonon_smearings_mev[0];
+        super::attempt::run(work,&format!("fine-smearing-{}",dir.file_name().unwrap().to_string_lossy()),&dir,String::new(),retry,
+            || fine::prepare_fine_at(&epw,work,&dir,width),
+            || coarse::run_epw(&epw,&dir,"epw_fine.in",launcher,backend),
+            || fine::collect_native_fine_at(work,&dir,&epw), |_| Ok(vec![]))?;
+        return super::direct::fine(cfg);
+    }
     let identity = if crate::foundation::layout::enabled(work) {
         None
     } else {
@@ -381,6 +402,8 @@ pub fn run_fine_with_retry(
 
 /// 清单与每个粗网格文件均须仍然有效，且不得混入细网格结果。
 pub fn verify_coarse(cfg: &config::Config, work: &Path) -> Result<InterpolationManifest> {
+    if crate::foundation::layout::enabled(work) {return super::direct::coarse(cfg);}
+
     let m = InterpolationManifest::load(&crate::foundation::layout::path(
         &work,
         "wannier/manifest.json",

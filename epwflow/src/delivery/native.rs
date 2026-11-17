@@ -284,6 +284,25 @@ fn csv(value: &str) -> String {
 }
 
 pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
+    if crate::foundation::layout::enabled(work) {
+        let cfg=crate::qe_data::direct::current(work)?;
+        let source=crate::superconductivity::source::selected(&cfg)?;
+        let modes=match cfg.superconductivity.mode {crate::foundation::config::Mode::Iso=>vec![crate::foundation::config::Mode::Iso],crate::foundation::config::Mode::Aniso=>vec![crate::foundation::config::Mode::Aniso],_=>vec![crate::foundation::config::Mode::Iso,crate::foundation::config::Mode::Aniso]};
+        let mut seen=std::collections::BTreeSet::new();let mut spectra=Vec::new();
+        for mode in modes {
+            let source=source.for_mode(&cfg,mode)?;
+            let path=if source.reuse_spectrum(mode) && source.a2f.path.is_file() {source.a2f.path.clone()}else{
+                crate::foundation::stages::Step::Superconductivity.directory(&cfg).join(crate::superconductivity::batch::directory_name(&cfg,mode))
+                    .join(if source.reuse_spectrum(mode){"source.a2f".into()}else{format!("{}.a2f",cfg.qe.prefix)})
+            };
+            if !seen.insert(path.clone()) {continue;}
+            let raw=crate::interpolation::native::NativeSpectrum::read(&path,source.spectral_points)?;
+            for (i,values) in raw.a2f.iter().enumerate() {spectra.push(Spectrum{smearing_id:format!("{mode:?}-{i}"),energy_mev:raw.energy_mev.clone(),a2f:values.clone(),lambda_integral:raw.lambda_integral[i],lambda_sum:raw.lambda_sum,cutoff_ev:cfg.solver_for(mode)?.frequency_cutoff_ev});}
+        }
+        let f3=InterpolationManifest{schema_version:2,run_id:"native".into(),f2_digest:String::new(),wannier_digest:String::new(),coarse:None,fine:None,spectra,mode_readiness:BTreeMap::new(),validation:crate::interpolation::manifest::Validation{status:"valid".into(),checks:vec![],units:BTreeMap::new(),thresholds:BTreeMap::new(),evidence:vec![]}};
+        return collect_gap(work,output,&source.a2f.path,&crate::foundation::readable_state::path(work,crate::foundation::stages::Step::Superconductivity)?,f3);
+    }
+
     let f3_path = crate::foundation::layout::path(&work, "interpolation/manifest.json");
     let f4_path = crate::foundation::layout::path(&work, "superconductivity/manifest.json");
     let f3 = InterpolationManifest::load(&f3_path)?;
@@ -633,10 +652,12 @@ fn collect_gap(
     f4_path: &Path,
     f3: InterpolationManifest,
 ) -> Result<PathBuf> {
-    let run = superconductivity::points::Run::load(f4_path)?;
+    let run = if crate::foundation::layout::enabled(work) {
+        let cfg=crate::qe_data::direct::current(work)?;superconductivity::points::published(work,&cfg,"native")?
+    } else {superconductivity::points::Run::load(f4_path)?};
     ensure!(
         run.run_id == f3.run_id
-            && run.interpolation_digest == store::hash_file(f3_path)?
+            && (crate::foundation::layout::enabled(work) || run.interpolation_digest == store::hash_file(f3_path)?)
             && !f3.spectra.is_empty(),
         "input_conflict: Single Point Result F3 Source does not match"
     );

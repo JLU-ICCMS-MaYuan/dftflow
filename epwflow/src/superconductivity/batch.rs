@@ -266,9 +266,12 @@ fn prepare(
     }
     let input = dir.join("epw.in");
     store::atomic_bytes(&input, render(&requests, source)?.as_bytes())?;
-    crate::foundation::workspace_data::link(&source.crystal.path,&dir.join("crystal.fmt"))?;
-    crate::foundation::workspace_data::link(&source.a2f.path,&dir.join("source.a2f"))?;
-    if mode == Mode::Aniso {
+    source.stage_matrix_links(&dir,mode)?;
+    if source.interpolation_digest!="native-spectrum" {
+        crate::foundation::workspace_data::link(&source.crystal.path,&dir.join("crystal.fmt"))?;
+    }
+    if source.reuse_spectrum(mode) && source.a2f.path.is_file() {crate::foundation::workspace_data::link(&source.a2f.path,&dir.join("source.a2f"))?;}
+    if mode == Mode::Aniso || !source.reuse_spectrum(mode) {
         crate::foundation::workspace_data::link(
             &source
                 .selecq
@@ -485,15 +488,15 @@ pub(crate) fn run_mode(
     let root = Step::Superconductivity.directory(cfg);
     fs::create_dir_all(&root)?;
     let _guard = log::DirectoryGuard::acquire(&root)?;
-    let f3 = crate::interpolation::direct::fine(cfg)?;
-    let source = super::source::bind(&cfg.work_dir, cfg, &f3)?;
-    let mut run = current(cfg, &source, &f3.run_id)?;
+    let source = super::source::selected(cfg)?;
+    let mut run = current(cfg, &source, "native")?;
     let mut pending = false;
     let mut errors = vec![];
     for mode in [Mode::Iso, Mode::Aniso] {
         if !run.plan.iter().any(|q| q.mode == mode) {
             continue;
         }
+        let source=source.for_mode(cfg,mode)?;
         let result = (|| -> Result<()> {
             let label = format!("Method · {}", method(mode));
             if let Some(mut task) = native_jobs::group_task(cfg, method(mode))? {

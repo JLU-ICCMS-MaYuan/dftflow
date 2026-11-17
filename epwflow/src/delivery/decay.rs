@@ -295,6 +295,18 @@ fn bound_sources(
 
 /// 只收集指定粗网格回执绑定的文件；也供只读原生数据出图验证使用。
 pub fn collect(completion_path: &Path, output: &Path) -> Result<()> {
+    if let Some(root)=crate::qe_data::direct::workspace(completion_path) {
+        let cfg=crate::qe_data::direct::current(&root)?;
+        let source=Step::Coarse.directory(&cfg);
+        let sources=NATIVE.iter().map(|n|Identity::reference(&source.join(n))).collect::<Vec<_>>();
+        let panels=sources.iter().zip(NATIVE).map(|(id,name)|parse(&fs::read_to_string(&id.path).with_context(||format!("data_invalid: missing {}",id.path.display()))?,name)).collect::<Result<Vec<_>>>()?;
+        let data=Data{schema_version:1,scientific_key:String::new(),completion:Identity::reference(completion_path),sources,parameters:Parameters::default(),panels};
+        fs::create_dir_all(output)?;
+        let paths=data.sources.iter().map(|id|crate::foundation::workspace_data::relative(output,&id.path)).collect::<Result<Vec<_>>>()?;
+        store::write(&output.join("decay.plot.json"),&serde_json::json!({"kind":"Decay","sources":paths}))?;
+        return render_all(output,&data).map_err(|e|anyhow::anyhow!("plot_failed: decay: {e:#}"));
+    }
+
     let completion = Identity::capture(completion_path)?;
     let receipt: Completion = if let Some(root) = crate::qe_data::direct::workspace(completion_path)
     {
@@ -454,6 +466,11 @@ pub fn recover_pending(cfg: &Config) -> Result<()> {
 }
 
 pub fn pending(cfg: &Config) -> Result<bool> {
+    if crate::foundation::layout::enabled(&cfg.work_dir) {
+        let dir=stage_results::root(cfg).join("6.epw-coarse");
+        return Ok(!dir.join("decay.plot.json").is_file() || FIGURES.iter().any(|n|FORMATS.iter().any(|e|!dir.join(format!("{n}.{e}")).is_file())));
+    }
+
     let receipt = stages::completion(cfg, Step::Coarse)?;
     let source = Step::Coarse.directory(cfg);
     if !bound_sources(&receipt, &source)?.1.is_empty() {

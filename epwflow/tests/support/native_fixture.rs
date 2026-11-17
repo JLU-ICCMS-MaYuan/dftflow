@@ -119,6 +119,8 @@ pub fn matrix(cfg: &mut Config) {
         stages[format!("8.epw-{method}")] = solver.clone();
         let node = &mut stages[format!("8.epw-{method}")];
         node["prefix"] = json!(prefix);
+        // 谱读取的测试请求与夹具文件行数一致；生产参数仍由各阶段独立设置。
+        node["nqstep"] = json!(cfg.interpolation.spectral_points);
         node["liso"] = json!(method == "iso");
         node["laniso"] = json!(method == "aniso");
         node["nstemp"] = json!(cfg.superconductivity.gap_temperatures_k.len());

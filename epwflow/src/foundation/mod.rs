@@ -48,3 +48,5 @@ mod legacy_language;
 mod electronic_reuse;
 
 pub mod workspace_data;
+
+pub(crate) mod reuse_files;

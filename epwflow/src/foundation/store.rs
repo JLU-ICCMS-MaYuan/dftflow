@@ -22,10 +22,20 @@ pub fn atomic_bytes(path:&Path,bytes:&[u8])->Result<()>{
 }
 pub fn write<T:Serialize>(path:&Path,data:&T)->Result<()> {let mut bytes=serde_json::to_vec_pretty(data)?;bytes.push(b'\n');atomic_bytes(path,&bytes)}
 #[derive(Debug,Clone,Serialize,Deserialize)] #[serde(deny_unknown_fields)]
-pub struct Identity {pub path:PathBuf,pub target:PathBuf,pub sha256:String,pub bytes:u64}
+pub struct Identity {
+    pub path:PathBuf,
+    pub target:PathBuf,
+    #[serde(default,skip_serializing_if="String::is_empty")]
+    pub sha256:String,
+    #[serde(default,skip_serializing_if="zero_bytes")]
+    pub bytes:u64,
+}
+fn zero_bytes(bytes:&u64)->bool {*bytes==0}
 impl Identity {
+    pub fn reference(path:&Path)->Self {Self {path:path.into(),target:path.into(),sha256:String::new(),bytes:0}}
+
     pub fn capture(path:&Path)->Result<Self>{let target=fs::canonicalize(path).with_context(||format!("input_conflict: Unable to locate {}",path.display()))?;let bytes=fs::metadata(&target)?.len();let sha256=hash_file(path)?;Ok(Self{path:path.into(),target,sha256,bytes})}
-    pub fn verify(&self)->Result<()>{if qf_io::qe_payload::unchecked(&self.path){return Ok(());}let now=Self::capture(&self.path)?;ensure!(now.target==self.target && now.sha256==self.sha256&&now.bytes==self.bytes,"input_conflict: File or link target changed {}",self.path.display());Ok(())}
+    pub fn verify(&self)->Result<()>{if self.sha256.is_empty() { if qf_io::qe_payload::unchecked(&self.path) {return Ok(());} fs::File::open(&self.path).with_context(||format!("data_invalid: cannot read {}",self.path.display()))?;return Ok(()); } if qf_io::qe_payload::unchecked(&self.path){return Ok(());}let now=Self::capture(&self.path)?;ensure!(now.target==self.target && now.sha256==self.sha256&&now.bytes==self.bytes,"input_conflict: File or link target changed {}",self.path.display());Ok(())}
 }
 /// 仅文件确实不存在才返回不可用；权限、链接目标及内容冲突仍返回原错误。
 pub fn identity_available(id: &Identity) -> Result<bool> {

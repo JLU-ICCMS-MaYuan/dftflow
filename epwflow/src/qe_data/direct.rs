@@ -148,3 +148,22 @@ pub fn current(root: &std::path::Path) -> Result<Config> {
             .context("configuration: Please use the current configuration to initialize phase 8 logs")?,
     )
 }
+
+/// 仅声子本身的原生交付，不读取 NSCF、电子图或文件身份清单。
+pub struct PhononData {pub phonon_files:Vec<PhResponse>}
+pub fn phonon(cfg:&Config)->Result<PhononData> {
+    let qe=QeSettings::from_config(cfg)?;
+    let geometry=super::phonon::geometry(&qe,&cfg.work_dir)?;geometry.validate(&qe)?;
+    let dir=Step::Phonon.directory(cfg).join("save");let prefix=&cfg.qe.prefix;
+    let points=qmap::parse_dyn0(&dir.join(format!("{prefix}.dyn0.xml")),&geometry,cfg.phonon.q_grid,false)?;
+    let control=dir.join(format!("{prefix}.phsave/control_ph.xml"));native_ph::control(&control,&points)?;
+    let mut phonon_files=Vec::new();
+    for q in &points {
+        let response=PhResponse{q_id:q.global_index,dyn_file:dir.join(format!("{prefix}.dyn_q{}.xml",q.global_index)),
+            patterns:dir.join(format!("{prefix}.phsave/patterns.{}.xml",q.global_index)),
+            dvscf:Some(dir.join(format!("{prefix}.dvscf_q{}",q.global_index))),control_metadata:control.clone(),
+            format:native_ph::FORMAT.into(),perturbations:geometry.atoms.len()*3};
+        native_ph::verify(&response,q,&geometry)?;phonon_files.push(response);
+    }
+    Ok(PhononData{phonon_files})
+}

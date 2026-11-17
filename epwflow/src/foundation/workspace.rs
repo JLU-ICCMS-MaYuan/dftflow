@@ -132,6 +132,8 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         println!("Stage complete; existing scientific results are reusable");
         return Ok(());
     }
+    if pending {super::reuse_files::check_inputs(&cfg,target)?;}
+
     ensure!(
         resume || log::read(&cfg.work_dir, target)?.get("Stage allocation", "Status") != Some("failed"),
         "stage_failed: Last stage distribution failed, please use --resume Continuation of unfinished business"

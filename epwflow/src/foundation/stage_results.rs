@@ -324,6 +324,8 @@ pub fn tree(cfg: &Config, step: Step, unit: &str, source: &Path, parameters: Val
 }
 pub fn pending(cfg: &Config, step: Step) -> Result<bool> {
     if super::layout::enabled(&cfg.work_dir) {
+        let base=root(cfg).join(stage_name(cfg,step)?);
+        if step==Step::Wannier && super::combined_plot::ELECTRONIC_FILES.iter().any(|n|!base.join(n).is_file()) {return Ok(true);}
         let doc=super::readable_state::read(&cfg.work_dir,step)?;
         let sections=doc.sections.iter().filter(|(name,_)|name.starts_with("Published plots · ")).collect::<Vec<_>>();
         if sections.is_empty() {return Ok(true);}

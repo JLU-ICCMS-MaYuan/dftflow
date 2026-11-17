@@ -1638,3 +1638,233 @@ fn layout_0070_single_fine_grid_and_native_temperature_batch_share_inputs() {
 }
 
 // 0052：直接文件接续，不使用历史阶段回执或全链补算。
+
+// 0052：直接文件接续，不使用历史阶段回执或全链补算。
+#[test]
+fn reuse_0052_nscf_missing_direct_input_stops_without_running_scf() {
+    let c=Case::numbered();c.accounting(Some(201));
+    let out=c.numbered_cli(0,&["--stage","nscf","-r"],Some(201),"reuse-0052-missing");
+    assert!(!out.status.success());
+    assert!(c.calls().0.is_empty(),"must not calculate missing SCF automatically");
+}
+
+#[test]
+fn reuse_0052_scf_then_nscf_reports_actual_files_without_electronic_work() {
+    let c=Case::numbered();c.accounting(Some(201));
+    success(c.numbered_cli(0,&["--stage","scf","-r"],Some(201),"reuse-0052-scf"));
+    let out=c.numbered_cli(0,&["--stage","nscf","-r"],Some(201),"reuse-0052-nscf");
+    let stdout=String::from_utf8_lossy(&out.stdout).into_owned();success(out);
+    assert!(stdout.contains("reuse: 1.qe-scf\n"),"{stdout}");
+    assert!(stdout.contains("       1.qe-scf/out/scf.save/data-file-schema.xml"),"{stdout}");
+    assert!(!stdout.contains("reuse: 3.qe-electronic"),"{stdout}");
+    assert!(!c.root.join("run/3.qe-electronic/qe_eband/eband.out").exists());
+    let log=fs::read_to_string(c.root.join("run/epw-state/1.qe-scf.log")).unwrap();
+    assert!(!log.contains("Protected metadata"));
+}
+
+fn reuse_0052_seed_coarse(c:&Case) {
+    let dir=c.root.join("run/6.epw-coarse");fs::create_dir_all(dir.join("out")).unwrap();
+    let n=5;
+    let ukk=format!("9 7\n{}\n{}{}{}{}",(8..=16).map(|i|i.to_string()).collect::<Vec<_>>().join("\n"),
+        "(0,0)\n".repeat(9*n),"T\n".repeat(9),"T\n".repeat(7)+&"F\n".repeat(9),"0 0 0\n".repeat(n));
+    fs::write(dir.join("scf.ukk"),ukk).unwrap();
+    fs::write(dir.join("epwdata.fmt"),format!("0.2\n5 1 6 1 1\n{}{}","0\n".repeat(27),"(0,0)\n".repeat(n*n+36))).unwrap();
+    fs::write(dir.join("crystal.fmt"),"2\n6\nfixture-IO\n").unwrap();
+    fs::write(dir.join("wigner.fmt"),format!("1 1 1 1 1\n{}","0 0 0 0\n1\n".repeat(3))).unwrap();
+    fs::write(dir.join("vmedata.fmt"),"(0,0)\n".repeat(6*n*n)).unwrap();
+    fs::write(dir.join("dmedata.fmt"),"(0,0)\n".repeat(3*n*n)).unwrap();
+    fs::write(dir.join("out/scf.epmatwp"),vec![0u8;16*n*n*6]).unwrap();
+}
+
+#[test]
+fn reuse_0052_fine_reads_only_coarse_and_keeps_numbered_parameter_groups() {
+    let c=Case::numbered();reuse_0052_seed_coarse(&c);c.accounting(Some(201));
+    let out=c.numbered_cli(2,&["--stage","fine","-r"],Some(201),"reuse-0052-fine");
+    let stdout=String::from_utf8_lossy(&out.stdout).into_owned();success(out);
+    assert!(stdout.contains("reuse: 6.epw-coarse\n"),"{stdout}");
+    for stage in ["1.qe-scf","2.qe-nscf","3.qe-electronic","4.qe-phonon","5.epw-wannier"] {
+        assert!(!stdout.contains(&format!("reuse: {stage}")),"{stdout}");
+    }
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    let first=epwflow::interpolation::fine::directory(&cfg).unwrap();
+    assert!(first.file_name().unwrap().to_string_lossy().starts_with("01.k4x4x4-q2x2x2-fsthick"));
+    let original=fs::read(first.join("out/scf.ephmat/egnv")).unwrap();
+    let input=fs::read_to_string(first.join("epw_fine.in")).unwrap();
+    assert!(!input.contains("dis_froz_max"));
+    assert!(input.contains("efermi_read = .false."));
+    fs::write(c.root.join("run/6.epw-coarse/manifest.json"),"obsolete garbage").unwrap();
+    c.numbered_change(|cfg|cfg.interpolation.fsthick_ev=0.8);
+    success(c.numbered_cli(2,&["--stage","fine","-r"],Some(201),"reuse-0052-fine-second"));
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    let second=epwflow::interpolation::fine::directory(&cfg).unwrap();
+    assert!(second.file_name().unwrap().to_string_lossy().starts_with("02."));
+    assert_eq!(original,fs::read(first.join("out/scf.ephmat/egnv")).unwrap());
+    assert!(second.join("out/scf.ephmat/egnv").is_file());
+}
+
+#[test]
+fn reuse_0052_fine_rejects_missing_direct_matrix_without_upstream_calculation() {
+    let c=Case::numbered();reuse_0052_seed_coarse(&c);c.accounting(Some(201));
+    fs::remove_file(c.root.join("run/6.epw-coarse/out/scf.epmatwp")).unwrap();
+    let out=c.numbered_cli(2,&["--stage","fine","-r"],Some(201),"reuse-0052-missing-matrix");
+    assert!(!out.status.success());
+    assert!(c.calls().0.is_empty() && c.calls().1.is_empty());
+}
+
+#[test]
+fn reuse_0052_iso_spectrum_route_needs_no_matrix_or_earlier_stage() {
+    let c=Case::numbered();
+    c.numbered_change(|cfg| {cfg.superconductivity.mode=config::Mode::Iso;cfg.superconductivity.task=config::SuperconductivityTask::Tc;});
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    epwflow::foundation::layout::initialize(&cfg).unwrap();
+    let dir=epwflow::interpolation::fine::directory(&cfg).unwrap();fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("scf.a2f"),"w[meV] a2f and integrated 2*a2f/w for 1 smearing values\n1 0.5 1\n2 1 2\n3 1.5 3\n4 2 4\nIntegrated el-ph coupling\n # 4\nSummed el-ph coupling 4\n").unwrap();
+    let input=epwflow::superconductivity::source::selected(&cfg).unwrap();
+    input.verify(config::Mode::Iso).unwrap();
+    assert!(input.matrix_files.is_empty());
+    assert!(input.states.is_empty());
+    assert!(!dir.join("out/scf.ephmat").exists());
+}
+
+#[test]
+fn reuse_0052_phonon_does_not_require_nscf_or_electronic_reference() {
+    let c=Case::numbered();c.accounting(Some(201));
+    success(c.numbered_cli(0,&["--stage","scf","-r"],Some(201),"reuse-0052-ph-scf"));
+    let out=c.numbered_cli(0,&["--stage","phonon","-r"],Some(201),"reuse-0052-ph");
+    let stdout=String::from_utf8_lossy(&out.stdout).into_owned();success(out);
+    assert!(stdout.contains("reuse: 1.qe-scf"),"{stdout}");
+    assert!(!stdout.contains("reuse: 2.qe-nscf"),"{stdout}");
+    assert!(!c.root.join("run/2.qe-nscf/nscf.out").exists());
+    assert!(c.root.join("run/4.qe-phonon-nosplit/save/scf.dvscf_q2").is_file());
+}
+
+#[test]
+fn reuse_0052_aniso_uses_per_file_links_to_selected_fine_group() {
+    let c=Case::numbered();reuse_0052_seed_coarse(&c);c.accounting(Some(201));
+    c.numbered_change(|cfg| {cfg.superconductivity.task=config::SuperconductivityTask::Gap;cfg.superconductivity.mode=config::Mode::Aniso;cfg.superconductivity.iso=None;cfg.superconductivity.aniso=None;});
+    success(c.numbered_cli(2,&["--stage","fine","-r"],Some(201),"reuse-0052-link-fine"));
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    let fine=epwflow::interpolation::fine::directory(&cfg).unwrap();
+    fs::write(fine.join("out/scf.dos"),"fixture native DOS metadata\n").unwrap();
+    let original=fs::read(fine.join("out/scf.ephmat/ephmat1")).unwrap();
+    let out=c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(201),"reuse-0052-links");
+    let stdout=String::from_utf8_lossy(&out.stdout).into_owned();success(out);
+    assert!(stdout.contains("reuse: 7.epw-fine"),"{stdout}");
+    let dir=cfg.work_dir.join("8.epw-superconductivity").join(epwflow::superconductivity::batch::directory_name(&cfg,config::Mode::Aniso));
+    for name in ["egnv","freq","ikmap","npool","ephmat1"] {
+        let target=dir.join("out/scf.ephmat").join(name);
+        assert!(fs::symlink_metadata(&target).unwrap().file_type().is_symlink());
+        assert_eq!(fs::canonicalize(&target).unwrap(),fs::canonicalize(fine.join("out/scf.ephmat").join(name)).unwrap());
+    }
+    assert_eq!(original,fs::read(fine.join("out/scf.ephmat/ephmat1")).unwrap());
+}
+
+#[test]
+fn reuse_0052_coarse_consumes_wannier_matrices_without_wout_or_electronic_plots() {
+    let c=Case::numbered();c.accounting(Some(201));
+    // 只准备粗网格真实需要的第1、2、4步数据，不执行第3、5步。
+    for stage in ["scf","nscf","phonon"] {success(c.numbered_cli(0,&["--stage",stage,"-r"],Some(201),&format!("reuse-0052-coarse-{stage}")));}
+    let target=c.root.join("run/5.epw-wannier");fs::create_dir_all(&target).unwrap();
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();let n=cfg.wannier.num_wann as usize;let nk=8;
+    fs::write(target.join("scf.ukk"),format!("9 7\n{}\n{}{}{}{}",(8..=16).map(|i|i.to_string()).collect::<Vec<_>>().join("\n"),"(0,0)\n".repeat(9*n*nk),"T\n".repeat(9*nk),"T\n".repeat(7)+&"F\n".repeat(9),"0 0 0\n".repeat(n))).unwrap();
+    fs::write(target.join("scf.bvec"),format!("fixture bvec\n{nk} 1\n{}","1 0 0 1\n".repeat(nk))).unwrap();
+    fs::write(target.join("scf.mmn"),"(0,0)\n".repeat(9*9*nk)).unwrap();
+    let out=c.numbered_cli(1,&["--stage","coarse","-r"],Some(201),"reuse-0052-coarse");
+    let stdout=String::from_utf8_lossy(&out.stdout).into_owned();success(out);
+    assert!(stdout.contains("reuse: 2.qe-nscf"),"{stdout}");
+    assert!(stdout.contains("reuse: 4.qe-phonon-nosplit"),"{stdout}");
+    assert!(stdout.contains("       5.epw-wannier/scf.mmn"),"{stdout}");
+    assert!(!stdout.contains("reuse: 3.qe-electronic"),"{stdout}");
+    assert!(!target.join("scf.wout").exists());
+    assert!(cfg.work_dir.join("results/6.epw-coarse/phonon.png").is_file());
+}
+
+#[test]
+fn reuse_0052_native_failure_is_never_marked_completed() {
+    let c=Case::numbered();c.accounting(Some(201));
+    c.script("pw.x","#!/bin/sh\nprintf 'native fixture failure\\n'\nexit 17\n");
+    let out=c.numbered_cli(0,&["--stage","scf","-r"],Some(201),"reuse-0052-native-failure");
+    assert!(!out.status.success());
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    let log=epwflow::foundation::readable_state::read(&cfg.work_dir,epwflow::foundation::stages::Step::Scf).unwrap();
+    assert_ne!(log.get("Stage","Scientific status"),Some("completed"));
+}
+
+#[test]
+fn reuse_0052_active_submission_cannot_be_submitted_twice() {
+    let c=Case::numbered();c.accounting(None);
+    success(c.numbered_cli(0,&["--stage","scf","-s"],None,"reuse-0052-submit-first"));
+    let before=fs::read(c.root.join("submissions")).unwrap();
+    c.accounting(Some(201));
+    let out=c.numbered_cli(0,&["--stage","scf","-s"],None,"reuse-0052-submit-again");
+    assert!(!out.status.success());
+    assert_eq!(before,fs::read(c.root.join("submissions")).unwrap());
+}
+
+#[test]
+fn reuse_0052_explicit_stage_sequence_runs_without_implicit_upstream_work() {
+    let c=Case::numbered();c.accounting(Some(201));
+    for (program,stage) in [(0,"scf"),(0,"nscf"),(0,"electronic"),(0,"phonon"),(1,"wannier"),(1,"coarse"),(2,"fine")] {
+        success(c.numbered_cli(program,&["--stage",stage,"-r"],Some(201),&format!("reuse-0052-sequence-{stage}")));
+    }
+    let cfg=config::Config::load(&c.root.join("input.toml")).unwrap();
+    let fine=epwflow::interpolation::fine::directory(&cfg).unwrap();
+    assert!(fine.join("out/scf.ephmat/egnv").is_file());
+    for stage in ["5.epw-wannier","6.epw-coarse"] {
+        assert!(!cfg.work_dir.join(stage).join("manifest.json").exists());
+    }
+    assert!(!cfg.work_dir.join("6.epw-coarse/comparison-native/sources.json").exists());
+}
+
+#[test]
+fn reuse_0052_coarse_submit_stops_on_missing_inputs_before_sbatch() {
+    let c=Case::numbered();c.accounting(None);
+    let out=c.numbered_cli(1,&["--stage","coarse","-s"],None,"reuse-0052-coarse-preflight");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("2.qe-nscf/out/scf.save/data-file-schema.xml"));
+    assert!(!c.root.join("submissions").exists());
+}
+
+#[test]
+fn reuse_0052_iso_matrix_route_regenerates_spectrum_with_stage_eight_width() {
+    let c=Case::numbered();reuse_0052_seed_coarse(&c);c.accounting(Some(201));
+    c.numbered_change(|cfg|{cfg.superconductivity.mode=config::Mode::Iso;cfg.superconductivity.task=config::SuperconductivityTask::Gap;cfg.superconductivity.iso=None;cfg.superconductivity.aniso=None;});
+    success(c.numbered_cli(2,&["--stage","fine","-r"],Some(201),"reuse-0052-width-fine"));
+    let file=c.root.join("input.toml");let mut cfg=config::Config::load(&file).unwrap();
+    let fine=epwflow::interpolation::fine::directory(&cfg).unwrap();
+    fs::write(fine.join("out/scf.dos"),"fixture native DOS\n").unwrap();
+    let original=fs::read(fine.join("scf.a2f")).unwrap();
+    cfg.set_native(&["8.epw-superconductivity","iso","epw","INPUTEPW","fila2f"],json!("")).unwrap();
+    cfg.set_native(&["8.epw-superconductivity","iso","epw","INPUTEPW","degaussq"],json!(1.25)).unwrap();
+    cfg.set_native(&["8.epw-superconductivity","iso","epw","INPUTEPW","nqstep"],json!(6)).unwrap();
+    fs::write(&file,toml::to_string_pretty(&cfg).unwrap()).unwrap();
+    let before=c.calls().1;
+    success(c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(201),"reuse-0052-width-solve"));
+    assert_eq!(before,c.calls().1,"changing spectral width must not run fine interpolation");
+    let dir=cfg.work_dir.join("8.epw-superconductivity").join(epwflow::superconductivity::batch::directory_name(&cfg,config::Mode::Iso));
+    assert!(fs::symlink_metadata(dir.join("out/scf.ephmat/egnv")).unwrap().file_type().is_symlink());
+    assert!(!dir.join("source.a2f").exists());
+    let raw=epwflow::interpolation::native::NativeSpectrum::read(&dir.join("scf.a2f"),6).unwrap();
+    assert_eq!(raw.lambda_sum,15.0,"synthetic width tag must reflect stage-eight degaussq");
+    assert_eq!(original,fs::read(fine.join("scf.a2f")).unwrap());
+}
+
+#[test]
+fn reuse_0052_linearized_matrix_route_links_qmap_metadata_without_fine_rerun() {
+    let c=Case::numbered();reuse_0052_seed_coarse(&c);c.accounting(Some(201));
+    c.numbered_change(|cfg|{cfg.superconductivity.mode=config::Mode::Iso;cfg.superconductivity.task=config::SuperconductivityTask::Tc;});
+    success(c.numbered_cli(2,&["--stage","fine","-r"],Some(201),"reuse-0052-linear-fine"));
+    let file=c.root.join("input.toml");let mut cfg=config::Config::load(&file).unwrap();
+    let fine=epwflow::interpolation::fine::directory(&cfg).unwrap();
+    fs::write(fine.join("out/scf.dos"),"fixture native DOS\n").unwrap();
+    cfg.set_native(&["8.epw-superconductivity","iso","epw","INPUTEPW","fila2f"],json!("")).unwrap();
+    cfg.set_native(&["8.epw-superconductivity","iso","epw","INPUTEPW","degaussq"],json!(1.25)).unwrap();
+    fs::write(&file,toml::to_string_pretty(&cfg).unwrap()).unwrap();
+    let before=c.calls().1;
+    success(c.numbered_cli(2,&["--stage","superconductivity","-r"],Some(201),"reuse-0052-linear-solve"));
+    assert_eq!(before,c.calls().1);
+    let dir=cfg.work_dir.join("8.epw-superconductivity").join(epwflow::superconductivity::batch::directory_name(&cfg,config::Mode::Iso));
+    assert!(fs::symlink_metadata(dir.join("selecq.fmt")).unwrap().file_type().is_symlink());
+    assert!(dir.join("scf.a2f").is_file());
+    assert!(!dir.join("source.a2f").exists());
+}

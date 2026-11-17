@@ -37,6 +37,7 @@ impl NativeReceipt {
             id.verify()?;
         }
         if let Some(root) = &self.save_root {
+            if root.ancestors().any(super::layout::enabled) {return Ok(());}
             let mut expected = self
                 .outputs
                 .iter()
@@ -69,7 +70,7 @@ impl NativeReceipt {
 
 fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
     let label = format!("Electronic substep · {task}");
-    let Some(outputs) = super::readable_state::completed_files(cfg, Step::Electronic, &label)?
+    let Some(_outputs) = super::readable_state::completed_files(cfg, Step::Electronic, &label)?
     else {
         return Ok(None);
     };
@@ -96,8 +97,8 @@ fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
     let r = NativeReceipt {
         version: 1,
         key: key(cfg, task)?,
-        input: Identity::capture(&input)?,
-        outputs,
+        input: Identity::reference(&input),
+        outputs: vec![Identity::reference(&super::scientific_logs::output(&dir,match task {"pw-bands"=>"eband","bands"=>"elebanddata",_=>"eletdos"}))],
         save_root: if task == "bands" {
             None
         } else if task=="dos" {
@@ -205,6 +206,11 @@ fn scientific_args(program: &Program) -> Vec<String> {
 }
 
 fn key(cfg: &Config, task: &str) -> Result<String> {
+    if super::layout::enabled(&cfg.work_dir) {
+        let parts=match task {"pw-bands"=>vec![super::native_config::ELECTRONIC,"qe_eband","pw"],"bands"=>vec![super::native_config::ELECTRONIC,"qe_eband","bands"],_=>vec![super::native_config::ELECTRONIC,"qe_eledos","dos"]};
+        return Ok(serde_json::to_string(&json!({"request":cfg.native_value::<serde_json::Value>(&parts)?,"path":cfg.kpath}))?);
+    }
+
     let (program, input, upstream) = match task {
         "pw-bands" => (
             cfg.programs.pw.clone(),
@@ -329,17 +335,17 @@ fn capture(
     let mut outputs = paths
         .iter()
         .filter(|path| merged_stderr.as_ref() != Some(*path))
-        .map(|p| Identity::capture(p))
+        .map(|p| if super::layout::enabled(&cfg.work_dir) {Ok(Identity::reference(p))}else{Identity::capture(p)})
         .collect::<Result<Vec<_>>>()?;
     if let Some(root) = &save_root {
-        for file in save::files(root)? {
+        if !super::layout::enabled(&cfg.work_dir) {for file in save::files(root)? {
             outputs.push(Identity::capture(&root.join(file.relative_path))?);
-        }
+        }}
     }
     let r = NativeReceipt {
         version: 1,
         key: key(cfg, task)?,
-        input: Identity::capture(input)?,
+        input: if super::layout::enabled(&cfg.work_dir) {Identity::reference(input)}else{Identity::capture(input)?},
         outputs,
         save_root,
         provenance,
@@ -382,8 +388,10 @@ fn validate_pw(cfg: &Config) -> Result<()> {
     ensure!(points.len()==requested.len()
         && points.iter().flatten().zip(requested.iter().flatten()).all(|(a,b)|(a-b).abs()<1e-10),
         "input_conflict: saved QE path differs from its own input");
-    let reference = crate::interpolation::electronic_sampling::plan(cfg)?;
-    crate::interpolation::comparison::native_path(&reference.path, &states.kpoints, &reference.reciprocal)?;
+    let (reference,_) = crate::interpolation::automatic_comparison::path_points(
+        cfg.kpath.as_ref().context("configuration: kpath required")?, &geo.reciprocal,
+        cfg.native_value::<u32>(&[super::native_config::ELECTRONIC,"workflow","points_per_edge"])? as usize)?;
+    crate::interpolation::comparison::native_path(&reference, &states.kpoints, &geo.reciprocal)?;
     ensure!(
         states.nbnd == cfg.qe.nscf.nbnd as usize && states.kpoints.len() == points.len(),
         "data_invalid: PW Can carry a number or k The points don't match"
@@ -586,6 +594,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             }
         }
         "qe_eledos" => {
+            super::reuse_files::report(&cfg.work_dir,[super::layout::path(&cfg.work_dir,"nscf/out").join(format!("{}.save/data-file-schema.xml",cfg.qe.prefix))]);
             dos_inputs(cfg)?;
             if reusable(cfg, "dos")? {
                 super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("dos"));

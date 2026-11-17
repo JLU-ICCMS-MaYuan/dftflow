@@ -49,8 +49,10 @@ pub struct Report {
     pub outer_counts: Option<Vec<usize>>,
     pub energy_frozen_counts: Option<Vec<usize>>,
     pub sample_capacity_ok: Option<bool>,
+    #[serde(default,skip_serializing_if="Vec::is_empty")]
     pub sources: Vec<Identity>,
     pub request_key: String,
+    #[serde(default,skip_serializing_if="BTreeMap::is_empty")]
     pub output_sha256: BTreeMap<String, String>,
 }
 
@@ -64,7 +66,7 @@ fn paths(cfg: &Config, step: Step) -> Result<(PathBuf, Vec<PathBuf>)> {
             super::stage_results::root(cfg).join("3.qe-electronic"),
             vec![
                 dir.join("qe_eband/out").join(&xml),
-                Step::Nscf.directory(cfg).join("out").join(xml),
+                Step::Scf.directory(cfg).join("out").join(xml),
             ],
         ),
         _ => anyhow::bail!("configuration: You can only support it with a scope diagram SCF/NSCF/electronic"),
@@ -74,21 +76,22 @@ fn request(cfg: &Config, step: Step) -> Result<(PathBuf, Vec<Identity>, String)>
     let (dir, inputs) = paths(cfg, step)?;
     let sources = inputs
         .iter()
-        .map(|p| Identity::capture(p))
+        .map(|p| if super::layout::enabled(&cfg.work_dir) {Ok(Identity::reference(p))}else{Identity::capture(p)})
         .collect::<Result<Vec<_>>>()?;
-    let key = store::hash_bytes(&serde_json::to_vec(&(
+    let key = serde_json::to_string(&(
         VERSION,
         step,
         &cfg.qe.prefix,
         &cfg.wannier,
-        &sources,
-    ))?);
+        &cfg.kpath,
+    ))?;
     Ok((dir, sources, key))
 }
 fn current(dir: &Path, stem: &str, key: &str) -> bool {
     let Ok(old) = store::read::<Report>(&dir.join(format!("{stem}.json"))) else {
         return false;
     };
+    if old.output_sha256.is_empty() {return old.request_key==key && ["png","svg"].iter().all(|ext|dir.join(format!("{stem}.{ext}")).is_file());}
     old.request_key == key
         && old.output_sha256.len() == 2
         && ["png", "svg"].iter().all(|ext| {
@@ -215,7 +218,7 @@ fn summarize(cfg: &Config, step: Step, sources: Vec<Identity>, key: String) -> R
         nbnd,
         fermi_ev: fermi,
         fermi_source: if step == Step::Electronic {
-            "NSCF".into()
+            "SCF".into()
         } else {
             step.name().to_uppercase()
         },
@@ -227,7 +230,7 @@ fn summarize(cfg: &Config, step: Step, sources: Vec<Identity>, key: String) -> R
         outer_counts: outer,
         energy_frozen_counts: frozen,
         sample_capacity_ok: capacity,
-        sources,
+        sources: Vec::new(),
         request_key: key,
         output_sha256: BTreeMap::new(),
     })
@@ -545,9 +548,11 @@ pub fn generate(cfg: &Config, step: Step) -> Result<()> {
         }
         fs::rename(temporary, dir.join(&files[0]))?;
         for name in &files[..2] {
+            if !super::layout::enabled(&cfg.work_dir) {
             report
                 .output_sha256
                 .insert(name.clone(), store::hash_file(&dir.join(name))?);
+            }
         }
         store::write(&dir.join(&files[2]), &report)?;
         println!("band_range_plots: {}", dir.join(&files[0]).display());

@@ -146,11 +146,10 @@ pub(super) fn prepare_coarse(epw_cfg: &EpwConfig, work: &Path) -> Result<()> {
         !dir.join("epw_coarse.in").exists() && !scientific_logs::output(&dir, "epw_coarse").exists(),
         "input_conflict: The coarse grid is on site"
     );
-    qf_wannier::write_selection(
-        &dir.join("window-selection.json"),
-        &epw_cfg.window_selection()?,
-    )?;
-    epw_cfg.require_window_support()?;
+    if !crate::foundation::layout::enabled(work) {
+        qf_wannier::write_selection(&dir.join("window-selection.json"), &epw_cfg.window_selection()?)?;
+        epw_cfg.require_window_support()?;
+    }
     if !crate::foundation::layout::enabled(work) {
         fs::write(
             dir.join("epw_wannier.in"),
@@ -194,20 +193,16 @@ pub fn collect_coarse(work: &Path, epw_cfg: &EpwConfig) -> Result<CoarseResult> 
     paths.extend([
         ("coarse_log".into(), scientific_logs::output(&dir, "epw_coarse")),
         ("coarse_input".into(), dir.join("epw_coarse.in")),
-        (
-            "coarse_wannier".into(),
-            dir.join(format!("{}.wout", cfg.qe.prefix)),
-        ),
+
     ]);
-    super::wannier::check_native(
-        &dir.join(format!("{}.wout", cfg.qe.prefix)),
-        cfg.wannier.num_wann as usize,
-    )?;
-    epw_cfg.check_native_windows(&fs::read_to_string(
-        dir.join(format!("{}.wout", cfg.qe.prefix)),
-    )?)?;
-    if crate::foundation::layout::enabled(work) {crate::foundation::workspace_data::release_electronic_work(epw_cfg.cfg,&dir)?;}
-    let digest = store::hash_file(&dir.join("epw_coarse.in"))?;
+    if !crate::foundation::layout::enabled(work) {
+        super::wannier::check_native(&dir.join(format!("{}.wout", cfg.qe.prefix)), cfg.wannier.num_wann as usize)?;
+        epw_cfg.check_native_windows(&fs::read_to_string(dir.join(format!("{}.wout", cfg.qe.prefix)))?)?;
+    }
+    if crate::foundation::layout::enabled(work) {
+        return Ok(CoarseResult{kpoints:cfg.qe.nscf.k_grid.iter().map(|n|*n as usize).product(),qpoints:cfg.phonon.q_grid.iter().map(|n|*n as usize).product(),nwann:cfg.wannier.num_wann as usize,artifacts:Vec::new()});
+    }
+    let digest = if crate::foundation::layout::enabled(work) {String::new()} else {store::hash_file(&dir.join("epw_coarse.in"))?};
     let artifacts = paths
         .into_iter()
         .map(|(role, p)| {
@@ -216,7 +211,7 @@ pub fn collect_coarse(work: &Path, epw_cfg: &EpwConfig) -> Result<CoarseResult> 
                 role,
                 relative_path: p.strip_prefix(work)?.into(),
                 byte_size: fs::metadata(&p)?.len(),
-                sha256: store::hash_file(&p)?,
+                sha256: if crate::foundation::layout::enabled(work) {String::new()} else {store::hash_file(&p)?},
                 producer_stage: "coarse".into(),
                 input_digest: digest.clone(),
                 format_version: restart::FORMAT.into(),
@@ -239,4 +234,22 @@ pub fn into_coarse_data(r: &CoarseResult) -> CoarseData {
         ephmat_role: "coarse_epmatwp".into(),
         artifacts: r.artifacts.clone(),
     }
+}
+
+/// 粗网格只交接实际 NSCF、PH 与 Wannier 文件，不读取来源阶段回执。
+pub(super) fn stage_native(cfg:&crate::foundation::config::Config)->Result<()> {
+    let work=&cfg.work_dir;
+    let dir=crate::foundation::stages::Step::Coarse.directory(cfg);
+    crate::foundation::reuse_files::electronic(cfg,&crate::foundation::layout::path(work,"nscf/out"),&dir.join("out"),true)?;
+    let source=crate::foundation::stages::Step::Wannier.directory(cfg);
+    let mut used=vec![];
+    for suffix in ["ukk","mmn","bvec"] {
+        let path=source.join(format!("{}.{suffix}",cfg.qe.prefix));
+        save::nonempty(&path)?;
+        crate::foundation::reuse_files::link(&path,&dir.join(path.file_name().unwrap()))?;
+        used.push(path);
+    }
+    used.extend(crate::foundation::reuse_files::phonon_inputs(cfg)?);
+    crate::foundation::reuse_files::report(work,used);
+    Ok(())
 }

@@ -314,6 +314,8 @@ fn expand_calls(mut d: Document) -> Result<Document> {
             keys.extend(["gap_edge", "tc_linear"]);
         }
         for key in keys {
+            // 用户显式给出的费米能不再同时登记为上游自动绑定。
+            if ["fermi_energy","fila2f"].contains(&key) && settings.contains_key(key) {continue;}
             let target = call.target(key)?;
             let location = target[1..]
                 .iter()
