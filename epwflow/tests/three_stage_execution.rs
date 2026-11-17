@@ -94,7 +94,6 @@ runpy.run_path(str(root/name),run_name='__main__')
         cfg.kpath = Some(c.root.join("KPATH.in"));
         cfg.pseudos = [("Si".into(), cfg.structure.clone())].into();
         cfg.atomic_masses.clear();
-        cfg.budget.ledger = c.root.join("fixture-ledger.json");
         cfg.programs.launcher.clear();
         cfg.programs.environment_script = None;
         let programs = &mut cfg.programs;
@@ -241,14 +240,6 @@ runpy.run_path(str(root/name),run_name='__main__')
         self.output(cmd, None, label)
     }
     fn allocated_cli(&self, i: usize, args: &[&str], job: u64, label: &str) -> Output {
-        // 历史 -r 只接受已登记分配；通过真实预算 CLI 登记本测试的手工分配。
-        let cfg=config::Config::load(&self.root.join("inputepw.toml")).unwrap();
-        let ledger=cfg.budget.ledger.to_string_lossy().into_owned();
-        let reserve=self.cli(0,&["--budget","reserve","--ledger",&ledger,"--label",label],"manual-allocation-reserve");
-        assert!(reserve.status.success(),"{}",String::from_utf8_lossy(&reserve.stderr));
-        let text=String::from_utf8(reserve.stdout).unwrap();
-        let token=text.trim().strip_prefix("reserved: token=").unwrap();
-        success(self.cli(0,&["--budget","attach","--ledger",&ledger,"--token",token,"--job",&job.to_string()],"manual-allocation-attach"));
         let mut cmd = Command::new(BINS[i]);
         cmd.args(args);
         self.output(cmd, Some(job), label)
@@ -658,32 +649,6 @@ fn numbered_empty_pools_and_slurm_mismatch_stop_before_native_execution() {
     assert_eq!(c.calls().0, "");
 }
 
-#[test]
-fn numbered_submit_and_execution_ignore_exhausted_time_and_storage_limits() {
-    let c = Case::numbered();
-    c.direct_setup();
-    success(c.cli(0, &["--budget", "reserve", "--ledger", "fixture-ledger.json", "--label", "initialize"], "initialize-ledger"));
-    let path = c.root.join("fixture-ledger.json");
-    let mut ledger: Value = store::read(&path).unwrap();
-    ledger["reservations"] = json!([]);
-    ledger["spent_node_seconds"] = json!(1000000);
-    ledger["limits"]["node_seconds"] = json!(1);
-    ledger["limits"]["storage_bytes"] = json!(1);
-    ledger["legacy_source"] = json!({"storage_actual_bytes": 999999999999u64});
-    store::write(&path, &ledger).unwrap();
-    success(c.numbered_cli(0, &["--stage", "scf", "-s"], None, "submit-over-old-limits"));
-    assert_eq!(c.direct_execute(), 0);
-    success(c.numbered_cli(0, &["--stage", "scf", "-s"], None, "reconcile-over-old-limits"));
-    c.assert_scripts_without_time_limits();
-    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
-    let summary = epwflow::delivery::budget::ledger_summary(&cfg).unwrap();
-    assert_eq!(summary["limits"], json!({"max_lanes": 2}));
-    assert!(summary["spent_node_seconds"].as_u64().unwrap() >= 1000000);
-    let saved: Value = store::read(&path).unwrap();
-    assert_eq!(saved["limits"], ledger["limits"]);
-    assert_eq!(saved["legacy_source"], ledger["legacy_source"]);
-    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 1);
-}
 
 #[test]
 fn numbered_submission_freezes_config_and_blocks_duplicate_queued_job() {
@@ -1095,7 +1060,7 @@ impl Case {
 }
 
 #[test]
-fn numbered_legacy_migration_preserves_history_budget_and_reuses_without_hidden_tree() {
+fn numbered_legacy_migration_preserves_history_and_reuses_without_hidden_tree() {
     use epwflow::foundation::stages::{self, Step};
     let c = Case::numbered();
     c.accounting(Some(201));
@@ -1106,14 +1071,13 @@ fn numbered_legacy_migration_preserves_history_budget_and_reuses_without_hidden_
     c.hide_numbered_state();
     let old = c.root.join("run/.epwflow");
 
-    let ledger = fs::read(c.root.join("fixture-ledger.json")).unwrap();
     let blocked = c.numbered_cli(1, &["--status"], None, "migration-required");
     assert!(!blocked.status.success());
     assert!(String::from_utf8_lossy(&blocked.stderr).contains("--migrate-state"));
     assert!(!c.root.join("run/epw-state").exists(), "Read-only queries do not migrate");
     success(c.numbered_cli(1, &["--migrate-state"], None, "migration"));
     assert!(!old.exists());
-    assert_eq!(ledger, fs::read(c.root.join("fixture-ledger.json")).unwrap());
+    assert!(!c.root.join("fixture-ledger.json").exists());
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
     for s in [Step::Scf, Step::Nscf, Step::Phonon, Step::Wannier] {
         assert!(stages::reusable(&cfg, s).unwrap(), "Migration should be reused {}", s.name());

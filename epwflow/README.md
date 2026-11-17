@@ -12,7 +12,7 @@
 
 ## 计算时长与存储
 
-DFTFlow 不额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。历史账本保留消费、作业身份和并发登记；活动、未知作业检查继续有效。
+DFTFlow 不额外限制计算时长和存储空间，集群自身规则仍由 Slurm 管理。预算账本及其配置、命令、全局并发限制已删除；提交与恢复使用工作流状态和 Slurm 作业号，活动、未知作业检查继续有效。
 
 ## Slurm 文件头
 
@@ -30,7 +30,7 @@ header = """
 """
 ```
 
-header 原文保留；默认作业名和日志指令位于它之前，用户同名指令优先。未填写 header 时使用 Slurm 缺省资源，不自动增加分区、节点数或任务数。MPI 进程数可以小于分配的任务数，不再强制相等；EPW 原生 pool／image 与实际 k 网格的必要检查仍保留。旧 `[resources]` 直接报错，应迁移源输入并重新生成脚本，不手改冻结快照。公开 `--nodes`／预算 `--mpi` 已移除，恢复时修改源配置中的 launcher 及原生 pool 参数。
+header 原文保留；默认作业名和日志指令位于它之前，用户同名指令优先。未填写 header 时使用 Slurm 缺省资源，不自动增加分区、节点数或任务数。MPI 进程数可以小于分配的任务数，不再强制相等；EPW 原生 pool／image 与实际 k 网格的必要检查仍保留。旧 `[resources]` 直接报错，应迁移源输入并重新生成脚本，不手改冻结快照。公开 `--nodes`／`--mpi` 已移除，恢复时修改源配置中的 launcher 及原生 pool 参数。
 
 构建成功后直接覆盖固定 `bin/<模块>/` 的命令，不保留编译版本目录或版本记录。详见 [0065](../docs/specs/0065-slurm-header-launcher/spec.md)。
 
@@ -87,7 +87,7 @@ epw_clear --yes
 epw_clear --work "/path/to/epwflow" --dry-run
 ```
 
-八日志布局不再生成历史，`epw_clear` 报告无需清理。下列历史清理限制仅用于仍采用 `layout.json` 的旧工作区；现用计算、结果、配置版本及预算保留。
+八日志布局不再生成历史，`epw_clear` 报告无需清理。下列历史清理限制仅用于仍采用 `layout.json` 的旧工作区；现用计算、结果、配置版本保留。
 
 活动／未知作业、现用记录或链接引用历史、清理根及其祖先为链接时，删除前拒绝并说明具体原因；历史内部链接只删除链接本身。删除失败返回非零并列出路径。清理与计算／输入生成／恢复顺序执行。完整参数及边界见 [epw_clear](../docs/overview/epwflow/epw_clear.md)，验证见 [0057](../docs/specs/0057-epw-clear-history/acceptance.md)。
 
@@ -155,7 +155,7 @@ epw_wannier --stage wannier --resume -s
 
 电子 PW 能带、bands、DOS 与投影分别在第 3 步日志记录续算。直接校验实际输入、原生日志、XML 和保存树；后处理失败只接续缺失子项，成功 PW 数据保留。不创建失败历史或额外 receipts。
 
-工作区推进和日志合并锁定稳定目录 inode，进程结束自动释放，不创建永久工作流锁文件。日志和 `.jobs` 保留提交中断与未知回执，活动／未知时禁止重提。预算及结果发布锁各自保留。
+工作区推进和日志合并锁定稳定目录 inode，进程结束自动释放，不创建永久工作流锁文件。日志和 `.jobs` 保留提交中断与未知回执，活动／未知时禁止重提。结果发布锁继续保留。
 
 同一阶段的独立产物最多使用 8 路完整哈希核验，流式读取使用 1 MiB 堆缓冲；减少共享盘串行等待，不省略文件或跨调用缓存。缺失与损坏仍分别处理，见 [0041](../docs/specs/0041-stage-output-verification-io/spec.md)。
 
@@ -191,7 +191,7 @@ gap_edge = 0.01           # eV
 broyden_beta = -0.3
 ```
 
-执行 `epw_superconductivity -c "input.toml" --stage superconductivity -s`，在前置数据可复用时一次提交 iso／aniso 两个独立 Slurm 作业，无方法间依赖。每种方法只调用一次 EPW，`nstemp` 和完整 `temps` 列表包含全部配置温度，无需逐温度重复命令。每个方法作业内部归集本批结果，最后完成的方法自动出图并发布到 `results/8.epw-superconductivity/`；不重算已完成点。`--status --json` 的 `native_methods` 分别显示两个作业；实际启动时间由调度器决定，每个作业使用配置资源并单独登记共享预算。
+执行 `epw_superconductivity -c "input.toml" --stage superconductivity -s`，在前置数据可复用时一次提交 iso／aniso 两个独立 Slurm 作业，无方法间依赖。每种方法只调用一次 EPW，`nstemp` 和完整 `temps` 列表包含全部配置温度，无需逐温度重复命令。每个方法作业内部归集本批结果，最后完成的方法自动出图并发布到 `results/8.epw-superconductivity/`；不重算已完成点。`--status --json` 的 `native_methods` 分别显示两个作业；实际启动时间由调度器决定，每个作业使用配置资源并分别记录作业号与执行状态。
 
 `muc`、`gap_edge` 和求解控制必须显式配置，程序不注入科学默认值。两种方法独立读取自己的参数与温度；第 7 步也有自己的 `nstemp/temps`。温度列表为 1～50 个互不重复的 0.01～999.99 K 值，按配置顺序传递；频率截断须容纳首个 Matsubara 频率。负 `broyden_beta` 为原生线性混合、正值为 Broyden，绝对值须在 `(0,1]`。
 
@@ -242,7 +242,7 @@ sbatch 5.epw-wannier/submit.sh
 
 路径点数改变补齐相应路径参考，不改变已有 Wannier 变换。受影响的派生现场直接更新，不创建历史。成功子任务重验复用，失败子任务在显式恢复后覆盖重试。格式、维度和来源相容性仍检查；差值供用户判断。
 
-每次配置驱动 CLI 检查原文；变化后在工作区 `epw-state/` 保存下一份 `NNNN-config.toml`，连续相同不重复。阶段提交脚本引用该原文版本，排队期间编辑当前输入不会改变该分配使用的参数。日志区分当前输入和计算使用的版本；不再保存展开配置、attempts 或请求指纹。预算消费不重置。
+每次配置驱动 CLI 检查原文；变化后在工作区 `epw-state/` 保存下一份 `NNNN-config.toml`，连续相同不重复。阶段提交脚本引用该原文版本，排队期间编辑当前输入不会改变该分配使用的参数。日志区分当前输入和计算使用的版本；不再保存展开配置、attempts 或请求指纹。配置备份不依赖全局账本。
 
 ## 并行预检
 
@@ -298,7 +298,7 @@ imports/                 # 外部声子导入时保留
 
 删除必要产物后，下一次公开推进会检查并补齐，保留相容上游；改变上游会使受影响下游待更新。结果包保留其自包含科学清单和图参，用于核验和离线重绘，不作为任务续算状态。
 
-旧可见状态自动进行一次性退出，先核对旧作业终态，不要求已归档的旧输入仍存在。旧隐藏编号布局使用 `epw_wannier --migrate-state`，未知内容明确保留并报出路径；旧非编号数据使用 `--import-work`。不复制旧历史或重置预算。当前改动的源码、测试与安装边界见 [0064 验收](../docs/specs/0064-epw-readable-state-logs/acceptance.md)。
+旧可见状态自动进行一次性退出，先核对旧作业终态，不要求已归档的旧输入仍存在。旧隐藏编号布局使用 `epw_wannier --migrate-state`，未知内容明确保留并报出路径；旧非编号数据使用 `--import-work`。不复制旧历史，不读取旧账本。当前改动的源码、测试与安装边界见 [0064 验收](../docs/specs/0064-epw-readable-state-logs/acceptance.md)。
 
 
 显式声子路径使用专用 matdyn 解析：QE 7.4.1 的未使用第四列可未初始化，按固定宽度跳过该列，坐标、全部频率和点序仍严格核验；普通加权格式保持有限非负权重检查。编号自动比较直接读取科学来源，已完成子任务的续算位置保存于第 6 步日志，不生成冻结请求。依据见 [0037](../docs/specs/0037-matdyn-path-unused-weight/acceptance.md)、[0038](../docs/specs/0038-comparison-orchestrator-upgrade/acceptance.md)。
@@ -421,3 +421,5 @@ epw_phonon --config "epwinput.toml" --import-phonon "external-phonon/save" -s
 `[programs]` 统一使用 `pw_x`／`pw_args` 等平铺字段。PW、PH、EPW、bands、DOS、projwfc、q2r、matdyn、postw90 各自配置路径和参数，不推导同目录程序。空 args 不追加参数，不自动补入 `-pd`；需要 pencil 时由用户显式配置。旧 `[programs.xx]` 子表明确拒绝并提示迁移。
 
 EPW 所有阶段禁用多 image，默认或显式单 image 可用；PH 保留自身规则。完整字段和示例见[原生配置说明](../docs/overview/epwflow/native-stage-config.md#外部程序路径与命令行参数)。历史输入、脚本和科学文件不自动迁移。
+
+预算功能已彻底移除：源输入中删除整个 `[budget]` 区段，三个程序不再接受预算参数，也不再读取或生成 `campaign/ledger.json`、`campaigns.json`。旧账本可以留作历史资料，不影响计算；旧字段直接报错，带哈希的冻结快照和已提交脚本不自动改写，应从清理后的源输入重新生成脚本。设计及验收见 [0058](../docs/specs/0058-epw-remove-resource-limits/spec.md)。

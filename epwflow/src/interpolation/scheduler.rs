@@ -1,4 +1,4 @@
-use super::super::foundation::{budget, config, stage::Backend, store};
+use super::super::foundation::{config, stage::Backend, store};
 use super::{
     adapter, coarse, epw_config, fine,
     manifest::{InterpolationManifest, Validation},
@@ -8,14 +8,6 @@ use anyhow::{bail, ensure, Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// 在共享预算账本上预留资源（FR-011）。
-fn charge_budget(cfg: &config::Config, run_id: &str) -> Result<String> {
-    budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
-        budget::reserve(ledger, &format!("interpolation:{}", run_id))
-    })
-    .context("budget_denied: interpolation Budget set aside failed")
-}
-
 /// 执行完整 Wannier 化与 EPW 插值（F3），交付 interpolation/manifest.json（FR-001~012）。
 pub fn run(
     cfg: &config::Config,
@@ -24,17 +16,11 @@ pub fn run(
     work: &Path,
     f2_work: &Path,
 ) -> Result<InterpolationManifest> {
-    run_coarse_stages(cfg, backend, launcher, work, f2_work, true, false)?;
-    let result = run_fine_registered(cfg, backend, launcher, work)?;
-    budget::with_ledger(
-        &cfg.budget.ledger,
-        &cfg.budget.campaign_id,
-        budget::reconcile,
-    )?;
-    Ok(result)
+    run_coarse_stages(cfg, backend, launcher, work, f2_work, false)?;
+    run_fine_registered(cfg, backend, launcher, work)
 }
 
-/// 统一入口已登记整份分配，禁止再次按阶段计费。
+/// 统一入口在同一分配中执行粗、细网格阶段。
 pub fn run_registered(
     cfg: &config::Config,
     backend: Backend,
@@ -65,7 +51,7 @@ pub fn run_coarse_with_retry(
     f2_work: &Path,
     retry: bool,
 ) -> Result<InterpolationManifest> {
-    run_coarse_stages(cfg, backend, launcher, work, f2_work, false, retry)
+    run_coarse_stages(cfg, backend, launcher, work, f2_work, retry)
 }
 
 fn attempt_digest(
@@ -115,7 +101,6 @@ fn run_coarse_stages(
     launcher: &[String],
     work: &Path,
     f2_work: &Path,
-    charge: bool,
     retry: bool,
 ) -> Result<InterpolationManifest> {
     let f2_manifest_path =
@@ -133,9 +118,6 @@ fn run_coarse_stages(
         .with_species(&structure.cell.elements)?;
     epw_cfg.window_selection()?;
     epw_cfg.require_window_support()?;
-    if charge {
-        charge_budget(cfg, "f3")?;
-    }
     // 非编号内部调用也分别使用第 5、6 步配置；公开编号链由工作区调度。
     let f2 = crate::qe_data::manifest::QeManifest::load(&f2_manifest_path)?;
     let digest = attempt_digest(

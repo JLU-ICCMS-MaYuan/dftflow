@@ -66,7 +66,6 @@ impl Case {
         cfg.qe.scf.k_shift = [0; 3];
         cfg.qe.nscf.k_grid = [2, 3, 6];
         cfg.phonon.q_grid = [1; 3];
-        cfg.budget.ledger = root.join("ledger.json");
         native_fixture::matrix(&mut cfg);
         cfg.validate().unwrap();
         Self { root, cfg }

@@ -53,12 +53,6 @@ pub fn command(args: &[&str], cwd: &Path) -> Command {
                     panic!("Unknown test action {action}");
                 }
             }
-            "budget" => {
-                args[0] = "--budget".into();
-                if args.get(1).is_none_or(|s| s == "--help") {
-                    args.insert(1, "status".into());
-                }
-            }
             "results" => {
                 phase = "interpolation".into();
                 args.drain(0..2);

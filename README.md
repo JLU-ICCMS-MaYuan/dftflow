@@ -306,3 +306,5 @@ phonon_mode = "split_index"
 声子 DOS 默认插值网格是 PH 网格各方向的两倍，显式 `[qe_phonon.phdos].qpoints` 优先。绘图高斯平滑默认 `plot_sigma_cm1 = 5.0`（cm⁻¹），调大更平滑、设为 0 关闭；使用 `qe_process_phonon --plot` 重画，原始 DOS 和 CSV 保留。
 
 声子聚合流程保存 `input-init.toml` 和原结构名加 `-init` 的备份，已提交链路读取工作目录快照。修改外部配置后需用原目录的 `input-init.toml` 续算；旧目录和已生成旧脚本不会因安装新版而自动迁移。
+
+EPW 不再提供预算账本功能：输入删除 `[budget]`，正常提交与续算直接使用工作流状态和 Slurm 作业号，不依赖 `campaign/ledger.json` 或固定项目身份。旧账本不再读写，详见[EPW 使用说明](epwflow/README.md)。

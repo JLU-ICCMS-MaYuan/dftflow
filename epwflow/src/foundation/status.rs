@@ -10,7 +10,6 @@ pub enum Category {
     InputConflict,
     Environment,
     SchedulerUnknown,
-    BudgetDenied,
     StorageDenied,
     DataInvalid,
     ExecutionFailed,
@@ -25,7 +24,6 @@ impl Category {
             Category::InputConflict => "input_conflict",
             Category::Environment => "environment",
             Category::SchedulerUnknown => "scheduler_unknown",
-            Category::BudgetDenied => "budget_denied",
             Category::StorageDenied => "storage_denied",
             Category::DataInvalid => "data_invalid",
             Category::ExecutionFailed => "execution_failed",
@@ -44,8 +42,6 @@ impl Category {
             Category::Environment
         } else if msg.starts_with("scheduler_unknown:") {
             Category::SchedulerUnknown
-        } else if msg.starts_with("budget_denied:") {
-            Category::BudgetDenied
         } else if msg.starts_with("storage_denied:") {
             Category::StorageDenied
         } else if msg.starts_with("data_invalid:") {

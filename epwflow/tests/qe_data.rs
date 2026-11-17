@@ -5,7 +5,6 @@
 mod native_fixture;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::sync::Once;
 
 use epwflow::foundation::config;
 use epwflow::foundation::snapshot;
@@ -20,17 +19,6 @@ use epwflow::qe_data::reuse;
 use epwflow::qe_data::scheduler;
 use epwflow::qe_data::{nscf, qmap, scf};
 
-static INIT: Once = Once::new();
-
-/// 隔离状态根，避免与机器或其它测试共享 campaign 注册表（FR-010）。
-fn setup_state_root() {
-    INIT.call_once(|| {
-        let dir =
-            std::env::temp_dir().join(format!("epwflow-qe-data-state-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        std::env::set_var("EPWFLOW_LOCAL_STATE", &dir);
-    });
-}
 
 fn write_script(path: &PathBuf, body: &str) {
     std::fs::write(path, body).expect("Write fixture Failed");
@@ -65,7 +53,6 @@ fn base_config(
     ph: &PathBuf,
     epw: &PathBuf,
     mode: &str,
-    ledger: &PathBuf,
 ) -> String {
     let text=format!(
         r#"work_dir = "{work}"
@@ -103,10 +90,6 @@ header = """
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 """
-
-[budget]
-campaign_id = "epic-0007"
-ledger = "{ledger}"
 
 [stages."1.qe-scf"]
 K_POINTS = "automatic\n2 2 2 0 0 0"
@@ -527,7 +510,6 @@ nqf3 = 2
         ph = ph.display(),
         epw = epw.display(),
         mode = mode,
-        ledger = ledger.display(),
     );
     let mut document: toml::Value = toml::from_str(&text).unwrap();
     if mode == "nosplit" {
@@ -545,7 +527,6 @@ struct Case {
 }
 
 fn make_case(mode: &str) -> Case {
-    setup_state_root();
     let root = std::env::temp_dir().join(format!(
         "epwflow-qe-data-{}-{}-{}",
         mode,
@@ -575,22 +556,14 @@ fn make_case(mode: &str) -> Case {
 
     let work = root.join("work");
     let out = root.join("out");
-    let ledger = root.join("ledger.json");
     let config_path = root.join("config.toml");
-    let cfg_text = base_config(&work, &out, &structure, &pw, &ph, &_epw, mode, &ledger);
+    let cfg_text = base_config(&work, &out, &structure, &pw, &ph, &_epw, mode);
     std::fs::write(&config_path, cfg_text).unwrap();
 
     Case { root, config_path }
 }
 
 fn try_pipeline(case: &Case) -> anyhow::Result<QeManifest> {
-    // 序列化预算相关运行，并为每次运行隔离 state root，避免共享 campaign 注册表冲突。
-    static BUDGET_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = BUDGET_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let state_dir = std::env::temp_dir().join(format!("epwflow-qe-state-{}", store::token()));
-    let _ = std::fs::create_dir_all(&state_dir);
-    std::env::set_var("EPWFLOW_LOCAL_STATE", &state_dir);
-
     let cfg = config::Config::load(&case.config_path).expect("Configure Load Failed");
     let binding = snapshot::prepare(&cfg, &case.config_path).expect("prepare Failed");
     let qe = QeSettings::from_config(&cfg).expect("QeSettings Failed");

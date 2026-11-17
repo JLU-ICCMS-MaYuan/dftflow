@@ -226,7 +226,7 @@ pub fn run(
 ) -> Result<()> {
     ensure!(
         backend == crate::foundation::stage::Backend::Local,
-        "allocation: single-point solving requires a registered allocation"
+        "allocation: single-point solving requires a running Slurm allocation"
     );
     let f3_path = crate::foundation::layout::path(work, "interpolation/manifest.json");
     let f3 = crate::interpolation::manifest::InterpolationManifest::load(&f3_path)?;
@@ -341,11 +341,9 @@ pub fn run(
             let job = std::env::var("SLURM_JOB_ID")
                 .context("allocation: current Slurm allocation missing")?
                 .parse::<u64>()?;
-            crate::foundation::budget::with_ledger(
-                &cfg.budget.ledger,
-                &cfg.budget.campaign_id,
-                |ledger| ledger.require_allocation(job).map(|_| ()),
-            )?;
+            let allocation = crate::foundation::slurm::running_allocation(job)?;
+            ensure!(!allocation.terminal && allocation.state == "RUNNING",
+                "allocation: current Slurm allocation is not running");
         }
         ensure!(
             store::hash_file(&f3_path)? == source.interpolation_digest,

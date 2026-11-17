@@ -4,7 +4,7 @@
 
 以下清理规则仅用于仍采用旧 `layout.json` 的工作区。
 
-`epw_clear` 清空编号工作区的三处历史：`epw-state/history/`、`epw-state/native-attempts/history/`、`epw-state/native-jobs/history/`。保留现用计算、`results/`、现用任务记录及预算，不另建备份。
+`epw_clear` 清空编号工作区的三处历史：`epw-state/history/`、`epw-state/native-attempts/history/`、`epw-state/native-jobs/history/`。保留现用计算、`results/`、现用任务记录，不另建备份。
 
 ## 用法
 

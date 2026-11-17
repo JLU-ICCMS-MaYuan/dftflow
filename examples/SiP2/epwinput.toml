@@ -47,10 +47,6 @@ header = """
 #SBATCH --ntasks=36
 """
 
-[budget]
-campaign_id = "epic-0007"
-ledger = "/data/home/mayuan/code/dftflow/docs/local/epwflow-campaign.json"
-
 # 第 1 步：QE SCF。SCF 与 NSCF 均使用 2×3×6、零位移网格。
 [stages."1.qe-scf"]
 calculation = "scf"

@@ -22,7 +22,6 @@ pub struct RunBinding {
     pub environment_status: String,
     pub work_dir: PathBuf,
     pub outdir_base: PathBuf,
-    pub budget_id: String,
 }
 
 impl RunBinding {
@@ -146,7 +145,6 @@ pub fn prepare(config: &config::Config, _config_path: &Path) -> Result<RunBindin
             environment_status: "unverified".into(),
             work_dir: work.clone(),
             outdir_base: config.outdir.clone(),
-            budget_id: config.budget.campaign_id.clone(),
         };
         store::atomic_bytes(&staging.join("input-init.toml"), &bytes)?;
         store::write(&staging.join("run-binding.json"), &binding)?;

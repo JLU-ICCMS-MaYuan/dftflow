@@ -3,7 +3,7 @@
 import pathlib, subprocess, sys
 assert sys.argv[1:4] == ['show', 'job', '-o']
 job = sys.argv[4]
-rows = subprocess.check_output([str(pathlib.Path(__file__).with_name('sacct'))], universal_newlines=True).splitlines()
+rows = subprocess.check_output([str(pathlib.Path(__file__).with_name('sacct')), '-j', job], universal_newlines=True).splitlines()
 rows = [r.split('|') for r in rows if r.split('|')[0] == job]
 assert len(rows) == 1 and len(rows[0]) >= 4
 r = rows[0]

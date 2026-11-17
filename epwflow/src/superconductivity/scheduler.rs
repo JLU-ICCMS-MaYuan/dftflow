@@ -30,7 +30,7 @@ pub fn run_with_retry(
     anyhow::bail!("unsupported: adaptive Tc search has been removed; request native linearized temperatures explicitly")
 }
 
-/// 发布 F4 结构化交付；生产调用者必须先完成来源和预算检查。
+/// 发布 F4 结构化交付；生产调用者必须先完成来源和作业身份检查。
 pub fn publish(
     root: &Path,
     run_id: String,

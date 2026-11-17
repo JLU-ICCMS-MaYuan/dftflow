@@ -291,7 +291,7 @@ fn published(
         let source = if let Some(id) = r.attempts.iter().find_map(|a| a.record.as_ref()) {
             record(&id.path)?.source
         } else {
-            // 预算等前置错误也可留下零尝试模式，来源仍须绑定当前原生 F3。
+            // 前置检查错误也可留下零尝试模式，来源仍须绑定当前原生 F3。
             let f3 = crate::interpolation::manifest::InterpolationManifest::load(
                 &crate::foundation::layout::path(&work, "interpolation/manifest.json"),
             )?;

@@ -94,7 +94,7 @@ pub fn probe(config_path: &Path, submit: bool, require_allocation: bool) -> Resu
     if require_allocation {
         let job = std::env::var("SLURM_JOB_ID").ok();
         ensure!(job.is_some(), "allocation: probe -r requires the current SLURM_JOB_ID");
-        bail!("allocation: probe -r requires a registered allocation matching SLURM_JOB_ID");
+        bail!("allocation: probe -r requires a running Slurm allocation matching SLURM_JOB_ID");
     }
     // submit 模式在 F1 需要提交探测作业，科学阶段尚未接入。
     let _ = config_path;

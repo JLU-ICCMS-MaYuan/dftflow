@@ -33,7 +33,6 @@ fn make_config(root: &PathBuf) -> PathBuf {
     write_script(&pw2, "#!/bin/bash\nexit 0\n");
     let work = root.join("work");
     std::fs::create_dir_all(&work).unwrap();
-    let ledger = root.join("ledger.json");
     let p = root.join("config.toml");
     std::fs::write(
         &p,
@@ -77,10 +76,6 @@ header = """
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 """
-
-[budget]
-campaign_id = "epic-0007"
-ledger = "{ledger}"
 
 [stages."1.qe-scf"]
 K_POINTS = "automatic\n2 2 2 0 0 0"
@@ -498,7 +493,6 @@ nqf3 = 2
             epw = epw.display(),
             wan = wan.display(),
             pw2 = pw2.display(),
-            ledger = ledger.display(),
         ),
     )
     .unwrap();
@@ -818,36 +812,6 @@ fn native_broyden_history_rejects_unsupported_size_before_launch() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
-#[test]
-fn native_stage_requires_existing_allocation_without_time_or_storage_quota() {
-    use epwflow::foundation::budget::BudgetLedger;
-    let root = std::env::temp_dir().join(format!("epwflow-f4-budget-{}", store::token()));
-    std::fs::create_dir_all(&root).unwrap();
-    config::Config::load(&make_config(&root)).unwrap();
-    let mut value = serde_json::json!({
-        "schema_version":1,"campaign_id":"fixture",
-        "limits":{"node_seconds":28800,"storage_bytes":107374182400_u64,"max_lanes":2},
-        "spent_node_seconds":0,"reservations":[],"lanes":1,"storage_roots":[],"revision":0,
-        "allocations":[{"reservation_id":"native","job_id":42,
-            "node_seconds":7200,
-            "storage_bytes":1048576}]
-    });
-    let ledger: BudgetLedger = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(
-        ledger.require_allocation(42).unwrap(),
-        "native"
-    );
-    assert!(ledger.require_allocation(43).is_err());
-    value["allocations"][0]["node_seconds"] = 0.into();
-    let ledger: BudgetLedger = serde_json::from_value(value.clone()).unwrap();
-    assert!(ledger.require_allocation(42).is_ok());
-    value["allocations"][0]["node_seconds"] =
-        7200.into();
-    value["allocations"][0]["storage_bytes"] = 0.into();
-    let ledger: BudgetLedger = serde_json::from_value(value).unwrap();
-    assert!(ledger.require_allocation(42).is_ok());
-    std::fs::remove_dir_all(root).unwrap();
-}
 
 #[test]
 fn missing_native_solver_cannot_publish_superconductivity() {

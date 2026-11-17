@@ -1,6 +1,5 @@
 //! 编号工作区提交入口；分配状态写入阶段日志，作业号保存在计算目录。
 use super::{
-    budget,
     config::Config,
     native_jobs, parallelism, readable_state as log, slurm,
     stages::{self, Step},
@@ -36,11 +35,6 @@ pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
             "scheduler_unknown: Phase {} Operations {job} Still active, no coverage",
             step.name()
         );
-        budget::with_ledger(
-            &cfg.budget.ledger,
-            &cfg.budget.campaign_id,
-            budget::reconcile,
-        )?;
         log::update(&cfg.work_dir, step, |d| {
             d.set(
                 "Stage allocation",
@@ -108,13 +102,6 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
     if resume {
         crate::delivery::decay::recover_pending(&cfg)?;
     }
-    if cfg.budget.ledger.is_file() {
-        budget::with_ledger(
-            &cfg.budget.ledger,
-            &cfg.budget.campaign_id,
-            budget::reconcile,
-        )?;
-    }
     if !resume {
         for task in native_jobs::tasks(&cfg)? {
             ensure!(
@@ -180,13 +167,8 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         println!("script: {}; not submitted", script.display());
         return Ok(());
     }
-    let reservation = budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
-        budget::reconcile(l)?;
-        budget::reserve_workflow(l, &format!("stage:{id}"))
-    })?;
     log::set_job(&cfg.work_dir, target, "Stage allocation", None)?;
     log::update(&cfg.work_dir, target, |d| {
-        d.set("Stage allocation", "Budget association", &reservation);
         d.set("Stage allocation", "Status", "submitting");
         Ok(())
     })?;
@@ -216,12 +198,6 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
     match result {
         Ok(job) => {
             log::set_job(&cfg.work_dir, target, "Stage allocation", Some(job.job_id))?;
-            budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
-                if l.has_unsettled_token(&reservation) {
-                    budget::attach_once(l, &reservation, job.job_id)?;
-                }
-                Ok(())
-            })?;
             log::update(&cfg.work_dir, target, |d| {
                 if d.get("Stage allocation", "Status") == Some("submitting") {
                     d.set("Stage allocation", "Status", "submitted");
@@ -272,11 +248,6 @@ pub fn allocated(config: &Path, target: Step, resume: bool, id: &str) -> Result<
     ensure!(!allocation.terminal && allocation.state == "RUNNING", "allocation: Current distribution is not running");
     parallelism::preflight(&cfg, target, true)?;
     log::set_job(&cfg.work_dir, target, "Stage allocation", Some(job))?;
-    if let Some(token) = doc.get("Stage allocation", "Budget association") {
-        budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
-            budget::attach_once(l, token, job)
-        })?;
-    }
     log::update(&cfg.work_dir, target, |d| {
         d.set("Stage allocation", "Status", "running");
         Ok(())
@@ -313,11 +284,10 @@ pub fn start_allocated(config: &Path, target: Step, resume: bool) -> Result<()> 
     let job = std::env::var("SLURM_JOB_ID")
         .context("allocation: -r Yes Slurm Allocation")?
         .parse::<u64>()?;
+    let allocation = slurm::running_allocation(job)?;
+    ensure!(!allocation.terminal && allocation.state == "RUNNING",
+        "allocation: current Slurm allocation is not running");
     parallelism::preflight(&cfg, target, true)?;
-    budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
-        budget::reconcile(l)?;
-        budget::register_generated(l, job)
-    })?;
     super::native_workspace::allocated(config, target, resume, &generation)
 }
 /// 仅删除已确认不再运行的旧内容，保留阶段根 inode。

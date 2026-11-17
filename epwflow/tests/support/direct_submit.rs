@@ -359,15 +359,14 @@ fn direct_status_is_read_only_and_unknown_receipt_never_resubmits() {
         .status
         .success());
     let active = c.root.join("run/epw-state/1.qe-scf.log");
-    let ledger = c.root.join("fixture-ledger.json");
-    let before = (fs::read(&active).unwrap(), fs::read(&ledger).unwrap());
+    let before = fs::read(&active).unwrap();
     let out = c.direct_advance(0, &["--status", "--json"], "unknown-status");
     assert!(out.status.success());
     let status: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(status["native_task"]["state"], "unknown");
     assert_eq!(
         before,
-        (fs::read(&active).unwrap(), fs::read(&ledger).unwrap())
+        fs::read(&active).unwrap()
     );
     assert!(!c
         .direct_advance(0, &["--resume", "-s"], "unknown-retry")
@@ -435,7 +434,7 @@ pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
 }
 
 #[test]
-fn sequential_public_commands_submit_only_once_and_reserve_budget_once() {
+fn sequential_public_commands_submit_only_once_without_a_ledger() {
     let c = Case::numbered();
     c.direct_setup();
     success(c.direct_advance(0, &["-s"], "sequential-a"));
@@ -449,10 +448,7 @@ fn sequential_public_commands_submit_only_once_and_reserve_budget_once() {
             .count(),
         1
     );
-    let ledger: Value = store::read(&c.root.join("fixture-ledger.json")).unwrap();
-    assert_eq!(ledger["reservations"].as_array().unwrap().len(), 0);
-    assert_eq!(ledger["allocations"].as_array().unwrap().len(), 1);
-    assert_eq!(ledger["allocations"][0]["job_id"], 201);
+    assert!(!c.root.join("fixture-ledger.json").exists());
 }
 
 #[test]
@@ -865,17 +861,44 @@ fn completed_task_reuses_science_after_fixed_script_and_slurm_log_are_overwritte
         .success());
 }
 
+
 #[test]
-fn budget_ledger_lock_still_blocks_budget_writes() {
+fn obsolete_budget_files_and_locks_do_not_affect_submission_or_completion() {
     let c = Case::numbered();
     c.direct_setup();
-    let ledger = c.root.join("fixture-ledger.json");
-    let guard = store::Lock::acquire(&ledger).unwrap();
-    let blocked = c.direct_advance(0, &["-s"], "budget-lock-blocked");
-    assert!(!blocked.status.success());
-    let error = String::from_utf8_lossy(&blocked.stderr);
-    assert!(error.contains("fixture-ledger.json.lock"), "{error}");
-    assert!(!c.root.join("submissions").exists());
-    drop(guard);
-    success(c.direct_advance(0, &["--resume", "-s"], "budget-lock-released"));
+    fs::create_dir_all(c.root.join("campaign")).unwrap();
+    fs::create_dir_all(c.root.join("state")).unwrap();
+    c.put("campaign/ledger.json", "invalid historical ledger");
+    c.put("fixture-ledger.json", r#"{"lanes":2,"allocations":[{"job_id":1},{"job_id":2}]}"#);
+    c.put("state/campaigns.json", "invalid historical registry");
+    let legacy = c.root.join("fixture-ledger.json");
+    let before = fs::read(&legacy).unwrap();
+    let _guard = store::Lock::acquire(&legacy).unwrap();
+    success(c.direct_advance(0, &["-s"], "obsolete-budget-submit"));
+    assert_eq!(c.direct_execute(), 0);
+    success(c.direct_advance(0, &["-s"], "obsolete-budget-complete"));
+    assert_eq!(fs::read(&legacy).unwrap(), before);
+    assert_eq!(fs::read_to_string(c.root.join("campaign/ledger.json")).unwrap(), "invalid historical ledger");
+    assert_eq!(fs::read_to_string(c.root.join("state/campaigns.json")).unwrap(), "invalid historical registry");
+    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 1);
+}
+
+#[test]
+fn three_independent_workspaces_submit_with_one_shared_state_directory() {
+    let cases = [Case::numbered(), Case::numbered(), Case::numbered()];
+    let shared = cases[0].root.join("shared-state");
+    fs::create_dir_all(&shared).unwrap();
+    fs::write(shared.join("campaigns.json"), "invalid obsolete registry").unwrap();
+    for c in &cases {
+        c.direct_setup();
+        let mut cmd = Command::new(BINS[0]);
+        c.environment(&mut cmd, None);
+        cmd.env("EPWFLOW_LOCAL_STATE", &shared).env("XDG_STATE_HOME", &shared)
+            .args(["-c", "input.toml", "--stage", "scf", "-s"]);
+        success(cmd.output().unwrap());
+        assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 1);
+        assert!(!c.root.join("campaign").exists());
+        assert!(!c.root.join("fixture-ledger.json").exists());
+    }
+    assert_eq!(fs::read_to_string(shared.join("campaigns.json")).unwrap(), "invalid obsolete registry");
 }

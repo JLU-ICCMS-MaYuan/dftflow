@@ -1,4 +1,4 @@
-//! 显式清理三类历史；不加载科学配置，不改写现用记录和预算。
+//! 显式清理三类历史；不加载科学配置，不改写现用记录。
 use super::{layout::Layout, slurm, status, store};
 use anyhow::{bail, ensure, Context, Result};
 use clap::Parser;
@@ -480,6 +480,6 @@ pub fn clear(path: &Path, delete: bool) -> Result<()> {
         "execution_failed: history cleanup incomplete:\n{}",
         failures.join("\n")
     );
-    println!("History cleanup complete; current calculations, results, task records and budget unchanged");
+    println!("History cleanup complete; current calculations, results, task records unchanged");
     Ok(())
 }

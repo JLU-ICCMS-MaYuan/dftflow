@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use super::{budget, config, environment, snapshot, status, workflow::{self, Boundary}};
+use super::{config, environment, snapshot, status, workflow::{self, Boundary}};
 use crate::interpolation::cli::InterpolationCommand;
 use crate::qe_data::cli::QeDataCommand;
 use crate::superconductivity::cli::SuperconductivityCommand;
@@ -39,8 +39,8 @@ pub enum EpwCommand {
         #[arg(long, value_enum, default_value = "all")]
         until: Boundary,
     },
-    /// 在已登记的 Slurm 分配内依次执行科学阶段。
-    #[command(about = "Run scientific stages sequentially within a registered Slurm allocation", long_about = "Run scientific stages sequentially within a registered Slurm allocation")]
+    /// 在现有 Slurm 分配内依次执行科学阶段。
+    #[command(about = "Run scientific stages sequentially within an existing Slurm allocation", long_about = "Run scientific stages sequentially within an existing Slurm allocation")]
     Run {
         #[arg(short = 'c', long)]
         config: PathBuf,
@@ -86,12 +86,6 @@ pub enum EpwCommand {
         #[arg(short = 'r', long)]
         require_allocation: bool,
     },
-    /// 共享预算账本：status/reserve/attach/reconcile。
-    #[command(about = "Shared budget ledger: status/reserve/attach/reconcile", long_about = "Shared budget ledger: status/reserve/attach/reconcile")]
-    Budget {
-        #[command(subcommand)]
-        action: Option<BudgetAction>,
-    },
     /// QE 数据准备阶段边界：check / import（FR-001）。
     #[command(about = "QE data preparation: check / import", long_about = "QE data preparation: check / import")]
     QeData {
@@ -110,8 +104,8 @@ pub enum EpwCommand {
         #[command(subcommand)]
         command: SuperconductivityCommand,
     },
-    /// 结果交付阶段边界：collect / results / budget（FR-001）。
-    #[command(about = "Result delivery: collect / results / budget", long_about = "Result delivery: collect / results / budget")]
+    /// 结果交付阶段边界：collect / results（FR-001）。
+    #[command(about = "Result delivery: collect / results", long_about = "Result delivery: collect / results")]
     Delivery {
         #[command(subcommand)]
         command: DeliveryCommand,
@@ -152,33 +146,6 @@ pub enum ResultsCommand {
     },
 }
 
-#[derive(Subcommand)]
-pub enum BudgetAction {
-    Status {
-        #[arg(long)]
-        ledger: PathBuf,
-        #[arg(long)]
-        json: bool,
-    },
-    Reserve {
-        #[arg(long)]
-        ledger: PathBuf,
-        #[arg(long)]
-        label: String,
-    },
-    Attach {
-        #[arg(long)]
-        ledger: PathBuf,
-        #[arg(long)]
-        token: String,
-        #[arg(long)]
-        job: Option<u64>,
-    },
-    Reconcile {
-        #[arg(long)]
-        ledger: PathBuf,
-    },
-}
 
 pub fn run() {
     let cli = Cli::parse();
@@ -213,7 +180,6 @@ pub(crate) fn dispatch_command(command: EpwCommand) -> Result<()> {
             submit,
             require_allocation,
         } => environment::probe(&config, submit, require_allocation),
-        EpwCommand::Budget { action } => budget_cmd(action),
         EpwCommand::QeData { command } => crate::qe_data::cli::run(command),
         EpwCommand::Interpolation { command } => crate::interpolation::cli::run(command),
         EpwCommand::Superconductivity { command } => crate::superconductivity::cli::run(command),
@@ -282,52 +248,4 @@ fn status_cmd(work: &Path, refresh: bool, json: bool) -> Result<()> {
         println!("workflow_complete: {}", v["workflow_complete"]);
     }
     Ok(())
-}
-
-fn budget_cmd(action: Option<BudgetAction>) -> Result<()> {
-    match action {
-        None => {
-            println!("usage: epwflow budget <status|reserve|attach|reconcile> --help");
-            Ok(())
-        }
-        Some(BudgetAction::Status { ledger, json }) => {
-            let v = budget::status_json(&ledger, "epic-0007")?;
-            if json {
-                status::print_json(&v);
-            } else {
-                println!("campaign_id: {}", v["campaign_id"]);
-                println!("spent_node_seconds: {}", v["spent_node_seconds"]);
-                println!("reserved_node_seconds: {}", v["reserved_node_seconds"]);
-                println!("lanes: {}", v["lanes"]);
-            }
-            Ok(())
-        }
-        Some(BudgetAction::Reserve {
-            ledger,
-            label,
-        }) => {
-            let token = budget::with_ledger(&ledger, "epic-0007", |ledger| {
-                budget::reserve(ledger, &label)
-            })?;
-            println!("reserved: token={}", token);
-            Ok(())
-        }
-        Some(BudgetAction::Attach {
-            ledger,
-            token,
-            job,
-        }) => {
-            budget::with_ledger(&ledger, "epic-0007", |ledger| {
-                budget::attach(ledger, &token, job)
-            })?;
-            println!("attached: token={}", token);
-            Ok(())
-        }
-        Some(BudgetAction::Reconcile { ledger }) => {
-            let settled =
-                budget::with_ledger(&ledger, "epic-0007", |ledger| budget::reconcile(ledger))?;
-            println!("reconciled: settled_node_seconds={}", settled);
-            Ok(())
-        }
-    }
 }

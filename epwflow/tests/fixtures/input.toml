@@ -37,11 +37,6 @@ header = """
 #SBATCH --ntasks=1
 """
 
-[budget]
-campaign_id = "epic-0007"
-ledger = "campaign/ledger.json"
-
-
 [stages."1.qe-scf"]
 K_POINTS = '''automatic
 4 4 2 0 0 0'''

@@ -21,7 +21,7 @@ pub fn absolute(base: &Path, input: &Path) -> Result<PathBuf> {
     }}
     Ok(out)
 }
-/// 非现存输出路径也以真实现存祖先确定身份，防止别名创建第二账本。
+/// 非现存输出路径也以真实现存祖先确定身份，防止输出目录通过别名绕过身份核对。
 pub fn destination(path:&Path)->Result<PathBuf>{
     if path.exists(){return fs::canonicalize(path).with_context(||format!("configuration: {}",path.display()));}
     if fs::symlink_metadata(path).is_ok(){bail!("configuration: dangling symlink {}",path.display());}
@@ -46,9 +46,4 @@ pub fn command(base:&Path, value:&str)->Result<PathBuf>{
         if p.is_file(){return existing(base,&p,"programs.launcher",true);}
     }
     bail!("environment: programs.launcher: {value} not found in PATH")
-}
-pub fn state_root()->Result<PathBuf>{
-    let root=super::store::state_root()?;
-    if !root.is_absolute(){bail!("configuration: state root must be absolute");}
-    destination(&root)
 }

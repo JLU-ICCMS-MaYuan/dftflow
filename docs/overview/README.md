@@ -21,6 +21,8 @@ DFTFlow 为第一性原理计算准备输入、组织外部求解器和调度任
 
 ## 关键入口
 
+EPW 已彻底删除预算账本依赖，提交与续算直接核对工作流记录和 Slurm 作业号；配置迁移见 [EPW 总览](epwflow/README.md#预算功能已移除)。
+
 - [三种声子模式、dyn0 来源、目录和一次提交链（0006）](qeflow/phonon-workflow.md)。
 - [只用 QE 初始化生成 dyn0](qeflow/qe_ph_nosplit.md) 与 [独立 Rust dyn0 工具](tools/qf-gen-dyn0.md)。 初始化输入和日志的位置见 [文件问答](qeflow/phonon-workflow.md#dyn0-初始化文件问答)。
 - [Rust 架构、平台构建与安装](dftflow-rust.md)。

@@ -146,12 +146,6 @@ impl Drop for Lock {fn drop(&mut self){
 }}
 pub fn hostname()->String{let mut name=[0u8;256];#[cfg(unix)] unsafe{if libc::gethostname(name.as_mut_ptr().cast(),name.len())==0 {return String::from_utf8_lossy(&name[..name.iter().position(|b|*b==0).unwrap_or(name.len())]).into_owned();}}"unknown".into()}
 pub fn now()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()}
-/// 预算注册表默认放在可见的 ~/epwflow-state；保留显式环境覆盖。
-pub fn state_root()->Result<PathBuf>{
-    if let Ok(local)=std::env::var("EPWFLOW_LOCAL_STATE"){return Ok(PathBuf::from(local));}
-    let base=match std::env::var("XDG_STATE_HOME"){Ok(v) if !v.is_empty()=>PathBuf::from(v),_=>{let home=std::env::var("HOME").unwrap_or_else(|_|".".to_string());return Ok(PathBuf::from(home).join("epwflow-state"))}};
-    Ok(base.join("epwflow"))
-}
 
 #[cfg(test)]
 mod hash_tests {

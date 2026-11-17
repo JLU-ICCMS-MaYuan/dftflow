@@ -32,7 +32,7 @@ pub struct RuntimeConfig {
     #[serde(default, skip_serializing_if="Option::is_none")] pub kpath:Option<PathBuf>,
     #[serde(default, skip_serializing_if="Option::is_none")] pub comparison:Option<Comparison>,
     #[serde(default)] pub atomic_masses:BTreeMap<String,f64>,
-    pub slurm:qf_config::SlurmSection,pub budget:BudgetConfig,pub qe:Qe,pub phonon:Phonon,
+    pub slurm:qf_config::SlurmSection,pub qe:Qe,pub phonon:Phonon,
     pub wannier:Wannier,pub interpolation:Interpolation,pub superconductivity:Superconductivity,
 }
 /// 仅控制显示，不参与任何科学阶段身份。
@@ -52,7 +52,6 @@ impl PlotConfig {
 fn default_outdir()->PathBuf{PathBuf::from("./tmp")}
 data!(Program{path:PathBuf,args:Vec<String>});
 pub use super::programs::Programs;
-data!(BudgetConfig{campaign_id:String,ledger:PathBuf});
 data!(Qe{prefix:String,ecutwfc_ry:f64,ecutrho_ry:f64,occupations:Occupations,smearing:Option<Smearing>,degauss_ry:Option<f64>,scf:Scf,nscf:Nscf});
 data!(Scf{k_grid:[u32;3],k_shift:[u32;3],conv_thr_ry:f64});
 data!(Nscf{k_grid:[u32;3],nbnd:u32,conv_thr_ry:f64});
@@ -136,7 +135,6 @@ impl Config {
             positive(c.electronic_sigma_ev,"stages.5.epw-wannier.electron_dos.postw90.dos_smr_fixed_en_width")?;
             positive(c.phonon_sigma_cm1,&format!("stages.{ph}.workflow.phonon_sigma_cm1"))?;
         }
-        ensure!(self.budget.campaign_id=="epic-0007","configuration: budget.campaign_id: this run must share epic-0007");
         ensure!(!self.pseudos.is_empty()&&self.pseudos.keys().all(|s|!s.is_empty()&&s.chars().all(|c|c.is_ascii_alphabetic())),"configuration: pseudos: requires a nonempty element-to-file mapping");
         for (el,mass) in &self.atomic_masses {ensure!(self.pseudos.contains_key(el),"configuration: stages.1.qe-scf.pw.ATOMIC_SPECIES: {el} has no declared pseudopotential element");positive(*mass,&format!("stages.1.qe-scf.pw.ATOMIC_SPECIES.{el}"))?;}
         for (n,p) in self.programs.iter() {
@@ -210,7 +208,6 @@ impl Config {
             if !qf_runner::is_mpirun(p) {*p=paths::command(base,p)?.to_string_lossy().into_owned();}
         }
         if let Some(p)=&mut self.runtime.programs.environment_script {*p=paths::existing(base,p,"programs.environment_script",false)?;}
-        self.budget.ledger=paths::destination(&paths::absolute(base,&self.budget.ledger)?)?;
         // 输入不得在后续要由本运行拥有的工作树内；防止准备与复制相互覆盖。
         for p in std::iter::once(&self.structure).chain(self.pseudos.values()) {
             if p.starts_with(&self.work_dir) && self.layout.as_deref()!=Some("numbered") { // 已绑定配置中结构快照例外由 snapshot 校验。
@@ -218,7 +215,6 @@ impl Config {
             }
         }
         ensure!(self.work_dir!=self.outdir,"configuration: work_dir and outdir base must differ");
-        ensure!(!self.budget.ledger.starts_with(&self.work_dir),"configuration: budget.ledger must be outside the run directory");
         Ok(())
     }
 }

@@ -220,15 +220,19 @@ fn b01_until_is_a_recognized_execution_boundary() {
 
 
 #[test]
-fn b01_resource_run_requires_registered_allocation() {
+fn b01_resource_run_checks_slurm_without_budget_registration() {
     let c = Case::new();
     c.scheduled();
+    c.qe_fixture();
+    c.script("scontrol", "#!/bin/sh\nexit 91\n");
     let o = c.cli(&["run", "-c", "input.toml", "--until", "qe-data"]);
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("allocation"));
     let o = c.execution(&["run", "-c", "input.toml", "--until", "qe-data"], 123);
     assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("not yet registered"));
+    let error = String::from_utf8_lossy(&o.stderr);
+    assert!(error.contains("scontrol"), "{error}");
+    assert!(!c.root.join("campaign").exists());
     assert!(!c.root.join("scientific-calls").exists());
 }
 
@@ -324,47 +328,6 @@ fn b05_scf_consumes_stdout_and_rejects_nonconvergence() {
     );
 }
 
-#[test]
-fn b06_unknown_scheduler_preserves_active_allocation() {
-    let c = Case::new();
-    let ledger = "campaign/ledger.json";
-    let out = c.cli(&[
-        "budget",
-        "reserve",
-        "--ledger",
-        ledger,
-        "--label",
-        "isolated-test",
-    ]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let text = String::from_utf8(out.stdout).unwrap();
-    let token = text.trim().strip_prefix("reserved: token=").unwrap();
-    let out = c.cli(&[
-        "budget", "attach", "--ledger", ledger, "--token", token, "--job", "424242",
-    ]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let path = c.root.join(ledger);
-    let before: Value = store::read(&path).unwrap();
-    let _ = c.cli(&["budget", "reconcile", "--ledger", ledger]);
-    let after: Value = store::read(&path).unwrap();
-    assert_eq!(
-        after["allocations"], before["allocations"],
-        "Could not release unknown job if the schedule query failed"
-    );
-    assert_eq!(after["lanes"], before["lanes"], "Consistency must be preserved");
-    assert_eq!(
-        after["spent_node_seconds"], before["spent_node_seconds"],
-        "You can't guess actual consumption"
-    );
-}
 
 #[test]
 fn b07_qe_stages_use_bound_prefix() {
@@ -661,55 +624,6 @@ fn strict_scheduler_identity_and_accounting() {
     }
 }
 
-#[test]
-fn attached_allocations_still_enforce_existing_concurrency_limit() {
-    let c = Case::new();
-    let mut tokens = Vec::new();
-    for _ in 0..4 {
-        let out = c.cli(&[
-            "budget",
-            "reserve",
-            "--ledger",
-            "campaign/ledger.json",
-            "--label",
-            "bound",
-        ]);
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        tokens.push(
-            String::from_utf8(out.stdout)
-                .unwrap()
-                .trim()
-                .strip_prefix("reserved: token=")
-                .unwrap()
-                .to_string(),
-        );
-    }
-    assert!(c
-        .cli(&[
-            "budget",
-            "attach",
-            "--ledger",
-            "campaign/ledger.json",
-            "--token",
-            &tokens[0],
-            "--job",
-            "12"
-        ])
-        .status
-        .success());
-    assert!(c.cli(&["budget", "attach", "--ledger", "campaign/ledger.json",
-        "--token", &tokens[1], "--job", "13"]).status.success());
-    let denied = c.cli(&["budget", "attach", "--ledger", "campaign/ledger.json",
-        "--token", &tokens[2], "--job", "14"]);
-    assert!(!denied.status.success());
-    let ledger: Value = store::read(&c.root.join("campaign/ledger.json")).unwrap();
-    assert_eq!(ledger["allocations"].as_array().unwrap().len(), 2);
-    assert_eq!(ledger["reservations"].as_array().unwrap().len(), 2);
-}
 
 #[test]
 fn prepare_rejects_changed_bound_configuration_without_rewriting() {

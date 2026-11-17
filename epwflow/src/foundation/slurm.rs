@@ -137,7 +137,7 @@ impl std::fmt::Display for RunningNodesPending {
 }
 impl std::error::Error for RunningNodesPending {}
 
-/// 启动读取控制器实时分配；终态计费仍由独立的 sacct 查询负责。
+/// 启动读取控制器实时分配；终态由独立的 sacct 查询负责。
 pub fn running_allocation(job_id: u64) -> Result<Accounting> {
     running_with(
         10,
@@ -160,7 +160,7 @@ fn controller_allocation(job_id: u64) -> Result<Accounting> {
     parse_controller(job_id, &String::from_utf8(out.stdout)?)
 }
 
-/// 仅供启动门使用，不提供计费秒数，不从环境变量猜测资源。
+/// 仅供启动门使用，不提供运行时长，不从环境变量猜测资源。
 fn parse_controller(job_id: u64, text: &str) -> Result<Accounting> {
     let rows: Vec<_> = text.lines().filter(|l| !l.trim().is_empty()).collect();
     ensure!(rows.len() == 1, "scheduler_unknown: Control record missing or not unique");
@@ -216,7 +216,7 @@ fn running_with(
     bail!("scheduler_unknown: Waiting for controller RUNNING Nodes timed out; prohibition on starting scientific programs")
 }
 
-/// 只采用 allocation 行，排除 batch/extern 等 step，未知状态保持预留。
+/// 只采用 allocation 行，排除 batch/extern 等 step，未知状态拒绝继续。
 pub fn accounting(job_id: u64) -> Result<Accounting> {
     ensure!(job_id > 0, "scheduler_unknown: Invalid Job Number");
     let out = Command::new("sacct")

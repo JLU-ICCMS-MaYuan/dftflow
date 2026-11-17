@@ -1,4 +1,4 @@
-//! 本机真实生产函数验收；显式选择、已记账 Slurm 分配、固定来源三者缺一不可。
+//! 本机真实生产函数验收；显式选择、运行中的 Slurm 分配、固定来源三者缺一不可。
 //! 不发布 F2/F3 完整工作流清单，不把此项阶段验收冒充自动链完成。
 use anyhow::{ensure, Context, Result};
 use epwflow::{
@@ -57,23 +57,6 @@ fn actual() -> Result<()> {
     ensure!(
         std::env::var("SLURM_NTASKS")?.parse::<u32>()? == epwflow::foundation::parallelism::mpi_count(&cfg).unwrap(),
         "MPI Numbers do not match"
-    );
-    // 本机历史试验仍共用原账本；不得为测试建立零消费的新账本。
-    let ledger: serde_json::Value = store::read(&cfg.budget.ledger)?;
-    let attempts = ledger["attempts"].as_array().context("Lack of original shared budget records")?;
-    let matching: Vec<_> = attempts
-        .iter()
-        .filter(|a| a["job_id"].as_u64() == Some(job))
-        .collect();
-    ensure!(
-        ledger["campaign"] == "epic-0007"
-            && matching.len() == 1
-            && attempts
-                .iter()
-                .filter(|a| a["reserved_node_seconds"].as_u64().unwrap_or(0) > 0)
-                .count()
-                <= 2,
-        "The shared account book does not register the current allocation or exceed the limit"
     );
     ensure!(!cfg.work_dir.exists(), "Target exists. Covering or retrying is prohibited");
     let states = epwflow::qe_data::nscf::parse_xml(&c.nscf_xml.path)?;
@@ -139,7 +122,7 @@ fn publish(
 }
 
 #[test]
-#[ignore = "Real 40³/20³ EPC ;Requires visible configuration, pre-positioning of shared budgets and Slurm Under implementation"]
+#[ignore = "Real 40³/20³ EPC ;Requires visible configuration, execution within a Slurm allocation"]
 fn actual_lda_fine_matrices() {
     actual().unwrap();
 }

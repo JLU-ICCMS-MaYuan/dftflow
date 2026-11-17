@@ -35,7 +35,6 @@ fn base_config(
     epw: &PathBuf,
     wan: &PathBuf,
     pw2: &PathBuf,
-    ledger: &PathBuf,
 ) -> String {
     format!(
         r#"work_dir = "{work}"
@@ -77,10 +76,6 @@ header = """
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 """
-
-[budget]
-campaign_id = "epic-0007"
-ledger = "{ledger}"
 
 [stages."1.qe-scf"]
 K_POINTS = "automatic\n2 2 2 0 0 0"
@@ -498,7 +493,6 @@ nqf3 = 2
         epw = epw.display(),
         wan = wan.display(),
         pw2 = pw2.display(),
-        ledger = ledger.display(),
     )
 }
 
@@ -542,11 +536,10 @@ exit 0
     write_script(&pw2, "#!/bin/bash\nexit 0\n");
 
     let work = root.join("work");
-    let ledger = root.join("ledger.json");
     let config_path = root.join("config.toml");
     std::fs::write(
         &config_path,
-        base_config(&work, &structure, &pw, &ph, &epw, &wan, &pw2, &ledger),
+        base_config(&work, &structure, &pw, &ph, &epw, &wan, &pw2),
     )
     .unwrap();
 

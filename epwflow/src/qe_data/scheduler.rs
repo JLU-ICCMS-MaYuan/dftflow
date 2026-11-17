@@ -1,4 +1,4 @@
-use super::super::foundation::{budget, config, snapshot, stage::Backend, store};
+use super::super::foundation::{config, snapshot, stage::Backend, store};
 use super::{
     collect_ph, compare,
     manifest::{Fingerprints, QeManifest, ScfRecord, Validation},
@@ -10,17 +10,6 @@ use anyhow::{bail, ensure, Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// 在共享账本上登记本运行，不限制计算时长或存储空间。
-fn charge_budget(binding: &snapshot::RunBinding, cfg: &config::Config) -> Result<String> {
-    budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
-        budget::reserve(
-            ledger,
-            &format!("qe-data:{}", binding.run_id),
-        )
-    })
-    .context("budget_denied: qe-data Budget set aside failed")
-}
-
 /// 执行完整 QE 数据链到 qe-data 交付（FR-001/003~010）：
 /// 一次 SCF → 完整 NSCF → PH 初始化 → 分 q → 归集 → 校验 → 发布清单。
 pub fn run(
@@ -31,17 +20,10 @@ pub fn run(
     launcher: &[String],
     work: &Path,
 ) -> Result<QeManifest> {
-    let _token = charge_budget(binding, cfg)?;
-    let result = run_registered(binding, cfg, qe, backend, launcher, work)?;
-    budget::with_ledger(
-        &cfg.budget.ledger,
-        &cfg.budget.campaign_id,
-        budget::reconcile,
-    )?;
-    Ok(result)
+    run_registered(binding, cfg, qe, backend, launcher, work)
 }
 
-/// 由统一入口在已登记分配内调用；整份分配只计费一次。
+/// 由统一入口在现有 Slurm 分配内执行科学阶段。
 pub fn run_registered(
     binding: &snapshot::RunBinding,
     _cfg: &config::Config,
@@ -334,7 +316,7 @@ pub fn unsupported_beyond_qe_data() -> Result<()> {
     bail!("not_implemented: Full process follow-up phase(F3–F5 )Not yet accessed,submit/run Over qe-data Not Available");
 }
 
-/// qe-data 阶段自检（FR-010 依赖/预算/失败边界）：核对绑定来源未变。
+/// qe-data 阶段自检（FR-010 依赖/失败边界）：核对绑定来源未变。
 pub fn verify_binding(binding: &snapshot::RunBinding) -> Result<()> {
     binding
         .verify()

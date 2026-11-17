@@ -1,6 +1,5 @@
 //! 公开执行入口：固定输入、登记分配、依次执行已有科学阶段并验证交付。
 use super::{
-    budget,
     config::Config,
     slurm,
     snapshot::{self, RunBinding},
@@ -60,7 +59,6 @@ struct Record {
     attempt_id: String,
     until: Boundary,
     state: String,
-    reservation: String,
     job_id: Option<u64>,
     cluster: Option<String>,
     executable: store::Identity,
@@ -107,7 +105,6 @@ fn job_id() -> Result<u64> {
 }
 fn new_record(
     until: Boundary,
-    reservation: String,
     job_id: Option<u64>,
     completed: BTreeMap<String, Completion>,
 ) -> Result<Record> {
@@ -116,7 +113,6 @@ fn new_record(
         attempt_id: store::token(),
         until,
         state: "submission_pending".into(),
-        reservation,
         job_id,
         cluster: None,
         executable: store::Identity::capture(&std::env::current_exe()?)?,
@@ -130,7 +126,7 @@ fn new_record(
     })
 }
 
-/// 所有账本/运行联合更新均先取账本锁、再取运行锁。
+/// 调用方持有运行锁，按持久作业记录阻止重复提交。
 fn previous(
     work: &Path,
     until: Boundary,
@@ -145,7 +141,7 @@ fn previous(
     }
     match r.state.as_str() {
         "submission_pending" | "unknown" => bail!(
-            "scheduler_unknown: Try {} No confirmation of submission, reservation reservation, prohibition of resubmission",
+            "scheduler_unknown: Attempt {} has no confirmed submission receipt; resubmission prohibited",
             r.attempt_id
         ),
         "submitted" | "running" => {
@@ -255,7 +251,7 @@ fn generated_path(work: &Path, until: Boundary) -> PathBuf {
     work.join("epw-state/generated").join(format!("{}.json", until.name()))
 }
 
-/// 生成阶段脚本只固定输入，不查询调度器、不预留预算、不运行科学程序。
+/// 生成阶段脚本只固定输入，不查询调度器、不运行科学程序。
 pub fn generate_phase(config: &Path, until: Boundary) -> Result<PathBuf> {
     generate_phase_for(config, until, &std::env::current_exe()?)
 }
@@ -288,7 +284,7 @@ pub(super) fn generate_phase_for(config: &Path, until: Boundary, executable_path
 }
 
 pub fn run_generated(work: &Path, until: Boundary) -> Result<()> {
-    let (cfg, b) = fixed(work)?;
+    let (_cfg, b) = fixed(work)?;
     let g: Generated = store::read(&generated_path(&b.work_dir, until))?;
     ensure!(g.schema_version == 1 && g.until == until && g.executable.path == std::env::current_exe()?, "input_conflict: Generate Script Identity Different");
     g.executable.verify()?;
@@ -297,10 +293,6 @@ pub fn run_generated(work: &Path, until: Boundary) -> Result<()> {
     let job = job_id()?;
     let a = slurm::running_allocation(job)?;
     ensure!(!a.terminal && a.state == "RUNNING", "allocation: Current distribution is not running");
-    budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
-        budget::reconcile(ledger)?;
-        budget::register_generated(ledger, job).map(|_| ())
-    })?;
     let extend = record_path(&b.work_dir).exists() && load(&b.work_dir)?.state == "succeeded";
     start_bound(&b.work_dir, until, false, extend)
 }
@@ -313,7 +305,7 @@ fn resume_with_mpi(work: &Path, until: Option<Boundary>, submit: bool, resource:
         submit != resource,
         "required: resume There's got to be and only a choice -s or -r"
     );
-    let (cfg, b) = fixed(work)?;
+    let (_cfg, b) = fixed(work)?;
     let boundary = until.unwrap_or(if record_path(&b.work_dir).exists() {
         load(&b.work_dir)?.until
     } else {
@@ -334,7 +326,6 @@ fn resume_with_mpi(work: &Path, until: Option<Boundary>, submit: bool, resource:
                 b.work_dir.join("results/figures/native-figures"),
                 b.work_dir.join("results/figures/comparison-figures"),
                 record_path(&b.work_dir),
-                cfg.budget.ledger.clone(),
             ] {
                 store::recover_finished_lock(&target, job)?;
             }
@@ -348,7 +339,7 @@ fn start_bound(work: &Path, until: Boundary, submit: bool, retry: bool) -> Resul
 }
 
 fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool, mpi: Option<u32>) -> Result<()> {
-    let (mut cfg, b) = fixed(work)?;
+    let (mut cfg, _binding) = fixed(work)?;
     if let Some(mpi) = mpi {
         ensure!(retry && until == Boundary::Interpolation,
             "input_conflict: --mpi For failure only Wannier/Visible resumption of the coarse grid phase");
@@ -358,7 +349,7 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
         super::parallelism::apply(&mut cfg, mpi)?;
     }
     let direct_job = if submit { None } else { Some(job_id()?) };
-    let outcome = budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
+    let outcome = (|| -> Result<_> {
         let _lock = store::Lock::acquire(&record_path(work))?;
         let inherited_mpi = if record_path(work).exists() { load(work)?.mpi_override } else { None };
         if mpi.is_some() {
@@ -380,21 +371,14 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
         if let Some(existing) = existing {
             return Ok((existing, false));
         }
-        // 收到终态后才释放旧预留；查询失败时保守拒绝新任务。
-        budget::reconcile(ledger)?;
-        let token = if let Some(job) = direct_job {
-            budget::registered_allocation(ledger, job)?
-        } else {
-            budget::reserve_workflow(ledger, &format!("workflow:{}", b.run_id))?
-        };
-        let mut r = new_record(until, token, direct_job, completed)?;
+        let mut r = new_record(until, direct_job, completed)?;
         r.calculation_dir =
             Some(calculation_dir.unwrap_or_else(|| work.join("calculations").join(&r.attempt_id)));
         r.retry_failed = retry;
         r.mpi_override = mpi.or(inherited_mpi);
         save(work, &r)?;
         Ok((r, true))
-    })?;
+    })()?;
     let (mut record, fresh) = outcome;
     if !fresh {
         println!(
@@ -410,7 +394,7 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
         return execute(work, &record.attempt_id);
     }
 
-    // 先持久化预留与尝试，再调用一次 sbatch；响应丢失不能退款或重提。
+    // 先持久化尝试，再调用一次 sbatch；响应丢失不能重提。
     let submitted = (|| -> Result<slurm::SubmittedJob> {
         let script = work
             .join("epw-state/slurm")
@@ -459,7 +443,7 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
     })();
     match submitted {
         Ok(job) => {
-            budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
+            (|| -> Result<()> {
                 let _lock = store::Lock::acquire(&record_path(work))?;
                 let mut current = load(work)?;
                 ensure!(
@@ -470,14 +454,13 @@ fn start_bound_with_mpi(work: &Path, until: Boundary, submit: bool, retry: bool,
                     current.job_id.is_none_or(|id| id == job.job_id),
                     "scheduler_unknown: This is not consistent with the count node identity"
                 );
-                budget::attach_once(ledger, &current.reservation, job.job_id)?;
                 current.job_id = Some(job.job_id);
                 current.cluster = job.cluster.clone();
                 if current.state == "submission_pending" {
                     current.state = "submitted".into();
                 }
                 save(work, &current)
-            })?;
+            })()?;
             println!(
                 "submitted: job_id={} until={}\nworkflow_complete: false",
                 job.job_id,
@@ -643,7 +626,7 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
     let (cfg, binding) = fixed(work)?;
     let work = binding.work_dir.as_path();
     let job = job_id()?;
-    let mut record = budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
+    let mut record = (|| -> Result<_> {
         let _lock = store::Lock::acquire(&record_path(work))?;
         let mut r = load(work)?;
         ensure!(
@@ -659,8 +642,6 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
             r.job_id.is_none_or(|id| id == job),
             "allocation: Not a registered job"
         );
-        budget::attach_once(ledger, &r.reservation, job)?;
-        budget::registered_allocation(ledger, job)?;
         let a = slurm::running_allocation(job)?;
         ensure!(
             !a.terminal && a.state == "RUNNING",
@@ -670,7 +651,7 @@ pub fn execute(work: &Path, attempt: &str) -> Result<()> {
         r.state = "running".into();
         save(work, &r)?;
         Ok(r)
-    })?;
+    })()?;
     let calculation = record
         .calculation_dir
         .clone()
@@ -791,23 +772,19 @@ pub fn status(work: &Path, refresh: bool) -> Result<serde_json::Value> {
         return snapshot::status(work);
     }
     if refresh {
-        budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
-            let _lock = store::Lock::acquire(&record_path(work))?;
-            let mut r = load(work)?;
-            if let Some(job) = r.job_id {
-                let a = slurm::accounting(job)?;
-                if a.terminal && matches!(r.state.as_str(), "submitted" | "running") {
-                    r.state = "failed".into();
-                    r.error = Some(format!(
-                        "execution_failed: Slurm {},Lack of numerically validated stage completion records",
-                        a.state
-                    ));
-                    save(work, &r)?;
-                }
+        let _lock = store::Lock::acquire(&record_path(work))?;
+        let mut r = load(work)?;
+        if let Some(job) = r.job_id {
+            let a = slurm::accounting(job)?;
+            if a.terminal && matches!(r.state.as_str(), "submitted" | "running") {
+                r.state = "failed".into();
+                r.error = Some(format!(
+                    "execution_failed: Slurm {},Lack of numerically validated stage completion records",
+                    a.state
+                ));
+                save(work, &r)?;
             }
-            budget::reconcile(ledger)?;
-            Ok(())
-        })?;
+        }
     }
     let r = load(work)?;
     for done in r.completed.values() {

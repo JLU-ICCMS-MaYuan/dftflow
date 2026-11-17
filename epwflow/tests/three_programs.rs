@@ -136,7 +136,7 @@ fn default_generation_is_idempotent_and_does_not_reserve_or_submit() {
 }
 
 #[test]
-fn generated_script_is_authenticated_and_registers_one_allocation() {
+fn generated_script_is_authenticated_without_a_ledger() {
     let c = Case::new();
     success(c.run(0, &[]));
     let script = c.root.join("run/epw-state/generated/qe-data.sh");
@@ -149,9 +149,8 @@ fn generated_script_is_authenticated_and_registers_one_allocation() {
     assert!(!out.status.success(), "The double has to fail");
     let r: serde_json::Value = store::read(&c.root.join("run/epw-state/workflow.json")).unwrap();
     assert_eq!(r["state"], "failed");
-    let l: serde_json::Value = store::read(&c.root.join("campaign/ledger.json")).unwrap();
-    assert_eq!(l["allocations"].as_array().unwrap().len(), 1);
-    assert_eq!(l["reservations"].as_array().unwrap().len(), 0);
+    assert!(!c.root.join("campaign/ledger.json").exists());
+    assert!(r.get("reservation").is_none());
     let attempt = r["attempt_id"].as_str().unwrap();
     let out = c
         .cmd(1)
@@ -169,8 +168,7 @@ fn generated_script_is_authenticated_and_registers_one_allocation() {
         .output()
         .unwrap();
     assert!(!out.status.success());
-    let after: serde_json::Value = store::read(&c.root.join("campaign/ledger.json")).unwrap();
-    assert_eq!(l, after);
+    assert!(!c.root.join("campaign/ledger.json").exists());
 }
 
 #[test]

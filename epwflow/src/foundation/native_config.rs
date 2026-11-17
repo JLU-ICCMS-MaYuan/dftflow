@@ -40,7 +40,6 @@ pub struct Document {
     pub programs: config::Programs,
     #[serde(default)]
     pub slurm: qf_config::SlurmSection,
-    pub budget: config::BudgetConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -527,7 +526,6 @@ fn decode(d: &Document) -> Result<RuntimeConfig> {
         pseudos: d.pseudos.clone(),
         programs: d.programs.clone(),
         slurm: d.slurm.clone(),
-        budget: d.budget.clone(),
         layout: d.layout.clone(),
         kpath: d.kpath.clone(),
         atomic_masses: masses,
@@ -1230,7 +1228,6 @@ impl Config {
         d.pseudos = self.pseudos.clone();
         d.programs = self.programs.clone();
         d.slurm = self.slurm.clone();
-        d.budget = self.budget.clone();
         d.layout = self.layout.clone();
         d.kpath = self.kpath.clone();
         // 算法视图的可变字段仅写回其所有者；其他阶段始终保存自己的原生设置。

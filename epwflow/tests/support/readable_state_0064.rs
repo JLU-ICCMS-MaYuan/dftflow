@@ -42,7 +42,6 @@ fn state_snapshots_keep_relative_paths_and_queued_configuration_across_directori
     value["structure"] = json!("POSCAR");
     value["kpath"] = json!("KPATH.in");
     value["pseudos"]["Si"] = json!("POSCAR");
-    value["budget"]["ledger"] = json!("budget.json");
     for p in value["programs"].as_object_mut().unwrap().values_mut() {
         if let Some(path) = p.get("path").and_then(Value::as_str) {
             if let Ok(relative) = std::path::Path::new(path).strip_prefix(&c.root) {
@@ -63,7 +62,6 @@ fn state_snapshots_keep_relative_paths_and_queued_configuration_across_directori
     assert_eq!(saved.work_dir, c.root.join("run"));
     assert_eq!(saved.structure, c.root.join("POSCAR"));
     assert_eq!(saved.pseudos["Si"], c.root.join("POSCAR"));
-    assert_eq!(saved.budget.ledger, c.root.join("budget.json"));
     assert_eq!(saved.programs.pw.path, c.root.join("pw.x"));
     success(c.stage_submit("electronic", false));
     c.numbered_change(|cfg| cfg.comparison.as_mut().unwrap().points_per_edge = 3);

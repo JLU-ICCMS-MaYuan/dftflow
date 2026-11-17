@@ -1,6 +1,6 @@
 # Ubuntu 上的 MgB₂ EPW 自测试
 
-本目录是独立工作区，配置为 `input.toml`，阶段、日志和结果生成在本目录的 `run/`，账本放在同级 `campaign/`，所有运行数据仍位于 ubuntu 内。Git 仅跟踪本输入和本文档；仓库现有 `/examples/` 忽略规则屏蔽其他新文件，不要强制添加计算数据。
+本目录是独立工作区，配置为 `input.toml`，阶段、日志和结果生成在本目录的 `run/`，所有运行数据仍位于 ubuntu 内。Git 仅跟踪本输入和本文档；仓库现有 `/examples/` 忽略规则屏蔽其他新文件，不要强制添加计算数据。
 
 ## 输入与测试范围
 
@@ -9,7 +9,7 @@
 - 5 个 Wannier 函数，B:pz 与三个键中心 s 初始投影；使用 `energy_only` 自动选窗，实际能窗须查看本次原生日志。
 - 第 8 阶段为 iso／aniso 的 20／30／40 K 能隙计算，μ*=0.1，不执行 Tc 搜索。
 - Slurm header 申请本机 `local` 分区、单节点、12 任务；launcher 启动 12 MPI。小网格用于检查执行链与图表，不代表 MgB₂ 的物理结果或网格已收敛。
-- 账本为 `campaign/ledger.json`，沿用程序要求的 `epic-0007` 身份；没有自动扩大历史项目预算的含义。完整运行前检查生成脚本和本机资源限制。
+- 输入已删除 `[budget]`，程序不再读写 `campaign/ledger.json` 或绑定固定项目名。现有 `campaign/` 只保留历史资料；完整运行前检查生成脚本和本机资源限制。
 
 ## 本机环境
 
@@ -87,7 +87,7 @@ epw_superconductivity -c "input.toml" --stage superconductivity -s
 
 转换源代码、单份本地转换命令、输出和 conversion.log 位于忽略的 repair/；生成文件不纳入 Git，删除后须依据上述同版本源码重新转换。当前路径是 repair/pp/mg_pbe_v1.4.UPF 和 repair/pp/b_pbe_v1.4.uspp.F.UPF。原始文件校验记录为 repair/original-pseudos.sha256。
 
-本机没有 Slurm accounting 数据库，但启用了 jobcomp/filetxt。新版 CLI 在 sacct 明确报告未启用 accounting 时，使用控制器核验正在运行的作业，或对完成日志的 0600 临时副本调用原生 sacct --completion --file，读取真实终态、NNodes、ElapsedRaw 和 ExitCode；副本查询后删除。不修改系统配置、原完成日志或账本，不猜测缺失任务终态。
+本机没有 Slurm accounting 数据库，但启用了 jobcomp/filetxt。新版 CLI 在 sacct 明确报告未启用 accounting 时，使用控制器核验正在运行的作业，或对完成日志的 0600 临时副本调用原生 sacct --completion --file，读取真实终态、NNodes、ElapsedRaw 和 ExitCode；副本查询后删除。不修改系统配置或原完成日志，不猜测缺失任务终态。
 
 后续手动继续 NSCF：
 

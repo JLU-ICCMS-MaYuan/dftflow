@@ -1,6 +1,5 @@
 //! 作业外的原生执行边界：一份脚本、一次调用、一次明确的调度回执。
 use super::{
-    budget,
     config::Config,
     process::ExecutionReport,
     slurm,
@@ -79,9 +78,6 @@ pub struct Task {
     pub sources: Vec<Identity>,
     pub state: String,
     pub job: Option<u64>,
-    pub reservation: Option<String>,
-    #[serde(default)]
-    pub attached: bool,
     pub exit_status: Option<i32>,
     pub duration_secs: f64,
     pub stdout: Option<Identity>,
@@ -113,7 +109,7 @@ pub fn scoped<T>(
     scoped_mode(cfg, generation, submit, resume, false, run)
 }
 
-/// 声子整阶段已登记一个分配，子调用不再提交或预留资源。
+/// 声子整阶段已登记一个分配，子调用不再提交。
 pub fn scoped_allocated<T>(
     cfg: &Config,
     generation: &str,
@@ -215,7 +211,7 @@ fn persist(cfg: &Config, task: &Task) -> Result<()> {
         if task.group.is_none() {
             doc.remove(&label);
         } else {
-            for key in ["Exit code", "Budget association"] {
+            for key in ["Exit code"] {
                 if let Some(fields) = doc.sections.get_mut(&label) {
                     fields.remove(key);
                 }
@@ -237,12 +233,8 @@ fn persist(cfg: &Config, task: &Task) -> Result<()> {
                     .join(" "),
             ),
             ("Duration seconds", format!("{:.3}", task.duration_secs)),
-            ("Budget attached", task.attached.to_string()),
         ] {
             doc.set(&label, key, value);
-        }
-        if let Some(token) = &task.reservation {
-            doc.set(&label, "Budget association", token);
         }
         if let Some(exit) = task.exit_status {
             doc.set(&label, "Exit code", exit);
@@ -314,8 +306,6 @@ pub fn tasks(cfg: &Config) -> Result<Vec<Task>> {
                 sources: Vec::new(),
                 state: state.into(),
                 job,
-                reservation: fields.get("Budget association").cloned(),
-                attached: fields.get("Budget attached").is_some_and(|v| v == "true"),
                 exit_status: fields.get("Exit code").map(|v| v.parse()).transpose()?,
                 duration_secs: field("Duration seconds")?.parse()?,
                 stdout: output.is_file().then(|| optional_identity(&output)),
@@ -574,16 +564,6 @@ pub fn reconcile_task(cfg: &Config, _resume: bool, task: &mut Task) -> Result<()
         ensure!(code >= 0 && signal >= 0, "scheduler_unknown: negative ExitCode");
         task.exit_status = Some(if signal == 0 { code } else { 128 + signal });
         task.duration_secs = accounting.node_seconds as f64 / accounting.nodes.max(1) as f64;
-        if let Some(token) = &task.reservation {
-            budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
-                // 另一方法的结算可能已同时结算本任务；不能重新消费已撤下的 token。
-                if l.has_unsettled_token(token) {
-                    budget::attach_once(l, token, job)?;
-                }
-                budget::reconcile(l)
-            })?;
-            task.attached = true;
-        }
         task.state = if accounting.state == "COMPLETED" && task.exit_status == Some(0) {
             "awaiting_validation"
         } else {
@@ -819,21 +799,13 @@ pub fn execute(command: &[String], work: &Path, stem: &str) -> Result<ExecutionR
     Err(Paused.into())
 }
 
-/// 两个独立方法与旧逐任务入口共用同一提交／预算边界。
+/// 两个独立方法与旧逐任务入口共用同一提交边界。
 pub fn submit_task(cfg: &Config, task: &mut Task) -> Result<()> {
     ensure!(
         task.state == "prepared",
         "scheduler_unknown: task submitted or submission state unknown"
     );
     verify(task)?;
-    task.reservation = Some(budget::with_ledger(
-        &cfg.budget.ledger,
-        &cfg.budget.campaign_id,
-        |l| {
-            budget::reconcile(l)?;
-            budget::reserve_workflow(l, &format!("native:{}", task.id))
-        },
-    )?);
     task.state = "submission_pending".into();
     persist(cfg, task)?;
     let out = Command::new("sbatch")
@@ -855,11 +827,6 @@ pub fn submit_task(cfg: &Config, task: &mut Task) -> Result<()> {
         Ok(job) => {
             task.job = Some(job.job_id);
             task.state = "submitted".into();
-            persist(cfg, task)?;
-            budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |l| {
-                budget::attach_once(l, task.reservation.as_ref().unwrap(), job.job_id)
-            })?;
-            task.attached = true;
             persist(cfg, task)?;
             println!("job_id: {}", job.job_id);
         }
@@ -1080,8 +1047,6 @@ fn prepare_mode(
         sources,
         state: "prepared".into(),
         job: None,
-        reservation: None,
-        attached: false,
         exit_status: None,
         duration_secs: 0.,
         stdout: None,

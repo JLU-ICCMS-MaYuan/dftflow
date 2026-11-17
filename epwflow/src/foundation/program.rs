@@ -1,11 +1,11 @@
-//! 三个独立阶段入口，共用已有配置、账本、状态和科学执行器。
+//! 三个独立阶段入口，共用已有配置、状态和科学执行器。
 use super::{
-    cli::{self, BudgetAction, EpwCommand, ResultsCommand},
+    cli::{self, EpwCommand, ResultsCommand},
     status,
     workflow::{self, Boundary},
 };
 use anyhow::{ensure, Context, Result};
-use clap::{ArgGroup, Parser, ValueEnum};
+use clap::{ArgGroup, Parser};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,17 +31,9 @@ impl Phase {
     }
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum BudgetOperation {
-    Status,
-    Reserve,
-    Attach,
-    Reconcile,
-}
-
 #[derive(Parser)]
 #[command(about = "Generate, submit or resume this stage; read input.toml and generate scripts by default")]
-#[command(group(ArgGroup::new("operation").args(["check", "prepare_only", "status", "probe", "import", "migrate_state", "collect", "plot", "results_check", "export_comparison", "budget", "execute_attempt", "run_script", "all", "submit_chain"])))]
+#[command(group(ArgGroup::new("operation").args(["check", "prepare_only", "status", "probe", "import", "migrate_state", "collect", "plot", "results_check", "export_comparison", "execute_attempt", "run_script", "all", "submit_chain"])))]
 struct Options {
     #[arg(short = 'c', long, default_value = "input.toml")]
     config: PathBuf,
@@ -55,10 +47,10 @@ struct Options {
     import_work: Option<PathBuf>,
     /// 导入已有 PH save；仅执行 q2r、matdyn 和绘图。
     #[arg(help = "Import existing PH save data; run only q2r, matdyn and plotting", long_help = "Import existing PH save data; run only q2r, matdyn and plotting")]
-    #[arg(long, value_name = "SAVE", conflicts_with_all = ["import_work", "migrate_state", "all", "run", "status", "probe", "import", "collect", "plot", "results_check", "budget", "export_comparison", "submit_chain"])]
+    #[arg(long, value_name = "SAVE", conflicts_with_all = ["import_work", "migrate_state", "all", "run", "status", "probe", "import", "collect", "plot", "results_check", "export_comparison", "submit_chain"])]
     import_phonon: Option<PathBuf>,
-    /// 一次性迁移旧编号工作区的隐藏状态；保留现用科学结果与预算，不提交计算。
-    #[arg(help = "Migrate legacy hidden state once, preserving scientific results and budget without submitting calculations", long_help = "Migrate legacy hidden state once, preserving scientific results and budget without submitting calculations")]
+    /// 一次性迁移旧编号工作区的隐藏状态；保留现用科学结果，不提交计算。
+    #[arg(help = "Migrate legacy hidden state once, preserving scientific results without submitting calculations", long_help = "Migrate legacy hidden state once, preserving scientific results without submitting calculations")]
     #[arg(long, conflicts_with_all = ["submit", "run", "status", "check", "import_work", "all", "resume"])]
     migrate_state: bool,
     #[arg(long, hide = true)]
@@ -79,8 +71,8 @@ struct Options {
     #[arg(help = "Submit stage allocations with automatic postprocessing; gap methods use independent native jobs", long_help = "Submit stage allocations with automatic postprocessing; gap methods use independent native jobs")]
     #[arg(short = 's', long, conflicts_with = "run")]
     submit: bool,
-    /// 在已经登记的 Slurm 分配内运行本阶段。
-    #[arg(help = "Run this stage within an already registered Slurm allocation", long_help = "Run this stage within an already registered Slurm allocation")]
+    /// 在现有 Slurm 分配内运行本阶段。
+    #[arg(help = "Run this stage within an existing Slurm allocation", long_help = "Run this stage within an existing Slurm allocation")]
     #[arg(short = 'r', long)]
     run: bool,
     /// 恢复失败阶段；显式 --stage scf --resume -s 覆盖旧结果并强制重算，须搭配 -s 或 -r。
@@ -117,16 +109,6 @@ struct Options {
     formats: Vec<String>,
     #[arg(long, value_name = "SOURCES")]
     export_comparison: Option<PathBuf>,
-    #[arg(long, value_enum)]
-    budget: Option<BudgetOperation>,
-    #[arg(long)]
-    ledger: Option<PathBuf>,
-    #[arg(long)]
-    label: Option<String>,
-    #[arg(long)]
-    token: Option<String>,
-    #[arg(long)]
-    job: Option<u64>,
     #[arg(long, hide = true)]
     execute_attempt: Option<String>,
     #[arg(long, hide = true)]
@@ -260,7 +242,6 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
     }
     if numbered
         && !o.probe
-        && o.budget.is_none()
         && o.import.is_none()
         && !o.collect
         && !o.plot
@@ -340,10 +321,10 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         o.stage.is_none(),
         "input_conflict: --stage requires the current layout='numbered' configuration"
     );
-    if o.submit && !o.probe && o.budget.is_none() && o.work.is_none() {
+    if o.submit && !o.probe && o.work.is_none() {
         super::config::Config::load(&o.config)?;
     }
-    ensure!(!o.submit || o.probe || o.budget.is_some(),
+    ensure!(!o.submit || o.probe,
         "migration_required: new native submissions require layout='numbered'; set a new work_dir and explicitly import the old workspace with --import-work; internal-executor wrapper scripts cannot be submitted");
     let work = || o.work.clone().context("required: this operation requires -w/--work");
     let results = || o.results.clone().context("required: this operation requires --results");
@@ -366,8 +347,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         || o.collect
         || o.plot
         || o.results_check
-        || o.export_comparison.is_some()
-        || o.budget.is_some();
+        || o.export_comparison.is_some();
     ensure!(
         !maintenance || (!o.submit && !o.run && !o.resume),
         "input_conflict: read-only, import or preparation operations cannot execute/submit/resume simultaneously"
@@ -480,27 +460,6 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
                     json: o.json,
                 },
             }
-        }
-    } else if let Some(operation) = o.budget {
-        let ledger = o.ledger.context("required: ledger operations require --ledger")?;
-        let action = match operation {
-            BudgetOperation::Status => BudgetAction::Status {
-                ledger,
-                json: o.json,
-            },
-            BudgetOperation::Reconcile => BudgetAction::Reconcile { ledger },
-            BudgetOperation::Attach => BudgetAction::Attach {
-                ledger,
-                token: o.token.context("required: --token required")?,
-                job: o.job,
-            },
-            BudgetOperation::Reserve => BudgetAction::Reserve {
-                ledger,
-                label: o.label.context("required: --label required")?,
-            },
-        };
-        EpwCommand::Budget {
-            action: Some(action),
         }
     } else {
         if o.resume {

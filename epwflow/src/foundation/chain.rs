@@ -1,4 +1,4 @@
-//! 三程序的脚本与依赖提交；科学阶段、执行校验和预算仍由各程序拥有。
+//! 三程序的脚本与依赖提交；科学阶段和执行校验仍由各程序拥有。
 use super::{
     config::Config,
     slurm, snapshot, store,
@@ -192,7 +192,7 @@ pub fn submit(work: &Path) -> Result<()> {
         store::write(&target, &receipt)?;
         ensure!(
             out.status.success(),
-            "scheduler_unknown: Total submissions sbatch Failed, reservation submitted and pending receipt: {}",
+            "scheduler_unknown: Total submissions sbatch Failed, submission receipt unknown: {}",
             String::from_utf8_lossy(&out.stderr)
         );
         let job = slurm::parse_job_id(&String::from_utf8(out.stdout)?)?;

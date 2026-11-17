@@ -1,5 +1,7 @@
 # 平层配置契约
 
+> 2026-11-17 最新约定：预算账本功能已按用户要求彻底撤销。本文件涉及账本、campaign 身份、预算预留／结算及全局两个作业限制的旧条款均已失效；当前计算只依赖工作流记录、Slurm 作业身份及科学核验。历史消耗与验收记录不改写。详见 [0058 最新需求](../../0058-epw-remove-resource-limits/spec.md)。
+
 说明：前部保留最初平层版本的需求及验收记录；2026-10-28 已确认的八主阶段方案见本文后部追加章节，旧的“所有段禁止子表”限制已由该方案替代。
 
 根字段继续使用 `schema_version=2`、work_dir、outdir、structure、pseudos、programs、resources、budget、可选 layout/kpath；科学字段仅允许放在下表对应的同层段内。

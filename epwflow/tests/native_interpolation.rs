@@ -45,7 +45,6 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
     let mut cfg: config::Config = toml::from_str(include_str!("fixtures/input.toml")).unwrap();
     cfg.work_dir = root.join("run");
     cfg.outdir = root.join("out");
-    cfg.budget.ledger = root.join("fixture-ledger.json");
     cfg.structure = root.join("POSCAR");
     fs::write(
         &cfg.structure,
@@ -201,7 +200,7 @@ fn native_pipeline_pairs_new_coarse_and_isolates_smearings() {
     let calls = fs::read_to_string(c.root.join("epw-calls")).unwrap();
     assert_eq!(calls.lines().count(), 4);
     assert_eq!(calls.matches("coarse ").count(), 2);
-    assert!(!c.cfg.budget.ledger.exists());
+    assert!(!c.root.join("fixture-ledger.json").exists());
     // 在首个展宽有效时也不能复用未知的粗网格现场。
     assert!(run(&c).is_err());
     assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap(), calls);
@@ -452,7 +451,7 @@ fn failed_coarse_requires_explicit_retry_and_overwrites_failed_outputs() {
     assert_eq!(calls(&c).lines().count(), 4);
     assert!(!c.cfg.work_dir.join("native-attempts").exists());
     assert!(!c.cfg.work_dir.join("fine").exists());
-    assert!(!c.cfg.budget.ledger.exists());
+    assert!(!c.root.join("fixture-ledger.json").exists());
 }
 
 #[test]
