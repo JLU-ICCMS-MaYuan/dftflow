@@ -48,13 +48,34 @@ fn decimal(t: i64) -> String {
 pub fn directory_name(cfg: &Config, mode: Mode) -> String {
     let settings = cfg.solver_for(mode).expect("Configuration validated at public entry");
     let ts = &settings.gap_temperatures_k;
+
+    let degaussq = smearing(cfg, mode).expect("Configuration validated at public entry");
+
     format!(
-        "{}-mu{}-{}-{}",
+        "{}-mu{}-Tc{}-{}-degaussq{}meV",
         method(mode),
         settings.mu_star,
         ts[0],
-        ts[ts.len() - 1]
+        ts[ts.len() - 1],
+        degaussq
     )
+}
+
+/// 目录与原生输入共用同一展宽，显式非法值不能静默回退第七步。
+pub(crate) fn smearing(cfg: &Config, mode: Mode) -> Result<f64> {
+    let settings = cfg.solver_for(mode)?;
+    let input: serde_json::Value = cfg.native_value(&[
+        crate::foundation::native_config::SUPER, method(mode), "epw", "INPUTEPW",
+    ])?;
+    let value = if let Some(value) = input.get("degaussq") {
+        value.as_f64().context("configuration: superconductivity degaussq must be a number in meV")?
+    } else {
+        *cfg.interpolation.phonon_smearings_mev.get(settings.spectrum_index as usize)
+            .context("configuration: superconductivity spectrum_index is out of range")?
+    };
+    ensure!(value.is_finite() && value > 0.,
+        "configuration: superconductivity degaussq must be finite and positive (meV)");
+    Ok(value)
 }
 
 pub fn render(requests: &[Request], source: &NativeInputs) -> Result<String> {
@@ -657,4 +678,36 @@ pub(crate) fn run_mode(
 
 pub fn allocated_finish(_config: &std::path::Path, _group: &str, _exit: i32) -> Result<()> {
     anyhow::bail!("unsupported_version: legacy finalization scripts disabled; collect method results with the current public command")
+}
+
+#[cfg(test)]
+mod directory_tests {
+    use super::*;
+    fn config() -> Config {
+        let mut cfg: Config = toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
+        cfg.superconductivity.mode = Mode::Iso;
+        cfg.superconductivity.mu_star = 0.13;
+        cfg.superconductivity.gap_temperatures_k = vec![20., 25.5, 40.];
+        cfg
+    }
+    #[test]
+    fn method_directory_uses_explicit_smearing_and_preserves_plan_endpoints() {
+        let mut cfg = config();
+        assert_eq!(directory_name(&cfg, Mode::Iso), "iso-mu0.13-Tc20-40-degaussq0.5meV");
+        cfg.set_native(&[crate::foundation::native_config::SUPER,"iso","epw","INPUTEPW","degaussq"], serde_json::json!(2.0)).unwrap();
+        assert_eq!(directory_name(&cfg, Mode::Iso), "iso-mu0.13-Tc20-40-degaussq2meV");
+        cfg.superconductivity.mode = Mode::Aniso;
+        cfg.superconductivity.mu_star = 0.1;
+        cfg.superconductivity.gap_temperatures_k = vec![20.25];
+        assert_eq!(directory_name(&cfg, Mode::Aniso), "aniso-mu0.1-Tc20.25-20.25-degaussq0.5meV");
+    }
+    #[test]
+    fn missing_smearing_uses_selected_index_and_invalid_explicit_value_is_rejected() {
+        let mut cfg = config();
+        cfg.interpolation.phonon_smearings_mev = vec![0.5, 2.];
+        cfg.superconductivity.spectrum_index = 1;
+        assert_eq!(smearing(&cfg, Mode::Iso).unwrap(), 2.);
+        cfg.superconductivity.spectrum_index = 2;
+        assert!(smearing(&cfg, Mode::Iso).is_err());
+    }
 }

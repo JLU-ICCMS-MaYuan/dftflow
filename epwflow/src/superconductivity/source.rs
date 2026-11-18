@@ -14,6 +14,30 @@ use std::{
     path::{Component, Path},
 };
 
+/// 将独立求解展宽与原生矩阵路线固定在现有输入视图中，不改科学源文件。
+fn configured_stages(cfg: &Config) -> Result<serde_json::Value> {
+    use crate::foundation::{config::Mode, native_config::SUPER};
+    let mut stage: serde_json::Value = cfg.native_value(&[SUPER])?;
+    for mode in [Mode::Iso, Mode::Aniso] {
+        if cfg.superconductivity.mode != Mode::Both && cfg.superconductivity.mode != mode { continue; }
+        let name = if mode == Mode::Iso { "iso" } else { "aniso" };
+        let input = &mut stage[name]["epw"]["INPUTEPW"];
+        let explicit = input.get("degaussq").is_some();
+        input["degaussq"] = serde_json::json!(super::batch::smearing(cfg, mode)?);
+        if explicit {
+            ensure!(input.get("fila2f").is_none_or(|v| v.as_str().is_some_and(|s|s.trim().is_empty())),
+                "configuration: independent superconductivity degaussq requires matrix input; set fila2f='' instead of reusing a fixed spectrum");
+            input["fila2f"] = serde_json::json!("");
+        }
+        // 回填后的原生值不再同时声明为运行时派生，避免输入所有权冲突。
+        if let Some(derived) = stage["workflow"]["derived"].as_object_mut() {
+            derived.remove(&format!("{name}.epw.INPUTEPW.degaussq"));
+            if explicit { derived.remove(&format!("{name}.epw.INPUTEPW.fila2f")); }
+        }
+    }
+    Ok(serde_json::json!({SUPER: stage}))
+}
+
 pub fn artifact_path(work: &Path, a: &Artifact) -> Result<std::path::PathBuf> {
     ensure!(
         !a.relative_path.is_absolute()
@@ -150,9 +174,7 @@ pub fn bind_native_roles(
         .collect::<Result<Vec<_>>>()?;
     evidence.verify()?;
     Ok(NativeInputs {
-        configured_stages: Some(
-            serde_json::json!({"8.epw-superconductivity":cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::SUPER])?}),
-        ),
+        configured_stages: Some(configured_stages(cfg)?),
         interpolation_digest: if crate::foundation::layout::enabled(work) {"native".into()}else{evidence.sha256.clone()},
         prefix: cfg.qe.prefix.clone(),
         k_grid: cfg.interpolation.k_grid,
@@ -173,7 +195,8 @@ pub fn bind_native_roles(
 
 /// 仅各向同性谱路线不读取细网格矩阵、原生日志或更早阶段。
 pub fn selected(cfg:&Config)->Result<NativeInputs> {
-    let matrix_iso=cfg.native_value::<String>(&[crate::foundation::native_config::SUPER,"iso","epw","INPUTEPW","fila2f"]).ok().is_some_and(|s|s.trim().is_empty());
+    let configured = configured_stages(cfg)?;
+    let matrix_iso=configured[crate::foundation::native_config::SUPER]["iso"]["epw"]["INPUTEPW"]["fila2f"].as_str().is_some_and(|s|s.trim().is_empty());
     if cfg.superconductivity.mode!=crate::foundation::config::Mode::Iso || matrix_iso {
         return native_selected(cfg);
     }
@@ -183,7 +206,7 @@ pub fn selected(cfg:&Config)->Result<NativeInputs> {
     let samples=cfg.native_value::<usize>(&[crate::foundation::native_config::SUPER,"iso","epw","INPUTEPW","nqstep"]).unwrap_or(cfg.interpolation.spectral_points as usize);
     crate::interpolation::native::NativeSpectrum::read(&path,samples)?;
     Ok(NativeInputs {
-        configured_stages:Some(serde_json::json!({"8.epw-superconductivity":cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::SUPER])?})),
+        configured_stages:Some(configured),
         interpolation_digest:"native-spectrum".into(),prefix:cfg.qe.prefix.clone(),k_grid:cfg.interpolation.k_grid,q_grid:cfg.interpolation.q_grid,
         spectral_points:samples,eps_acoustic_cm1:cfg.interpolation.eps_acoustic_cm1,
         a2f:Identity::reference(&path),crystal:Identity::reference(&dir.join("crystal.fmt")),selecq:None,
@@ -209,9 +232,28 @@ fn native_selected(cfg:&Config)->Result<NativeInputs> {
     ensure!(paths.len()==result.ephmat_shards+4,"data_invalid: inconsistent matrix shard count");
     let a2f=dir.join(format!("{}.a2f",cfg.qe.prefix));
 
-    Ok(NativeInputs{configured_stages:Some(serde_json::json!({"8.epw-superconductivity":cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::SUPER])?})),
+    Ok(NativeInputs{configured_stages:Some(configured_stages(cfg)?),
         interpolation_digest:"native".into(),prefix:cfg.qe.prefix.clone(),k_grid:cfg.interpolation.k_grid,q_grid:cfg.interpolation.q_grid,
         spectral_points:cfg.interpolation.spectral_points as usize,eps_acoustic_cm1:cfg.interpolation.eps_acoustic_cm1,
         a2f:Identity::reference(&a2f),crystal:Identity::reference(&dir.join("crystal.fmt")),selecq:Some(Identity::reference(&dir.join("selecq.fmt"))),
         matrix_outdir:out,matrix_files:paths.iter().map(|p|Identity::reference(p)).collect(),states:data.states})
+}
+
+#[cfg(test)]
+mod smearing_tests {
+    use super::*;
+    use crate::foundation::{config::Mode, native_config::SUPER};
+    #[test]
+    fn independent_method_widths_choose_matrix_route_and_fallback_is_local() {
+        let mut cfg: Config=toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
+        cfg.superconductivity.mode=Mode::Both;
+        cfg.set_native(&[SUPER,"aniso","epw","INPUTEPW","degaussq"],serde_json::json!(2.)).unwrap();
+        let values=configured_stages(&cfg).unwrap();
+        assert_eq!(values[SUPER]["aniso"]["epw"]["INPUTEPW"]["degaussq"],2.);
+        assert_eq!(values[SUPER]["aniso"]["epw"]["INPUTEPW"]["fila2f"],"");
+        assert_eq!(values[SUPER]["iso"]["epw"]["INPUTEPW"]["degaussq"],0.5);
+        assert!(values[SUPER]["iso"]["epw"]["INPUTEPW"].get("fila2f").is_none());
+        cfg.set_native(&[SUPER,"aniso","epw","INPUTEPW","fila2f"],serde_json::json!("old.a2f")).unwrap();
+        assert!(configured_stages(&cfg).is_err());
+    }
 }

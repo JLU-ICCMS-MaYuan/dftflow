@@ -406,7 +406,8 @@ pub fn run_attempt(
             "input_conflict: native spectrum copy differs from its source");
     }
     inputs.stage_matrix_links(dir,request.mode)?;
-    if inputs.matrix_route(request.mode) {
+    // 旧单点各向异性入口也需要将选 q 文件交接到本次求解目录。
+    if request.mode == Mode::Aniso || inputs.matrix_route(request.mode) {
         crate::foundation::workspace_data::link(
             &inputs
                 .selecq

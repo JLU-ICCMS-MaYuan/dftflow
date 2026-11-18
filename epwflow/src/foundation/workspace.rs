@@ -327,6 +327,11 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
         if name.ends_with(".jobs") || name.ends_with(".sh") || slurm_log(&path) {
             continue;
         }
+        // 第八步参数扫描保留各方法的既有结果，只重置当前阶段调度事实。
+        if step == Step::Superconductivity && entry.file_type()?.is_dir()
+            && (name.starts_with("iso-mu") || name.starts_with("aniso-mu")) {
+            continue;
+        }
         if entry.file_type()?.is_dir() {
             fs::remove_dir_all(&path)?;
         } else {

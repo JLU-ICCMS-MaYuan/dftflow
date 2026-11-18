@@ -68,3 +68,38 @@ CARGO_PROFILE_TEST_DEBUG=0 bash "scripts/build-native.sh" test -p epwflow --test
 一次公开提交得到 1334469／1334470 两个独立作业；各执行一次 EPW 的 20／30／40 K 完整列表，六点均执行完成、收敛且数据有效。显式 μ*=0.05 保留，实际目录为 iso／aniso-mu0.05-20-40；较新的 0050 规定作业内收尾，无需再次公开命令归集。
 
 实际作业、制品、失败修复、完整回归、安装及示例清理状态统一见 [联合验收记录](../0050-epw-stage-results/real-chain-validation.md)。当前真实链已完成；部署及文档收尾以该记录的最终状态为准，不把旧替身证据改写成科学验证。
+
+
+## 2026-11-18：新版 #49 独立展宽与参数目录落地
+
+### 本轮范围与事实
+
+用户要求“现在你来落地实现 #49”，随后明确“按照新的 #49 重新执行！”。开始时工作区已存在本功能 Spec 更新及部分命名代码；实施过程中重新读取了更新后的规则，采用第 8 步显式 degaussq 优先、第 7 步 spectrum_index 回退。没有采用更新前仅从第 7 步命名的方案。
+
+- FR-003／004、SC-002：目录使用 mode、μ*、完整列表首末温度、有效展宽；2.0 规范为 2，示例为 aniso-mu0.1-Tc20-40-degaussq2meV。恢复剩余子批次仍使用完整原计划目录。目录与原生输入共用 smearing 解析，非法显式值不能静默回退。
+- 独立展宽：将有效值纳入已有 NativeInputs 的配置视图，显式值默认选择细矩阵路线，不继续读取旧 α²F；显式非空 fila2f 与独立重算冲突时报告具体原因，不伪称新展宽已用于旧谱。未填写时保留谱选择机制并回填所选值。
+- 旧结果保护：第 8 步参数更新仅重置当前状态，保留 iso-mu／aniso-mu 方法目录；不同展宽结果并存，不把旧成功点登记为新参数成功。不实现本轮范围外的细网格分层目录，不自动迁移旧格式路径。
+- FR-006～008：双方法独立提交、未知回执防重提、异常温度／数据、早停恢复及已有单点证据继续核验。扩展回归发现旧单点 aniso 未交接 selecq.fmt，补齐相同文件交接后通过原用例。
+
+### 验证
+
+证据目录为 docs/local/0049-directory-parameters-20261118/，受控进程的临时工作区为 /var/tmp/dftflow-0049-tests/；均不纳入 Git。不修改用户 TMPDIR 或系统挂载配置，仅为本次命令指定测试临时目录。
+
+| 验证 | 结果 | 证据 |
+| --- | --- | --- |
+| 最终 release 库单元 | 90 通过，4 项既有外部来源测试忽略 | final-regression-v2.log |
+| 超导／旧单点／原生交付回归 | 10 通过、0 失败 | final-regression-v2.log |
+| 多温度公开进程 | 7 通过、0 失败 | multitemperature-v3.log |
+| 固定入口构建与发布 | 4 个产品与构建缓存制品哈希一致；4 个 --help 成功 | build.log、verification.json |
+
+合计 107 项通过、4 项忽略。忽略不计通过；本轮没有提交真实 QE／EPW／Slurm 科学作业，不宣称新展宽的真实 Tc 或能隙通过科学验收。
+
+公开用例实际执行受控原生脚本，验证新目录、0.5→2 meV 的输入值、两方法独立回执及早停恢复。参数切换前后旧方法 epw.out 哈希保持，fine 原生日志哈希保持，QE 与 fine 调用计数不增加。夹具先显式建立 1～7 步来源，补全矩阵路线的 DOS 交付并隔离旧模拟作业号；未恢复生产隐式补上游，也未放宽科学校验。
+
+中间失败如实保留：initial-contract.log 的断言仍使用旧目录；multitemperature.log 的新增测试类型推断失败；multitemperature-final.log 的派生／显式 fila2f 冲突及旧夹具缺 DOS；final-regression.log 的旧单点 aniso 缺 selecq 交接。最终代码和夹具分别修复后重跑上述最终集合，无失败被改成 ignored。
+
+### 构建与协作边界
+
+按 scripts/build-native.sh build --release -j 2 -p epwflow --bins --locked 成功构建，直接覆盖 bin/epwflow 的四个固定产品，不建立公开版本目录或旧命令备份。当前共享工作树还有并行 #61 等未提交改动，构建使用当前工作树，不能把制品表述为仅本次 Git 提交；源码边界与产品哈希见 verification.json。本次提交只覆盖 #49 的实现、测试、设计和 native-superconductivity 总览，不纳入 #61、线宽、算例配置或 PDF 删除。
+
+已使用 big-project-overview-maintainer 回写当前行为，并更新本 Feature 快速开始。模块手册和根 README 的既有导航仍能到达相应说明，本轮未覆盖它们正在进行的其他功能编辑。GitHub #49 只读核对为历史 CLOSED、唯一 type:feature；本轮不修改线上状态、不推送，新版 Spec 的远程发布仍待后续授权，不能把本地交付当成线上新一轮关闭验收。
