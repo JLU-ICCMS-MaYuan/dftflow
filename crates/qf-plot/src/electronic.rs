@@ -15,7 +15,7 @@ pub const REFERENCE_WIDTH: u32 = 1;
 pub const INTERPOLATED_STROKE: ComparisonStroke = ComparisonStroke {
     dash: 2,
     gap: 2,
-    width: 2,
+    width: 1,
 };
 /// 元素投影使用不同短虚线周期，防止多条完全重合时后绘元素完全覆盖先绘元素。
 pub fn element_stroke(index: usize) -> ComparisonStroke {
