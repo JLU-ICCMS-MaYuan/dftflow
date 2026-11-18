@@ -186,7 +186,54 @@ epw_wannier --config "epwinput.toml" --migrate-state
 
 实施结论：用户要求可实际使用的当前输入；本轮补齐此前仅有文档的公共参数／数组解析，再同步 Ubuntu MgB₂ 配置，不写入 CLI 尚不支持的格式。保留当前科学参数数值、12 MPI、四个能窗及排除带，转换为八主阶段／独立用途子段。按 0070 删除无效的双初值及温度搜索 workflow 字段，不改原生 iso／aniso 温度列表。
 
-本轮包含必要解析实现、回归、固定 CLI 覆盖与范围提交，不提交科学作业，不改写既有配置版本或科学文件；本轮不操作线上 Issue。上文“仅文档／待实现”描述前一轮边界，后续完成事实以本轮验收为准。
+本轮包含必要解析实现、回归、固定 CLI 覆盖与范围提交，不提交科学作业，不改写既有配置版本或科学文件；本轮不操作线上 Issue。上文”仅文档／待实现”描述前一轮边界，后续完成事实以本轮验收为准。
+
+## 2026-11-18：fermi_source 提取到全局配置
+
+### 原始需求记录
+
+> 我现在的代码不需要在对比的时候再算一次 qe，所以 input.toml 里面的 [stages.”6.epw-coarse”.comparison] 是不是可以删掉，其他的参数可以精简吗？
+>
+> fermi_source 这么通用，我看好几个地方都用的上，能不能把它移动到 [baseparams] 下面。
+
+用户确认当前对比功能直接复用已有 QE 数据（第 3、4 步结果），不需要在第 6 步重新计算 QE，因此 `[stages.”6.epw-coarse”.comparison]` 配置段可以删除。
+
+用户发现 `fermi_source` 在多个阶段（第 5、6、7 步）重复配置，希望提取到 `[baseparams]` 作为全局默认值。
+
+### 背景与取舍
+
+**`fermi_source` 的作用**：指定费米能级的数据来源（`f2` = 第 2 步 NSCF），用于 Wannier 能窗选择和 EPW 能量参考。NSCF 使用更密的 k 网格，费米能级比 SCF 更准确，是标准选择。
+
+**当前实现限制**：`fermi_source` 目前在代码中定义为 `Interpolation` 结构体的字段（对应 `[workflow.”7.epw-fine”]`），不支持从 `[baseparams]` 读取和回填。实现该功能需要修改：
+- `epwflow/src/foundation/config.rs`：在 `RuntimeConfig` 顶层添加 `fermi_source` 字段
+- `epwflow/src/foundation/native_config.rs`：实现回填逻辑（阶段显式值优先，未填写时使用全局默认）
+- `epwflow/src/foundation/config_versions.rs`：处理配置版本兼容
+- 相关测试用例和验证
+
+**用户答复**：
+
+> 先解决选择 3，f2 的问题暂时采用方案 2（优化注释，保持代码不变）。把这个要求写成 issue 和 spec。更新到旧的 issue 和 spec 里面
+
+用户确认暂不实施全局提取，先通过优化注释解决重复问题，将全局提取需求记录到 Issue 和 Spec 中作为后续改进。
+
+### 临时方案：优化注释（已完成）
+
+在 `examples/MgB2/ubuntu/input.toml` 中：
+- 删除了 `[stages.”6.epw-coarse”.comparison]` 配置段（31 行）
+- 在 `[workflow.”5.epw-wannier”]` 中添加详细注释说明 `fermi_source = “f2”` 的含义和原因
+- 在 `[workflow.”6.epw-coarse”]` 和 `[workflow.”7.epw-fine”]` 中添加简短注释 `# 同上，使用 NSCF 费米能`
+
+### 后续需求：全局配置支持（待实施）
+
+- **US6**：用户在 `[baseparams]` 一次配置 `fermi_source`，各 EPW 阶段自动继承，避免重复填写。
+- **FR-019**：`[baseparams]` 支持 `fermi_source` 字段，值为 `f2` 或 `fine_fixed_electrons`；仅向 Wannier 和 EPW 阶段提供默认值。
+- **FR-020**：阶段显式 `fermi_source` 优先于 `[baseparams]`；未填写时使用全局值；全局和阶段都未填写时报错，不提供隐式默认。
+- **FR-021**：`fermi_source` 回填逻辑与公共参数（FR-018）一致；配置序列化、错误定位和来源记录保持清晰。
+- **SC-012**：全局 `fermi_source` 在多个 EPW 阶段生效；阶段覆盖独立工作；缺失值被拒绝；同一费米来源的配置在全局／阶段表达间内部视图和科学身份一致。
+
+### 本轮交付边界
+
+本轮只完成文档更新和临时注释优化，不实施全局配置解析、不修改代码结构、不编译发布。FR-019～021 和 SC-012 标记为待实施需求。
 
 ## 本次全局费米来源实施授权
 

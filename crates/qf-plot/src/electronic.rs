@@ -11,7 +11,7 @@ pub struct ComparisonStroke {
     pub width: u32,
 }
 /// QE 参考始终为实线；仅共享粗细，不提供可误用于参考线的虚线样式。
-pub const REFERENCE_WIDTH: u32 = 2;
+pub const REFERENCE_WIDTH: u32 = 1;
 pub const INTERPOLATED_STROKE: ComparisonStroke = ComparisonStroke {
     dash: 2,
     gap: 2,
@@ -19,7 +19,7 @@ pub const INTERPOLATED_STROKE: ComparisonStroke = ComparisonStroke {
 };
 /// 元素投影使用不同短虚线周期，防止多条完全重合时后绘元素完全覆盖先绘元素。
 pub fn element_stroke(index: usize) -> ComparisonStroke {
-    ComparisonStroke { dash: 6 + 2 * (index % ELEMENTS.len()) as u32, gap: 6, width: 3 }
+    ComparisonStroke { dash: 6 + 2 * (index % ELEMENTS.len()) as u32, gap: 6, width: 1 }
 }
 pub const FERMI: RGBColor = RGBColor(220, 0, 0);
 pub const INTERPOLATED: RGBColor = RGBColor(0, 70, 210);

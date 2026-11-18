@@ -61,8 +61,7 @@ Emax = 100.0
 DeltaE = 0.01
 
 [stages."1.qe-scf"]
-K_POINTS = '''automatic
-4 4 2 0 0 0'''
+K_POINTS = [8, 8, 4, 0, 0, 0]
 
 calculation = "scf"
 
@@ -75,7 +74,7 @@ degauss = 0.02
 conv_thr = 1e-10
 
 [stages."2.qe-nscf"]
-K_POINTS = [4, 4, 2]
+K_POINTS = [8, 8, 4]
 calculation = "nscf"
 occupations = "smearing"
 smearing = "mv"
@@ -131,7 +130,7 @@ lqdir = true
 recover = false
 only_wfc = false
 fildvscf = "dvscf"
-nq = [2, 2, 1]
+nq = [2, 2, 2]
 
 [stages."4.qe-phonon-index".q2r]
 zasr = "simple"
@@ -155,7 +154,7 @@ lqdir = true
 recover = false
 only_wfc = false
 fildvscf = "dvscf"
-nq = [2, 2, 1]
+nq = [2, 2, 2]
 
 [workflow."5.epw-wannier"]
 points_per_edge = 20 # 高对称路径每段划分为 20 个采样间隔（含两端为 21 点，相邻段共用端点） # 仅控制相应比较采样，不要求与第 3／6 步密度相同；内嵌 Wannier90 使用 bands_num_points，不是 NSCF 网格。
@@ -180,8 +179,8 @@ phonselfen = false
 a2f = false
 ngaussw = 0
 efermi_read = true
-nk = [4, 4, 2]
-nq = [2, 2, 1]
+nk = [8, 8, 4]
+nq = [2, 2, 2]
 epwread = false
 epwwrite = true
 wannierize = true
@@ -249,50 +248,16 @@ phonselfen = false
 a2f = false
 ngaussw = 0
 efermi_read = true
-nk = [4, 4, 2]
-nq = [2, 2, 1]
+nk = [8, 8, 4]
+nq = [2, 2, 2]
 epwread = false
 epwwrite = true
 wannierize = false
 ephwrite = false
 eliashberg = false
 band_plot = false
-nkf = [4, 4, 2]
-nqf = [2, 2, 1]
-
-[stages."6.epw-coarse".comparison]
-# fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
-ep_coupling = true
-elph = true
-etf_mem = 0
-nbndsub = 5
-iverbosity = 2
-amass = [ 24.305, 10.811,]
-fsthick = 0.4
-degaussw = 0.1
-degaussq = 0.5
-nqstep = 500
-nqsmear = 1
-eps_acoustic = 1.0
-elecselfen = false
-phonselfen = false
-a2f = false
-ngaussw = 0
-efermi_read = true
-nk = [4, 4, 2]
-nq = [2, 2, 1]
-epwread = true
-epwwrite = false
-wannierize = false
-ephwrite = false
-eliashberg = false
-band_plot = true
-epbread = false
-selecqread = true
-filkf = "kpoints.dat"
-filqf = "qpoints.dat"
-
-[workflow."7.epw-fine"]
+nkf = [8, 8, 4]
+nqf = [2, 2, 2]
 
 [stages."7.epw-fine"]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
@@ -313,8 +278,8 @@ phonselfen = false
 a2f = false
 ngaussw = 0
 efermi_read = true
-nk = [4, 4, 2]
-nq = [2, 2, 1]
+nk = [8, 8, 4]
+nq = [2, 2, 2]
 epwread = true
 epwwrite = false
 wannierize = false
@@ -326,7 +291,7 @@ mp_mesh_k = true
 nstemp = 1
 temps = [ 5.0,]
 nkf = [8, 8, 4]
-nqf = [4, 4, 2]
+nqf = [4, 4, 4]
 
 [workflow."8.epw-superconductivity"]
 task = "gap"
@@ -372,7 +337,7 @@ iverbosity = 2
 eps_acoustic = 1.0
 mp_mesh_k = true
 nkf = [8, 8, 4]
-nqf = [4, 4, 2]
+nqf = [4, 4, 4]
 
 [stages."8.epw-superconductivity".aniso]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
@@ -411,4 +376,4 @@ iverbosity = 2
 eps_acoustic = 1.0
 mp_mesh_k = true
 nkf = [8, 8, 4]
-nqf = [4, 4, 2]
+nqf = [4, 4, 4]
