@@ -321,9 +321,11 @@ pub fn group_task(cfg: &Config, group: &str) -> Result<Option<Task>> {
         .find(|t| t.group.as_deref() == Some(group)))
 }
 pub fn active_task(cfg: &Config) -> Result<Option<Task>> {
+    let generation = SESSION.with(|s| s.borrow().as_ref().map(|s| s.generation.clone()));
     Ok(tasks(cfg)?
         .into_iter()
         .filter(|t| t.group.is_none())
+        .filter(|t| generation.as_ref().is_none_or(|g| &t.generation == g))
         .max_by(|a, b| a.id.cmp(&b.id)))
 }
 pub fn check_groups(cfg: &Config) -> Result<()> {

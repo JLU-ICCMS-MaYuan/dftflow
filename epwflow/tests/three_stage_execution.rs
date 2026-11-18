@@ -1871,3 +1871,5 @@ fn reuse_0052_linearized_matrix_route_links_qmap_metadata_without_fine_rerun() {
 
 #[path = "support/stage_auto_plotting_0072.rs"]
 mod stage_auto_plotting_0072;
+#[path = "support/electronic_parallel_0073.rs"]
+mod electronic_parallel_0073;

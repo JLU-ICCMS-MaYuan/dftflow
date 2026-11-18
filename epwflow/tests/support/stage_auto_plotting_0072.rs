@@ -71,7 +71,7 @@ fn issue_0072_electronic_renderer_failure_keeps_scientific_completion() {
 }
 
 #[test]
-fn issue_0072_pdos_failure_keeps_band_and_total_dos_plots() {
+fn issue_0072_pdos_failure_preserves_science_and_defers_combined_plot() {
     use epwflow::foundation::{readable_state as logs, stages::Step};
     let c = Case::numbered(); c.stage_setup();
     issue_0072_seed(&c, &["scf", "nscf"]);
@@ -86,8 +86,9 @@ fn issue_0072_pdos_failure_keeps_band_and_total_dos_plots() {
         String::from_utf8_lossy(&output.stderr));
     assert!(c.root.join("run/3.qe-electronic/qe_eledos/scf.tdos").is_file());
     assert!(root.join("electronic-band-ranges.png").is_file());
-    assert!(root.join("electronic.png").is_file(),
-        "US2/SC-002: PDOS 失败后电子能带和总 DOS 图没有保留");
+    assert!(!root.join("electronic.png").exists(),
+        "Issue #73: DOS 分支含 projwfc，失败时应保留科学数据和范围诊断，等待两分支成功后绘制组合图");
+    assert_eq!(doc.get("Stage", "Scientific status"), Some("completed"));
 }
 
 #[test]

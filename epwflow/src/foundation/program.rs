@@ -59,6 +59,8 @@ struct Options {
     workspace_task: Option<PathBuf>,
     #[arg(long, hide = true)]
     allocated_stage: Option<super::stages::Step>,
+    #[arg(long, hide = true, value_parser = ["qe_eband", "qe_eledos"])]
+    electronic_branch: Option<String>,
     #[arg(long, hide = true)]
     allocation_id: Option<String>,
     #[arg(long, hide = true)]
@@ -132,6 +134,12 @@ pub fn run(phase: Phase) {
 }
 
 fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
+    if let Some(branch) = &o.electronic_branch {
+        return super::electronic_parallel::allocated(
+            &o.config, branch, o.resume,
+            o.allocation_id.as_deref().context("allocation: electronic branch allocation ID missing")?,
+        );
+    }
     if let Some(stage) = o.allocated_stage {
         return super::workspace::allocated(
             &o.config,

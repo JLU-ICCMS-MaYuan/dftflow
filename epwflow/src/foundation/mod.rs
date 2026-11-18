@@ -46,6 +46,7 @@ pub mod combined_plot;
 
 mod legacy_language;
 mod electronic_reuse;
+pub(crate) mod electronic_parallel;
 
 pub mod workspace_data;
 

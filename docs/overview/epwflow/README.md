@@ -71,7 +71,7 @@ epw_superconductivity -c "input.toml" --stage fine -s
 epw_superconductivity -c "input.toml" --stage superconductivity -s
 ```
 
-第 3～6 步一次阶段分配自动完成本阶段科学计算、核验、必要后处理与绘图；第 7／8 步原生任务结束后重复同一公开命令核验、推进。gap 按 iso／aniso 分别提交原生多温度作业。
+第 3 步 `-s` 连续提交独立的能带和 DOS 分支，再提交依赖两者退出的收尾作业；两分支科学产物均通过核验后自动绘图。第 4～6 步一次阶段分配自动完成本阶段科学计算、核验、必要后处理与绘图；第 7／8 步原生任务结束后重复同一公开命令核验、推进。gap 按 iso／aniso 分别提交原生多温度作业。
 
 ```bash
 # 查询；修复失败原因后显式恢复
@@ -110,7 +110,7 @@ epw_superconductivity --results-check --results "run/results" --json
 
 <a id="编号工作区的电子后处理续算"></a>
 
-电子后处理失败保留有效 PW 数据，修复后只补未完成子任务。参数来自各程序独立 `args`，不自动追加 pencil 或沿用其他程序的 pool。详见[文件接续](preflight-and-reuse.md)。
+第 3 步能带分支执行路径 PW → bands.x，DOS 分支执行 dos.x → projwfc.x；两个分支独立提交，实际并发由 Slurm 资源决定。路径 PW 核验后即生成能带范围诊断，诊断失败不阻止 bands.x。两边都成功后才绘制组合图；一边失败保留另一边和本分支已成功的原生子任务，修复后用 `--resume -s` 只补未完成部分。分支状态保存在第 3 步日志的 `Electronic branch` 段，作业号仍在第 3 步 `.jobs`。活动作业或未知提交回执禁止重复提交。已有分配内的 `-r` 顺序执行两个分支，不额外提交或叠加 MPI。参数来自各程序独立 `args`，不自动追加 pencil 或沿用其他程序的 pool。详见[文件接续](preflight-and-reuse.md)。
 
 <a id="实际解纠缠外窗与测试目录"></a>
 

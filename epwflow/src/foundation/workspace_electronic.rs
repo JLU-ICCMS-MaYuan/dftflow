@@ -208,7 +208,11 @@ fn scientific_args(program: &Program) -> Vec<String> {
 fn key(cfg: &Config, task: &str) -> Result<String> {
     if super::layout::enabled(&cfg.work_dir) {
         let parts=match task {"pw-bands"=>vec![super::native_config::ELECTRONIC,"qe_eband","pw"],"bands"=>vec![super::native_config::ELECTRONIC,"qe_eband","bands"],_=>vec![super::native_config::ELECTRONIC,"qe_eledos","dos"]};
-        return Ok(serde_json::to_string(&json!({"request":cfg.native_value::<serde_json::Value>(&parts)?,"path":cfg.kpath}))?);
+        let sampling = if task == "dos" { None } else {
+            Some(json!({"pw":cfg.native_value::<serde_json::Value>(&[super::native_config::ELECTRONIC,"qe_eband","pw"])?,
+                "points":cfg.native_value::<u32>(&[super::native_config::ELECTRONIC,"workflow","points_per_edge"])?}))
+        };
+        return Ok(serde_json::to_string(&json!({"request":cfg.native_value::<serde_json::Value>(&parts)?,"path":cfg.kpath,"sampling":sampling}))?);
     }
 
     let (program, input, upstream) = match task {
@@ -312,6 +316,65 @@ pub(super) fn completed(cfg: &Config) -> Result<bool> {
         }
     }
     Ok(true)
+}
+
+/// 检查单个分支（能带或 DOS）是否已完成。
+/// 用于并行提交场景下的独立状态追踪和选择性恢复。
+pub(super) fn branch_completed(cfg: &Config, branch: &str) -> Result<bool> {
+    match branch {
+        "qe_eband" => {
+            // 能带分支需要 pw-bands 和 bands 两个任务都完成
+            Ok(reusable(cfg, "pw-bands")? && reusable(cfg, "bands")?)
+        }
+        "qe_eledos" => {
+            Ok(reusable(cfg, "dos")? && !super::workspace_pdos::files(cfg)?.is_empty())
+        }
+        _ => anyhow::bail!("configuration: Unknown electronic branch {branch}"),
+    }
+}
+
+/// 子任务失效只清理自己的检查点；成功 PW、DOS 和另一分支保持原位。
+pub(super) fn repair_checkpoints(cfg: &Config, branch: &str, resume: bool) -> Result<()> {
+    let tasks: &[(&str, &str)] = if branch == "qe_eband" {
+        &[("pw-bands", "eband"), ("bands", "elebanddata")]
+    } else { &[("dos", "eletdos")] };
+    for &(task, stem) in tasks {
+        match reusable(cfg, task) {
+            Ok(true) => continue,
+            Err(e) if !resume => return Err(e),
+            _ => (),
+        }
+        clear_checkpoint(cfg, branch, &format!("Electronic substep · {task}"), stem)?;
+    }
+    if branch == "qe_eledos" {
+        let projection = super::workspace_pdos::files(cfg);
+        if projection.as_ref().is_ok_and(|files| !files.is_empty()) { return Ok(()); }
+        let invalid = projection.is_err();
+        if let Err(e) = projection { if !resume { return Err(e); } }
+        let old = super::readable_state::checkpoint_config(cfg, Step::Electronic, "Electronic native substep · projwfc")?;
+        let compatible = old.as_ref().map(|old| {
+            let parts = [super::native_config::ELECTRONIC, "qe_eledos", "projwfc"];
+            Ok::<_, anyhow::Error>(old.native_value::<serde_json::Value>(&parts)? == cfg.native_value::<serde_json::Value>(&parts)?)
+        }).transpose()?.unwrap_or(false);
+        if !compatible || invalid {
+            clear_checkpoint(cfg, branch, "Electronic substep · projwfc", "projwfc")?;
+            super::readable_state::update(&cfg.work_dir, Step::Electronic, |d| {
+                d.remove("Electronic native substep · projwfc"); Ok(())
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn clear_checkpoint(cfg: &Config, branch: &str, label: &str, stem: &str) -> Result<()> {
+    let directory = Step::Electronic.directory(cfg).join(branch);
+    for task in super::native_jobs::tasks(cfg)?.into_iter().filter(|t| t.directory == directory
+        && (t.stem == stem || super::scientific_logs::legacy_stem(stem) == Some(t.stem.as_str()))) {
+        let task_label = format!("Task · {} / {}", super::readable_state::relative(&cfg.work_dir, &task.directory), task.stem);
+        super::readable_state::set_job(&cfg.work_dir, Step::Electronic, &task_label, None)?;
+        super::readable_state::update(&cfg.work_dir, Step::Electronic, |d| { d.remove(&task_label); Ok(()) })?;
+    }
+    super::readable_state::update(&cfg.work_dir, Step::Electronic, |d| { d.remove(label); Ok(()) })
 }
 
 fn capture(
@@ -466,11 +529,14 @@ fn path_points(cfg: &Config) -> Result<Vec<[f64; 3]>> {
 }
 
 pub(super) fn inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
+    band_inputs(cfg, qe)?;
+    dos_inputs(cfg)
+}
+
+fn band_inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
     let root = Step::Electronic.directory(cfg);
     let bands = root.join("qe_eband");
-    let dos = root.join("qe_eledos");
     fs::create_dir_all(&bands)?;
-    fs::create_dir_all(&dos)?;
     let points = path_points(cfg)?;
     let input = qe.path_input("./out", &points)?;
     if !super::native_jobs::enabled() {
@@ -492,7 +558,6 @@ pub(super) fn inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
         &[super::native_config::ELECTRONIC, "qe_eband", "bands"],
         &bands.join("elebanddata.in"),
     )?;
-    dos_inputs(cfg)?;
     Ok(())
 }
 
@@ -527,7 +592,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
     let dir = Step::Electronic.directory(cfg).join(name);
     match name {
         "qe_eband" => {
-            inputs(cfg, &QeSettings::from_config(cfg)?)?;
+            band_inputs(cfg, &QeSettings::from_config(cfg)?)?;
             if reusable(cfg, "pw-bands")? {
                 super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("pw-bands"));
             } else {
@@ -552,7 +617,9 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                 persist_receipt(cfg, "pw-bands", &receipt)?;
             }
             // 路径本征值一经核验就画范围图，不等待 bands.x、DOS 或投影。
-            super::band_ranges::generate(cfg, Step::Electronic)?;
+            if let Err(e) = super::band_ranges::generate(cfg, Step::Electronic) {
+                eprintln!("Warning: Electronic band-range diagnostic failed: {e:#}");
+            }
             if reusable(cfg, "bands")? {
                 super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("bands"));
             } else {
@@ -598,7 +665,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             dos_inputs(cfg)?;
             if reusable(cfg, "dos")? {
                 super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("dos"));
-                return super::workspace_qe_plot::electronic(cfg, name);
+                return super::workspace_pdos::run(cfg);
             }
             let mut paths = logs(&dir, "eletdos");
             paths.push(dir.join(format!("{}.tdos", cfg.qe.prefix)));
@@ -622,14 +689,6 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
         }
         _ => anyhow::bail!("configuration: Unknown electron subphase {name}"),
     }
-    // 绘图失败不影响科学数据交付 (Issue #72 B01)
-    if let Err(e) = super::workspace_qe_plot::electronic(cfg, name) {
-        eprintln!("Warning: Electronic leaf plotting failed: {:#}", e);
-        let _ = super::readable_state::update(&cfg.work_dir, super::stages::Step::Electronic, |d| {
-            d.set(&format!("Plot · {}", name), "Status", "failed");
-            d.set(&format!("Plot · {}", name), "Failure", format!("{:#}", e));
-            Ok(())
-        });
-    }
+    if name == "qe_eledos" { super::workspace_pdos::run(cfg)?; }
     Ok(())
 }

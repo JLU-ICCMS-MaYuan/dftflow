@@ -9,6 +9,7 @@ use anyhow::{ensure, Context, Result};
 use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Command};
 
 pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
+    super::electronic_parallel::check_active(cfg)?;
     native_jobs::check_orphan_jobs(cfg)?;
     for step in Step::ALL {
         let doc = log::read(&cfg.work_dir, step)?;
@@ -138,11 +139,20 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         resume || log::read(&cfg.work_dir, target)?.get("Stage allocation", "Status") != Some("failed"),
         "stage_failed: Last stage distribution failed, please use --resume Continuation of unfinished business"
     );
+    let dependencies = if target == Step::Electronic {
+        super::electronic_parallel::prepare(&cfg, &version, resume, submit)?
+    } else { Vec::new() };
     let id = store::token();
     let dir = target.directory(&cfg);
     fs::create_dir_all(&dir)?;
     let q = slurm::shell_quote;
     let mut body = slurm::script_header(&cfg, &dir, &format!("epw-{}", target.name()), &format!("slurm-{}.log", target.name()), &format!("slurm-{}.log", target.name()));
+    if !dependencies.is_empty() {
+        // 失败也运行收尾核验，避免 afterok 的永久依赖等待；不完整时不会绘图。
+        let dependency = format!("#SBATCH --dependency=afterany:{}\n", dependencies.iter().map(u64::to_string).collect::<Vec<_>>().join(":"));
+        let position = body.find('\n').map(|i| i + 1).unwrap_or(body.len());
+        body.insert_str(position, &dependency);
+    }
     if let Some(env) = &cfg.programs.environment_script {
         body.push_str(&super::workflow::source_environment(env)?);
     }
@@ -260,7 +270,12 @@ pub fn allocated(config: &Path, target: Step, resume: bool, id: &str) -> Result<
         Ok(())
     })?;
     drop(operation);
-    let result = super::native_workspace::allocated(config, target, resume, id);
+    let result = if target == Step::Electronic {
+        super::electronic_parallel::ready_to_finish(&cfg)
+            .and_then(|_| super::native_workspace::allocated(config, target, resume, id))
+    } else {
+        super::native_workspace::allocated(config, target, resume, id)
+    };
     log::update(&cfg.work_dir, target, |d| {
         d.set(
             "Stage allocation",

@@ -80,7 +80,10 @@ fn checked_files(cfg: &Config) -> Result<Vec<PathBuf>> {
     if input(&old)? != input(cfg)? {
         return Ok(vec![]);
     }
-    raw_files(cfg)
+    let paths = raw_files(cfg)?;
+    qf_io::qe_completion::checked_log(&dir(cfg).join("projwfc.out"), false)?;
+    aggregate(cfg, &paths, 0., &projected_total(cfg, 0.)?)?;
+    Ok(paths)
 }
 pub fn run(cfg: &Config) -> Result<()> {
     if !files(cfg)?.is_empty() {

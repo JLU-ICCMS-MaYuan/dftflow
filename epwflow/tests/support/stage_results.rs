@@ -43,6 +43,13 @@ impl Case {
         }
         use std::{io::Write, os::unix::fs::MetadataExt};
         let (step, doc) = allocation.unwrap();
+        if step == Step::Electronic {
+            for branch in ["qe_eband", "qe_eledos"] {
+                if logs::read(&cfg.work_dir, step).unwrap().get(&format!("Electronic branch · {branch}"), "Status") == Some("submitted") {
+                    self.electronic_execute_branch(branch);
+                }
+            }
+        }
         let script = logs::resolve(&cfg.work_dir, doc.get("Stage allocation", "Script").unwrap());
         let script_body = fs::read(&script).unwrap();
         let log_path = script.with_file_name(format!("slurm-{}.log", step.name()));

@@ -48,6 +48,28 @@ pub fn run_electronic_leaf(cfg: &Config, name: &str) -> Result<()> {
     super::workspace_electronic::run_leaf(cfg, name)
 }
 
+/// 已有分配或分支收尾内按资源顺序执行；提交并行由 electronic_parallel 负责。
+fn run_electronic_parallel(cfg: &Config) -> Result<()> {
+    let mut failures = Vec::new();
+    for branch in ["qe_eband", "qe_eledos"] {
+        if let Err(e) = run_electronic_leaf(cfg, branch) {
+            if super::native_jobs::paused(&e) { return Err(e); }
+            failures.push(format!("{branch}: {e:#}"));
+        }
+    }
+    if !failures.is_empty() {
+        if super::workspace_electronic::completed(cfg).unwrap_or(false) {
+            stages::finish(cfg, Step::Electronic)?;
+        }
+        anyhow::bail!("execution_failed: electronic branches incomplete: {}; successful results retained", failures.join("; "));
+    }
+    // 核验和图失败分开处理；派生失败不会清除成功的科学检查点。
+    if let Err(e) = super::workspace_qe_plot::refresh(cfg, Step::Electronic) {
+        eprintln!("Warning: Electronic plotting failed: {e:#}");
+    }
+    Ok(())
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct PostReceipt {
     key: String,
@@ -399,17 +421,7 @@ pub fn run(cfg: &Config, step: Step) -> Result<()> {
             }
         }
         Step::Electronic => {
-            run_electronic_leaf(cfg, "qe_eband")?;
-            run_electronic_leaf(cfg, "qe_eledos")?;
-            // 自动绘制 Electronic 全部图（能带范围、能带、DOS、PDOS）
-            if let Err(e) = super::workspace_qe_plot::refresh(cfg, step) {
-                eprintln!("Warning: Electronic plotting failed: {:#}", e);
-                let _ = super::readable_state::update(root, step, |d| {
-                    d.set("Plot · Electronic", "Status", "failed");
-                    d.set("Plot · Electronic", "Failure", format!("{:#}", e));
-                    Ok(())
-                });
-            }
+            run_electronic_parallel(cfg)?;
         }
         Step::Phonon => {
             run_phonon(cfg, &qe)?;
