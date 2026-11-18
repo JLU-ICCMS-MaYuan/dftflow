@@ -156,22 +156,40 @@ pub fn write_phonon_scf_input(
 
 /// 由 `scf` 配置段的 kpoints / kmesh 推导自动 k 点网格文本。
 pub fn scf_kpoints_text(structure: &Structure, scf: &SectionMap) -> String {
-    let grid = match scf.get("kpoints") {
-        Some(Value::Array(a)) if a.len() == 3 => [
-            a[0].as_i64().unwrap_or(1),
-            a[1].as_i64().unwrap_or(1),
-            a[2].as_i64().unwrap_or(1),
-        ],
-        Some(Value::Number(n)) => get_kpoints_from_spacing(
-            structure.lattice,
-            &KmeshSpec::Spacing(n.as_f64().unwrap_or(0.04)),
-            0.04,
+    let (grid, shift) = match scf.get("kpoints") {
+        Some(Value::Array(a)) if a.len() == 3 => (
+            [
+                a[0].as_i64().unwrap_or(1),
+                a[1].as_i64().unwrap_or(1),
+                a[2].as_i64().unwrap_or(1),
+            ],
+            [0, 0, 0],
         ),
-        _ => get_kpoints_from_spacing(structure.lattice, &KmeshSpec::Spacing(0.04), 0.04),
+        Some(Value::Array(a)) if a.len() == 6 => (
+            [
+                a[0].as_i64().unwrap_or(1),
+                a[1].as_i64().unwrap_or(1),
+                a[2].as_i64().unwrap_or(1),
+            ],
+            [
+                a[3].as_i64().unwrap_or(0),
+                a[4].as_i64().unwrap_or(0),
+                a[5].as_i64().unwrap_or(0),
+            ],
+        ),
+        Some(Value::Number(n)) => {
+            let g = get_kpoints_from_spacing(
+                structure.lattice,
+                &KmeshSpec::Spacing(n.as_f64().unwrap_or(0.04)),
+                0.04,
+            );
+            (g, [0, 0, 0])
+        }
+        _ => {
+            let g = get_kpoints_from_spacing(structure.lattice, &KmeshSpec::Spacing(0.04), 0.04);
+            (g, [0, 0, 0])
+        }
     };
-    let shift: [i64; 3] = std::array::from_fn(|i| {
-        scf.get("k_shift").and_then(Value::as_array).and_then(|v| v.get(i)).and_then(Value::as_i64).unwrap_or(0)
-    });
     format!(
         "K_POINTS automatic\n  {grid0} {grid1} {grid2} {s0} {s1} {s2}\n",
         grid0 = grid[0],

@@ -235,6 +235,68 @@ fn compact_grid_is_expanded_and_full_card_config_is_rejected() {
 }
 
 #[test]
+fn scf_array_grids_validate_render_and_roundtrip() {
+    for points in [json!([4, 4, 2]), json!([4, 4, 2, 0, 0, 0])] {
+        let mut c = Case::new();
+        c.cfg.set_native(&[SCF, "pw", "K_POINTS"], points).unwrap();
+        c.cfg.validate().unwrap();
+        let input = QeSettings::from_config(&c.cfg).unwrap().scf_input("./out").unwrap();
+        assert!(input.contains("K_POINTS automatic\n  4 4 2 0 0 0\n"), "{input}");
+        let text = toml::to_string_pretty(&c.cfg).unwrap();
+        let again: Config = toml::from_str(&text).unwrap();
+        again.validate().unwrap();
+        assert_eq!(again.qe.scf.k_grid, [4, 4, 2]);
+        assert_eq!(again.qe.scf.k_shift, [0; 3]);
+    }
+}
+
+#[test]
+fn scf_array_shift_is_rendered_but_epw_zero_shift_constraint_is_preserved() {
+    let mut c = Case::new();
+    c.cfg.set_native(&[SCF, "pw", "K_POINTS"], json!([4, 4, 2, 1, 0, 1])).unwrap();
+    assert_eq!(c.cfg.qe.scf.k_shift, [1, 0, 1]);
+    let input = QeSettings::from_config(&c.cfg).unwrap().scf_input("./out").unwrap();
+    assert!(input.contains("K_POINTS automatic\n  4 4 2 1 0 1\n"), "{input}");
+    assert!(format!("{:#}", c.cfg.validate().unwrap_err()).contains("identical zero-shift grids required"));
+}
+
+#[test]
+fn scf_legacy_card_is_readable_and_serializes_as_an_array() {
+    let c = Case::new();
+    assert!(QeSettings::from_config(&c.cfg).unwrap().scf_input("./out").unwrap()
+        .contains("K_POINTS automatic"));
+    let value = serde_json::to_value(&c.cfg).unwrap();
+    assert_eq!(value["stages"][SCF]["K_POINTS"], json!([4, 4, 2]));
+}
+
+#[test]
+fn scf_legacy_crystal_card_keeps_its_coordinates_and_type() {
+    let mut c = Case::new();
+    let points = qf_input::pw::uniform_kpoints_text([4, 4, 2], true).unwrap();
+    let card = points.strip_prefix("K_POINTS ").unwrap();
+    c.cfg.set_native(&[SCF, "pw", "K_POINTS"], json!(card)).unwrap();
+    c.cfg.validate().unwrap();
+    let input = QeSettings::from_config(&c.cfg).unwrap().scf_input("./out").unwrap();
+    assert!(input.contains(points.trim_end()), "{input}");
+    let value = serde_json::to_value(&c.cfg).unwrap();
+    assert_eq!(value["stages"][SCF]["K_POINTS"], card);
+}
+
+#[test]
+fn malformed_scf_arrays_and_shifted_nscf_are_rejected() {
+    for points in [json!([4, 4]), json!([0, 4, 2]), json!([4, -1, 2]),
+        json!([4, 4.5, 2]), json!([4, 4, 2, 2, 0, 0])] {
+        let mut c = Case::new();
+        let result = c.cfg.set_native(&[SCF, "pw", "K_POINTS"], points)
+            .and_then(|_| c.cfg.validate());
+        assert!(result.is_err());
+    }
+    let mut c = Case::new();
+    let error = c.cfg.set_native(&[NSCF, "pw", "K_POINTS"], json!([4, 4, 2, 1, 0, 0])).unwrap_err();
+    assert!(format!("{error:#}").contains("requires zero shift"), "{error:#}");
+}
+
+#[test]
 fn each_method_keeps_its_own_temperature_plan() {
     let mut c = Case::new();
     c.cfg

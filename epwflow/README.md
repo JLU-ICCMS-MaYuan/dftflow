@@ -116,7 +116,7 @@ ecutwfc = 40.0  # 此次 pw.x 独立设置，不从 SCF 继承
 
 八主阶段完整示例见 [SiP₂ 配置](../examples/SiP2/epwinput.toml)，历史平层示例见 [MgB₂ 配置](../examples/MgB2/sugon-amd/run/epwflow/epwinput.toml)，字段和单位见[原生阶段参数说明](../docs/overview/epwflow/native-stage-config.md)。所有科学调用读取对应阶段配置；修改 NSCF 截断能不会改写 SCF。数据交接必须匹配的前缀、粗细网格、Wannier 维数等出现冲突时，执行前列出两处配置和值。顶层 `workflow` 单独保存自动选窗、输入来源、PH 拆分及搜索设置。自动绑定在程序内部登记，无需填写 derived 表；同一目标同时手填和内部推导会被拒绝。第 3 步使用 `3.qe-electronic` 主段及 `.bands/.dos/.projwfc` 子段，第 5 步使用 `5.epw-wannier` 主段及 `.wannier90/.postw90` 子段。新旧主段不能混写，未知用途、程序／namelist 的额外嵌套明确拒绝。配置简化及验证见 [0061](../docs/specs/0061-epw-flat-stage-config/spec.md)。
 
-数组使用原生名，例如 `amass`、`temps`，生成 Fortran 索引数组；`ATOMIC_SPECIES` 保存原生卡片文本；SCF 的 `K_POINTS` 保存类型及正文，NSCF 的 `K_POINTS = [A, B, C]` 仅填写三个正整数。Rust 按官方 `kmesh.pl` 的公式、顺序及精度展开到实际 `nscf.in`，配置中不保存长点表。SCF 与 NSCF 必须同维度、零位移。输入文件不再前置参数来源注释；原文配置使用编号版本保存，当前及计算使用的版本由阶段日志说明；内部算法类型不是另一份用户配置。
+数组使用原生名，例如 `amass`、`temps`，生成 Fortran 索引数组；`ATOMIC_SPECIES` 保存原生卡片文本。SCF 的 `K_POINTS = [A, B, C]` 表示零偏移，也支持六元素 `[A, B, C, s1, s2, s3]`，偏移标志只能为 `0/1`；旧 SCF 卡片继续读取，`automatic` 卡片序列化为数组。NSCF 的 `K_POINTS = [A, B, C]` 仅填写三个正整数。Rust 按官方 `kmesh.pl` 的公式、顺序及精度展开到实际 `nscf.in`，配置中不保存长点表。完整 EPW 工作流仍要求 SCF 与 NSCF 同维度、零位移。独立 QE 声子工作流使用 `[qe_phonon.scf].kpoints` 的三／六元素数组，允许非零偏移，独立 `k_shift` 字段须迁移到六元素数组。输入文件不再前置参数来源注释；原文配置使用编号版本保存，当前及计算使用的版本由阶段日志说明；内部算法类型不是另一份用户配置。
 
 
 实际计算目录保存运行到该任务时生成的原生输入、功能脚本和日志。分 q、细网格展宽及各温度尝试也在自己的目录生成提交脚本。依赖上游产物才能确定的输入和子任务在运行到该阶段时生成；未得到 NSCF 时不会伪造 EPW 选窗。脚本固定工作目录，能够从其他目录提交。一个阶段分配只执行目标范围内缺少的任务，不生成自动推进全部物理阶段的总提交脚本。

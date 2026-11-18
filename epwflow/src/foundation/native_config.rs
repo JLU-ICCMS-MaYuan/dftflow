@@ -167,11 +167,27 @@ fn ph_name(d: &Document) -> Result<String> {
 fn pw_grid(v: &Value, stage: &str) -> Result<([u32; 3], [u32; 3])> {
     if stage == NSCF {
         let grid: [u32; 3] = get(v, &[stage, "pw", "K_POINTS"])
-            .context("configuration: stages.2.qe-nscf.pw.K_POINTS: requires three positive integers [A, B, C]; explicit point lists are no longer accepted")?;
+            .context("configuration: stages.2.qe-nscf.pw.K_POINTS: requires three positive integers [A, B, C]; complete uniform EPW NSCF grid requires zero shift; explicit point lists are no longer accepted")?;
         qf_input::pw::uniform_kpoint_count(grid.map(i64::from))
             .context("configuration: stages.2.qe-nscf.pw.K_POINTS: invalid grid")?;
         return Ok((grid, [0; 3]));
     }
+
+    // 尝试解析为数组格式：[nk1, nk2, nk3] 或 [nk1, nk2, nk3, s1, s2, s3]
+    if let Ok(arr) = get::<Vec<u32>>(v, &[stage, "pw", "K_POINTS"]) {
+        if arr.len() == 3 {
+            return Ok(([arr[0], arr[1], arr[2]], [0, 0, 0]));
+        } else if arr.len() == 6 {
+            return Ok((
+                [arr[0], arr[1], arr[2]],
+                [arr[3], arr[4], arr[5]]
+            ));
+        } else {
+            bail!("configuration: stages.{stage}.pw.K_POINTS: array format requires 3 elements [nk1, nk2, nk3] or 6 elements [nk1, nk2, nk3, s1, s2, s3]");
+        }
+    }
+
+    // 回退到旧的字符串格式
     let text: String = get(v, &[stage, "pw", "K_POINTS"])?;
     let mut rows = text.lines().filter(|row| !row.trim().is_empty());
     let kind = rows
@@ -711,7 +727,7 @@ fn validate_task_node(node: &Value, path: &str) -> Result<()> {
             }
         } else if key == "K_POINTS" || key == "ATOMIC_SPECIES" {
             ensure!(
-                path.ends_with(".pw") && (value.is_string() || (key == "K_POINTS" && path == format!("stages.{NSCF}.pw") && value.is_array())),
+                path.ends_with(".pw") && (value.is_string() || (key == "K_POINTS" && (path == format!("stages.{SCF}.pw") || path == format!("stages.{NSCF}.pw")) && value.is_array())),
                 "configuration: {path}.{key}: native PW card text required"
             );
         } else {
@@ -1275,16 +1291,15 @@ impl Config {
             ),
             (NSCF, self.qe.nscf.k_grid, [0; 3], self.qe.nscf.conv_thr_ry),
         ] {
-            if pw_grid(&v, stage)? != (g, shift) {
-                let card = if stage == NSCF {
+            let legacy_automatic = at(&v, &[stage, "pw", "K_POINTS"])?
+                .as_str().is_some_and(|text| text.trim_start().starts_with("automatic"));
+            if pw_grid(&v, stage)? != (g, shift) || legacy_automatic {
+                let card = if shift == [0; 3] {
                     json!(g)
                 } else {
-                    json!(format!(
-                        "automatic\n{} {} {} {} {} {}",
-                        g[0], g[1], g[2], shift[0], shift[1], shift[2]
-                    ))
+                    json!([g[0], g[1], g[2], shift[0], shift[1], shift[2]])
                 };
-                put(&mut v, &[stage, "pw", "K_POINTS"], json!(card));
+                put(&mut v, &[stage, "pw", "K_POINTS"], card);
             }
             put(&mut v, &[stage, "pw", "ELECTRONS", "conv_thr"], json!(thr));
         }

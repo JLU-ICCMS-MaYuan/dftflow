@@ -155,7 +155,8 @@ pub fn run(
         "qe_phonon": {
             "retain_epw_data": true, "work_dir": dir, "prefix": cfg.qe.prefix,
             "scf": {"calculation": "scf", "outdir": "out", "prefix": cfg.qe.prefix,
-                "kpoints": cfg.qe.scf.k_grid, "k_shift": cfg.qe.scf.k_shift,
+                "kpoints": [cfg.qe.scf.k_grid[0], cfg.qe.scf.k_grid[1], cfg.qe.scf.k_grid[2],
+                    cfg.qe.scf.k_shift[0], cfg.qe.scf.k_shift[1], cfg.qe.scf.k_shift[2]],
                 "ecutwfc": cfg.qe.ecutwfc_ry, "ecutrho": cfg.qe.ecutrho_ry,
                 "occupations": cfg.qe.occupations, "conv_thr": cfg.qe.scf.conv_thr_ry},
             "ph": {"qpoints": cfg.phonon.q_grid, "tr2_ph": cfg.phonon.tr2_ph},

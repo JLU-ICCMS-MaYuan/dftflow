@@ -319,8 +319,15 @@ pub fn load(path: Option<&str>, config_file: Option<&str>) -> Result<Config> {
     for (element, mass) in &config.atomic_masses {
         anyhow::ensure!(mass.is_finite() && *mass > 0.0, "atomic_masses.{element} It has to be a finite positive number");
     }
-    if let Some(shift) = config.qe_phonon.scf.get("k_shift") {
-        anyhow::ensure!(shift.as_array().is_some_and(|v| v.len() == 3 && v.iter().all(|n| matches!(n.as_i64(), Some(0 | 1)))), "qe_phonon.scf.k_shift It has to contain three 0/1 Integer");
+    anyhow::ensure!(!config.qe_phonon.scf.contains_key("k_shift"),
+        "qe_phonon.scf.k_shift is unsupported; use kpoints = [nk1, nk2, nk3, s1, s2, s3]");
+    if let Some(Value::Array(points)) = config.qe_phonon.scf.get("kpoints") {
+        anyhow::ensure!(matches!(points.len(), 3 | 6),
+            "qe_phonon.scf.kpoints requires 3 or 6 integers");
+        anyhow::ensure!(points[..3].iter().all(|n| n.as_u64().is_some_and(|v| v > 0 && v <= u32::MAX as u64)),
+            "qe_phonon.scf.kpoints grid requires three positive integers within u32 range");
+        anyhow::ensure!(points[3..].iter().all(|n| matches!(n.as_i64(), Some(0 | 1))),
+            "qe_phonon.scf.kpoints shift requires three 0/1 integers");
     }
     Ok(config)
 }
@@ -433,6 +440,24 @@ fn expand_user(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn phonon_kpoints_array_validation() {
+        let path = std::env::temp_dir().join(format!("qf-config-kpoints-{}.toml", std::process::id()));
+        for (points, valid) in [
+            ("[2,3,4]", true), ("[2,3,4,1,0,1]", true),
+            ("[2,3]", false), ("[0,3,4]", false), ("[2,-1,4]", false),
+            ("[2,3.5,4]", false), ("[2,3,4294967296]", false),
+            ("[2,3,4,2,0,0]", false), ("[2,3,4,0.5,0,0]", false),
+        ] {
+            std::fs::write(&path, format!("[qe_phonon.scf]\nkpoints={points}\n")).unwrap();
+            assert_eq!(load(Some(path.to_str().unwrap()), None).is_ok(), valid, "{points}");
+        }
+        std::fs::write(&path, "[qe_phonon.scf]\nkpoints=[2,3,4]\nk_shift=[1,0,1]\n").unwrap();
+        assert!(format!("{:#}", load(Some(path.to_str().unwrap()), None).unwrap_err())
+            .contains("use kpoints"));
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn merge_recursive_nested_and_null_skip() {

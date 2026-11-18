@@ -46,7 +46,7 @@ conv_thr = 1e-6 # Ry
 
 QE 的 ecutwfc/ecutrho/degauss/conv_thr 使用 Ry；DOS/PROJWFC 的 Emin/Emax/DeltaE 使用 eV，其 degauss 仍为 Ry。EPW fsthick/degaussw/wscut/gap_edge 为 eV，degaussq 为 meV，eps_acoustic 为 cm⁻¹，temps 为 K。Wannier90 能窗为绝对 eV，conv_tol 为 Å²。单位写在注释，不加字段别名。
 
-amass、temps 等数组保持原生名字，输入生成 Fortran 下标；nstemp 必须与自身 temps 长度一致。ATOMIC_SPECIES 支持卡片正文或上述物种二维数组；SCF 的 K_POINTS 保存类型及正文。NSCF 沿用 0060 三整数网格，由 Rust 展开，要求与 SCF 同维度且零位移，完成及复用时核对实际输入和输出，详见 [NSCF 网格与 FFT](nscf-grid.md)。
+amass、temps 等数组保持原生名字，输入生成 Fortran 下标；nstemp 必须与自身 temps 长度一致。ATOMIC_SPECIES 支持卡片正文或上述物种二维数组；SCF 的 K_POINTS 支持三正整数网格或六整数网格与偏移数组，后三项只能为 0/1。旧 SCF 卡片继续读取，automatic 卡片序列化为数组，crystal 卡片保持原类型。NSCF 沿用 0060 三整数网格，由 Rust 展开，完整 EPW 工作流仍要求与 SCF 同维度且零位移，完成及复用时核对实际输入和输出，详见 [NSCF 网格与 FFT](nscf-grid.md)。独立 QE 声子工作流的 `[qe_phonon.scf].kpoints` 使用同样的三／六元素数组并允许非零偏移；独立 k_shift 字段明确报错并提示迁移。
 
 ## 工作流与自动绑定
 

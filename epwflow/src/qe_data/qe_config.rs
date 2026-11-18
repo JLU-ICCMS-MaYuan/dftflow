@@ -79,7 +79,13 @@ impl<'a> QeSettings<'a> {
                 text
             } else { qf_input::pw::uniform_kpoints_text(qe.nscf.k_grid.map(i64::from), true)? }
         } else {
-            format!("K_POINTS {}\n",self.config.native_value::<String>(&[SCF,"pw","K_POINTS"])?)
+            let card: serde_json::Value = self.config.native_value(&[SCF, "pw", "K_POINTS"])?;
+            if let Some(text) = card.as_str() {
+                format!("K_POINTS {text}\n")
+            } else {
+                let scf = [("kpoints".into(), card)].into();
+                qf_input::pw::scf_kpoints_text(&self.cell, &scf)
+            }
         };
         let mut card_path=task.to_vec();card_path.push("ATOMIC_SPECIES");
         let native_species:String=self.config.native_value(&card_path)?;
