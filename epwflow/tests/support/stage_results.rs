@@ -1,4 +1,4 @@
-//! 阶段交付契约：第 5～8 步由公开命令逐项推进，科学程序为隔离替身。
+//! 阶段交付契约：第 5、6 步在分配内自动完成交付，第 7、8 步逐项推进；科学程序为隔离替身。
 use super::*;
 impl Case {
     pub(super) fn stage_setup(&self) {
@@ -173,7 +173,7 @@ fn wannier_allocation_publishes_without_phonons_and_repairs_only_derivatives() {
     fs::remove_file(result.join("electronic-bands.png")).unwrap();
     fs::remove_file(
         c.root
-            .join("run/5.epw-wannier/comparison-native/electron/electronic-dos.png"),
+            .join("run/5.epw-wannier/comparison-native/electronic-dos.png"),
     )
     .unwrap();
     success(c.stage_submit("wannier", false));
@@ -224,7 +224,7 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
     let post = c.post_calls();
     let electron = store::hash_file(
         &c.root
-            .join("run/5.epw-wannier/comparison-native/electron/band.eig"),
+            .join("run/5.epw-wannier/comparison-native/band.eig"),
     )
     .unwrap();
     success(c.stage_submit("coarse", false));
@@ -238,7 +238,7 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
         electron,
         store::hash_file(
             &c.root
-                .join("run/5.epw-wannier/comparison-native/electron/band.eig")
+                .join("run/5.epw-wannier/comparison-native/band.eig")
         )
         .unwrap()
     );
@@ -250,7 +250,7 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
     assert!(source["epw_bands"]["path"]
         .as_str()
         .unwrap()
-        .contains("5.epw-wannier/comparison-native/electron"));
+        .contains("5.epw-wannier/comparison-native"));
     assert!(source["qe_bands_xml"]["path"]
         .as_str()
         .unwrap()
@@ -288,9 +288,16 @@ fn coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw() {
         c.calls().0,
         "电子模型变化不能重复 PW/PH/q2r/matdyn"
     );
-    let phonon = c.root.join("run/4.qe-phonon-nosplit/comparison");
+    let phonon = c.root.join("run/6.epw-coarse/comparison-native");
     assert!(phonon.join("force-constants/reference.fc.xml").is_file());
     assert!(phonon.join("frequencies/reference.freq").is_file());
+    // 显式重建上游 SCF 时，原 PH 来源即失效，不能跨来源保留比较检查点。
+    success(c.stage_submit("scf", true));
+    let coarse = epwflow::foundation::readable_state::read(
+        &c.root.join("run"), epwflow::foundation::stages::Step::Coarse,
+    ).unwrap();
+    assert!(coarse.get("子步骤 · comparison-q2r", "状态").is_none());
+    assert!(coarse.get("子步骤 · comparison-matdyn", "状态").is_none());
 }
 
 #[test]
@@ -316,7 +323,7 @@ fn matdyn_recovery_reuses_successful_force_constants_and_native_coarse() {
     assert!(epwflow::foundation::stages::reusable(&cfg, epwflow::foundation::stages::Step::Coarse).unwrap());
     let force = c
         .root
-        .join("run/4.qe-phonon-nosplit/comparison/force-constants/reference.fc.xml");
+        .join("run/6.epw-coarse/comparison-native/force-constants/reference.fc.xml");
     let hash = store::hash_file(&force).unwrap();
     fs::remove_file(c.root.join("comparison-failure")).unwrap();
     success(c.stage_submit("coarse", true));
@@ -371,7 +378,7 @@ fn registered_legacy_electronic_samples_migrate_without_refitting_or_changing_sc
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
     let sampling = epwflow::interpolation::electronic_sampling::plan(&cfg).unwrap();
     let fit = c.root.join("run/5.epw-wannier");
-    let post = fit.join("comparison-native/electron");
+    let post = fit.join("comparison-native");
     let old = c.root.join("run/6.epw-coarse/comparison-native");
     fs::create_dir_all(old.join("epw")).unwrap();
     let band = old.join("epw/band.eig");
@@ -564,7 +571,12 @@ fn failed_wannier_generation_error_recovers_without_archived_inputs() {
     let failure = c.stage_execute();
     assert!(!failure.status.success());
     assert!(String::from_utf8_lossy(&failure.stderr).contains("局域化收敛证据"));
-    let old = c.direct_task();
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let old = serde_json::to_value(
+        epwflow::foundation::native_jobs::tasks(&cfg).unwrap().into_iter()
+            .find(|task| task.directory == cfg.work_dir.join("5.epw-wannier") && task.stem == "epw")
+            .unwrap()
+    ).unwrap();
     assert_eq!(old["state"], "failed");
     let scientific = c.calls().0;
     let path_hash = store::hash_file(&c.root.join("KPATH.in")).unwrap();
@@ -576,7 +588,8 @@ fn failed_wannier_generation_error_recovers_without_archived_inputs() {
         )
         .unwrap();
     });
-    let failure = c.stage_submit("wannier", true);
+    success(c.stage_submit("wannier", true));
+    let failure = c.stage_execute();
     assert!(!failure.status.success());
     assert!(String::from_utf8_lossy(&failure.stderr).contains("零个间隔"));
     assert!(!c.root.join("run/5.epw-wannier/epw_wannier.in").exists());
@@ -682,4 +695,50 @@ fn electronic_band_ranges_precede_dos_failure_and_invalid_windows_keep_diagnosti
     let states=epwflow::qe_data::nscf::parse_xml(&root.join(format!("2.qe-nscf/out/{}.save/data-file-schema.xml",cfg.qe.prefix))).unwrap();
     let error=epwflow::interpolation::epw_config::EpwConfig::from_config(&cfg).unwrap().with_fermi(states.fermi).unwrap().with_bands(&states.eigenvalues).unwrap().window_selection().unwrap_err();
     assert!(error.to_string().contains("不自动裁剪"));
+}
+
+#[test]
+fn wannier_and_coarse_single_allocation_freezes_config_and_automatically_plots() {
+    use epwflow::foundation::{readable_state as logs, stages::Step};
+    let c = Case::numbered();
+    c.stage_setup();
+    for (step, stage, folder) in [
+        (Step::Wannier, "wannier", "5.epw-wannier"),
+        (Step::Coarse, "coarse", "6.epw-coarse"),
+    ] {
+        let original = fs::read(c.root.join("input.toml")).unwrap();
+        let count = fs::read_to_string(c.root.join("submissions")).unwrap_or_default().lines().count();
+        success(c.stage_submit(stage, false));
+        let doc = logs::read(&c.root.join("run"), step).unwrap();
+        let script = logs::resolve(&c.root.join("run"), doc.get("阶段分配", "脚本").unwrap());
+        let body = fs::read_to_string(script).unwrap();
+        assert!(body.contains(&format!("--allocated-stage {stage}")));
+        assert!(body.contains("epw_wannier"));
+        assert!(!c.stage_submit(stage, false).status.success());
+        c.put("input.toml", "invalid pending edit");
+        // 真实执行一次捕获的 Slurm 脚本；不使用作业外反复推进辅助器。
+        success(c.stage_execute());
+        fs::write(c.root.join("input.toml"), original).unwrap();
+        assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), count + 1,
+            "阶段内不能嵌套提交");
+        assert_eq!(logs::read(&c.root.join("run"), step).unwrap().get("阶段分配", "状态"), Some("已完成"));
+        let result = c.root.join("run/results").join(folder);
+        let comparison = c.root.join("run").join(folder).join("comparison-native");
+        assert!(!comparison.join("electron").exists());
+        assert!(!comparison.join("phonon").exists());
+        if step == Step::Wannier {
+            assert!(comparison.join("postw90.out").is_file());
+            assert!(comparison.join("band.eig").is_file());
+        } else {
+            assert!(comparison.join("force-constants/reference.fc.xml").is_file());
+            assert!(comparison.join("frequencies/reference.freq").is_file());
+        }
+        assert!(result.join("stage-manifest.json").is_file());
+        let files = epwflow::qe_data::save::files(&result).unwrap();
+        assert!(files.iter().any(|f| f.relative_path.extension().is_some_and(|ext| ext == "png")));
+        let before = (c.calls(), c.post_calls());
+        success(c.stage_submit(stage, false));
+        assert_eq!(before, (c.calls(), c.post_calls()));
+        assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), count + 1);
+    }
 }

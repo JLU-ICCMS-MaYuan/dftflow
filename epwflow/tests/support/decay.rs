@@ -51,7 +51,9 @@ fn decay_is_published_before_comparison_failure_and_repairs_without_rerunning_sc
     fs::remove_file(native.join("decay/decay-H.png")).unwrap();
     fs::remove_file(result.join("decay-overview.pdf")).unwrap();
     // 模拟分配被终止后的遗留锁：只恢复原作业，错误所有者必须保留。
-    let job = c.direct_task()["job"].as_u64().unwrap();
+    let job = epwflow::foundation::readable_state::jobs(
+        &c.root.join("run"), epwflow::foundation::stages::Step::Coarse,
+    ).unwrap()["阶段分配"];
     let locks = [
         native.join("decay/decay-publication.lock"),
         result.join("stage-publication.lock"),

@@ -83,3 +83,35 @@ Issue、Spec、计划、研究、数据模型、CLI 契约、任务、需求检�
 
 
 联合收尾已完成：仓库及默认三程序入口与真实受测制品哈希一致；examples 旧现场 1394 项移出归档校验一致，输入保护不变，新目录公开检查通过；手动 README／RESULTS 与总览已同步。最终回归为 EPW 248＋QE 34＝282 项通过，默认暂挂 10 项中两项真实只读另行通过，其余历史来源／Tc 测试不计通过。全过程科学调用与阶段回执核验、预算及路径证据见联合验收；线上状态仍由用户管理。
+
+## 2026-11-16 比较目录扁平化验收
+
+用户明确要求第 5、6 步去掉 electron／phonon 中间目录，并选择“同时迁移已有目录，保留科学数据并验证续算”。沿用本地 0050 需求，不新建或操作线上 Gitee Issue。
+
+### 实现与覆盖
+
+- FR-014 → layout::path 编号映射 → T090：电子直接映射 5.epw-wannier/comparison-native/，QE 声子比较直接映射 6.epw-coarse/comparison-native/；非编号历史路径不变。内部语义键仅用于唯一映射，不再生成实体 electron／phonon 目录；epw 子目录保留。
+- FR-016 → workspace::archive_step／native_workspace 的检查点保留与批次重关联 → T091：粗网格归档保留相容 force-constants／frequencies 及对应检查点；attempt 继续核验参数。原始 SCF／PH 来源重建时清除这些检查点。实际进程验证电子模型变化不增加 q2r／matdyn 调用，上游重建后原检查点消失。
+- FR-015／SC-014 → 本次定向迁移与续算核验 → T092：未新增常驻旧布局读取或自动迁移框架，不自动处理其他工作区。未知目标冲突及活动 Slurm 作业在写入前拒绝。
+
+### 回归与固定入口
+
+命令：`bash scripts/build-native.sh test --release -p epwflow --test three_stage_execution --test native_interpolation --locked`。阶段进程回归 **108 通过、0 失败、1 ignored**；原生插值 **13 通过、0 失败、1 ignored**。两项 ignored 是需显式外部／本机条件的专用用例，不计通过。实际阶段脚本验证图表自动发布、扁平目录内容与无中间层、失败恢复、电子模型变化复用、来源失效；非编号原生比较保持。证据日志本轮保留于 /tmp/dftflow-flat-final-tests.log。
+
+首轮 107 项阶段回归通过，1 项发现保留检查点仍绑定旧 coarse 批次，导致重复调用。修复为新批次关联后交由原参数检查再复用；最终回归全部通过，不把首轮失败计作通过。
+
+重新 release 构建并自动发布固定 epwflow 四个入口成功，没有创建编译版本或旧命令备份；已安装 epw_wannier 与构建制品 SHA-256 一致。源码仅在测试后作了不改变语义的换行排版，发布时重新编译。git diff --check 通过。
+
+### 已有 Ubuntu MgB₂ 目录迁移
+
+工作区：examples/MgB2/ubuntu/run。先确认无活动 Slurm 作业并核验旧结果包；将第 5 步 comparison-native/electron 中 **32 个文件**平移到 comparison-native 根，移除空 electron 目录；**20 个科学输出文件**的 SHA-256 保持一致，**11 份路径类元数据／任务引用**同步更新，并按依赖更新受影响 JSON 来源与结果清单哈希。没有更改模型、拟合日志、谱表或图像字节；密度与原始波函数不参与任何哈希、存在性、大小或文件集合核验。
+
+该实际工作区当时没有第 6 步／第 4 步旧声子比较目录可迁移；第 6 步扁平生成及复用由真实 Bash 与隔离原生替身回归覆盖，不虚报已有声子文件迁移。
+
+使用新固定入口运行 `epw_wannier -c examples/MgB2/ubuntu/input.toml --stage wannier -s`，PATH 中 sbatch 拦截器会拒绝任何意外提交。实际退出 0 并返回“阶段已完成，现有科学结果可复用”，拦截器零调用；随后结果包核验成功，20 个科学文件再次核对一致。没有执行新的 QE／EPW／postw90 科学计算。
+
+一次性迁移操作脚本、前后元数据及科学文件证据、续算输出与结果核验留在忽略的 docs/local/comparison-flat-20261116/，不进入生产实现或版本库。本次只迁移已授权工作区，不批量修改历史冻结数据。Issue／Spec、使用说明及 Overview 已同步；线上 Issue 自管，不推送或关闭。
+
+### 原则
+
+KISS／DRY：目录规则只改唯一映射，复用现有归档与检查点核验。YAGNI：不新增兼容入口、后台服务或迁移状态体系；一次性旧现场迁移与生产计算逻辑分开。科学数据、参数核验和程序职责保持原边界。

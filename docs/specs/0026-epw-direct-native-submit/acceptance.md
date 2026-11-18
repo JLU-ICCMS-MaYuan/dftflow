@@ -75,3 +75,17 @@ EPW `.sh` 通过统一原子写入器在替换前设置 `0755`；普通输入不
 安装前核对队列为空、三个原安装文件未被其他任务替换；从独立快照的已验证开发构建打包并更新 `bin/epwflow/epw_phonon`、`epw_wannier`、`epw_superconductivity`，三个安装哈希与打包制品逐一相同。该快照包含并发任务已经提交的高对称端点实现，保留其功能；未包含其他未提交源码。安装器完成活动引用检查，未改 shell 启动文件或集群设置。
 
 实际安装入口的 SiP₂ 配置预检及现场 `--plot` 均验证，图源仍是旧 5000 轮模型，未启动新的科学程序。本地完整日志、迁移清单、打包来源与安装哈希存于 `docs/local/0026-20261027-native-diagnostics/`。SiP₂ README 原有第 1／2／3 步说明与旧运行说明保留；本次涉及文档 111 个本地链接核验通过。前文“不覆盖安装”的记录属于任务仍活动时的保护阶段，由此处最终安装事实补充。
+
+## 2026-11-16 第 5、6 步自动后处理验收
+
+用户确认恢复第 5、6 步阶段 CLI 包装提交并明确要求落地；原纯原生约束只在这两步被替代。入口分派及 prepare_stage 复用第 3、4 步已有配置冻结、allocation-id、作业号表和阶段日志；不新增状态格式或第二套科学执行链。第 7、8 步原生提交保留。
+
+- FR-019／SC-012：wannier 和 coarse 的真实 Bash 阶段脚本各执行一次，自动生成本阶段 stage-manifest 与 PNG，提交计数各只增一；修改原 input.toml 不影响冻结作业，完成后再次调用零新增提交／科学调用。证据：stage_results::wannier_and_coarse_single_allocation_freezes_config_and_automatically_plots。
+- FR-020：coarse_publishes_phonons_using_stage_five_electrons_without_reference_pw 验证第 6 步复用第 5 步电子结果，完成声子比较；已有路径插值／比较／绘图逻辑保持。
+- FR-021／SC-013：wannier_post_failure_keeps_model_and_recovery_never_calls_wannier90、matdyn_recovery_reuses_successful_force_constants_and_native_coarse、decay_is_published_before_comparison_failure_and_repairs_without_rerunning_science，覆盖失败非零、保留模型和粗网格、恢复及衰减交付。版本误拒绝恢复、防重复、目录重建、第 7／8 步原生及双求解器继续通过。
+- 最终命令：`bash scripts/build-native.sh test --release -p epwflow --test three_stage_execution --locked`。结果 **108 通过、0 失败、1 ignored**，178.84 秒；ignored 为要求显式本机配置的只读真实数据用例，不计通过。证据日志本轮保留于 /tmp/dftflow-verified-regression.log。
+- 初始调试回归期间并行编译替换测试 CLI，造成 current_exe 的 deleted 路径干扰，相关调试轮次已停止，不计验收通过。最终全量回归使用稳定 release 制品，不并行替换该制品。旧迁移用例改为断言默认生成阶段脚本不修复未核验电子记录、显式迁移复查仍如实报错，未放宽科学核验。
+- release 构建成功并通过发布预检，已覆盖固定 bin/epwflow 的四个产品。首次发布因检测到运行中的 epw_phonon 而保留旧入口，待其自然退出后再次构建发布成功，没有停止真实进程。已安装 epw_wannier 与 release 构建制品 SHA-256 同为 2853b89016fd5bcb18891304f2411721356a4ceaa700acd27b72778173b4c780；--help 启动及新提交说明核对通过。
+- git diff --check、Issue／Spec 新增原话一致性检查通过；已更新根 README、模块说明和 Overview。KISS／DRY：复用既有阶段执行器及原生边界；YAGNI：只恢复第 5、6 步，没有新调度服务或额外状态文件。
+
+本次测试的 QE／EPW 为隔离替身；未提交真实科学作业、修改物理参数、密度／波函数核验边界或历史科学数据。已有冻结脚本不批量重写，新公开调用生成新阶段脚本。线上 Gitee Issue 沿用用户自管，不推送、不宣称线上关闭。

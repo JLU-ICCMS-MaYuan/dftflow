@@ -95,7 +95,7 @@ pub fn start_phonon(config: &Path, resume: bool) -> Result<()> {
     start_stage(config, Step::Phonon, resume)
 }
 pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: bool) -> Result<()> {
-    if target >= Step::Wannier {
+    if target > Step::Coarse {
         return super::native_workspace::advance(config, target, submit, resume);
     }
     let cfg = super::readable_state::load_config(config)?;
@@ -104,12 +104,27 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
     check_active(&cfg, None)?;
     native_jobs::check_groups(&cfg)?;
     native_jobs::reconcile(&cfg, resume)?;
+    if resume {
+        crate::delivery::decay::recover_pending(&cfg)?;
+    }
     if cfg.budget.ledger.is_file() {
         budget::with_ledger(
             &cfg.budget.ledger,
             &cfg.budget.campaign_id,
             budget::reconcile,
         )?;
+    }
+    if !resume {
+        for task in native_jobs::tasks(&cfg)? {
+            ensure!(
+                task.state != "failed"
+                    || !stages::execution_steps(&cfg, target)
+                        .iter()
+                        .any(|step| task.directory.starts_with(step.directory(&cfg))),
+                "execution_failed: {} 上次失败；修复后使用 --resume -s",
+                task.directory.display()
+            );
+        }
     }
     let version = log::backup_config(config)?;
     log::register_config(&cfg, config, &version)?;
@@ -317,6 +332,21 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
         if name.ends_with(".jobs") || name.ends_with(".sh") || slurm_log(&path) {
             continue;
         }
+        if step == Step::Coarse && name == "comparison-native" {
+            // QE 声子比较与电子模型独立；保留其已核验现场，其他派生数据正常重建。
+            for child in fs::read_dir(&path)? {
+                let child = child?;
+                if matches!(child.file_name().to_str(), Some("force-constants" | "frequencies")) {
+                    continue;
+                }
+                if child.file_type()?.is_dir() {
+                    fs::remove_dir_all(child.path())?;
+                } else {
+                    fs::remove_file(child.path())?;
+                }
+            }
+            continue;
+        }
         if entry.file_type()?.is_dir() {
             fs::remove_dir_all(&path)?;
         } else {
@@ -330,7 +360,13 @@ pub(super) fn archive_step(cfg: &Config, step: Step) -> Result<()> {
                     d.sections.retain(|name, _| {
                         matches!(name.as_str(), "工作区" | "阶段" | "阶段分配" | "下一步")
                             || name.starts_with("配置快照 · ")
+                            || (step == Step::Coarse
+                                && matches!(name.as_str(), "子步骤 · comparison-q2r" | "子步骤 · comparison-matdyn"))
                     });
+                }
+                if affected == Step::Coarse && step <= Step::Phonon {
+                    d.remove("子步骤 · comparison-q2r");
+                    d.remove("子步骤 · comparison-matdyn");
                 }
                 d.set("阶段", "科学状态", "待计算");
                 d.set(
