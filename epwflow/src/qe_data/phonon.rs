@@ -58,6 +58,23 @@ fn dyn0(qe: &QeSettings, dir: &Path, geometry: &xml::Geometry) -> Result<Vec<QPo
     )
 }
 
+/// 并行任务从同一份 QE 初始化结果重建坐标，不猜测对称性和内部编号。
+pub fn initialized_points(qe: &QeSettings, work: &Path) -> Result<Vec<QPoint>> {
+    let dir = crate::foundation::layout::path(work, "ph_init");
+    let mut points = dyn0(qe, &dir, &geometry(qe, work)?)?;
+    native_ph::control(&control(qe, &dir), &points)?;
+    for point in &mut points {
+        point.directory = format!("q{:04}", point.global_index);
+    }
+    Ok(points)
+}
+
+pub(crate) fn completed_response(qe: &QeSettings, work: &Path, q: &QPoint) -> Result<PhResponse> {
+    let dir = crate::foundation::layout::path(work, "ph").join(&q.directory);
+    qf_io::qe_completion::checked_log(&dir.join("ph.out"), false)?;
+    response(qe, &dir, q, &control(qe, &crate::foundation::layout::path(work, "ph_init")), &geometry(qe, work)?)
+}
+
 fn control(qe: &QeSettings, dir: &Path) -> PathBuf {
     dir.join("out/_ph0")
         .join(format!("{}.phsave/control_ph.xml", qe.config.qe.prefix))

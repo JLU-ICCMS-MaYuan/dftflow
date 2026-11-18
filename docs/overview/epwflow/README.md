@@ -126,7 +126,15 @@ SCF／NSCF 及 electronic 路径完成后还会生成逐带范围诊断，不等
 
 ## 各阶段自动绘图（0072）
 
-第 1～6 步的当前阶段分配在科学任务结束后执行对应绘图，无需另提绘图作业。第 1／2 步生成逐带范围图；第 3 步生成范围图和近费米能、全能窗电子组合图，正常 DOS 面板包含元素 PDOS；第 4 步生成声子能带／DOS 组合图；第 5 步只比较电子能带／总 DOS；第 6 步比较声子能带／DOS，并生成实空间衰减图。
+第 1～6 步的当前阶段分配在科学任务结束后执行对应绘图，无需另提绘图作业。第 4 步 index／coords 的独立 q 提交路径改由 collect 分配执行声子后处理及绘图。第 1／2 步生成逐带范围图；第 3 步生成范围图和近费米能、全能窗电子组合图，正常 DOS 面板包含元素 PDOS；第 4 步生成声子能带／DOS 组合图；第 5 步只比较电子能带／总 DOS；第 6 步比较声子能带／DOS，并生成实空间衰减图。
+
+### index／coords 独立 q 提交（0075）
+
+编号工作区的 `epw_phonon -s` 对 index／coords 提交 init、各 q 与 collect 独立 Slurm 作业，不在一个分配里顺序执行全部 q。首次由 init 生成并校验真实 dyn0 后自动展开 q 脚本与提交；这些 q 仍以 `afterok` 依赖尚未退出的 init，collect 以 `afterok` 依赖全部 q。因此首次命令返回时可能只显示 init 作业号，后续无需手动推进。单纯运行 `epw_phonon` 只生成驱动模板和状态，不提交或计算。
+
+`4.qe-phonon-{index,coords}/phonon-qpoints.json` 保存每个任务的状态、作业号和 q 元数据。`--status` 及 `--status --json` 可查看；Slurm 取消、超时等明确失败通过调度记录校准。续算只重提 failed q，保留完成 q；仍在等待的 collect 用新 q 作业号更新依赖，作业号保持不变。collect 自身失败且全部 q 完成后可单独重提。
+
+状态缺失／损坏、未知提交回执或冻结批次配置改变时拒绝猜测恢复。nosplit、外部 PH 导入与 `-r` 的同步执行语义保留。代码与协议测试不代表原生 MgB₂ 科学验收；当前证据及首次无 dyn0 的时序取舍见 [0075 验收](../../specs/0075-phonon-parallel-qpoints/acceptance.md)。
 
 图像位于 `run/results/<编号阶段>/`。当前阶段复用时补齐本阶段缺图，不检查或补画上游图片，不因缺图重跑科学程序。SCF／NSCF 的独立目录可使用 `epw_phonon --plot --results "run/results/1.qe-scf"` 等形式重绘；第 3／5 步也保留既有现场重绘命令。
 

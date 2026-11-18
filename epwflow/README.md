@@ -36,7 +36,7 @@ header 原文保留；默认作业名和日志指令位于它之前，用户同�
 
 ## 编号工作区：原生任务与阶段交付
 
-第 3／4 步提交一个阶段分配，在分配内完成依赖、原生后处理、核验、绘图和发布。第 1／2 步及第 5～8 步的 `-s` 直接提交就绪的原生任务；作业结束后重复同一公开命令，核验并推进下一子任务或交付。指定温度 `task="gap"` 为每个方法独立提交原生多温度作业，后续公开调用归集结果。`-r` 在已有 Slurm 分配内同步推进所选阶段。各步交付可从工作区根 `results/` 查看。
+第 3 步和第 4 步 nosplit 模式沿用阶段分配。第 4 步 index／coords 的 `-s` 使用独立 init、逐 q 和 collect 分配，详见下节。第 1／2 步及第 5～8 步的 `-s` 直接提交就绪的原生任务；作业结束后重复同一公开命令，核验并推进下一子任务或交付。指定温度 `task="gap"` 为每个方法独立提交原生多温度作业，后续公开调用归集结果。`-r` 在已有 Slurm 分配内同步推进所选阶段。各步交付可从工作区根 `results/` 查看。
 
 第 3 步路径完成即保留逐带范围诊断，能带与 DOS 就绪后发布两张组合图；第 5 步发布同样两种范围的电子对比组合图，不等待声子；第 6 步发布一张声子谱＋总 DOS 对比组合图。流程与恢复见 [0050](../docs/specs/0050-epw-stage-results/quickstart.md)及 [Overview 流程图](../docs/overview/epwflow/workflow.md)。
 
@@ -45,6 +45,16 @@ epw_phonon -c input.toml -s
 epw_wannier -c input.toml -s
 epw_superconductivity -c input.toml -s
 ```
+
+### index／coords 的独立 q 作业（0075）
+
+`epw_phonon -c input.toml` 只生成脚本和状态，不运行科学程序或提交。首次没有原生 dyn0 时，生成 `init/ph_init.sh`、`q/q0001/ph.sh` 的 Γ 驱动模板和 `collect/collect.sh`；完整不可约列表由 init 确定。
+
+`-s` 先提交 init。init 成功解析本次 dyn0 后，在退出前自动生成并提交全部 q 作业，各自依赖 `afterok:init`；collect 依赖全部 q 成功，负责归集、q2r、两项 matdyn 和绘图。首次公开命令返回时可能只有 init 入队，其余作业号随后出现在 init 日志、状态文件和 `--status`。程序不限制 q 数量，实际并发由 Slurm 资源决定。
+
+状态保存在 `4.qe-phonon-index/phonon-qpoints.json` 或 `4.qe-phonon-coords/phonon-qpoints.json`。失败修复后用 `epw_phonon -c input.toml -s --resume`，只重提 failed q，已完成 q 保留。仍在等待的 collect 更新到新 q 作业号，保留自己的作业号；collect 自身失败且全部 q 已完成时才重提 collect。init 失败时先重提 init。未知提交回执、缺失／损坏状态和变更后的冻结批次配置会报错，禁止猜测重建或重复提交。
+
+nosplit 与已有 PH 导入仍走原路径，不生成该状态文件。此功能的协议、真实调度器测试与科学验收边界分别记录在 [0075 验收](../docs/specs/0075-phonon-parallel-qpoints/acceptance.md)。
 
 阶段成功发布后再报告完成。失败修复后用相同目标加 `--resume -s`，成功科学检查点继续复用，只补失败后处理、缺图或发布。排队、运行中或终态未知时拒绝重提。Tc 沿用原搜索规则、双初值和次数上限，搜索进度写第 8 步日志，不扩大科学参数范围。
 

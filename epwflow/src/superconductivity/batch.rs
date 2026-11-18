@@ -45,6 +45,23 @@ fn method(mode: Mode) -> &'static str {
 fn decimal(t: i64) -> String {
     (t as f64 / 100.0).to_string()
 }
+
+/// 生成第 7 步参数目录名：k网格-q网格-fsthick-degaussw
+pub fn interpolation_params_directory(cfg: &Config) -> String {
+    let k = &cfg.interpolation.k_grid;
+    let q = &cfg.interpolation.q_grid;
+    let fsthick = cfg.interpolation.fsthick_ev;
+    let degaussw = cfg.interpolation.degaussw_ev;
+
+    format!(
+        "01.k{}x{}x{}-q{}x{}x{}-fsthick{}eV-degaussw{}eV",
+        k[0], k[1], k[2],
+        q[0], q[1], q[2],
+        fsthick, degaussw
+    )
+}
+
+/// 生成第 8 步参数目录名：iso/aniso-μ*-Tc范围-degaussq
 pub fn directory_name(cfg: &Config, mode: Mode) -> String {
     let settings = cfg.solver_for(mode).expect("Configuration validated at public entry");
     let ts = &settings.gap_temperatures_k;
@@ -271,6 +288,7 @@ fn prepare(
     );
     let dir = Step::Superconductivity
         .directory(cfg)
+        .join(interpolation_params_directory(cfg))
         .join(directory_name(cfg, mode));
     fs::create_dir_all(&dir)?;
     // 仅覆盖本轮仍需计算温度的数据；成功温度保留当前科学结果。

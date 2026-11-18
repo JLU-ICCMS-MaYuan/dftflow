@@ -1252,6 +1252,9 @@ mod direct_submit;
 #[path = "support/phonon_chain.rs"]
 mod phonon_chain;
 
+#[path = "support/phonon_parallel.rs"]
+mod phonon_parallel;
+
 #[path = "support/qe_stage_plots.rs"]
 mod qe_stage_plots;
 

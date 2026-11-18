@@ -240,7 +240,7 @@ struct Generated {
 }
 
 // 不改变 shell 选项；环境脚本加载失败时显式传播退出码。
-pub(super) fn source_environment(path: &Path) -> Result<String> {
+pub(crate) fn source_environment(path: &Path) -> Result<String> {
     Ok(format!(
         "source {} --force || exit $?\n",
         slurm::shell_quote(path.to_str().context("Environmental scripts are not UTF-8")?)

@@ -62,6 +62,8 @@ struct Options {
     #[arg(long, hide = true, value_parser = ["qe_eband", "qe_eledos"])]
     electronic_branch: Option<String>,
     #[arg(long, hide = true)]
+    phonon_task: Option<String>,
+    #[arg(long, hide = true)]
     allocation_id: Option<String>,
     #[arg(long, hide = true)]
     batch_finish: Option<String>,
@@ -134,6 +136,11 @@ pub fn run(phase: Phase) {
 }
 
 fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
+    if let Some(task) = &o.phonon_task {
+        ensure!(phase == Phase::Phonon, "configuration: phonon tasks belong to epw_phonon");
+        return crate::qe_data::phonon_parallel::allocated(&o.config, task,
+            o.allocation_id.as_deref().context("allocation: phonon task allocation ID missing")?);
+    }
     if let Some(branch) = &o.electronic_branch {
         return super::electronic_parallel::allocated(
             &o.config, branch, o.resume,

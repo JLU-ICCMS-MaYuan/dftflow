@@ -8,7 +8,8 @@ use super::{
 use anyhow::{ensure, Context, Result};
 use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Command};
 
-pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
+pub(crate) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
+    crate::qe_data::phonon_parallel::check_active(cfg, own)?;
     super::electronic_parallel::check_active(cfg)?;
     native_jobs::check_orphan_jobs(cfg)?;
     for step in Step::ALL {
@@ -53,6 +54,11 @@ pub(super) fn check_active(cfg: &Config, own: Option<&str>) -> Result<()> {
     Ok(())
 }
 pub fn report(cfg: &Config) -> Result<serde_json::Value> {
+    let phonon = if crate::qe_data::phonon_parallel::enabled(cfg)
+        && (crate::qe_data::phonon_parallel::state_path(cfg).try_exists()?
+            || log::read(&cfg.work_dir, Step::Phonon)?.get("Parallel phonon", "Batch").is_some()) {
+        Some(crate::qe_data::phonon_parallel::reconcile(cfg)?)
+    } else {None};
     let mut steps = serde_json::Map::new();
     let mut complete = true;
     for step in Step::ALL {
@@ -60,11 +66,12 @@ pub fn report(cfg: &Config) -> Result<serde_json::Value> {
         complete &= reusable;
         steps.insert(step.name().into(),serde_json::json!({"Status":log::read(&cfg.work_dir,step)?.get("Stage","Status"),"reusable":reusable}));
     }
-    Ok(
-        serde_json::json!({"schema_version":1,"operation_status":"ok","workflow_status":if complete {"complete"} else {"incomplete"},"workflow_complete":complete,"steps":steps,"native_task":native_jobs::status(cfg)?,"native_methods":native_jobs::groups_status(cfg)?}),
-    )
+    let mut report = serde_json::json!({"schema_version":1,"operation_status":"ok","workflow_status":if complete {"complete"} else {"incomplete"},"workflow_complete":complete,"steps":steps,"native_task":native_jobs::status(cfg)?,"native_methods":native_jobs::groups_status(cfg)?});
+    if let Some(phonon) = phonon {report["phonon_qpoints"] = serde_json::to_value(phonon)?;}
+    Ok(report)
 }
 pub fn status(cfg: &Config) -> Result<()> {
+    crate::qe_data::phonon_parallel::status(cfg)?;
     for step in Step::ALL {
         let doc = log::read(&cfg.work_dir, step)?;
         println!(
@@ -94,6 +101,9 @@ pub(crate) fn prepare_stage(config: &Path, target: Step, resume: bool, submit: b
         return super::native_workspace::advance(config, target, submit, resume);
     }
     let cfg = super::readable_state::load_config(config)?;
+    if target == Step::Phonon && crate::qe_data::phonon_parallel::enabled(&cfg) {
+        return crate::qe_data::phonon_parallel::prepare(&cfg, config, resume, submit);
+    }
     let operation = log::DirectoryGuard::acquire(&cfg.work_dir)?;
     let electronic = super::electronic_reuse::Scope::enter(&cfg)?;
     super::run_state::ready(&cfg.work_dir)?;

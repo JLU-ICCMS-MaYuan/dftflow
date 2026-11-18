@@ -292,7 +292,9 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
         for mode in modes {
             let source=source.for_mode(&cfg,mode)?;
             let path=if source.reuse_spectrum(mode) && source.a2f.path.is_file() {source.a2f.path.clone()}else{
-                crate::foundation::stages::Step::Superconductivity.directory(&cfg).join(crate::superconductivity::batch::directory_name(&cfg,mode))
+                crate::foundation::stages::Step::Superconductivity.directory(&cfg)
+                    .join(crate::superconductivity::batch::interpolation_params_directory(&cfg))
+                    .join(crate::superconductivity::batch::directory_name(&cfg,mode))
                     .join(if source.reuse_spectrum(mode){"source.a2f".into()}else{format!("{}.a2f",cfg.qe.prefix)})
             };
             if !seen.insert(path.clone()) {continue;}

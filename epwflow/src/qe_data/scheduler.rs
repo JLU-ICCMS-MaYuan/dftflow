@@ -10,6 +10,14 @@ use anyhow::{bail, ensure, Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
 
+/// 并行 PH 的归集边界；逐项验证已有原生响应，不调用 ph.x。
+pub fn collect_parallel(cfg: &config::Config, qe: &QeSettings) -> Result<()> {
+    let points = phonon::initialized_points(qe, &cfg.work_dir)?;
+    let responses = points.iter().map(|q| phonon::completed_response(qe, &cfg.work_dir, q)).collect::<Result<Vec<_>>>()?;
+    collect_ph::collect(&cfg.work_dir, &points, &responses, &cfg.qe.prefix, &phonon::geometry(qe, &cfg.work_dir)?)?;
+    Ok(())
+}
+
 /// 执行完整 QE 数据链到 qe-data 交付（FR-001/003~010）：
 /// 一次 SCF → 完整 NSCF → PH 初始化 → 分 q → 归集 → 校验 → 发布清单。
 pub fn run(

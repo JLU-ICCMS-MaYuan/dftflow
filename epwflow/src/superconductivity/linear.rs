@@ -24,7 +24,10 @@ pub fn run(cfg:&Config,_work:&Path,launcher:&[String],backend:Backend)->Result<(
     text=super::attempt::configured(&request,&input,&text)?;
     ensure!(regex::Regex::new(r"(?im)^\s*tc_linear\s*=\s*\.true\.")?.is_match(&text),
         "configuration: explicit native linearized task requires tc_linear=.true.");
-    let dir=Step::Superconductivity.directory(cfg).join(super::batch::directory_name(cfg,Mode::Iso));fs::create_dir_all(&dir)?;
+    let dir=Step::Superconductivity.directory(cfg)
+        .join(super::batch::interpolation_params_directory(cfg))
+        .join(super::batch::directory_name(cfg,Mode::Iso));
+    fs::create_dir_all(&dir)?;
     input.stage_matrix_links(&dir,Mode::Iso)?;
     if input.reuse_spectrum(Mode::Iso) {
         workspace_data::link(&input.a2f.path,&dir.join("source.a2f"))?;
