@@ -57,22 +57,46 @@ fn redraw_preserves_all_samples_and_rejects_mismatched_labels() {
     );
     assert_eq!(rows[0][5], "-5.000000");
     for name in [
-        "phband/phonon_band.png",
-        "phdos/phonon_dos.png",
-        "phonon_combined.jpg",
+        "phband/phonon_band.svg",
+        "phdos/phonon_dos.svg",
+        "phonon_combined.svg",
     ] {
-        assert!(fs::metadata(dir.join(name)).unwrap().len() > 10000);
+        let svg = fs::read_to_string(dir.join(name)).unwrap();
+        assert!(svg.contains("<svg") && svg.contains("</svg>"));
+        assert!(svg.contains("Frequency (cm⁻¹)"));
     }
     assert_eq!(
         fs::read_to_string(dir.join("phband/Si.phband.freq")).unwrap(),
         freq
     );
     let original_csv=fs::read(dir.join("phdos/phonon_dos_elements.csv")).unwrap();
-    let smoothed=fs::read(dir.join("phdos/phonon_dos.png")).unwrap();
+    let smoothed=fs::read(dir.join("phdos/phonon_dos.svg")).unwrap();
     fs::write(dir.join("input.toml"), "[qe_phonon]\nwork_dir='.'\nprefix='Si'\n[qe_phonon.phdos]\nplot_sigma_cm1=0\n").unwrap();
     assert!(invoke().status.success());
-    assert_ne!(smoothed,fs::read(dir.join("phdos/phonon_dos.png")).unwrap());
+    assert_ne!(smoothed,fs::read(dir.join("phdos/phonon_dos.svg")).unwrap());
     assert_eq!(original_csv,fs::read(dir.join("phdos/phonon_dos_elements.csv")).unwrap());
+    // 走实际 CLI 配置读取，覆盖三个图的单格式、多格式和非法配置。
+    for formats in ["['png']", "['svg', 'PNG', 'pdf', 'jpeg', 'png']"] {
+        for base in ["phband/phonon_band", "phdos/phonon_dos", "phonon_combined"] {
+            for extension in ["svg", "png", "pdf", "jpg"] {
+                let _ = fs::remove_file(dir.join(format!("{base}.{extension}")));
+            }
+        }
+        fs::write(dir.join("input.toml"), format!("[plot]\nformats={formats}\n[qe_phonon]\nwork_dir='.'\nprefix='Si'\n")).unwrap();
+        let result = invoke();
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        for base in ["phband/phonon_band", "phdos/phonon_dos", "phonon_combined"] {
+            let bytes = fs::read(dir.join(format!("{base}.png"))).unwrap();
+            assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+            for extension in ["svg", "pdf", "jpg"] {
+                assert_eq!(dir.join(format!("{base}.{extension}")).is_file(), formats != "['png']");
+            }
+        }
+    }
+    for formats in ["[]", "['gif']"] {
+        fs::write(dir.join("input.toml"), format!("[plot]\nformats={formats}\n[qe_phonon]\nwork_dir='.'\nprefix='Si'\n")).unwrap();
+        assert!(!invoke().status.success());
+    }
     fs::write(dir.join("input.toml"), "[qe_phonon]\nwork_dir='.'\nprefix='Si'\n[qe_phonon.phdos]\nplot_sigma_cm1=-1\n").unwrap();
     let invalid=invoke();assert!(!invalid.status.success());
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("plot_sigma_cm1"));
@@ -84,6 +108,6 @@ fn redraw_preserves_all_samples_and_rejects_mismatched_labels() {
     .unwrap();
     let bad = invoke();
     assert!(!bad.status.success());
-    assert!(String::from_utf8_lossy(&bad.stderr).contains("Inconsistent index with frequency points"));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("phonon routing endpoint index inconsistent with frequency points"));
     fs::remove_dir_all(dir).unwrap();
 }

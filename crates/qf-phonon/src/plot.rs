@@ -4,6 +4,7 @@ use crate::{
     band::{archived_file, frequency_range, BandData},
 };
 use anyhow::{ensure, Result};
+use qf_config::PlotFormat;
 use plotters::{
     coord::Shift,
     prelude::*,
@@ -250,18 +251,18 @@ where
     Ok(())
 }
 
-pub fn plot_phonon_band(workspace: &str, prefix: &str) -> Result<String> {
+pub fn plot_phonon_band(workspace: &str, prefix: &str, formats: &[PlotFormat]) -> Result<Vec<String>> {
     let data = BandData::load(workspace, prefix)?;
     let range = frequency_range(data.frequencies.iter().flatten().copied())?;
     std::fs::create_dir_all(format!("{workspace}/{PHBAND_DIR}"))?;
-    let out = format!("{workspace}/{PHBAND_DIR}/phonon_band.png");
-    {
-        let area = BitMapBackend::new(&out, (1200, 760)).into_drawing_area();
+    let out = format!("{workspace}/{PHBAND_DIR}/phonon_band");
+    qf_plot::save_plot(&out, formats, |svg| {
+        let area = SVGBackend::with_string(svg, (1200, 760)).into_drawing_area();
         area.fill(&WHITE)?;
         draw_band(&area, &data, range)?;
         area.present()?;
-    }
-    Ok(out)
+        Ok(())
+    })
 }
 pub fn plot_phonon_dos(
     workspace: &str,
@@ -269,19 +270,20 @@ pub fn plot_phonon_dos(
     elements: &[String],
     counts: &[usize],
     sigma: f64,
-) -> Result<String> {
+    formats: &[PlotFormat],
+) -> Result<Vec<String>> {
     let mut data = load_dos(workspace, prefix, elements, counts)?;
     data.rows = gaussian_dos(data.rows, sigma)?;
     let range = frequency_range(data.rows.iter().map(|r| r[0]))?;
     std::fs::create_dir_all(format!("{workspace}/{PHDOS_DIR}"))?;
-    let out = format!("{workspace}/{PHDOS_DIR}/phonon_dos.png");
-    {
-        let area = BitMapBackend::new(&out, (720, 760)).into_drawing_area();
+    let out = format!("{workspace}/{PHDOS_DIR}/phonon_dos");
+    qf_plot::save_plot(&out, formats, |svg| {
+        let area = SVGBackend::with_string(svg, (720, 760)).into_drawing_area();
         area.fill(&WHITE)?;
         draw_dos(&area, &data, range, true)?;
         area.present()?;
-    }
-    Ok(out)
+        Ok(())
+    })
 }
 pub fn plot_phonon_combined(
     workspace: &str,
@@ -289,7 +291,8 @@ pub fn plot_phonon_combined(
     elements: &[String],
     counts: &[usize],
     sigma: f64,
-) -> Result<String> {
+    formats: &[PlotFormat],
+) -> Result<Vec<String>> {
     let band = BandData::load(workspace, prefix)?;
     let mut dos = load_dos(workspace, prefix, elements, counts)?;
     dos.rows = gaussian_dos(dos.rows, sigma)?;
@@ -300,16 +303,16 @@ pub fn plot_phonon_combined(
             .copied()
             .chain(dos.rows.iter().map(|r| r[0])),
     )?;
-    let out = format!("{workspace}/phonon_combined.jpg");
-    {
-        let area = BitMapBackend::new(&out, (1600, 760)).into_drawing_area();
+    let out = format!("{workspace}/phonon_combined");
+    qf_plot::save_plot(&out, formats, |svg| {
+        let area = SVGBackend::with_string(svg, (1600, 760)).into_drawing_area();
         area.fill(&WHITE)?;
         let (left, right) = area.split_horizontally(1200);
         draw_band(&left, &band, range)?;
         draw_dos(&right, &dos, range, false)?;
         area.present()?;
-    }
-    Ok(out)
+        Ok(())
+    })
 }
 
 #[cfg(test)]

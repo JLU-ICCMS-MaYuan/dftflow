@@ -163,7 +163,7 @@ fn nosplit_runs_postprocessing_once_and_exports_paired_epw_data() {
     assert_eq!(fs::read(save.join("Si.dvscf_q1")).unwrap(), vec![1; 32]);
     assert_eq!(fs::read(save.join("Si.dvscf_q2")).unwrap(), vec![2; 32]);
     assert!(c.0.join("calc/out/Si.save/charge-density.dat").is_file());
-    assert!(c.0.join("calc/phonon_combined.jpg").is_file());
+    assert!(c.0.join("calc/phonon_combined.svg").is_file());
     let repeated =
         qf_phonon::epw::export_nosplit(&c.0.join("calc"), &c.0.join("calc/out"), "Si").unwrap();
     assert_eq!(repeated, save);
@@ -215,5 +215,5 @@ fn option_disabled_keeps_original_names_and_failure_stops_downstream() {
         "pw.x\nph.x\nq2r.x\n"
     );
     assert!(!c.0.join("calc/save").exists());
-    assert!(!c.0.join("calc/phonon_combined.jpg").exists());
+    assert!(!c.0.join("calc/phonon_combined.svg").exists());
 }

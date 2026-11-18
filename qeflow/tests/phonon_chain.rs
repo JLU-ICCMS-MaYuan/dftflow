@@ -169,7 +169,7 @@ fn local_coords_finishes_and_uses_cartesian_q() {
     let ph = fs::read_to_string(w.0.join("calc/02/split_ph.in")).unwrap();
     assert!(ph.contains("2.886751345000000E-1") || ph.contains("2.886751345000000e-1"));
     assert!(w.0.join("calc/chain_complete.json").exists());
-    assert!(w.0.join("calc/phband/phonon_band.png").exists());
+    assert!(w.0.join("calc/phband/phonon_band.svg").exists());
     let before = fs::read_to_string(w.0.join("calls")).unwrap();
     ok(cli(&w, &["-r"], &[]));
     assert_eq!(before, fs::read_to_string(w.0.join("calls")).unwrap());
@@ -289,7 +289,7 @@ fn both_split_modes_report_concise_preparation_submission_and_failure() {
         assert!(!failed.stderr.is_empty());
         let submitted = cli(&w, &["-s"], &[]);
         assert!(submitted.status.success(), "{}", String::from_utf8_lossy(&submitted.stderr));
-        assert_eq!(String::from_utf8(submitted.stdout).unwrap(), "Pre-commissioned 102 ;Follow-up calculations and drawings will automatically be arranged\n");
+        assert_eq!(String::from_utf8(submitted.stdout).unwrap(), "Pre-commissioned 102;Follow-up calculations and drawings will automatically be arranged\n");
     }
 }
 
@@ -323,10 +323,10 @@ fn submitted_scripts_use_frozen_config_and_original_structure_after_external_edi
         let wrong_mode=if mode=="coords" {"index"} else {"coords"};
         let wrong=command(&w).args(["qe-phonon-chain-stage","-c",snapshot.to_str().unwrap(),"--mode",wrong_mode,"--stage","post"]).output().unwrap();
         assert!(!wrong.status.success());
-        assert!(String::from_utf8_lossy(&wrong.stderr).contains("Different mode"));
+        assert!(String::from_utf8_lossy(&wrong.stderr).contains("Quick-separated splits are different from the current pattern"));
         fs::write(&snapshot,frozen.replace("ecutwfc = 40","ecutwfc = 90")).unwrap();
         let bad=command(&w).args(["qe-phonon-chain-stage","-c",snapshot.to_str().unwrap(),"--mode",mode,"--stage","post"]).output().unwrap();
         assert!(!bad.status.success());
-        assert!(String::from_utf8_lossy(&bad.stderr).contains("The snapshot has changed"));
+        assert!(String::from_utf8_lossy(&bad.stderr).contains("Input snapshot changed"));
     }
 }

@@ -3,6 +3,7 @@
 //! plotters 绘制 SVG，`svg2pdf` 纯 Rust 转 PDF；内容/布局等价，非像素级。
 
 use anyhow::Result;
+use qf_config::PlotFormat;
 use plotters::prelude::*;
 use std::path::Path;
 
@@ -18,18 +19,7 @@ fn get<'a>(dict: &'a OrderedDict, key: &str) -> &'a [f64] {
 
 /// SVG 文本 → PDF 文件（svg2pdf，纯 Rust）。
 pub fn svg_to_pdf(svg_text: &str, pdf_path: &Path) -> Result<()> {
-    let mut options = svg2pdf::usvg::Options::default();
-    options.fontdb_mut().load_system_fonts();
-    let tree = svg2pdf::usvg::Tree::from_str(svg_text, &options)
-        .map_err(|e| anyhow::anyhow!("SVG Parsing failed: {e}"))?;
-    let pdf = svg2pdf::to_pdf(
-        &tree,
-        svg2pdf::ConversionOptions::default(),
-        svg2pdf::PageOptions::default(),
-    )
-    .map_err(|e| anyhow::anyhow!("PDF conversion failed: {e}"))?;
-    std::fs::write(pdf_path, pdf)?;
-    Ok(())
+    qf_plot::svg_to_pdf(svg_text, pdf_path)
 }
 
 fn plot_xy(
@@ -119,7 +109,7 @@ fn plot_line(
 
 /// `plot_system`：3×2 面板 → `plot_s{s}_r{r}_g{g}[_b{b}].pdf`。
 #[allow(clippy::too_many_arguments)]
-pub fn plot_system(
+pub fn plot_system_with_formats(
     direct: &OrderedDict,
     a2f: &OrderedDict,
     _formula: &str,
@@ -129,7 +119,8 @@ pub fn plot_system(
     _mu: f64,
     path: &str,
     b: f64,
-) -> Result<String> {
+    formats: &[PlotFormat],
+) -> Result<Vec<String>> {
     let freqs_a2f = get(a2f, "freqs, THz");
     let freqs_direct = get(direct, "freqs, THz");
     let file_name = if b > 0.0 {
@@ -150,9 +141,11 @@ pub fn plot_system(
     };
     let out_path = Path::new(path).join(&file_name);
     let (width, height) = (1200u32, 1600u32);
-    let svg_tmp = out_path.with_extension("svg.tmp");
-    {
-        let root = SVGBackend::new(&svg_tmp, (width, height)).into_drawing_area();
+    let base = out_path.with_extension("");
+    let mut all_formats = vec![PlotFormat::Pdf];
+    all_formats.extend_from_slice(formats);
+    let saved = qf_plot::save_plot(&base.to_string_lossy(), &all_formats, |svg| {
+        let root = SVGBackend::with_string(svg, (width, height)).into_drawing_area();
         root.fill(&WHITE).map_err(|e| anyhow::anyhow!("{e}"))?;
         let cells = root.split_evenly((3, 2));
         // (0,0) a2F：interp 填充 + direct 散点
@@ -190,26 +183,28 @@ pub fn plot_system(
             plot_line(&cells[idx], freqs_direct, get(direct, key_g), RGBColor(0x66, 0x66, 0x66), title, y_label)?;
         }
         root.present().map_err(|e| anyhow::anyhow!("{e}"))?;
-    }
-    let svg_text = std::fs::read_to_string(&svg_tmp)?;
-    svg_to_pdf(&svg_text, &out_path)?;
-    let _ = std::fs::remove_file(&svg_tmp);
-    Ok(out_path.to_string_lossy().into_owned())
+        Ok(())
+    })?;
+    anyhow::ensure!(saved.iter().any(|p| Path::new(p) == out_path), "Required scflow PDF was not saved: {}", out_path.display());
+    Ok(saved)
 }
 
 /// `plot_article_view`：α²F 填充 + λ/wlog/Tc_AD 曲线 → `plot_article_{formula}.pdf`。
-pub fn plot_article_view(
+pub fn plot_article_view_with_formats(
     _direct: &OrderedDict,
     a2f: &OrderedDict,
     formula: &str,
     path: &str,
-) -> Result<String> {
+    formats: &[PlotFormat],
+) -> Result<Vec<String>> {
     let freqs_a2f = get(a2f, "freqs, THz");
     let out_path = Path::new(path).join(format!("plot_article_{formula}.pdf"));
     let (width, height) = (1200u32, 600u32);
-    let svg_tmp = out_path.with_extension("svg.tmp");
-    {
-        let root = SVGBackend::new(&svg_tmp, (width, height)).into_drawing_area();
+    let base = out_path.with_extension("");
+    let mut all_formats = vec![PlotFormat::Pdf];
+    all_formats.extend_from_slice(formats);
+    let saved = qf_plot::save_plot(&base.to_string_lossy(), &all_formats, |svg| {
+        let root = SVGBackend::with_string(svg, (width, height)).into_drawing_area();
         root.fill(&WHITE).map_err(|e| anyhow::anyhow!("{e}"))?;
         plot_xy(
             &root,
@@ -227,15 +222,14 @@ pub fn plot_article_view(
         plot_line(&root, freqs_a2f, get(a2f, "wlog (gamma), K"), RGBColor(0xFF, 0x8C, 0x00), "ω_log", "ω_log, K")?;
         plot_line(&root, freqs_a2f, get(a2f, "Tc_AD (gamma), K"), RGBColor(0x22, 0x88, 0x22), "Allen-Dynes T_C", "T_C, K")?;
         root.present().map_err(|e| anyhow::anyhow!("{e}"))?;
-    }
-    let svg_text = std::fs::read_to_string(&svg_tmp)?;
-    svg_to_pdf(&svg_text, &out_path)?;
-    let _ = std::fs::remove_file(&svg_tmp);
-    Ok(out_path.to_string_lossy().into_owned())
+        Ok(())
+    })?;
+    anyhow::ensure!(saved.iter().any(|p| Path::new(p) == out_path), "Required scflow PDF was not saved: {}", out_path.display());
+    Ok(saved)
 }
 
 /// `plot_summary`：Tc–展宽收敛 → `summary_{formula}_s{s}_mu{mu}.pdf`。
-pub fn plot_summary(
+pub fn plot_summary_with_formats(
     broadening: &[f64],
     summary: &std::collections::BTreeMap<String, Vec<f64>>,
     formula: &str,
@@ -244,16 +238,19 @@ pub fn plot_summary(
     resolution: usize,
     mu: f64,
     path: &str,
-) -> Result<String> {
+    formats: &[PlotFormat],
+) -> Result<Vec<String>> {
     let out_path = Path::new(path).join(format!(
         "summary_{formula}_s{}_mu{}.pdf",
         outputs::format_smoothing_raw(smoothing),
         outputs::format_smoothing_raw(mu)
     ));
     let (width, height) = (1200u32, 600u32);
-    let svg_tmp = out_path.with_extension("svg.tmp");
-    {
-        let root = SVGBackend::new(&svg_tmp, (width, height)).into_drawing_area();
+    let base = out_path.with_extension("");
+    let mut all_formats = vec![PlotFormat::Pdf];
+    all_formats.extend_from_slice(formats);
+    let saved = qf_plot::save_plot(&base.to_string_lossy(), &all_formats, |svg| {
+        let root = SVGBackend::with_string(svg, (width, height)).into_drawing_area();
         root.fill(&WHITE).map_err(|e| anyhow::anyhow!("{e}"))?;
         let mut keys: Vec<&String> = summary.keys().filter(|k| k.starts_with("Tc")).collect();
         keys.sort();
@@ -305,9 +302,55 @@ pub fn plot_summary(
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
         }
         root.present().map_err(|e| anyhow::anyhow!("{e}"))?;
+        Ok(())
+    })?;
+    anyhow::ensure!(saved.iter().any(|p| Path::new(p) == out_path), "Required scflow PDF was not saved: {}", out_path.display());
+    Ok(saved)
+}
+
+/// 保留仅返回主 PDF 的库接口；CLI 使用带格式参数的版本。
+#[allow(clippy::too_many_arguments)]
+pub fn plot_system(direct: &OrderedDict, a2f: &OrderedDict, formula: &str,
+    smoothing: f64, resolution: usize, sigma: f64, mu: f64, path: &str, b: f64) -> Result<String> {
+    Ok(plot_system_with_formats(direct, a2f, formula, smoothing, resolution, sigma, mu, path, b, &[])?[0].clone())
+}
+
+pub fn plot_article_view(direct: &OrderedDict, a2f: &OrderedDict, formula: &str, path: &str) -> Result<String> {
+    Ok(plot_article_view_with_formats(direct, a2f, formula, path, &[])?[0].clone())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn plot_summary(broadening: &[f64], summary: &std::collections::BTreeMap<String, Vec<f64>>,
+    formula: &str, smoothing: f64, sigma: f64, resolution: usize, mu: f64, path: &str) -> Result<String> {
+    Ok(plot_summary_with_formats(broadening, summary, formula, smoothing, sigma, resolution, mu, path, &[])?[0].clone())
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+
+    #[test]
+    fn extra_format_failure_preserves_required_pdf_and_legacy_return() {
+        let dir = std::env::temp_dir().join(format!("scflow-plot-extra-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("plot_article_MgB2.jpg")).unwrap();
+        let data = vec![("freqs, THz".into(), vec![0.0, 1.0, 2.0])];
+        let saved = plot_article_view_with_formats(&data, &data, "MgB2", dir.to_str().unwrap(), &[PlotFormat::Jpg, PlotFormat::Svg]).unwrap();
+        assert_eq!(saved.len(), 2);
+        assert!(saved[0].ends_with(".pdf") && saved[1].ends_with(".svg"));
+        let pdf = plot_article_view(&data, &data, "MgB2", dir.to_str().unwrap()).unwrap();
+        assert_eq!(pdf, saved[0]);
+        assert!(std::fs::read(&pdf).unwrap().starts_with(b"%PDF-"));
+        std::fs::remove_dir_all(dir).unwrap();
     }
-    let svg_text = std::fs::read_to_string(&svg_tmp)?;
-    svg_to_pdf(&svg_text, &out_path)?;
-    let _ = std::fs::remove_file(&svg_tmp);
-    Ok(out_path.to_string_lossy().into_owned())
+
+    #[test]
+    fn required_pdf_failure_is_reported_even_if_svg_succeeds() {
+        let dir = std::env::temp_dir().join(format!("scflow-plot-required-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("plot_article_MgB2.pdf")).unwrap();
+        let data = vec![("freqs, THz".into(), vec![0.0, 1.0, 2.0])];
+        let error = plot_article_view_with_formats(&data, &data, "MgB2", dir.to_str().unwrap(), &[PlotFormat::Svg]).unwrap_err();
+        assert!(error.to_string().contains("Required scflow PDF was not saved"));
+        assert!(dir.join("plot_article_MgB2.svg").is_file());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

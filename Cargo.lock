@@ -1571,6 +1571,7 @@ dependencies = [
  "qf-crystal",
  "qf-input",
  "qf-io",
+ "qf-plot",
  "qf-runner",
  "regex",
  "serde",
@@ -1583,9 +1584,12 @@ name = "qf-plot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "image 0.25.10",
  "plotters",
  "png 0.17.16",
+ "qf-config",
  "resvg",
+ "svg2pdf",
 ]
 
 [[package]]
@@ -1611,10 +1615,10 @@ dependencies = [
  "plotters",
  "qf-config",
  "qf-crystal",
+ "qf-plot",
  "regex",
  "serde",
  "serde_json",
- "svg2pdf",
 ]
 
 [[package]]

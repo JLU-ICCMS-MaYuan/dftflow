@@ -41,6 +41,8 @@ pub struct Config {
     #[serde(default)]
     pub slurm: SlurmSection,
     #[serde(default)]
+    pub plot: PlotSection,
+    #[serde(default)]
     pub qe_phonon: QePhononSection,
     #[serde(default)]
     pub qe_scf: SectionMap,
@@ -106,6 +108,69 @@ impl QeSection {
 pub struct SlurmSection {
     #[serde(default)]
     pub header: Option<String>,
+}
+
+/// 绘图格式配置段：全局统一输出格式。
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlotSection {
+    /// 输出格式列表，可选：png, svg, pdf, jpg
+    #[serde(default = "default_plot_formats")]
+    pub formats: Vec<String>,
+}
+
+impl Default for PlotSection {
+    fn default() -> Self {
+        Self {
+            formats: default_plot_formats(),
+        }
+    }
+}
+
+fn default_plot_formats() -> Vec<String> {
+    vec!["svg".to_string()]
+}
+
+impl PlotSection {
+    /// 校验格式合法性并返回规范化的格式列表。
+    pub fn validate_formats(&self) -> Result<Vec<PlotFormat>> {
+        let mut result = Vec::new();
+        for fmt in &self.formats {
+            let normalized = match fmt.to_lowercase().as_str() {
+                "png" => PlotFormat::Png,
+                "svg" => PlotFormat::Svg,
+                "pdf" => PlotFormat::Pdf,
+                "jpg" | "jpeg" => PlotFormat::Jpg,
+                _ => anyhow::bail!("Unsupported plot format: {fmt}. Allowed values: png, svg, pdf, jpg"),
+            };
+            if !result.contains(&normalized) {
+                result.push(normalized);
+            }
+        }
+        if result.is_empty() {
+            anyhow::bail!("[plot].formats cannot be empty");
+        }
+        Ok(result)
+    }
+}
+
+/// 支持的绘图格式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlotFormat {
+    Png,
+    Svg,
+    Pdf,
+    Jpg,
+}
+
+impl PlotFormat {
+    pub fn extension(&self) -> &'static str {
+        match self {
+            PlotFormat::Png => "png",
+            PlotFormat::Svg => "svg",
+            PlotFormat::Pdf => "pdf",
+            PlotFormat::Jpg => "jpg",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -250,6 +315,7 @@ pub fn load(path: Option<&str>, config_file: Option<&str>) -> Result<Config> {
         serde_json::from_value(base).context("deserialize merged config")?;
     config.pp_dir = resolve_pp_dir_path(config.pp_dir, config_file);
     config.validate_no_manual_lattice_params()?;
+    config.plot.validate_formats().context("validate [plot].formats")?;
     for (element, mass) in &config.atomic_masses {
         anyhow::ensure!(mass.is_finite() && *mass > 0.0, "atomic_masses.{element} It has to be a finite positive number");
     }
@@ -409,6 +475,106 @@ mod tests {
         let mut base2: Value = serde_json::json!({"potcar_dir": null});
         hoist_root_vasp_keys(&mut base2);
         assert!(base2.get("vasp").is_none());
+    }
+
+    #[test]
+    fn plot_section_default_is_svg() {
+        let section = PlotSection::default();
+        assert_eq!(section.formats, vec!["svg".to_string()]);
+    }
+
+    #[test]
+    fn plot_format_extension() {
+        assert_eq!(PlotFormat::Png.extension(), "png");
+        assert_eq!(PlotFormat::Svg.extension(), "svg");
+        assert_eq!(PlotFormat::Pdf.extension(), "pdf");
+        assert_eq!(PlotFormat::Jpg.extension(), "jpg");
+    }
+
+    #[test]
+    fn plot_section_validate_formats_single() {
+        let section = PlotSection { formats: vec!["png".to_string()] };
+        let result = section.validate_formats().unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], PlotFormat::Png);
+    }
+
+    #[test]
+    fn plot_section_validate_formats_multiple() {
+        let section = PlotSection {
+            formats: vec!["svg".to_string(), "png".to_string(), "pdf".to_string()]
+        };
+        let result = section.validate_formats().unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], PlotFormat::Svg);
+        assert_eq!(result[1], PlotFormat::Png);
+        assert_eq!(result[2], PlotFormat::Pdf);
+    }
+
+    #[test]
+    fn plot_section_validate_formats_case_insensitive() {
+        let section = PlotSection {
+            formats: vec!["PNG".to_string(), "Svg".to_string(), "pdf".to_string()]
+        };
+        let result = section.validate_formats().unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], PlotFormat::Png);
+        assert_eq!(result[1], PlotFormat::Svg);
+        assert_eq!(result[2], PlotFormat::Pdf);
+    }
+
+    #[test]
+    fn plot_section_validate_formats_deduplicates() {
+        let section = PlotSection {
+            formats: vec!["png".to_string(), "PNG".to_string(), "png".to_string()]
+        };
+        let result = section.validate_formats().unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], PlotFormat::Png);
+    }
+
+    #[test]
+    fn plot_section_validate_formats_jpg_and_jpeg() {
+        let section1 = PlotSection { formats: vec!["jpg".to_string()] };
+        assert_eq!(section1.validate_formats().unwrap()[0], PlotFormat::Jpg);
+
+        let section2 = PlotSection { formats: vec!["jpeg".to_string()] };
+        assert_eq!(section2.validate_formats().unwrap()[0], PlotFormat::Jpg);
+    }
+
+    #[test]
+    fn plot_section_validate_formats_empty_fails() {
+        let section = PlotSection { formats: vec![] };
+        let result = section.validate_formats();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn plot_section_validate_formats_invalid_fails() {
+        let section = PlotSection { formats: vec!["gif".to_string()] };
+        let result = section.validate_formats();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unsupported plot format"));
+    }
+
+    #[test]
+    fn plot_formats_are_validated_when_loading_config() {
+        assert_eq!(load(None, None).unwrap().plot.validate_formats().unwrap(), [PlotFormat::Svg]);
+        let path = std::env::temp_dir().join(format!("qf-config-plot-{}.toml", std::process::id()));
+        for (formats, expected) in [
+            ("['PNG', 'png', 'JPEG', 'jpg']", Some(vec![PlotFormat::Png, PlotFormat::Jpg])),
+            ("[]", None),
+            ("['gif']", None),
+        ] {
+            std::fs::write(&path, format!("[plot]\nformats = {formats}\n")).unwrap();
+            let result = load(path.to_str(), path.to_str());
+            match expected {
+                Some(expected) => assert_eq!(result.unwrap().plot.validate_formats().unwrap(), expected),
+                None => assert!(result.is_err()),
+            }
+        }
+        std::fs::remove_file(path).unwrap();
     }
 }
 

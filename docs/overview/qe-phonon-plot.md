@@ -15,6 +15,6 @@ qe_process_phonon -c input.toml --collect
 qe_process_phonon -c input.toml --plot
 ```
 
---collect 与 --plot 分开调用。当前输出为 phband/phonon_band.png、phdos/phonon_dos.png 以及工作目录的 phonon_combined.jpg，伴随 CSV；联合图共享频率轴并保留虚频。不再引用迁移前已删除的 Python 绘图模块。
+--collect 与 --plot 分开调用。当前默认输出为 phband/phonon_band.svg、phdos/phonon_dos.svg 以及工作目录的 phonon_combined.svg，伴随 CSV；根级 `[plot].formats` 可选 png/svg/pdf/jpg 的组合；联合图共享频率轴并保留虚频。不再引用迁移前已删除的 Python 绘图模块。
 
 实现见 [Rust 绘图](../../crates/qf-phonon/src/plot.rs) 和 [归档](../../crates/qf-phonon/src/archive.rs)；历史需求见 [0003](../specs/0003-phonon-band-dos-combined/spec.md)，自动串联验收见 [0006](../specs/0006-qe-phonon-submit-chain/acceptance.md)。

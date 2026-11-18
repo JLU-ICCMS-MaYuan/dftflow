@@ -92,3 +92,5 @@ EPW 常规四类比较保留，独立抽样核验已取消；四项最大差值�
 电荷密度和原始波函数不做完整性核对，EPW 复用／恢复／导入与共享 QE 初始化均排除相关内容、大小、非空、存在性和集合检查；实际复制和科学读取保留。其他元数据、输入和日志仍核验。当前规则覆盖历史相关条款，详见 [0067](../specs/0067-unchecked-density-wavefunctions/spec.md)。
 
 - [三个前置电子阶段的能带范围图](epwflow/README.md#三个前置电子阶段的能带范围图0068)：SCF／NSCF 完成及 electronic 路径完成即绘制，显示采样范围、窗口和冻结态容量；诊断不放宽科学选窗。
+
+- [QE 声子与 scflow 图片格式](qeflow/qe_process_phonon.md#图片输出格式)：根级 `[plot].formats` 选择 SVG/PNG/PDF/JPG，声子默认 SVG，scflow 保留 PDF 并添加配置格式。

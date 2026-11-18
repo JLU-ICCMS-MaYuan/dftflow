@@ -12,6 +12,7 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 plotters = { workspace = true }
 qf-config = { path = "../qf-config" }
+qf-plot = { path = "../qf-plot" }
 qf-crystal = { path = "../qf-crystal" }
 qf-io = { path = "../qf-io" }
 qf-input = { path = "../qf-input" }

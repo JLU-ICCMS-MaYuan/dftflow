@@ -480,9 +480,9 @@ pub fn redraw(results: &Path) -> Result<PathBuf> {
                 .as_f64()
                 .context("data_invalid: Unspeakable extension")?;
             let work = dir.to_str().context("Result path is not UTF-8")?;
-            qf_phonon::plot::plot_phonon_band(work, prefix)?;
-            qf_phonon::plot::plot_phonon_dos(work, prefix, &elements, &counts, sigma)?;
-            qf_phonon::plot::plot_phonon_combined(work, prefix, &elements, &counts, sigma)?;
+            qf_phonon::plot::plot_phonon_band(work, prefix, &[qf_config::PlotFormat::Png])?;
+            qf_phonon::plot::plot_phonon_dos(work, prefix, &elements, &counts, sigma, &[qf_config::PlotFormat::Png])?;
+            qf_phonon::plot::plot_phonon_combined(work, prefix, &elements, &counts, sigma, &[qf_config::PlotFormat::Jpg])?;
         }
     }
     // 派生图片清单可变；数值表和来源在重绘前均已严格校验。

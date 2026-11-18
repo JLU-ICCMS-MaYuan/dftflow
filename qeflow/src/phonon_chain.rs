@@ -522,7 +522,7 @@ fn post(ctx: &PhononCtx, config: &str) -> Result<()> {
         false,
         true,
     )?;
-    for f in qf_phonon::archive::phonon_plot_files() {
+    for f in qf_phonon::archive::phonon_plot_files(&ctx.cfg.plot.validate_formats()?).into_iter().filter(|f| f.ends_with(".csv")) {
         ensure!(
             Path::new(&ctx.workspace)
                 .join(&f)
@@ -532,14 +532,6 @@ fn post(ctx: &PhononCtx, config: &str) -> Result<()> {
             "Lack of products {f}"
         );
     }
-    ensure!(
-        Path::new(&ctx.workspace)
-            .join("phonon_combined.jpg")
-            .metadata()
-            .map(|m| m.len() > 0)
-            .unwrap_or(false),
-        "Lack of coalition JPG"
-    );
     atomic_json(
         &Path::new(&ctx.workspace).join("chain_complete.json"),
         &json!({"finished":true,"prefix":ctx.prefix}),
@@ -579,9 +571,8 @@ pub fn run(
         .join("chain_complete.json")
         .exists()
     {
-        let complete = qf_phonon::archive::phonon_plot_files()
+        let complete = qf_phonon::archive::phonon_plot_files(&ctx.cfg.plot.validate_formats()?)
             .into_iter()
-            .chain(std::iter::once("phonon_combined.jpg".into()))
             .all(|f| {
                 Path::new(&ctx.workspace)
                     .join(f)

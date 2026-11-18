@@ -643,9 +643,10 @@ fn run_nosplit(config: Option<String>, input: Option<String>, run: bool, submit:
         qf_phonon::write_csv(&format!("{}/phband/phonon_band_labels.csv", ctx.workspace), &label_rows)?;
         qf_phonon::write_csv(&format!("{}/phdos/phonon_dos_atoms.csv", ctx.workspace), &atoms_rows)?;
         qf_phonon::write_csv(&format!("{}/phdos/phonon_dos_elements.csv", ctx.workspace), &elements_rows)?;
-        qf_phonon::plot::plot_phonon_band(&ctx.workspace, &ctx.prefix)?;
-        qf_phonon::plot::plot_phonon_dos(&ctx.workspace, &ctx.prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&ctx.cfg)?)?;
-        qf_phonon::plot::plot_phonon_combined(&ctx.workspace, &ctx.prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&ctx.cfg)?)?;
+        let formats = ctx.cfg.plot.validate_formats()?;
+        qf_phonon::plot::plot_phonon_band(&ctx.workspace, &ctx.prefix, &formats)?;
+        qf_phonon::plot::plot_phonon_dos(&ctx.workspace, &ctx.prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&ctx.cfg)?, &formats)?;
+        qf_phonon::plot::plot_phonon_combined(&ctx.workspace, &ctx.prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&ctx.cfg)?, &formats)?;
         export_epw_if_requested(&ctx.cfg, Path::new(&ctx.workspace), &ctx.prefix)?;
         println!("Sound subprocess has been completed:{}", ctx.workspace);
     } else if submit {
@@ -731,10 +732,11 @@ fn run_qe_process_phonon(
         qf_phonon::write_csv(&format!("{work_dir}/phband/phonon_band_labels.csv"), &label_rows)?;
         qf_phonon::write_csv(&format!("{work_dir}/phdos/phonon_dos_atoms.csv"), &atoms_rows)?;
         qf_phonon::write_csv(&format!("{work_dir}/phdos/phonon_dos_elements.csv"), &elements_rows)?;
-        let band_png = qf_phonon::plot::plot_phonon_band(&work_dir, &prefix)?;
-        let dos_png = qf_phonon::plot::plot_phonon_dos(&work_dir, &prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&cfg)?)?;
-        let combined = qf_phonon::plot::plot_phonon_combined(&work_dir, &prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&cfg)?)?;
-        println!("[qe_process_phonon ] Drawing complete: {band_png}, {dos_png}, {combined}");
+        let formats = cfg.plot.validate_formats()?;
+        let band_plots = qf_phonon::plot::plot_phonon_band(&work_dir, &prefix, &formats)?;
+        let dos_plots = qf_phonon::plot::plot_phonon_dos(&work_dir, &prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&cfg)?, &formats)?;
+        let combined = qf_phonon::plot::plot_phonon_combined(&work_dir, &prefix, &elements, &counts, qf_phonon::plot::dos_plot_sigma(&cfg)?, &formats)?;
+        println!("[qe_process_phonon ] Drawing complete: {}", band_plots.into_iter().chain(dos_plots).chain(combined).collect::<Vec<_>>().join(", "));
         return Ok(());
     }
 

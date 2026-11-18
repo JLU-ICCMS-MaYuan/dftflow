@@ -58,13 +58,17 @@ pub fn build_collect_phdos_commands(prefix: &str) -> Vec<String> {
 }
 
 /// 归档产物文件清单（用于状态判定与清洗）。
-pub fn phonon_plot_files() -> Vec<String> {
-    vec![
+pub fn phonon_plot_files(formats: &[qf_config::PlotFormat]) -> Vec<String> {
+    let mut files = vec![
         format!("{PHBAND_DIR}/phonon_band.csv"),
         format!("{PHBAND_DIR}/phonon_band_labels.csv"),
-        format!("{PHBAND_DIR}/phonon_band.png"),
         format!("{PHDOS_DIR}/phonon_dos_atoms.csv"),
         format!("{PHDOS_DIR}/phonon_dos_elements.csv"),
-        format!("{PHDOS_DIR}/phonon_dos.png"),
-    ]
+    ];
+    for base in [format!("{PHBAND_DIR}/phonon_band"), format!("{PHDOS_DIR}/phonon_dos"), "phonon_combined".into()] {
+        for format in formats {
+            files.push(format!("{base}.{}", format.extension()));
+        }
+    }
+    files
 }

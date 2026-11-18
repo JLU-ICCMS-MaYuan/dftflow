@@ -8,3 +8,6 @@ plotters = { workspace = true }
 anyhow = { workspace = true }
 resvg = "0.43"
 png = "0.17"
+qf-config = { path = "../qf-config" }
+svg2pdf = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }

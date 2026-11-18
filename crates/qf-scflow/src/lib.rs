@@ -256,8 +256,8 @@ pub fn run(config: &ScflowConfig) -> Result<()> {
             ),
             broadening,
         )?;
-        plots::plot_system(&sys.direct, &sys.a2f, &formula, smoothing, config.resolution, config.gaussian_sigma, config.mu, &result_dir_text, broadening)?;
-        plots::plot_article_view(&sys.direct, &sys.a2f, &formula, &result_dir_text)?;
+        plots::plot_system_with_formats(&sys.direct, &sys.a2f, &formula, smoothing, config.resolution, config.gaussian_sigma, config.mu, &result_dir_text, broadening, &config.plot_formats)?;
+        plots::plot_article_view_with_formats(&sys.direct, &sys.a2f, &formula, &result_dir_text, &config.plot_formats)?;
 
         // Eliashberg（用 a2f 的 gamma 通道）
         let a2f = crate::a2f::A2f {
@@ -292,7 +292,7 @@ pub fn run(config: &ScflowConfig) -> Result<()> {
                 config.mu,
                 &config.results_dir.to_string_lossy(),
             )?;
-            plots::plot_summary(
+            plots::plot_summary_with_formats(
                 &summary["Broadening, Ry"],
                 &summary,
                 &formula,
@@ -301,6 +301,7 @@ pub fn run(config: &ScflowConfig) -> Result<()> {
                 config.resolution,
                 config.mu,
                 &config.results_dir.to_string_lossy(),
+                &config.plot_formats,
             )?;
         }
     }

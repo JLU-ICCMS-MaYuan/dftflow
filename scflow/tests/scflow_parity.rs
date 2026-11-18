@@ -166,8 +166,30 @@ fn full_pipeline_matches_python_reference() {
             pdf.display()
         );
         assert!(bytes.windows(5).any(|s| s == b"%%EOF"), "PDF 截断");
+        let svg = std::fs::read_to_string(pdf.with_extension("svg")).unwrap();
+        assert!(svg.contains("<svg") && svg.contains("</svg>"));
     }
     let _ = std::fs::remove_dir_all(&work);
+}
+
+#[test]
+fn configured_formats_reach_all_three_scflow_plots() {
+    let work = std::env::temp_dir().join(format!("scflow_formats_{}", std::process::id()));
+    copy_dir(&fixture_dir().join("work"), &work.join("work"));
+    let config = std::fs::read_to_string(fixture_dir().join("input.toml")).unwrap();
+    std::fs::write(work.join("input.toml"), format!("{config}\n[plot]\nformats=['PNG', 'jpg', 'pdf', 'png']\n")).unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_scflow"))
+        .args(["-c", "input.toml"]).current_dir(&work).output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let mut pdfs = Vec::new();
+    collect_pdfs(&work.join("results"), &mut pdfs);
+    assert_eq!(pdfs.len(), 7);
+    for pdf in pdfs {
+        assert!(!pdf.with_extension("svg").exists());
+        assert!(std::fs::read(pdf.with_extension("png")).unwrap().starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(std::fs::read(pdf.with_extension("jpg")).unwrap().starts_with(b"\xff\xd8"));
+    }
+    std::fs::remove_dir_all(work).unwrap();
 }
 
 fn compare(

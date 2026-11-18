@@ -26,6 +26,7 @@ pub struct ScflowConfig {
     pub gaussian_sigma: f64,
     pub structure_tolerance: f64,
     pub eliashberg_dim: usize,
+    pub plot_formats: Vec<qf_config::PlotFormat>,
 }
 
 impl Integration {
@@ -96,6 +97,7 @@ impl ScflowConfig {
             gaussian_sigma,
             structure_tolerance,
             eliashberg_dim: 24,
+            plot_formats: qf_config::PlotSection::default().validate_formats()?,
         })
     }
 }
@@ -130,5 +132,7 @@ pub fn from_config(base: &Path, cfg: &qf_config::Config) -> Result<ScflowConfig>
     if cfg.scflow.is_empty() {
         bail!("input.toml Missing [scflow ] Configure Section (needs) work_dir / a2f_file / mu Wait)");
     }
-    ScflowConfig::from_section(base, &cfg.scflow)
+    let mut config = ScflowConfig::from_section(base, &cfg.scflow)?;
+    config.plot_formats = cfg.plot.validate_formats()?;
+    Ok(config)
 }

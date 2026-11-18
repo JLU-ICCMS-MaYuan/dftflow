@@ -22,3 +22,5 @@ scflow/
 ## 使用关系
 
 EPC 文件与 q 权重 → 分展宽 direct/interp → λ/频率矩/Tc → CSV/JSON/PDF。普通声子结果没有耦合数据，不能代替 EPC 输入。
+
+三类图均保留 PDF，并按根级 `[plot].formats` 生成额外格式，默认 PDF+SVG，见 [图片输出格式](scflow.md#图片输出格式)。

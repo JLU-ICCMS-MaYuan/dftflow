@@ -30,7 +30,7 @@
 /
 
 ATOMIC_SPECIES
-  Mg   24.3050 mg_pbe_v1.4.uspp
+  Mg   24.3050 mg_pbe_v1.4.UPF
   B    10.8100 b_pbe_v1.4.uspp.F.UPF
 
 ATOMIC_POSITIONS {crystal}

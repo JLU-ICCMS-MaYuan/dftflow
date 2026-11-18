@@ -1039,7 +1039,7 @@ fn shared_qeflow_nosplit_preserves_mass_zero_shift_checkpoint_and_complete_deliv
     assert!(!cfg.work_dir.join("scf/snapshot/actual_prefix.save/stage-local-marker").exists());
     assert!(shared.join("out/actual_prefix.save/stage-local-marker").is_file());
     assert!(shared.join("save/manifest.json").is_file());
-    assert!(shared.join("phonon_combined.jpg").is_file());
+    assert!(shared.join("phonon_combined.svg").is_file());
     assert!(m.artifacts.iter().any(|a| a.role == "qeflow_shared-source-identities.json"));
     std::fs::remove_file(case.root.join("KPATH.in")).unwrap();
     binding.verify().unwrap();

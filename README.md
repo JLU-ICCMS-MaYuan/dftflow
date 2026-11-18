@@ -311,3 +311,16 @@ phonon_mode = "split_index"
 声子聚合流程保存 `input-init.toml` 和原结构名加 `-init` 的备份，已提交链路读取工作目录快照。修改外部配置后需用原目录的 `input-init.toml` 续算；旧目录和已生成旧脚本不会因安装新版而自动迁移。
 
 EPW 不再提供预算账本功能：输入删除 `[budget]`，正常提交与续算直接使用工作流状态和 Slurm 作业号，不依赖 `campaign/ledger.json` 或固定项目身份。旧账本不再读写，详见[EPW 使用说明](epwflow/README.md)。
+
+### QE 声子与 scflow 图片格式
+
+在 `input.toml` 的根级配置：
+
+```toml
+[plot]
+formats = ["svg", "png", "pdf"]
+```
+
+支持 SVG、PNG、PDF、JPG（也接受 `jpeg`），大小写不敏感且自动去重。QE 声子独立谱、DOS、联合图默认生成 SVG，指定 `['png']` 时只新生成 PNG；PNG 保留原画布尺寸并带 300 DPI 元数据。已有结果可执行 `qe_process_phonon -c input.toml -i POSCAR --plot` 重绘。scflow 三类图沿用必需的 PDF，额外输出配置指定格式，默认 PDF+SVG。旧格式文件不会自动删除。
+
+本项尚未接入 VASP、替位 DOS、Wannier 与 EPW 专属绘图；EPW 现有 `[plot]` 能窗设置沿用原规则。详见 [配置与验证说明](docs/specs/0074-unified-plot-formats/quickstart.md)。

@@ -161,3 +161,5 @@ mod tests {
 }
 
 pub mod electronic;
+mod formats;
+pub use formats::{save_plot, svg_to_pdf};
