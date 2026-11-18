@@ -134,7 +134,7 @@ SCF／NSCF 及 electronic 路径完成后还会生成逐带范围诊断，不等
 
 `4.qe-phonon-{index,coords}/phonon-qpoints.json` 保存每个任务的状态、作业号和 q 元数据。`--status` 及 `--status --json` 可查看；Slurm 取消、超时等明确失败通过调度记录校准。续算只重提 failed q，保留完成 q；仍在等待的 collect 用新 q 作业号更新依赖，作业号保持不变。collect 自身失败且全部 q 完成后可单独重提。
 
-状态缺失／损坏、未知提交回执或冻结批次配置改变时拒绝猜测恢复。nosplit、外部 PH 导入与 `-r` 的同步执行语义保留。代码与协议测试不代表原生 MgB₂ 科学验收；当前证据及首次无 dyn0 的时序取舍见 [0075 验收](../../specs/0075-phonon-parallel-qpoints/acceptance.md)。
+状态缺失／损坏、未知提交回执或冻结批次配置改变时拒绝猜测恢复。nosplit、外部 PH 导入与 `-r` 的同步执行语义保留。2026-11-18 已在本机真实 Slurm 使用原生 MgB₂ 小网格验证 index／coords 独立并行、各取消一个 q 后只重提失败点、collect 原号更新依赖以及后处理／绘图；每个 q 使用 6 路 MPI，成功点输出和作业号不变。这不构成网格收敛或 Tc 验收；首次无 dyn0 的提交时序差异仍待确认，见 [0075 验收](../../specs/0075-phonon-parallel-qpoints/acceptance.md)。
 
 图像位于 `run/results/<编号阶段>/`。当前阶段复用时补齐本阶段缺图，不检查或补画上游图片，不因缺图重跑科学程序。SCF／NSCF 的独立目录可使用 `epw_phonon --plot --results "run/results/1.qe-scf"` 等形式重绘；第 3／5 步也保留既有现场重绘命令。
 
