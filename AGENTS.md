@@ -170,6 +170,14 @@ description: 专业的软件工程师，严格遵循SOLID、KISS、DRY、YAGNI�
 
 ## 需求处理记录
 
+### [2026-11-18] chem 集群安装 DFTFlow 与 MgB₂ 测试配置
+
+- **需求**：安装当前最新 DFTFlow，准备 `examples/MgB2/chem/input.toml`，确保本机可开展 MgB₂ 测试。
+- **配置**：复用现行 v2 八阶段 PBE 模板，使用本机 QE 7.6／EPW 6.1 和独立 Wannier90 4.0.3；Slurm cpu 分区 1 节点／4 MPI，40／320 Ry、SCF 4×4×2、粗 q 2×2×1。GBRV 官方 UPF 包补齐 Mg、B v1.4 赝势，原始数据留本地。
+- **修复与安装**：回归复现 EPW 6.1 被版本白名单拒绝后，最小扩展唯一运行头识别；退出码、原生错误和结束计时仍严格检查。发布 9 个主产品及 dyn0 工具，按既有机制在固定 `bin/.native/linux-x86_64` 打包私有运行库，解决旧计算节点缺 fontconfig／glibc 不匹配，不修改全局环境。
+- **验收**：原生日志及阶段执行回归 119 通过、1 既有环境测试跳过；计算节点 56 个命令入口启动成功。Slurm 作业 2751176 在 cpu32 上以 4 MPI 完成 MgB₂ SCF，9 次迭代，总能量 −138.11356494 Ry；DFTFlow 核验可复用并生成能带范围图。
+- **边界与证据**：完整声子／Wannier／EPC／超导七个后续阶段未运行，初始能窗不代表本机拟合收敛；使用说明见 chem/README.md，构建与节点测试日志保存在 `docs/local/2026-11-18-chem-install/`。不将赝势、编译产物及计算数据加入 Git。
+
 ### [2026-11-16] 原目录安装最新 QE／EPW 与 Wannier90
 
 - **需求**：更新并编译 `external/q-e` 和 `external/wannier90`，确认 EPW 6.1，程序保留在各自 `bin`，将路径写入记忆文件。

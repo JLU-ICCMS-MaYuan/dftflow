@@ -1,4 +1,4 @@
-//! EPW 5.9／6.0 原生运行证据与输出解析。谱能量轴独立于细网格声子本征频率。
+//! EPW 5.9／6.0／6.1 原生运行证据与输出解析。谱能量轴独立于细网格声子本征频率。
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
@@ -86,7 +86,7 @@ pub fn runtime_version(log: &str) -> Result<&str> {
     let versions: Vec<_> = header.captures_iter(log)
         .map(|c| c.get(1).unwrap().as_str()).collect();
     ensure!(versions.len() == 1, "environment_incompatible: 缺少唯一 EPW 运行版本记录");
-    ensure!(matches!(versions[0], "5.9" | "6.0"),
+    ensure!(matches!(versions[0], "5.9" | "6.0" | "6.1"),
         "environment_incompatible: 未适配的 EPW 运行版本 {}", versions[0]);
     Ok(versions[0])
 }
