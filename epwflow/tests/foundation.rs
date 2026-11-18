@@ -123,8 +123,11 @@ fn refuses_conflicts_and_no_science_success_on_failed_submission() {
     fail(c.run(&["submit","-c","input.toml","--stage","scf"]),"scheduler_unknown");
     assert!(!c.root.join("run/calculations").exists(),"Failed to submit cannot run the science phase");
     let cfg = epwflow::foundation::config::Config::load(&c.root.join("input.toml")).unwrap();
-    let task = epwflow::foundation::native_jobs::active_task(&cfg).unwrap().unwrap();
-    assert_eq!(task.state, "unknown");
+    // 独立 SCF 提交状态由阶段日志保存，不属于原生超导任务记录。
+    let stage = epwflow::foundation::readable_state::read(
+        &cfg.work_dir, epwflow::foundation::stages::Step::Scf,
+    ).unwrap();
+    assert_eq!(stage.get("Stage allocation", "Status"), Some("submission unknown"));
     assert!(!cfg.work_dir.join("epw-state/native-active.json").exists());
 }
 #[test]

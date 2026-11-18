@@ -220,3 +220,123 @@ fn actual_mgb2_public_defaults_preserve_science_without_reading_calculation_data
     assert_eq!(external["stages"].as_object().unwrap().len(), 8);
     assert!(external["baseparams"]["ATOMIC_SPECIES"].is_array());
 }
+
+#[test]
+fn common_fermi_source_preserves_stages_keys_and_roundtrip() {
+    let old = original();
+    let mut value = serde_json::to_value(&old).unwrap();
+    value["baseparams"] = json!({"fermi_source":"f2"});
+    for stage in [WANNIER, COARSE, FINE] {
+        value["workflow"][stage]
+            .as_object_mut()
+            .unwrap()
+            .remove("fermi_source");
+    }
+    let cfg: Config = serde_json::from_value(value.clone()).unwrap();
+    cfg.validate().unwrap();
+    assert_eq!(old.stage_document().unwrap(), cfg.stage_document().unwrap());
+    for step in Step::ALL {
+        assert_eq!(
+            stages::scientific_key(&old, step).unwrap(),
+            stages::scientific_key(&cfg, step).unwrap()
+        );
+    }
+    for text in [
+        toml::to_string_pretty(&cfg).unwrap(),
+        cfg.to_stage_toml().unwrap(),
+    ] {
+        let again: Config = toml::from_str(&text).unwrap();
+        assert_eq!(
+            cfg.stage_document().unwrap(),
+            again.stage_document().unwrap()
+        );
+        let external = serde_json::to_value(&again).unwrap();
+        for stage in [WANNIER, COARSE, FINE] {
+            assert!(external["workflow"][stage].get("fermi_source").is_none());
+        }
+    }
+    value["workflow"][WANNIER]["fermi_source"] = json!("fine_fixed_electrons");
+    let overridden: Config = serde_json::from_value(value.clone()).unwrap();
+    let doc = overridden.stage_document().unwrap();
+    assert_eq!(
+        doc[WANNIER]["workflow"]["fermi_source"],
+        "fine_fixed_electrons"
+    );
+    for stage in [COARSE, FINE] {
+        assert_eq!(doc[stage]["workflow"]["fermi_source"], "f2");
+    }
+    let mut changed = cfg.clone();
+    changed.interpolation.fermi_source =
+        epwflow::foundation::config::FermiSource::FineFixedElectrons;
+    let external = serde_json::to_value(&changed).unwrap();
+    assert_eq!(
+        external["workflow"][FINE]["fermi_source"],
+        "fine_fixed_electrons"
+    );
+    let restored: Config = serde_json::from_value(external).unwrap();
+    assert_eq!(
+        restored.interpolation.fermi_source,
+        epwflow::foundation::config::FermiSource::FineFixedElectrons
+    );
+    value["workflow"][WANNIER]["fermi_source"] = json!("invalid");
+    let err = serde_json::from_value::<Config>(value)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("workflow.5.epw-wannier.fermi_source"), "{err}");
+}
+
+#[test]
+fn common_fermi_source_rejects_invalid_and_missing_sources() {
+    for bad in [json!("unknown"), json!(42), json!(null)] {
+        let mut value = serde_json::to_value(original()).unwrap();
+        value["baseparams"] = json!({"fermi_source":bad});
+        let err = serde_json::from_value::<Config>(value)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("baseparams.fermi_source"), "{err}");
+    }
+    for stage in [WANNIER, COARSE, FINE] {
+        let mut value = serde_json::to_value(original()).unwrap();
+        value["workflow"][stage]
+            .as_object_mut()
+            .unwrap()
+            .remove("fermi_source");
+        let err = serde_json::from_value::<Config>(value)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("workflow.{stage}.fermi_source")),
+            "{err}"
+        );
+    }
+}
+
+#[test]
+fn each_stage_can_override_the_global_fermi_source_independently() {
+    for overridden in [WANNIER, COARSE, FINE] {
+        let mut value = serde_json::to_value(original()).unwrap();
+        value["baseparams"] = json!({"fermi_source":"fine_fixed_electrons"});
+        for stage in [WANNIER, COARSE, FINE] {
+            value["workflow"][stage]
+                .as_object_mut()
+                .unwrap()
+                .remove("fermi_source");
+        }
+        value["workflow"][overridden]["fermi_source"] = json!("f2");
+        let cfg: Config = serde_json::from_value(value).unwrap();
+        let doc = cfg.stage_document().unwrap();
+        for stage in [WANNIER, COARSE, FINE] {
+            assert_eq!(
+                doc[stage]["workflow"]["fermi_source"],
+                if stage == overridden {
+                    "f2"
+                } else {
+                    "fine_fixed_electrons"
+                }
+            );
+        }
+        let text = cfg.to_stage_toml().unwrap();
+        let again: Config = toml::from_str(&text).unwrap();
+        assert_eq!(doc, again.stage_document().unwrap());
+    }
+}

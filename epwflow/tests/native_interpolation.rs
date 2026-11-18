@@ -261,10 +261,7 @@ fn fine_rechecks_actual_windows_in_hash_consistent_legacy_coarse_manifest() {
     fs::write(&wout, text.replace(line, "| Outer: 1.52 to 5.0 (eV)")).unwrap();
     let identity = store::Identity::capture(&wout).unwrap();
     manifest.wannier_digest = identity.sha256.clone();
-    let artifact = manifest.coarse.as_mut().unwrap().artifacts.iter_mut()
-        .find(|artifact| artifact.role == "coarse_wannier").unwrap();
-    artifact.sha256 = identity.sha256;
-    artifact.byte_size = fs::metadata(&wout).unwrap().len();
+    // 当前粗网格清单不登记 wout；保留实际窗口重检的负向场景。
     store::write(&work.join("wannier/manifest.json"), &manifest).unwrap();
     interpolation::scheduler::verify_coarse(&c.cfg, work).unwrap();
     let error = interpolation::scheduler::run_fine_registered(

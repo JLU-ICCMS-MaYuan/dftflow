@@ -432,6 +432,8 @@ EPW 所有阶段禁用多 image，默认或显式单 image 可用；PH 保留自
 
 顶层 `[baseparams]` 支持物种二维数组 `ATOMIC_SPECIES`、`prefix`、`ecutwfc/ecutrho` 及 QE DOS／PDOS 的 `Emin/Emax/DeltaE`。仅回填适用调用，阶段显式值优先，非法值不回退；公共能量采样参数不等同绘图范围或 Wannier 能窗。
 
+`[baseparams]` 还支持 `fermi_source = "f2"` 或 `"fine_fixed_electrons"`，作为第 5、6、7 步 workflow 的公共默认；各阶段显式值优先。公共与阶段都缺失时报错，非法值不回退；旧的逐阶段配置仍可读取和往返。
+
 阶段内可用 `nk/nq/nkf/nqf` 三正整数数组，按对应原生方向展开；不能与自身方向字段混写，不能放进公共表。SCF／NSCF 的 `K_POINTS` 和 postw90 的 `dos_kmesh` 保留原接口。相同科学参数的新旧写法保持原生输入和科学身份一致；Ubuntu MgB₂ 当前输入已同步，实际计算仍由用户执行。
 
 ## 电子 DOS 自适应横轴

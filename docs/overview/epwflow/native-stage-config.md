@@ -34,7 +34,9 @@ conv_thr = 1e-6 # Ry
 
 ## 公共参数与阶段网格简写
 
-`[baseparams]` 仅支持 `ATOMIC_SPECIES`、`prefix`、`ecutwfc`、`ecutrho`、`Emin`、`Emax`、`DeltaE`。按原生调用的参数所有权回填：阶段显式值优先，未填写时才用公共值；非法显式值直接报错。物种可用 `[["Mg",24.305,"Mg.upf"],["B",10.811,"B.upf"]]`，整组取值，保留顺序、质量和文件名。历史卡片正文仍可读取。
+`[baseparams]` 支持 `ATOMIC_SPECIES`、`prefix`、`ecutwfc`、`ecutrho`、`Emin`、`Emax`、`DeltaE` 及工作流字段 `fermi_source`。按原生调用的参数所有权回填：阶段显式值优先，未填写时才用公共值；非法显式值直接报错。物种可用 `[["Mg",24.305,"Mg.upf"],["B",10.811,"B.upf"]]`，整组取值，保留顺序、质量和文件名。历史卡片正文仍可读取。
+
+`fermi_source = "f2"` 或 `"fine_fixed_electrons"` 仅回填第 5、6、7 步 workflow 的同名字段；阶段显式值优先，各阶段分别取值。公共和阶段都未填写时明确报错，无隐式默认；非法值不回退。序列化保留公共设置和显式覆盖，同一有效来源的全局／阶段表达不改变科学身份。该配置适配沿用现有科学链，不向原生 namelist 注入此字段。
 
 `nk/nq/nkf/nqf` 可在支持对应三个方向字段的阶段或用途子段写成三正整数数组，例如 PH `nq=[2,2,1]`、EPW `nk=[4,4,2]`、`nkf=[8,8,4]`。同一数组不能与自身方向字段混写；所有网格都禁止放进 `[baseparams]`，包括 `K_POINTS`、`dos_kmesh` 和方向字段。SCF／NSCF 的 `K_POINTS` 与 postw90 的 `dos_kmesh` 不改名。
 

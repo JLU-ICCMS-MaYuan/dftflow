@@ -3,7 +3,7 @@ use super::{Call, Document, Value};
 use anyhow::{ensure, Context, Result};
 use std::collections::BTreeMap;
 
-const COMMON: [&str; 7] = [
+const COMMON: [&str; 8] = [
     "ATOMIC_SPECIES",
     "prefix",
     "ecutwfc",
@@ -11,6 +11,7 @@ const COMMON: [&str; 7] = [
     "Emin",
     "Emax",
     "DeltaE",
+    "fermi_source",
 ];
 const GRIDS: [&str; 4] = ["nk", "nq", "nkf", "nqf"];
 
@@ -66,10 +67,13 @@ fn species(value: &Value, path: &str) -> Result<Value> {
 fn common(base: &BTreeMap<String, Value>) -> Result<BTreeMap<String, Value>> {
     let mut result = BTreeMap::new();
     for (key, value) in base {
-        ensure!(COMMON.contains(&key.as_str()), "configuration: baseparams.{key}: only ATOMIC_SPECIES, prefix, ecutwfc, ecutrho, Emin, Emax and DeltaE are allowed; grids belong to their stage");
+        ensure!(COMMON.contains(&key.as_str()), "configuration: baseparams.{key}: only ATOMIC_SPECIES, prefix, ecutwfc, ecutrho, Emin, Emax, DeltaE and fermi_source are allowed; grids belong to their stage");
         let path = format!("baseparams.{key}");
         let normalized = if key == "ATOMIC_SPECIES" {
             species(value, &path)?
+        } else if key == "fermi_source" {
+            fermi_source(value, &path)?;
+            value.clone()
         } else {
             super::super::validate_parameter(key, value, &path)?;
             if key == "prefix" {
@@ -94,8 +98,35 @@ fn common(base: &BTreeMap<String, Value>) -> Result<BTreeMap<String, Value>> {
     Ok(result)
 }
 
+fn fermi_source(value: &Value, path: &str) -> Result<()> {
+    serde_json::from_value::<super::super::config::FermiSource>(value.clone())
+        .with_context(|| format!("configuration: {path}: expected f2 or fine_fixed_electrons"))?;
+    Ok(())
+}
+
 pub(super) fn expand(document: &mut Document, calls: &[Call]) -> Result<()> {
     let base = common(&document.baseparams)?;
+    for name in [super::WANNIER, super::COARSE, super::FINE] {
+        let path = format!("workflow.{name}.fermi_source");
+        let workflow = document
+            .workflow
+            .entry(name.into())
+            .or_insert_with(|| serde_json::json!({}));
+        let workflow = workflow
+            .as_object_mut()
+            .with_context(|| format!("configuration: workflow.{name}: must be a table"))?;
+        if !workflow.contains_key("fermi_source") {
+            if let Some(value) = base.get("fermi_source") {
+                workflow.insert("fermi_source".into(), value.clone());
+                document
+                    .input_locations
+                    .insert(path.clone(), "baseparams.fermi_source".into());
+            }
+        }
+        let value = workflow.get("fermi_source")
+            .with_context(|| format!("configuration: {path}: required parameter missing; set stage value or baseparams.fermi_source"))?;
+        fermi_source(value, &path)?;
+    }
     for (name, settings) in &mut document.stages {
         let Some(call) = calls.iter().find(|c| c.name == *name) else {
             continue;
@@ -155,6 +186,24 @@ pub(super) fn expand(document: &mut Document, calls: &[Call]) -> Result<()> {
 
 pub(super) fn compact(document: &mut Document) -> Result<()> {
     let base = common(&document.baseparams)?;
+    for name in [super::WANNIER, super::COARSE, super::FINE] {
+        let path = format!("workflow.{name}.fermi_source");
+        if document
+            .input_locations
+            .get(&path)
+            .is_some_and(|p| p == "baseparams.fermi_source")
+        {
+            if let Some(workflow) = document
+                .workflow
+                .get_mut(name)
+                .and_then(Value::as_object_mut)
+            {
+                if workflow.get("fermi_source") == base.get("fermi_source") {
+                    workflow.remove("fermi_source");
+                }
+            }
+        }
+    }
     for (name, settings) in &mut document.stages {
         let settings = settings
             .as_object_mut()

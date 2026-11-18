@@ -49,6 +49,8 @@ header = """
 
 # 仅回填给支持相应字段的调用；阶段显式值优先。网格留在各自阶段。
 [baseparams]
+# 第 5、6、7 步的公共费米来源；各 workflow 可显式覆盖。
+fermi_source = "f2"
 ATOMIC_SPECIES = [["Mg", 24.305, "mg_pbe_v1.4.UPF"], ["B", 10.811, "b_pbe_v1.4.uspp.F.UPF"]]
 prefix = "MgB2"
 ecutwfc = 40.0 # Ry
@@ -157,7 +159,6 @@ nq = [2, 2, 1]
 
 [workflow."5.epw-wannier"]
 points_per_edge = 20 # 高对称路径每段划分为 20 个采样间隔（含两端为 21 点，相邻段共用端点） # 仅控制相应比较采样，不要求与第 3／6 步密度相同；内嵌 Wannier90 使用 bands_num_points，不是 NSCF 网格。
-fermi_source = "f2" # 使用已绑定的 QE 电子态数据（F2）中的费米能，作为能量参考；# f2 是来源标识，不是数值 2；当前显式填写的绝对能窗仍以 QE 能量零点为准。
 selection_mode = "energy_only" # 纯能量选窗：按 dis_win_* 外窗和 dis_froz_* 冻结窗筛选能带， # 不启用投影度冻结（dis_proj_*）；projections 初始投影仍用于构建 Wannier 函数。
 
 [stages."5.epw-wannier"]
@@ -228,7 +229,6 @@ dos_smr_type = "gauss"
 [workflow."6.epw-coarse"]
 # EPW 声子比较独立采样，不为差值统计匹配 QE 点数（0043）。
 points_per_edge = 20
-fermi_source = "f2"
 
 [stages."6.epw-coarse"]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
@@ -293,7 +293,6 @@ filkf = "kpoints.dat"
 filqf = "qpoints.dat"
 
 [workflow."7.epw-fine"]
-fermi_source = "f2"
 
 [stages."7.epw-fine"]
 # fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。

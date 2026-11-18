@@ -80,3 +80,41 @@ Overview 入口及参数页、模块说明、SiP₂ 算例和 0061 文档已同�
 - 证据保存在忽略目录 `docs/local/0061-input-sync-20261117/`。Spec、计划、研究、契约、任务及说明同步；保留并行 Issue 迁移和文档整理，不恢复已迁移的本地 Issue 草稿，不操作线上 Issue，不推送。
 
 公共分发和数组展开集中在配置适配边界，复用已有调用白名单与内部生成器，不建立通用继承框架；旧科学格式和当前配置共享同一内部视图，符合 KISS／DRY。
+
+## 2026-11-18：全局费米来源
+
+实施范围为 FR-019～021、SC-012。公共值在现有配置适配边界回填第 5、6、7 步 workflow；保留 Interpolation 的既有第 7 步视图，不新增运行时顶层副本或 schema 版本。各阶段显式值优先，公共和阶段都缺失报错；两种合法枚举均支持，非法公共值和非法阶段值均按实际字段拒绝。
+
+定向回归覆盖全局／阶段表达的有效配置和全部八阶段科学身份等价、历史平层与八主阶段往返、显式覆盖保留、运行时修改后序列化及缺失／非法拒绝。实际 MgB₂ 输入以前后两个版本运行 `common_stage_config::actual_mgb2_public_defaults_preserve_science_without_reading_calculation_data`，1 项通过，确认各阶段有效科学参数不变；该测试只读配置，不读取已有计算数据。
+
+`bash scripts/build-native.sh build --release -j 2 -p epwflow --bins --locked` 成功，覆盖四个固定模块入口。逐一比较 epw_phonon、epw_wannier、epw_superconductivity、epw_clear 的 release 制品与公开文件 SHA-256，全部一致。epw_wannier 的 SHA-256 为 `a1a6050d3524dbff6cd2f9bc9b767093cf8ebd283a8f3f82501b35d3620671a3`。
+
+发布后的 epw_wannier 使用隔离目录及当前 MgB₂ 输入的绝对路径副本执行 `--stage wannier --check --json`，返回 `operation_status=ok`；非法公共来源由同一入口拒绝，错误包含 `baseparams.fermi_source`。隔离目录为 `/tmp/dftflow-61-cli-check/`，日志在 `/tmp/dftflow-61-{tests,mgb2,build}.log`，属于本机临时证据。
+
+构建使用当前工作树，包含原先已有的绘图与超导批处理修改；这些差异不作为本需求的提交或验收结果。此次只验证配置适配沿用现有科学链，不声称重新验证两种费米来源的物理算法。没有科学作业提交、已有运行目录 CLI 调用、历史快照改写或推送；线上 Issue 与远程 Spec 链接仍不作关闭处理。
+
+初次全回归受到临时目录环境影响：`/tmp` 写入返回 `Disk quota exceeded`；改到仓库缓存后，仓库所在 `fuseblk` 的权限及目录删除语义又导致两个无关单元测试失败。没有修改生产代码来适配测试环境。最终使用主目录文件系统的 `TMPDIR=/home/mayuan/.cache/dftflow-issue61-tests`，同一单元测试制品完整复跑 **87 通过、0 失败、4 忽略**。最终定向配置回归 **7 通过、0 失败、1 忽略**，该忽略用例另按实际 MgB₂ 配置显式执行通过。最终单元日志为 `/home/mayuan/.cache/dftflow-issue61-unit.log`；忽略不计入通过。
+
+完整集成回归另发现 `foundation::refuses_conflicts_and_no_science_success_on_failed_submission` 的状态来源断言过期：SCF 提交失败由 `workspace::start_stage` 写入本阶段日志的 `Stage allocation.Status = submission unknown`，原测试却查询原生超导任务列表并对不存在的记录 unwrap。修正测试为读取 SCF 阶段日志，保留提交失败、无科学执行及无旧隐藏状态文件的检查；不修改调度实现或阶段状态所有权。
+
+原生插值回归另有旧夹具假定 `coarse_wannier` 仍在粗网格产物清单，构造篡改现场时对不存在条目 unwrap。移除该过期夹具设置，保留实际 wout 窗口篡改、细网格拒绝、无额外原生调用的检查；定向复测 1 项通过。修正后的 foundation 目标 11 项全部通过。相应日志为 `/home/mayuan/.cache/dftflow-issue61-{foundation,window}.log`。
+
+完整回归尚未通过：`slurm_log_filenames` 的 `absent_header_does_not_invent_resource_directives`、`numbered_scripts_keep_logs_local_when_submitted_from_other_directories`、`public_submission_uses_short_names_and_refuses_duplicate_queued_jobs` 失败。单独复现首项，生成 electronic 脚本时拒绝缺失 SCF 的 `data-file-schema.xml`；属于当前独立阶段依赖与旧夹具的差异，本次不改生产检查或伪造上游完成。`generated_chain_keeps_logs_local_and_preserves_frozen_scripts` 的旧 `--all` 生成进程长时间未结束，已终止本次自有回归进程，未中断其他任务。完整日志为 `/home/mayuan/.cache/dftflow-issue61-tests-final.log`，不得把已通过的定向检查表述为完整回归通过。
+
+按仓库“验证失败不得提交”约定，本轮不执行 git commit，不推送、不关闭 Issue；T017/T018 按定向证据完成，T019 的最终收尾仍未完成。原有未提交改动及 PDF 删除保持原状，未暂存任何文件。配置支持与发布结果不等于整个仓库验收通过。
+
+## 完成确认后的测试收尾
+
+用户已明确确认核心功能完成并授权关闭，前述“暂不提交”是上一轮状态。本轮 Slurm 日志目标在优化构建下 **8 项全部通过**（约 4.25 秒），包括此前长时间未结束的旧链式生成用例。调试制品约 311 MiB，链式生成多次核验程序身份；优化入口约 45 MiB，原测试保留全部脚本／程序身份检查即可正常结束，不增加超时或放宽身份核验。
+
+两个 electronic 夹具通过已有 QE 进程替身和公开 CLI 顺序生成 SCF／NSCF 上游，再生成电子阶段脚本；不手写 XML 或完成记录。它们保留空格路径，其余六项继续覆盖含单引号路径。含单引号的 QE 原生绝对路径引用不属于本次配置收尾范围；替身按合法 Fortran 字符串解析，没有为非法引用增加容错。
+
+SCF 公开提交断言更新为 `stage-scf.sh`。从其它目录重新 sbatch 已冻结的脚本时，显式传入新作业号 202，检查 `input_conflict: Phase script binding different jobs`、非零退出、目标目录日志和无 `scf.out`，确认真实分配绑定拒绝，避免仅因缺少 Slurm 环境而通过的假阳性。
+
+两路只读诊断（当前 Codex 独立助手、独立 Codex CLI）核对了根因与上述修正。旧 CLI 不支持当前模型，单次调用改用 VS Code 扩展自带版本，不安装软件、不修改长期配置；诊断过程未改变工作树。遵循 KISS／DRY，仅提取夹具工作目录构造，复用现有原生替身与公开入口，保留生产检查。
+
+最终相关验证：配置目标 7 项、平层兼容 7 项、foundation 11 项、Slurm 日志目标 8 项和实际 MgB₂ 配置对照 1 项均通过；默认忽略的 MgB₂ 对照已单独显式运行，不重复计数。窗口篡改负向回归另单独执行。完整仓库的历史失败日志保留，本次不把相关目标通过表述为全仓重新验收。
+
+最终日志：`/home/mayuan/.cache/dftflow-issue61-{core,slurm,mgb2,window}-final.log`。重新执行固定入口 release 构建成功，四个公开文件与 release 制品 SHA-256 一致；epw_wannier 为 `12f7ffffda1f3dba4c3d6f166769e9a8c9cb11b61fd4559564133197b588d5a3`。构建含原有绘图差异，该文件及三份原有 PDF 删除不纳入本需求提交。
+
+Documentation Impact：当前功能文档、根 README、模块 README、配置契约及 Spec 产物已同步。以登录身份 `JLU-ICCMS-MaYuan` 核验 GitHub API 返回的 `rust-master` Spec，文件确为 0061 且指回 #61；远程现有文档 SHA 为 `d444371e4e2aff80aa094964e4a43668bf03b8ed`，URL 为 https://github.com/JLU-ICCMS-MaYuan/dftflow/blob/rust-master/docs/specs/0061-epw-flat-stage-config/spec.md 。本次最新增量只提交本地，不自动推送；关闭说明明确区分已有远程 Spec 和本地最新实现。
