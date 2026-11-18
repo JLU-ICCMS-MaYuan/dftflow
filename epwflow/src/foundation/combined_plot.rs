@@ -10,7 +10,7 @@ use plotters::{
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 pub const ELECTRONIC_FILES: &[&str] = &[
     "electronic.png",
     "electronic.plot.json",
@@ -30,6 +30,9 @@ pub struct Figure {
     pub renderer_version: u32,
     pub title: String,
     pub bounds: [f64; 2],
+    /// 电子 DOS 的横轴参考能窗，与全能窗纵轴分开保存。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dos_reference_bounds: Option<[f64; 2]>,
     pub bands: Vec<Curve>,
     /// 保留 (能量或频率, DOS) 原始列序；渲染时转置。
     pub dos: Vec<Curve>,
@@ -76,9 +79,15 @@ pub fn redraw_stage(cfg: &Config, step: Step) -> Result<Option<std::path::PathBu
     let near = output.join("electronic.plot.json");
     if near.is_file() {
         let mut data: Figure = store::read(&near)?;
+        data.renderer_version = VERSION;
         data.bounds = cfg.plot.bounds();
+        data.dos_reference_bounds = Some(cfg.plot.bounds());
         write(&output.join("electronic.png"), &data)?;
-        redraw(&output.join("electronic-from-lowest-to-highest.plot.json"))?;
+        let full = output.join("electronic-from-lowest-to-highest.plot.json");
+        let mut data: Figure = store::read(&full)?;
+        data.renderer_version = VERSION;
+        data.dos_reference_bounds = Some(cfg.plot.bounds());
+        write(&output.join("electronic-from-lowest-to-highest.png"), &data)?;
         let metadata = output.join("electronic-display.json");
         if metadata.is_file() {
             let mut data: serde_json::Value = store::read(&metadata)?;
@@ -210,6 +219,7 @@ pub fn electronic(cfg: &Config, source: &Path, output: &Path) -> Result<()> {
         }
         .into(),
         bounds: cfg.plot.bounds(),
+        dos_reference_bounds: Some(cfg.plot.bounds()),
         bands,
         dos,
         labels,
@@ -217,8 +227,6 @@ pub fn electronic(cfg: &Config, source: &Path, output: &Path) -> Result<()> {
         notes,
     };
     fs::create_dir_all(output)?;
-    let mut full=fig.clone(); full.bounds=[lo,hi];
-    store::write(&output.join("electronic-from-lowest-to-highest.plot.json"),&full)?;
     write(&output.join("electronic.png"), &fig)?;
     fig.bounds = [lo, hi];
     write(&output.join("electronic-from-lowest-to-highest.png"), &fig)?;
@@ -233,11 +241,21 @@ pub fn write(file: &Path, data: &Figure) -> Result<()> {
     style::png(&svg, file, 3600, 2400).context("plot_failed: PNG output failed")
 }
 pub fn redraw(file: &Path) -> Result<()> {
-    let data: Figure = store::read(file)?;
+    let mut data: Figure = store::read(file)?;
     ensure!(
         data.kind == "Combined",
         "data_invalid: invalid combined figure kind"
     );
+    // 旧包只借用同目录近费米图的显示边界，不访问原始科学来源。
+    if !data.title.contains("phonon") && data.dos_reference_bounds.is_none() {
+        let near = file.with_file_name("electronic.plot.json");
+        data.dos_reference_bounds = Some(if near.is_file() {
+            store::read::<Figure>(&near)?.bounds
+        } else {
+            super::config::PlotConfig::default().bounds()
+        });
+    }
+    data.renderer_version = VERSION;
     write(&file.with_extension("").with_extension("png"), &data)
 }
 
@@ -261,14 +279,8 @@ pub fn svg(data: &Figure) -> Result<String> {
             .all(|c| c.points.iter().all(|p| p.0.is_finite() && p.1.is_finite())),
         "data_invalid: non-finite combined figure data"
     );
-    let dmax = data
-        .dos
-        .iter()
-        .flat_map(|c| clipped_dos(&c.points, lo, hi))
-        .map(|p| p.0)
-        .fold(0., f64::max)
-        .max(1e-6)
-        * 1.06;
+    let phonon = data.title.contains("phonon");
+    let (dmax, fallback) = dos_axis(data)?;
     let mut svg = String::new();
     {
         let area = SVGBackend::with_string(&mut svg, (1200, 800)).into_drawing_area();
@@ -298,7 +310,6 @@ pub fn svg(data: &Figure) -> Result<String> {
             .x_label_area_size(44)
             .y_label_area_size(0)
             .build_cartesian_2d(0.0..dmax, lo..hi)?;
-        let phonon = data.title.contains("phonon");
         bands
             .configure_mesh()
             .x_labels(0)
@@ -351,21 +362,42 @@ pub fn svg(data: &Figure) -> Result<String> {
         }
         for c in &data.dos {
             let color = RGBColor(c.color[0], c.color[1], c.color[2]);
-            let points = clipped_dos(&c.points, lo, hi);
-            if c.dashed {
-                let stroke = dashed_stroke(&c.name, color);
-                dos.draw_series(DashedLineSeries::new(
-                    points,
-                    stroke.dash,
-                    stroke.gap,
-                    color.stroke_width(stroke.width),
-                ))?;
-            } else {
-                dos.draw_series(LineSeries::new(
-                    points,
-                    color.stroke_width(style::REFERENCE_WIDTH),
-                ))?;
+            for points in visible_dos(&c.points, lo, hi, dmax) {
+                if c.dashed {
+                    let stroke = dashed_stroke(&c.name, color);
+                    dos.draw_series(DashedLineSeries::new(
+                        points,
+                        stroke.dash,
+                        stroke.gap,
+                        color.stroke_width(stroke.width),
+                    ))?;
+                } else {
+                    dos.draw_series(LineSeries::new(
+                        points,
+                        color.stroke_width(style::REFERENCE_WIDTH),
+                    ))?;
+                }
             }
+        }
+        let peaks = if phonon { vec![] } else { truncated_peaks(data, dmax) };
+        for (density, energy, color) in &peaks {
+            let color = RGBColor(color[0], color[1], color[2]);
+            let half_height = (hi - lo) * 0.006;
+            dos.draw_series(std::iter::once(PathElement::new(
+                vec![(dmax * 0.91, *energy), (dmax, *energy)],
+                color.stroke_width(1),
+            )))?;
+            dos.draw_series(std::iter::once(PathElement::new(
+                vec![(dmax * 0.97, (energy + half_height).min(hi)), (dmax, *energy),
+                    (dmax * 0.97, (energy - half_height).max(lo))],
+                color.stroke_width(1),
+            )))?;
+            dos.draw_series(std::iter::once(Text::new(
+                format!("max {density:.3}"),
+                (dmax * 0.97, *energy),
+                TextStyle::from(("sans-serif", 10).into_font()).color(&color)
+                    .pos(Pos::new(HPos::Right, VPos::Bottom)),
+            )))?;
         }
         for (e, _, color) in &data.window {
             if *e < lo || *e > hi {
@@ -461,7 +493,20 @@ pub fn svg(data: &Figure) -> Result<String> {
             }
             legend.draw(&Text::new(name, (37, y), ("sans-serif", 12).into_font()))?;
         }
-        for (i, note) in data.notes.iter().enumerate() {
+        let mut notes = data.notes.clone();
+        if !phonon {
+            let reference = data.dos_reference_bounds
+                .unwrap_or(super::config::PlotConfig::default().bounds());
+            notes.push(format!(
+                "DOS axis: reference E - E_F [{:.3}, {:.3}] eV; 10% headroom; upper limit {dmax:.4} states/eV/cell{}",
+                reference[0], reference[1],
+                if fallback { "; no positive reference DOS, using displayed data" } else { "" },
+            ));
+            if !peaks.is_empty() {
+                notes.push("Arrows mark clipped DOS peaks; labels show true density (states/eV/cell); overlapping markers show the largest peak.".into());
+            }
+        }
+        for (i, note) in notes.iter().enumerate() {
             footer.draw(&Text::new(
                 note.clone(),
                 (70, 22 + i as i32 * 20),
@@ -471,6 +516,63 @@ pub fn svg(data: &Figure) -> Result<String> {
         area.present()?;
     }
     Ok(svg)
+}
+
+fn dos_max(data: &Figure, lo: f64, hi: f64) -> f64 {
+    if lo >= hi { return 0.; }
+    data.dos.iter().flat_map(|c| clipped_dos(&c.points, lo, hi))
+        .map(|p| p.0).fold(0., f64::max)
+}
+
+/// 参考能窗只决定电子 DOS 的显示横轴，不裁剪原始数据或能量纵轴。
+fn dos_axis(data: &Figure) -> Result<(f64, bool)> {
+    let [lo, hi] = data.bounds;
+    let displayed = dos_max(data, lo, hi);
+    if data.title.contains("phonon") {
+        return Ok((displayed.max(1e-6) * 1.06, false));
+    }
+    let [a, b] = data.dos_reference_bounds
+        .unwrap_or(super::config::PlotConfig::default().bounds());
+    ensure!(a.is_finite() && b.is_finite() && a < b,
+        "data_invalid: invalid DOS reference energy bounds");
+    let reference = dos_max(data, a.max(lo), b.min(hi));
+    let fallback = reference <= 0.;
+    let padded = if fallback { displayed } else { reference }.max(1e-6) * 1.10;
+    let step = 10_f64.powf(padded.log10().floor());
+    let upper = (padded / step).ceil() * step;
+    ensure!(upper.is_finite() && upper > 0., "data_invalid: invalid DOS axis limit");
+    Ok((upper, fallback))
+}
+
+/// 两个方向均按线段交点裁剪；高峰不被钳制成边界上的伪平顶。
+fn visible_dos(points: &[(f64, f64)], lo: f64, hi: f64, limit: f64) -> Vec<Vec<(f64, f64)>> {
+    let energy_clipped = clipped_dos(points, lo, hi).into_iter()
+        .map(|(d, e)| (e, d)).collect::<Vec<_>>();
+    crate::delivery::comparison_plot::clip(&energy_clipped, 0., limit).into_iter()
+        .map(|segment| segment.into_iter().map(|(e, d)| (d, e)).collect()).collect()
+}
+
+fn truncated_peaks(data: &Figure, limit: f64) -> Vec<(f64, f64, [u8; 3])> {
+    let [lo, hi] = data.bounds;
+    let mut peaks = vec![];
+    for c in &data.dos {
+        let mut peak: Option<(f64, f64, [u8; 3])> = None;
+        for (d, e) in clipped_dos(&c.points, lo, hi) {
+            if d > limit {
+                if peak.as_ref().is_none_or(|p| d > p.0) { peak = Some((d, e, c.color)); }
+            } else if let Some(p) = peak.take() { peaks.push(p); }
+        }
+        if let Some(p) = peak { peaks.push(p); }
+    }
+    // 同屏位置的多条曲线用最大实际峰值标注，避免文字互相遮挡。
+    peaks.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let mut grouped: Vec<(f64, f64, [u8; 3])> = vec![];
+    for peak in peaks {
+        if grouped.iter().all(|p| (p.1 - peak.1).abs() > (hi - lo) * 0.025) {
+            grouped.push(peak);
+        }
+    }
+    grouped
 }
 fn clipped_dos(points: &[(f64, f64)], lo: f64, hi: f64) -> Vec<(f64, f64)> {
     let swapped = points.iter().map(|(e, d)| (*d, *e)).collect::<Vec<_>>();
@@ -550,6 +652,7 @@ pub fn coarse(cfg: &Config, _results: &Path) -> Result<()> {
         renderer_version: VERSION,
         title: "QE / EPW phonon dispersion and DOS".into(),
         bounds: [0., maximum],
+        dos_reference_bounds: None,
         bands,
         dos,
         labels: data
@@ -635,6 +738,7 @@ pub fn qe_phonon(
             renderer_version: VERSION,
             title: "QE phonon dispersion and DOS".into(),
             bounds: [0., maximum],
+            dos_reference_bounds: None,
             bands,
             dos,
             labels: band.ticks,
@@ -664,6 +768,84 @@ fn retire_comparison_figures(dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn deep_peak_figure() -> Figure {
+        Figure {
+            kind: "Combined".into(), renderer_version: VERSION,
+            title: "QE electronic bands and DOS".into(), bounds: [-80., 20.],
+            dos_reference_bounds: Some([-3., 3.]),
+            bands: vec![curve("QE", vec![(0., -80.), (1., 20.)], style::QE, false)],
+            dos: vec![curve("QE", vec![(-80., 0.), (-43., 0.), (-42., 32.6),
+                (-41., 0.), (-3., 1.), (0., 4.24), (3., 1.), (20., 0.)], style::QE, false)],
+            labels: vec![], window: vec![], notes: vec![],
+        }
+    }
+
+    #[test]
+    fn electronic_dos_reference_excludes_deep_peaks_and_preserves_all_curves() {
+        let mut data = deep_peak_figure();
+        let original = serde_json::to_value(&data).unwrap();
+        assert_eq!(dos_axis(&data).unwrap(), (5., false));
+        let text = svg(&data).unwrap();
+        assert!(text.contains("max 32.600") && text.contains("Arrows mark clipped DOS peaks"));
+        assert!(text.contains("upper limit 5.0000"));
+        assert_eq!(serde_json::to_value(&data).unwrap(), original);
+        data.dos[0].points[2].1 = 32600.;
+        assert_eq!(dos_axis(&data).unwrap(), (5., false));
+        data.dos.push(curve("EPW", vec![(-3., 1.), (0., 6.2), (3., 1.)], style::INTERPOLATED, true));
+        assert_eq!(dos_axis(&data).unwrap(), (7., false));
+        data.dos_reference_bounds = Some([1., 3.]);
+        // 边界在原生网格之间时按线段插值，不能漏掉较高的边界值。
+        assert_eq!(dos_axis(&data).unwrap(), (5., false));
+    }
+
+    #[test]
+    fn truncated_dos_has_separate_boundary_intersections_not_a_flattened_peak() {
+        let points = vec![(-1., 0.), (0., 10.), (1., 0.)];
+        let segments = visible_dos(&points, -1., 1., 5.);
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].last(), Some(&(5., -0.5)));
+        assert_eq!(segments[1].first(), Some(&(5., 0.5)));
+        assert!(segments.iter().flatten().all(|(d, _)| *d >= 0. && *d <= 5.));
+    }
+
+    #[test]
+    fn dos_reference_fallback_and_phonon_scaling_remain_well_defined() {
+        let mut data = deep_peak_figure();
+        data.dos_reference_bounds = Some([30., 40.]);
+        assert_eq!(dos_axis(&data).unwrap(), (40., true));
+        data.dos[0].points.iter_mut().for_each(|p| p.1 = 0.);
+        let (limit, fallback) = dos_axis(&data).unwrap();
+        assert!(fallback && limit > 0. && limit.is_finite());
+        assert!(svg(&data).unwrap().contains("no positive reference DOS"));
+        data = deep_peak_figure();
+        data.title = "QE phonon dispersion and DOS".into();
+        assert!((dos_axis(&data).unwrap().0 - 32.6 * 1.06).abs() < 1e-12);
+        data.title = "QE electronic bands and DOS".into();
+        data.dos_reference_bounds = Some([3., -3.]);
+        assert!(dos_axis(&data).is_err());
+    }
+
+    #[test]
+    fn old_moved_combined_package_uses_saved_near_window_without_scientific_sources() {
+        let dir = std::env::temp_dir().join(format!("dos-reference-{}", store::token()));
+        fs::create_dir_all(&dir).unwrap();
+        let mut old = serde_json::to_value(deep_peak_figure()).unwrap();
+        old.as_object_mut().unwrap().remove("dos_reference_bounds");
+        let full = dir.join("electronic-from-lowest-to-highest.plot.json");
+        store::write(&full, &old).unwrap();
+        old["bounds"] = serde_json::json!([1., 3.]);
+        store::write(&dir.join("electronic.plot.json"), &old).unwrap();
+        redraw(&full).unwrap();
+        let new: Figure = store::read(&full).unwrap();
+        assert_eq!(new.dos_reference_bounds, Some([1., 3.]));
+        assert_eq!(new.bounds, [-80., 20.]);
+        assert_eq!(serde_json::to_value(&new).unwrap()["dos"], old["dos"]);
+        assert_eq!(dos_axis(&new).unwrap(), (4., false));
+        assert!(dir.join("electronic-from-lowest-to-highest.png").is_file());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn shared_axis_and_transposed_dos_keep_bounds_and_uncovered_ranges_empty() {
         let data = Figure {
@@ -671,6 +853,7 @@ mod tests {
             renderer_version: VERSION,
             title: "QE bands and DOS".into(),
             bounds: [-3., 3.],
+            dos_reference_bounds: Some([-3., 3.]),
             bands: vec![curve("QE", vec![(0., -8.), (1., 8.)], style::QE, false)],
             dos: vec![curve(
                 "QE",

@@ -70,6 +70,10 @@ input.toml 的顶层 [plot] 提供 electronic_energy_min_ev 与 electronic_energ
 
 第 3、5 步 plot/ 各生成两张电子组合图；全范围取 QE 路径能带极值。第 4、6 步 plot/ 为 0 到最高路径频率的一张声子组合图。自包含 .plot.json 支持独立重绘。
 
+两张电子组合图的 DOS 横轴都用 `[plot]` 能窗与当前可见能窗交集内所有待绘曲线的最大值，加 10% 留白并向上整理刻度。全范围图仍显示全部 QE 路径能级，深能级尖峰只在图上裁剪，用箭头及真实峰值标注；重叠标记显示最大峰，不修改 DOS 数组、积分或科学来源。参考窗无正 DOS 时注明并回退可见数据，全零时保留有效正刻度；声子范围规则不变。
+
+例如 E_F±3 eV 内最大 DOS 为 4.24，则横轴上限由 4.664 向上整理为 5 states/eV/cell；不受 −42 eV 附近更高峰影响。无需新增 TOML 参数，修改现有能窗后使用 `epw_phonon -c "input.toml" --stage electronic --plot` 或 `epw_wannier -c "input.toml" --plot` 原位重绘。自包含图参保存独立的 DOS 参考窗；旧独立包缺字段时只读同目录近费米图的边界，缺失则默认 ±3 eV。
+
 ## 外部程序路径与命令行参数
 
 全部外部程序在一个 `[programs]` 内平铺配置，路径与参数分别使用 `*_x`、`*_args`；不使用 `[programs.pw]` 等子表。每个后处理程序必须有自己的显式路径，不从 pw／ph 目录或 PATH 推导。

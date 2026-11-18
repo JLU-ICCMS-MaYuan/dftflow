@@ -218,6 +218,7 @@ pub fn run(cfg: &Config) -> Result<()> {
             renderer_version: combined_plot::VERSION,
             title: "QE / EPW phonon dispersion and DOS".into(),
             bounds: [minimum, maximum],
+            dos_reference_bounds: None,
             bands: curves,
             dos: vec![curve("QE", qe_density), curve("EPW", epw_density)],
             labels: ticks.into_iter().map(|t| (t.distance, t.label)).collect(),

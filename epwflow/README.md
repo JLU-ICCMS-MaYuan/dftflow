@@ -429,3 +429,9 @@ EPW 所有阶段禁用多 image，默认或显式单 image 可用；PH 保留自
 顶层 `[baseparams]` 支持物种二维数组 `ATOMIC_SPECIES`、`prefix`、`ecutwfc/ecutrho` 及 QE DOS／PDOS 的 `Emin/Emax/DeltaE`。仅回填适用调用，阶段显式值优先，非法值不回退；公共能量采样参数不等同绘图范围或 Wannier 能窗。
 
 阶段内可用 `nk/nq/nkf/nqf` 三正整数数组，按对应原生方向展开；不能与自身方向字段混写，不能放进公共表。SCF／NSCF 的 `K_POINTS` 和 postw90 的 `dos_kmesh` 保留原接口。相同科学参数的新旧写法保持原生输入和科学身份一致；Ubuntu MgB₂ 当前输入已同步，实际计算仍由用户执行。
+
+## 电子 DOS 自适应横轴
+
+第 3、5 步近费米图和全能窗图共用 `[plot]` 的近费米能窗来确定 DOS 横轴：所有待绘曲线在该窗内的最大值乘 1.10，再向上整理刻度。例如最大值 4.24 时上限为 5 states/eV/cell。全能窗图仍显示全部能级，深能级超出峰用箭头及真实峰值标注，原始数据和积分不变。参考窗没有正 DOS 时明确注明并回退可见数据；声子图保持原规则。
+
+编译后在算例目录执行 `epw_phonon -c "input.toml" --stage electronic --plot`，即可用已有图参原位更新两张 PNG；第 5 步使用 `epw_wannier -c "input.toml" --plot`。两者均不补算科学数据或提交任务。独立包保留 DOS 参考窗，使用 `--plot --results "run/results/3.qe-electronic"` 可离线重绘。

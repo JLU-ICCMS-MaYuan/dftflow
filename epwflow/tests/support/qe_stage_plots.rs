@@ -226,6 +226,10 @@ fn combined_plots_use_shared_config_and_qe_path_extrema_without_scientific_rerun
 #[test]
 fn stage_three_and_five_plot_commands_use_saved_minimal_curves_without_science() {
     let c=Case::numbered();c.stage_setup();
+    // 当前目标不自动补上游；先显式建立重绘所需的阶段科学数据。
+    for stage in ["scf", "nscf", "electronic"] {
+        success(c.stage_submit(stage, false));success(c.stage_execute());
+    }
     success(c.stage_submit("wannier",false));success(c.stage_execute());
     let root=c.root.join("run/results");
     for stage in ["3.qe-electronic","5.epw-wannier"] {
@@ -243,6 +247,10 @@ fn stage_three_and_five_plot_commands_use_saved_minimal_curves_without_science()
         let dir=root.join(stage);
         let data:Value=store::read(&dir.join("electronic.plot.json")).unwrap();
         assert_eq!(data["bounds"],serde_json::json!([-2.,4.]));
+        assert_eq!(data["dos_reference_bounds"], serde_json::json!([-2.,4.]));
+        let full:Value=store::read(&dir.join("electronic-from-lowest-to-highest.plot.json")).unwrap();
+        assert_eq!(full["dos_reference_bounds"], serde_json::json!([-2.,4.]));
+        assert_eq!(full["dos"], data["dos"]);
         assert!(dir.join("electronic.png").is_file());
         assert!(dir.join("electronic-from-lowest-to-highest.png").is_file());
     }
