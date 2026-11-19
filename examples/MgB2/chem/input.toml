@@ -1,6 +1,6 @@
-# chem 集群 MgB₂ 小网格功能测试；不是数值收敛或 Tc 验收。
-# 版本 2：八个主阶段、独立用途子段；公共参数按 0061 回填。
-# 科学参数保留原生名称和单位；workflow 独立记录执行设置；自动绑定由程序内部确认。
+# MgB₂ 超导性质计算配置（基于 Mori Tutorial Wed.9）
+# 参考：EPW School 2024 Exercise 2 - Anisotropic Migdal-Eliashberg equations
+# 本配置采用小网格用于功能测试，实际收敛计算需更密网格
 layout = "numbered"
 work_dir = "run"
 kpath = "../KPATH.in"
@@ -72,30 +72,32 @@ Emax = 100.0
 DeltaE = 0.01
 
 [stages."1.qe-scf"]
+# PDF Tutorial: 8×8×8 k-mesh for SCF
 K_POINTS = [8, 8, 8, 0, 0, 0]
 
 calculation = "scf"
 
-# degauss：Ry；截断能继承 baseparams。
+# degauss：Ry；PDF Tutorial 使用 0.05 Ry (较大的展宽以加速收敛)
 occupations = "smearing"
-smearing = "mv"
-degauss = 0.02
+smearing = "mp"
+degauss = 0.05
 
 # conv_thr：Ry。
-conv_thr = 1e-10
+conv_thr = 1e-9
 
 [stages."2.qe-nscf"]
+# PDF Tutorial: 6×6×6 uniform Γ-centered grid for NSCF
 K_POINTS = [6, 6, 6]
 calculation = "nscf"
 occupations = "smearing"
-smearing = "mv"
-degauss = 0.02
+smearing = "mp"
+degauss = 0.05
 nbnd = 16
 nosym = false
 noinv = false
 
 # conv_thr：Ry。
-conv_thr = 1e-12
+conv_thr = 1e-9
 
 [workflow."3.qe-electronic"]
 points_per_edge = 20
@@ -134,7 +136,8 @@ phonon_sigma_cm1 = 10.0
 points_per_edge = 100
 
 [stages."4.qe-phonon-index"]
-tr2_ph = 1e-12
+# PDF Tutorial: 3×3×3 phonon q-mesh
+tr2_ph = 1e-16
 ldisp = true
 only_init = true
 lqdir = true
@@ -158,7 +161,7 @@ ndos = 200
 nk = [8, 8, 4]
 
 [stages."4.qe-phonon-index".q]
-tr2_ph = 1e-12
+tr2_ph = 1e-16
 ldisp = true
 only_init = false
 lqdir = true
@@ -208,20 +211,20 @@ bands_plot = true
 bands_num_points = 1
 # 能窗为绝对 eV；conv_tol 为 Å²；num_iter 等为迭代次数。
 num_wann = 5
-projections = ["B:pz", "f=0.5,0.0,0.5:s", "f=0.0,0.5,0.5:s", "f=0.5,0.5,0.5:s"]
+# PDF Tutorial: B:pz + 3个 s 轨道投影
+projections = ["B:pz", "f=0.5,1.0,0.5:s", "f=0.0,0.5,0.5:s", "f=0.5,0.5,0.5:s"]
 # Mg 2s/2p 半芯态：原始带编号 1–4；余下 12 带用于 5 个 Wannier 函数。
 exclude_bands = [1, 2, 3, 4]
 # 四界均为绝对 eV（QE 能量零点），不是相对 E_F。
-# Mori 第 19–20 页：8.8 - 7.469822726 = E_F 上方约 1.330177274 eV。
-# 沿用原 PBE 小网格测试初值（NSCF E_F=9.183946302 eV）；须结合本次能谱核对。
+# PDF Tutorial 第 19–20 页：dis_froz_max = 8.8 eV (绝对值)
 dis_win_min = -3.40915530
 dis_win_max = 26.41812126
 dis_froz_min = -3.40915530
-dis_froz_max = 10.51412358
+dis_froz_max = 8.8
 num_iter = 1000
 conv_tol = 1e-10
 conv_window = 5
-dis_num_iter = 1000
+dis_num_iter = 500
 dis_conv_tol = 1e-10
 dis_conv_window = 5
 
@@ -269,6 +272,7 @@ wannierize = false
 ephwrite = false
 eliashberg = false
 band_plot = false
+# PDF Tutorial: fine grids 保持可整除关系
 nkf = [40, 40, 40]
 nqf = [20, 20, 20]
 
@@ -291,6 +295,7 @@ phonselfen = false
 a2f = false
 ngaussw = 0
 efermi_read = true
+# PDF Tutorial: coarse grids 6×6×6 k, 3×3×3 q
 nk = [6, 6, 6]
 nq = [3, 3, 3]
 epwread = true
@@ -377,10 +382,11 @@ gridsamp = 0
 nswi = 0
 nstemp = 3
 temps = [20.0, 30.0, 40.0]
+# PDF Tutorial: muc = 0.1
 muc = 0.1
-wscut = 1.0
-nsiter = 1000
-conv_thr_iaxis = 1e-8
+wscut = 0.5
+nsiter = 500
+conv_thr_iaxis = 1e-3
 broyden_beta = 0.3
 broyden_ndim = 4
 a_gap0 = 1.0
