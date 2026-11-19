@@ -4,12 +4,15 @@
 
 ## 输入与测试范围
 
-- 复用仓库 test_auto/MgB2/MgB2.vasp 结构和 test_auto/MgB2/pp/ 的 PBE 赝势模型。当前输入读取 repair/pp/：Mg 为原二进制势的同模型 UPF 转换，B 通过相对链接引用原文件；均不跟踪。
-- SCF／NSCF 网格 4×4×2，16 条带；PH 为 index 模式、2×2×1；细网格 k 为 8×8×4、q 为 4×4×2。截断能为 40／320 Ry。
+- 按用户要求保留仓库 test_auto/MgB2/MgB2.vasp 结构和原 PBE 赝势模型，当前输入读取本目录 `pp/`；其余主要科学参数按 Mori Tutorial Wed.9 第 16～19 页对齐。因此本配置不是 PDF 的完整 LDA 复现。
+- SCF 网格 8×8×8，NSCF 网格 6×6×6、16 条带；PH 为 index 模式、3×3×3；细网格 k 为 40×40×40、q 为 20×20×20。PDF 第 16 页正文写 SCF 12³，但展示的 scf.in 为 8³；与 chem 一样采用展示输入。
+- 截断能为 40／320 Ry（320 Ry 沿用 PBE 设置）；SCF／NSCF 使用 mp 展宽 0.05 Ry、conv_thr=1e-9，声子 tr2_ph=1e-16。
 - 5 个 Wannier 函数，B:pz 与三个键中心 s 初始投影；使用 `energy_only` 自动选窗，实际能窗须查看本次原生日志。
-- 第 8 阶段为 iso／aniso 的 20／30／40 K 能隙计算，μ*=0.1，不执行 Tc 搜索。
-- Slurm header 申请本机 `local` 分区、单节点、12 任务；launcher 启动 12 MPI。小网格用于检查执行链与图表，不代表 MgB₂ 的物理结果或网格已收敛。
+- 第 8 阶段保留 iso／aniso 两种方法，均使用 PDF 的 μ*=0.05、10～55 K 每隔 5 K 共 10 个温度；wscut=0.5 eV、nsiter=500、conv_thr_iaxis=1e-3，启用 Padé，不执行 Tc 搜索。PDF 的 temps=10 55 等距写法已展开为当前接口所需的完整列表；PDF 未显式设置的 npade、broyden_beta 取 EPW 原生默认值 90、0.7。
+- Slurm header 申请本机 `local` 分区、单节点、12 任务；launcher 启动 12 MPI，OMP／MKL 线程各为 1。教程参数不代表 MgB₂ 的物理结果或网格已收敛。
 - 输入已删除 `[budget]`，程序不再读写 `campaign/ledger.json` 或绑定固定项目名。现有 `campaign/` 只保留历史资料；完整运行前检查生成脚本和本机资源限制。
+
+2026-11-19 已拉取最新代码并重新构建固定入口，三个科学入口的配置检查通过；没有提交新的科学计算，也没有改写已有 run。PDF 与 chem 冲突时采用 PDF 的明确数值，PBE 赝势和现有结构按用户决定保留。Wannier 采用 500 次局域化迭代、PDF 的初始投影与绝对冻结上界 8.8 eV；排除带 1～4 和其余三个能窗边界沿用 chem／PBE 设置，尚须根据新计算能谱核对。下文带日期的验收和旧能窗分析是历史记录，不能作为本次配置的科学验收。
 
 ## 本机环境
 
@@ -100,9 +103,9 @@ epw_superconductivity -c "input.toml" --stage superconductivity -s
 原始电荷密度和波函数不做哈希、大小、非空、存在性或集合核对，旧记录对应条目也忽略；实际复制与原生读取保留，其他元数据和科学检查保留。本次目录保持现状，不删除 campaign 或 repair/pp。正式 CLI 已覆盖，现场 SCF 复用打开这两类文件的次数由 3934 降为 0，未提交新计算。完整原话和验收见 [0067](../../../docs/specs/0067-unchecked-density-wavefunctions/spec.md)。
 
 
-## 按 Mori 思路设置当前 PBE 能窗
+## 历史记录：按 Mori 相对费米能设置 PBE 能窗
 
-当前输入保留 5 个 Wannier 函数，排除原始带编号 1–4 的 Mg 2s/2p 半芯态。全部四界显式写在 stages."5.wannier90"，单位为相对 QE 能量零点的绝对 eV：
+此前输入保留 5 个 Wannier 函数，排除原始带编号 1–4 的 Mg 2s/2p 半芯态。以下为旧输入能窗（本次冻结上界已改为 PDF 的 8.8 eV），单位为相对 QE 能量零点的绝对 eV：
 
 - dis_win_min = −3.40915530，dis_win_max = 26.41812126。
 - dis_froz_min = −3.40915530，dis_froz_max = 10.51412358。
@@ -130,8 +133,8 @@ QE 与 EPW 沿同一物理高对称路径，各自保留原生采样；不要求
 
 当前 `input.toml` 使用八个主阶段及独立用途子段。`[baseparams]` 集中填写 `ATOMIC_SPECIES` 二维数组、`prefix`、`ecutwfc/ecutrho` 和 QE DOS／PDOS 的 `Emin/Emax/DeltaE`；仅适用调用回填，阶段显式值优先。截断能单位 Ry，后三项单位 eV；它们不是 `[plot]` 显示范围或 Wannier 能窗。
 
-`nk/nq/nkf/nqf` 各为三个正整数，只放所属阶段或用途子段；不得与同一网格的 `nk1` 等方向字段混写，不在公共表继承。SCF 的 `K_POINTS` 原生卡片、NSCF 的 `K_POINTS=[4,4,2]` 及 postw90 的 `dos_kmesh` 保持各自接口。当前 PH 为 `nq=[2,2,1]`，EPW 粗 k/q 为 `[4,4,2]`／`[2,2,1]`，细 k/q 为 `[8,8,4]`／`[4,4,2]`。
+`nk/nq/nkf/nqf` 各为三个正整数，只放所属阶段或用途子段；不得与同一网格的 `nk1` 等方向字段混写，不在公共表继承。SCF 的 `K_POINTS` 原生卡片、NSCF 的 `K_POINTS=[6,6,6]` 及 postw90 的 `dos_kmesh` 保持各自接口。当前 PH 为 `nq=[3,3,3]`，EPW 粗 k/q 为 `[6,6,6]`／`[3,3,3]`，细 k/q 为 `[40,40,40]`／`[20,20,20]`。
 
-本次只调整配置表达并删除不再消费的双初值／温度搜索 workflow 设置；保留 num_wann=5、排除带 1～4、四个绝对能窗、12 MPI、QE／EPW 独立路径密度及 20／30／40 K 原生多温度列表，不触发科学计算或改写历史配置。
+此前格式迁移只调整配置表达并删除不再消费的双初值／温度搜索 workflow 设置；当时保留 num_wann=5、排除带 1～4、四个绝对能窗、12 MPI、QE／EPW 独立路径密度及 20／30／40 K 原生多温度列表，未触发科学计算或改写历史配置。本次有效参数见文首。
 
 本次检查发现原 `repair/pp/` 已缺失，已按 0066 恢复：Mg 从原二进制势以 QE 原生 readvan／write_upf 转换为 UPF，再用原生 read_ps_new 读取核对，主要物理数组的最大归一化差为 1.54×10⁻¹⁵，小于 10⁻¹²；B 使用原文件的相对链接。`repair/pp/` 是实际赝势输入，运行前需保留，不跟踪转换产物。未执行 SCF 或其他科学计算。
