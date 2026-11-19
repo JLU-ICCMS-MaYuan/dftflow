@@ -310,14 +310,13 @@ pub fn auto_plot(cfg: &Config) {
             return;
         }
     };
-    match plot_existing(
-        &cfg.work_dir,
-        &cfg.work_dir
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("results"),
-        &formats,
-    ) {
+    // results 应该在 run/ 目录下，而不是和 run/ 平级
+    let run_root = cfg
+        .work_dir
+        .ancestors()
+        .find(|p| p.file_name().is_some_and(|n| n == "run"))
+        .unwrap_or(&cfg.work_dir);
+    match plot_existing(&cfg.work_dir, &run_root.join("results"), &formats) {
         Ok(r) => println!("superconductivity_plots: {}", r.files.len()),
         Err(e) => eprintln!("Warning: superconductivity plot: {e:#}"),
     }
@@ -338,12 +337,10 @@ pub fn plot_config(path: &Path) -> Result<PlotReport> {
         .transpose()?
         .unwrap_or_default();
     let formats = section.validate_formats()?;
-    plot_existing(
-        &work,
-        &work
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("results"),
-        &formats,
-    )
+    // results 应该在 run/ 目录下，而不是和 run/ 平级
+    let run_root = work
+        .ancestors()
+        .find(|p| p.file_name().is_some_and(|n| n == "run"))
+        .unwrap_or(&work);
+    plot_existing(&work, &run_root.join("results"), &formats)
 }

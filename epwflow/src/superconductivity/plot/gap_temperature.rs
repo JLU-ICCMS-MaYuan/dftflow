@@ -64,10 +64,17 @@ fn temperature_panels(task: &PlotTask, iso: bool) -> Result<Option<Vec<Panel>>> 
         panels.push(panel);
     }
     if !any {
-        task.warn(format!(
-            "fig{}: missing valid temperature series; skipped",
-            if iso { 4 } else { 3 }
-        ));
+        let has_candidates = if iso {
+            !task.data.imag_iso.is_empty()
+        } else {
+            !task.data.imag_aniso.is_empty()
+        };
+        if has_candidates {
+            task.warn(format!(
+                "fig{}: available temperature files did not yield a valid series; skipped",
+                if iso { 4 } else { 3 }
+            ));
+        }
         return Ok(None);
     }
     while panels.len() < 2 {

@@ -261,7 +261,7 @@ fn iso_method_uses_imag_iso_for_fig2() {
     let c = Case::new();
     c.write(
         "Test.imag_iso_010.00",
-        "# iw(meV) Z delta(eV)\n3.141 0.9 0.005\n6.283 0.85 0.0048\n",
+        "# iw(eV) Z delta(eV)\n0.0027072150869 0.9 0.005\n0.0081216452607 0.85 0.0048\n",
     );
     c.write(
         "Test.pade_iso_010.00",
@@ -274,7 +274,8 @@ fn iso_method_uses_imag_iso_for_fig2() {
         .unwrap();
     assert_eq!(panels.len(), 2);
     assert_eq!(panels[0].curves[0].points.len(), 2);
-    assert_eq!(panels[0].curves[0].points[0], (3.141, 5.0)); // eV → meV
+    assert!((panels[0].curves[0].points[0].0 - 2.7072150869).abs() < 1e-9);
+    assert_eq!(panels[0].curves[0].points[0].1, 5.0); // eV → meV
     assert!(!panels[1].curves.is_empty(), "iso Padé data must be plotted");
 }
 #[test]
