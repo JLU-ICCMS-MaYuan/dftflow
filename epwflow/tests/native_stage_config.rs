@@ -194,6 +194,35 @@ fn declared_native_array_is_written_with_fortran_indices() {
 }
 
 #[test]
+fn pade_sample_percentage_is_accepted_and_rendered_for_both_methods() {
+    let mut c = Case::new();
+    for method in ["iso", "aniso"] {
+        c.cfg
+            .set_native(&[SUPER, method, "epw", "INPUTEPW", "lpade"], json!(true))
+            .unwrap();
+        c.cfg
+            .set_native(&[SUPER, method, "epw", "INPUTEPW", "npade"], json!(50))
+            .unwrap();
+    }
+    c.cfg.validate().unwrap();
+    for method in ["iso", "aniso"] {
+        assert_eq!(
+            c.cfg
+                .native_value::<i64>(&[SUPER, method, "epw", "INPUTEPW", "npade"])
+                .unwrap(),
+            50
+        );
+    }
+    let text = c.cfg.apply_native(
+        &[SUPER, "aniso", "epw"],
+        "&inputepw\n lpade = .false.\n npade = 90\n eliashberg = .true.\n/\n",
+    )
+    .unwrap();
+    assert!(text.contains(" lpade = .true."), "{text}");
+    assert!(text.contains(" npade = 50"), "{text}");
+}
+
+#[test]
 fn manual_and_derived_definitions_are_rejected_before_execution() {
     let mut c = Case::new();
     c.cfg

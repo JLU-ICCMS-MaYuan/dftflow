@@ -11,7 +11,11 @@ pub fn plot_gap_imaginary_real(task: &PlotTask) -> Result<Option<Vec<Panel>>> {
         .iter()
         .find_map(|p| task.load(p, io::parse_imag_aniso));
     let Some(gap) = gap else {
-        task.warn("fig2: missing valid imaginary-axis anisotropic gaps; skipped");
+        // 各向同性方法目录本来就没有 imag_aniso；图 2 对应 Mori 的各向异性图，
+        // 该方法留空不属于数据损坏，也不应污染自动绘图警告。
+        if !task.data.imag_aniso.is_empty() {
+            task.warn("fig2: missing valid imaginary-axis anisotropic gaps; skipped");
+        }
         return Ok(None);
     };
     let t = gap.temperature_k;

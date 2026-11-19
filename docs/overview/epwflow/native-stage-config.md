@@ -129,4 +129,6 @@ EPW 从 Wannier、粗网格到细网格、超导求解全部禁用多 image；�
 
 绘图只在当前方法文件缺少 λ 分布、且已选 a2f 是符号链接时，读取该链接目标同前缀的 lambda_pairs／lambda_k_pairs；不搜索其他细网格、不补算上游。实际来源路径写入 plot.log。
 
-2026-11-18 的公开 CLI 回归已验证：`--skip-plot` 后可通过复用补图，不重复科学调用；图片实际写入失败只报警告，科学完成状态保留；科学数据无效时不自动出图。本机真实 MgB₂ 当前只有 20／30／40 K 数据，生成 7 张 SVG；缺少 Padé 和 qdos，尚不能验证真实完整五类图。合成五类图三格式与 70 MB 压力样本验证已通过，不能替代缺失的真实科学数据。
+第 8 步若要补齐 Mori Fig. 7／9 所需数据，在 iso 和 aniso 两个 `INPUTEPW` 配置中设置 `lpade = true`、`npade = 50`。EPW 5.9 的 Padé 路径会自动调用 `dos_quasiparticle` 生成 `qdos_*`，不添加 `qdos_k`；qdos 第二列已经是 `N_S/N_F`。结果图写入配置目录下的 `results/8.epw-superconductivity/`。
+
+2026-11-19 方案 B 实跑已验证：iso/aniso 各 20／30／40 K 收敛，生成 Padé 与 qdos；aniso 目录生成五类图三格式共 15 个文件，iso 目录生成可用图共 12 个。此前合成样本与缺数据回测记录仍保留在 0076 验收文档。

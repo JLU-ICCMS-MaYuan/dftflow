@@ -24,6 +24,8 @@ pub struct DosData {
     pub temperature_k: f64,
     pub omega_mev: Vec<f64>,
     pub dos_raw: Vec<f64>,
+    /// EPW 原生 qdos 文件的第二列已经是 N_S/N_F；契约样本仍是未归一化 DOS。
+    pub normalized: bool,
 }
 /// 原生 EPW 分布已经分箱，不得再对横坐标做无权直方图。
 #[derive(Debug)]
@@ -40,12 +42,10 @@ fn rows(path: &Path, mut visit: impl FnMut(usize, &[f64]) -> Result<()>) -> Resu
         if text.is_empty() {
             continue;
         }
-        // 原生 iso 首行没有 #；仅识别明确的单位和列名，不吞掉未知坏行。
+        // 原生 EPW 的列头可能没有注释符；只跳过明确的列名行，不吞掉未知坏行。
         if index == 0
             && text.starts_with('w')
-            && text.contains("[eV]")
-            && text.contains("znorm(w)")
-            && text.contains("delta(w)")
+            && (text.contains("[eV]") || text.contains("N_S/N_F") || text.contains("znorm(w)"))
         {
             continue;
         }
@@ -326,6 +326,7 @@ pub fn parse_qdos(path: &Path) -> Result<DosData> {
         temperature_k: temperature(path)?,
         omega_mev: vec![],
         dos_raw: vec![],
+        normalized: false,
     };
     let header = BufReader::new(File::open(path)?)
         .lines()
@@ -337,6 +338,7 @@ pub fn parse_qdos(path: &Path) -> Result<DosData> {
     } else {
         1.
     };
+    result.normalized = header.contains("N_S/N_F");
     rows(path, |_, r| {
         ensure!(r.len() >= 2 && r[1] >= 0., "invalid DOS columns/value");
         result.omega_mev.push(r[0] * factor);

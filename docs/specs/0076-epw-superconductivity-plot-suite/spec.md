@@ -657,10 +657,10 @@ formats = ["svg", "png"]  # 同时输出 SVG 和 PNG
 - **取值范围**：通常 30-70%
 - **建议值**：50（平衡精度和稳定性）
 
-**`qdos_k = .true.`**（可选，计算超导态密度）
-- **功能**：计算超导态密度 N_S(ω) 相对于正常态 N_F 的比值
-- **输出**：生成 `MgB2.qdos_XX` 文件（2 列：ω(eV), N_S/N_F）
-- **注意**：需要 EPW 5.8+ 版本支持
+**qdos 自动输出**
+- **功能**：EPW 5.9 在 `lpade` 成功后调用 `dos_quasiparticle`
+- **输出**：生成 `MgB2.qdos_XX` 文件（首行为 `w [eV] N_S/N_F`，第二列已归一化）
+- **注意**：不添加 `qdos_k`；绘图不再重复除以 `N_F`
 
 ### 14.3 具体操作步骤
 
@@ -679,8 +679,7 @@ npade = 50            # 新增这一行
 lpade = true          # 从 false 改为 true
 npade = 50            # 新增这一行
 
-# 可选：如果要生成图 5 超导态密度，在两个部分的末尾添加
-qdos_k = true         # 新增这一行
+# 图 5 不需要额外开关；lpade 成功后 EPW 5.9 自动生成 qdos_*
 ```
 
 #### 步骤 2：清理旧数据并重新计算
@@ -730,18 +729,18 @@ epw_superconductivity --plot-only -c input.toml
 
 ```bash
 # 检查生成的图表文件
-ls -lh run/results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/*/fig*.{svg,png,pdf}
+ls -lh results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/*/fig*.{svg,png,pdf}
 
 # 应该看到五类图（每类 SVG/PNG/PDF）：
 # fig1_coupling_strength.*           - 电声耦合三联图
 # fig2_gap_imaginary_real.*          - 虚频/实频能隙双联图（实频部分不再为空）
 # fig3_aniso_gap_vs_T.*              - 各向异性能隙温度演化
 # fig4_iso_gap_vs_T.*                - 各向同性能隙温度演化
-# fig5_superconducting_dos.*         - 超导态密度（如果添加了 qdos_k = true）
+# fig5_superconducting_dos.*         - 超导态密度（如果已有 qdos 数据）
 
 # 对比 Mori PDF 进行视觉验证
 evince ../../../examples/MgB2/Wed.9.Mori.pdf &
-eog run/results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/fig*.png &
+eog results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/fig*.png &
 ```
 
 ### 14.4 科学验证标准
