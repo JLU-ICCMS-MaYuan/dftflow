@@ -11,6 +11,9 @@ outdir = "scratch"
 # 电子组合图的纵轴范围，相对费米能级；第 3、5 步共用。
 # 修改后只重绘：epw_phonon --stage electronic --plot；epw_wannier --plot。
 [plot]
+# 第 8 步超导分析图使用以下格式；第 3、5 步电子组合图目前仍固定输出 PNG。
+formats = ["svg", "png", "pdf"]
+# 线宽、虚线长度和间隔目前由共享绘图主题设置，尚不支持 plot.electronic 配置。
 electronic_energy_min_ev = -3.0 # 下限：E_F - 3 eV
 electronic_energy_max_ev = 3.0 # 上限：E_F + 3 eV
 
