@@ -247,11 +247,11 @@ head -20 run/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV
 ls -lh results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/
 
 # 应该看到五类图（SVG/PNG/PDF）：
-# fig1_coupling_strength.*           - 电声耦合三联图
-# fig2_gap_imaginary_real.*          - 虚频/实频能隙双联图
-# fig3_aniso_gap_vs_T.*              - 各向异性能隙温度演化
-# fig4_iso_gap_vs_T.*                - 各向同性能隙温度演化
-# fig5_superconducting_dos.*         - 超导态密度（如果有 qdos 数据）
+# coupling_strength.*           - 电声耦合三联图
+# gap_imaginary_real.*          - 虚频/实频能隙双联图
+# aniso_gap_vs_T.*              - 各向异性能隙温度演化
+# iso_gap_vs_T.*                - 各向同性能隙温度演化
+# superconducting_dos.*         - 超导态密度（如果有 qdos 数据）
 ```
 
 ### 步骤 9：手动触发绘图（如果需要）
@@ -303,7 +303,7 @@ cd /home/mayuan/code/dftflow/examples/MgB2/ubuntu
 evince ../../../examples/MgB2/Wed.9.Mori.pdf &
 
 # 打开生成的图表
-eog results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/fig*.png &
+eog results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/*.png &
 ```
 
 **对比检查清单**：

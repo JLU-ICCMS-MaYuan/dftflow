@@ -34,7 +34,7 @@ fn completed_stage_skips_then_replots_without_repeating_science() {
     fn find_figure(dir: &std::path::Path) -> Option<PathBuf> {
         for entry in fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
-            if path.file_name().unwrap() == "fig4_iso_gap_vs_T.svg" {
+            if path.file_name().unwrap() == "iso_gap_vs_T.svg" {
                 return Some(path);
             }
             if path.is_dir() {

@@ -471,7 +471,7 @@ epw_superconductivity --stage superconductivity -s --skip-plot
 formats = ["svg", "png", "pdf"]
 ```
 
-例如 `work_dir="run"`，输入 `run/8.epw-superconductivity/01.grid/aniso-mu0.1-.../` 镜像到配置目录下的 `results/8.epw-superconductivity/01.grid/aniso-mu0.1-.../`。文件名依次为 `fig1_coupling_strength`、`fig2_gap_imaginary_real`、`fig3_aniso_gap_vs_T`、`fig4_iso_gap_vs_T`、`fig5_superconducting_dos`，扩展名由 formats 决定。这套分析图与历史 `run/results` 结果包分别输出。
+例如 `work_dir="run"`，输入 `run/8.epw-superconductivity/01.grid/aniso-mu0.1-.../` 镜像到配置目录下的 `results/8.epw-superconductivity/01.grid/aniso-mu0.1-.../`。文件名依次为 `coupling_strength`、`gap_imaginary_real`、`aniso_gap_vs_T`、`iso_gap_vs_T`、`superconducting_dos`，扩展名由 formats 决定。这套分析图与历史 `run/results` 结果包分别输出。
 
 每个输出目录的 `plot.log` 记录实际读取来源、警告及成功输出。缺失 λ 分布只留空相应子图；缺少谱则跳过图 1，缺少虚频能隙则跳过图 2，缺少温度数据或 qdos 则跳过对应图。费米面 DOS 优先读取 `epw1.out`，兼容当前原生日志 `epw.out`，提取失败时用 1.0 并警告。绘图失败不改变科学成功状态。
 

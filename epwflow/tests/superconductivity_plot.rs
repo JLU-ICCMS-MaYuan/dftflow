@@ -76,11 +76,11 @@ impl Drop for Case {
     }
 }
 const NAMES: [&str; 5] = [
-    "fig1_coupling_strength",
-    "fig2_gap_imaginary_real",
-    "fig3_aniso_gap_vs_T",
-    "fig4_iso_gap_vs_T",
-    "fig5_superconducting_dos",
+    "coupling_strength",
+    "gap_imaginary_real",
+    "aniso_gap_vs_T",
+    "iso_gap_vs_T",
+    "superconducting_dos",
 ];
 #[test]
 fn five_figures_mirror_svg_styles_and_physics() {
@@ -218,16 +218,16 @@ fn real_mgb2_available_data_and_gaps_are_not_fabricated() {
     assert!(r
         .files
         .iter()
-        .any(|p| p.file_name().unwrap() == "fig2_gap_imaginary_real.svg"));
+        .any(|p| p.file_name().unwrap() == "gap_imaginary_real.svg"));
     assert!(r
         .files
         .iter()
-        .any(|p| p.file_name().unwrap() == "fig3_aniso_gap_vs_T.svg"));
+        .any(|p| p.file_name().unwrap() == "aniso_gap_vs_T.svg"));
     if task.data.qdos.is_empty() {
         assert!(!r
             .files
             .iter()
-            .any(|p| p.file_name().unwrap() == "fig5_superconducting_dos.svg"));
+            .any(|p| p.file_name().unwrap() == "superconducting_dos.svg"));
     }
     let gap = io::parse_imag_aniso(&work.join("MgB2.imag_aniso_020.00")).unwrap();
     assert!(gap.gaps_mev[0]
@@ -377,7 +377,7 @@ fn automatic_hook_respects_skip_and_format_is_not_scientific_identity() {
     assert!(c
         .task()
         .result_dir
-        .join("fig5_superconducting_dos.svg")
+        .join("superconducting_dos.svg")
         .is_file());
     cfg.plot.formats = vec!["png".into(), "pdf".into()];
     assert_eq!(

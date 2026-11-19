@@ -119,7 +119,7 @@ EPW 从 Wannier、粗网格到细网格、超导求解全部禁用多 image；�
 
 普通第 8 步完成核验后自动调用同一绘图模块；第 7／8 步原生作业的“结束后重复公开命令核验”约定保留。`--skip-plot` 只禁用本次调用的超导分析图，不写入配置，不影响其他阶段。绘图失败只记警告，不改变科学完成状态。
 
-输入 `<work_dir>/8.epw-superconductivity/<细网格参数>/<方法参数>/` 镜像输出至 `<work_dir 的父目录>/results/8.epw-superconductivity/<细网格参数>/<方法参数>/`；例如 `work_dir="run"` 对应配置目录下的 `results/`。该目录保存 `fig1_coupling_strength`、`fig2_gap_imaginary_real`、`fig3_aniso_gap_vs_T`、`fig4_iso_gap_vs_T`、`fig5_superconducting_dos` 及 `plot.log`，与既有 `<work_dir>/results` 交付包分别输出。
+输入 `<work_dir>/8.epw-superconductivity/<细网格参数>/<方法参数>/` 镜像输出至 `<work_dir 的父目录>/results/8.epw-superconductivity/<细网格参数>/<方法参数>/`；例如 `work_dir="run"` 对应配置目录下的 `results/`。该目录保存 `coupling_strength`、`gap_imaginary_real`、`aniso_gap_vs_T`、`iso_gap_vs_T`、`superconducting_dos` 及 `plot.log`，与既有 `<work_dir>/results` 交付包分别输出。
 
 数据缺失时只绘制可用内容：无 a2f 跳过图 1，无 λ 数据留空对应面板；图 2 使用最低可用虚频温度，只叠加本方法同温度 Padé；图 3 读取本方法的原生 gap0 分布，图 4 读取 iso 首 Matsubara 能隙；图 5 读取当前方法的 qdos，原生已归一化文件直接绘制，其余使用该方法费米面 DOS 归一化，优先 10 K，否则明确标注最低可用温度。需要 DOS 而提取失败时用 1.0 并警告。各方法不读取兄弟目录补图，未提供的第二组明确留空。
 

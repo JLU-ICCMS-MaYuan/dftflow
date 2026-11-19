@@ -79,11 +79,11 @@
 results/8.epw-superconductivity/
 ├── 01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/
 │   ├── aniso-mu0.1-Tc20-40-degaussq0.5meV/
-│   │   ├── fig1_coupling_strength.svg      # 三联图
-│   │   ├── fig2_gap_imaginary_real.svg     # 虚频 + 实频
-│   │   ├── fig3_aniso_gap_vs_T.svg         # 各向异性温度演化
-│   │   ├── fig4_iso_gap_vs_T.svg           # 各向同性温度演化
-│   │   ├── fig5_superconducting_dos.svg    # 超导态密度
+│   │   ├── coupling_strength.svg      # 三联图
+│   │   ├── gap_imaginary_real.svg     # 虚频 + 实频
+│   │   ├── aniso_gap_vs_T.svg         # 各向异性温度演化
+│   │   ├── iso_gap_vs_T.svg           # 各向同性温度演化
+│   │   ├── superconducting_dos.svg    # 超导态密度
 │   │   └── summary_all.svg                 # 可选：组合图
 │   └── ...
 └── ...

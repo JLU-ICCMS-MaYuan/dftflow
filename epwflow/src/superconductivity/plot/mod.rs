@@ -191,14 +191,14 @@ impl PlotTask {
         fs::create_dir_all(&self.result_dir)?;
         type Draw = fn(&PlotTask) -> Result<Option<Vec<Panel>>>;
         let jobs: [(&str, Draw); 5] = [
-            ("fig1_coupling_strength", coupling::plot_coupling_triple),
+            ("coupling_strength", coupling::plot_coupling_triple),
             (
-                "fig2_gap_imaginary_real",
+                "gap_imaginary_real",
                 gap_frequency::plot_gap_imaginary_real,
             ),
-            ("fig3_aniso_gap_vs_T", gap_temperature::plot_aniso_gap_vs_t),
-            ("fig4_iso_gap_vs_T", gap_temperature::plot_iso_gap_vs_t),
-            ("fig5_superconducting_dos", dos::plot_superconducting_dos),
+            ("aniso_gap_vs_T", gap_temperature::plot_aniso_gap_vs_t),
+            ("iso_gap_vs_T", gap_temperature::plot_iso_gap_vs_t),
+            ("superconducting_dos", dos::plot_superconducting_dos),
         ];
         // 独立线程池最多五路，防止宿主线程数放大 PDF 转换内存。
         let pool = rayon::ThreadPoolBuilder::new().num_threads(5).build()?;

@@ -89,11 +89,11 @@ PDF 位置: `examples/MgB2/Wed.9.Mori.pdf`
 - **支持格式**: SVG（默认）、PNG、PDF
 - **配置**: 根级 `[plot].formats = ["svg", "png"]`（复用现有声子配置）
 - **命名规则**:
-  - `fig1_coupling_strength.svg`
-  - `fig2_gap_imaginary_real.svg`
-  - `fig3_aniso_gap_vs_T.svg`
-  - `fig4_iso_gap_vs_T.svg`
-  - `fig5_superconducting_dos.svg`
+  - `coupling_strength.svg`
+  - `gap_imaginary_real.svg`
+  - `aniso_gap_vs_T.svg`
+  - `iso_gap_vs_T.svg`
+  - `superconducting_dos.svg`
 
 #### FR-009: 目录层级镜像
 - **输入**: `8.epw-superconductivity/01.k8x8x4-q4x4x4-.../aniso-mu0.1-.../`
@@ -407,11 +407,11 @@ fn test_full_plot_pipeline() {
     task.execute().unwrap();
     
     // 检查五类图表是否生成
-    assert!(result_dir.join("fig1_coupling_strength.svg").exists());
-    assert!(result_dir.join("fig2_gap_imaginary_real.svg").exists());
-    assert!(result_dir.join("fig3_aniso_gap_vs_T.svg").exists());
-    assert!(result_dir.join("fig4_iso_gap_vs_T.svg").exists());
-    assert!(result_dir.join("fig5_superconducting_dos.svg").exists());
+    assert!(result_dir.join("coupling_strength.svg").exists());
+    assert!(result_dir.join("gap_imaginary_real.svg").exists());
+    assert!(result_dir.join("aniso_gap_vs_T.svg").exists());
+    assert!(result_dir.join("iso_gap_vs_T.svg").exists());
+    assert!(result_dir.join("superconducting_dos.svg").exists());
 }
 
 #[test]
@@ -436,7 +436,7 @@ cd examples/MgB2/ubuntu
 epw_superconductivity --plot-only --config input.toml
 
 # 对比生成的图表与 Wed.9.Mori.pdf 中的参考图
-evince results/8.epw-superconductivity/*/fig*.svg &
+evince results/8.epw-superconductivity/*/*.svg &
 evince Wed.9.Mori.pdf &
 ```
 
@@ -484,11 +484,11 @@ formats = ["svg", "png"]  # 同时输出 SVG 和 PNG
 
 完成 Tc 求解后，系统自动生成对标 Mori Tutorial (Phys. Rev. B 87, 024505) 的五类图表：
 
-- `fig1_coupling_strength`: 电声耦合分析（三联图）
-- `fig2_gap_imaginary_real`: 虚频/实频能隙对比
-- `fig3_aniso_gap_vs_T`: 各向异性能隙温度演化
-- `fig4_iso_gap_vs_T`: 各向同性能隙温度演化（如有 iso 计算）
-- `fig5_superconducting_dos`: 超导态密度
+- `coupling_strength`: 电声耦合分析（三联图）
+- `gap_imaginary_real`: 虚频/实频能隙对比
+- `aniso_gap_vs_T`: 各向异性能隙温度演化
+- `iso_gap_vs_T`: 各向同性能隙温度演化（如有 iso 计算）
+- `superconducting_dos`: 超导态密度
 
 图表自动镜像到 `results/8.epw-superconductivity/`，保持与计算输出相同的目录层级。
 
@@ -729,18 +729,18 @@ epw_superconductivity --plot-only -c input.toml
 
 ```bash
 # 检查生成的图表文件
-ls -lh results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/*/fig*.{svg,png,pdf}
+ls -lh results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/*/*.{svg,png,pdf}
 
 # 应该看到五类图（每类 SVG/PNG/PDF）：
-# fig1_coupling_strength.*           - 电声耦合三联图
-# fig2_gap_imaginary_real.*          - 虚频/实频能隙双联图（实频部分不再为空）
-# fig3_aniso_gap_vs_T.*              - 各向异性能隙温度演化
-# fig4_iso_gap_vs_T.*                - 各向同性能隙温度演化
-# fig5_superconducting_dos.*         - 超导态密度（如果已有 qdos 数据）
+# coupling_strength.*           - 电声耦合三联图
+# gap_imaginary_real.*          - 虚频/实频能隙双联图（实频部分不再为空）
+# aniso_gap_vs_T.*              - 各向异性能隙温度演化
+# iso_gap_vs_T.*                - 各向同性能隙温度演化
+# superconducting_dos.*         - 超导态密度（如果已有 qdos 数据）
 
 # 对比 Mori PDF 进行视觉验证
 evince ../../../examples/MgB2/Wed.9.Mori.pdf &
-eog results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/fig*.png &
+eog results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/*.png &
 ```
 
 ### 14.4 科学验证标准
@@ -789,3 +789,24 @@ A: 查看绘图警告并检查数据文件格式：
 epw_superconductivity --plot-only -c input.toml 2>&1 | grep -i "warning\|error"
 head -5 run/8.epw-superconductivity/.../MgB2.pade_aniso_020.00
 ```
+
+
+## 2026-11-19 追加需求：简洁文件名与 μ* 列表
+
+### 原始需求记录
+
+> 绘制出来的图片不需要在图片前面写 fig[n]\_*.{png,svg,pdf}, 这里的 n 是数字编号。我就希望是干干净净的名字就行，不需要fig[n]\_
+
+> 能不能在 input.toml里面新增需求：mu 可以输入的是列表，这样就可以一次多计算几个 mu 了！起码默认要计算 mu=0.1和 0.13
+
+### 需求结论
+
+- FR-010：五类分析图去掉 fig 数字前缀，使用 coupling_strength、gap_imaginary_real、aniso_gap_vs_T、iso_gap_vs_T、superconducting_dos；保留所选扩展名及参数目录层级。迁移当前示例已生成的旧名文件，避免同一结果保留两套名称。
+- FR-011（新增待实现）：第 8 步 iso/aniso 的 μ* 支持列表，一次命令遍历多个值；默认列表为 [0.1, 0.13]。拟沿用原生名称 muc；原生 EPW 每次调用仍接收单个标量，由工作流展开任务，不能把列表直接写成 EPW 的 muc 数组。
+- μ* 扫描必须以“方法、μ*、温度”区分请求、日志、作业和结果身份；每个值进入各自参数目录。成功组可复用，失败组独立恢复，科学完成状态覆盖整份计划，不互相覆盖数据。
+- 当前只交付 FR-010；FR-011 是用户要求新增的需求记录，运行时仍只接受标量 muc。不得把 muc = [0.1, 0.13] 写入当前可运行示例，或宣称已经计算 μ*=0.13。
+
+### 验收标准
+
+- SC-010：新旧文件名映射明确，现有格式、图像内容和参数目录不变；后续自动／手动出图直接使用新名。
+- SC-011（待实现）：一次配置两种 μ*、两种方法、三个温度，产生四组独立目录及十二个温度请求；原生每份输入使用所属 μ*，失败恢复不重复其他成功组；默认列表行为与显式配置均有回归。

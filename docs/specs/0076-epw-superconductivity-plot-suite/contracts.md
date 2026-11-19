@@ -308,11 +308,11 @@ SubplotStyle {
 ### 3.1 输出文件名
 
 ```
-fig1_coupling_strength.<ext>       # 电声耦合三联图
-fig2_gap_imaginary_real.<ext>      # 虚频/实频能隙
-fig3_aniso_gap_vs_T.<ext>          # 各向异性温度演化
-fig4_iso_gap_vs_T.<ext>            # 各向同性温度演化
-fig5_superconducting_dos.<ext>     # 超导态密度
+coupling_strength.<ext>       # 电声耦合三联图
+gap_imaginary_real.<ext>      # 虚频/实频能隙
+aniso_gap_vs_T.<ext>          # 各向异性温度演化
+iso_gap_vs_T.<ext>            # 各向同性温度演化
+superconducting_dos.<ext>     # 超导态密度
 ```
 
 ### 3.2 扩展名
@@ -449,8 +449,8 @@ fn test_full_pipeline_mgb2_ubuntu() {
     task.execute().unwrap();
     
     // 断言：五个文件存在 + 文件大小 > 0
-    assert!(result_dir.join("fig1_coupling_strength.svg").exists());
-    assert!(result_dir.join("fig2_gap_imaginary_real.svg").metadata().unwrap().len() > 1000);
+    assert!(result_dir.join("coupling_strength.svg").exists());
+    assert!(result_dir.join("gap_imaginary_real.svg").metadata().unwrap().len() > 1000);
     // ...
 }
 ```
@@ -460,11 +460,11 @@ fn test_full_pipeline_mgb2_ubuntu() {
 ```bash
 # 测试 --plot-only
 epw_superconductivity --plot-only --config examples/MgB2/ubuntu/input.toml
-assert_exists results/8.epw-superconductivity/*/fig*.svg
+assert_exists results/8.epw-superconductivity/*/*.svg
 
 # 测试 --skip-plot
 epw_superconductivity --skip-plot --config examples/MgB2/ubuntu/input.toml
-assert_not_exists results/8.epw-superconductivity/*/fig*.svg
+assert_not_exists results/8.epw-superconductivity/*/*.svg
 ```
 
 ---
