@@ -17,7 +17,7 @@
 
 DFTFlow 固定入口在 `/public/home/mayuan/code/dftflow/bin/<模块>/`，QE 7.6／EPW 6.1 在 `external/q-e/bin/`，独立 Wannier90 4.0.3 在 `external/wannier90/bin/`。科学程序路径在配置中显式指定。
 
-Slurm 使用 `cpu` 分区、1 节点、4 任务，每任务 1 CPU、30 分钟时限；MPI 为 4 路，EPW pool 为 4，OMP／MKL 线程为 1。作业加载 `/public/home/mayuan/intel/oneapi/setvars.sh`，使用 `LC_ALL=C`、`LANG=C`。这里是 chem 集群，不采用 Ubuntu 的 local 分区和 12 路约定。
+Slurm 使用 `cpu` 分区、1 节点、56 任务，每任务 1 CPU、30 分钟时限；实际启动 32 路 MPI，EPW pool 为 32，OMP／MKL 线程为 1。粗 k 网格共 32 点，当前单 image 路径要求每 pool 一个 MPI，因此不能直接启动 56 路。作业加载 `/public/home/mayuan/intel/oneapi/setvars.sh`，使用 `LC_ALL=C`、`LANG=C`。这里是 chem 集群，不采用 Ubuntu 的 local 分区和 12 路约定。
 
 DFTFlow 的私有运行库使用仓库固定前缀 `bin/.native/linux-x86_64`；不要把其中的 glibc 目录加入全局 `LD_LIBRARY_PATH`。配置环境脚本只负责科学程序，DFTFlow 的 ELF 加载器直接使用私有前缀。
 
@@ -84,3 +84,7 @@ epw_superconductivity -c "input.toml" --stage superconductivity -s
 - 原生日志：`run/1.qe-scf/scf.out`；状态日志：`run/epw-state/1.qe-scf.log`；安装、回归与节点验证证据：仓库 `docs/local/2026-11-18-chem-install/`。
 
 继续测试可从 `epw_phonon -c "input.toml" --stage nscf -s` 开始。
+
+## 2026-11-19 更新
+
+已重新获取远程 master（最新仍为 62d7537），重新编译发布全部主产品和 dyn0 工具；三个 EPW 入口的配置检查均通过。当前解析器仍强制要求 `[budget]` 及固定 campaign 身份，时间和存储限制已取消，暂保留作业登记字段；这不表示废弃工作已完成。本次未提交新的科学作业，前述 4 MPI SCF 为历史验收记录。

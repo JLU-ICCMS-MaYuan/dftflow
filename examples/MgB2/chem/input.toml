@@ -13,7 +13,8 @@ Mg = "pp/mg_pbe_v1.4.uspp.F.UPF"
 B = "pp/b_pbe_v1.4.uspp.F.UPF"
 
 [programs]
-launcher = ["mpirun", "-np", "4"]
+# 粗 k 网格共 32 点；EPW 单 image 路径每 pool 使用一个 MPI。
+launcher = ["mpirun", "-np", "32"]
 environment_script = "/public/home/mayuan/intel/oneapi/setvars.sh"
 
 [programs.pw]
@@ -26,7 +27,7 @@ args = []
 
 [programs.epw]
 path = "/public/home/mayuan/code/dftflow/external/q-e/bin/epw.x"
-args = ["-nk", "4"]
+args = ["-nk", "32"]
 
 
 [programs.wannier90]
@@ -45,7 +46,7 @@ args = []
 header = """
 #SBATCH --partition=cpu
 #SBATCH --nodes=1
-#SBATCH --ntasks=4
+#SBATCH --ntasks=56
 #SBATCH --cpus-per-task=1
 #SBATCH --time=00:30:00
 export LC_ALL=C LANG=C
@@ -53,8 +54,9 @@ export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
 """
 
 [budget]
+# 当前远程 master 的解析器仍要求此块；时间和存储额度限制已取消。
+# 仅保留现有作业登记所需字段，待源码移除该要求后再删除本块。
 campaign_id = "epic-0007"
-# 沿用当前实现要求的 campaign 身份，不表示历史项目预算已重置。
 ledger = "campaign/ledger.json"
 
 
