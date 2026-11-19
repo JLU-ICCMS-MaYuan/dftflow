@@ -132,18 +132,18 @@ fn parse_pade_aniso(path: &Path) -> Result<GapData>
 
 ### 1.6 MgB2.imag_aniso_gap0_XXX.XX
 
-**功能**: 虚频轴前导能隙（用于温度演化）  
-**格式**: 与 `MgB2.imag_aniso_XXX.XX` 相同
+**功能**: Mori Fig. 8 的费米面能隙分布随温度变化。
+**格式**: 原生五列分布，与四列 `MgB2.imag_aniso_XXX.XX` 不同。
 
 **契约**:
-- 用途: 提取各 k 点在 Δ(iω→0) 处的能隙值
-- 提取方法: 每个状态的第一个频率点的 Δ 值
-- 温度演化: 收集多个温度文件，按温度排序
+- 第 1 列为 `T + 归一化分布`，第 2 列为能隙（meV），第 3 列为 T（K），第 4／5 列为归一化／原始分布。
+- 每个温度单独绘制第 1 列对第 2 列的蓝色线；不跨温度连接分箱，不把分布误作逐 k 点身份。
+- 校验五列、有限值、文件名温度和分布偏移；缺失或损坏时报告，不用完整 imag_aniso 冒充同一种图。
 
 **解析器签名**:
 ```rust
-fn extract_leading_gaps(paths: &[(f64, PathBuf)]) -> Result<Vec<(f64, Vec<f64>)>>
-// 返回: [(temperature_K, [gap_mev_per_state])]
+fn parse_gap0_distribution(path: &Path) -> Result<Vec<(f64, f64)>>
+// 返回原生 (T + 分布, gap_mev)，不重新归一化或重采样。
 ```
 
 ### 1.7 MgB2.qdos_XX
@@ -493,7 +493,7 @@ assert_not_exists results/8.epw-superconductivity/*/fig*.svg
 ## 9. 原生格式实测补充（2026-11-18）
 
 - 带 `distribution` 头的原生 λ 文件为三列分箱密度，直接绘制第 1／2 列，不再次统计箱中心。
-- 原生 gap0 五列是能隙分布，不能提取逐状态身份；温度曲线读取同方法、同温度完整四列 imag_aniso 的首频率状态。上述 1.6 的四列样本仅为契约样本。
+- 2026-11-19 修正：原生 gap0 五列分布正是 Mori Fig. 8 的数据源，直接绘制第 1／2 列；此前改读完整 imag_aniso 首频率状态的解释错误，已撤回。完整 imag_aniso 仍用于图 2。
 - 原生 Padé 六列包含第 2 列电子能量，实部能隙是第 5 列；五列契约样本取第 4 列。两种均由 eV 转为 meV。
 - 原生 iso 首行 `w [eV] znorm(w) delta(w) [eV]` 没有注释符，明确识别该列头后读取第 3 列能隙。
 - `source.a2f` 为链接时，缺失的 λ 分布只从已选链接目标同前缀伴随文件读取，不搜索其他参数网格。

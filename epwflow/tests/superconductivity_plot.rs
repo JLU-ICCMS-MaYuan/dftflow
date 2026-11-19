@@ -46,7 +46,10 @@ impl Case {
                 g / 4.
             );
             c.write(&format!("Test.imag_aniso_{t:06.2}"), &text);
-            c.write(&format!("Test.imag_aniso_gap0_{t:06.2}"), &text);
+            c.write(
+                &format!("Test.imag_aniso_gap0_{t:06.2}"),
+                &format!("# distribution = rho(delta_nk)\n{t} {} {t} 0 0\n{} {} {t} 1 3\n{t} {} {t} 0 0\n", g * 500., t + 1., g * 1000., g * 1500.),
+            );
             c.write(
                 &format!("Test.imag_iso_{t:06.2}"),
                 &format!("{w} 2 {g}\n{} 2 {}\n", 3. * w, g / 2.),
@@ -64,7 +67,7 @@ impl Case {
         c
     }
     fn task(&self) -> PlotTask {
-        PlotTask::mirror_to_results(&self.work, &self.root.join("results")).unwrap()
+        PlotTask::mirror_to_results(&self.work, &self.root.join("run/results")).unwrap()
     }
 }
 impl Drop for Case {
@@ -87,7 +90,7 @@ fn five_figures_mirror_svg_styles_and_physics() {
     assert_eq!(r.files.len(), 5, "{:?}", r.warnings);
     assert!(task
         .result_dir
-        .ends_with("results/8.epw-superconductivity/01.grid/aniso-mu0.1-Tc10-30"));
+        .ends_with("run/results/8.epw-superconductivity/01.grid/aniso-mu0.1-Tc10-30"));
     for name in NAMES {
         let text = fs::read_to_string(task.result_dir.join(format!("{name}.svg"))).unwrap();
         assert!(text.contains("<svg") && text.contains("</svg>"));
@@ -106,12 +109,11 @@ fn five_figures_mirror_svg_styles_and_physics() {
     let panels = plot::gap_temperature::plot_aniso_gap_vs_t(&task)
         .unwrap()
         .unwrap();
-    assert_eq!(panels[0].curves.len(), 2);
+    assert_eq!(panels[0].curves.len(), 3);
     for curve in &panels[0].curves {
-        assert!(curve
-            .points
-            .windows(2)
-            .all(|p| p[1].0 > p[0].0 && p[1].1 < p[0].1));
+        assert_eq!(curve.points.len(), 3);
+        assert_eq!(curve.points[1].0 - curve.points[0].0, 1.);
+        assert!(curve.points.windows(2).all(|p| p[1].1 > p[0].1));
     }
     let panels = plot::gap_temperature::plot_iso_gap_vs_t(&task)
         .unwrap()
@@ -145,7 +147,8 @@ fn malformed_file_does_not_stop_other_figures() {
     let c = Case::new();
     let r = c.task().execute().unwrap();
     assert!(r.files.is_empty());
-    assert!(r.warnings.len() >= 4, "{:?}", r.warnings);
+    assert!(r.warnings.iter().any(|w| w.contains("fig1: missing a2f")));
+    assert!(r.warnings.iter().any(|w| w.contains("fig5: missing qdos")));
 }
 #[test]
 fn svg_png_pdf_use_shared_exporter() {
@@ -254,7 +257,10 @@ fn real_mgb2_scan_finds_pade_qdos_and_imaginary_gaps() {
     let iso_data = DataFiles::scan(&iso_work).unwrap();
     assert_eq!(iso_data.imag_iso.len(), 3, "{:?}", iso_data.imag_iso);
     assert_eq!(iso_data.qdos.len(), 3, "{:?}", iso_data.qdos);
-    assert!(iso_data.imag_aniso.is_empty(), "iso should not have imag_aniso");
+    assert!(
+        iso_data.imag_aniso.is_empty(),
+        "iso should not have imag_aniso"
+    );
 }
 #[test]
 fn iso_method_uses_imag_iso_for_fig2() {
@@ -263,10 +269,7 @@ fn iso_method_uses_imag_iso_for_fig2() {
         "Test.imag_iso_010.00",
         "# iw(eV) Z delta(eV)\n0.0027072150869 0.9 0.005\n0.0081216452607 0.85 0.0048\n",
     );
-    c.write(
-        "Test.pade_iso_010.00",
-        "0 1 0 0.005 0\n0.01 1 0 0.0048 0\n",
-    );
+    c.write("Test.pade_iso_010.00", "0 1 0 0.005 0\n0.01 1 0 0.0048 0\n");
     c.write("epw.out", "DOS = 2");
     let task = c.task();
     let panels = plot::gap_frequency::plot_gap_imaginary_real(&task)
@@ -276,7 +279,10 @@ fn iso_method_uses_imag_iso_for_fig2() {
     assert_eq!(panels[0].curves[0].points.len(), 2);
     assert!((panels[0].curves[0].points[0].0 - 2.7072150869).abs() < 1e-9);
     assert_eq!(panels[0].curves[0].points[0].1, 5.0); // eV → meV
-    assert!(!panels[1].curves.is_empty(), "iso Padé data must be plotted");
+    assert!(
+        !panels[1].curves.is_empty(),
+        "iso Padé data must be plotted"
+    );
 }
 #[test]
 fn temperature_mismatch_and_native_gap0_fallback() {
@@ -288,7 +294,7 @@ fn temperature_mismatch_and_native_gap0_fallback() {
     .unwrap();
     c.write(
         "Test.imag_aniso_gap0_010.00",
-        "# distribution = rho(delta)\n10 12 10 1 1\n",
+        "# distribution = rho(delta)\n11 12 10 1 1\n",
     );
     let task = c.task();
     let panels = plot::gap_frequency::plot_gap_imaginary_real(&task)
@@ -298,7 +304,7 @@ fn temperature_mismatch_and_native_gap0_fallback() {
     let panels = plot::gap_temperature::plot_aniso_gap_vs_t(&task)
         .unwrap()
         .unwrap();
-    assert_eq!(panels[0].curves[0].points[0], (10., 12.));
+    assert_eq!(panels[0].curves[0].points[0], (11., 12.));
 }
 #[test]
 fn sibling_parameter_panels_and_separate_normalization() {
@@ -315,7 +321,41 @@ fn sibling_parameter_panels_and_separate_normalization() {
         .unwrap()
         .unwrap();
     assert_eq!(panels[0].curves[0].points[0], (-10., 1.));
-    assert!(panels[1].curves.is_empty(), "a method plot must not consume sibling data");
+    assert!(
+        panels[1].curves.is_empty(),
+        "a method plot must not consume sibling data"
+    );
+}
+
+#[test]
+fn mori_gap0_distribution_preserves_native_offsets_and_rejects_bad_rows() {
+    let c = Case::fixture();
+    let path = c.work.join("Test.imag_aniso_gap0_010.00");
+    c.write(
+        "Test.imag_aniso_gap0_010.00",
+        "# distribution\n10 2 10 0 0\n11 3 10 1 4\n10 4 10 0 0\n",
+    );
+    assert_eq!(
+        io::parse_gap0_distribution(&path).unwrap(),
+        [(10., 2.), (11., 3.), (10., 4.)]
+    );
+    let panels = plot::gap_temperature::plot_aniso_gap_vs_t(&c.task())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        panels[0].curves[0].points,
+        [(10., 2.), (11., 3.), (10., 4.)]
+    );
+    for bad in [
+        "10 2 10 0",
+        "10 2 20 0 0",
+        "10 2 10 1 4",
+        "11 2 10 -1 4",
+        "10 NaN 10 0 0",
+    ] {
+        c.write("Test.imag_aniso_gap0_010.00", bad);
+        assert!(io::parse_gap0_distribution(&path).is_err(), "{bad}");
+    }
 }
 
 #[test]
@@ -331,7 +371,7 @@ fn automatic_hook_respects_skip_and_format_is_not_scientific_identity() {
     cfg.plot.formats = vec!["svg".into()];
     plot::set_skip(true);
     plot::auto_plot(&cfg);
-    assert!(!c.root.join("results").exists());
+    assert!(!c.root.join("run/results").exists());
     plot::set_skip(false);
     plot::auto_plot(&cfg);
     assert!(c

@@ -1,9 +1,36 @@
-//! 逐状态温度曲线；不排序能隙值、不平滑或强制单调。
+//! 原生各向异性能隙分布及各向同性首 Matsubara 温度曲线。
 use super::{io, PlotTask};
 use anyhow::Result;
 use plotters::style::Color;
 use qf_plot::superconductivity::{Curve, Mark, Panel, ScColors};
 fn temperature_panels(task: &PlotTask, iso: bool) -> Result<Option<Vec<Panel>>> {
+    if !iso {
+        let mut panel = Panel::new(
+            super::parameter_title(&task.work_dir),
+            "Temperature (K)",
+            "Δ_{nk} (meV)",
+        );
+        for path in &task.data.aniso_gap0 {
+            if let Some(points) = task.load(path, io::parse_gap0_distribution) {
+                panel.curves.push(Curve::new(
+                    points,
+                    ScColors::TEMPERATURE.to_rgba(),
+                    Mark::Line,
+                    "",
+                ));
+            }
+        }
+        if panel.curves.is_empty() {
+            if !task.data.aniso_gap0.is_empty() {
+                task.warn("fig3: no valid gap0 distribution; skipped");
+            }
+            return Ok(None);
+        }
+        return Ok(Some(vec![
+            panel,
+            Panel::new("No second parameter set", "Temperature (K)", "Δ_{nk} (meV)"),
+        ]));
+    }
     let mut panels = vec![];
     let mut any = false;
     {
@@ -18,21 +45,6 @@ fn temperature_panels(task: &PlotTask, iso: bool) -> Result<Option<Vec<Panel>>> 
         if iso {
             for path in &data.imag_iso {
                 if let Some(g) = task.load(path, io::parse_imag_iso) {
-                    series.push((g.temperature_k, g.gaps_mev[0].clone()));
-                }
-            }
-        } else {
-            // 原生 gap0 是五列分布，不含逐状态身份；不能把分箱伪装成 k 点。
-            // 温度曲线只从同一方法目录的完整四列 imag_aniso 首 Matsubara 数据读取。
-            for path in &data.imag_aniso {
-                let Ok(t) = io::temperature(path) else {
-                    task.warn(format!("{}: invalid temperature", path.display()));
-                    continue;
-                };
-                if series.iter().any(|(old, _)| (*old - t).abs() < 1e-6) {
-                    continue;
-                }
-                if let Some(g) = task.load(path, io::parse_imag_aniso) {
                     series.push((g.temperature_k, g.gaps_mev[0].clone()));
                 }
             }
@@ -86,7 +98,7 @@ fn temperature_panels(task: &PlotTask, iso: bool) -> Result<Option<Vec<Panel>>> 
     }
     Ok(Some(panels))
 }
-/// 各向异性逐状态曲线，不将五列分布直方图误认为状态。
+/// Mori Fig. 8：直接绘制当前目录原生 gap0 的温度偏移分布。
 pub fn plot_aniso_gap_vs_t(task: &PlotTask) -> Result<Option<Vec<Panel>>> {
     temperature_panels(task, false)
 }

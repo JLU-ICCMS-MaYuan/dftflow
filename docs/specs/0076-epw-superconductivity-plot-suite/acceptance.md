@@ -145,3 +145,15 @@ Mori 第 23～25 页用于视觉参照：图 1 三联布局、图 2 虚／实频
 **验收决策（2026-11-19）**：109 项失败已通过基线对照确认为 #76 之前的既有问题，本次实施无新增失败。专项回归（36 项）、真实数据回测（27 个图表）、方案 B 科学计算验证均已通过。按照”无新增失败即可提交”原则，#76 功能实现满足验收标准，批准提交。
 
 未满足的边界项（第二参数组对比、10+ 温度点性能、Mori 数值复现）属于数据依赖限制，不阻塞功能交付。109 项既有失败的修复作为独立任务追踪，不纳入 #76 范围。
+
+## 2026-11-19：按 Mori Fig. 8 修正图 3
+
+用户指出 `run/results/8.epw-superconductivity/<细网格>/<aniso 参数>/fig3_aniso_gap_vs_T.png` 与提供的 Fig. 8 截图不同。实际旧图是 20／30／40 K 的首 Matsubara 逐状态连线；参考图则是每个温度的费米面能隙分布。这是绘图语义错误，不能全部归因于计算参数差异。
+
+已对照 `external/q-e/EPW/src/io/io_supercond.f90` 中 `gap_distribution_FS` 的输出公式：原生五列 gap0 第 1 列为 `T + 归一化分布`，第 2 列是能隙 meV，第 3 列是 T，第 4／5 列为归一化／原始密度。图 3 改为逐文件绘制第 1／2 列，不跨温度连线、不重新分箱、不从 imag_aniso 取逐状态曲线替代。图 4 的 iso 数据来源与点线画法保持。
+
+当前三个 gap0 文件各 275 行，重绘后图 3 有三条竖向分布。当前 μ*=0.1、温度 20／30／40 K，截图两个面板 μ*=0.05／0.16 且温度更密；因此修正画法不意味着数值复现截图。现有分布能隙上端分别约 16.892、16.616、15.852 meV，原值保留；只有一组参数，第二面板继续明确标缺失。
+
+验证：`bash scripts/build-native.sh test --release --package epwflow --test superconductivity_plot --locked --jobs 2` 为 16 项通过。加入原生分布坐标保真、非法列数／温度／偏移／密度拒绝检查；测试输出路径同步已落地的 `run/results/`。相关 Rust 文件格式检查和 `git diff --check` 通过。重新 release 构建并覆盖固定 EPW 命令，`--plot-only` 生成 24 个文件、0 警告，PNG 实看与 SVG 解析通过。44 份直接科学输入／输出哈希不变，无新增科学计算。
+
+本机证据：`docs/local/0076-superconductivity-plot/gap0-redraw-sources-before.json`、`gap0-redraw-verification.json`、`gap0-tests.log`、`gap0-build.log`、`gap0-redraw.log`。本次是绘图修复的专项验证，不重写此前的全量基线失败结论，也不以此关闭 #76。

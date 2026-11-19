@@ -121,9 +121,9 @@ EPW 从 Wannier、粗网格到细网格、超导求解全部禁用多 image；�
 
 输入 `<work_dir>/8.epw-superconductivity/<细网格参数>/<方法参数>/` 镜像输出至 `<work_dir 的父目录>/results/8.epw-superconductivity/<细网格参数>/<方法参数>/`；例如 `work_dir="run"` 对应配置目录下的 `results/`。该目录保存 `fig1_coupling_strength`、`fig2_gap_imaginary_real`、`fig3_aniso_gap_vs_T`、`fig4_iso_gap_vs_T`、`fig5_superconducting_dos` 及 `plot.log`，与既有 `<work_dir>/results` 交付包分别输出。
 
-数据缺失时只绘制可用内容：无 a2f 跳过图 1，无 λ 数据留空对应面板；图 2 使用最低可用虚频温度，只叠加同温度 Padé；图 3／4 使用首 Matsubara 频率的逐状态能隙，保留符号与状态顺序；图 5 用各方法自己的费米面 DOS 归一化，优先 10 K，否则明确标注最低可用温度。DOS 提取失败用 1.0 并警告。同模式参数组最多比较两组，未提供的第二组明确留空。
+数据缺失时只绘制可用内容：无 a2f 跳过图 1，无 λ 数据留空对应面板；图 2 使用最低可用虚频温度，只叠加本方法同温度 Padé；图 3 读取本方法的原生 gap0 分布，图 4 读取 iso 首 Matsubara 能隙；图 5 读取当前方法的 qdos，原生已归一化文件直接绘制，其余使用该方法费米面 DOS 归一化，优先 10 K，否则明确标注最低可用温度。需要 DOS 而提取失败时用 1.0 并警告。各方法不读取兄弟目录补图，未提供的第二组明确留空。
 
-原生 λ 三列分布保留密度，避免对分箱中心再次做无权直方图。原生 gap0 五列分布不含逐状态身份，逐状态温度曲线使用完整 imag_aniso；不将分布箱当作 k 点。Padé 五／六列分别取实部能隙第 4／5 列，eV 转 meV；超过 10 MB 流式采样至不超过 10000 点。格式错误、非有限值和温度不一致记录在 `plot.log`，不以经验公式补齐缺失图。
+原生 λ 三列分布保留密度，避免对分箱中心再次做无权直方图。图 3 按 Mori Fig. 8 读取当前 aniso 目录的五列 `imag_aniso_gap0_*`：第 1 列为温度加分布偏移，第 2 列为能隙（meV），每个温度单独绘制蓝色分布线；不跨温度连接 k 点，不重采样或补造温度。图 4 保持读取 iso 自己的 `imag_iso_*` 首 Matsubara 能隙。Padé 五／六列分别取实部能隙第 4／5 列，eV 转 meV；超过 10 MB 流式采样至不超过 10000 点。格式错误、非有限值和温度不一致记录在 `plot.log`，不以经验公式补齐缺失图。
 
 实现与验证边界见 [0076 验收](../../specs/0076-epw-superconductivity-plot-suite/acceptance.md)。
 

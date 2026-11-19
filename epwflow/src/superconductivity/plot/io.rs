@@ -328,6 +328,31 @@ pub fn extract_leading_gaps(paths: &[(f64, PathBuf)]) -> Result<Vec<(f64, Vec<f6
     increasing(&result.iter().map(|p| p.0).collect::<Vec<_>>())?;
     Ok(result)
 }
+/// 原生 `imag_aniso_gap0_*` 五列分布：第 1 列是温度加分布横向偏移，第 2 列是 Δ_nk(meV)。
+/// 这正是 Mori Fig. 8 的竖向分布曲线；不能将其转换成少量 k 点状态。
+pub fn parse_gap0_distribution(path: &Path) -> Result<Vec<(f64, f64)>> {
+    let t = temperature(path)?;
+    let mut points = Vec::new();
+    rows(path, |_, r| {
+        columns(r, &[5])?;
+        ensure!(
+            (r[2] - t).abs() < 1e-6,
+            "gap0 filename temperature mismatch"
+        );
+        ensure!(
+            r[3] >= 0. && r[3] <= 1. + 1e-8 && r[4] >= 0.,
+            "invalid gap0 density"
+        );
+        ensure!(
+            (r[0] - r[2] - r[3]).abs() < 1e-6,
+            "invalid gap0 temperature offset"
+        );
+        points.push((r[0], r[1]));
+        Ok(())
+    })?;
+    ensure!(!points.is_empty(), "empty gap0 distribution");
+    Ok(points)
+}
 /// 契约 1.7：第 1 列 meV、第 2 列未归一化 DOS；带明确 [eV] 头时转换单位。
 pub fn parse_qdos(path: &Path) -> Result<DosData> {
     let mut result = DosData {
