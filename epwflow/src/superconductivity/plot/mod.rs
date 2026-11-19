@@ -29,6 +29,7 @@ pub struct DataFiles {
     pub a2f: Option<PathBuf>,
     pub imag_aniso: Vec<PathBuf>,
     pub pade_aniso: Vec<PathBuf>,
+    pub pade_iso: Vec<PathBuf>,
     pub aniso_gap0: Vec<PathBuf>,
     pub imag_iso: Vec<PathBuf>,
     pub qdos: Vec<PathBuf>,
@@ -69,6 +70,8 @@ impl DataFiles {
                 data.pade_aniso.push(path);
             } else if name.contains(".imag_iso_") && io::temperature(&path).is_ok() {
                 data.imag_iso.push(path);
+            } else if name.contains(".pade_iso_") && io::temperature(&path).is_ok() {
+                data.pade_iso.push(path);
             } else if name.contains(".qdos_") && io::temperature(&path).is_ok() {
                 data.qdos.push(path);
             } else if name == "epw1.out" || (name == "epw.out" && data.epw_output.is_none()) {
@@ -93,6 +96,7 @@ impl DataFiles {
         for files in [
             &mut data.imag_aniso,
             &mut data.pade_aniso,
+            &mut data.pade_iso,
             &mut data.aniso_gap0,
             &mut data.imag_iso,
             &mut data.qdos,
@@ -108,6 +112,8 @@ impl DataFiles {
     fn has_data(&self) -> bool {
         self.a2f.is_some()
             || !self.imag_aniso.is_empty()
+            || !self.pade_aniso.is_empty()
+            || !self.pade_iso.is_empty()
             || !self.aniso_gap0.is_empty()
             || !self.imag_iso.is_empty()
             || !self.qdos.is_empty()
@@ -178,44 +184,6 @@ impl PlotTask {
                 None
             }
         }
-    }
-    /// 同一细网格下对比同模式的不同参数目录；最多两组，当前组始终先绘。
-    pub(super) fn groups(&self, mode: &str) -> Result<Vec<(PathBuf, DataFiles)>> {
-        let mut dirs = vec![];
-        let current = self
-            .work_dir
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
-        if current.starts_with(mode)
-            || (mode == "iso-" && !self.data.imag_iso.is_empty())
-            || (mode == "aniso-"
-                && (!self.data.imag_aniso.is_empty() || !self.data.aniso_gap0.is_empty()))
-            || (!current.starts_with("iso-") && !current.starts_with("aniso-"))
-        {
-            dirs.push(self.work_dir.clone());
-        }
-        if let Some(parent) = self.work_dir.parent() {
-            let mut siblings = fs::read_dir(parent)?
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-                .map(|e| e.path())
-                .filter(|p| {
-                    p != &self.work_dir
-                        && p.file_name()
-                            .is_some_and(|n| n.to_string_lossy().starts_with(mode))
-                })
-                .collect::<Vec<_>>();
-            siblings.sort();
-            dirs.extend(siblings);
-        }
-        dirs.truncate(2);
-        dirs.into_iter()
-            .map(|dir| {
-                let data = DataFiles::scan(&dir)?;
-                Ok((dir, data))
-            })
-            .collect()
     }
     /// 五类图独立并行；日志在全部线程结束后一次写入，缺失或损坏数据不传播至科学流程。
     pub fn execute(&self) -> Result<PlotReport> {
@@ -342,14 +310,13 @@ pub fn auto_plot(cfg: &Config) {
             return;
         }
     };
-    match plot_existing(
-        &cfg.work_dir,
-        &cfg.work_dir
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("results"),
-        &formats,
-    ) {
+    // results 应该在 run/ 目录下，而不是和 run/ 平级
+    let run_root = cfg
+        .work_dir
+        .ancestors()
+        .find(|p| p.file_name().is_some_and(|n| n == "run"))
+        .unwrap_or(&cfg.work_dir);
+    match plot_existing(&cfg.work_dir, &run_root.join("results"), &formats) {
         Ok(r) => println!("superconductivity_plots: {}", r.files.len()),
         Err(e) => eprintln!("Warning: superconductivity plot: {e:#}"),
     }
@@ -370,12 +337,10 @@ pub fn plot_config(path: &Path) -> Result<PlotReport> {
         .transpose()?
         .unwrap_or_default();
     let formats = section.validate_formats()?;
-    plot_existing(
-        &work,
-        &work
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("results"),
-        &formats,
-    )
+    // results 应该在 run/ 目录下，而不是和 run/ 平级
+    let run_root = work
+        .ancestors()
+        .find(|p| p.file_name().is_some_and(|n| n == "run"))
+        .unwrap_or(&work);
+    plot_existing(&work, &run_root.join("results"), &formats)
 }
