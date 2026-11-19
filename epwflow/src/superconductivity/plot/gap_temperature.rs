@@ -6,9 +6,11 @@ use qf_plot::superconductivity::{Curve, Mark, Panel, ScColors};
 fn temperature_panels(task: &PlotTask, iso: bool) -> Result<Option<Vec<Panel>>> {
     let mut panels = vec![];
     let mut any = false;
-    for (dir, data) in task.groups(if iso { "iso-" } else { "aniso-" })? {
+    {
+        let dir = &task.work_dir;
+        let data = &task.data;
         let mut panel = Panel::new(
-            super::parameter_title(&dir),
+            super::parameter_title(dir),
             "Temperature (K)",
             if iso { "Δ₀ (meV)" } else { "Δ_{nk} (meV)" },
         );

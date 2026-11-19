@@ -246,6 +246,36 @@ fn real_mgb2_scan_finds_pade_qdos_and_imaginary_gaps() {
     assert_eq!(data.imag_aniso.len(), 3, "{:?}", data.imag_aniso);
     assert_eq!(data.pade_aniso.len(), 3, "{:?}", data.pade_aniso);
     assert_eq!(data.qdos.len(), 3, "{:?}", data.qdos);
+
+    // iso 目录应该有 imag_iso 和 qdos
+    let iso_work = root
+        .join("01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV")
+        .join("iso-mu0.1-Tc20-40-degaussq0.5meV");
+    let iso_data = DataFiles::scan(&iso_work).unwrap();
+    assert_eq!(iso_data.imag_iso.len(), 3, "{:?}", iso_data.imag_iso);
+    assert_eq!(iso_data.qdos.len(), 3, "{:?}", iso_data.qdos);
+    assert!(iso_data.imag_aniso.is_empty(), "iso should not have imag_aniso");
+}
+#[test]
+fn iso_method_uses_imag_iso_for_fig2() {
+    let c = Case::new();
+    c.write(
+        "Test.imag_iso_010.00",
+        "# iw(meV) Z delta(eV)\n3.141 0.9 0.005\n6.283 0.85 0.0048\n",
+    );
+    c.write(
+        "Test.pade_iso_010.00",
+        "0 1 0 0.005 0\n0.01 1 0 0.0048 0\n",
+    );
+    c.write("epw.out", "DOS = 2");
+    let task = c.task();
+    let panels = plot::gap_frequency::plot_gap_imaginary_real(&task)
+        .unwrap()
+        .unwrap();
+    assert_eq!(panels.len(), 2);
+    assert_eq!(panels[0].curves[0].points.len(), 2);
+    assert_eq!(panels[0].curves[0].points[0], (3.141, 5.0)); // eV → meV
+    assert!(!panels[1].curves.is_empty(), "iso Padé data must be plotted");
 }
 #[test]
 fn temperature_mismatch_and_native_gap0_fallback() {
@@ -284,7 +314,7 @@ fn sibling_parameter_panels_and_separate_normalization() {
         .unwrap()
         .unwrap();
     assert_eq!(panels[0].curves[0].points[0], (-10., 1.));
-    assert_eq!(panels[1].curves[0].points[0], (-10., 0.5));
+    assert!(panels[1].curves.is_empty(), "a method plot must not consume sibling data");
 }
 
 #[test]

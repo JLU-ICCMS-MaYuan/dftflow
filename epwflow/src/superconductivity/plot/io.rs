@@ -268,7 +268,7 @@ pub fn parse_imag_iso(path: &Path) -> Result<GapData> {
 /// 契约 1.5：五列 ω/ReZ/ImZ/ReΔ/ImΔ；原生六列额外包含第二列 E。
 /// 超过 10 MB 时先流式计数，再按固定步长抽样；所有行仍检查列数和有限值。
 /// 上限 10000 点，避免行宽估计偏差导致超额；不在内存中缓存整个文件。
-pub fn parse_pade_aniso(path: &Path) -> Result<GapData> {
+fn parse_pade(path: &Path, accepted_columns: &[usize]) -> Result<GapData> {
     let mut step = 1;
     if path.metadata()?.len() > 10 * 1024 * 1024 {
         let mut count = 0usize;
@@ -292,7 +292,7 @@ pub fn parse_pade_aniso(path: &Path) -> Result<GapData> {
     let mut index = 0;
     let mut width = None;
     rows(path, |_, r| {
-        columns(r, &[5, 6])?;
+        columns(r, accepted_columns)?;
         ensure!(width.is_none_or(|w| w == r.len()), "pade column mismatch");
         width = Some(r.len());
         if index % step == 0 {
@@ -304,6 +304,14 @@ pub fn parse_pade_aniso(path: &Path) -> Result<GapData> {
     })?;
     ensure!(!result.gaps_mev.is_empty(), "empty pade data");
     Ok(result)
+}
+/// 各向异性 Padé：原生 EPW 六列，取第 5 列实部能隙。
+pub fn parse_pade_aniso(path: &Path) -> Result<GapData> {
+    parse_pade(path, &[5, 6])
+}
+/// 各向同性 Padé：原生 EPW 五列，取第 4 列实部能隙。
+pub fn parse_pade_iso(path: &Path) -> Result<GapData> {
+    parse_pade(path, &[5])
 }
 /// 契约 1.6：四列虚频数据取首频率全部状态，按温度排序；分布 gap0 不伪装成状态。
 pub fn extract_leading_gaps(paths: &[(f64, PathBuf)]) -> Result<Vec<(f64, Vec<f64>)>> {
