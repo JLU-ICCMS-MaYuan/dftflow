@@ -95,6 +95,12 @@ fn five_figures_mirror_svg_styles_and_physics() {
         let text = fs::read_to_string(task.result_dir.join(format!("{name}.svg"))).unwrap();
         assert!(text.contains("<svg") && text.contains("</svg>"));
         assert!(text.len() > 1000);
+        if [NAMES[2], NAMES[3], NAMES[4]].contains(&name) {
+            assert!(text.contains("width=\"600\" height=\"600\""), "{name}");
+            assert_eq!(text.matches("id=\"panel-").count(), 1, "{name}");
+            assert!(!text.contains("No second parameter set"), "{name}");
+            assert!(!text.contains("Data unavailable"), "{name}");
+        }
     }
     let fig1 = fs::read_to_string(task.result_dir.join(format!("{}.svg", NAMES[0]))).unwrap();
     assert!(fig1.contains("width=\"1800\"") && fig1.matches("<g").count() >= 3);
@@ -165,6 +171,17 @@ fn svg_png_pdf_use_shared_exporter() {
     assert_eq!(reader.info().pixel_dims.unwrap().xppu, 11811);
     let pdf = fs::read(task.result_dir.join(format!("{}.pdf", NAMES[0]))).unwrap();
     assert!(pdf.starts_with(b"%PDF"));
+    for name in &NAMES[2..] {
+        let path = task.result_dir.join(format!("{name}.png"));
+        let image = png::Decoder::new(std::io::BufReader::new(fs::File::open(path).unwrap()))
+            .read_info()
+            .unwrap();
+        assert_eq!(
+            (image.info().width, image.info().height),
+            (600, 600),
+            "{name}"
+        );
+    }
 }
 #[test]
 fn plot_only_reads_no_scientific_configuration_and_changes_no_inputs() {
@@ -321,8 +338,9 @@ fn sibling_parameter_panels_and_separate_normalization() {
         .unwrap()
         .unwrap();
     assert_eq!(panels[0].curves[0].points[0], (-10., 1.));
-    assert!(
-        panels[1].curves.is_empty(),
+    assert_eq!(
+        panels.len(),
+        1,
         "a method plot must not consume sibling data"
     );
 }

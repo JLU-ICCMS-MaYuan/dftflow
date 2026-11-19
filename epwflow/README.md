@@ -471,14 +471,17 @@ epw_superconductivity --stage superconductivity -s --skip-plot
 formats = ["svg", "png", "pdf"]
 ```
 
-例如 `work_dir="run"`，输入 `run/8.epw-superconductivity/01.grid/aniso-mu0.1-.../` 镜像到配置目录下的 `results/8.epw-superconductivity/01.grid/aniso-mu0.1-.../`。文件名依次为 `coupling_strength`、`gap_imaginary_real`、`aniso_gap_vs_T`、`iso_gap_vs_T`、`superconducting_dos`，扩展名由 formats 决定。这套分析图与历史 `run/results` 结果包分别输出。
+例如 `work_dir="run"`，输入 `run/8.epw-superconductivity/01.grid/aniso-mu0.1-.../` 镜像到配置目录下的 `run/results/8.epw-superconductivity/01.grid/aniso-mu0.1-.../`。文件名依次为 `coupling_strength`、`gap_imaginary_real`、`aniso_gap_vs_T`、`iso_gap_vs_T`、`superconducting_dos`，扩展名由 formats 决定。这套分析图保留自己的方法参数子目录。
 
 每个输出目录的 `plot.log` 记录实际读取来源、警告及成功输出。缺失 λ 分布只留空相应子图；缺少谱则跳过图 1，缺少虚频能隙则跳过图 2，缺少温度数据或 qdos 则跳过对应图。费米面 DOS 优先读取 `epw1.out`，兼容当前原生日志 `epw.out`，提取失败时用 1.0 并警告。绘图失败不改变科学成功状态。
 
-EPW 5.9 的 `lpade = true` 会在 Padé 延拓成功后自动写出 `qdos_*`；qdos 首行为 `w [eV] N_S/N_F`，第二列已经归一化，绘图不会再次除以 `N_F`。在第 8 步原生配置中，`npade` 是允许的整数参数，例如 iso/aniso 均可设置 `npade = 50`。方案 B 的实际输出位于配置目录下的 `results/8.epw-superconductivity/`。
+EPW 5.9 的 `lpade = true` 会在 Padé 延拓成功后自动写出 `qdos_*`；qdos 首行为 `w [eV] N_S/N_F`，第二列已经归一化，绘图不会再次除以 `N_F`。在第 8 步原生配置中，`npade` 是允许的整数参数，例如 iso/aniso 均可设置 `npade = 50`。方案 B 的实际输出位于配置目录下的 `run/results/8.epw-superconductivity/`。
 
-每个方法目录只读取自身能隙数据，只有一组参数时另一个面板注明缺失。虚频／实频图严格配对同一温度；DOS 优先 10 K，否则使用最低可用温度并标注。不平滑、不强迫能隙单调、不将缺失数据补成物理结果。带 distribution 头的原生 λ 文件按已有密度绘制；图 3 按 Mori Fig. 8 绘制五列 `imag_aniso_gap0_*` 的第 1／2 列（温度加分布偏移／能隙 meV），每温度一条分布线，不使用完整 imag_aniso 的逐 k 点连线代替。图 4 仍使用 iso 自己的 imag_iso 首频率能隙。Padé 支持契约五列和原生六列，超过 10 MB 时流式计数、固定步长取不超过 10000 点，所有行仍检查列数与有限值。
+每个方法目录只读取自身能隙数据，两类能隙温度图和 DOS 图均为当前 μ* 的单面板；μ* 列表暂不实现。虚频／实频图严格配对同一温度；DOS 优先 10 K，否则使用最低可用温度并标注。不平滑、不强迫能隙单调、不将缺失数据补成物理结果。带 distribution 头的原生 λ 文件按已有密度绘制；图 3 按 Mori Fig. 8 绘制五列 `imag_aniso_gap0_*` 的第 1／2 列（温度加分布偏移／能隙 meV），每温度一条分布线，不使用完整 imag_aniso 的逐 k 点连线代替。图 4 仍使用 iso 自己的 imag_iso 首频率能隙。Padé 支持契约五列和原生六列，超过 10 MB 时流式计数、固定步长取不超过 10000 点，所有行仍检查列数与有限值。
 
 测试与本机数据缺口见 [0076 验收记录](../docs/specs/0076-epw-superconductivity-plot-suite/acceptance.md)。
 
 绘图只在当前方法文件缺少 λ 分布、且已选 a2f 是符号链接时，读取该链接目标同前缀的 lambda_pairs／lambda_k_pairs；不搜索其他细网格、不补算上游。实际来源路径写入 plot.log。
+
+
+超导态密度图片名称为 superconducting_dos.{png,svg,pdf}，读取当前 iso/aniso 参数目录的原生 qdos；默认展示 10 K，缺少 10 K 时展示最低可用温度并标注。分析图保存在 run/results/8.epw-superconductivity/ 的网格和方法参数子目录中，不另外创建 q_dos 命名副本。

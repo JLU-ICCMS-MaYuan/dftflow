@@ -254,8 +254,8 @@ RightSubplot {
 
 ### 2.3 图 3: 各向异性能隙温度演化
 
-**尺寸**: 1200×600 px（2×1 布局）  
-**子图**: 左右分别对应不同 μ_c
+**尺寸**: 600×600 px（单面板）
+**面板**: 当前方法、当前参数目录的单个 μ*；不生成第二参数占位。
 
 **样式**:
 ```rust
@@ -263,16 +263,16 @@ SubplotStyle {
     x_label: "Temperature (K)",
     y_label: "Δ_{nk} (meV)",
     line_style: Solid,
-    marker: Circle { size: 3.0 },
+    marker: None,
     color: RGB(30, 144, 255),   // DodgerBlue
     line_width: 1.0,
-    per_state_curve: true,      // 每个 k 点一条线
+    per_temperature_distribution: true, // 每个温度一条原生 gap0 分布线
 }
 ```
 
 ### 2.4 图 4: 各向同性能隙温度演化
 
-**尺寸**: 1200×600 px（2×1 布局）
+**尺寸**: 600×600 px（单面板）
 
 **样式**:
 ```rust
@@ -288,7 +288,7 @@ SubplotStyle {
 
 ### 2.5 图 5: 超导态密度
 
-**尺寸**: 1200×600 px（2×1 布局）
+**尺寸**: 600×600 px（单面板）
 
 **样式**:
 ```rust
@@ -501,3 +501,8 @@ assert_not_exists results/8.epw-superconductivity/*/*.svg
 - 自动触发的实际生产边界为编号第 8 步的 `Scientific status = completed`；手动 `--plot-only` 允许输出部分诊断。
 
 真实数据、合成样本、性能测量及待满足项分别记录于 [验收记录](acceptance.md)。
+
+
+## 2026-11-19 单 μ* 展示契约
+
+μ* 列表实现暂缓。两类能隙温度图与 superconducting_dos 均只包含一个 600×600 面板，当前目录的 μ* 显示在标题中；不读取兄弟方法或其他参数目录，不创建第二个 μ* 占位子图。电声耦合三联和虚／实频双联保留。qdos 图仍使用简洁名称 superconducting_dos，数据来自各自的原生 qdos 文件。

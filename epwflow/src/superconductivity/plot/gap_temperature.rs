@@ -26,10 +26,7 @@ fn temperature_panels(task: &PlotTask, iso: bool) -> Result<Option<Vec<Panel>>> 
             }
             return Ok(None);
         }
-        return Ok(Some(vec![
-            panel,
-            Panel::new("No second parameter set", "Temperature (K)", "Δ_{nk} (meV)"),
-        ]));
+        return Ok(Some(vec![panel]));
     }
     let mut panels = vec![];
     let mut any = false;
@@ -88,13 +85,6 @@ fn temperature_panels(task: &PlotTask, iso: bool) -> Result<Option<Vec<Panel>>> 
             ));
         }
         return Ok(None);
-    }
-    while panels.len() < 2 {
-        panels.push(Panel::new(
-            "No second parameter set",
-            "Temperature (K)",
-            if iso { "Δ₀ (meV)" } else { "Δ_{nk} (meV)" },
-        ));
     }
     Ok(Some(panels))
 }

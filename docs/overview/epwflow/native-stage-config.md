@@ -119,9 +119,9 @@ EPW 从 Wannier、粗网格到细网格、超导求解全部禁用多 image；�
 
 普通第 8 步完成核验后自动调用同一绘图模块；第 7／8 步原生作业的“结束后重复公开命令核验”约定保留。`--skip-plot` 只禁用本次调用的超导分析图，不写入配置，不影响其他阶段。绘图失败只记警告，不改变科学完成状态。
 
-输入 `<work_dir>/8.epw-superconductivity/<细网格参数>/<方法参数>/` 镜像输出至 `<work_dir 的父目录>/results/8.epw-superconductivity/<细网格参数>/<方法参数>/`；例如 `work_dir="run"` 对应配置目录下的 `results/`。该目录保存 `coupling_strength`、`gap_imaginary_real`、`aniso_gap_vs_T`、`iso_gap_vs_T`、`superconducting_dos` 及 `plot.log`，与既有 `<work_dir>/results` 交付包分别输出。
+输入 `<work_dir>/8.epw-superconductivity/<细网格参数>/<方法参数>/` 镜像输出至 `<work_dir>/results/8.epw-superconductivity/<细网格参数>/<方法参数>/`；例如 `work_dir="run"` 对应配置目录下的 `run/results/`。该目录保存 `coupling_strength`、`gap_imaginary_real`、`aniso_gap_vs_T`、`iso_gap_vs_T`、`superconducting_dos` 及 `plot.log`，与既有阶段交付位于同一结果根目录下。
 
-数据缺失时只绘制可用内容：无 a2f 跳过图 1，无 λ 数据留空对应面板；图 2 使用最低可用虚频温度，只叠加本方法同温度 Padé；图 3 读取本方法的原生 gap0 分布，图 4 读取 iso 首 Matsubara 能隙；图 5 读取当前方法的 qdos，原生已归一化文件直接绘制，其余使用该方法费米面 DOS 归一化，优先 10 K，否则明确标注最低可用温度。需要 DOS 而提取失败时用 1.0 并警告。各方法不读取兄弟目录补图，未提供的第二组明确留空。
+数据缺失时只绘制可用内容：无 a2f 跳过图 1，无 λ 数据留空对应面板；图 2 使用最低可用虚频温度，只叠加本方法同温度 Padé；图 3 读取本方法的原生 gap0 分布，图 4 读取 iso 首 Matsubara 能隙；图 5 读取当前方法的 qdos，原生已归一化文件直接绘制，其余使用该方法费米面 DOS 归一化，优先 10 K，否则明确标注最低可用温度。需要 DOS 而提取失败时用 1.0 并警告。各方法不读取兄弟目录补图。两类能隙温度图及 DOS 图均为当前 μ* 的单面板，不生成第二组参数空白子图；μ* 列表暂不实现。
 
 原生 λ 三列分布保留密度，避免对分箱中心再次做无权直方图。图 3 按 Mori Fig. 8 读取当前 aniso 目录的五列 `imag_aniso_gap0_*`：第 1 列为温度加分布偏移，第 2 列为能隙（meV），每个温度单独绘制蓝色分布线；不跨温度连接 k 点，不重采样或补造温度。图 4 保持读取 iso 自己的 `imag_iso_*` 首 Matsubara 能隙。Padé 五／六列分别取实部能隙第 4／5 列，eV 转 meV；超过 10 MB 流式采样至不超过 10000 点。格式错误、非有限值和温度不一致记录在 `plot.log`，不以经验公式补齐缺失图。
 
@@ -129,6 +129,6 @@ EPW 从 Wannier、粗网格到细网格、超导求解全部禁用多 image；�
 
 绘图只在当前方法文件缺少 λ 分布、且已选 a2f 是符号链接时，读取该链接目标同前缀的 lambda_pairs／lambda_k_pairs；不搜索其他细网格、不补算上游。实际来源路径写入 plot.log。
 
-第 8 步若要补齐 Mori Fig. 7／9 所需数据，在 iso 和 aniso 两个 `INPUTEPW` 配置中设置 `lpade = true`、`npade = 50`。EPW 5.9 的 Padé 路径会自动调用 `dos_quasiparticle` 生成 `qdos_*`，不添加 `qdos_k`；qdos 第二列已经是 `N_S/N_F`。结果图写入配置目录下的 `results/8.epw-superconductivity/`。
+第 8 步若要补齐 Mori Fig. 7／9 所需数据，在 iso 和 aniso 两个 `INPUTEPW` 配置中设置 `lpade = true`、`npade = 50`。EPW 5.9 的 Padé 路径会自动调用 `dos_quasiparticle` 生成 `qdos_*`，不添加 `qdos_k`；qdos 第二列已经是 `N_S/N_F`。结果图写入配置目录下的 `run/results/8.epw-superconductivity/`（work_dir=run）。
 
 2026-11-19 方案 B 实跑已验证：iso/aniso 各 20／30／40 K 收敛，生成 Padé 与 qdos；aniso 目录生成五类图三格式共 15 个文件，iso 目录生成可用图共 12 个。此前合成样本与缺数据回测记录仍保留在 0076 验收文档。

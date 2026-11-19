@@ -528,3 +528,14 @@ header = """
 实际结果目录是配置目录下的 results/8.epw-superconductivity/，不是 run/results/。aniso 方法目录生成五类图各 SVG/PNG/PDF 一份，共 15 个文件；iso 方法目录生成其可用的图 1、3、4、5，共 12 个文件。图 2 使用 Mori Fig. 7 对应的各向异性虚频与 Padé 数据，iso 目录没有各向异性输入时留空属于预期。
 
 EPW qdos 首行是未注释的 w [eV] N_S/N_F，第二列已经是归一化值；绘图解析器会跳过该列头并避免再次除以费米面 DOS。原生 imag_aniso_gap0_* 和 pade_aniso_gap0_* 是分布／辅助文件，不会被误当作逐状态温度曲线或 Padé 主文件。
+
+
+## 2026-11-19：单 μ* 图片与 qdos 查找
+
+μ* 列表暂缓。aniso_gap_vs_T、iso_gap_vs_T 和 superconducting_dos 均为当前方法当前 μ* 的单面板，无第二组空白占位。图像仍镜像到 run/results/8.epw-superconductivity/<细网格参数>/<方法参数>/；每个目录只消费自身科学数据。虚频／实频对比仍是两个物理轴面板。
+
+qdos 是原生数据文件名，图片名称为 superconducting_dos.png（另有 SVG／PDF），不是 q_dos.png。可用以下命令查找：
+
+    find run/results/8.epw-superconductivity -name 'superconducting_dos.*'
+
+本机现有 iso/aniso 的 20、30、40 K qdos 齐全；当前图使用最低可用的 20 K，原生 N_S/N_F 已归一化，不再次除以 N_F。

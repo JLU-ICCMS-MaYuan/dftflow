@@ -165,3 +165,15 @@ Mori 第 23～25 页用于视觉参照：图 1 三联布局、图 2 虚／实频
 验证：`superconductivity_plot` 的 16 项及 `three_stage_execution` 中 `superconductivity_plot_0076` 的 2 项通过。CLI 回归夹具同步当前 `run/results/` 路径，跳过／失败隔离检查针对实际分析图文件，避免被既有交付包目录影响。release 构建成功并覆盖固定模块命令，实际执行 `--plot-only -c input.toml` 返回 24 个文件、0 警告，旧名前缀图片为零，44 份科学输入／输出哈希不变。
 
 证据位于本机 `docs/local/0076-superconductivity-plot/simple-names-*.json` 及 `simple-names-*.log`。μ* 列表与默认 `[0.1, 0.13]` 已按用户“新增需求”记录为 FR-011、T046～T048；尚未实现配置解析、任务展开和续算，不改变当前标量 `muc`，不新增科学作业。
+
+## 2026-11-19：当前 μ* 单面板与 qdos 图核查
+
+用户明确暂缓 μ* 列表，当前继续使用标量 muc；两类能隙温度图每张只展示当前 μ*，不创建第二个 μ* 子图。DOS 图也改成当前方法、当前 μ* 的单面板。电声耦合三联及虚／实频对比双联保留，因为其中的面板表示不同物理量。对应需求为 FR-012／FR-013、SC-012／SC-013。
+
+`qdos` 图此前已经生成，只是使用简洁图片名 `superconducting_dos`；iso/aniso 参数目录各有一份 PNG／SVG／PDF，并不是 `q_dos.png`。`plot.log` 分别记录读取各自 `MgB2.qdos_020.00` 并保存 `superconducting_dos.*`。当前只有 20、30、40 K，按既定规则选择最低可用的 20 K；原生 qdos 已归一化，数值不再除以 N_F。去掉图例中把归一化因子 1 当作实际 N_F 的表述，仅标注实际温度。
+
+两份 DOS 图片位于 `examples/MgB2/ubuntu/run/results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/` 下的 `iso-mu0.1-Tc20-40-degaussq0.5meV/superconducting_dos.png` 和 `aniso-mu0.1-Tc20-40-degaussq0.5meV/superconducting_dos.png`。两种方法的数据和参数目录保持隔离。
+
+验证：release `superconductivity_plot` 16 项通过；`three_stage_execution` 过滤 `superconductivity_plot_0076` 的 2 项通过。测试检查三种单面板图的 SVG 面板数量、600×600 PNG 尺寸且无第二组空白占位；两项公开 CLI 验证跳过、复用、失败隔离。release 构建覆盖固定命令成功，实际 `--plot-only` 出图 24 个文件、0 警告。4 张真实单面板 PNG 均为 600×600，SVG 只有一个 panel，PDF 为 600×600 pt；已实看能隙分布和 DOS PNG。44 份科学输入／输出哈希不变，无新增科学作业、无 Claude 委托。
+
+证据：本机忽略目录 `docs/local/0076-superconductivity-plot/single-mu-{tests,cli-tests,build,redraw}.log`、`single-mu-science-before.json` 和 `single-mu-verification.json`。GitHub #76 正文已更新需求与唯一 `type:feature` 类型标签；本地 Spec 变更未自动推送，远程链接的变更发布仍待后续授权。
