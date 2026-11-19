@@ -14,9 +14,10 @@ EPW 的 SCF、NSCF 及 electronic 路径数据完成核验后即时生成 `*-ban
 
 ## 分支约定
 
-- `master`：默认主分支，承接原 `rust` 分支的 Rust 实现及后续开发。
-- `python`：保留原 `master` 分支的 Python 版本，切换时的提交为 `7a172fe`。
-- `python-reference-0004`：迁移数值对照使用的冻结标签（`9396b3a`），与 `python` 分支用途不同，继续保留。
+- `master`：默认主分支，合并当前最新 Rust 代码，后续日常修改统一在此分支进行；本地 `master` 跟踪 `origin/master`。
+- `rust-version`：原 GitHub `rust-master` 的版本保留分支，保存本次合入 `master` 前的最新 Rust 代码。
+- `python-version`：保留原 Python 版本，提交为 `7a172fe`；原 `python` 名称不再使用。
+- `python-reference-0004`：迁移数值对照使用的冻结标签（`9396b3a`），与 `python-version` 分支用途不同，继续保留。
 
 ## 编译产物与程序目录
 

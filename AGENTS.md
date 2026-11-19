@@ -22,6 +22,9 @@ description: 专业的软件工程师，严格遵循SOLID、KISS、DRY、YAGNI�
 
 `git push`、创建或切换分支不属于自动提交范围，必须获得用户单独明确授权。
 
+日常开发统一在本地 `master` 分支进行，并跟踪 GitHub 的 `origin/master`。
+`origin/rust-version` 和 `origin/python-version` 保留对应版本，不作为后续日常开发分支。
+
 **高风险操作：**
 
 - Git 高风险操作：`git push`、`git reset --hard`、强制推送、删除分支

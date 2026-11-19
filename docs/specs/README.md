@@ -10,4 +10,4 @@
 
 编号采用至少四位数字；已有目录以实际 GitHub Issue 为准。历史本地编号 0051 的实空间衰减图已对应 [0054](0054-epw-real-space-decay/spec.md)，历史本地编号 0052 的测试说明调整已对应 [0071](0071-epw-readme-no-tables/spec.md)，不得与现有 GitHub #51、#52 混用。
 
-文档随当前 Rust 代码发布到 GitHub 的 `rust-master` 分支。2026-10-22 的首次迁移和状态回写说明作为历史记录保留在根目录 `AGENTS.md`；当时的数量、状态和旧目录不作为当前协作状态依据。
+文档随当前代码发布到 GitHub 的 `master` 分支，后续修改统一在 `master` 进行。原 `rust-master` 改名为 `rust-version`，原 Python 版本保留在 `python-version`。2026-10-22 的首次迁移和状态回写说明作为历史记录保留在根目录 `AGENTS.md`；当时的数量、状态和旧目录不作为当前协作状态依据。
