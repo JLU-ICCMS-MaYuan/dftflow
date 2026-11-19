@@ -33,7 +33,7 @@ impl Phase {
 
 #[derive(Parser)]
 #[command(about = "Generate, submit or resume this stage; read input.toml and generate scripts by default")]
-#[command(group(ArgGroup::new("operation").args(["check", "prepare_only", "status", "probe", "import", "migrate_state", "collect", "plot", "results_check", "export_comparison", "execute_attempt", "run_script", "all", "submit_chain"])))]
+#[command(group(ArgGroup::new("operation").args(["check", "prepare_only", "status", "probe", "import", "migrate_state", "collect", "plot", "plot_only", "results_check", "export_comparison", "execute_attempt", "run_script", "all", "submit_chain"])))]
 struct Options {
     #[arg(short = 'c', long, default_value = "input.toml")]
     config: PathBuf,
@@ -103,6 +103,10 @@ struct Options {
     collect: bool,
     #[arg(long)]
     plot: bool,
+    #[arg(long, conflicts_with_all = ["skip_plot", "submit", "run", "resume", "import_work", "import_phonon", "allocated_stage", "phonon_task", "electronic_branch"], help = "Plot existing superconductivity data without running calculations")]
+    plot_only: bool,
+    #[arg(long, help = "Disable automatic superconductivity plotting for this invocation")]
+    skip_plot: bool,
     #[arg(long)]
     results_check: bool,
     #[arg(long)]
@@ -136,6 +140,16 @@ pub fn run(phase: Phase) {
 }
 
 fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
+    ensure!(!(o.plot_only || o.skip_plot) || phase == Phase::Superconductivity,
+        "input_conflict: --plot-only and --skip-plot belong to epw_superconductivity");
+    crate::superconductivity::plot::set_skip(o.skip_plot);
+    if o.plot_only {
+        ensure!(o.stage.is_none_or(|s| s == super::stages::Step::Superconductivity), "input_conflict: --plot-only belongs to stage 8");
+        if !o.config.exists() && o.config == PathBuf::from("input.toml") && PathBuf::from("inputepw.toml").is_file() { o.config = PathBuf::from("inputepw.toml"); }
+        let report = crate::superconductivity::plot::plot_config(&o.config)?;
+        println!("superconductivity_plots: {}\nplot_warnings: {}", report.files.len(), report.warnings.len());
+        return Ok(());
+    }
     if let Some(task) = &o.phonon_task {
         ensure!(phase == Phase::Phonon, "configuration: phonon tasks belong to epw_phonon");
         return crate::qe_data::phonon_parallel::allocated(&o.config, task,
@@ -494,4 +508,15 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         return Ok(());
     };
     cli::dispatch_command(command)
+}
+
+#[cfg(test)]
+mod plot_options_tests {
+    use super::*;
+    #[test]
+    fn superconductivity_plot_flags_and_conflicts() {
+        assert!(Options::try_parse_from(["epw_superconductivity","--skip-plot"]).unwrap().skip_plot);
+        assert!(Options::try_parse_from(["epw_superconductivity","--plot-only"]).unwrap().plot_only);
+        assert!(Options::try_parse_from(["epw_superconductivity","--plot-only","--skip-plot"]).is_err());
+    }
 }

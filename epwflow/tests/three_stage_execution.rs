@@ -1876,3 +1876,5 @@ fn reuse_0052_linearized_matrix_route_links_qmap_metadata_without_fine_rerun() {
 mod stage_auto_plotting_0072;
 #[path = "support/electronic_parallel_0073.rs"]
 mod electronic_parallel_0073;
+#[path = "support/superconductivity_plot_0076.rs"]
+mod superconductivity_plot_0076;

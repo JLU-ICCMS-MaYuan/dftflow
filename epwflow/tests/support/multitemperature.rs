@@ -2,7 +2,7 @@
 use super::*;
 
 impl Case {
-    fn gap_batch(mode: config::Mode, temperatures: Vec<f64>, mu: Option<f64>) -> Self {
+    pub(super) fn gap_batch(mode: config::Mode, temperatures: Vec<f64>, mu: Option<f64>) -> Self {
         let c = Self::numbered();
         c.numbered_change(|cfg| {
             let sc = &mut cfg.superconductivity;

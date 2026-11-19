@@ -603,6 +603,7 @@ dependencies = [
  "qf-plot",
  "qf-runner",
  "qf-wannier",
+ "rayon",
  "regex",
  "roxmltree",
  "serde",

@@ -10,6 +10,7 @@ pub mod iso;
 pub mod manifest;
 pub mod parse;
 pub mod points;
+pub mod plot;
 pub mod reuse;
 pub mod scheduler;
 pub mod search;

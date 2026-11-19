@@ -111,3 +111,22 @@ postw90_args = []
 EPW 从 Wannier、粗网格到细网格、超导求解全部禁用多 image；省略 image 或显式 `-nimage 1` 可用，`-ni`／`-nimage`／`-nimages` 多 image 均拒绝。PH image 参数保留自身规则。`-nk`／`-npool`／`-npools` 为 pool 参数别名，只能选择一个填写。当前单 image EPW 仍要求每 pool 一个 MPI 进程。
 
 旧程序子表需要用户改为平铺字段；不自动改写历史配置快照、已生成脚本或计算数据，不保证旧工作区透明续算。源码、回归及安装边界见 [0065 验收](../../specs/0065-slurm-header-launcher/acceptance.md)。
+
+
+## 第 8 步超导分析图
+
+`epw_superconductivity --plot-only -c "input.toml"` 只读取已有科学数据与根级路径／绘图配置，不运行科学程序、不提交作业、不备份或迁移科学配置。根级 `[plot].formats` 控制 SVG／PNG／PDF，默认 `["svg"]`，也接受共享导出器的 JPG。原有电子显示能窗字段继续有效。
+
+普通第 8 步完成核验后自动调用同一绘图模块；第 7／8 步原生作业的“结束后重复公开命令核验”约定保留。`--skip-plot` 只禁用本次调用的超导分析图，不写入配置，不影响其他阶段。绘图失败只记警告，不改变科学完成状态。
+
+输入 `<work_dir>/8.epw-superconductivity/<细网格参数>/<方法参数>/` 镜像输出至 `<work_dir 的父目录>/results/8.epw-superconductivity/<细网格参数>/<方法参数>/`；例如 `work_dir="run"` 对应配置目录下的 `results/`。该目录保存 `fig1_coupling_strength`、`fig2_gap_imaginary_real`、`fig3_aniso_gap_vs_T`、`fig4_iso_gap_vs_T`、`fig5_superconducting_dos` 及 `plot.log`，与既有 `<work_dir>/results` 交付包分别输出。
+
+数据缺失时只绘制可用内容：无 a2f 跳过图 1，无 λ 数据留空对应面板；图 2 使用最低可用虚频温度，只叠加同温度 Padé；图 3／4 使用首 Matsubara 频率的逐状态能隙，保留符号与状态顺序；图 5 用各方法自己的费米面 DOS 归一化，优先 10 K，否则明确标注最低可用温度。DOS 提取失败用 1.0 并警告。同模式参数组最多比较两组，未提供的第二组明确留空。
+
+原生 λ 三列分布保留密度，避免对分箱中心再次做无权直方图。原生 gap0 五列分布不含逐状态身份，逐状态温度曲线使用完整 imag_aniso；不将分布箱当作 k 点。Padé 五／六列分别取实部能隙第 4／5 列，eV 转 meV；超过 10 MB 流式采样至不超过 10000 点。格式错误、非有限值和温度不一致记录在 `plot.log`，不以经验公式补齐缺失图。
+
+实现与验证边界见 [0076 验收](../../specs/0076-epw-superconductivity-plot-suite/acceptance.md)。
+
+绘图只在当前方法文件缺少 λ 分布、且已选 a2f 是符号链接时，读取该链接目标同前缀的 lambda_pairs／lambda_k_pairs；不搜索其他细网格、不补算上游。实际来源路径写入 plot.log。
+
+2026-11-18 的公开 CLI 回归已验证：`--skip-plot` 后可通过复用补图，不重复科学调用；图片实际写入失败只报警告，科学完成状态保留；科学数据无效时不自动出图。本机真实 MgB₂ 当前只有 20／30／40 K 数据，生成 7 张 SVG；缺少 Padé 和 qdos，尚不能验证真实完整五类图。合成五类图三格式与 70 MB 压力样本验证已通过，不能替代缺失的真实科学数据。

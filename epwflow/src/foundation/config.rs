@@ -39,15 +39,17 @@ pub struct RuntimeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct PlotConfig {
+    pub formats: Vec<String>,
     pub electronic_energy_min_ev: f64,
     pub electronic_energy_max_ev: f64,
 }
 impl Default for PlotConfig {
-    fn default() -> Self { Self { electronic_energy_min_ev: -3.0, electronic_energy_max_ev: 3.0 } }
+    fn default() -> Self { Self { formats: vec!["svg".into()], electronic_energy_min_ev: -3.0, electronic_energy_max_ev: 3.0 } }
 }
 impl PlotConfig {
     pub fn bounds(&self) -> [f64; 2] { [self.electronic_energy_min_ev, self.electronic_energy_max_ev] }
-    pub fn validate(&self) -> Result<()> { interval(self.bounds(), "plot.electronic_energy_min_ev/electronic_energy_max_ev") }
+    pub fn formats(&self) -> Result<Vec<qf_config::PlotFormat>> { qf_config::PlotSection { formats: self.formats.clone() }.validate_formats() }
+    pub fn validate(&self) -> Result<()> { self.formats()?; interval(self.bounds(), "plot.electronic_energy_min_ev/electronic_energy_max_ev") }
 }
 fn default_outdir()->PathBuf{PathBuf::from("./tmp")}
 data!(Program{path:PathBuf,args:Vec<String>});

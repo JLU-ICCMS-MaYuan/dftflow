@@ -161,5 +161,6 @@ mod tests {
 }
 
 pub mod electronic;
+pub mod superconductivity;
 mod formats;
 pub use formats::{save_plot, svg_to_pdf};

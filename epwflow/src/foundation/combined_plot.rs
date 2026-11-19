@@ -911,7 +911,8 @@ mod tests {
         for bounds in [[3., -3.], [1., 1.], [f64::NAN, 3.], [0., f64::INFINITY]] {
             assert!(super::super::config::PlotConfig {
                 electronic_energy_min_ev: bounds[0],
-                electronic_energy_max_ev: bounds[1]
+                electronic_energy_max_ev: bounds[1],
+                ..Default::default()
             }
             .validate()
             .is_err());

@@ -32,6 +32,7 @@
 - [阶段配置详解](native-stage-config.md)
 - [NSCF 网格生成](nscf-grid.md)
 - [超导求解](native-superconductivity.md)
+- [超导分析图与格式配置](native-stage-config.md#第-8-步超导分析图)
 
 ### 使用手册
 
@@ -81,6 +82,8 @@ epw_wannier -c "input.toml" --stage wannier --resume -s
 epw_phonon -c "input.toml" --stage electronic --plot
 epw_wannier -c "input.toml" --plot
 epw_superconductivity --plot --results "run/results"
+# 第 8 步原生数据五类分析图，输出到配置目录下的 results/8.epw-superconductivity
+epw_superconductivity --plot-only -c "input.toml"
 epw_superconductivity --results-check --results "run/results" --json
 ```
 

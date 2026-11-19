@@ -451,3 +451,32 @@ EPW 所有阶段禁用多 image，默认或显式单 image 可用；PH 保留自
 第 3、5 步近费米图和全能窗图共用 `[plot]` 的近费米能窗来确定 DOS 横轴：所有待绘曲线在该窗内的最大值乘 1.10，再向上整理刻度。例如最大值 4.24 时上限为 5 states/eV/cell。全能窗图仍显示全部能级，深能级超出峰用箭头及真实峰值标注，原始数据和积分不变。参考窗没有正 DOS 时明确注明并回退可见数据；声子图保持原规则。
 
 编译后在算例目录执行 `epw_phonon -c "input.toml" --stage electronic --plot`，即可用已有图参原位更新两张 PNG；第 5 步使用 `epw_wannier -c "input.toml" --plot`。两者均不补算科学数据或提交任务。独立包保留 DOS 参考窗，使用 `--plot --results "run/results/3.qe-electronic"` 可离线重绘。
+
+
+## 超导计算自动绘图
+
+第 8 步完成科学核验后，`epw_superconductivity` 自动绘制电声耦合三联图、虚频／实频能隙、各向异性与各向同性温度曲线及超导态密度。第 7／8 步的原生作业仍需结束后重复公开命令核验、推进；绘图在核验完成的调用中执行。当前 `task="tc"` 仍是显式温度列表的原生线性化求解，自动绘图不新增 Tc 搜索能力。
+
+```bash
+# 在 input.toml 所在目录补绘；不执行科学程序，不提交作业
+epw_superconductivity --plot-only --config "input.toml"
+# 在本次计算／核验调用中禁用自动绘图
+epw_superconductivity --stage superconductivity -s --skip-plot
+```
+
+根级格式配置复用共享导出器，默认 SVG：
+
+```toml
+[plot]
+formats = ["svg", "png", "pdf"]
+```
+
+例如 `work_dir="run"`，输入 `run/8.epw-superconductivity/01.grid/aniso-mu0.1-.../` 镜像到配置目录下的 `results/8.epw-superconductivity/01.grid/aniso-mu0.1-.../`。文件名依次为 `fig1_coupling_strength`、`fig2_gap_imaginary_real`、`fig3_aniso_gap_vs_T`、`fig4_iso_gap_vs_T`、`fig5_superconducting_dos`，扩展名由 formats 决定。这套分析图与历史 `run/results` 结果包分别输出。
+
+每个输出目录的 `plot.log` 记录实际读取来源、警告及成功输出。缺失 λ 分布只留空相应子图；缺少谱则跳过图 1，缺少虚频能隙则跳过图 2，缺少温度数据或 qdos 则跳过对应图。费米面 DOS 优先读取 `epw1.out`，兼容当前原生日志 `epw.out`，提取失败时用 1.0 并警告。绘图失败不改变科学成功状态。
+
+温度曲线比较同一细网格目录下、同模式的最多两组参数；当前组优先，只有一组时另一个面板注明缺失。虚频／实频图严格配对同一温度；DOS 优先 10 K，否则使用最低可用温度并标注。不平滑、不强迫能隙单调、不将缺失数据补成物理结果。带 distribution 头的原生 λ 文件按已有密度绘制；原生五列 gap0 分布不能恢复状态身份，因此逐状态温度曲线回读相同温度的完整 imag_aniso。Padé 支持契约五列和原生六列，超过 10 MB 时流式计数、固定步长取不超过 10000 点，所有行仍检查列数与有限值。
+
+测试与本机数据缺口见 [0076 验收记录](../docs/specs/0076-epw-superconductivity-plot-suite/acceptance.md)。
+
+绘图只在当前方法文件缺少 λ 分布、且已选 a2f 是符号链接时，读取该链接目标同前缀的 lambda_pairs／lambda_k_pairs；不搜索其他细网格、不补算上游。实际来源路径写入 plot.log。

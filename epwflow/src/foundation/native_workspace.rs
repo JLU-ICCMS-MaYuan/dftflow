@@ -217,6 +217,9 @@ fn advance_mode(
         Err(e) => Err(e),
         Ok(()) => {
             let valid = log::read(&cfg.work_dir, target)?.get("Stage", "Scientific status") == Some("completed");
+            if target == Step::Superconductivity && valid {
+                crate::superconductivity::plot::auto_plot(&cfg);
+            }
             log::update(&cfg.work_dir, target, |d| {
                 d.set(
                     "Next step",
