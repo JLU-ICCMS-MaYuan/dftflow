@@ -1,0 +1,390 @@
+# chem 集群 MgB₂ 小网格功能测试；不是数值收敛或 Tc 验收。
+# 版本 2：八个主阶段、独立用途子段；公共参数按 0061 回填。
+# 科学参数保留原生名称和单位；workflow 独立记录执行设置；自动绑定由程序内部确认。
+layout = "numbered"
+work_dir = "run"
+kpath = "../KPATH.in"
+structure = "../../../test_auto/MgB2/MgB2.vasp"
+schema_version = 2
+outdir = "scratch"
+
+# 电子组合图的纵轴范围，相对费米能级；第 3、5 步共用。
+# 修改后只重绘：epw_phonon --stage electronic --plot；epw_wannier --plot。
+[plot]
+# 第 8 步超导分析图使用以下格式；第 3、5 步电子组合图目前仍固定输出 PNG。
+formats = ["svg", "png", "pdf"]
+# 线宽、虚线长度和间隔目前由共享绘图主题设置，尚不支持 plot.electronic 配置。
+electronic_energy_min_ev = -3.0 # 下限：E_F - 3 eV
+electronic_energy_max_ev = 3.0 # 上限：E_F + 3 eV
+
+[pseudos]
+Mg = "pp/mg_pbe_v1.4.uspp.F.UPF"
+B = "pp/b_pbe_v1.4.uspp.F.UPF"
+
+[programs]
+launcher = ["mpirun", "-np", "32"]
+environment_script = "/public/home/mayuan/intel/oneapi/setvars.sh"
+pw_x = "/public/home/mayuan/code/dftflow/external/q-e/bin/pw.x"
+pw_args = ["-nk", "4"]
+ph_x = "/public/home/mayuan/code/dftflow/external/q-e/bin/ph.x"
+ph_args = ["-nk", "4"]
+epw_x = "/public/home/mayuan/code/dftflow/external/q-e/bin/epw.x"
+epw_args = ["-nk", "32"]
+bands_x = "/public/home/mayuan/code/dftflow/external/q-e/bin/bands.x"
+bands_args = ["-pd", ".true."]
+dos_x = "/public/home/mayuan/code/dftflow/external/q-e/bin/dos.x"
+dos_args = ["-pd", ".true."]
+projwfc_x = "/public/home/mayuan/code/dftflow/external/q-e/bin/projwfc.x"
+projwfc_args = ["-pd", ".true."]
+q2r_x = "/public/home/mayuan/code/dftflow/external/q-e/bin/q2r.x"
+q2r_args = []
+matdyn_x = "/public/home/mayuan/code/dftflow/external/q-e/bin/matdyn.x"
+matdyn_args = []
+postw90_x = "/public/home/mayuan/code/dftflow/external/wannier90/bin/postw90.x"
+postw90_args = []
+wannier90_x = "/public/home/mayuan/code/dftflow/external/wannier90/bin/wannier90.x"
+wannier90_args = []
+pw2wannier90_x = "/public/home/mayuan/code/dftflow/external/q-e/bin/pw2wannier90.x"
+pw2wannier90_args = []
+
+[slurm]
+header = """
+#SBATCH --partition=cpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=56
+#SBATCH --cpus-per-task=1
+#SBATCH --time=00:30:00
+export LC_ALL=C LANG=C
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
+"""
+
+# 仅回填给支持相应字段的调用；阶段显式值优先。网格留在各自阶段。
+[baseparams]
+# 第 5、6、7 步的公共费米来源；各 workflow 可显式覆盖。
+fermi_source = "f2"
+ATOMIC_SPECIES = [["Mg", 24.305, "mg_pbe_v1.4.uspp.F.UPF"], ["B", 10.811, "b_pbe_v1.4.uspp.F.UPF"]]
+prefix = "MgB2"
+ecutwfc = 40.0 # Ry
+ecutrho = 320.0 # Ry
+# QE DOS／PDOS 的能量采样，单位 eV；不是绘图范围或 Wannier 能窗。
+Emin = -100.0
+Emax = 100.0
+DeltaE = 0.01
+
+[stages."1.qe-scf"]
+K_POINTS = [4, 4, 2, 0, 0, 0]
+
+calculation = "scf"
+
+# degauss：Ry；截断能继承 baseparams。
+occupations = "smearing"
+smearing = "mv"
+degauss = 0.02
+
+# conv_thr：Ry。
+conv_thr = 1e-10
+
+[stages."2.qe-nscf"]
+K_POINTS = [4, 4, 2]
+calculation = "nscf"
+occupations = "smearing"
+smearing = "mv"
+degauss = 0.02
+nbnd = 16
+nosym = false
+noinv = false
+
+# conv_thr：Ry。
+conv_thr = 1e-12
+
+[workflow."3.qe-electronic"]
+points_per_edge = 20
+
+[stages."3.qe-electronic"]
+
+calculation = "bands"
+
+# degauss：Ry；截断能继承 baseparams。
+occupations = "smearing"
+smearing = "mv"
+degauss = 0.02
+nbnd = 16
+nosym = true
+noinv = true
+
+# conv_thr：Ry。
+conv_thr = 1e-12
+
+[stages."3.qe-electronic".bands]
+lsym = false
+
+[stages."3.qe-electronic".dos]
+# degauss：Ry；Emin/Emax/DeltaE：eV。
+ngauss = 0
+degauss = 0.007349864435130998
+
+[stages."3.qe-electronic".projwfc]
+# degauss：Ry；Emin/Emax/DeltaE：eV。
+ngauss = 0
+degauss = 0.007349864435130998
+
+[workflow."4.qe-phonon-index"]
+# 仅控制 QE 声子路径密度；EPW 比较密度由第 6 步独立设置。
+phonon_sigma_cm1 = 10.0
+points_per_edge = 100
+
+[stages."4.qe-phonon-index"]
+tr2_ph = 1e-12
+ldisp = true
+only_init = true
+lqdir = true
+recover = false
+only_wfc = false
+fildvscf = "dvscf"
+nq = [2, 2, 1]
+
+[stages."4.qe-phonon-index".q2r]
+zasr = "simple"
+
+[stages."4.qe-phonon-index".dispersion]
+asr = "simple"
+q_in_cryst_coord = true
+q_in_band_form = true
+
+[stages."4.qe-phonon-index".dos]
+asr = "simple"
+dos = true
+ndos = 200
+nk = [8, 8, 4]
+
+[stages."4.qe-phonon-index".q]
+tr2_ph = 1e-12
+ldisp = true
+only_init = false
+lqdir = true
+recover = false
+only_wfc = false
+fildvscf = "dvscf"
+nq = [2, 2, 1]
+
+[workflow."5.epw-wannier"]
+points_per_edge = 20 # 高对称路径每段划分为 20 个采样间隔（含两端为 21 点，相邻段共用端点） # 仅控制相应比较采样，不要求与第 3／6 步密度相同；内嵌 Wannier90 使用 bands_num_points，不是 NSCF 网格。
+selection_mode = "energy_only" # 纯能量选窗：按 dis_win_* 外窗和 dis_froz_* 冻结窗筛选能带， # 不启用投影度冻结（dis_proj_*）；projections 初始投影仍用于构建 Wannier 函数。
+
+[stages."5.epw-wannier"]
+# fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
+ep_coupling = true
+elph = false
+etf_mem = 0
+nbndsub = 5
+iverbosity = 2
+amass = [ 24.305, 10.811,]
+fsthick = 0.4
+degaussw = 0.1
+degaussq = 0.5
+nqstep = 500
+nqsmear = 1
+eps_acoustic = 1.0
+elecselfen = false
+phonselfen = false
+a2f = false
+ngaussw = 0
+efermi_read = true
+nk = [4, 4, 2]
+nq = [2, 2, 1]
+epwread = false
+epwwrite = true
+wannierize = true
+ephwrite = false
+eliashberg = false
+band_plot = false
+num_iter = 1000
+
+[stages."5.epw-wannier".wannier90]
+bands_plot = true
+# 保留 chem 原测试采样设置；其余段由 Wannier90 按段长比例取整。
+bands_num_points = 1
+# 能窗为绝对 eV；conv_tol 为 Å²；num_iter 等为迭代次数。
+num_wann = 5
+projections = ["B:pz", "f=0.5,0.0,0.5:s", "f=0.0,0.5,0.5:s", "f=0.5,0.5,0.5:s"]
+# Mg 2s/2p 半芯态：原始带编号 1–4；余下 12 带用于 5 个 Wannier 函数。
+exclude_bands = [1, 2, 3, 4]
+# 四界均为绝对 eV（QE 能量零点），不是相对 E_F。
+# Mori 第 19–20 页：8.8 - 7.469822726 = E_F 上方约 1.330177274 eV。
+# 沿用原 PBE 小网格测试初值（NSCF E_F=9.183946302 eV）；须结合本次能谱核对。
+dis_win_min = -3.40915530
+dis_win_max = 26.41812126
+dis_froz_min = -3.40915530
+dis_froz_max = 10.51412358
+num_iter = 1000
+conv_tol = 1e-10
+conv_window = 5
+dis_num_iter = 1000
+dis_conv_tol = 1e-10
+dis_conv_window = 5
+
+[stages."5.epw-wannier".postw90]
+# dos_energy_step、dos_smr_fixed_en_width：eV。
+write_hr = false
+write_bvec = false
+bands_plot = false
+dos = true
+num_elec_per_state = 2
+dos_kmesh = [ 4, 4, 2,]
+dos_energy_step = 0.01
+dos_adpt_smr = false
+dos_smr_fixed_en_width = 0.1
+dos_smr_type = "gauss"
+
+[workflow."6.epw-coarse"]
+# EPW 声子比较独立采样，不为差值统计匹配 QE 点数（0043）。
+points_per_edge = 20
+
+[stages."6.epw-coarse"]
+# fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
+ep_coupling = true
+elph = true
+etf_mem = 0
+nbndsub = 5
+iverbosity = 2
+amass = [ 24.305, 10.811,]
+fsthick = 0.4
+degaussw = 0.1
+degaussq = 0.5
+nqstep = 500
+nqsmear = 1
+eps_acoustic = 1.0
+elecselfen = false
+phonselfen = false
+a2f = false
+ngaussw = 0
+efermi_read = true
+nk = [4, 4, 2]
+nq = [2, 2, 1]
+epwread = false
+epwwrite = true
+wannierize = false
+ephwrite = false
+eliashberg = false
+band_plot = false
+nkf = [4, 4, 2]
+nqf = [2, 2, 1]
+
+[stages."7.epw-fine"]
+# fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
+ep_coupling = true
+elph = true
+etf_mem = 0
+nbndsub = 5
+iverbosity = 2
+amass = [ 24.305, 10.811,]
+fsthick = 0.4
+degaussw = 0.1
+degaussq = 0.5
+nqstep = 500
+nqsmear = 1
+eps_acoustic = 1.0
+elecselfen = false
+phonselfen = false
+a2f = false
+ngaussw = 0
+efermi_read = true
+nk = [4, 4, 2]
+nq = [2, 2, 1]
+epwread = true
+epwwrite = false
+wannierize = false
+ephwrite = true
+eliashberg = true
+liso = false
+laniso = false
+mp_mesh_k = true
+nstemp = 1
+temps = [ 5.0,]
+nkf = [8, 8, 4]
+nqf = [4, 4, 2]
+
+[workflow."8.epw-superconductivity"]
+task = "gap"
+mode = "both"
+spectrum_index = 0
+
+
+
+[stages."8.epw-superconductivity".iso]
+# fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
+epwread = true
+epbread = false
+epwwrite = false
+wannierize = false
+ep_coupling = false
+elph = false
+eliashberg = true
+liso = true
+laniso = false
+tc_linear_solver = "lapack"
+tc_linear = false
+limag = true
+lreal = false
+lpade = false
+lacon = false
+imag_read = false
+fbw = false
+positive_matsu = true
+gridsamp = 0
+nswi = 0
+nstemp = 3
+temps = [20.0, 30.0, 40.0]
+muc = 0.1
+wscut = 1.0
+nsiter = 1000
+conv_thr_iaxis = 1e-8
+broyden_beta = 0.3
+broyden_ndim = 4
+a_gap0 = 1.0
+gap_edge = 0.01
+nqstep = 500
+iverbosity = 2
+eps_acoustic = 1.0
+mp_mesh_k = true
+nkf = [8, 8, 4]
+nqf = [4, 4, 2]
+
+[stages."8.epw-superconductivity".aniso]
+# fsthick/degaussw/wscut/gap_edge：eV；degaussq：meV；eps_acoustic：cm^-1；temps：K。
+epwread = true
+epbread = false
+epwwrite = false
+wannierize = false
+ep_coupling = false
+elph = false
+eliashberg = true
+liso = false
+laniso = true
+tc_linear_solver = "lapack"
+tc_linear = false
+limag = true
+lreal = false
+lpade = false
+lacon = false
+imag_read = false
+fbw = false
+positive_matsu = true
+gridsamp = 0
+nswi = 0
+nstemp = 3
+temps = [20.0, 30.0, 40.0]
+muc = 0.1
+wscut = 1.0
+nsiter = 1000
+conv_thr_iaxis = 1e-8
+broyden_beta = 0.3
+broyden_ndim = 4
+a_gap0 = 1.0
+gap_edge = 0.01
+nqstep = 500
+iverbosity = 2
+eps_acoustic = 1.0
+mp_mesh_k = true
+nkf = [8, 8, 4]
+nqf = [4, 4, 2]

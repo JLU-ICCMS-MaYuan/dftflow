@@ -173,6 +173,22 @@ description: 专业的软件工程师，严格遵循SOLID、KISS、DRY、YAGNI�
 
 ## 需求处理记录
 
+### [2026-11-18] chem 集群安装 DFTFlow 与 MgB₂ 测试配置
+
+- **需求**：安装当前最新 DFTFlow，准备 `examples/MgB2/chem/input.toml`，确保本机可开展 MgB₂ 测试。
+- **配置**：复用现行 v2 八阶段 PBE 模板，使用本机 QE 7.6／EPW 6.1 和独立 Wannier90 4.0.3；Slurm cpu 分区 1 节点／4 MPI，40／320 Ry、SCF 4×4×2、粗 q 2×2×1。GBRV 官方 UPF 包补齐 Mg、B v1.4 赝势，原始数据留本地。
+- **修复与安装**：回归复现 EPW 6.1 被版本白名单拒绝后，最小扩展唯一运行头识别；退出码、原生错误和结束计时仍严格检查。发布 9 个主产品及 dyn0 工具，按既有机制在固定 `bin/.native/linux-x86_64` 打包私有运行库，解决旧计算节点缺 fontconfig／glibc 不匹配，不修改全局环境。
+- **验收**：原生日志及阶段执行回归 119 通过、1 既有环境测试跳过；计算节点 56 个命令入口启动成功。Slurm 作业 2751176 在 cpu32 上以 4 MPI 完成 MgB₂ SCF，9 次迭代，总能量 −138.11356494 Ry；DFTFlow 核验可复用并生成能带范围图。
+- **边界与证据**：完整声子／Wannier／EPC／超导七个后续阶段未运行，初始能窗不代表本机拟合收敛；使用说明见 chem/README.md，构建与节点测试日志保存在 `docs/local/2026-11-18-chem-install/`。不将赝势、编译产物及计算数据加入 Git。
+
+### [2026-11-16] 原目录安装最新 QE／EPW 与 Wannier90
+
+- **需求**：更新并编译 `external/q-e` 和 `external/wannier90`，确认 EPW 6.1，程序保留在各自 `bin`，将路径写入记忆文件。
+- **来源**：原 madegan/q-e 最新代码仍为 EPW 6.0，改用 EPW 官方 `https://gitlab.com/epw/q-e.git`；QE 7.6／EPW 6.1 固定提交 `34246ba0af9741aa90a06e4dcc7b80f26a5760c9`，独立 Wannier90 4.0.3 固定提交 `64309eec824c7d69c4b28981a6ad33d4f3222402`。EPW 内部保留其指定的 Wannier90 3.1.0 库。
+- **安装**：公开目录为 `/public/home/mayuan/code/dftflow/external/q-e/bin` 和 `/public/home/mayuan/code/dftflow/external/wannier90/bin`；使用 Intel ifort／MPI／MKL，Slurm cpu 分区 16 核编译，作业语言环境为 `C`。不修改全局环境或迁移程序。
+- **验证**：QE `make -j16 all epw` 成功，关键程序动态库依赖完整；2 路 MPI 硅 SCF 能量与官方参考一致，Γ 声子最大偏差 1.021064 cm⁻¹，满足官方 2 cm⁻¹ 容差；实际启动日志确认 EPW 6.1。独立 Wannier90 的 GaAs Wannier 化和 Cu DOS 两项官方样例共 106 个数值通过官方容差比较。未运行完整 EPW EPC／超导计算。
+- **记录**：路径与环境写入 `/public/home/mayuan/.codex/memories/MEMORY.md` 及摘要；原始日志、配置和构建／验证脚本保存在忽略目录 `external/build-logs/2026-11-16-install/`，构建产物不纳入 Git。
+
 ### [2026-10-16] Issue 0015：test_auto 中真实 MgB₂ EPW 冒烟
 - **授权与位置**：用户明确要求真实 EPW、MgB₂、test_auto；沿用 Rust/Bash 生产实现与 Python 测试例外，新输入/数据在忽略的 test_auto/MgB2/epwflow/local_run，历史来源只读。
 - **真实结果**：计算节点 EPW 5.9；三种实际 PH 来源均完成原生 Wannier、粗/细网格 EPC、500 点 α²F 和 λ；未执行新 SCF/PH，NSCF 共三次。三份来源共 1020 文件及文件集合保持不变。

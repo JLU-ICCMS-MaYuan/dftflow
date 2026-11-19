@@ -47,9 +47,20 @@ fn completion_requires_exit_status_and_epw_timing() {
     native::checked_log(log, 0).unwrap();
     assert!(native::checked_log(log, 1).is_err());
     native::checked_log(&log.replace("5.9", "6.0"), 0).unwrap();
-    assert!(native::checked_log(&log.replace("5.9", "6.1"), 0).is_err());
+    native::checked_log(&log.replace("5.9", "6.1"), 0).unwrap();
+    assert!(native::checked_log(&log.replace("5.9", "6.2"), 0).is_err());
     assert!(native::checked_log(&format!("{log}{log}"), 0).is_err());
     assert!(native::checked_log(&log.replace("Program EPW v.5.9 starts", "DFTFlow EPW 5.9 workflow input"), 0).is_err());
+    assert!(native::checked_log(&log.replace("Total program execution", "JOB DONE"), 0).is_err());
+    assert!(native::checked_log(&format!("{log} Error in routine broken"), 0).is_err());
+}
+
+#[test]
+fn epw_61_keeps_completion_and_error_checks() {
+    let log = "Program EPW v.6.1 starts\nTotal program execution\nEPW : 2s CPU 3s WALL\n";
+    assert_eq!(native::runtime_version(log).unwrap(), "6.1");
+    assert!(native::checked_log(log, 1).is_err());
+    assert!(native::checked_log(&format!("{log}{log}"), 0).is_err());
     assert!(native::checked_log(&log.replace("Total program execution", "JOB DONE"), 0).is_err());
     assert!(native::checked_log(&format!("{log} Error in routine broken"), 0).is_err());
 }

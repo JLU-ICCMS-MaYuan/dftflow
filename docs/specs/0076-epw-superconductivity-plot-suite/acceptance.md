@@ -157,3 +157,11 @@ Mori 第 23～25 页用于视觉参照：图 1 三联布局、图 2 虚／实频
 验证：`bash scripts/build-native.sh test --release --package epwflow --test superconductivity_plot --locked --jobs 2` 为 16 项通过。加入原生分布坐标保真、非法列数／温度／偏移／密度拒绝检查；测试输出路径同步已落地的 `run/results/`。相关 Rust 文件格式检查和 `git diff --check` 通过。重新 release 构建并覆盖固定 EPW 命令，`--plot-only` 生成 24 个文件、0 警告，PNG 实看与 SVG 解析通过。44 份直接科学输入／输出哈希不变，无新增科学计算。
 
 本机证据：`docs/local/0076-superconductivity-plot/gap0-redraw-sources-before.json`、`gap0-redraw-verification.json`、`gap0-tests.log`、`gap0-build.log`、`gap0-redraw.log`。本次是绘图修复的专项验证，不重写此前的全量基线失败结论，也不以此关闭 #76。
+
+## 2026-11-19：移除图片文件名的编号前缀
+
+五类图片按用户要求去掉 `fig1_`～`fig5_` 前缀，新名称为 `coupling_strength`、`gap_imaginary_real`、`aniso_gap_vs_T`、`iso_gap_vs_T`、`superconducting_dos`；保留 SVG／PNG／PDF 格式和参数目录层级。当前 Ubuntu 示例的 24 个旧名图片已迁移，迁移时文件内容哈希相同，不保留两套文件名。历史段落中的旧名是当时证据，不代表当前输出。
+
+验证：`superconductivity_plot` 的 16 项及 `three_stage_execution` 中 `superconductivity_plot_0076` 的 2 项通过。CLI 回归夹具同步当前 `run/results/` 路径，跳过／失败隔离检查针对实际分析图文件，避免被既有交付包目录影响。release 构建成功并覆盖固定模块命令，实际执行 `--plot-only -c input.toml` 返回 24 个文件、0 警告，旧名前缀图片为零，44 份科学输入／输出哈希不变。
+
+证据位于本机 `docs/local/0076-superconductivity-plot/simple-names-*.json` 及 `simple-names-*.log`。μ* 列表与默认 `[0.1, 0.13]` 已按用户“新增需求”记录为 FR-011、T046～T048；尚未实现配置解析、任务展开和续算，不改变当前标量 `muc`，不新增科学作业。

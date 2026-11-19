@@ -12,8 +12,8 @@ fn completed_stage_skips_then_replots_without_repeating_science() {
         Some(777),
         "0076-skip",
     ));
-    let results = c.root.join("results/8.epw-superconductivity");
-    assert!(!results.exists());
+    let results = c.root.join("run/results/8.epw-superconductivity");
+    assert!(find_figure(&results).is_none());
     let calls = c.calls();
     c.accounting(Some(778));
     let output = c.numbered_cli(
@@ -32,6 +32,9 @@ fn completed_stage_skips_then_replots_without_repeating_science() {
         Some("completed")
     );
     fn find_figure(dir: &std::path::Path) -> Option<PathBuf> {
+        if !dir.is_dir() {
+            return None;
+        }
         for entry in fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
             if path.file_name().unwrap() == "iso_gap_vs_T.svg" {
@@ -101,7 +104,17 @@ fn invalid_gap_data_do_not_trigger_automatic_plotting() {
     );
     assert!(!String::from_utf8_lossy(&output.stdout).contains("superconductivity_plots:"));
     success(output);
-    assert!(!c.root.join("results/8.epw-superconductivity").exists());
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let figure = c
+        .root
+        .join("run/results/8.epw-superconductivity")
+        .join(epwflow::superconductivity::batch::interpolation_params_directory(&cfg))
+        .join(epwflow::superconductivity::batch::directory_name(
+            &cfg,
+            config::Mode::Iso,
+        ))
+        .join("iso_gap_vs_T.svg");
+    assert!(!figure.exists());
     assert_ne!(
         logs::read(&c.root.join("run"), Step::Superconductivity)
             .unwrap()
