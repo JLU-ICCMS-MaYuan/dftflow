@@ -125,9 +125,9 @@ pub fn build_phonon_dos_tables(
     };
     let numeric_rows = read_numeric_rows(&std::fs::read_to_string(&dos_path)?);
     if numeric_rows.is_empty() || numeric_rows[0].len() < 2 {
-        anyhow::bail!("声子 DOS 文件至少需要 frequency 与 TDOS 两列。");
+        anyhow::bail!("Phonon DOS File needs at least frequency with TDOS Two rows.");
     }
-    anyhow::ensure!(numeric_rows.iter().all(|r| r.len() == numeric_rows[0].len() && r.iter().all(|v| v.is_finite())), "声子 DOS 列数不一致或包含非有限数值");
+    anyhow::ensure!(numeric_rows.iter().all(|r| r.len() == numeric_rows[0].len() && r.iter().all(|v| v.is_finite())), "Phonon DOS Columns are inconsistent or contain non-finite values");
     let atom_names = atom_names(elements, counts);
     let max_atom_cols = numeric_rows[0].len() - 2;
     let selected = &atom_names[..atom_names.len().min(max_atom_cols)];

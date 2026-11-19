@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 #[derive(Subcommand)]
 pub enum QeDataCommand {
     /// 只读核查本地数据、来源与清单；不启动 EPW 读取测试。
+    #[command(about = "Validate local data, sources and manifest read-only without starting an EPW read test", long_about = "Validate local data, sources and manifest read-only without starting an EPW read test")]
     Check {
         #[arg(short = 'w', long)]
         work: PathBuf,
@@ -15,6 +16,7 @@ pub enum QeDataCommand {
         json: bool,
     },
     /// 校验来源清单，准备隔离副本并登记可复用阶段；不提交计算。
+    #[command(about = "Validate the source manifest, prepare an isolated copy and register reusable stages without submitting calculations", long_about = "Validate the source manifest, prepare an isolated copy and register reusable stages without submitting calculations")]
     Import {
         #[arg(short = 'c', long)]
         config: PathBuf,
@@ -39,17 +41,17 @@ fn check(work: &Path, json: bool) -> Result<()> {
             let v = status::envelope(
                 "ok",
                 "no_data",
-                serde_json::json!({"workflow_complete": false, "reason": "qe-data/manifest.json 不存在"}),
+                serde_json::json!({"workflow_complete": false, "reason": "qe-data/manifest.json does not exist"}),
             );
             status::print_json(&v);
         } else {
             println!("workflow_status: no_data");
-            println!("reason: qe-data/manifest.json 不存在");
+            println!("reason: qe-data/manifest.json does not exist");
         }
         return Ok(());
     }
     let m: QeManifest = QeManifest::load(&manifest_path)
-        .with_context(|| format!("data_invalid: 无法加载 {}", manifest_path.display()))?;
+        .with_context(|| format!("data_invalid: Cannot Load {}", manifest_path.display()))?;
     if json {
         let v = status::envelope(
             "ok",
@@ -95,7 +97,7 @@ fn import(config: &Path, source: &Path) -> Result<()> {
     let source_work = source
         .parent()
         .and_then(|p| p.parent())
-        .context("data_invalid: 来源清单路径须为 <source_work>/qe-data/manifest.json")?;
+        .context("data_invalid: The source manifest path shall be <source_work>/qe-data/manifest.json")?;
     let report = super::scheduler::register_import(source_work, &binding.work_dir)?;
     println!(
         "imported: source_run={} roles={} status={}",

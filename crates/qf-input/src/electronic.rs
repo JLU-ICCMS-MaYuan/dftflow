@@ -95,7 +95,7 @@ type KPoint = ([f64; 3], String);
 /// 解析 KPATH.in：每行 4 字段 `kx ky kz label`；两两成段，相邻段端点重合则合并。
 /// 对齐 `qeflow/input_deck/kpath.py: parse_kpath_segments`。
 pub fn parse_kpath_segments(path: &str) -> Result<Vec<Vec<KPoint>>> {
-    let text = fs::read_to_string(path).map_err(|_| anyhow::anyhow!("找不到 KPATH.in: {path}"))?;
+    let text = fs::read_to_string(path).map_err(|_| anyhow::anyhow!("Not found KPATH.in: {path}"))?;
     let mut points: Vec<KPoint> = Vec::new();
     for line in text.lines() {
         let line = line.trim();
@@ -112,10 +112,10 @@ pub fn parse_kpath_segments(path: &str) -> Result<Vec<Vec<KPoint>>> {
         points.push((coords, parts[3].to_string()));
     }
     if points.len() % 2 != 0 {
-        bail!("KPATH.in 格式异常，点数为奇数: {}", points.len());
+        bail!("KPATH.in Format abnormal, odd number of points: {}", points.len());
     }
     if points.is_empty() {
-        bail!("KPATH.in 未解析到任何高对称点");
+        bail!("KPATH.in No high symmetry parsed");
     }
     let mut segments: Vec<Vec<KPoint>> = Vec::new();
     let tol = 1.0e-6;
@@ -277,7 +277,7 @@ fn write_indexed_labelinfo(
         }
     }
     if label_points.len() != weights.len() {
-        bail!("高对称点数量与 K_POINTS 权重数量不一致");
+        bail!("Number of high symmetric points versus K_POINTS Inconsistent weights");
     }
     let mut indices = vec![1i64];
     for i in 1..weights.len() {

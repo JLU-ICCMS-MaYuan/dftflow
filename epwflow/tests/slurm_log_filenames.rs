@@ -18,10 +18,13 @@ struct Case {
 }
 impl Case {
     fn new(numbered: bool) -> Self {
+        Self::with_work_name(numbered, "run with 'quotes' and spaces")
+    }
+    fn with_work_name(numbered: bool, work_name: &str) -> Self {
         let root = std::env::temp_dir().join(format!("epw-log-names-{}", store::token()));
         fs::create_dir(&root).unwrap();
         let c = Self {
-            work: root.join("run with 'quotes' and spaces"),
+            work: root.join(work_name),
             root,
         };
         fs::write(c.root.join("POSCAR"), "MgB2\n1\n3 0 0\n-1.5 2.598 0\n0 0 3.5\nMg B\n1 2\nDirect\n0 0 0\n0.3333 0.6667 0.5\n0.6667 0.3333 0.5\n").unwrap();
@@ -52,6 +55,22 @@ impl Case {
         }
         fs::write(c.config(), toml::to_string_pretty(&cfg).unwrap()).unwrap();
         c
+    }
+    fn electronic_upstream(&self) {
+        // 用现有 QE 进程替身生成真实格式上游，不伪造阶段完成记录。
+        fs::write(self.root.join("qe_native_io.py"), include_str!("fixtures/qe_native_io.py")).unwrap();
+        self.executable("pw.x", &format!(
+            "#!/bin/sh\nexec /usr/bin/python3 {} pw \"$@\"\n",
+            slurm::shell_quote(self.root.join("qe_native_io.py").to_str().unwrap()),
+        ));
+        self.executable("scontrol", include_str!("fixtures/slurm_controller.py"));
+        for stage in ["scf", "nscf"] {
+            success(self.command(PHONON)
+                .args(["-c", self.config().to_str().unwrap(), "--stage", stage, "-r"])
+                .env("SLURM_JOB_ID", "201")
+                .env("SLURM_NTASKS", "1")
+                .output().unwrap());
+        }
     }
     fn config(&self) -> PathBuf {
         self.root.join("inputepw.toml")
@@ -122,7 +141,7 @@ fn check_row(row: &Value, job_placeholder: bool, merged: bool) {
         assert_eq!(filename.contains("%j"), job_placeholder, "{filename}");
         assert_eq!(
             row["directives"][key], row["options"][key],
-            "提交参数不能覆盖日志目录"
+            "Submit parameter cannot overwrite log directory"
         );
         let path = Path::new(row[key].as_str().unwrap());
         assert_eq!(path.parent(), script.parent());
@@ -139,7 +158,8 @@ fn check_row(row: &Value, job_placeholder: bool, merged: bool) {
 
 #[test]
 fn numbered_scripts_keep_logs_local_when_submitted_from_other_directories() {
-    let c = Case::new(true);
+    let c = Case::with_work_name(true, "run with spaces");
+    c.electronic_upstream();
     success(
         c.command(PHONON)
             .args(["-c", c.config().to_str().unwrap(), "--stage", "electronic"])
@@ -234,7 +254,7 @@ fn public_submission_uses_short_names_and_refuses_duplicate_queued_jobs() {
         .iter()
         .any(|v| v.as_str().unwrap().starts_with("--chdir")));
     let script = Path::new(rows[0]["script"].as_str().unwrap());
-    assert_eq!(script.file_name().unwrap(), "scf.sh");
+    assert_eq!(script.file_name().unwrap(), "stage-scf.sh");
     assert_eq!(
         Path::new(rows[0]["cwd"].as_str().unwrap()),
         script.parent().unwrap()
@@ -246,31 +266,29 @@ fn public_submission_uses_short_names_and_refuses_duplicate_queued_jobs() {
         .args(["-c", c.config().to_str().unwrap(), "--stage", "scf", "-s"])
         .output()
         .unwrap();
-    assert_eq!(c.rows().len(), 1, "排队中的任务不能重复提交");
+    assert_eq!(c.rows().len(), 1, "Queued tasks cannot be duplicated");
     identity.verify().unwrap();
     let body = fs::read_to_string(script).unwrap();
     assert!(!body
         .lines()
         .any(|line| line.starts_with("cd ") || line.starts_with("if ! cd ")));
-    // 从其他目录手工 sbatch；替身按 --chdir 启动实际 Bash，科学输出仍在目标目录。
+    // 从其他目录启动实际 Bash；新的作业号不能冒用旧分配，拒绝信息仍写入目标日志。
     success(
         c.command(c.root.join("sbatch"))
             .arg(script)
             .env("DFTFLOW_SLURM_TEST_EXECUTE", "1")
+            .env("SLURM_JOB_ID", "202")
             .current_dir("/")
             .output()
             .unwrap(),
     );
     let rows = c.rows();
     assert_eq!(rows[1]["cwd"], "/");
-    assert_eq!(rows[1]["exit_code"], 0);
+    assert_ne!(rows[1]["exit_code"], 0);
     check_row(&rows[1], false, true);
-    assert_eq!(
-        fs::read_to_string(script.parent().unwrap().join("scf.out"))
-            .unwrap()
-            .trim(),
-        script.parent().unwrap().to_str().unwrap()
-    );
+    let log = fs::read_to_string(rows[1]["output"].as_str().unwrap()).unwrap();
+    assert!(log.contains("input_conflict: Phase script binding different jobs"), "{log}");
+    assert!(!script.parent().unwrap().join("scf.out").exists());
 }
 
 #[test]
@@ -396,7 +414,8 @@ fn user_resource_header_survives_public_submission_without_cli_overrides() {
 
 #[test]
 fn absent_header_does_not_invent_resource_directives() {
-    let c = Case::new(true);
+    let c = Case::with_work_name(true, "run with spaces");
+    c.electronic_upstream();
     let mut cfg: Config = toml::from_str(&fs::read_to_string(c.config()).unwrap()).unwrap();
     cfg.slurm.header = None;
     fs::write(c.config(), toml::to_string_pretty(&cfg).unwrap()).unwrap();

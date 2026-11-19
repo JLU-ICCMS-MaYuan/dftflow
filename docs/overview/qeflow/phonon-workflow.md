@@ -144,7 +144,7 @@ run/index/
     ├── chain_complete.json
     ├── phband/
     ├── phdos/
-    └── phonon_combined.jpg
+    └── phonon_combined.svg
 ```
 
 ## 配置与启动脚本
@@ -210,11 +210,11 @@ chain_inputs.json 绑定原配置、结构和模式；chain_jobs.json 保存阶�
 | prefix.dyn0、prefix.dyn1… | q 网格与动力学矩阵 |
 | phband/phonon_band.csv | 声子谱频率表 |
 | phband/phonon_band_labels.csv | 高对称点标签 |
-| phband/phonon_band.png | 独立声子谱图 |
+| phband/phonon_band.svg | 独立声子谱图 |
 | phdos/phonon_dos_atoms.csv | 原子分波 DOS |
 | phdos/phonon_dos_elements.csv | 元素分波/总 DOS |
-| phdos/phonon_dos.png | 独立 DOS 图 |
-| phonon_combined.jpg | 左声子谱、右 DOS 联合图 |
+| phdos/phonon_dos.svg | 独立 DOS 图 |
+| phonon_combined.svg | 左声子谱、右 DOS 联合图 |
 
 ## 实现与验收边界
 
@@ -222,7 +222,7 @@ chain_inputs.json 绑定原配置、结构和模式；chain_jobs.json 保存阶�
 
 [0006 验收](../../specs/0006-qe-phonon-submit-chain/acceptance.md) 记录了 QE 7.4.1 下 MgB2 的 index、coords 与显式脚本 nosplit 对照，以及真实 only_init 验证；固定标准为对应频率差 ≤0.1 cm⁻¹、总 DOS 积分相对差 ≤10⁻³，同 MPI 配置对照通过。该记录不证明所有材料/机器或参数已收敛。其他机器的配置仍须单独补齐与验证。
 
-本页只回写已查证的当前行为；需求背景见 [本地 Issue 草稿](../../specs/0006-qe-phonon-submit-chain/issue-draft.md)、[Spec](../../specs/0006-qe-phonon-submit-chain/spec.md)、[CLI 契约](../../specs/0006-qe-phonon-submit-chain/contracts/cli.md)。本次未重跑计算，也未修改这些需求文件。
+本页只回写已查证的当前行为；需求背景见 [GitHub Issue #6](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/6)、[Spec](../../specs/0006-qe-phonon-submit-chain/spec.md)、[CLI 契约](../../specs/0006-qe-phonon-submit-chain/contracts/cli.md)。本次未重跑计算，也未修改这些需求文件。
 
 ## 声子谱路径与仅重绘
 
@@ -233,3 +233,7 @@ chain_inputs.json 绑定原配置、结构和模式；chain_jobs.json 保存阶�
 从原计算目录指向快照，例如 `qe_phonon_split_coords -c qe_phonon_coords/input-init.toml -s`；结构由快照自动恢复。若外部配置已经改变，应使用快照续算。旧目录没有 input-init.toml 时不能凭当前外部配置自动恢复原计算依据，需先核对 chain_inputs.json 中保存的原配置并重新准备。安装新版不会修改旧脚本中的旧二进制路径，也不会自动重提取消的作业。
 
 DOS 未显式指定 qpoints 或完整 nk1/nk2/nk3 时，默认使用 PH 配置生成网格的两倍（nq1/nq2/nq3 形式同样支持）；显式网格优先。改变网格需重新执行 matdyn DOS 才生效。plot_sigma_cm1 只影响图片，原始 DOS 和 CSV 不变；总 DOS 与元素投影共用归一高斯核，保持积分和投影可加性。σ 越大越平滑，也越容易掩盖细峰。σ=0 关闭；非有限值或负值明确报错。
+
+## 声子图格式
+
+上述 `.svg` 是默认输出；根级 `[plot].formats` 可选择 SVG、PNG、PDF、JPG 的任意非空组合。三类图使用相同配置，分 q 续算清单按请求格式判断完整性，不再依赖旧的 PNG/JPG 名称。旧格式文件不自动清除，详细配置见 [后处理说明](qe_process_phonon.md#图片输出格式)。

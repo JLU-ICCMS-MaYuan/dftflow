@@ -1,6 +1,6 @@
 # 0044 实施计划
 
-日期：2026-10-21；[Issue](issue-draft.md)；[规格](spec.md)。
+日期：2026-10-21；[GitHub Issue #44](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/44)；[规格](spec.md)。
 
 ## 技术上下文与结构
 

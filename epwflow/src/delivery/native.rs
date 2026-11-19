@@ -120,11 +120,21 @@ pub struct Manifest {
     pub sources: Vec<Identity>,
 }
 pub fn load(root: &Path) -> Result<(Manifest, Data)> {
+    if root.join("native.plot.json").is_file() {
+        let data:Data=store::read(&root.join("native.plot.json"))?;
+        ensure!(data.schema_version==1,"data_invalid: native plotting data version");
+        for state in &data.states {ensure!([state.delta_mev,state.z,state.weight,state.energy_ev].iter().all(|v|v.is_finite()),"data_invalid: invalid native plot state");}
+        for spectrum in &data.spectra {validate_spectrum(spectrum)?;}
+        let manifest=Manifest {schema_version:1,kind:"native-plot-data".into(),run_id:data.run_id.clone(),complete:data.complete,
+            files:vec![Artifact::capture(root,"native.plot.json")?],sources:vec![]};
+        return Ok((manifest,data));
+    }
+
     super::publication::ensure_finished(root, "manifest.json")?;
     let m: Manifest = store::read(&root.join("manifest.json"))?;
     ensure!(
         m.schema_version == 1 && m.kind == "epwflow-native-results",
-        "unsupported_version: 原生结果包格式"
+        "unsupported_version: native result package format"
     );
     let d: Data = store::read(&root.join("summary.json"))?;
     let expected = [
@@ -148,7 +158,7 @@ pub fn load(root: &Path) -> Result<(Manifest, Data)> {
                 .filter(|a| a.relative_path == Path::new(n))
                 .count()
                 == 1),
-        "data_invalid: 原生结果文件集合不完整或重复"
+        "data_invalid: Incomplete or duplicated collection of native outcome documents"
     );
     for a in &m.files {
         a.verify(root)?;
@@ -158,7 +168,7 @@ pub fn load(root: &Path) -> Result<(Manifest, Data)> {
             && d.run_id == m.run_id
             && d.complete == m.complete
             && (!d.modes.is_empty() || d.gap_run.is_some()),
-        "data_invalid: 结果身份冲突"
+        "data_invalid: As a result of identity conflict"
     );
     ensure!(
         d.complete
@@ -166,7 +176,7 @@ pub fn load(root: &Path) -> Result<(Manifest, Data)> {
                 .as_ref()
                 .map(|r| r.execution_complete)
                 .unwrap_or_else(|| d.modes.values().all(|r| r.complete)),
-        "data_invalid: 结果整体状态冲突"
+        "data_invalid: As a result, the overall state of the conflict"
     );
     if let Some(r) = &d.gap_run {
         ensure!(
@@ -175,7 +185,7 @@ pub fn load(root: &Path) -> Result<(Manifest, Data)> {
                 && !r.points.is_empty()
                 && r.execution_complete == r.points.iter().all(|p| p.status.execution_complete)
                 && r.data_complete == r.points.iter().all(|p| p.status.data_status == "valid"),
-            "data_invalid: 单点结果状态冲突"
+            "data_invalid: Single-point result conflict"
         );
         for (i, p) in r.points.iter().enumerate() {
             ensure!(
@@ -183,7 +193,7 @@ pub fn load(root: &Path) -> Result<(Manifest, Data)> {
                     && p.temperature_centikelvin > 0
                     && !r.points[..i].iter().any(|q| q.mode == p.mode
                         && q.temperature_centikelvin == p.temperature_centikelvin),
-                "data_invalid: 单点结果计划无效"
+                "data_invalid: The single point result is invalid"
             );
         }
     }
@@ -218,7 +228,7 @@ pub fn load(root: &Path) -> Result<(Manifest, Data)> {
                 ]
                 .iter()
                 .all(|x| x.is_finite()),
-            "data_invalid: 能隙统计无效"
+            "data_invalid: Not valid for gap statistics"
         );
     }
     for s in &d.states {
@@ -233,7 +243,7 @@ pub fn load(root: &Path) -> Result<(Manifest, Data)> {
                 && s.weight >= 0.0
                 && s.z > 0.0
                 && s.k_crystal.is_none_or(|k| k.iter().all(|x| x.is_finite())),
-            "data_invalid: 能隙状态无效"
+            "data_invalid: Not valid for gap status"
         );
     }
     Ok((m, d))
@@ -249,7 +259,7 @@ fn validate_spectrum(s: &Spectrum) -> Result<()> {
             && s.energy_mev.windows(2).all(|w| w[1] > w[0])
             && s.lambda_integral.is_finite()
             && s.lambda_sum.is_finite(),
-        "data_invalid: 原生谱数据无效"
+        "data_invalid: native Spectrograph Invalid"
     );
     Ok(())
 }
@@ -274,6 +284,27 @@ fn csv(value: &str) -> String {
 }
 
 pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
+    if crate::foundation::layout::enabled(work) {
+        let cfg=crate::qe_data::direct::current(work)?;
+        let source=crate::superconductivity::source::selected(&cfg)?;
+        let modes=match cfg.superconductivity.mode {crate::foundation::config::Mode::Iso=>vec![crate::foundation::config::Mode::Iso],crate::foundation::config::Mode::Aniso=>vec![crate::foundation::config::Mode::Aniso],_=>vec![crate::foundation::config::Mode::Iso,crate::foundation::config::Mode::Aniso]};
+        let mut seen=std::collections::BTreeSet::new();let mut spectra=Vec::new();
+        for mode in modes {
+            let source=source.for_mode(&cfg,mode)?;
+            let path=if source.reuse_spectrum(mode) && source.a2f.path.is_file() {source.a2f.path.clone()}else{
+                crate::foundation::stages::Step::Superconductivity.directory(&cfg)
+                    .join(crate::superconductivity::batch::interpolation_params_directory(&cfg))
+                    .join(crate::superconductivity::batch::directory_name(&cfg,mode))
+                    .join(if source.reuse_spectrum(mode){"source.a2f".into()}else{format!("{}.a2f",cfg.qe.prefix)})
+            };
+            if !seen.insert(path.clone()) {continue;}
+            let raw=crate::interpolation::native::NativeSpectrum::read(&path,source.spectral_points)?;
+            for (i,values) in raw.a2f.iter().enumerate() {spectra.push(Spectrum{smearing_id:format!("{mode:?}-{i}"),energy_mev:raw.energy_mev.clone(),a2f:values.clone(),lambda_integral:raw.lambda_integral[i],lambda_sum:raw.lambda_sum,cutoff_ev:cfg.solver_for(mode)?.frequency_cutoff_ev});}
+        }
+        let f3=InterpolationManifest{schema_version:2,run_id:"native".into(),f2_digest:String::new(),wannier_digest:String::new(),coarse:None,fine:None,spectra,mode_readiness:BTreeMap::new(),validation:crate::interpolation::manifest::Validation{status:"valid".into(),checks:vec![],units:BTreeMap::new(),thresholds:BTreeMap::new(),evidence:vec![]}};
+        return collect_gap(work,output,&source.a2f.path,&crate::foundation::readable_state::path(work,crate::foundation::stages::Step::Superconductivity)?,f3);
+    }
+
     let f3_path = crate::foundation::layout::path(&work, "interpolation/manifest.json");
     let f4_path = crate::foundation::layout::path(&work, "superconductivity/manifest.json");
     let f3 = InterpolationManifest::load(&f3_path)?;
@@ -281,11 +312,11 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
         let artifact = f3
             .fine
             .as_ref()
-            .context("data_invalid: 缺细网格")?
+            .context("data_invalid: Missing Fine Grid")?
             .artifacts
             .iter()
             .find(|a| a.role == "fine_log")
-            .context("data_invalid: 缺细网格日志")?;
+            .context("data_invalid: fine Grid Log")?;
         crate::superconductivity::source::artifact_path(work, artifact)?
     } else {
         f3_path
@@ -303,7 +334,7 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
             && f4.run_id == f3.run_id
             && !f3.spectra.is_empty()
             && f4.interpolation_digest == store::hash_file(&f3_path)?,
-        "input_conflict: 原生交付的 F3 来源不匹配"
+        "input_conflict: native delivery F3 Source does not match"
     );
     for s in &f3.spectra {
         validate_spectrum(s)?;
@@ -346,7 +377,7 @@ pub fn collect(work: &Path, output: Option<&Path>) -> Result<PathBuf> {
                     data.gaps.push(GapSummary {
                         mode: name.clone(),
                         temperature_centikelvin: g.temperature_centikelvin,
-                        seed_mev: r.request.seed_mev.context("data_invalid: 缺少初值")?,
+                        seed_mev: r.request.seed_mev.context("data_invalid: Missing opening value")?,
                         band,
                         statistics,
                         classification: mode.search.points.get(&g.temperature_centikelvin).copied(),
@@ -380,11 +411,17 @@ fn publish(
     data: Data,
     mut sources: Vec<Identity>,
 ) -> Result<PathBuf> {
+    if crate::foundation::layout::enabled(work) {
+        let output=work.join("results/8.epw-superconductivity");fs::create_dir_all(&output)?;
+        // 这是绘制所请求原生图所需的投影数据，不复制原生大矩阵或完整Delta/Z。
+        store::write(&output.join("native.plot.json"),&data)?;
+        return Ok(output);
+    }
     sources.sort_by(|a, b| a.path.cmp(&b.path).then(a.sha256.cmp(&b.sha256)));
     sources.dedup_by(|a, b| a.path == b.path && a.sha256 == b.sha256);
     ensure!(
         sources.windows(2).all(|w| w[0].path != w[1].path),
-        "input_conflict: 同一来源路径有不同身份"
+        "input_conflict: The same source path has different identities"
     );
     // 上游主清单始终排在前两项，便于核对同一运行的部分结果更新。
     sources.retain(|s| s.path != f3_path && s.path != f4_path);
@@ -410,7 +447,7 @@ fn publish(
                         .sources
                         .first()
                         .is_some_and(|x| x.sha256 == sources[0].sha256)),
-            "input_conflict: 结果绑定其他运行，请使用新的 --output"
+            "input_conflict: results are bound to another run; use a new --output"
         );
     }
     let names = [
@@ -439,7 +476,7 @@ fn publish(
     for name in names {
         ensure!(
             !output.join(name).exists() || owned.contains(&PathBuf::from(name)),
-            "input_conflict: 未知结果文件冲突 {name}"
+            "input_conflict: Unknown outcome document conflict {name}"
         );
     }
     let stage = output.join(format!(".native-{}", store::token()));
@@ -563,9 +600,9 @@ fn publish(
         fs::write(stage.join(name), text)?;
     }
     if let Some(gap) = &data.gap_run {
-        fs::write(stage.join("report.md"),format!("# 指定温度能隙结果\n\n运行：{}。原生执行完成：{}；能隙数据全部有效：{}。逐点状态见 summary.json。\n\n能隙与 Z 为最低正 Matsubara 频率数据。无效或缺失点不绘制、不补零，不对温度点插值。未进行 Tc 搜索。\n",data.run_id,gap.execution_complete,gap.data_complete))?;
+        fs::write(stage.join("report.md"),format!("# Gap results at specified temperatures\n\nRun: {}. Native execution complete: {}; all gap data valid: {}. See summary.json for per-point status.\n\nGap and Z values are evaluated at the lowest positive Matsubara frequency. Invalid or missing points are omitted, without zero filling or temperature interpolation. No Tc search was performed.\n",data.run_id,gap.execution_complete,gap.data_complete))?;
     } else {
-        fs::write(stage.join("report.md"),format!("# 原生超导结果\n\n运行：{}。所选模式数值完成：{}。独立科学参考及六组合验收需另行核验。\n\n能隙与 Z 均为最低正 Matsubara 频率数据；完整逐频率数组保留于 F4 原始交付，源身份见 manifest.json。不存在的数值保留为空，不填零。Tc 中点为有效区间估计。小网格结果不表示材料参数收敛。\n\n数据：[汇总](summary.json)、[谱](a2f.csv)、[耦合](coupling.csv)、[能隙统计](gap_summary.csv)、[状态](gap_states.csv)、[Tc](tc.csv)。图像位于 figures。\n",data.run_id,data.complete))?;
+        fs::write(stage.join("report.md"),format!("# Native superconductivity results\n\nRun: {}. Selected modes numerically complete: {}. Independent scientific references and validation of all six combinations require separate checks.\n\nGap and Z values are evaluated at the lowest positive Matsubara frequency; complete frequency-resolved arrays remain in the original F4 delivery. See manifest.json for source identities. Missing values remain empty, without zero filling. The Tc midpoint estimates the valid interval. Small-grid results do not establish convergence of material parameters.\n\nData: [summary](summary.json), [spectrum](a2f.csv), [coupling](coupling.csv), [gap statistics](gap_summary.csv), [states](gap_states.csv), [Tc](tc.csv). Plots are in figures.\n",data.run_id,data.complete))?;
     }
     let m = Manifest {
         schema_version: 1,
@@ -590,6 +627,11 @@ fn publish(
 }
 
 pub fn check(root: &Path) -> Result<serde_json::Value> {
+    if root.join("native.plot.json").is_file() {
+        let data:Data=store::read(&root.join("native.plot.json"))?;
+        return Ok(serde_json::json!({"schema_version":1,"native_complete":data.complete,"workflow_complete":false}));
+    }
+
     let (m, d) = load(root)?;
     let mut source_verification = "verified";
     for s in &m.sources {
@@ -612,12 +654,14 @@ fn collect_gap(
     f4_path: &Path,
     f3: InterpolationManifest,
 ) -> Result<PathBuf> {
-    let run = superconductivity::points::Run::load(f4_path)?;
+    let run = if crate::foundation::layout::enabled(work) {
+        let cfg=crate::qe_data::direct::current(work)?;superconductivity::points::published(work,&cfg,"native")?
+    } else {superconductivity::points::Run::load(f4_path)?};
     ensure!(
         run.run_id == f3.run_id
-            && run.interpolation_digest == store::hash_file(f3_path)?
+            && (crate::foundation::layout::enabled(work) || run.interpolation_digest == store::hash_file(f3_path)?)
             && !f3.spectra.is_empty(),
-        "input_conflict: 单点结果 F3 来源不匹配"
+        "input_conflict: Single Point Result F3 Source does not match"
     );
     let mut report = GapReport {
         task: "gap".into(),

@@ -94,28 +94,25 @@ impl Step {
 }
 
 pub fn execution_steps(cfg: &Config, target: Step) -> Vec<Step> {
-    if target == Step::Phonon && super::phonon_import::bound(cfg) {
-        vec![Step::Phonon]
-    } else {
-        target.closure()
-    }
+    let _ = cfg;
+    vec![target]
 }
 
 fn program(path: &Path) -> Result<Value> {
-    Ok(json!({"sha256":store::hash_file(path)?}))
+    Ok(json!({"path":path}))
 }
 
 /// 参数所有权保持局部：尤其 Wannier 不读取 PH 网格，粗网格不读取细网格。
 pub fn parameters(cfg: &Config, step: Step) -> Result<Value> {
     let qe = &cfg.qe;
     let mut value = match step {
-        Step::Scf => json!({"structure":store::hash_file(&cfg.structure)?,
-            "pseudos":cfg.pseudos.iter().map(|(el,p)| Ok((el.clone(),store::hash_file(p)?))).collect::<Result<BTreeMap<_,_>>>()?,
+        Step::Scf => json!({"structure":cfg.structure,
+            "pseudos":cfg.pseudos,
             "pw":program(&cfg.programs.pw.path)?,"prefix":qe.prefix,"ecutwfc":qe.ecutwfc_ry,"ecutrho":qe.ecutrho_ry,
             "occupations":qe.occupations,"smearing":qe.smearing,"degauss":qe.degauss_ry,"scf":qe.scf}),
         Step::Nscf => json!({"nscf":qe.nscf,"pw":program(&cfg.programs.pw.path)?}),
         Step::Electronic => {
-            json!({"kpath":cfg.kpath.as_ref().map(|p|store::hash_file(p)).transpose()?,
+            json!({"kpath":cfg.kpath,
             "points":cfg.comparison.clone().unwrap_or_default().points_per_edge})
         }
         Step::Phonon => {
@@ -151,8 +148,8 @@ pub fn parameters(cfg: &Config, step: Step) -> Result<Value> {
     }
     if let Some(workflow) = native.get_mut("workflow").and_then(Value::as_object_mut) {
         workflow.remove("phonon_sigma_cm1");
-        if step == Step::Coarse {
-            workflow.remove("onsite_asr");
+        if matches!(step, Step::Wannier | Step::Coarse) {
+            workflow.remove("points_per_edge");
         }
         if let Some(derived) = workflow.get_mut("derived").and_then(Value::as_object_mut) {
             derived.retain(|key, _| {
@@ -174,10 +171,13 @@ pub fn scientific_key(cfg: &Config, step: Step) -> Result<String> {
         .iter()
         .map(|&d| Ok((d.name(), scientific_key(cfg, d)?)))
         .collect::<Result<BTreeMap<_, _>>>()?;
+    let mut parameters = parameters(cfg, step)?;
+    // 公共回填和阶段显式值可能具有不同的表内顺序，顺序不是科学参数。
+    parameters.sort_all_objects();
     Ok(store::hash_bytes(&serde_json::to_vec(&(
         1,
         step,
-        parameters(cfg, step)?,
+        parameters,
         deps,
     ))?))
 }
@@ -228,7 +228,7 @@ fn verify_outputs(
         let mut available = true;
         for result in results {
             for valid in
-                result.map_err(|_| anyhow::anyhow!("execution_failed: 产物核验线程失败"))??
+                result.map_err(|_| anyhow::anyhow!("execution_failed: The product has failed to verify the thread"))??
             {
                 available &= valid;
             }
@@ -245,7 +245,7 @@ impl Completion {
     pub fn available(&self) -> Result<bool> {
         ensure!(
             self.schema_version == 1 && !self.outputs.is_empty(),
-            "data_invalid: 阶段清单缺证据"
+            "data_invalid: Lack of evidence in the phase manifest"
         );
         // 缺少诊断文件由派生交付报告，不为补图重跑科学；存在但损坏仍拒绝。
         verify_outputs(&self.outputs, |id| {
@@ -255,7 +255,7 @@ impl Completion {
     pub fn verify(&self) -> Result<()> {
         ensure!(
             self.schema_version == 1 && !self.outputs.is_empty(),
-            "data_invalid: 阶段清单缺证据"
+            "data_invalid: Lack of evidence in the phase manifest"
         );
         verify_outputs(&self.outputs, |id| {
             if self.decay_diagnostic(id) {
@@ -297,17 +297,31 @@ pub fn upstream(cfg: &Config, step: Step) -> Result<BTreeMap<String, String>> {
             Ok((
                 s.name().into(),
                 super::readable_state::read(&cfg.work_dir, s)?
-                    .get("阶段", "批次")
-                    .unwrap_or("现有科学结果")
+                    .get("Stage", "Batch")
+                    .unwrap_or("Existing scientific results")
                     .into(),
             ))
         })
         .collect()
 }
 pub fn reusable(cfg: &Config, step: Step) -> Result<bool> {
+    if step == Step::Electronic {
+        return super::electronic_reuse::electronic(cfg, || {
+            let reusable = reusable_uncached(cfg, step)?;
+            if reusable && super::electronic_reuse::active(cfg)? {
+                // 持锁推进时一并确认已有 PDOS；缺失仍由本阶段后处理补齐。
+                super::workspace_pdos::files(cfg)?;
+            }
+            Ok(reusable)
+        });
+    }
+    reusable_uncached(cfg, step)
+}
+
+fn reusable_uncached(cfg: &Config, step: Step) -> Result<bool> {
     use super::readable_state as log;
     let doc = log::read(&cfg.work_dir, step)?;
-    if doc.get("阶段", "科学状态") != Some("已完成") {
+    if doc.get("Stage", "Scientific status") != Some("completed") {
         return Ok(false);
     }
     let previous = match log::computation_config(&cfg.work_dir, step)
@@ -318,16 +332,6 @@ pub fn reusable(cfg: &Config, step: Step) -> Result<bool> {
     };
     if parameters(cfg, step)? != parameters(&previous, step)? {
         return Ok(false);
-    }
-    for &dependency in step.dependencies() {
-        if !reusable(cfg, dependency)? {
-            return Ok(false);
-        }
-        let upstream = log::read(&cfg.work_dir, dependency)?;
-        if doc.get("依赖", &format!("{} 批次", dependency.name())) != upstream.get("阶段", "批次")
-        {
-            return Ok(false);
-        }
     }
     // 文件和原生语义直接核验；缺失旧现场只意味着需要更新。
     match super::workspace_science::validate(cfg, step) {
@@ -349,25 +353,24 @@ pub fn finish(cfg: &Config, step: Step) -> Result<()> {
     let scientific_valid = if step == Step::Superconductivity
         && cfg.superconductivity.task == super::config::SuperconductivityTask::Gap
     {
-        let fine = crate::interpolation::direct::fine(cfg)?;
-        crate::superconductivity::points::published(&cfg.work_dir, cfg, &fine.run_id)?.data_complete
+        crate::superconductivity::points::published(&cfg.work_dir,cfg,"native")?.data_complete
     } else {
         true
     };
-    let upstream = upstream(cfg, step)?;
+    let upstream = BTreeMap::<String,String>::new();
     super::readable_state::update(&cfg.work_dir, step, |d| {
         let state = if scientific_valid {
-            "已完成"
+            "completed"
         } else {
-            "求解已结束，能隙数据无效"
+            "Solver finished; gap data invalid"
         };
-        d.set("阶段", "科学状态", state);
-        d.set("阶段", "状态", state);
-        d.remove("依赖");
+        d.set("Stage", "Scientific status", state);
+        d.set("Stage", "Status", state);
+        d.remove("Dependencies");
         for (name, batch) in upstream {
-            d.set("依赖", &format!("{name} 批次"), batch);
+            d.set("Dependencies", &format!("{name} batch"), batch);
         }
-        d.remove("问题");
+        d.remove("Problem");
         Ok(())
     })
 }
@@ -417,7 +420,7 @@ mod tests {
         std::fs::write(&paths[16], "damaged").unwrap();
         assert!(
             completion.available().is_err(),
-            "先发现缺失也必须拒绝另一产物损坏"
+            "We must also reject the damage to another product"
         );
         assert!(completion.verify().is_err());
         std::fs::write(&paths[16], "original").unwrap();
@@ -490,7 +493,7 @@ mod tests {
         store::write(&receipt(&root, Step::Scf), &c).unwrap();
         assert!(
             !reusable(&cfg, Step::Scf).unwrap(),
-            "旧 JSON 不能取代阶段日志和实际 SCF 输出"
+            "Old JSON Could not replace phase logs and actual SCF Output"
         );
         std::fs::remove_dir_all(root).unwrap();
     }

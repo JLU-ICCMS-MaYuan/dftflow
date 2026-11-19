@@ -2,7 +2,7 @@
 use super::*;
 
 impl Case {
-    fn gap_batch(mode: config::Mode, temperatures: Vec<f64>, mu: Option<f64>) -> Self {
+    pub(super) fn gap_batch(mode: config::Mode, temperatures: Vec<f64>, mu: Option<f64>) -> Self {
         let c = Self::numbered();
         c.numbered_change(|cfg| {
             let sc = &mut cfg.superconductivity;
@@ -13,15 +13,69 @@ impl Case {
             sc.aniso = None;
             sc.mu_star = mu.unwrap_or(0.13);
         });
-        c.accounting(Some(201));
-        success(c.numbered_cli(2, &["--stage", "fine", "-r"], Some(201), "batch-upstream"));
+        c.stage_setup();
+        // 当前独立阶段不隐式补上游；本夹具显式生成完整细网格来源。
+        for stage in ["scf", "nscf", "electronic", "phonon", "wannier", "coarse"] {
+            success(c.stage_submit(stage, false));
+            success(c.stage_execute());
+        }
+        c.accounting(Some(999));
+        success(c.numbered_cli(2, &["--stage", "fine", "-r"], Some(999), "batch-upstream"));
+        // 真实细网格交付包含 DOS；旧 IO 替身尚未写出此矩阵路线配套文件。
+        let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+        let fine = epwflow::interpolation::fine::directory(&cfg).unwrap();
+        fs::write(fine.join("out").join(format!("{}.dos", cfg.qe.prefix)), "0 1\n1 1\n").unwrap();
         c.direct_setup();
-        c.put("job-201.state", "COMPLETED");
+        // 后续提交计数从 1 开始，不能继承上游夹具中相同作业号的终态。
+        for entry in fs::read_dir(&c.root).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with("job-") && name.ends_with(".state") {
+                fs::remove_file(entry.path()).unwrap();
+            }
+        }
+        c.put("job-999.state", "COMPLETED");
         c.put("submissions", "allocated preparation\n");
         c
     }
 }
 const ARGS: [&str; 3] = ["--stage", "superconductivity", "-s"];
+
+#[test]
+fn batch_independent_degaussq_keeps_old_results_and_reuses_fine_matrices() {
+    use epwflow::foundation::native_config::SUPER;
+    let c = Case::gap_batch(config::Mode::Iso, vec![20.], None);
+    let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+    let fine = epwflow::interpolation::fine::directory(&cfg).unwrap();
+    let fine_log = store::hash_file(&fine.join("epw_fine.out")).unwrap();
+    let scientific_calls = c.calls();
+    let mut previous: Option<(PathBuf, String)> = None;
+    for width in [0.5, 2.] {
+        let mut cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
+        cfg.set_native(&[SUPER,"iso","epw","INPUTEPW","degaussq"], json!(width)).unwrap();
+        c.put("input.toml", &toml::to_string_pretty(&cfg).unwrap());
+        success(c.direct_advance(2, &ARGS, "independent-width-submit"));
+        let task = c.method_task("iso");
+        let dir = PathBuf::from(task["directory"].as_str().unwrap());
+        assert!(dir.ends_with(format!("iso-mu0.13-Tc20-20-degaussq{width}meV")));
+        let input = fs::read_to_string(dir.join("epw.in")).unwrap();
+        let actual = regex::Regex::new(r"(?m)^\s*degaussq\s*=\s*([^\s,]+)").unwrap()
+            .captures(&input).unwrap()[1].parse::<f64>().unwrap();
+        assert_eq!(actual, width);
+        assert!(!input.contains("source.a2f"), "Independent smearing must recompute the spectrum from matrices");
+        assert!(dir.join("out/scf.ephmat/egnv").is_file());
+        assert_eq!(c.execute_record(task), 0);
+        success(c.direct_advance(2, &ARGS, "independent-width-collect"));
+        if let Some((old, hash)) = &previous {
+            assert_eq!(store::hash_file(old).unwrap(), *hash, "Changing width must preserve old scientific output");
+        }
+        let output = dir.join("epw.out");
+        previous = Some((output.clone(), store::hash_file(&output).unwrap()));
+        assert_eq!(c.calls().0, scientific_calls.0, "No upstream QE rerun");
+        assert_eq!(c.calls().1.matches("fine ").count(), scientific_calls.1.matches("fine ").count());
+        assert_eq!(store::hash_file(&fine.join("epw_fine.out")).unwrap(), fine_log);
+    }
+}
 
 #[test]
 fn batch_prepared_script_comments_do_not_require_fingerprints() {
@@ -53,13 +107,13 @@ fn batch_explicit_native_mu_values_use_method_range_directories() {
             config::Mode::Iso,
             vec![20., 25.5, 40.],
             None,
-            "iso-mu0.13-20-40",
+            "iso-mu0.13-Tc20-40-degaussq0.5meV",
         ),
         (
             config::Mode::Aniso,
             vec![20.25],
             Some(0.1),
-            "aniso-mu0.1-20.25-20.25",
+            "aniso-mu0.1-Tc20.25-20.25-degaussq0.5meV",
         ),
     ] {
         let c = Case::gap_batch(mode, temperatures.clone(), mu);
@@ -95,9 +149,9 @@ fn batch_explicit_native_mu_values_use_method_range_directories() {
         .unwrap();
         assert!(run.execution_complete && run.data_complete);
         assert!(run.attempts.iter().all(|a| a.directory == dir));
-        assert!(fs::read_dir(dir)
-            .unwrap()
-            .all(|e| !e.unwrap().path().is_dir()));
+        assert!(fs::read_dir(dir).unwrap().all(|e| {
+            let e=e.unwrap(); !e.path().is_dir() || e.file_name()=="out"
+        }));
     }
 }
 

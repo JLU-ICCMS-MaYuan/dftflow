@@ -5,7 +5,6 @@
 mod native_fixture;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::sync::Once;
 
 use epwflow::foundation::config;
 use epwflow::foundation::snapshot;
@@ -20,22 +19,11 @@ use epwflow::qe_data::reuse;
 use epwflow::qe_data::scheduler;
 use epwflow::qe_data::{nscf, qmap, scf};
 
-static INIT: Once = Once::new();
-
-/// 隔离状态根，避免与机器或其它测试共享 campaign 注册表（FR-010）。
-fn setup_state_root() {
-    INIT.call_once(|| {
-        let dir =
-            std::env::temp_dir().join(format!("epwflow-qe-data-state-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        std::env::set_var("EPWFLOW_LOCAL_STATE", &dir);
-    });
-}
 
 fn write_script(path: &PathBuf, body: &str) {
-    std::fs::write(path, body).expect("写 fixture 失败");
+    std::fs::write(path, body).expect("Write fixture Failed");
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
-        .expect("chmod fixture 失败");
+        .expect("chmod fixture Failed");
 }
 
 fn make_script(name: &str, dir: &PathBuf, body: &str) -> PathBuf {
@@ -65,7 +53,6 @@ fn base_config(
     ph: &PathBuf,
     epw: &PathBuf,
     mode: &str,
-    ledger: &PathBuf,
 ) -> String {
     let text=format!(
         r#"work_dir = "{work}"
@@ -78,7 +65,24 @@ Si = "{structure}"
 
 [programs]
 launcher = []
-
+pw_x = "{pw}"
+pw_args = []
+ph_x = "{ph}"
+ph_args = []
+epw_x = "{epw}"
+epw_args = []
+bands_x = "{pw}"
+bands_args = []
+dos_x = "{pw}"
+dos_args = []
+projwfc_x = "{pw}"
+projwfc_args = []
+q2r_x = "{pw}"
+q2r_args = []
+matdyn_x = "{pw}"
+matdyn_args = []
+postw90_x = "{pw}"
+postw90_args = []
 
 [slurm]
 header = """
@@ -86,23 +90,6 @@ header = """
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 """
-
-[budget]
-campaign_id = "epic-0007"
-ledger = "{ledger}"
-
-[programs.pw]
-path = "{pw}"
-args = []
-
-[programs.ph]
-path = "{ph}"
-args = []
-
-[programs.epw]
-path = "{epw}"
-args = []
-
 
 [stages."1.qe-scf"]
 K_POINTS = "automatic\n2 2 2 0 0 0"
@@ -523,7 +510,6 @@ nqf3 = 2
         ph = ph.display(),
         epw = epw.display(),
         mode = mode,
-        ledger = ledger.display(),
     );
     let mut document: toml::Value = toml::from_str(&text).unwrap();
     if mode == "nosplit" {
@@ -541,7 +527,6 @@ struct Case {
 }
 
 fn make_case(mode: &str) -> Case {
-    setup_state_root();
     let root = std::env::temp_dir().join(format!(
         "epwflow-qe-data-{}-{}-{}",
         mode,
@@ -571,30 +556,22 @@ fn make_case(mode: &str) -> Case {
 
     let work = root.join("work");
     let out = root.join("out");
-    let ledger = root.join("ledger.json");
     let config_path = root.join("config.toml");
-    let cfg_text = base_config(&work, &out, &structure, &pw, &ph, &_epw, mode, &ledger);
+    let cfg_text = base_config(&work, &out, &structure, &pw, &ph, &_epw, mode);
     std::fs::write(&config_path, cfg_text).unwrap();
 
     Case { root, config_path }
 }
 
 fn try_pipeline(case: &Case) -> anyhow::Result<QeManifest> {
-    // 序列化预算相关运行，并为每次运行隔离 state root，避免共享 campaign 注册表冲突。
-    static BUDGET_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = BUDGET_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let state_dir = std::env::temp_dir().join(format!("epwflow-qe-state-{}", store::token()));
-    let _ = std::fs::create_dir_all(&state_dir);
-    std::env::set_var("EPWFLOW_LOCAL_STATE", &state_dir);
-
-    let cfg = config::Config::load(&case.config_path).expect("配置加载失败");
-    let binding = snapshot::prepare(&cfg, &case.config_path).expect("prepare 失败");
-    let qe = QeSettings::from_config(&cfg).expect("QeSettings 失败");
+    let cfg = config::Config::load(&case.config_path).expect("Configure Load Failed");
+    let binding = snapshot::prepare(&cfg, &case.config_path).expect("prepare Failed");
+    let qe = QeSettings::from_config(&cfg).expect("QeSettings Failed");
     scheduler::run(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir)
 }
 
 fn run_pipeline(case: &Case) -> QeManifest {
-    try_pipeline(case).expect("scheduler 失败")
+    try_pipeline(case).expect("scheduler Failed")
 }
 
 #[test]
@@ -607,10 +584,10 @@ fn native_qe_rejects_incomplete_and_mismatched_outputs() {
     ] {
         let case = make_case("index");
         std::fs::write(case.root.join("fixture-failure"), failure).unwrap();
-        assert!(try_pipeline(&case).is_err(), "{failure} 应拒绝");
+        assert!(try_pipeline(&case).is_err(), "{failure} It should be rejected");
         assert!(
             !case.root.join("work/qe-data/manifest.json").exists(),
-            "{failure} 不能发布成功清单"
+            "{failure} Can not publish successful manifest"
         );
     }
 }
@@ -635,7 +612,7 @@ fn scf_snapshot_and_ph_copies_are_independent() {
         .iter()
         .map(|p| std::fs::metadata(p).unwrap().ino())
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(inodes.len(), paths.len(), "每阶段必须独立物理复制");
+    assert_eq!(inodes.len(), paths.len(), "Each stage must be independently physically copied");
     assert!(!work
         .join("scf/snapshot/actual_prefix.save/stage-local-marker")
         .exists());
@@ -646,7 +623,7 @@ fn scf_snapshot_and_ph_copies_are_independent() {
             .iter()
             .zip(m.qpoints[1].cartesian)
             .any(|(a, b)| (a - b).abs() > 1e-4),
-        "非正交转换不能使用单位矩阵"
+        "The unit matrix cannot be used for non-positive conversion"
     );
     let pattern = std::fs::read_to_string(&m.phonon_files[1].patterns).unwrap();
     assert!(pattern.contains("<QPOINT_NUMBER>2</QPOINT_NUMBER>"));
@@ -660,7 +637,7 @@ fn scf_snapshot_and_ph_copies_are_independent() {
     invalid.role = "unchecked-outside".into();
     invalid.relative_path = "../wfc1.dat".into();
     unsafe_manifest.artifacts.push(invalid);
-    assert!(unsafe_manifest.verify().is_err(), "排除数据核验不取消通用路径边界");
+    assert!(unsafe_manifest.verify().is_err(), "Excludes data validation and does not cancel the common path boundary");
     let victim = &m.states.as_ref().unwrap().wavefunctions.join("wfc1.dat");
     std::fs::write(victim, "tampered").unwrap();
     m.verify().unwrap();
@@ -676,7 +653,7 @@ fn qe_data_index_mode_full_pipeline() {
     let m = run_pipeline(&case);
     assert!(
         m.validation.all_passed(),
-        "index 模式校验未通过: {:?}",
+        "index Mode validation not passed: {:?}",
         m.validation.status
     );
     assert_eq!(m.qpoints.len(), 2);
@@ -684,7 +661,7 @@ fn qe_data_index_mode_full_pipeline() {
     assert!(m.scf.is_some());
     assert!(m.states.is_some());
     let manifest_path = case.root.join("work").join("qe-data").join("manifest.json");
-    assert!(manifest_path.exists(), "清单未发布");
+    assert!(manifest_path.exists(), "manifest not published");
 }
 
 #[test]
@@ -693,7 +670,7 @@ fn qe_data_coords_mode_full_pipeline() {
     let m = run_pipeline(&case);
     assert!(
         m.validation.all_passed(),
-        "coords 模式校验未通过: {:?}",
+        "coords Mode validation not passed: {:?}",
         m.validation.status
     );
     assert_eq!(m.qpoints.len(), 2);
@@ -709,7 +686,7 @@ fn qe_data_nosplit_mode_full_pipeline() {
     let m = run_pipeline(&case);
     assert!(
         m.validation.all_passed(),
-        "nosplit 模式校验未通过: {:?}",
+        "nosplit Mode validation not passed: {:?}",
         m.validation.status
     );
     assert_eq!(m.qpoints.len(), 2);
@@ -734,7 +711,7 @@ fn qe_config_renders_expected_namelists() {
     assert!(reference_in.contains("calculation = 'bands'"));
     for deck in [&scf_in, &nscf_in, &reference_in] {
         assert!(deck.starts_with("&CONTROL\n"), "{deck}");
-        assert!(!deck.contains("参数来源"), "{deck}");
+        assert!(!deck.contains("Parameter Source"), "{deck}");
         for pseudo in cfg.pseudos.values() {
             assert!(deck.contains(&format!("'{}'", pseudo.parent().unwrap().display())));
             assert!(deck.contains(pseudo.file_name().unwrap().to_str().unwrap()));
@@ -747,7 +724,7 @@ fn qe_config_renders_expected_namelists() {
         .unwrap();
     assert!(q_in.contains("start_q = 1") && q_in.contains("last_q = 1"));
     for deck in [&init_in, &q_in] {
-        assert!(!deck.contains("参数来源"), "{deck}");
+        assert!(!deck.contains("Parameter Source"), "{deck}");
     }
 }
 
@@ -959,10 +936,10 @@ fn _use_states(_s: ElectronicStates) {}
 
 /// 显式只读检查机器上的真实历史来源；不提交作业，不修改科学文件。
 #[test]
-#[ignore = "需要 EPWFLOW_REAL_QE_ROOT 指向已有 LDA 证据，显式执行只读核验"]
+#[ignore = "Yes EPWFLOW_REAL_QE_ROOT Pointed to already LDA Proof. Visible performance of read-only tests"]
 fn actual_lda_native_layout() {
     use epwflow::qe_data::{manifest::PhResponse, native_ph, xml};
-    let root = PathBuf::from(std::env::var("EPWFLOW_REAL_QE_ROOT").expect("缺少实际证据根目录"));
+    let root = PathBuf::from(std::env::var("EPWFLOW_REAL_QE_ROOT").expect("Lack of physical evidence base directory"));
     let scf = root.join("014-lda-fsr-scf-nscf-phonon/phonon/tmp/mgb2.save/data-file-schema.xml");
     let nscf =
         root.join("014-lda-fsr-scf-nscf-phonon/electrons/tmp/mgb2.save/data-file-schema.xml");
@@ -1009,7 +986,7 @@ fn actual_lda_native_layout() {
         .iter()
         .map(|p| store::hash_file(p).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(before, after, "只读核验不能改变来源");
+    assert_eq!(before, after, "Read-and-certify can't change the source");
     let report = serde_json::json!({"qpoints":qs.len(),"modes_per_q":9,"nks":states.kpoints.len(),"bands":states.nbnd,"native_response_validation":true,"source_unchanged":true,"sources":paths.iter().zip(before).map(|(p,h)|serde_json::json!({"path":p,"sha256":h})).collect::<Vec<_>>()});
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
     if let Ok(path) = std::env::var("EPWFLOW_REAL_CHECK_REPORT") {
@@ -1018,12 +995,26 @@ fn actual_lda_native_layout() {
 }
 
 fn shared_case() -> (Case, config::Config, snapshot::RunBinding) {
+    shared_case_with_args(false)
+}
+
+fn shared_case_with_args(explicit_args: bool) -> (Case, config::Config, snapshot::RunBinding) {
     let case = make_case("nosplit");
     std::fs::write(case.root.join("KPATH.in"), "0 0 0 G\n0.5 0 0 X\n").unwrap();
     for name in ["q2r", "matdyn"] {
         make_script(&format!("{name}.x"), &case.root, &format!("#!/bin/sh\nexec /usr/bin/python3 '{}' {name} \"$@\"\n", case.root.join("qe-native.py").display()));
     }
     let mut cfg = config::Config::load(&case.config_path).unwrap();
+    cfg.programs.q2r = Some(config::Program { path: case.root.join("q2r.x"), args: vec![] });
+    cfg.programs.matdyn = Some(config::Program { path: case.root.join("matdyn.x"), args: vec![] });
+    if explicit_args {
+        for name in ["q2r", "matdyn"] {
+            let args = vec![format!("--{name}-only"), "value with spaces".into()];
+            make_script(&format!("{name}.x"), &case.root, &format!("#!/bin/sh\n[ \"$1\" = '--{name}-only' ] && [ \"$2\" = 'value with spaces' ] || exit 81\nprintf '%s\\n' '{name}' >> '{}'\nshift 2\nexec /usr/bin/python3 '{}' {name} \"$@\"\n", case.root.join("explicit-post-args").display(), case.root.join("qe-native.py").display()));
+            if name == "q2r" { cfg.programs.q2r.as_mut().unwrap().args = args; }
+            else { cfg.programs.matdyn.as_mut().unwrap().args = args; }
+        }
+    }
     cfg.atomic_masses.insert("Si".into(), 29.1234);
     cfg.qe.scf.k_shift = [0; 3];
     native_fixture::matrix(&mut cfg);
@@ -1048,7 +1039,7 @@ fn shared_qeflow_nosplit_preserves_mass_zero_shift_checkpoint_and_complete_deliv
     assert!(!cfg.work_dir.join("scf/snapshot/actual_prefix.save/stage-local-marker").exists());
     assert!(shared.join("out/actual_prefix.save/stage-local-marker").is_file());
     assert!(shared.join("save/manifest.json").is_file());
-    assert!(shared.join("phonon_combined.jpg").is_file());
+    assert!(shared.join("phonon_combined.svg").is_file());
     assert!(m.artifacts.iter().any(|a| a.role == "qeflow_shared-source-identities.json"));
     std::fs::remove_file(case.root.join("KPATH.in")).unwrap();
     binding.verify().unwrap();
@@ -1122,4 +1113,12 @@ fn missing_nscf_wavefunction_does_not_trigger_integrity_rejection() {
     std::fs::write(case.root.join("fixture-failure"), "missing_wfc").unwrap();
     let manifest = run_pipeline(&case);
     manifest.verify().unwrap();
+}
+
+#[test]
+fn shared_qeflow_passes_each_explicit_postprocessor_argument_list() {
+    let (case, cfg, binding) = shared_case_with_args(true);
+    let qe = QeSettings::from_config(&cfg).unwrap();
+    scheduler::run_qeflow_registered(&binding, &cfg, &qe, Backend::Local, &[], &cfg.work_dir).unwrap().verify().unwrap();
+    assert_eq!(std::fs::read_to_string(case.root.join("explicit-post-args")).unwrap(), "q2r\nmatdyn\nmatdyn\n");
 }

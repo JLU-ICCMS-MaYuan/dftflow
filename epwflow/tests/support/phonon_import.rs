@@ -106,7 +106,7 @@ fn external_import_one_job_no_pw_ph_idempotent_and_plot_repair() {
         "import-overlap",
     );
     assert!(!rejected.status.success());
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("重叠"));
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("overlaps"));
     assert!(!cfg.work_dir.join("epw-state/imports").exists());
     success(c.numbered_cli(0, &args, None, "import-submit"));
     c.accounting(Some(201));
@@ -138,7 +138,7 @@ fn external_import_one_job_no_pw_ph_idempotent_and_plot_repair() {
     );
     let image = cfg
         .work_dir
-        .join("4.qe-phonon-nosplit/plots/phband/phonon_band.png");
+        .join("results/4.qe-phonon-nosplit/phonon.png");
     assert!(image.is_file());
     fs::remove_file(&image).unwrap();
     success(c.numbered_cli(0, &args, None, "import-repair-submit"));
@@ -324,7 +324,7 @@ fn external_import_upgrades_nested_config_without_changing_electronic_outputs() 
         None,
         "import-upgrade-prepare",
     ));
-    assert_eq!(fs::read_to_string(&path).unwrap(),legacy, "导入不能改写用户原始配置");
+    assert_eq!(fs::read_to_string(&path).unwrap(),legacy, "Import cannot rewrite original user configuration");
     assert!(fs::read_dir(cfg.work_dir.join("epw-state")).unwrap().flatten().any(|e|e.file_name().to_string_lossy().ends_with("-config.toml") && fs::read_to_string(e.path()).ok().as_deref()==Some(legacy.as_str())));
     assert!(!cfg.work_dir.join("epw-state/imports/config-upgrade.json").exists());
     success(c.numbered_cli(0,&["--import-phonon",source.to_str().unwrap(),"-s"],None,"nested-import-submit"));

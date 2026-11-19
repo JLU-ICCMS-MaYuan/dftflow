@@ -1,6 +1,8 @@
 # Feature 规格：QE 声子一次提交全链路
 
-**Issue**：[0006 本地草稿](issue-draft.md)，关联 0004。用户明确要求本地编号；线上由用户自管。
+> **协作入口（2026-11-17）**：[GitHub Issue #6](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/6)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #6](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/6)，关联 0004。用户明确要求本地编号；线上由用户自管。
 **创建日期**：2026-10-14
 **状态**：原全链路及 US3 工具独立化已实现并通过自动/真实初始化验收；按后续要求完成全量重编译与默认安装切换。线上仍由用户自管。
 

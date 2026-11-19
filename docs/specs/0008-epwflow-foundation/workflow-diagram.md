@@ -1,5 +1,7 @@
 # 三阶段流程与命令入口
 
+> 2026-11-17 最新约定：下文旧预算登记、账本读写和全局两个作业限制已经撤销，相关旧任务不再执行。当前实现与接口以 [0058 追加需求](../0058-epw-remove-resource-limits/spec.md) 为准；历史科学证据保留。
+
 当前用户已选择三个独立程序：`epw_phonon`、`epw_wannier`、`epw_superconductivity`。配置继续使用 `inputepw.toml`；原单程序子命令与 `--until` 使用说明已由本次契约替代。
 
 完整流程图、每阶段命令、脚本生成／提交／恢复／重绘见[模块 README](../../../epwflow/README.md)，职责与验收见[三程序契约](three-programs.md)，持久记录见[接口契约](contracts/interface.md)。

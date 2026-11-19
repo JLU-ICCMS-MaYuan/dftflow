@@ -6,13 +6,18 @@ DFT 计算工作流自动化（Issue 0004：全量 Rust 重写）。
 
 开发中的 [epwflow](epwflow/README.md) 提供 `epw_phonon`、`epw_wannier`、`epw_superconductivity` 三个阶段程序和历史清理工具 `epw_clear`，支持检查、脚本生成、提交和恢复；完整真实原生超导链仍在验收。qeflow 的 nosplit 流程现可通过 `[qe_phonon].retain_epw_data=true` 归档 EPW 所需声子数据，见 [保留数据说明](qeflow/README.md#为-epw-保留声子数据)。MgB₂ 运行数据位于 `test_auto/MgB2/local_run/` 的编号目录；源码、受测构建和当前安装分别核对。
 
+EPW 的外部程序在 `[programs]` 中使用 `pw_x`／`pw_args` 等平铺字段，后处理程序也逐个显式配置；空 args 不追加参数，EPW 全阶段只使用单 image。旧程序子表需要迁移，详见[程序路径与参数](docs/overview/epwflow/native-stage-config.md#外部程序路径与命令行参数)。
+
+EPW 可在 `[baseparams]` 一次填写 `fermi_source = "f2"`（或 `"fine_fixed_electrons"`），第 5、6、7 步 workflow 未显式填写时使用公共值；两处都缺失时报错。详见[公共参数说明](docs/overview/epwflow/native-stage-config.md#公共参数与阶段网格简写)。
+
 EPW 的 SCF、NSCF 及 electronic 路径数据完成核验后即时生成 `*-band-ranges.png`，用于检查逐带能量范围、四窗口和冻结态容量；位置及补图方式见 [三阶段诊断说明](epwflow/README.md)。
 
 ## 分支约定
 
-- `master`：默认主分支，承接原 `rust` 分支的 Rust 实现及后续开发。
-- `python`：保留原 `master` 分支的 Python 版本，切换时的提交为 `7a172fe`。
-- `python-reference-0004`：迁移数值对照使用的冻结标签（`9396b3a`），与 `python` 分支用途不同，继续保留。
+- `master`：默认主分支，合并当前最新 Rust 代码，后续日常修改统一在此分支进行；本地 `master` 跟踪 `origin/master`。
+- `rust-version`：原 GitHub `rust-master` 的版本保留分支，保存本次合入 `master` 前的最新 Rust 代码。
+- `python-version`：保留原 Python 版本，提交为 `7a172fe`；原 `python` 名称不再使用。
+- `python-reference-0004`：迁移数值对照使用的冻结标签（`9396b3a`），与 `python-version` 分支用途不同，继续保留。
 
 ## 编译产物与程序目录
 
@@ -55,7 +60,7 @@ epw_phonon --help
 
 确认显示的是仓库 `bin/<模块>/` 下的入口后，进入计算目录直接执行命令，例如 `epw_phonon -c epwinput.toml`。添加 `PATH` 本身不提交计算，也不迁移已有运行绑定。
 
-更新按程序逐文件原子替换，不保证所有程序同时切换；应在没有活动计算链时更新。生成脚本和 EPW 身份记录可能固定了程序绝对路径、链接目标和哈希，仅复制到新目录不会自动迁移这些绑定；已有运行按其恢复约定处理，新运行使用 `bin/<模块>/`。
+更新按程序逐文件原子替换，不保证所有程序同时切换；应在没有活动计算链时更新。生成脚本可能固定程序绝对路径，已有运行按其恢复约定处理；当前编号 EPW 不再用科学文件指纹清单追溯整条来源链，新运行使用 `bin/<模块>/`。
 
 本次唯一入口与依赖迁移见 [0017 操作指南](docs/specs/0017-build-binaries-layout/quickstart.md)；旧安装清理的历史说明保留在 [0011](docs/specs/0011-build-history-cleanup/quickstart.md)，不作为新的安装契约。
 
@@ -202,16 +207,28 @@ Linux 上配置 `DFTFLOW_NATIVE_PREFIX` 时，自动设置私有 ELF interpreter
 
 ## QE／EPW 编号工作区
 
+电子能带与 DOS 合并为共享能量纵轴的组合图。第 3、5 步的 plot/ 各有 electronic.png（默认 E_F±3 eV）与 electronic-from-lowest-to-highest.png（QE 路径全部能带极值）；第 4、6 步 plot/ 为共享频率纵轴的 phonon.png。结果同步发布到 results 对应阶段的 plot/。近费米范围在 input.toml 中独立调整：
+
+    [plot]
+    electronic_energy_min_ev = -3.0
+    electronic_energy_max_ev = 3.0
+
+上下限均相对 E_F，必须有限且下限小于上限；只改变绘图，不改变科学计算或拟合窗口。
+
+
 新 EPW 配置使用 `layout = "numbered"`、`work_dir = "."` 和根 `input.toml`。
-阶段重算覆盖旧内容，保留编号目录 inode 和当前打开的 Slurm 日志，不生成历史。`epw-state/` 保存八份中文阶段日志、编号原文配置及按需保留的 `imports/`；作业号保存在各计算目录同名 `.jobs`。输入原文变化时，在工作区 `epw-state/` 增加 `NNNN-config.toml` 版本。
+阶段重算保留编号目录 inode 和当前打开的 Slurm 日志；第 7 步按编号参数组保留不同网格、费米窗口和电子展宽的数据，新增组不覆盖旧组。`epw-state/` 保存八份英文阶段日志、编号原文配置及按需保留的 `imports/`；作业号保存在各计算目录同名 `.jobs`。输入原文变化时，在工作区 `epw-state/` 增加 `NNNN-config.toml` 版本。
 八日志布局执行 `epw_clear` 会报告无需清理；旧布局仍支持预览并清空三类历史。详见 [清理用法](docs/overview/epwflow/epw_clear.md)。
 各 flow 统一采用 `[slurm].header` 多行字符串填写 Slurm 文件头，MPI 启动参数由 launcher／现有程序启动命令指定。EPW 已删除整个 `[resources]`，不再自动补写或通过 sbatch 参数覆盖分区、节点数和任务数。旧输入须迁移，历史冻结快照不手改；示例见 [EPW 配置说明](epwflow/README.md#slurm-文件头)。
 
 SCF／NSCF 的原始电荷密度和波函数不做哈希、大小、非空、存在性或文件集合核对，实际复制和原生读取保留；其他科学证据照常验证，见 [0067](docs/specs/0067-unchecked-density-wavefunctions/spec.md)。
-修改当前配置后直接执行 `epw_wannier --stage wannier -s`；已有相容的 QE 自动复用。第 5 步在一个 Slurm 分配内自动完成拟合、核验、能带／DOS 后处理和绘图；`--stage coarse -s` 同样自动完成第 6 步粗网格、路径插值与 QE／EPW 比较绘图。两步脚本从开始调用阶段 CLI，无需重复命令推进后处理。
+修改当前配置后执行 `epw_wannier --stage wannier -s`，直接读取必要的既有 NSCF 数据，缺失时停止，不补算上游。第 1～4 步也在当前阶段完成后自动生成各自的 QE 图，第 3 步正常图含元素 PDOS；SCF／NSCF 的独立结果使用 `epw_phonon --plot --results "run/results/1.qe-scf"` 等形式重绘。第 5 步在一个 Slurm 分配内自动完成拟合、核验、能带／DOS 后处理和绘图；`--stage coarse -s` 同样自动完成第 6 步粗网格、路径插值与 QE／EPW 比较绘图。两步脚本从开始调用阶段 CLI，无需重复命令推进后处理。
 `--stage coarse` 到粗网格，`epw_superconductivity --stage fine` 到细网格。
-第 3 步 QE 子任务完成即发布单侧图；第 5 步完成电子能带／总 DOS 对比，第 6 步完成声子谱／TDOS 对比及总览，图片、数据和来源按阶段保存在工作区根 `results/`。
-第 3／4 步在阶段分配内完成后处理；第 5～8 步直接提交原生任务，作业结束后再次执行相同公开命令核验和推进；第 5 步不等待声子。详见[阶段结果说明](docs/specs/0050-epw-stage-results/quickstart.md)。
+
+各阶段 `reuse` 按来源列出实际接续文件，续行缩进 7 空格；不递归核验历史阶段或刷新其他阶段图表。第 7 步即使只有一组参数，也使用 `7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/` 这样的子目录；第 8 步逐文件软链接所选组的细矩阵。详见 [当前文件接续规则](docs/overview/epwflow/preflight-and-reuse.md)。
+
+第 3 步 `--stage electronic -s` 同时提交能带和 DOS 两个独立分支（各分支内部顺序执行），两边核验成功后由依赖作业统一绘图；失败后 `--resume -s` 只补失败分支，成功 PW／DOS 保留。已有分配内 `-r` 顺序执行，避免 MPI 超额。第 5 步完成电子能带／总 DOS 对比，第 6 步完成声子谱／TDOS 对比及总览，图片、数据和来源按阶段保存在工作区根 `results/`。
+第 3 步通过两个独立分支和依赖收尾作业完成后处理，第 4～6 步在阶段分配内自动完成科学核验与绘图；第 7／8 步原生作业结束后再次执行相同公开命令核验和推进；第 5 步不等待声子。详见[阶段结果说明](docs/specs/0050-epw-stage-results/quickstart.md)。
 输入、按目的命名的 `.sh` 和科学输出位于各实际计算目录，空 pool 在生成、提交及脚本启动时阻断。
 旧工作区可只读核验后一次性导入，不为目录改版重跑 QE。
 详见 [模块手册](epwflow/README.md) 和 [MgB₂ 直接操作说明](examples/MgB2/sugon-amd/run/README.md)。
@@ -295,3 +312,18 @@ phonon_mode = "split_index"
 声子 DOS 默认插值网格是 PH 网格各方向的两倍，显式 `[qe_phonon.phdos].qpoints` 优先。绘图高斯平滑默认 `plot_sigma_cm1 = 5.0`（cm⁻¹），调大更平滑、设为 0 关闭；使用 `qe_process_phonon --plot` 重画，原始 DOS 和 CSV 保留。
 
 声子聚合流程保存 `input-init.toml` 和原结构名加 `-init` 的备份，已提交链路读取工作目录快照。修改外部配置后需用原目录的 `input-init.toml` 续算；旧目录和已生成旧脚本不会因安装新版而自动迁移。
+
+EPW 不再提供预算账本功能：输入删除 `[budget]`，正常提交与续算直接使用工作流状态和 Slurm 作业号，不依赖 `campaign/ledger.json` 或固定项目身份。旧账本不再读写，详见[EPW 使用说明](epwflow/README.md)。
+
+### QE 声子与 scflow 图片格式
+
+在 `input.toml` 的根级配置：
+
+```toml
+[plot]
+formats = ["svg", "png", "pdf"]
+```
+
+支持 SVG、PNG、PDF、JPG（也接受 `jpeg`），大小写不敏感且自动去重。QE 声子独立谱、DOS、联合图默认生成 SVG，指定 `['png']` 时只新生成 PNG；PNG 保留原画布尺寸并带 300 DPI 元数据。已有结果可执行 `qe_process_phonon -c input.toml -i POSCAR --plot` 重绘。scflow 三类图沿用必需的 PDF，额外输出配置指定格式，默认 PDF+SVG。旧格式文件不会自动删除。
+
+本项尚未接入 VASP、替位 DOS、Wannier 与 EPW 专属绘图；EPW 现有 `[plot]` 能窗设置沿用原规则。详见 [配置与验证说明](docs/specs/0074-unified-plot-formats/quickstart.md)。

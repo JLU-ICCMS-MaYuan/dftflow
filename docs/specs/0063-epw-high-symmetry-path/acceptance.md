@@ -117,3 +117,14 @@ CARGO_PROFILE_TEST_DEBUG=0 bash "scripts/build-native.sh" test -p epwflow --test
 加载 `scripts/env.sh`，在真实 `examples/SiP2` 执行正式 `epw_wannier --config "epwinput.toml" --stage wannier`，不带提交选项，退出 0。输出复用四项前置工作并到达 `workflow_status: prepared`；原先的缺失输入错误不再出现。调用前后任务 ID 相同，输入及脚本哈希相同，状态仍为 `prepared`，作业号及预留为空，没有重复创建或提交任务。见 `real-installed-cli-prepare.log`、`real-state-after.json`。
 
 现已可以用普通 `epw_wannier --config "epwinput.toml" --stage wannier -s` 提交该准备任务。已有 SCF／NSCF／PH 不重算；本轮未提交真实计算、未执行新拟合，也不宣称 500 次一定收敛。线上 Gitee 状态及实际拟合判断继续由用户管理。本轮仅提交本任务差异，不推送，保留原有 7 个无关修改文件。
+
+## 2026-11-16：默认能带采样设置为 50
+
+- 需求：FR-013／SC-009，任务 T014；用户明确要求默认使用 50 并更新 Issue、Spec 和 input.toml。
+- 配置：`examples/MgB2/ubuntu/input.toml` 的 `[stages."5.wannier90"]`、`examples/SiP2/epwinput.toml` 的 `[stages."5.epw-wannier".wannier90]` 均为 `bands_num_points = 50`；数值已由提交 `d250d34d` 更新，本次补充中文注释与需求文档。
+- 验证：使用 Python `tomllib` 解析两份配置，断言两个实际参数所有者的值均为 50；对照提交前配置确认新增注释不改变任何配置值。检查 FR-013／SC-009／T014 和契约、快速说明一致，`git diff --check` 通过。
+- 边界：默认设置指用户示例，不新增省略字段自动补值机制，不覆盖用户显式设置；首段间隔和其余段按长度取整的原生规则保持不变。历史记录中的 1 不修改。仅文档和示例注释维护，无源码修改、编译、安装、科学运行或线上 Issue 操作。
+
+## 2026-11-16：比较行为衔接
+
+本需求电子独立采样边界已与声子比较及无紫色误差标记统一，证据见 [0043 验收](../0043-epw-comparison-max-differences/acceptance.md)。首段采样默认 50 的既有决定未改变；只统计已有共同坐标，无配对不补算、不重采样、不阻止出图。

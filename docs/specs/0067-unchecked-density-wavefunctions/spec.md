@@ -1,6 +1,8 @@
 # 0067：取消电荷密度与波函数核对
 
-关联 [本地 Issue](issue-draft.md)，本地暂定编号，线上沿用用户管理约定。用户明确授权编写 Issue／Spec 并修改代码，当前目录范围已澄清。
+> **协作入口（2026-11-17）**：[GitHub Issue #67](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/67)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+关联 [GitHub Issue #67](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/67)，本地暂定编号，线上沿用用户管理约定。用户明确授权编写 Issue／Spec 并修改代码，当前目录范围已澄清。
 
 ## 原始需求记录
 

@@ -35,7 +35,6 @@ fn base_config(
     epw: &PathBuf,
     wan: &PathBuf,
     pw2: &PathBuf,
-    ledger: &PathBuf,
 ) -> String {
     format!(
         r#"work_dir = "{work}"
@@ -48,7 +47,28 @@ Si = "{structure}"
 
 [programs]
 launcher = []
-
+pw_x = "{pw}"
+pw_args = []
+ph_x = "{ph}"
+ph_args = []
+epw_x = "{epw}"
+epw_args = []
+wannier90_x = "{wan}"
+wannier90_args = []
+pw2wannier90_x = "{pw2}"
+pw2wannier90_args = []
+bands_x = "{pw}"
+bands_args = []
+dos_x = "{pw}"
+dos_args = []
+projwfc_x = "{pw}"
+projwfc_args = []
+q2r_x = "{pw}"
+q2r_args = []
+matdyn_x = "{pw}"
+matdyn_args = []
+postw90_x = "{pw}"
+postw90_args = []
 
 [slurm]
 header = """
@@ -56,31 +76,6 @@ header = """
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 """
-
-[budget]
-campaign_id = "epic-0007"
-ledger = "{ledger}"
-
-[programs.pw]
-path = "{pw}"
-args = []
-
-[programs.ph]
-path = "{ph}"
-args = []
-
-[programs.epw]
-path = "{epw}"
-args = []
-
-[programs.wannier90]
-path = "{wan}"
-args = []
-
-[programs.pw2wannier90]
-path = "{pw2}"
-args = []
-
 
 [stages."1.qe-scf"]
 K_POINTS = "automatic\n2 2 2 0 0 0"
@@ -498,7 +493,6 @@ nqf3 = 2
         epw = epw.display(),
         wan = wan.display(),
         pw2 = pw2.display(),
-        ledger = ledger.display(),
     )
 }
 
@@ -542,11 +536,10 @@ exit 0
     write_script(&pw2, "#!/bin/bash\nexit 0\n");
 
     let work = root.join("work");
-    let ledger = root.join("ledger.json");
     let config_path = root.join("config.toml");
     std::fs::write(
         &config_path,
-        base_config(&work, &structure, &pw, &ph, &epw, &wan, &pw2, &ledger),
+        base_config(&work, &structure, &pw, &ph, &epw, &wan, &pw2),
     )
     .unwrap();
 
@@ -603,7 +596,7 @@ fn incomplete_fixture_cannot_publish_interpolation() {
     assert!(!case.work.join("interpolation/manifest.json").exists());
     assert!(
         !case.root.join("ledger.json").exists(),
-        "输入不完整时不能先预留资源"
+        "Cannot reserve resources when input is incomplete"
     );
 }
 
@@ -648,7 +641,7 @@ fn adapter_rejects_empty_and_invalid_f2() {
     let cfg = config::Config::load(&case.config_path).unwrap();
     assert!(
         adapter::bind_f2(&case.work.join("qe-data").join("manifest.json"), &cfg).is_err(),
-        "空 F2 不能凭自述 valid 放行"
+        "Empty F2 I can't tell myself valid Let go!"
     );
 
     // 篡改 F2 校验状态后必须拒绝。
@@ -775,7 +768,7 @@ fn interpolation_reuse_rejects_unvalidated_manifest() {
     std::fs::create_dir_all(&target).unwrap();
     assert!(
         reuse::import_from_run(&dir.join("source"), &target).is_err(),
-        "没有校验项不能仅凭 valid 导入"
+        "You can't just do it without a checkout valid Import"
     );
 }
 

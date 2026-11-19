@@ -1,6 +1,8 @@
 # 实施计划：电子对比前置与逐阶段发布
 
-> 比较目录以文末“2026-11-16 目录扁平化”修订为准：第 5、6 步分别直接使用 comparison-native/，旧 electron／phonon 路径仅保留为历史记录。
+> 当前绘图输出以 [0055 组合图契约](../0055-electronic-plot-windows-pdos/spec.md) 为准；旧分离图、总览、±5 eV 和根目录图片要求均已替代。历史原话与验收记录保留。
+
+
 
 
 **日期**：2026-10-22。**基线**：[Spec](spec.md)。
@@ -36,37 +38,6 @@
 ## Feature 文档结构
 
 本目录包含 issue-draft.md、spec.md、plan.md、research.md、data-model.md、tasks.md、quickstart.md、acceptance.md、analysis.md、contracts/cli.md、checklists/requirements.md，以及 assets/Tue.6.Lafuente.pdf。源码结构与实际触点见下文“组件职责与变更位置”；需求到设计的逐项映射见 [一致性分析](analysis.md)。
-
-## 拟交付目录
-
-以下目录属于未来计算工作区设计；本轮只创建本 Spec 文档目录。
-
-```text
-计算工作区/
-├── 1.qe-scf/
-├── 2.qe-nscf/
-├── 3.qe-electronic/
-├── 4.qe-phonon-<模式>/
-├── 5.epw-wannier/
-│   └── comparison-native/
-├── 6.epw-coarse/
-│   └── comparison-native/
-│       ├── force-constants/
-│       ├── frequencies/
-│       └── epw/
-├── 7.epw-fine/
-├── 8.epw-superconductivity/
-└── results/
-    ├── index.json
-    ├── 3.qe-electronic/
-    ├── 4.qe-phonon-<模式>/
-    ├── 5.epw-wannier/
-    ├── 6.epw-coarse/
-    ├── 7.epw-fine/
-    └── 8.epw-superconductivity/
-```
-
-每个阶段包保留图片、对应表格、图参和来源。第 3 步能带与 DOS 分别有完整发布单元，尚未成功的单元不阻碍另一单元可见。没有已有最终图的阶段不创建空图或新增图任务。
 
 ## 目标流程
 
@@ -160,8 +131,6 @@ flowchart TD
 [任务](tasks.md)列出技术拆解与依赖，[验收说明](acceptance.md)只按事实登记状态。代码验收后应用总览维护 skill 更新 EPW 总览及使用说明，未实现行为不得提前写入。线上链接、Issue 状态由用户管理；本地文档提交不代表线上 Issue 创建或关闭。
 
 
-## 2026-11-16 目录扁平化修订
+## 原位重绘补充
 
-集中修改 layout::path 编号映射，内部 electron／phonon 语义键保留但不再成为实体目录。第 6 步归档保留 force-constants／frequencies 及对应已核验检查点；原 PH 替换时清除这些检查点，防止跨来源复用。已有 Ubuntu 工作区通过本次一次性定向迁移处理，不引入常驻旧布局回退。
-
-第 6 步批次变更时，保留的 comparison-q2r／comparison-matdyn 检查点重新关联当前批次，再由 attempt 核验旧配置与当前参数；仅电子模型变化不重复计算，上游 SCF／PH 重建则清除检查点。
+复用 workspace_plot::redraw；新增 redraw_current 聚合已有四份电子 plot.json 的原位重绘，将默认 --plot 从仅诊断分派改为优先现场图，无输入时才沿用 wannier_diagnostics。保存的绘图参数为唯一数值来源，不调用 electronic_comparison 或 postw90，不重新发布以当前配置标记的结果包。

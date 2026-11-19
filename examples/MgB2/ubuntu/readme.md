@@ -1,15 +1,15 @@
 # Ubuntu 上的 MgB₂ EPW 自测试
 
-本目录是独立工作区，配置为 `input.toml`，阶段、日志和结果生成在本目录的 `run/`，账本放在同级 `campaign/`，所有运行数据仍位于 ubuntu 内。Git 仅跟踪本输入和本文档；仓库现有 `/examples/` 忽略规则屏蔽其他新文件，不要强制添加计算数据。
+本目录是独立工作区，配置为 `input.toml`，阶段、日志和结果生成在本目录的 `run/`，所有运行数据仍位于 ubuntu 内。Git 仅跟踪本输入和本文档；仓库现有 `/examples/` 忽略规则屏蔽其他新文件，不要强制添加计算数据。
 
 ## 输入与测试范围
 
-- 复用仓库 test_auto/MgB2/MgB2.vasp 结构和 test_auto/MgB2/pp/ 的 PBE 赝势模型。当前输入读取 repair/pp/：Mg 为原二进制势的同模型 UPF 转换，B 为原文件的逐字节副本；均不跟踪。
+- 复用仓库 test_auto/MgB2/MgB2.vasp 结构和 test_auto/MgB2/pp/ 的 PBE 赝势模型。当前输入读取 repair/pp/：Mg 为原二进制势的同模型 UPF 转换，B 通过相对链接引用原文件；均不跟踪。
 - SCF／NSCF 网格 4×4×2，16 条带；PH 为 index 模式、2×2×1；细网格 k 为 8×8×4、q 为 4×4×2。截断能为 40／320 Ry。
 - 5 个 Wannier 函数，B:pz 与三个键中心 s 初始投影；使用 `energy_only` 自动选窗，实际能窗须查看本次原生日志。
 - 第 8 阶段为 iso／aniso 的 20／30／40 K 能隙计算，μ*=0.1，不执行 Tc 搜索。
 - Slurm header 申请本机 `local` 分区、单节点、12 任务；launcher 启动 12 MPI。小网格用于检查执行链与图表，不代表 MgB₂ 的物理结果或网格已收敛。
-- 账本为 `campaign/ledger.json`，沿用程序要求的 `epic-0007` 身份；没有自动扩大历史项目预算的含义。完整运行前检查生成脚本和本机资源限制。
+- 输入已删除 `[budget]`，程序不再读写 `campaign/ledger.json` 或绑定固定项目名。现有 `campaign/` 只保留历史资料；完整运行前检查生成脚本和本机资源限制。
 
 ## 本机环境
 
@@ -87,7 +87,7 @@ epw_superconductivity -c "input.toml" --stage superconductivity -s
 
 转换源代码、单份本地转换命令、输出和 conversion.log 位于忽略的 repair/；生成文件不纳入 Git，删除后须依据上述同版本源码重新转换。当前路径是 repair/pp/mg_pbe_v1.4.UPF 和 repair/pp/b_pbe_v1.4.uspp.F.UPF。原始文件校验记录为 repair/original-pseudos.sha256。
 
-本机没有 Slurm accounting 数据库，但启用了 jobcomp/filetxt。新版 CLI 在 sacct 明确报告未启用 accounting 时，使用控制器核验正在运行的作业，或对完成日志的 0600 临时副本调用原生 sacct --completion --file，读取真实终态、NNodes、ElapsedRaw 和 ExitCode；副本查询后删除。不修改系统配置、原完成日志或账本，不猜测缺失任务终态。
+本机没有 Slurm accounting 数据库，但启用了 jobcomp/filetxt。新版 CLI 在 sacct 明确报告未启用 accounting 时，使用控制器核验正在运行的作业，或对完成日志的 0600 临时副本调用原生 sacct --completion --file，读取真实终态、NNodes、ElapsedRaw 和 ExitCode；副本查询后删除。不修改系统配置或原完成日志，不猜测缺失任务终态。
 
 后续手动继续 NSCF：
 
@@ -110,3 +110,28 @@ epw_superconductivity -c "input.toml" --stage superconductivity -s
 外窗覆盖当前 NSCF 排除半芯带后的能谱并在两端各留 0.02 eV。Mori 第 19 页给出冻结上界 8.8 eV，第 20 页示例费米能为 7.469822726 eV；本次以其相对位置约 E_F＋1.330177274 eV 作为 PBE 初始窗口，平移到当前 NSCF E_F=9.183946302 eV。此平移是本次选窗起点，不代表不同赝势的能带严格刚性平移或拟合已经通过。
 
 对当前 32 个均匀 k 点，保留 12 条候选带，外窗每点 12 态，冻结窗每点 4～5 态，满足 frozen≤5≤outer，并包含 E_F±0.4 eV。原 SCF／NSCF 设置不变。本次没有执行拟合；仍需检查你后续运行的原生收敛与能带对比。
+
+
+组合图放在各阶段 plot/，并发布到 results 对应阶段的 plot/。第 3、5 步各两张电子图：electronic.png 使用 input.toml 中 [plot] 的两个独立上下限（默认 −3／＋3 eV，相对费米能），electronic-from-lowest-to-highest.png 使用 QE 路径全部能带极值。第 4、6 步各一张 phonon.png，声子谱与 DOS 共用 0 到最高路径频率的纵轴。逐带范围与衰减诊断保留。
+
+## 独立采样与已有频率复用（0043）
+
+QE 与 EPW 沿同一物理高对称路径，各自保留原生采样；不要求内部点一一对应。新生成 QE 声子比较采用第 4 步 `points_per_edge`，EPW 采用第 6 步。当前现场保存的 QE `matdyn.in` 与 `reference.freq` 为 215 点、9 模式，自身一致，可以复用；当前配置展开的 935 点不强加给这份旧结果。
+
+旧频率不为差值补点或重采样；仅已有共同坐标参与差值，空配对不阻止出图。改变比较密度不使已完成粗 EPC 失效，只有相应比较后处理按新请求更新。电子内嵌曲线由 `bands_num_points` 控制，不要求与第 3／6 步密度相同。比较图不绘制紫色误差标记，Wannier 窗口线保持。
+
+本次未执行新的科学作业。若现场尚缺普通 EPW 出图重读结果，继续使用公开 `epw_wannier -c "input.toml" --stage coarse -s` 补齐，再运行 `epw_superconductivity -c "input.toml" --stage fine -s`；这不表示需要重算 SCF、PH、Wannier 或粗 EPC。
+
+## 程序路径与参数
+
+活动 `input.toml` 使用 `[programs]` 下的 `pw_x`／`pw_args` 等平铺字段，后处理路径逐个显式声明。各 args 独立，空列表不追加参数；需要 pencil 时在对应程序明确设置 `-pd`、`.true.`。本机 launcher 仍为 12 路 MPI，EPW pool 为 12，全部 EPW 阶段仅允许单 image。已有 run 内冻结输入和脚本没有自动改写，不能将活动配置检查视为旧工作区续算或科学验收通过。
+
+## 当前输入格式与公共参数（0061）
+
+当前 `input.toml` 使用八个主阶段及独立用途子段。`[baseparams]` 集中填写 `ATOMIC_SPECIES` 二维数组、`prefix`、`ecutwfc/ecutrho` 和 QE DOS／PDOS 的 `Emin/Emax/DeltaE`；仅适用调用回填，阶段显式值优先。截断能单位 Ry，后三项单位 eV；它们不是 `[plot]` 显示范围或 Wannier 能窗。
+
+`nk/nq/nkf/nqf` 各为三个正整数，只放所属阶段或用途子段；不得与同一网格的 `nk1` 等方向字段混写，不在公共表继承。SCF 的 `K_POINTS` 原生卡片、NSCF 的 `K_POINTS=[4,4,2]` 及 postw90 的 `dos_kmesh` 保持各自接口。当前 PH 为 `nq=[2,2,1]`，EPW 粗 k/q 为 `[4,4,2]`／`[2,2,1]`，细 k/q 为 `[8,8,4]`／`[4,4,2]`。
+
+本次只调整配置表达并删除不再消费的双初值／温度搜索 workflow 设置；保留 num_wann=5、排除带 1～4、四个绝对能窗、12 MPI、QE／EPW 独立路径密度及 20／30／40 K 原生多温度列表，不触发科学计算或改写历史配置。
+
+本次检查发现原 `repair/pp/` 已缺失，已按 0066 恢复：Mg 从原二进制势以 QE 原生 readvan／write_upf 转换为 UPF，再用原生 read_ps_new 读取核对，主要物理数组的最大归一化差为 1.54×10⁻¹⁵，小于 10⁻¹²；B 使用原文件的相对链接。`repair/pp/` 是实际赝势输入，运行前需保留，不跟踪转换产物。未执行 SCF 或其他科学计算。

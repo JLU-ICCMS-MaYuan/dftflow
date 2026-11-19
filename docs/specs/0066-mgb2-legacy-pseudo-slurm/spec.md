@@ -1,6 +1,8 @@
 # MgB₂ 旧赝势读取与无数据库 Slurm 续算修复
 
-关联 [本地 Bug 草稿](issue-draft.md)。用户明确要求修复当前真实失败，沿用既有测试／debug 授权。本项不改变物理参数或赝势模型，不修改系统 Slurm 配置。
+> **协作入口（2026-11-17）**：[GitHub Issue #66](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/66)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+关联 [GitHub Issue #66](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/66)。用户明确要求修复当前真实失败，沿用既有测试／debug 授权。本项不改变物理参数或赝势模型，不修改系统 Slurm 配置。
 
 ## 原始需求记录
 

@@ -1,6 +1,5 @@
 //! F5 交付模块族（spec 0014，FR-001~FR-010）。
 pub mod acceptance;
-pub mod budget;
 pub mod cli;
 pub mod collect;
 pub mod compare;
@@ -28,8 +27,12 @@ pub fn collect_results(
     let result = output
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| crate::foundation::layout::path(work,"results"));
+    if crate::foundation::layout::enabled(work) {
+        return native::collect(work,Some(&result));
+    }
     let mut found = false;
     if crate::foundation::layout::path(&work, "superconductivity/manifest.json").exists() {
+        if crate::foundation::layout::enabled(work) {return native::collect(work,Some(&result));}
         native::collect(work, Some(&result))?;
         found = true;
     }
@@ -38,7 +41,7 @@ pub fn collect_results(
         comparison::collect(work, Some(&result))?;
         found = true;
     }
-    anyhow::ensure!(found, "data_invalid: 没有可收集的原生或比较结果");
+    anyhow::ensure!(found, "data_invalid: No native or comparative results to collect");
     Ok(result)
 }
 
@@ -47,9 +50,14 @@ pub fn plot_results(
     output: Option<&std::path::Path>,
     formats: &[String],
 ) -> anyhow::Result<std::path::PathBuf> {
-    if results.join("index.json").exists() {
+    if results.join("native.plot.json").is_file() { return native_plot::plot(results,output,formats); }
+    // Issue #72 B04: 识别能带范围图结果包
+    if results.join("index.json").exists() || crate::qe_data::save::files(results)?.iter().any(|f| {
+        let path = f.relative_path.to_string_lossy();
+        path.ends_with(".plot.json") || path.ends_with("-band-ranges.json")
+    }) {
         let target=if let Some(output)=output {
-            anyhow::ensure!(!output.exists(),"input_conflict: 重绘输出已存在");
+            anyhow::ensure!(!output.exists(),"input_conflict: Repaint output already exists");
             crate::qe_data::save::copy_tree(results,output)?;
             output
         } else {results};
@@ -67,12 +75,22 @@ pub fn plot_results(
         comparison_plot::plot(results, Some(&target), formats)?;
         found = true;
     }
-    anyhow::ensure!(found, "data_invalid: 没有可绘制的结果包");
+    anyhow::ensure!(found, "data_invalid: No Plotable Results Package");
     Ok(target)
 }
 
 pub fn check_results(results: &std::path::Path) -> anyhow::Result<serde_json::Value> {
-    if results.join("index.json").exists() {
+    if results.join("native.plot.json").is_file() {
+        let mut report=native::check(results)?;
+        let figures=native_plot::check(results)?;
+        report["workflow_complete"]=(report["native_complete"]==true && figures).into();return Ok(report);
+    }
+
+    // Issue #72 B04: check_results 也要识别能带范围图
+    if results.join("index.json").exists() || crate::qe_data::save::files(results)?.iter().any(|f| {
+        let path = f.relative_path.to_string_lossy();
+        path.ends_with(".plot.json") || path.ends_with("-band-ranges.json")
+    }) {
         let index=crate::foundation::stage_results::check(results)?;
         return Ok(serde_json::json!({"schema_version":1,"operation_status":"ok","stage_results_verified":true,"entries":index.entries,"workflow_complete":false}));
     }
@@ -97,7 +115,7 @@ pub fn check_results(results: &std::path::Path) -> anyhow::Result<serde_json::Va
         }
         found = true;
     }
-    anyhow::ensure!(found, "data_invalid: 结果包缺失");
+    anyhow::ensure!(found, "data_invalid: The result package is missing");
     Ok(report)
 }
 
@@ -113,7 +131,7 @@ pub fn finalize_to(
     plot_results(&results, None, &["png".into(), "svg".into(), "pdf".into()])?;
     anyhow::ensure!(
         check_results(&results)?["workflow_complete"] == true,
-        "partial: 原生交付或图表尚未完成"
+        "partial: native delivery or plots are incomplete"
     );
     Ok(results)
 }

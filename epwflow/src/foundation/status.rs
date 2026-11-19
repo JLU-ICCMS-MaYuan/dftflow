@@ -10,7 +10,6 @@ pub enum Category {
     InputConflict,
     Environment,
     SchedulerUnknown,
-    BudgetDenied,
     StorageDenied,
     DataInvalid,
     ExecutionFailed,
@@ -25,7 +24,6 @@ impl Category {
             Category::InputConflict => "input_conflict",
             Category::Environment => "environment",
             Category::SchedulerUnknown => "scheduler_unknown",
-            Category::BudgetDenied => "budget_denied",
             Category::StorageDenied => "storage_denied",
             Category::DataInvalid => "data_invalid",
             Category::ExecutionFailed => "execution_failed",
@@ -44,8 +42,6 @@ impl Category {
             Category::Environment
         } else if msg.starts_with("scheduler_unknown:") {
             Category::SchedulerUnknown
-        } else if msg.starts_with("budget_denied:") {
-            Category::BudgetDenied
         } else if msg.starts_with("storage_denied:") {
             Category::StorageDenied
         } else if msg.starts_with("data_invalid:") {
@@ -70,7 +66,7 @@ pub fn fail(err: Error) -> ! {
 
 /// 输出带格式版本的结构化结果；区分操作成功与流程成功。
 pub fn print_json(v: &Value) {
-    println!("{}", serde_json::to_string_pretty(v).expect("序列化 JSON 失败"));
+    println!("{}", serde_json::to_string_pretty(v).expect("JSON serialization failed"));
 }
 
 /// 构造统一 JSON 信封（schema_version、operation_status、workflow_status、diagnostics）。

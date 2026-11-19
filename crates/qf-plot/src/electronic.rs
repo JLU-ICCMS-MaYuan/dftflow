@@ -11,15 +11,15 @@ pub struct ComparisonStroke {
     pub width: u32,
 }
 /// QE 参考始终为实线；仅共享粗细，不提供可误用于参考线的虚线样式。
-pub const REFERENCE_WIDTH: u32 = 4;
+pub const REFERENCE_WIDTH: u32 = 1;
 pub const INTERPOLATED_STROKE: ComparisonStroke = ComparisonStroke {
-    dash: 6,
-    gap: 6,
-    width: 3,
+    dash: 2,
+    gap: 2,
+    width: 1,
 };
 /// 元素投影使用不同短虚线周期，防止多条完全重合时后绘元素完全覆盖先绘元素。
 pub fn element_stroke(index: usize) -> ComparisonStroke {
-    ComparisonStroke { dash: 6 + 2 * (index % ELEMENTS.len()) as u32, gap: 6, width: 3 }
+    ComparisonStroke { dash: 6 + 2 * (index % ELEMENTS.len()) as u32, gap: 6, width: 1 }
 }
 pub const FERMI: RGBColor = RGBColor(220, 0, 0);
 pub const INTERPOLATED: RGBColor = RGBColor(0, 70, 210);
@@ -44,7 +44,7 @@ pub const ELEMENTS: [RGBColor; 6] = [
 pub fn png(svg: &str, file: &Path, width: u32, height: u32) -> Result<()> {
     let options = font_options();
     let tree = resvg::usvg::Tree::from_str(svg, &options)?;
-    let mut pixels = resvg::tiny_skia::Pixmap::new(width, height).context("高清图像分配失败")?;
+    let mut pixels = resvg::tiny_skia::Pixmap::new(width, height).context("High-resolution image distribution failed")?;
     resvg::render(
         &tree,
         resvg::tiny_skia::Transform::from_scale(
@@ -96,7 +96,7 @@ mod tests {
                 .filter(|p| p[0] < 100 && p[3] > 100)
                 .count()
                 > 200,
-            "字体缺失不能默默输出空白文字"
+            "Missing fonts cannot be silently output blank text"
         );
         std::fs::remove_file(path).unwrap();
     }

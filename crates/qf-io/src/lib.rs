@@ -187,18 +187,18 @@ pub fn parse_dyn0_qpoints(text: &str) -> Result<Vec<Dyn0QPoint>> {
         .filter(|l| !l.is_empty())
         .collect();
     if lines.len() < 2 {
-        anyhow::bail!("dyn0 文件格式不完整");
+        anyhow::bail!("dyn0 file is incomplete");
     }
     if lines[0].split_whitespace().count() != 3 {
-        anyhow::bail!("dyn0 第一行无法解析 nq1/nq2/nq3: {}", lines[0]);
+        anyhow::bail!("Cannot parse nq1/nq2/nq3 from the first dyn0 row: {}", lines[0]);
     }
     let q_count: usize = lines[1]
         .split_whitespace()
         .next()
         .and_then(|s| s.parse().ok())
-        .ok_or_else(|| anyhow::anyhow!("dyn0 第二行无法解析 q 点数量: {}", lines[1]))?;
+        .ok_or_else(|| anyhow::anyhow!("Cannot parse the q-point count from the second dyn0 row: {}", lines[1]))?;
     if lines.len() < 2 + q_count {
-        anyhow::bail!("dyn0 q 点数量不足: 期望 {q_count}，实际 {}", lines.len() - 2);
+        anyhow::bail!("Insufficient dyn0 q points: expected {q_count}, found {}", lines.len() - 2);
     }
     let mut v = Vec::with_capacity(q_count);
     for idx in 0..q_count {
@@ -207,7 +207,7 @@ pub fn parse_dyn0_qpoints(text: &str) -> Result<Vec<Dyn0QPoint>> {
             .filter_map(|s| s.parse().ok())
             .collect();
         if parts.len() != 3 {
-            anyhow::bail!("dyn0 q 点行无法解析为 3 个分量: {}", lines[2 + idx]);
+            anyhow::bail!("Cannot parse three components from the dyn0 q-point row: {}", lines[2 + idx]);
         }
         v.push(Dyn0QPoint {
             index: idx + 1,
@@ -292,12 +292,12 @@ pub fn read_band_frequencies(text: &str, expected_modes: usize) -> Result<Vec<Ve
         return Ok(grouped);
     }
     if !current.is_empty() {
-        anyhow::bail!("声子谱 freq 行数量不是模式数的整数倍。");
+        anyhow::bail!("Phonon freq row count must be a multiple of the mode count");
     }
     if !numeric_rows.is_empty() {
         return Ok(numeric_rows);
     }
-    anyhow::bail!("无法从声子谱文件解析频率");
+    anyhow::bail!("Cannot parse frequencies from the phonon dispersion file");
 }
 
 fn read_qe_plot_frequencies(lines: &[&str], expected_modes: usize) -> Option<Vec<Vec<f64>>> {
@@ -405,7 +405,7 @@ pub fn parse_tdos(text: &str) -> Result<Tdos> {
         }
     }
     if energies.is_empty() {
-        anyhow::bail!("未从 TDOS 文件解析到数据");
+        anyhow::bail!("No data parsed from the TDOS file");
     }
     Ok(Tdos {
         energies,

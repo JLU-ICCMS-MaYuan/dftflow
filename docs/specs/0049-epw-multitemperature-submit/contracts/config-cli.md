@@ -1,4 +1,6 @@
-# 配置、命令与目录契约
+# 配置与命令契约
+
+> 2026-11-17 最新约定：预算账本功能已按用户要求彻底撤销。本文件涉及账本、campaign 身份、预算预留／结算及全局两个作业限制的旧条款均已失效；当前计算只依赖工作流记录、Slurm 作业身份及科学核验。历史消耗与验收记录不改写。详见 [0058 最新需求](../../0058-epw-remove-resource-limits/spec.md)。
 
 ```toml
 [superconductivity]
@@ -8,7 +10,7 @@ mu_star = 0.13
 gap_temperatures_k = [20.0, 30.0, 40.0]
 ```
 
-mu_star 可省略，默认 0.13；显式值优先。其余原配置仍必需。温度正数、0.01 K 精度、互不重复且最多 50 点，按配置顺序传递。目录首尾采用配置列表首末项，无单位后缀或多余零。
+mu_star 可省略，默认 0.13；显式值优先。其余原配置仍必需。温度正数、0.01 K 精度、互不重复且最多 50 点，按配置顺序传递。
 
 ```bash
 epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
@@ -16,6 +18,12 @@ epw_superconductivity -c "epwinput.toml" --status --json
 epw_superconductivity -c "epwinput.toml" --stage superconductivity --resume -s
 ```
 
-前置可复用时一次提交两个独立作业，输出方法、目录和作业号；单方法只提交一个。目录为 8.epw-superconductivity/iso-mu0.13-20-40 和 aniso-mu0.13-20-40，各有 epw.in、epw.sh、epw.out／err、slurm-epw.log 及带温度的原生输出。脚本直接运行科学程序，使用 --chdir，无额外 cd 或 shell 严格选项。
+前置可复用时一次提交两个独立作业，输出方法、目录和作业号；单方法只提交一个。脚本直接运行科学程序，使用 --chdir，无额外 cd 或 shell 严格选项。
 
 再次调用收集已结束的批次，不需逐温度推进；只读 --status 显示两方法调度状态。未完成批次恢复需 --resume；未知回执不重提，第二次提交失败保留第一次作业。每方法使用 resources 配置并单独预留共享预算，不扩大上限。
+
+## 2026-11-18：独立 degaussq 与新目录
+
+在当前版本 2 配置的 `[stages."8.epw-superconductivity".iso]` 或 `.aniso` 中独立设置 `degaussq = 2.0`（meV）。该值优先于第 7 步 spectrum_index 回退值，目录与原生输入一致。省略时保留选择第 7 步展宽的旧行为。
+
+显式独立展宽默认从已有细矩阵重新计算谱后求解，不触发第 7 步插值；不要同时指定非空 fila2f 复用旧谱，若已指定请显式改为空字符串选择矩阵路线。不同展宽方法目录并存，当前失败显式恢复、活动／未知作业禁止重提的约束保持。

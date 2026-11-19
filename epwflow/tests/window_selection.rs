@@ -91,7 +91,7 @@ fn missing_bound_bands_cannot_silently_use_previous_fixed_window() {
     assert!(ec.epw_coarse_input("out").is_err());
     assert!(
         ec.epw_fine_input("out", 0.5).is_ok(),
-        "重读细网格不重新选窗"
+        "Reread fine grids not re-select windows"
     );
 }
 
@@ -129,7 +129,7 @@ fn energy_only_uses_four_bounds_and_existing_epw_without_projectability() {
     assert_eq!(selection.mode, "energy_only");
     assert_eq!(
         selection.parameters["dis_froz_max"], 2.,
-        "稀疏间隙不能将上界移到 LUMO+2"
+        "The thin gap cannot move the upper boundary to LUMO+2"
     );
     assert_eq!(selection.parameters.len(), 4);
     for input in [
@@ -177,7 +177,7 @@ fn energy_only_rejects_target_loss_and_preserves_native_config_encoding() {
         .window_selection()
         .unwrap_err()
         .to_string()
-        .contains("目标窗"));
+        .contains("Target window"));
     c.wannier.frozen_window_ev = Some([-0.5, 0.5]);
     c.set_native(&["5.epw-wannier", "epw", "INPUTEPW", "fsthick"], serde_json::json!(0.6)).unwrap();
     let ec = EpwConfig::from_config(&c)
@@ -186,7 +186,7 @@ fn energy_only_rejects_target_loss_and_preserves_native_config_encoding() {
         .unwrap()
         .with_bands(&[vec![-2., -1., 3., 6.]])
         .unwrap();
-    assert!(ec.window_selection().is_err(), "EPC 窗不能超出冻结窗");
+    assert!(ec.window_selection().is_err(), "EPC The window can't go beyond the freeze window");
     assert!(toml::to_string(&c).unwrap().contains("energy_only"));
 }
 

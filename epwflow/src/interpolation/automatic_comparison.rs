@@ -2,17 +2,17 @@
 use super::{
     attempt, comparison,
     comparison::SourceFile,
-    comparison_asr, comparison_data,
+    comparison_data,
     epw_config::{EpwConfig, NativeStage},
     native, restart,
 };
 use crate::{
     foundation::{
-        config::{Config, Program},
+        config::Config,
         stage::Backend,
         store::{self, Identity},
     },
-    qe_data::{self, manifest::QeManifest, qe_config::QeSettings, save, xml::Geometry},
+    qe_data::{self, manifest::QeManifest, qe_config::QeSettings, save},
 };
 use anyhow::{ensure, Context, Result};
 use std::{fs, path::Path};
@@ -71,10 +71,10 @@ pub(crate) fn path_points(
 ) -> Result<(Vec<comparison::PathPoint>, Vec<comparison_data::Tick>)> {
     ensure!(
         intervals > 0 && reciprocal.iter().flatten().all(|x| x.is_finite()),
-        "configuration: 比较路径参数无效"
+        "configuration: Invalid path parameter for comparison"
     );
     let segments =
-        qf_input::electronic::parse_kpath_segments(path.to_str().context("路径不是 UTF-8")?)?;
+        qf_input::electronic::parse_kpath_segments(path.to_str().context("The path isn't UTF-8")?)?;
     let mut points: Vec<comparison::PathPoint> = vec![];
     let mut ticks = vec![];
     let mut distance = 0.0;
@@ -85,12 +85,12 @@ pub(crate) fn path_points(
             let length = delta.iter().map(|x| x * x).sum::<f64>().sqrt();
             ensure!(
                 length.is_finite() && length > 1e-12,
-                "data_invalid: 路径含零长度或无效边"
+                "data_invalid: Path with zero length or invalid edge"
             );
             if edge == 0 {
                 // 断点保留独立段；留出可见空隙，但绝不跨段连曲线。
                 if !points.is_empty() {
-                    distance += length / intervals as f64;
+                    distance += length / 20.0;
                 }
                 points.push(comparison::PathPoint {
                     segment_id,
@@ -121,30 +121,8 @@ pub(crate) fn path_points(
             });
         }
     }
-    ensure!(points.len() >= 2, "data_invalid: 比较路径为空");
+    ensure!(points.len() >= 2, "data_invalid: Compare Path to Empty");
     Ok((points, ticks))
-}
-
-fn check_points(
-    values: &native::NativeBands,
-    points: &[[f64; 3]],
-    geometry: &Geometry,
-    modes: usize,
-) -> Result<()> {
-    ensure!(
-        values.values.len() == points.len() && values.values.iter().all(|v| v.len() == modes),
-        "data_invalid: 比较点／带／模式数不同"
-    );
-    for (p, q) in points.iter().zip(&values.points_cartesian) {
-        ensure!(
-            cart(*p, &geometry.reciprocal)
-                .iter()
-                .zip(q)
-                .all(|(a, b)| (a - b).abs() < 1e-6),
-            "input_conflict: 比较原生输出坐标或点序不同"
-        );
-    }
-    Ok(())
 }
 
 /// KPATH 在公开第一阶段已冻结。旧无路径内部调用不改变粗网格接口。
@@ -162,7 +140,7 @@ pub(crate) fn run(
     };
     ensure!(
         backend == Backend::Local,
-        "allocation: 自动比较必须在已登记分配内同步执行"
+        "allocation: Autocomparison must be synchronized within the registered allocation"
     );
     let f2_path = crate::foundation::layout::path(&f2_work, "qe-data/manifest.json");
     let f2 = QeManifest::load(&f2_path)?;
@@ -181,7 +159,7 @@ pub(crate) fn run(
             "points_per_edge",
         ])? as usize,
     )?;
-    let states = f2.states.as_ref().context("data_invalid: 缺 F2 均匀网格")?;
+    let states = f2.states.as_ref().context("data_invalid: Missing F2 Flat Grid")?;
     let mesh: Vec<_> = states
         .kpoints
         .iter()
@@ -197,27 +175,15 @@ pub(crate) fn run(
         })
         .collect();
     let path_crystal: Vec<_> = path.iter().map(|p| p.crystal).collect();
+    let (qe_electronic_path, _) = path_points(kpath, &geometry.reciprocal,
+        cfg.native_value::<u32>(&[crate::foundation::native_config::ELECTRONIC, "workflow", "points_per_edge"])? as usize)?;
+    let qe_electronic_crystal: Vec<_> = qe_electronic_path.iter().map(|p| p.crystal).collect();
     let all: Vec<_> = path_crystal.iter().chain(&mesh).copied().collect();
-    let post_dir = cfg
-        .programs
-        .ph
-        .path
-        .parent()
-        .context("configuration: PH 缺父目录")?;
-    let q2r = Program {
-        path: post_dir.join("q2r.x"),
-        args: vec![],
-    };
-    let matdyn = Program {
-        path: post_dir.join("matdyn.x"),
-        args: vec![],
-    };
-    for (role, program) in [("q2r", &q2r), ("matdyn", &matdyn)] {
-        ensure!(
-            f2.fingerprints.program_sha256.get(role) == Some(&store::hash_file(&program.path)?),
-            "input_conflict: 自动比较的 {role}.x 未在 F1 冻结或已改变"
-        );
-    }
+    let phonon = crate::foundation::stages::Step::Phonon.directory_in(f2_work);
+    let qe_frequency = phonon.join(format!("{}.phband.freq", cfg.qe.prefix));
+    let qe_dos = phonon.join(format!("{}.phdos.dat", cfg.qe.prefix));
+    // 缺少第 4 步产物时报告缺项；不再为比较执行 QE 或改写动力学矩阵。
+    for path in [&qe_frequency, &qe_dos] { save::nonempty(path)?; }
     let coarse_dir = crate::foundation::layout::path(&work, "coarse");
     let modes = geometry.atoms.len() * 3;
     let nwann = cfg.wannier.num_wann as usize;
@@ -228,8 +194,8 @@ pub(crate) fn run(
             Identity::capture(&f2_path)?
         },
         Identity::capture(kpath)?,
-        Identity::capture(&q2r.path)?,
-        Identity::capture(&matdyn.path)?,
+        Identity::capture(&qe_frequency)?,
+        Identity::capture(&qe_dos)?,
         Identity::capture(&cfg.programs.pw.path)?,
         Identity::capture(&cfg.programs.epw.path)?,
         Identity::capture(&std::env::current_exe()?)?,
@@ -292,7 +258,7 @@ pub(crate) fn run(
                     .iter()
                     .zip(&mesh)
                     .all(|(a, b)| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-7)),
-            "input_conflict: 第 5/6 步参考网格不同"
+            "input_conflict: I don't think so 5/6 The step reference grid is different"
         );
         crate::foundation::workspace_science::verify_electronic_comparison(cfg)?;
     } else {
@@ -306,12 +272,12 @@ pub(crate) fn run(
             Some(&inputs),
             || {
                 fs::create_dir_all(&electron)?;
-                save::stage_scf(f2_work, &electron.join("out"), &cfg.qe.prefix)?;
+                save::stage_ground_state(f2_work, &electron.join("out"), &cfg.qe.prefix)?;
                 fs::write(
                     &electron_input,
                     qe.path_input(
-                        electron.join("out").to_str().context("路径不是 UTF-8")?,
-                        &path_crystal,
+                        electron.join("out").to_str().context("The path isn't UTF-8")?,
+                        &qe_electronic_crystal,
                     )?,
                 )?;
                 Ok(())
@@ -330,179 +296,18 @@ pub(crate) fn run(
             || {
                 qe_data::xml::validate_save(&electron.join("out"), &cfg.qe.prefix, &qe, None)?;
                 let data = qe_data::nscf::parse_xml(&electron_xml)?;
-                ensure!(
-                    data.nbnd == states.nbnd && data.kpoints.len() == path.len(),
-                    "data_invalid: 比较 NSCF 点／带数不同"
-                );
-                for (expected, actual) in path_crystal.iter().zip(&data.kpoints) {
-                    ensure!(
-                        cart(*expected, &geometry.reciprocal)
-                            .iter()
-                            .zip(actual)
-                            .all(|(a, b)| (a - b).abs() < 1e-7),
-                        "input_conflict: 比较 NSCF 坐标或顺序不同"
-                    );
-                }
+                let request = super::native_sampling::pw(&fs::read_to_string(&electron_input)?)?;
+                let requested = request.iter().map(|p| cart(*p, &geometry.reciprocal)).collect::<Vec<_>>();
+                super::native_sampling::output(&native::NativeBands {
+                    points_cartesian: data.kpoints, values: data.eigenvalues
+                }, &requested, states.nbnd)?;
+                comparison::native_path(&path, &requested, &geometry.reciprocal)?;
                 Ok(())
             },
             |_| evidence(&electron),
         )?;
     }
-    let phonon = crate::foundation::layout::path(work, "comparison-native/phonon");
-    let gamma_q = f2
-        .qpoints
-        .iter()
-        .find(|q| q.crystal.iter().all(|x| x.abs() < 1e-9))
-        .context("data_invalid: 缺 Γ")?;
-    let gamma = &f2
-        .phonon_files
-        .iter()
-        .find(|p| p.q_id == gamma_q.global_index)
-        .context("data_invalid: 缺 Γ 映射")?
-        .dyn_file;
-    let force = phonon.join("force-constants");
-    let force_file = force.join("reference.fc.xml");
-    let onsite: String = cfg.native_value(&[
-        crate::foundation::native_config::COARSE,
-        "workflow",
-        "onsite_asr",
-    ])?;
-    ensure!(
-        onsite == "gamma_hermitian",
-        "configuration: stages.6.epw-coarse.workflow.onsite_asr: 当前只支持 gamma_hermitian"
-    );
-    attempt::run_with_inputs(
-        work,
-        "comparison-q2r",
-        &force,
-        store::hash_bytes(format!("{digest}:gamma-onsite-force").as_bytes()),
-        retry,
-        "q2r.exitcode",
-        None,
-        || {
-            fs::create_dir_all(&force)?;
-            store::write(
-                &force.join("reuse-decision.json"),
-                &serde_json::json!({
-                    "required_programs":["q2r.x"],
-                    "reference_mode":cfg.phonon.mode,
-                    "reason":"第 4 步 q2r/matdyn 使用 simple ASR；EPW 比较需要 Γ onsite 加 Hermitian 修正后、q2r/matdyn 不再施加 ASR。现有力常数未满足该口径；仅转换已核验动力学矩阵并补 q2r，不运行 PW/PH。",
-                    "sources":f2.phonon_files
-                }),
-            )?;
-            fs::copy(
-                &gamma_q.source_dyn0,
-                force.join(format!("{}.dyn0", cfg.qe.prefix)),
-            )?;
-            let gamma_text = fs::read_to_string(gamma)?;
-            for p in &f2.phonon_files {
-                fs::write(
-                    force.join(format!("{}.dyn{}.xml", cfg.qe.prefix, p.q_id)),
-                    comparison_asr::qe_xml_records(&comparison_asr::corrected_stars(
-                        &fs::read_to_string(&p.dyn_file)?,
-                        &gamma_text,
-                        geometry.atoms.len(),
-                    )?)?,
-                )?;
-            }
-            fs::write(
-                force.join("q2r.in"),
-                format!(
-                    "&input\n fildyn='{}.dyn.xml'\n flfrc='reference.fc'\n zasr='no'\n/\n",
-                    cfg.qe.prefix
-                ),
-            )?;
-            cfg.configure_file(
-                &[
-                    crate::foundation::native_config::COARSE,
-                    "comparison",
-                    "q2r",
-                ],
-                &force.join("q2r.in"),
-            )?;
-            Ok(())
-        },
-        || {
-            qe_data::execution::run(
-                &q2r,
-                &force.join("q2r.in"),
-                &force,
-                launcher,
-                backend,
-                "q2r",
-                false,
-            )
-        },
-        || save::nonempty(&force_file),
-        |_| evidence(&force),
-    )?;
-    let frequency = phonon.join("frequencies");
-    let force_identity = Identity::capture(&force_file)?;
-    attempt::run_with_inputs(
-        work,
-        "comparison-matdyn",
-        &frequency,
-        store::hash_bytes(format!("{digest}:frequencies:{}", force_identity.sha256).as_bytes()),
-        retry,
-        "matdyn.exitcode",
-        None,
-        || {
-            fs::create_dir_all(&frequency)?;
-            fs::copy(&force_file, frequency.join("reference.fc.xml"))?;
-            force_identity.verify()?;
-            store::write(
-                &frequency.join("reuse-decision.json"),
-                &serde_json::json!({
-                    "required_programs":["matdyn.x"],
-                    "reason":"第 4 步频率采用不同 ASR，且不包含完整路径加 DOS 网格；读取已完成的比较力常数，在所需 q 点补频率，不重跑 q2r/PW/PH。",
-                    "force_constants":force_identity,"qpoints":all
-                }),
-            )?;
-            let mut input = String::from("&input\n flfrc='reference.fc.xml'\n flfrq='reference.freq'\n asr='no'\n q_in_cryst_coord=.false.\n q_in_band_form=.false.\n");
-            for (i, el) in qe.cell.elements.iter().enumerate() {
-                let mass =
-                    qf_input::species::get_atomic_mass(el, cfg.atomic_masses.get(el).copied());
-                input.push_str(&format!(" amass({})={mass:.17e}\n", i + 1));
-            }
-            input.push_str(&format!("/\n{}\n", all.len()));
-            for p in &all {
-                let p = cart(*p, &geometry.reciprocal);
-                input.push_str(&format!("{:.17e} {:.17e} {:.17e}\n", p[0], p[1], p[2]));
-            }
-            fs::write(frequency.join("matdyn.in"), input)?;
-            cfg.configure_file(
-                &[
-                    crate::foundation::native_config::COARSE,
-                    "comparison",
-                    "matdyn",
-                ],
-                &frequency.join("matdyn.in"),
-            )?;
-            Ok(())
-        },
-        || {
-            qe_data::execution::run(
-                &matdyn,
-                &frequency.join("matdyn.in"),
-                &frequency,
-                launcher,
-                backend,
-                "matdyn",
-                false,
-            )
-        },
-        || {
-            check_points(
-                &native::parse_matdyn_path(&fs::read_to_string(frequency.join("reference.freq"))?)?,
-                &all,
-                &geometry,
-                modes,
-            )
-        },
-        |_| evidence(&frequency),
-    )?;
-
-    let epw_dir = root.join("epw");
+    let epw_dir = if numbered {coarse_dir.clone()} else {root.join("epw")};
     attempt::run(
         work,
         "comparison-epw",
@@ -510,21 +315,14 @@ pub(crate) fn run(
         store::hash_bytes(format!("{digest}:epw").as_bytes()),
         retry,
         || {
-            restart::stage(
-                &coarse_dir,
-                &coarse_dir.join("out"),
-                &cfg.qe.prefix,
-                nwann,
-                modes,
-                &epw_dir,
-            )?;
+            if !numbered { restart::stage(&coarse_dir,&coarse_dir.join("out"),&cfg.qe.prefix,nwann,modes,&epw_dir)?; }
             store::write(
                 &epw_dir.join("reuse-decision.json"),
-                &serde_json::json!({"required_programs":["epw.x"],"reason":"已有粗网格实空间数据不含路径及 DOS q 点的插值频率；用 epwread 读取模型，仅补声子求值。原生 band_plot 同时要求电子 k 表，给出一个占位点，输出不用于电子比较；电子对比复用第 5 步。","qpoints":all}),
+                &serde_json::json!({"required_programs":["epw.x"],"reason":"There are coarse grid real-space data that do not contain paths and DOS q interpolation frequency of points;using epwread Reads the model, only for acoustics. native band_plot At the same time, it requires electronics k Table, give a place-holder point, the output is not used for electronic comparison; the electronic comparison is reused 5 Step.","qpoints":all}),
             )?;
             EpwConfig::write_points(&epw_dir, if numbered { &all[..1] } else { &all }, &all)?;
             fs::write(
-                epw_dir.join("epw.in"),
+                epw_dir.join(if numbered {"epw_compare.in"} else {"epw.in"}),
                 epw.native_input(
                     NativeStage::Comparison,
                     "./out",
@@ -534,23 +332,23 @@ pub(crate) fn run(
             )?;
             Ok(())
         },
-        || super::coarse::run_epw(epw, &epw_dir, "epw.in", launcher, backend),
+        || super::coarse::run_epw(epw, &epw_dir, if numbered {"epw_compare.in"} else {"epw.in"}, launcher, backend),
         || {
-            native::checked_log(&fs::read_to_string(epw_dir.join("epw.out"))?, 0)?;
-            check_points(
-                &native::parse_bands(&fs::read_to_string(epw_dir.join("band.eig"))?)?,
-                if numbered { &all[..1] } else { &all },
-                &geometry,
-                nwann,
-            )?;
-            check_points(
+            native::checked_log(&fs::read_to_string(epw_dir.join(if numbered {"epw_compare.out"} else {"epw.out"}))?, 0)?;
+            let k = super::native_sampling::epw(&fs::read_to_string(epw_dir.join("kpoints.dat"))?)?;
+            let q = super::native_sampling::epw(&fs::read_to_string(epw_dir.join("qpoints.dat"))?)?;
+            let kc = k.iter().map(|p| cart(*p, &geometry.reciprocal)).collect::<Vec<_>>();
+            let qc = q.iter().map(|p| cart(*p, &geometry.reciprocal)).collect::<Vec<_>>();
+            super::native_sampling::output(
+                &native::parse_bands(&fs::read_to_string(epw_dir.join("band.eig"))?)?, &kc, nwann)?;
+            super::native_sampling::phonon(
                 &native::parse_bands(&fs::read_to_string(epw_dir.join("phband.freq"))?)?,
-                &all,
-                &geometry,
-                modes,
-            )
+                &qc, &path, &mesh, &geometry, modes)
         },
-        |_| evidence(&epw_dir),
+        |_| if numbered {
+            ["epw_compare.in","epw_compare.out","phband.freq","band.eig","kpoints.dat","qpoints.dat"].iter()
+                .map(|name|Identity::capture(&epw_dir.join(name))).collect()
+        } else {evidence(&epw_dir)},
     )?;
     f2.verify()?;
     for id in &identities {
@@ -558,9 +356,9 @@ pub(crate) fn run(
     }
     let mut provenance = vec![];
     let provenance_dirs = if numbered {
-        vec![&phonon, &epw_dir]
+        vec![&epw_dir]
     } else {
-        vec![&electron, &phonon, &epw_dir]
+        vec![&electron, &epw_dir]
     };
     if numbered {
         for n in ["band.eig", "sampling.json", "metrics.json"] {
@@ -568,12 +366,20 @@ pub(crate) fn run(
         }
     }
     for dir in provenance_dirs {
+        if numbered && dir==&coarse_dir {
+            for name in ["epw_compare.in","epw_compare.out","phband.freq","kpoints.dat","qpoints.dat"] {provenance.push(file(&dir.join(name))?);}
+            continue;
+        }
         provenance.extend(
             evidence(dir)?
                 .iter()
                 .map(|id| file(&id.path))
                 .collect::<Result<Vec<_>>>()?,
         );
+    }
+    for name in ["q2r.in", "matdyn_phband.in", "matdyn_phdos.in"] {
+        let input = phonon.join(name);
+        if input.is_file() { provenance.push(file(&input)?); }
     }
     let sources = comparison::Sources {
         schema_version: 2,
@@ -592,9 +398,10 @@ pub(crate) fn run(
         } else {
             None
         },
-        qe_phonon_bands: file(&frequency.join("reference.freq"))?,
+        qe_phonon_bands: file(&qe_frequency)?,
+        qe_phonon_dos: Some(file(&qe_dos)?),
         epw_phonon_bands: file(&epw_dir.join("phband.freq"))?,
-        epw_log: file(&epw_dir.join("epw.out"))?,
+        epw_log: file(&epw_dir.join(if numbered {"epw_compare.out"} else {"epw.out"}))?,
         provenance,
         path,
         ticks,
@@ -614,42 +421,46 @@ pub(crate) fn run(
         let previous: comparison::Sources = store::read(&source_path)?;
         ensure!(
             serde_json::to_value(&previous)? == serde_json::to_value(&sources)?,
-            "input_conflict: 比较来源清单变化"
+            "input_conflict: Comparison of changes in the manifest of sources"
         );
     } else {
         store::write(&source_path, &sources)?;
     }
     let output = crate::foundation::layout::path(&work, "interpolation/comparison");
-    if output.exists() {
+    if output.join("manifest.json").is_file() {
         let data = comparison_data::load(&output)?;
         ensure!(
             data.manifest.upstream_digest == store::hash_file(&source_path)?,
-            "input_conflict: 比较包绑定其他来源"
+            "input_conflict: Compared to other sources"
         );
     } else {
         fs::create_dir_all(output.parent().unwrap())?;
         comparison::export(&source_path, &output)?;
     }
     let results = crate::delivery::comparison::collect(work, None)?;
-    let pending = results
-        .join("figures/.comparison-figures.json.publish.json")
-        .exists();
-    if pending
-        || !crate::delivery::comparison_plot::check_figure_formats(
-            &results,
-            &["png", "svg", "pdf"],
-        )?
-    {
-        crate::delivery::comparison_plot::plot(
-            &results,
-            None,
-            &["png".into(), "svg".into(), "pdf".into()],
-        )?;
+    if crate::foundation::layout::enabled(work) {
+        crate::foundation::combined_plot::coarse(cfg, &results)?;
+    } else {
+        let pending = results
+            .join("figures/.comparison-figures.json.publish.json")
+            .exists();
+        if pending
+            || !crate::delivery::comparison_plot::check_figure_formats(
+                &results,
+                &["png", "svg", "pdf"],
+            )?
+        {
+            crate::delivery::comparison_plot::plot(
+                &results,
+                None,
+                &["png".into(), "svg".into(), "pdf".into()],
+            )?;
+        }
+        ensure!(
+            crate::delivery::comparison_plot::check_figure_formats(&results, &["png", "svg", "pdf"])?,
+            "data_invalid: 比较图表未完整发布"
+        );
     }
-    ensure!(
-        crate::delivery::comparison_plot::check_figure_formats(&results, &["png", "svg", "pdf"])?,
-        "data_invalid: 比较图表未完整发布"
-    );
     Ok(())
 }
 

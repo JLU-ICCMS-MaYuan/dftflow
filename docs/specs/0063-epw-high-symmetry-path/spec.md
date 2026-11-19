@@ -1,10 +1,21 @@
 # Feature 规格：第 5 步 Wannier 路径仅声明高对称端点
 
-**Issue**：[本地 0063 草案](issue-draft.md)，线上 Gitee 用户自管，远程链接待验证。
+> **协作入口（2026-11-17）**：[GitHub Issue #63](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/63)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #63](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/63)，线上 Gitee 用户自管，远程链接待验证。
 
 **创建日期**：2026-10-27。**状态**：本地实现、自定义文件头修复、相关回归及正式 CLI 发布完成，详见 [验收记录](acceptance.md)；未进行真实科学运行。
 
 ## 原始需求记录
+
+### 2026-11-16 比较图与采样要求
+
+> 1. 删除比较图上的紫色误差点、连线和相关图例。
+> 2. QE／EPW 沿相同的物理高对称路径，各自使用自己的采样密度；不要求内部 k、q 点逐一重合。
+> 3. 不为计算逐点差值而补算、重采样或阻止出图；没有共同点时，不强行计算差值。
+>
+> 修改相应的 issue 和 spec，然后开始修改代码。
+
 
 > 5.epw_wannier那一步里面的高对称路径的写法你可以参考/data/home/mayuan/code/dftflow/test_auto/MgB2/epwflow/Wed.9.Mori.pdf里面的方法，把 kpath.in改造成只写高对称点的方法。不需要你把每个插值的点都写进来。
 >
@@ -28,6 +39,8 @@
 > input_conflict: input_conflict: 无法定位 /data/home/mayuan/code/dftflow/examples/SiP2/5.epw-wannier/epw_wannier.in:No such file or directory (os error 2)
 > (my_scripts) [mayuan@login02 SiP2]$ epw_wannier --config "epwinput.toml" --stage wannier  -s
 > input_conflict: input_conflict: 无法定位 /data/home/mayuan/code/dftflow/examples/SiP2/5.epw-wannier/epw_wannier.in:No such file or directory (os error 2)这是为什么？你在/data/home/mayuan/code/dftflow/examples/SiP2测试过了吗？为什么不行，还是报错。你确定你重新编译得到新的 CLI 了吗
+
+> bands_num_points = 1 默认以后都是 50。修改到对应的 issue 和 spec 里面，并且修改 input.toml文件
 
 ## 附件与推断来源
 
@@ -109,6 +122,8 @@ AI 观察：IMG-001 每行以两个带标签的端点声明一条线段。没有
 - **FR-011**：兼容已有四行路径文件头中的自定义标题；仅在完整识别“标题、正整数、Line-Mode、Reciprocal”结构时跳过文件头，正文错误仍逐行拒绝并保留原始行号。不得通过改写用户路径文件或回执来绕过兼容问题。
 - **FR-012**：第 5 步归档失败原生任务时必须保留并撤下其旧活动记录，避免后续校验继续引用已移动的输入。历史遗留悬空记录仅在显式恢复、任务已明确失败、阶段已进入另一失败尝试且归档中的输入、脚本、日志及外部来源身份可核验时接续；缺失、损坏、歧义、活动或未知提交均拒绝，不能删除历史证据或重写哈希绕过校验。
 
+- **FR-013**：用户示例配置中的 `bands_num_points` 默认采用 `50`，替代原有 `1`；允许用户显式调整合法正整数，不在读取时覆盖用户值。它表示首段采样间隔数，其余段仍由 Wannier90 按真实段长比例取整；保持短段零间隔校验，不改变 QE 的 `points_per_edge`、NSCF 网格、能窗或历史输入／结果。
+
 ### 关键实体
 
 - 高对称端点：分数坐标及标签，标签不代替坐标身份。
@@ -126,6 +141,8 @@ AI 观察：IMG-001 每行以两个带标签的端点声明一条线段。没有
 - **SC-006**：相关生产回归和文档检查通过，按 FR-010 记录各层验证边界；源码受控验证与真实科学运行分开记录。
 - **SC-007**：SiP₂ 原样路径在实际输入生成和公开 CLI 受控恢复中通过；任意标题的完整文件头、裸端点、大小写和空白、畸形文件头及正文错误均有回归。路径文件与已有电子来源不变；受控恢复不增加 SCF／NSCF／PH／电子参考调用。
 - **SC-008**：回归覆盖“拟合未收敛 → 归档后输入生成失败 → 再恢复”的完整链，以及历史悬空活动记录的严格接续与拒绝。对真实 SiP₂ 原有失败状态完成恢复及新输入准备，验证 `s,p`／500 次参数、正式 CLI 路径和哈希，保留 SCF／NSCF／PH 与原配置，不提交真实计算。
+
+- **SC-009**：MgB₂ Ubuntu 的 `input.toml` 与 SiP₂ 的 `epwinput.toml` 均设置 `bands_num_points = 50`，中文注释说明首段间隔含义及用户可调整；TOML 解析通过。Issue、Spec、契约与使用说明一致记录此默认设置，历史验收中原值 `1` 的事实保持原样。
 
 ## 假设与依赖
 
@@ -146,3 +163,11 @@ AI 观察：IMG-001 每行以两个带标签的端点声明一条线段。没有
 ## 最终草案确认
 
 用户明确答复“开始执行。”，授权实施端点路径目标。随后用户明确同坐标才算差值、无同坐标不算、保留 DOS、不注明共同点覆盖率，按该答复实施。
+
+## 2026-11-16 默认采样设置补充
+
+按用户明确要求，后续用户示例统一使用 `bands_num_points = 50`。本次仅维护需求、说明和示例配置，不新增缺省字段自动补值机制，不提交科学作业；原生取点规则保持不变。FR-013／SC-009 对应 T014，验证见验收记录。
+
+## 2026-11-16 与 0043 的范围衔接
+
+用户已授权实施；[0043 最新要求](../0043-epw-comparison-max-differences/spec.md) 将本需求已有的电子独立采样边界扩展到常规声子比较，并取消全部比较图的紫色误差标记。FR-005／SC-003 的共同点统计继续有效；不得将旧版“声子仍按原有口径”解释为继续强制内部 q 点一致。物理路径、端点、分段和每份原生输出自身有效性仍核对，不为差值补算或重采样。首段 bands_num_points 默认 50 的既有决定不变。本轮实施与验收统一见 0043，不操作线上 Gitee。

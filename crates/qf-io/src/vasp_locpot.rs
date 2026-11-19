@@ -34,7 +34,7 @@ pub fn read_vasp_volumetric(path: &str) -> Result<Volumetric> {
     let text = std::fs::read_to_string(path).with_context(|| format!("read {path}"))?;
     let lines: Vec<&str> = text.lines().map(str::trim_end).collect();
     if lines.len() < 8 {
-        bail!("{path} 过短，无法解析体积场文件");
+        bail!("{path} Too short to parse field files");
     }
 
     // 注释行 (0) + 缩放/格矢 (1..4 或 1 + 2..5)
@@ -45,18 +45,18 @@ pub fn read_vasp_volumetric(path: &str) -> Result<Volumetric> {
     let lattice: [[f64; 3]; 3];
     if numbers.len() >= 3 {
         // 第一行直接是格矢（无统一缩放）
-        let a = parse_vec3(lines[i]).ok_or_else(|| anyhow::anyhow!("格矢解析失败"))?;
-        let b = parse_vec3(lines[i + 1]).ok_or_else(|| anyhow::anyhow!("格矢解析失败"))?;
-        let c = parse_vec3(lines[i + 2]).ok_or_else(|| anyhow::anyhow!("格矢解析失败"))?;
+        let a = parse_vec3(lines[i]).ok_or_else(|| anyhow::anyhow!("Parsing failed"))?;
+        let b = parse_vec3(lines[i + 1]).ok_or_else(|| anyhow::anyhow!("Parsing failed"))?;
+        let c = parse_vec3(lines[i + 2]).ok_or_else(|| anyhow::anyhow!("Parsing failed"))?;
         scale = 1.0;
         lattice = [a, b, c];
         i += 3;
     } else {
         scale = numbers[0];
         lattice = [
-            parse_vec3(lines[i + 1]).context("格矢 a 解析失败")?,
-            parse_vec3(lines[i + 2]).context("格矢 b 解析失败")?,
-            parse_vec3(lines[i + 3]).context("格矢 c 解析失败")?,
+            parse_vec3(lines[i + 1]).context("Yee a Parsing failed")?,
+            parse_vec3(lines[i + 2]).context("Yee b Parsing failed")?,
+            parse_vec3(lines[i + 3]).context("Yee c Parsing failed")?,
         ];
         i += 4;
     }
@@ -81,7 +81,7 @@ pub fn read_vasp_volumetric(path: &str) -> Result<Volumetric> {
             .split_whitespace()
             .map(|t| t.parse::<usize>())
             .collect::<Result<Vec<_>, _>>()
-            .context("元素计数解析失败")?;
+            .context("Element Count Parsing Failed")?;
         i += 1;
     }
 
@@ -117,12 +117,12 @@ pub fn read_vasp_volumetric(path: &str) -> Result<Volumetric> {
         // augmentation 段：继续跳过（不解析其内容）
     }
     let grid_line_idx =
-        grid_line_idx.ok_or_else(|| anyhow::anyhow!("{path} 未找到网格维度行 NGX NGY NGZ"))?;
+        grid_line_idx.ok_or_else(|| anyhow::anyhow!("{path} No grid-dimensional lines found NGX NGY NGZ"))?;
     let dims: Vec<usize> = lines[grid_line_idx]
         .split_whitespace()
         .map(|t| t.parse::<usize>())
         .collect::<Result<Vec<_>, _>>()
-        .context("网格维度解析失败")?;
+        .context("Grid-dimensional resolution failed")?;
     let (nx, ny, nz) = (dims[0], dims[1], dims[2]);
     let ngrid = nx * ny * nz;
 
@@ -139,7 +139,7 @@ pub fn read_vasp_volumetric(path: &str) -> Result<Volumetric> {
     }
     if values.len() < ngrid {
         bail!(
-            "{path} 网格数据不足：读取 {}，需要 {}（网格 {}x{}x{}）",
+            "{path} Grid data insufficient: read {},Yes {}(Grid {}x{}x{})",
             values.len(),
             ngrid,
             nx,
@@ -180,7 +180,7 @@ pub fn planar_average(v: &Volumetric, axis: usize) -> Vec<f64> {
         0 => nx,
         1 => ny,
         2 => nz,
-        _ => panic!("axis 必须为 0/1/2"),
+        _ => panic!("axis Must be 0/1/2"),
     };
     let mut sum = vec![0.0f64; n];
     let mut cnt = vec![0usize; n];

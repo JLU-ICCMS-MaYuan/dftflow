@@ -29,7 +29,7 @@ pub fn compute_spectrum(
 ) -> Result<Spectrum> {
     ensure!(
         frequencies_cm1.len() == a2f.len(),
-        "data_invalid: 频率与 α²F 长度不一致"
+        "data_invalid: Frequency and α² F Inconsistent length"
     );
     let w = apply_low_frequency_rule(frequencies_cm1, eps_acoustic_cm1);
     let mut lambda_integral = 0.0_f64;

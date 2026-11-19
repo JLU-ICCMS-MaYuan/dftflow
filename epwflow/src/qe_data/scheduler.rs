@@ -1,4 +1,4 @@
-use super::super::foundation::{budget, config, snapshot, stage::Backend, store};
+use super::super::foundation::{config, snapshot, stage::Backend, store};
 use super::{
     collect_ph, compare,
     manifest::{Fingerprints, QeManifest, ScfRecord, Validation},
@@ -10,15 +10,12 @@ use anyhow::{bail, ensure, Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// 在共享账本上登记本运行，不限制计算时长或存储空间。
-fn charge_budget(binding: &snapshot::RunBinding, cfg: &config::Config) -> Result<String> {
-    budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
-        budget::reserve(
-            ledger,
-            &format!("qe-data:{}", binding.run_id),
-        )
-    })
-    .context("budget_denied: qe-data 预算预留失败")
+/// 并行 PH 的归集边界；逐项验证已有原生响应，不调用 ph.x。
+pub fn collect_parallel(cfg: &config::Config, qe: &QeSettings) -> Result<()> {
+    let points = phonon::initialized_points(qe, &cfg.work_dir)?;
+    let responses = points.iter().map(|q| phonon::completed_response(qe, &cfg.work_dir, q)).collect::<Result<Vec<_>>>()?;
+    collect_ph::collect(&cfg.work_dir, &points, &responses, &cfg.qe.prefix, &phonon::geometry(qe, &cfg.work_dir)?)?;
+    Ok(())
 }
 
 /// 执行完整 QE 数据链到 qe-data 交付（FR-001/003~010）：
@@ -31,17 +28,10 @@ pub fn run(
     launcher: &[String],
     work: &Path,
 ) -> Result<QeManifest> {
-    let _token = charge_budget(binding, cfg)?;
-    let result = run_registered(binding, cfg, qe, backend, launcher, work)?;
-    budget::with_ledger(
-        &cfg.budget.ledger,
-        &cfg.budget.campaign_id,
-        budget::reconcile,
-    )?;
-    Ok(result)
+    run_registered(binding, cfg, qe, backend, launcher, work)
 }
 
-/// 由统一入口在已登记分配内调用；整份分配只计费一次。
+/// 由统一入口在现有 Slurm 分配内执行科学阶段。
 pub fn run_registered(
     binding: &snapshot::RunBinding,
     _cfg: &config::Config,
@@ -82,25 +72,25 @@ pub fn run_qeflow_registered(
 ) -> Result<QeManifest> {
     ensure!(
         !crate::foundation::layout::path(&work, "qe-data/manifest.json").exists(),
-        "input_conflict: QE 数据已发布，请复用完成记录"
+        "input_conflict: QE Data has been released, please return to finish record"
     );
     binding.verify()?;
     for role in ["q2r", "matdyn"] {
         let id = binding.programs.get(role).with_context(|| {
-            format!("environment: 缺少固定的 {role}.x；请用完整 QE 目录建立新运行")
+            format!("environment: Missing fixed {role}.x ;Please complete QE Create directory for new running")
         })?;
         id.verify()?;
     }
     let path = cfg
         .kpath
         .as_ref()
-        .context("required: 缺少 kpath 或 KPATH.in")?;
+        .context("required: Missing kpath or KPATH.in")?;
     ensure!(
         binding
             .kpath
             .as_ref()
             .is_some_and(|id| store::hash_file(path).ok().as_ref() == Some(&id.sha256)),
-        "input_conflict: 路径未绑定或发生变化"
+        "input_conflict: The path has not been bound or changed"
     );
     let (scf_res, qpoints, responses) = super::qeflow::run(cfg, qe, backend, launcher, work)?;
     // 失败的 NSCF 保存树不能与新尝试合并；保留原现场后重新从 SCF 快照启动。
@@ -168,6 +158,19 @@ pub(crate) fn publish_data(
         &phonon::geometry(qe, work)?,
     )?;
     collect_ph::write_q_index_map(work, &qpoints)?;
+    if crate::foundation::layout::enabled(work) {
+        let mut validation=Validation{status:"valid".into(),checks:Vec::new(),units:BTreeMap::new(),thresholds:BTreeMap::new(),evidence:Vec::new()};
+        validation.check("scf_energy_finite",scf_res.energy_ry.is_finite(),"Native SCF energy is finite");
+        validation.check("nscf_complete",!states.kpoints.is_empty() && states.nbnd>0,"Imported electronic metadata is complete");
+        validation.check("phonon_complete",!qpoints.is_empty() && qpoints.len()==collected.responses.len(),"Native PH delivery parsed successfully");
+        ensure!(validation.all_passed(),"data_invalid: imported native PH validation failed");
+        let result=QeManifest{schema_version:2,artifact_root:Some(work.to_path_buf()),artifacts:Vec::new(),run_id:run_id.into(),
+            fingerprints:Fingerprints{structure_sha256:String::new(),pseudo_sha256:BTreeMap::new(),program_sha256:BTreeMap::new()},
+            scf:Some(ScfRecord{total_energy_ry:scf_res.energy_ry,attempt_count:scf_res.attempt_count,success_count:scf_res.success_count,snapshot_dir:scf_res.snapshot_dir}),
+            states:Some(states),qpoints,phonon_files:collected.responses,validation};
+        result.verify()?;
+        return Ok(result);
+    }
 
     let scf_record = ScfRecord {
         total_energy_ry: scf_res.energy_ry,
@@ -211,7 +214,7 @@ pub(crate) fn publish_data(
     validation.check(
         "phonon_complete",
         collected.responses.iter().all(|r| r.perturbations > 0),
-        "所有响应势扰动数已确定",
+        "All response-potential perturbation counts determined",
     );
     validation.check(
         "artifact_integrity",
@@ -265,7 +268,7 @@ pub(crate) fn publish_data(
             });
         }
     }
-    let identity = crate::foundation::layout::path(&work, "scf/snapshot-files.json");
+    let identity = if crate::foundation::layout::enabled(work) { crate::foundation::layout::path(work,"scf/snapshot").join(format!("{}.save/data-file-schema.xml",qe.config.qe.prefix)) } else { crate::foundation::layout::path(&work, "scf/snapshot-files.json") };
     artifacts.push(super::manifest::Artifact {
         role: "scf_snapshot_identity".into(),
         relative_path: identity.strip_prefix(work)?.into(),
@@ -300,24 +303,45 @@ pub(crate) fn publish_data(
             eprintln!("qe-data validation failed: {} = {}", c.name, c.passed);
         }
         bail!(
-            "data_invalid: qe-data 本地校验未通过，拒绝发布清单: {}",
+            "data_invalid: qe-data Local verification failed, release manifest denied: {}",
             validation.status
         );
     }
 
+    if crate::foundation::layout::enabled(work) {
+        let cfg=crate::qe_data::direct::current(work)?;
+        let stage=crate::foundation::stages::Step::Phonon.directory(&cfg);
+        let mut directories=vec![stage.join("out"),stage.join("init/out")];
+        let q=stage.join("q");
+        if q.is_dir() {for entry in std::fs::read_dir(q)? {let entry=entry?;if entry.file_type()?.is_dir(){directories.push(entry.path().join("out"));}}}
+        // 已归集并完整核验后移除原始工作矩阵；正式 save 保持唯一。
+        let mut originals=std::collections::BTreeSet::new();
+        for response in &responses { originals.insert(response.dyn_file.clone()); }
+        for point in &manifest.qpoints { originals.insert(point.source_dyn0.clone()); }
+        for original in originals {
+            if original.starts_with(&stage) && !original.starts_with(stage.join("save")) && original.is_file() {
+                crate::foundation::native_jobs::forget_work_inputs(&cfg,&original)?;
+                std::fs::remove_file(original)?;
+            }
+        }
+        for directory in directories {
+            crate::foundation::native_jobs::forget_work_inputs(&cfg,&directory)?;
+            crate::foundation::workspace_data::remove_work_tree(work,&directory)?;
+        }
+    }
     Ok(manifest)
 }
 
 /// 阶段边界：仅执行到 qe-data 交付；后续阶段未接入时明确报错（FR-001）。
 pub fn unsupported_beyond_qe_data() -> Result<()> {
-    bail!("not_implemented: 全流程后续阶段（F3–F5）尚未接入，submit/run 越过 qe-data 不可用");
+    bail!("not_implemented: Full process follow-up phase(F3–F5 )Not yet accessed,submit/run Over qe-data Not Available");
 }
 
-/// qe-data 阶段自检（FR-010 依赖/预算/失败边界）：核对绑定来源未变。
+/// qe-data 阶段自检（FR-010 依赖/失败边界）：核对绑定来源未变。
 pub fn verify_binding(binding: &snapshot::RunBinding) -> Result<()> {
     binding
         .verify()
-        .context("input_conflict: 绑定来源在执行前已被修改")
+        .context("input_conflict: The binding source has been modified before execution")
 }
 
 /// 内部最小参考数值对照（FR-011）的便捷入口：把当前清单与参考清单比较。
@@ -337,7 +361,7 @@ pub fn register_import(source_work: &Path, work: &Path) -> Result<reuse::ImportR
 pub fn record_acceptance(work: &Path, record: &qe_acceptance::AcceptanceRecord) -> Result<()> {
     ensure!(
         record.require_evidence().is_ok(),
-        "data_invalid: 验收记录缺少真实证据，拒绝落盘冒充"
+        "data_invalid: The receipt and inspection records lacked real evidence and refused to leave the book and impersonate"
     );
     qe_acceptance::write(
         &crate::foundation::layout::path(&work, "qe-data").join("acceptance.json"),

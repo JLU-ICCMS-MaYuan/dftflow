@@ -23,7 +23,7 @@ pub enum NativeStage {
 fn quoted(value: &str) -> Result<String> {
     ensure!(
         !value.contains(['\n', '\r', '\0']),
-        "configuration: 原生输入字符串包含控制字符"
+        "configuration: native input string contains control characters"
     );
     Ok(format!("'{}'", value.replace('\'', "''")))
 }
@@ -40,7 +40,7 @@ impl<'a> EpwConfig<'a> {
 
     /// 必须来自已绑定的 F2 电子态，不能使用材料猜测值或不同来源的零点。
     pub fn with_fermi(mut self, fermi_ev: f64) -> Result<Self> {
-        ensure!(fermi_ev.is_finite(), "data_invalid: F2 Fermi 能非有限");
+        ensure!(fermi_ev.is_finite(), "data_invalid: F2 Fermi It's not finite");
         self.fermi_ev = Some(fermi_ev);
         Ok(self)
     }
@@ -48,7 +48,7 @@ impl<'a> EpwConfig<'a> {
     /// 由已核验的 F2 清单提供完整 NSCF 本征值，单位为 eV。
     pub fn with_bands(mut self, bands: &[Vec<f64>]) -> Result<Self> {
         ensure!(qf_wannier::validate_bands(bands)? == self.cfg.qe.nscf.nbnd as usize,
-            "data_invalid: 选窗本征值与配置 NSCF 带数不符");
+            "data_invalid: Select Window Marker and Configure NSCF The number doesn't match");
         self.bands = Some(bands.to_vec());
         Ok(self)
     }
@@ -61,7 +61,7 @@ impl<'a> EpwConfig<'a> {
                 && !species.is_empty()
                 && species.iter().all(|el| self.cfg.pseudos.contains_key(el))
                 && self.cfg.atomic_masses.keys().all(|el| unique.contains(el)),
-            "data_invalid: EPW 原子质量缺少完整、有序的结构元素绑定"
+            "data_invalid: EPW Atom mass lacks complete and orderly structural elements binding"
         );
         self.species = Some(species.to_vec());
         Ok(self)
@@ -69,7 +69,7 @@ impl<'a> EpwConfig<'a> {
 
     pub fn window_selection(&self) -> Result<qf_wannier::Selection> {
         let w = &self.cfg.wannier;
-        ensure!(w.frozen_max_ev.is_none() || w.frozen_window_ev.is_none(), "configuration: 冻结能窗上界重复指定");
+        ensure!(w.frozen_max_ev.is_none() || w.frozen_window_ev.is_none(), "configuration: Freezing to double-specify above the window");
         let bounds = qf_wannier::Bounds {
             dis_win_min: w.outer_window_ev.map(|v| v[0]),
             dis_win_max: w.outer_window_ev.map(|v| v[1]),
@@ -85,8 +85,8 @@ impl<'a> EpwConfig<'a> {
             qf_wannier::SelectionMode::FixedPlusProjectability => qf_wannier::select_default,
         };
         let mut selection = select(
-            self.bands.as_deref().context("data_invalid: 选窗缺少绑定的完整 F2 本征值")?,
-            self.fermi_ev.context("data_invalid: 选窗缺少绑定的 F2 Fermi 能")?,
+            self.bands.as_deref().context("data_invalid: Window selection lacked the full bounds F2 Present value")?,
+            self.fermi_ev.context("data_invalid: The window is not bound F2 Fermi Yes")?,
             w.num_wann as usize,
             &w.exclude_bands.iter().map(|&v| v as usize).collect::<Vec<_>>(),
             &bounds, reference,
@@ -101,7 +101,7 @@ impl<'a> EpwConfig<'a> {
             let upper = fermi + fsthick;
             ensure!(selection.parameters["dis_froz_min"] <= lower
                 && upper <= selection.parameters["dis_froz_max"],
-                "data_invalid: 纯能量冻结窗未包含 EPC 目标窗 [{lower},{upper}] eV");
+                "data_invalid: Pure energy freeze window not contained EPC Target window [{lower},{upper}] eV");
         }
         Ok(selection)
     }
@@ -118,16 +118,16 @@ impl<'a> EpwConfig<'a> {
         if let Some(expected) = self.cfg.wannier.guiding_centres {
             let pattern = regex::Regex::new(r"Use guiding centre to control phases\s*:\s*([TF])\b")?;
             let actual = pattern.captures_iter(log).last()
-                .context("data_invalid: 原生 Wannier 日志缺少 guiding_centres 采用证据")?;
+                .context("data_invalid: Native Wannier Log Missing guiding_centres Use of evidence")?;
             ensure!((&actual[1] == "T") == expected,
-                "data_invalid: 原生 guiding_centres 与当前配置不一致");
+                "data_invalid: Native guiding_centres Inconsistent with current configuration");
         }
         if self.cfg.wannier.selection_mode != qf_wannier::SelectionMode::EnergyOnly {
             return Ok(());
         }
         let outer = super::comparison::parse_outer_window(log)?;
         let inner = super::comparison::parse_frozen_window(log)?
-            .context("data_invalid: 纯能量 Wannier 日志缺少 Inner 能窗")?;
+            .context("data_invalid: Pure energy Wannier Log Missing Inner The window")?;
         let selection = self.window_selection()?;
         for (name, actual) in [
             ("dis_win_min", outer[0]), ("dis_win_max", outer[1]),
@@ -137,7 +137,7 @@ impl<'a> EpwConfig<'a> {
             // 部署 W90 的 disentangle 使用 f10.5；仅允许半个显示间隔与浮点余量。
             let tolerance = 0.000005 + 8.0 * f64::EPSILON * expected.abs().max(1.0);
             ensure!((actual - expected).abs() <= tolerance,
-                "data_invalid: 原生 {name}={actual} eV 与选窗记录 {expected} eV 不一致");
+                "data_invalid: Native {name}={actual} eV And window-selection records {expected} eV Inconsistencies");
         }
         Ok(())
     }
@@ -164,7 +164,7 @@ impl<'a> EpwConfig<'a> {
         for p in &w.projections {
             ensure!(
                 !p.contains(['\n', '\r', '\0']),
-                "configuration: 投影含控制字符"
+                "configuration: Projectivity Control Character"
             );
             s.push_str(p);
             s.push('\n');
@@ -224,7 +224,7 @@ impl<'a> EpwConfig<'a> {
         smearing_mev: f64,
     ) -> Result<String> {
         config::positive(smearing_mev, "interpolation.phonon_smearings_mev")?;
-        ensure!(dvscf_dir.len() < 100, "configuration: EPW 5.9 dvscf_dir 长度必须小于 100 字节；请相对实际工作目录定位数据，避免 Fortran 静默截断");
+        ensure!(dvscf_dir.len() < 100, "configuration: EPW 5.9 dvscf_dir The length must be less than 100 bytes;relative to actual work directory location data, avoid Fortran Silent Cut");
         let i = &self.cfg.interpolation;
         let w = &self.cfg.wannier;
         let wannier_only = matches!(stage, NativeStage::WannierOnly);
@@ -251,11 +251,14 @@ impl<'a> EpwConfig<'a> {
         let efermi_read:bool=if matches!(stage,NativeStage::Comparison) {
             self.cfg.native_value(&[COARSE,"comparison","epw","INPUTEPW","efermi_read"])?
         } else {self.cfg.native_value(&[stage_name,"epw","INPUTEPW","efermi_read"])?};
+        let explicit_fermi = if matches!(stage,NativeStage::Comparison) {
+            self.cfg.native_value::<f64>(&[COARSE,"comparison","epw","INPUTEPW","fermi_energy"]).ok()
+        }else{self.cfg.native_value::<f64>(&[stage_name,"epw","INPUTEPW","fermi_energy"]).ok()};
+        let efermi_read = efermi_read && (explicit_fermi.is_some() || self.fermi_ev.is_some());
         match efermi_read {
             true => s.push_str(&format!(
                 " efermi_read = .true.\n fermi_energy = {:.16e}\n",
-                self.fermi_ev
-                    .context("data_invalid: 缺少绑定的 F2 Fermi 能")?
+                explicit_fermi.or(self.fermi_ev).context("configuration: efermi_read requires fermi_energy")?
             )),
             false => s.push_str(" efermi_read = .false.\n"),
         }
@@ -312,7 +315,7 @@ impl<'a> EpwConfig<'a> {
                 }
                 if wannier_only && self.cfg.kpath.is_some() {
                     data.extend(super::electronic_sampling::wdata(
-                        self.cfg.kpath.as_ref().context("required: 缺少 KPATH.in")?,
+                        self.cfg.kpath.as_ref().context("required: Missing KPATH.in")?,
                         self.cfg.native_value(&[
                             crate::foundation::native_config::WANNIER,
                             "wannier90",
@@ -330,7 +333,7 @@ impl<'a> EpwConfig<'a> {
                     )?);
                 }
                 ensure!(data.len() <= 200 && data.iter().all(|line| line.len() <= 256),
-                    "configuration: 内嵌 Wannier90 的 wdata 超过 200 条或单条 256 字节；保留已有 QE 数据，请缩短路径配置");
+                    "configuration: Embedded Wannier90 It's wdata More than 200 Articles or separate articles 256 bytes; retaining already QE Data, shorten path configuration");
                 for (j, line) in data.iter().enumerate() {
                     s.push_str(&format!(" wdata({}) = {}\n", j + 1, quoted(line)?));
                 }
@@ -345,7 +348,7 @@ impl<'a> EpwConfig<'a> {
                 s.push_str(" epwread = .true.\n epwwrite = .false.\n wannierize = .false.\n ephwrite = .true.\n eliashberg = .true.\n liso = .false.\n laniso = .false.\n mp_mesh_k = .true.\n");
                 // 原生数组由本阶段配置覆盖，不读取第八步温度。
                 let temps:Vec<f64>=self.cfg.native_value(&[crate::foundation::native_config::FINE,"epw","INPUTEPW","temps"])?;
-                s.push_str(&format!(" nstemp = 1\n temps = {:.16e}\n", temps.first().context("configuration: stages.7.epw-fine.epw.INPUTEPW.temps: 缺少温度")?));
+                s.push_str(&format!(" nstemp = 1\n temps = {:.16e}\n", temps.first().context("configuration: stages.7.epw-fine.epw.INPUTEPW.temps: Lack of temperature")?));
             }
         }
         // EPW 5.9 写完粗矩阵后仍进入 use_wannier，必须提供可加载的网格。
@@ -375,7 +378,10 @@ impl<'a> EpwConfig<'a> {
             NativeStage::Comparison=>&[COARSE,"comparison","epw"],
             NativeStage::FineMatrices=>&fine_parts,
         };
-        self.cfg.apply_native(task,&s)
+        let mut native_cfg=self.cfg.clone();
+        let mut flag=task.to_vec();flag.extend(["INPUTEPW","efermi_read"]);
+        native_cfg.set_native(&flag,serde_json::json!(efermi_read))?;
+        native_cfg.apply_native(task,&s)
     }
 
     /// 常规比较路径及 DOS 网格；显式选全 q，避免 Fermi 筛选遗漏频率。
@@ -386,7 +392,7 @@ impl<'a> EpwConfig<'a> {
         ] {
             ensure!(
                 !points.is_empty() && points.iter().flatten().all(|v| v.is_finite()),
-                "configuration: 常规比较点缺失或非有限"
+                "configuration: General points of comparison are missing or not finite"
             );
             let mut text = format!("{} crystal\n", points.len());
             for [x, y, z] in points {
@@ -409,5 +415,25 @@ impl<'a> EpwConfig<'a> {
             ),
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod direct_fine_tests {
+    use super::*;
+    #[test]
+    fn existing_model_fine_input_needs_no_window_binding_and_honors_explicit_fermi() {
+        let mut cfg:config::Config=toml::from_str(include_str!("../../tests/fixtures/input.toml")).unwrap();
+        cfg.set_native(&[crate::foundation::native_config::FINE,"epw","INPUTEPW","efermi_read"],serde_json::json!(true)).unwrap();
+        let epw=EpwConfig::from_config(&cfg).unwrap().with_species(&cfg.pseudos.keys().cloned().collect::<Vec<_>>()).unwrap();
+        let input=epw.epw_fine_input("./out",cfg.interpolation.phonon_smearings_mev[0]).unwrap();
+        assert!(input.contains("efermi_read = .false."));
+        assert!(!input.contains("dis_win_max"));
+        cfg.set_native(&[crate::foundation::native_config::FINE,"epw","INPUTEPW","fermi_energy"],serde_json::json!(6.25)).unwrap();
+        let epw=EpwConfig::from_config(&cfg).unwrap().with_species(&cfg.pseudos.keys().cloned().collect::<Vec<_>>()).unwrap();
+        let input=epw.epw_fine_input("./out",cfg.interpolation.phonon_smearings_mev[0]).unwrap();
+        assert!(input.contains("efermi_read = .true."));
+        let value=regex::Regex::new(r"(?m)^\s*fermi_energy\s*=\s*([0-9.eE+-]+)").unwrap().captures(&input).unwrap()[1].parse::<f64>().unwrap();
+        assert_eq!(value,6.25);
     }
 }

@@ -16,12 +16,11 @@ pub struct AcceptanceRecord {
     pub scf_attempt_count: u32,
     pub scf_success_count: u32,
     pub numeric_differences: BTreeMap<String, f64>,
-    pub budget_campaign: String,
     pub evidence: Vec<String>,
 }
 
 impl AcceptanceRecord {
-    pub fn new(run_id: &str, ph_mode: &str, budget_campaign: &str) -> Self {
+    pub fn new(run_id: &str, ph_mode: &str) -> Self {
         AcceptanceRecord {
             schema_version: 1,
             run_id: run_id.to_string(),
@@ -31,7 +30,6 @@ impl AcceptanceRecord {
             scf_attempt_count: 0,
             scf_success_count: 0,
             numeric_differences: BTreeMap::new(),
-            budget_campaign: budget_campaign.to_string(),
             evidence: Vec::new(),
         }
     }
@@ -40,11 +38,11 @@ impl AcceptanceRecord {
     pub fn require_evidence(&self) -> Result<()> {
         anyhow::ensure!(
             !self.program_identities.is_empty(),
-            "data_invalid: 验收缺少真实程序身份证据"
+            "data_invalid: Receiving and inspection lacked proof of true procedural identity"
         );
         anyhow::ensure!(
             self.scf_attempt_count > 0,
-            "data_invalid: 验收缺少真实 SCF 执行证据"
+            "data_invalid: The acceptance is not real SCF Evidence of execution"
         );
         Ok(())
     }
@@ -59,11 +57,10 @@ pub fn write(path: &Path, record: &AcceptanceRecord) -> Result<()> {
 pub fn from_manifest(
     run_id: &str,
     ph_mode: &str,
-    budget_campaign: &str,
     program_identities: BTreeMap<String, String>,
     input_identities: BTreeMap<String, String>,
 ) -> AcceptanceRecord {
-    let mut r = AcceptanceRecord::new(run_id, ph_mode, budget_campaign);
+    let mut r = AcceptanceRecord::new(run_id, ph_mode);
     r.program_identities = program_identities;
     r.input_identities = input_identities;
     r

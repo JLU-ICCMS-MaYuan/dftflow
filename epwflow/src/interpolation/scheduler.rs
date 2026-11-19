@@ -1,4 +1,4 @@
-use super::super::foundation::{budget, config, stage::Backend, store};
+use super::super::foundation::{config, stage::Backend, store};
 use super::{
     adapter, coarse, epw_config, fine,
     manifest::{InterpolationManifest, Validation},
@@ -8,14 +8,6 @@ use anyhow::{bail, ensure, Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// 在共享预算账本上预留资源（FR-011）。
-fn charge_budget(cfg: &config::Config, run_id: &str) -> Result<String> {
-    budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
-        budget::reserve(ledger, &format!("interpolation:{}", run_id))
-    })
-    .context("budget_denied: interpolation 预算预留失败")
-}
-
 /// 执行完整 Wannier 化与 EPW 插值（F3），交付 interpolation/manifest.json（FR-001~012）。
 pub fn run(
     cfg: &config::Config,
@@ -24,17 +16,11 @@ pub fn run(
     work: &Path,
     f2_work: &Path,
 ) -> Result<InterpolationManifest> {
-    run_coarse_stages(cfg, backend, launcher, work, f2_work, true, false)?;
-    let result = run_fine_registered(cfg, backend, launcher, work)?;
-    budget::with_ledger(
-        &cfg.budget.ledger,
-        &cfg.budget.campaign_id,
-        budget::reconcile,
-    )?;
-    Ok(result)
+    run_coarse_stages(cfg, backend, launcher, work, f2_work, false)?;
+    run_fine_registered(cfg, backend, launcher, work)
 }
 
-/// 统一入口已登记整份分配，禁止再次按阶段计费。
+/// 统一入口在同一分配中执行粗、细网格阶段。
 pub fn run_registered(
     cfg: &config::Config,
     backend: Backend,
@@ -65,7 +51,7 @@ pub fn run_coarse_with_retry(
     f2_work: &Path,
     retry: bool,
 ) -> Result<InterpolationManifest> {
-    run_coarse_stages(cfg, backend, launcher, work, f2_work, false, retry)
+    run_coarse_stages(cfg, backend, launcher, work, f2_work, retry)
 }
 
 fn attempt_digest(
@@ -115,9 +101,18 @@ fn run_coarse_stages(
     launcher: &[String],
     work: &Path,
     f2_work: &Path,
-    charge: bool,
     retry: bool,
 ) -> Result<InterpolationManifest> {
+    if crate::foundation::layout::enabled(work) {
+        let structure=crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
+        let epw=epw_config::EpwConfig::from_config(cfg)?.with_species(&structure.cell.elements)?;
+        super::attempt::run(work,"coarse",&crate::foundation::layout::path(work,"coarse"),String::new(),retry,
+            || {coarse::stage_native(cfg)?;coarse::prepare_coarse(&epw,work)},
+            || coarse::run_epw(&epw,&crate::foundation::layout::path(work,"coarse"),"epw_coarse.in",launcher,backend),
+            || coarse::collect_coarse(work,&epw), |_| Ok(vec![]))?;
+        crate::foundation::workspace_data::release_electronic_work(cfg,&crate::foundation::layout::path(work,"coarse"))?;
+        return super::direct::coarse(cfg);
+    }
     let f2_manifest_path =
         crate::foundation::layout::path(&f2_work, "qe-data").join("manifest.json");
     let binding = adapter::bind_f2(&f2_manifest_path, cfg)?;
@@ -133,9 +128,6 @@ fn run_coarse_stages(
         .with_species(&structure.cell.elements)?;
     epw_cfg.window_selection()?;
     epw_cfg.require_window_support()?;
-    if charge {
-        charge_budget(cfg, "f3")?;
-    }
     // 非编号内部调用也分别使用第 5、6 步配置；公开编号链由工作区调度。
     let f2 = crate::qe_data::manifest::QeManifest::load(&f2_manifest_path)?;
     let digest = attempt_digest(
@@ -191,7 +183,7 @@ fn run_coarse_stages(
         thresholds: BTreeMap::new(),
         evidence: Vec::new(),
     };
-    validation.check("f2_valid", true, "F2 来源已绑定且有效");
+    validation.check("f2_valid", true, "F2 source bound and valid");
     validation.check(
         "wannier_converged",
         wan.converged,
@@ -200,7 +192,7 @@ fn run_coarse_stages(
     validation.check(
         "coarse_complete",
         !coarse_data.artifacts.is_empty(),
-        "粗网格角色完整",
+        "Coarse-grid roles complete",
     );
     let mut mode_readiness = BTreeMap::new();
     mode_readiness.insert("wannier".to_string(), wan.converged);
@@ -226,7 +218,7 @@ fn run_coarse_stages(
         }
     } else {
         bail!(
-            "data_invalid: interpolation 本地校验未通过，拒绝发布清单: {}",
+            "data_invalid: interpolation Local verification failed, release manifest denied: {}",
             validation.status
         );
     }
@@ -250,6 +242,17 @@ pub fn run_fine_with_retry(
     work: &Path,
     retry: bool,
 ) -> Result<InterpolationManifest> {
+    if crate::foundation::layout::enabled(work) {
+        let structure=crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
+        let epw=epw_config::EpwConfig::from_config(cfg)?.with_species(&structure.cell.elements)?;
+        let dir=super::fine::directory(cfg)?;
+        let width=cfg.interpolation.phonon_smearings_mev[0];
+        super::attempt::run(work,&format!("fine-smearing-{}",dir.file_name().unwrap().to_string_lossy()),&dir,String::new(),retry,
+            || fine::prepare_fine_at(&epw,work,&dir,width),
+            || coarse::run_epw(&epw,&dir,"epw_fine.in",launcher,backend),
+            || fine::collect_native_fine_at(work,&dir,&epw), |_| Ok(vec![]))?;
+        return super::direct::fine(cfg);
+    }
     let identity = if crate::foundation::layout::enabled(work) {
         None
     } else {
@@ -262,7 +265,7 @@ pub fn run_fine_with_retry(
     ensure!(
         crate::foundation::layout::enabled(work)
             || !crate::foundation::layout::path(&work, "interpolation/manifest.json").exists(),
-        "input_conflict: 细网格清单已存在，保留现场"
+        "input_conflict: A fine grid manifest exists. Keep it on site"
     );
     let f2 = adapter::bind_f2(
         &crate::foundation::layout::path(&work, "qe-data/manifest.json"),
@@ -270,7 +273,7 @@ pub fn run_fine_with_retry(
     )?;
     ensure!(
         f2.f2_digest == manifest.f2_digest,
-        "input_conflict: 粗网格 QE 来源变化"
+        "input_conflict: coarse Grid QE Source change"
     );
     let structure = crate::qe_data::qe_config::QeSettings::from_config(cfg)?;
     let epw_cfg = epw_config::EpwConfig::from_config(cfg)?
@@ -280,7 +283,7 @@ pub fn run_fine_with_retry(
     epw_cfg.check_native_windows(&std::fs::read_to_string(
         crate::foundation::layout::path(&work, "coarse").join(format!("{}.wout", cfg.qe.prefix)),
     )?)?;
-    let coarse = manifest.coarse.as_ref().context("data_invalid: 缺粗网格")?;
+    let coarse = manifest.coarse.as_ref().context("data_invalid: Short of coarse grid")?;
     // 细网格 EPW：每个展宽一列（FR-007/008）。
     let mut spectra = Vec::new();
     let mut fine_data = None;
@@ -291,11 +294,11 @@ pub fn run_fine_with_retry(
             ensure!(
                 std::fs::metadata(&path)?.len() == artifact.byte_size
                     && store::hash_file(&path)? == artifact.sha256,
-                "input_conflict: 粗网格来源在细网格执行前改变"
+                "input_conflict: coarse grid source changed before fine grid implementation"
             );
         }
-        let dir = crate::foundation::layout::path(&work, "fine")
-            .join(format!("smearing-{:04}", index + 1));
+        let root=crate::foundation::layout::path(work,"fine");
+        let dir=if cfg.interpolation.phonon_smearings_mev.len()==1 {root}else{root.join(format!("smearing-{:04}",index+1))};
         let digest = attempt_digest(
             cfg,
             launcher,
@@ -329,7 +332,7 @@ pub fn run_fine_with_retry(
         )?;
         ensure!(
             raw.a2f.len() == 1,
-            "data_invalid: 本阶段要求单个显式展宽的原生谱"
+            "data_invalid: This stage requires a single visible extension of the native spectra"
         );
         let spec = super::manifest::Spectrum {
             smearing_id: format!("mev-{smearing_mev:.16e}"),
@@ -349,7 +352,7 @@ pub fn run_fine_with_retry(
             }
         }
     }
-    ensure!(!spectra.is_empty(), "data_invalid: 未产生任何谱函数列");
+    ensure!(!spectra.is_empty(), "data_invalid: No spectrofunctional column generated");
     if let Some(data) = &mut fine_data {
         data.artifacts.extend(other_smearings);
     }
@@ -378,15 +381,15 @@ pub fn run_fine_with_retry(
     manifest.mode_readiness.insert("fine".into(), true);
     manifest
         .validation
-        .check("fine_complete", manifest.fine.is_some(), "细网格数据完整");
+        .check("fine_complete", manifest.fine.is_some(), "Fine-grid data complete");
     manifest.validation.check(
         "spectra_present",
         !manifest.spectra.is_empty(),
-        "原生谱已核验",
+        "Native spectrum validated",
     );
     ensure!(
         manifest.validation.all_passed(),
-        "data_invalid: 细网格校验失败"
+        "data_invalid: Fine Grid Verification Failed"
     );
     if !crate::foundation::layout::enabled(work) {
         store::write(
@@ -399,16 +402,18 @@ pub fn run_fine_with_retry(
 
 /// 清单与每个粗网格文件均须仍然有效，且不得混入细网格结果。
 pub fn verify_coarse(cfg: &config::Config, work: &Path) -> Result<InterpolationManifest> {
+    if crate::foundation::layout::enabled(work) {return super::direct::coarse(cfg);}
+
     let m = InterpolationManifest::load(&crate::foundation::layout::path(
         &work,
         "wannier/manifest.json",
     ))?;
     ensure!(
         m.validation.all_passed() && m.fine.is_none() && m.spectra.is_empty(),
-        "data_invalid: 粗网格阶段清单无效"
+        "data_invalid: The manifest of coarse grid stages is invalid"
     );
-    let coarse = m.coarse.as_ref().context("data_invalid: 缺粗网格")?;
-    ensure!(!coarse.artifacts.is_empty(), "data_invalid: 粗网格证据为空");
+    let coarse = m.coarse.as_ref().context("data_invalid: Short of coarse grid")?;
+    ensure!(!coarse.artifacts.is_empty(), "data_invalid: The coarse grid evidence is empty");
     for artifact in &coarse.artifacts {
         crate::superconductivity::source::artifact_path(work, artifact)?;
     }
@@ -419,7 +424,7 @@ pub fn verify_coarse(cfg: &config::Config, work: &Path) -> Result<InterpolationM
                     .artifacts
                     .iter()
                     .any(|a| a.producer_stage == "comparison"),
-            "data_invalid: 粗网格阶段缺少自动比较交付"
+            "data_invalid: The coarse grid phase lacks automatic comparison deliveries"
         );
         super::comparison_data::load(&crate::foundation::layout::path(
             &work,
@@ -430,7 +435,7 @@ pub fn verify_coarse(cfg: &config::Config, work: &Path) -> Result<InterpolationM
                 &crate::foundation::layout::path(work, "results"),
                 &["png", "svg", "pdf"]
             )?,
-            "data_invalid: 粗网格阶段缺少比较图"
+            "data_invalid: The coarse grid phase lacks a comparative figure"
         );
     }
     Ok(m)

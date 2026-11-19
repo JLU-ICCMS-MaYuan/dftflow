@@ -21,9 +21,12 @@ DFTFlow 为第一性原理计算准备输入、组织外部求解器和调度任
 
 ## 关键入口
 
+EPW 已彻底删除预算账本依赖，提交与续算直接核对工作流记录和 Slurm 作业号；配置迁移见 [EPW 总览](epwflow/README.md#预算功能已移除)。
+
 - [三种声子模式、dyn0 来源、目录和一次提交链（0006）](qeflow/phonon-workflow.md)。
 - [只用 QE 初始化生成 dyn0](qeflow/qe_ph_nosplit.md) 与 [独立 Rust dyn0 工具](tools/qf-gen-dyn0.md)。 初始化输入和日志的位置见 [文件问答](qeflow/phonon-workflow.md#dyn0-初始化文件问答)。
 - [Rust 架构、平台构建与安装](dftflow-rust.md)。
+- [EPW 输出语言与复用标记](epwflow/preflight-and-reuse.md#输出语言与复用标记)：程序输出统一英文，复用信息显示编号阶段；旧中文状态记录可接续。
 - [EPW 原生阶段参数](epwflow/native-stage-config.md)：科学设置归入八个主阶段及用途子段，保留原生名称与独立数值；历史平层版本兼容，自动绑定由程序内部确认。
 - [外部原始声子单命令接续](epwflow/README.md#外部原始声子接续0010)：复用已有 SCF/NSCF 和 PH save，核验后生成 QE 声子谱、DOS 与正式交付，失败不回退重算。
 - [EPW 资源与作业登记](epwflow/README.md)：程序不再额外限制计算时长和存储空间；保留历史、身份与原有并发检查，集群规则仍由 Slurm 管理。
@@ -63,7 +66,7 @@ DFTFlow 自有任务脚本生成器及跟踪的构建、安装、自测脚本不
 
 Overview 只维护当前功能事实，不承担 Issue/任务状态管理。CLI 总览重写阶段仅修改 docs/overview、未运行程序测试或提交；后续代码变更的验证与交付另见相应 Feature 验收记录。0006 的默认 outdir 统一为 ./tmp，显式配置优先，已有结果保留。实际机器配置、软件路径和原始运行证据仍保存在本地忽略目录；这里不复制它们。
 
-编号 QE／EPW 工作区的电子参考支持 PW、bands、DOS 各任务校验和失败局部恢复；bands／DOS 各自启用 pencil 分解，重提旧作业脚本会提示公开命令生成新尝试；并行启动及旧数据接入边界见 [EPW 总览](epwflow/README.md#编号工作区的电子后处理续算)。
+编号 QE／EPW 工作区的电子参考支持 PW、bands、DOS 各任务校验和失败局部恢复；bands／DOS 可通过各自的 args 显式启用 pencil 分解，不再自动添加参数。重提旧作业脚本会提示公开命令生成新尝试；并行启动及旧数据接入边界见 [EPW 总览](epwflow/README.md#编号工作区的电子后处理续算)。
 
 独立 Wannier 输入及独立 W90／postw90 数据衔接、零退出错误检查、后处理失败保留拟合证据和并发命令锁诊断见 [EPW 总览](epwflow/README.md#编号工作区的电子后处理续算)与 [0023 验收](../specs/0023-epw-wannier-native-start/acceptance.md)。
 
@@ -89,3 +92,5 @@ EPW 常规四类比较保留，独立抽样核验已取消；四项最大差值�
 电荷密度和原始波函数不做完整性核对，EPW 复用／恢复／导入与共享 QE 初始化均排除相关内容、大小、非空、存在性和集合检查；实际复制和科学读取保留。其他元数据、输入和日志仍核验。当前规则覆盖历史相关条款，详见 [0067](../specs/0067-unchecked-density-wavefunctions/spec.md)。
 
 - [三个前置电子阶段的能带范围图](epwflow/README.md#三个前置电子阶段的能带范围图0068)：SCF／NSCF 完成及 electronic 路径完成即绘制，显示采样范围、窗口和冻结态容量；诊断不放宽科学选窗。
+
+- [QE 声子与 scflow 图片格式](qeflow/qe_process_phonon.md#图片输出格式)：根级 `[plot].formats` 选择 SVG/PNG/PDF/JPG，声子默认 SVG，scflow 保留 PDF 并添加配置格式。

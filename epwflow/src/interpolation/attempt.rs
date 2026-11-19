@@ -14,13 +14,17 @@ pub fn run<T>(
     collect: impl Fn() -> Result<T>,
     evidence: impl Fn(&T) -> Result<Vec<Identity>>,
 ) -> Result<T> {
+    let stem = if label == "coarse" { "epw_coarse" }
+        else if label.starts_with("fine-smearing-") { "epw_fine" }
+        else { "epw" };
+    let exit_name = format!("{stem}.exitcode");
     run_with_inputs(
         work,
         label,
         dir,
         digest,
         retry,
-        "epw.exitcode",
+        &exit_name,
         None,
         prepare,
         execute,
@@ -43,8 +47,12 @@ pub(super) fn run_with_inputs<T>(
 ) -> Result<T> {
     ensure!(
         dir.starts_with(work),
-        "configuration: 原生计算目录不属于工作区"
+        "configuration: Numerical Catalogue does not belong to the workspace"
     );
+    let exit_path = || {
+        let stem = Path::new(exit_code).file_stem().and_then(|s| s.to_str()).unwrap_or(exit_code);
+        crate::foundation::scientific_logs::output(dir, stem).with_extension("exitcode")
+    };
     let cfg = if crate::foundation::layout::enabled(work) {
         Some(crate::qe_data::direct::current(work)?)
     } else {
@@ -55,7 +63,7 @@ pub(super) fn run_with_inputs<T>(
             .into_iter()
             .find(|s| dir.starts_with(s.directory(c)))
     });
-    let section = format!("子步骤 · {label}");
+    let section = format!("Substep · {label}");
     if let (Some(cfg), Some(step)) = (&cfg, step) {
         if log::completed_files(cfg, step, &section)?.is_some() {
             let compatible = log::checkpoint_config(cfg, step, &section)?
@@ -69,17 +77,20 @@ pub(super) fn run_with_inputs<T>(
             if compatible {
                 return collect();
             }
-            native_jobs::retire(dir)?;
-            replace_outputs(dir)?;
+            if !label.starts_with("fine-smearing-") && (label!="comparison-epw" || dir!=Step::Coarse.directory(cfg)) {
+                native_jobs::retire(dir)?; replace_outputs(dir)?;
+            }
             log::update(&cfg.work_dir, step, |doc| {
                 doc.remove(&section);
                 Ok(())
             })?;
         }
     }
-    let continuing = native_jobs::continuing_directory(dir)?;
+    let shared_coarse = label=="comparison-epw" && cfg.as_ref().is_some_and(|c|dir==Step::Coarse.directory(c));
+    let continuing = if shared_coarse {false} else {native_jobs::continuing_directory(dir)?};
     if let Some(cfg) = &cfg {
         if !continuing
+            && !shared_coarse
             && native_jobs::retry_enabled()
             && native_jobs::tasks(cfg)?
                 .iter()
@@ -88,7 +99,7 @@ pub(super) fn run_with_inputs<T>(
             replace_outputs(dir)?;
         }
     } else if dir.exists() {
-        let exit = dir.join(exit_code);
+        let exit = exit_path();
         if exit.is_file() {
             if std::fs::read_to_string(&exit)?.trim() == "0" {
                 if let Ok(result) = collect() {
@@ -98,24 +109,31 @@ pub(super) fn run_with_inputs<T>(
                     return Ok(result);
                 }
             }
-            ensure!(retry, "execution_failed: 原生子任务失败，需要显式恢复");
+            ensure!(retry, "execution_failed: The birthbaby mission failed. It needs a visible recovery");
             replace_outputs(dir)?;
         } else {
-            ensure!(
-                std::fs::read_dir(dir)?.next().is_none(),
-                "scheduler_unknown: 原生目录尚无可确认退出码 {}",
-                dir.display()
-            );
+            if let Ok(result)=collect() {
+                for id in evidence(&result)? {id.verify()?;}
+                return Ok(result);
+            }
+            let output=exit_path().with_extension("out");
+            if output.is_file() {
+                ensure!(retry,"execution_failed: prior native output failed; resume explicitly");
+                replace_outputs(dir)?;
+            } else {
+                ensure!(std::fs::read_dir(dir)?.next().is_none(),
+                    "scheduler_unknown: native directory has no validated output {}",dir.display());
+            }
         }
     }
     if !continuing {
         prepare()?;
     }
     execute()?;
-    ensure!(
-        std::fs::read_to_string(dir.join(exit_code))?.trim() == "0",
-        "execution_failed: 原生程序退出失败"
-    );
+    // execute 已从实际进程退出状态拒绝失败；编号入口由阶段日志持久化退出证据。
+    if cfg.is_none() && exit_path().is_file() {
+        ensure!(std::fs::read_to_string(exit_path())?.trim()=="0","execution_failed: native exit failed");
+    }
     let result = collect()?;
     let ids = evidence(&result)?;
     for id in &ids {
@@ -137,51 +155,13 @@ fn parameters(
     step: Step,
 ) -> Result<serde_json::Value> {
     if let Some(kind) = label.strip_prefix("comparison-") {
-        if matches!(kind, "q2r" | "matdyn" | "epw") {
-            let native: serde_json::Value =
-                cfg.native_value(&[crate::foundation::native_config::COARSE, "comparison", kind])?;
-            let points = if kind == "q2r" {
-                None
-            } else {
-                Some(cfg.native_value::<u32>(&[
-                    crate::foundation::native_config::COARSE,
-                    "workflow",
-                    "points_per_edge",
-                ])?)
-            };
-            let kpath = if kind == "matdyn" {
-                cfg.kpath
-                    .as_ref()
-                    .map(|p| crate::foundation::store::hash_file(p))
-                    .transpose()?
-            } else {
-                None
-            };
-            let onsite = if kind == "q2r" {
-                Some(cfg.native_value::<String>(&[
-                    crate::foundation::native_config::COARSE,
-                    "workflow",
-                    "onsite_asr",
-                ])?)
-            } else {
-                None
-            };
-            let program = if kind == "epw" {
-                cfg.programs.epw.path.clone()
-            } else {
-                cfg.programs
-                    .pw
-                    .path
-                    .parent()
-                    .unwrap()
-                    .join(format!("{kind}.x"))
-            };
+        if kind == "epw" {
             return Ok(serde_json::json!([
-                native,
-                points,
-                kpath,
-                onsite,
-                crate::foundation::store::hash_file(&program)?
+                cfg.native_value::<serde_json::Value>(&[crate::foundation::native_config::COARSE, "comparison", "epw"])?,
+                Some(cfg.native_value::<u32>(&[crate::foundation::native_config::COARSE, "workflow", "points_per_edge"]) ?),
+                Option::<String>::None,
+                Option::<String>::None,
+                crate::foundation::store::hash_file(&cfg.programs.epw.path)?
             ]));
         }
     }

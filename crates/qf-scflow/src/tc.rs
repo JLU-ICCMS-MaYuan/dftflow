@@ -175,7 +175,7 @@ mod tests {
     fn mc_millan_positive_for_strong_coupling() {
         // λ=1, wlog=100K, μ=0.1 -> 应有正 Tc
         let tc = mc_millan_tc(100.0, 1.0, 0.1);
-        assert!(tc > 0.0, "Tc 应为正，实际 {tc}");
+        assert!(tc > 0.0, "Tc It should be positive, actual {tc}");
     }
 
     #[test]

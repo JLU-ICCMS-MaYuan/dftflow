@@ -24,7 +24,7 @@ pub struct EnvironmentEvidence {
 impl EnvironmentEvidence {
     pub fn load(path: &Path) -> Result<Self> {
         let e: Self = store::read(path)?;
-        ensure!(e.schema_version == 1, "unsupported_version: 环境证据 schema_version 必须为 1");
+        ensure!(e.schema_version == 1, "unsupported_version: environment evidence schema_version must be 1");
         Ok(e)
     }
 }
@@ -43,7 +43,7 @@ pub fn verify_program(path: &Path) -> Result<EnvironmentEvidence> {
     let out = Command::new(path)
         .arg("--version")
         .output()
-        .with_context(|| format!("environment: 无法启动 {}", path.display()))?;
+        .with_context(|| format!("environment: cannot start {}", path.display()))?;
     let observed = String::from_utf8_lossy(&out.stdout).trim().to_string();
     let observed = if observed.is_empty() {
         String::from_utf8_lossy(&out.stderr).trim().to_string()
@@ -78,7 +78,7 @@ pub fn verify_configuration(cfg: &config::Config) -> Result<Vec<EnvironmentEvide
     .into_iter()
     .filter(|(_, p)| !p.path.as_os_str().is_empty())
     {
-        ev.push(verify_program(&p.path).with_context(|| format!("environment: 程序 {n} 探测失败"))?);
+        ev.push(verify_program(&p.path).with_context(|| format!("environment: program {n} probe failed"))?);
     }
     Ok(ev)
 }
@@ -86,17 +86,17 @@ pub fn verify_configuration(cfg: &config::Config) -> Result<Vec<EnvironmentEvide
 /// probe 入口：选择校验 + 分配约束；科学阶段未接入时 -s 不可用，-r 需要分配记录。
 pub fn probe(config_path: &Path, submit: bool, require_allocation: bool) -> Result<()> {
     if submit && require_allocation {
-        bail!("cannot: probe 的 -s 与 -r 必须互斥");
+        bail!("cannot: probe -s and -r are mutually exclusive");
     }
     if !submit && !require_allocation {
-        bail!("required: probe 必须明确选择 -s 或 -r");
+        bail!("required: probe requires an explicit choice of -s or -r");
     }
     if require_allocation {
         let job = std::env::var("SLURM_JOB_ID").ok();
-        ensure!(job.is_some(), "allocation: probe -r 需要当前 SLURM_JOB_ID");
-        bail!("allocation: probe -r 需要已登记的分配记录且与 SLURM_JOB_ID 一致");
+        ensure!(job.is_some(), "allocation: probe -r requires the current SLURM_JOB_ID");
+        bail!("allocation: probe -r requires a running Slurm allocation matching SLURM_JOB_ID");
     }
     // submit 模式在 F1 需要提交探测作业，科学阶段尚未接入。
     let _ = config_path;
-    bail!("not_implemented: 科学阶段尚未接入，probe -s 不可用");
+    bail!("not_implemented: scientific stages are not connected; probe -s is unavailable");
 }

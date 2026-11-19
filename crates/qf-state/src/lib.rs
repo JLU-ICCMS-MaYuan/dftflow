@@ -488,30 +488,30 @@ pub fn split_needs_run(status: &WorkflowStatus) -> bool {
 /// 注意：现状实现跳过 7/9（"collect" 折叠进 matdyn 步骤），这里 1:1 对齐。
 pub fn split_resume_step(status: &WorkflowStatus) -> (u8, &'static str) {
     if status.scf != TaskState::Finished {
-        return (1, "运行 SCF");
+        return (1, "Run SCF");
     }
     if status.ph.dyn0 != TaskState::Finished {
-        return (2, "运行 dyn0");
+        return (2, "Run dyn0");
     }
     if !all_split_finished(status) {
-        return (3, "提交 split q 点任务");
+        return (3, "Submit split q Point Tasks");
     }
     if status.merge != TaskState::Finished {
-        return (4, "合并 split q 点结果");
+        return (4, "Merge split q Point Results");
     }
     if status.q2r != TaskState::Finished {
-        return (5, "运行 q2r");
+        return (5, "Run q2r");
     }
     if status.matdyn_phband != TaskState::Finished {
-        return (6, "运行 matdyn 声子谱");
+        return (6, "Run matdyn Sound spectra");
     }
     if status.matdyn_phdos != TaskState::Finished {
-        return (8, "运行 matdyn 声子 DOS");
+        return (8, "Run matdyn Voice DOS");
     }
     if status.phonon_plot != TaskState::Finished {
-        return (10, "绘图并写出 CSV");
+        return (10, "Draw and Write CSV");
     }
-    (11, "完成声子回收")
+    (11, "Finish Sound Recycle")
 }
 
 #[cfg(test)]

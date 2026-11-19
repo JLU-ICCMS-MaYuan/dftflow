@@ -37,8 +37,8 @@ fn tensor(lines: &[&str], cursor: &mut usize, rows: bool) -> Result<Vec<f64>> {
         *cursor += 1;
     }
     for _ in 0..3 {
-        let row = nums(lines.get(*cursor).context("data_invalid: 张量截断")?)?;
-        ensure!(row.len() == 3, "data_invalid: 张量维数错误");
+        let row = nums(lines.get(*cursor).context("data_invalid: Block Break")?)?;
+        ensure!(row.len() == 3, "data_invalid: An error in the square dimension");
         data.extend(row);
         *cursor += 1;
     }
@@ -58,7 +58,7 @@ fn dielectric(lines: &[&str], nat: usize) -> Result<String> {
     let raman = lines.iter().position(|s| s.contains("Raman tensor (A^2)"));
     ensure!(
         born.is_none() || eps.is_some(),
-        "data_invalid: Born 电荷缺介电张量"
+        "data_invalid: Born The charge's short of a grid"
     );
     let mut out = format!(
         "<DIELECTRIC_PROPERTIES epsil=\"{}\" zstar=\"{}\" raman=\"{}\">\n",
@@ -79,15 +79,15 @@ fn dielectric(lines: &[&str], nat: usize) -> Result<String> {
             }
             let line = lines
                 .get(cursor)
-                .context("data_invalid: Born 电荷原子截断")?;
+                .context("data_invalid: Born Charge Atom Interrupted")?;
             ensure!(
                 line.split_once('#')
-                    .context("data_invalid: Born 原子头错误")?
+                    .context("data_invalid: Born Atomic Head Error")?
                     .1
                     .trim()
                     .parse::<usize>()?
                     == a,
-                "data_invalid: Born 原子错序"
+                "data_invalid: Born Atom Error Order"
             );
             cursor += 1;
             tag(
@@ -99,7 +99,7 @@ fn dielectric(lines: &[&str], nat: usize) -> Result<String> {
         out.push_str("</ZSTAR>\n");
     }
     if let Some(p) = raman {
-        ensure!(eps.is_some(), "data_invalid: Raman 缺介电张量");
+        ensure!(eps.is_some(), "data_invalid: Raman Shorting of the media screen");
         let mut cursor = p + 1;
         out.push_str("<RAMAN_TENSOR_A2>\n");
         for a in 1..=nat {
@@ -109,16 +109,16 @@ fn dielectric(lines: &[&str], nat: usize) -> Result<String> {
                 }
                 let head = lines
                     .get(cursor)
-                    .context("data_invalid: Raman 头截断")?
+                    .context("data_invalid: Raman Head cut")?
                     .split_once('#')
-                    .context("data_invalid: Raman 原子头错误")?
+                    .context("data_invalid: Raman Atomic Head Error")?
                     .1;
                 let (atom, pol) = head
                     .split_once("pol.")
-                    .context("data_invalid: Raman 极化头错误")?;
+                    .context("data_invalid: Raman Error with polarized head")?;
                 ensure!(
                     atom.trim().parse::<usize>()? == a && pol.trim().parse::<usize>()? == k,
-                    "data_invalid: Raman 原子/极化错序"
+                    "data_invalid: Raman Atoms/polarization error sequences"
                 );
                 cursor += 1;
                 tag(
@@ -202,11 +202,11 @@ fn bravais(n: i32, c: &[f64]) -> Result<Vec<f64>> {
                 ],
             ]
         }
-        _ => anyhow::bail!("data_invalid: 未知 ibrav={n}"),
+        _ => anyhow::bail!("data_invalid: Unknown ibrav={n}"),
     };
     ensure!(
         matrix.iter().flatten().all(|v| v.is_finite()),
-        "data_invalid: 非法 celldm"
+        "data_invalid: Illegal celldm"
     );
     Ok(matrix.into_iter().flatten().collect())
 }
@@ -218,20 +218,20 @@ pub fn convert(raw: &str, geometry: &Geometry) -> Result<(String, Vec<[f64; 3]>)
         lines
             .first()
             .is_some_and(|s| s.trim() == "Dynamical matrix file"),
-        "data_invalid: 不是 QE 文本动力学矩阵"
+        "data_invalid: It's not QE Text Dynamic Matrix"
     );
-    let head = nums(lines.get(2).context("data_invalid: dyn 头截断")?)?;
+    let head = nums(lines.get(2).context("data_invalid: dyn Head cut")?)?;
     ensure!(
         head.len() == 9
             && head[0] > 0.0
             && head[1] > 0.0
             && head[..3].iter().all(|n| n.fract() == 0.0),
-        "data_invalid: dyn 头格式错误"
+        "data_invalid: dyn Header Format Error"
     );
     let (nt, nat, ibrav) = (head[0] as usize, head[1] as usize, head[2] as i32);
     ensure!(
         nat == geometry.atoms.len() && nt <= nat,
-        "data_invalid: dyn 原子数不符"
+        "data_invalid: dyn Atoms don't match"
     );
     // 非零 ibrav 从来源 celldm 重建，逐项核验当前 XML，不能猜晶格。
     let mut cursor = 3;
@@ -240,13 +240,13 @@ pub fn convert(raw: &str, geometry: &Geometry) -> Result<(String, Vec<[f64; 3]>)
             lines
                 .get(cursor)
                 .is_some_and(|s| s.trim() == "Basis vectors"),
-            "data_invalid: dyn 缺 Basis vectors"
+            "data_invalid: dyn Missing Basis vectors"
         );
         cursor += 1;
         let mut a = vec![];
         for _ in 0..3 {
-            let row = nums(lines.get(cursor).context("data_invalid: 晶格截断")?)?;
-            ensure!(row.len() == 3, "data_invalid: 晶格维数错误");
+            let row = nums(lines.get(cursor).context("data_invalid: Crystal Break")?)?;
+            ensure!(row.len() == 3, "data_invalid: Crystal-dimensional error");
             a.extend(row);
             cursor += 1;
         }
@@ -260,25 +260,25 @@ pub fn convert(raw: &str, geometry: &Geometry) -> Result<(String, Vec<[f64; 3]>)
                 .iter()
                 .zip(geometry.lattice.iter().flatten())
                 .all(|(x, y)| (x - y / geometry.alat).abs() < 1e-8),
-        "data_invalid: dyn 晶格/alat 与当前 SCF 不符"
+        "data_invalid: dyn Crystal/alat With Current SCF Inconsistencies"
     );
     let mut types = vec![];
     for n in 1..=nt {
         let parts = lines
             .get(cursor)
-            .context("data_invalid: 质量表截断")?
+            .context("data_invalid: Quality table cut")?
             .split('\'')
             .collect::<Vec<_>>();
         ensure!(
             parts.len() == 3 && parts[0].trim().parse::<usize>()? == n,
-            "data_invalid: 元素编号错误"
+            "data_invalid: Element Numbering Error"
         );
         let mass = nums(parts[2])?;
         ensure!(
             mass.len() == 1
                 && mass[0] > 0.0
                 && parts[1].trim().chars().all(|c| c.is_ascii_alphabetic()),
-            "data_invalid: 元素/质量错误"
+            "data_invalid: Element/Quality Error"
         );
         // 与 QE Modules/constants.f90 的 AMU_RY 完全相同。
         types.push((
@@ -289,14 +289,14 @@ pub fn convert(raw: &str, geometry: &Geometry) -> Result<(String, Vec<[f64; 3]>)
     }
     let mut atoms = vec![];
     for n in 1..=nat {
-        let row = nums(lines.get(cursor).context("data_invalid: 原子坐标截断")?)?;
+        let row = nums(lines.get(cursor).context("data_invalid: Atomic Coordinate Interrupted")?)?;
         ensure!(
             row.len() == 5
                 && row[0] == n as f64
                 && row[1] >= 1.0
                 && row[1] <= nt as f64
                 && row[1].fract() == 0.0,
-            "data_invalid: 原子编号错误"
+            "data_invalid: Atomic number error"
         );
         let t = row[1] as usize;
         ensure!(
@@ -305,7 +305,7 @@ pub fn convert(raw: &str, geometry: &Geometry) -> Result<(String, Vec<[f64; 3]>)
                     .iter()
                     .zip(geometry.atoms[n - 1].1)
                     .all(|(x, y)| (x - y / geometry.alat).abs() < 1e-8),
-            "data_invalid: dyn 原子顺序/元素/坐标不符"
+            "data_invalid: dyn Atom order/Element/Coordinate inconsistent"
         );
         atoms.push((t, row[2..].to_vec()));
         cursor += 1;
@@ -320,11 +320,11 @@ pub fn convert(raw: &str, geometry: &Geometry) -> Result<(String, Vec<[f64; 3]>)
         while lines.get(cursor).is_some_and(|s| s.trim().is_empty()) {
             cursor += 1;
         }
-        let qline = lines.get(cursor).context("data_invalid: q 坐标截断")?;
-        ensure!(qline.trim().starts_with("q ="), "data_invalid: 缺 q 坐标");
+        let qline = lines.get(cursor).context("data_invalid: q Coordinate Cut")?;
+        ensure!(qline.trim().starts_with("q ="), "data_invalid: Missing q Coordinates");
         let q: [f64; 3] = nums(qline.split_once('=').unwrap().1)?
             .try_into()
-            .map_err(|_| anyhow::anyhow!("data_invalid: q 维数错误"))?;
+            .map_err(|_| anyhow::anyhow!("data_invalid: q _Other Organiser"))?;
         points.push(q);
         cursor += 1;
         writeln!(matrices, "<DYNAMICAL_MAT_.{}>", points.len())?;
@@ -334,16 +334,16 @@ pub fn convert(raw: &str, geometry: &Geometry) -> Result<(String, Vec<[f64; 3]>)
                 while lines.get(cursor).is_some_and(|s| s.trim().is_empty()) {
                     cursor += 1;
                 }
-                let pair = nums(lines.get(cursor).context("data_invalid: 原子对截断")?)?;
+                let pair = nums(lines.get(cursor).context("data_invalid: Atom-to-Closure")?)?;
                 ensure!(
                     pair == [i as f64, j as f64],
-                    "data_invalid: 重复/错序的动力学矩阵原子对"
+                    "data_invalid: Atoms of the power matrix to repeat/wrong sequences"
                 );
                 cursor += 1;
                 let mut rows = vec![];
                 for _ in 0..3 {
-                    let row = nums(lines.get(cursor).context("data_invalid: 复矩阵截断")?)?;
-                    ensure!(row.len() == 6, "data_invalid: 复矩阵行截断");
+                    let row = nums(lines.get(cursor).context("data_invalid: Revert Matrix Break")?)?;
+                    ensure!(row.len() == 6, "data_invalid: Revert matrix line cut");
                     rows.extend(row);
                     cursor += 1;
                 }
@@ -356,7 +356,7 @@ pub fn convert(raw: &str, geometry: &Geometry) -> Result<(String, Vec<[f64; 3]>)
         }
         writeln!(matrices, "</DYNAMICAL_MAT_.{}>", points.len())?;
     }
-    ensure!(!points.is_empty(), "data_invalid: dyn 无动力学矩阵");
+    ensure!(!points.is_empty(), "data_invalid: dyn Non-dynamic matrix");
     let mut tail = String::from("<FREQUENCIES_THZ_CMM1>\n");
     let freq_lines = lines
         .iter()
@@ -365,34 +365,34 @@ pub fn convert(raw: &str, geometry: &Geometry) -> Result<(String, Vec<[f64; 3]>)
         .collect::<Vec<_>>();
     ensure!(
         freq_lines.len() == 3 * nat,
-        "data_invalid: dyn 频率/振型不完整"
+        "data_invalid: dyn Frequency/inflation incomplete"
     );
     for (m, (i, line)) in freq_lines.into_iter().enumerate() {
         let parts = line.split('=').collect::<Vec<_>>();
-        ensure!(parts.len() == 3, "data_invalid: 频率格式错误");
+        ensure!(parts.len() == 3, "data_invalid: Frequent format error");
         let index = nums(parts[0].trim().strip_prefix("freq").unwrap())?;
-        ensure!(index == [m as f64 + 1.0], "data_invalid: 模式编号重复/错序");
+        ensure!(index == [m as f64 + 1.0], "data_invalid: Modular Numbering Repeats/Error Order");
         let omega = [
             parts[1]
                 .split_whitespace()
                 .next()
-                .context("频率缺失")?
+                .context("Frequencies missing")?
                 .parse::<f64>()?,
             parts[2]
                 .split_whitespace()
                 .next()
-                .context("频率缺失")?
+                .context("Frequencies missing")?
                 .parse::<f64>()?,
         ];
         ensure!(
             omega.iter().all(|x| x.is_finite()),
-            "data_invalid: 非有限频率"
+            "data_invalid: Non-finite frequency"
         );
         tag(&mut tail, &format!("OMEGA.{}", m + 1), &omega);
         let mut u = vec![];
         for a in 0..nat {
-            let row = nums(lines.get(i + 1 + a).context("data_invalid: 振型截断")?)?;
-            ensure!(row.len() == 6, "data_invalid: 振型维数错误");
+            let row = nums(lines.get(i + 1 + a).context("data_invalid: Vibration cut")?)?;
+            ensure!(row.len() == 6, "data_invalid: Vibration dimension error");
             u.extend(row);
         }
         tag(&mut tail, &format!("DISPLACEMENT.{}", m + 1), &u);

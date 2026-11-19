@@ -49,8 +49,10 @@ pub struct Report {
     pub outer_counts: Option<Vec<usize>>,
     pub energy_frozen_counts: Option<Vec<usize>>,
     pub sample_capacity_ok: Option<bool>,
+    #[serde(default,skip_serializing_if="Vec::is_empty")]
     pub sources: Vec<Identity>,
     pub request_key: String,
+    #[serde(default,skip_serializing_if="BTreeMap::is_empty")]
     pub output_sha256: BTreeMap<String, String>,
 }
 
@@ -58,40 +60,41 @@ fn paths(cfg: &Config, step: Step) -> Result<(PathBuf, Vec<PathBuf>)> {
     let xml = format!("{}.save/data-file-schema.xml", cfg.qe.prefix);
     let dir = step.directory(cfg);
     Ok(match step {
-        Step::Scf => (dir.join("plots"), vec![dir.join("snapshot").join(xml)]),
-        Step::Nscf => (dir.join("plots"), vec![dir.join("out").join(xml)]),
+        Step::Scf => (super::stage_results::root(cfg).join("1.qe-scf"), vec![super::layout::path(&cfg.work_dir,"scf/snapshot").join(xml)]),
+        Step::Nscf => (super::stage_results::root(cfg).join("2.qe-nscf"), vec![dir.join("out").join(xml)]),
         Step::Electronic => (
-            dir.join("qe_eband/plots"),
+            super::stage_results::root(cfg).join("3.qe-electronic"),
             vec![
                 dir.join("qe_eband/out").join(&xml),
-                Step::Nscf.directory(cfg).join("out").join(xml),
+                Step::Scf.directory(cfg).join("out").join(xml),
             ],
         ),
-        _ => anyhow::bail!("configuration: 能带范围图仅支持 SCF／NSCF／electronic"),
+        _ => anyhow::bail!("configuration: You can only support it with a scope diagram SCF/NSCF/electronic"),
     })
 }
 fn request(cfg: &Config, step: Step) -> Result<(PathBuf, Vec<Identity>, String)> {
     let (dir, inputs) = paths(cfg, step)?;
     let sources = inputs
         .iter()
-        .map(|p| Identity::capture(p))
+        .map(|p| if super::layout::enabled(&cfg.work_dir) {Ok(Identity::reference(p))}else{Identity::capture(p)})
         .collect::<Result<Vec<_>>>()?;
-    let key = store::hash_bytes(&serde_json::to_vec(&(
+    let key = serde_json::to_string(&(
         VERSION,
         step,
         &cfg.qe.prefix,
         &cfg.wannier,
-        &sources,
-    ))?);
+        &cfg.kpath,
+    ))?;
     Ok((dir, sources, key))
 }
 fn current(dir: &Path, stem: &str, key: &str) -> bool {
     let Ok(old) = store::read::<Report>(&dir.join(format!("{stem}.json"))) else {
         return false;
     };
+    if old.output_sha256.is_empty() {return old.request_key==key && ["png","svg"].iter().all(|ext|dir.join(format!("{stem}.{ext}")).is_file());}
     old.request_key == key
-        && old.output_sha256.len() == 3
-        && ["png", "svg", "csv"].iter().all(|ext| {
+        && old.output_sha256.len() == 2
+        && ["png", "svg"].iter().all(|ext| {
             let name = format!("{stem}.{ext}");
             old.output_sha256
                 .get(&name)
@@ -215,7 +218,7 @@ fn summarize(cfg: &Config, step: Step, sources: Vec<Identity>, key: String) -> R
         nbnd,
         fermi_ev: fermi,
         fermi_source: if step == Step::Electronic {
-            "NSCF".into()
+            "SCF".into()
         } else {
             step.name().to_uppercase()
         },
@@ -227,7 +230,7 @@ fn summarize(cfg: &Config, step: Step, sources: Vec<Identity>, key: String) -> R
         outer_counts: outer,
         energy_frozen_counts: frozen,
         sample_capacity_ok: capacity,
-        sources,
+        sources: Vec::new(),
         request_key: key,
         output_sha256: BTreeMap::new(),
     })
@@ -531,7 +534,7 @@ fn render(r: &Report) -> (String, u32, u32) {
 pub fn generate(cfg: &Config, step: Step) -> Result<()> {
     let (dir, sources, key) = request(cfg, step)?;
     let stem = format!("{}-band-ranges", step.name());
-    let files = ["png", "svg", "csv", "json"].map(|ext| format!("{stem}.{ext}"));
+    let files = ["png", "svg", "json"].map(|ext| format!("{stem}.{ext}"));
     if !current(&dir, &stem, &key) {
         fs::create_dir_all(&dir)?;
         let mut report = summarize(cfg, step, sources.clone(), key)?;
@@ -541,33 +544,18 @@ pub fn generate(cfg: &Config, step: Step) -> Result<()> {
         let rendered = style::png(&svg, &temporary, width * 2, height * 2);
         if let Err(error) = rendered {
             let _ = fs::remove_file(&temporary);
-            return Err(error).context("plot_failed: 能带范围图生成失败；科学结果保留");
+            return Err(error).context("plot_failed: band-range plot generation failed; scientific results preserved");
         }
         fs::rename(temporary, dir.join(&files[0]))?;
-        let mut csv =
-            "band,min_ev,max_ev,min_minus_fermi_ev,max_minus_fermi_ev,crosses_fermi,excluded\n"
-                .to_string();
-        for b in &report.band_ranges {
-            writeln!(
-                csv,
-                "{},{:.12},{:.12},{:.12},{:.12},{},{}",
-                b.band,
-                b.min_ev,
-                b.max_ev,
-                b.min_ev - report.fermi_ev,
-                b.max_ev - report.fermi_ev,
-                b.crosses_fermi,
-                b.excluded
-            )?;
-        }
-        store::atomic_bytes(&dir.join(&files[2]), csv.as_bytes())?;
-        for name in &files[..3] {
+        for name in &files[..2] {
+            if !super::layout::enabled(&cfg.work_dir) {
             report
                 .output_sha256
                 .insert(name.clone(), store::hash_file(&dir.join(name))?);
+            }
         }
-        store::write(&dir.join(&files[3]), &report)?;
-        println!("能带范围图：{}", dir.join(&files[0]).display());
+        store::write(&dir.join(&files[2]), &report)?;
+        println!("band_range_plots: {}", dir.join(&files[0]).display());
     }
     for source in &sources {
         source.verify()?;

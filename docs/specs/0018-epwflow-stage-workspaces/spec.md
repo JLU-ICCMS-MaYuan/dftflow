@@ -1,6 +1,8 @@
 # 0018：QE／EPW 分阶段工作目录与当前配置续算
 
-本地 Feature，唯一类型 `type:feature`；[Issue 草稿](issue-draft.md)。用户已明确要求实施所展示的方案。远程 Issue/Spec 链接由用户管理，未验证。
+> **协作入口（2026-11-17）**：[GitHub Issue #18](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/18)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+本地 Feature，唯一类型 `type:feature`；[GitHub Issue #18](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/18)。用户已明确要求实施所展示的方案。远程 Issue/Spec 链接由用户管理，未验证。
 
 ## 原始需求记录
 
@@ -15,7 +17,6 @@
 
 ## 功能需求
 
-- FR-001（目录）：八个编号目录；输入、提交脚本、日志位于实际计算目录；所有子任务遵守相同规则。
 - FR-002（共享 QE）：第 1～4 步复用 qeflow 及共享输入/执行/后处理；PH 使用第 1 步 SCF，电子步骤保留 qe_eband/ qe_eledos。
 - FR-003（PH 交付）：nosplit、coords、index 均归集并验证动力学矩阵、dvscf、phsave 和 q 映射到第 4 步 save。
 - FR-004（独立拟合）：第 5 步执行 Wannier 拟合和电子对比；第 6 步复用变换执行粗网格 EPC 与比较、质量门。

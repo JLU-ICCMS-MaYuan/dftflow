@@ -26,7 +26,7 @@ pub fn band_offset(log: &str, bands: usize) -> Result<usize> {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         ensure!(
             !values.is_empty() && values[0] > 0 && values.iter().all(|x| *x == values[0]),
-            "data_invalid: 缺失或冲突的原生带边界"
+            "data_invalid: Missing or conflicting native belt borders"
         );
         Ok(values[0])
     };
@@ -34,7 +34,7 @@ pub fn band_offset(log: &str, bands: usize) -> Result<usize> {
     let hi = bound("ibndmax")?;
     ensure!(
         hi >= lo && hi - lo + 1 == bands,
-        "data_invalid: egnv 带数与原生带窗口不符"
+        "data_invalid: egnv The number does not match the native tape window"
     );
     Ok(lo - 1)
 }
@@ -48,22 +48,22 @@ impl<'a> Reader<'a> {
         let end = self
             .pos
             .checked_add(N)
-            .context("data_invalid: 二进制偏移溢出")?;
+            .context("data_invalid: Binary offset overflow")?;
         let raw = self
             .bytes
             .get(self.pos..end)
-            .context("data_invalid: 原生二进制文件截断")?;
+            .context("data_invalid: Interrupted native binary")?;
         self.pos = end;
         Ok(raw.try_into().unwrap())
     }
     fn int(&mut self) -> Result<usize> {
         let v = i32::from_le_bytes(self.take()?);
-        ensure!(v >= 0, "data_invalid: 原生整数负值或不支持的字节序");
+        ensure!(v >= 0, "data_invalid: Negative or not supported bytes for native integers");
         Ok(v as usize)
     }
     fn real(&mut self) -> Result<f64> {
         let v = f64::from_le_bytes(self.take()?);
-        ensure!(v.is_finite(), "data_invalid: 原生非有限数");
+        ensure!(v.is_finite(), "data_invalid: Originals are not finite");
         Ok(v)
     }
 }
@@ -90,7 +90,7 @@ pub fn eigenvalues(bytes: &[u8]) -> Result<Eigenvalues> {
             && nkfs > 0
             && nkfs <= nk
             && grid.iter().all(|g| *g > 0 && *g <= u32::MAX as usize),
-        "data_invalid: egnv 网格/态数无效"
+        "data_invalid: egnv Grid/State Number Invalid"
     );
     let _ef = r.real()?;
     let ef0 = r.real()? * RY_EV;
@@ -99,14 +99,14 @@ pub fn eigenvalues(bytes: &[u8]) -> Result<Eigenvalues> {
     let shell = r.real()? * RY_EV;
     ensure!(
         dos > 0.0 && smear > 0.0 && shell > 0.0,
-        "data_invalid: egnv 费米面参数无效"
+        "data_invalid: egnv Femi-noodle parameter invalid"
     );
     let stride = 40usize
-        .checked_add(nb.checked_mul(8).context("data_invalid: egnv 大小溢出")?)
-        .context("data_invalid: egnv 大小溢出")?;
+        .checked_add(nb.checked_mul(8).context("data_invalid: egnv Size Spill")?)
+        .context("data_invalid: egnv Size Spill")?;
     ensure!(
         nk.checked_mul(stride).and_then(|n| n.checked_add(r.pos)) == Some(bytes.len()),
-        "data_invalid: egnv 长度/INTEGER/REAL 布局冲突"
+        "data_invalid: egnv Length/INTEGER/REAL Layout Conflict"
     );
     let mut by_compressed = std::collections::BTreeMap::new();
     let mut all_energies = Vec::new();
@@ -115,16 +115,16 @@ pub fn eigenvalues(bytes: &[u8]) -> Result<Eigenvalues> {
         let k_crystal = [r.real()?, r.real()?, r.real()?];
         ensure!(
             wk >= 0.0 && r.int()? == ik,
-            "data_invalid: egnv k 索引/权重冲突"
+            "data_invalid: egnv k Index/weight conflict"
         );
         let ix = r.int()?;
-        ensure!(ix <= nkfs, "data_invalid: egnv ikfs 越界");
+        ensure!(ix <= nkfs, "data_invalid: egnv ikfs Crossing the border");
         let mut states = vec![];
         for ib in 1..=nb {
             let energy = r.real()? * RY_EV - ef0;
             all_energies.push(energy);
             if energy.abs() < shell {
-                ensure!(ix != 0, "data_invalid: 费米面内的 k 未映射");
+                ensure!(ix != 0, "data_invalid: In the face of Ferami k Unmapped");
                 let w = 0.5 * wk * (-(energy / smear).powi(2)).exp()
                     / (std::f64::consts::PI.sqrt() * smear * dos);
                 states.push(State {
@@ -139,13 +139,13 @@ pub fn eigenvalues(bytes: &[u8]) -> Result<Eigenvalues> {
         if ix > 0 {
             ensure!(
                 !states.is_empty() && by_compressed.insert(ix, states).is_none(),
-                "data_invalid: 重复/空 ikfs 映射"
+                "data_invalid: Repeat / Empty ikfs Map"
             );
         }
     }
     ensure!(
         by_compressed.len() == nkfs && by_compressed.keys().copied().eq(1..=nkfs),
-        "data_invalid: 缺失 ikfs 映射"
+        "data_invalid: Missing ikfs Map"
     );
     Ok(Eigenvalues {
         grid: grid.map(|x| x as u32),
@@ -166,18 +166,18 @@ pub fn frequencies(bytes: &[u8], expected_grid: [u32; 3]) -> Result<Vec<f64>> {
     let product = expected_grid
         .iter()
         .try_fold(1usize, |n, x| n.checked_mul(*x as usize))
-        .context("data_invalid: q 网格溢出")?;
+        .context("data_invalid: q Grid overflowing")?;
     ensure!(
         grid == expected_grid.map(|x| x as usize) && nq == product && nm > 0,
-        "data_invalid: freq 网格/模式数冲突"
+        "data_invalid: freq Grid/Model Conflict"
     );
     let expected = nq
-        .checked_mul(nm.checked_add(3).context("data_invalid: freq 溢出")?)
+        .checked_mul(nm.checked_add(3).context("data_invalid: freq Spill")?)
         .and_then(|n| n.checked_mul(8))
         .and_then(|n| n.checked_add(r.pos));
     ensure!(
         expected == Some(bytes.len()),
-        "data_invalid: freq 截断/多余数据/格式不符"
+        "data_invalid: freq Interdiction/redundant data/format mismatch"
     );
     let mut ws = vec![];
     for _ in 0..nq {

@@ -5,3 +5,8 @@
 - [x] T003 [US1] 在 epwflow/src/superconductivity/ 执行方法批次，复用 foundation/native_jobs.rs 完成两个独立作业与状态。
 - [x] T004 [US3] 在 epwflow/tests/support/ 验证逐点证据、失败恢复、旧清单和 Tc 兼容。
 - [x] T005 同步 epwflow/README.md、算例说明及 docs/overview/epwflow/README.md，完成验收与隔离本地提交。
+
+- [x] T006：统一方法有效 degaussq、原生输入和新目录命名，验证独立方法参数与回退。
+- [x] T007：显式独立展宽复用细矩阵；切换参数保留旧方法结果，验证互不覆盖。
+- [x] T008：更新公开进程夹具的显式上游准备，回归双作业／早停／未知回执及新目录。
+- [x] T009：同步 Overview 和手册，构建覆盖固定入口，精确提交本次范围并记录科学边界。

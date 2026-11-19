@@ -19,14 +19,14 @@ pub fn against_baseline(current: &ResultsBundle, baseline: Option<&ResultsBundle
     if let Some(base) = baseline {
         if !compare::tc_close(current.tc, base.tc) {
             tc_regressed = true;
-            notes.push(format!("Tc 偏离基线: {:?} vs {:?}", current.tc, base.tc));
+            notes.push(format!("Tc differs from baseline: {:?} vs {:?}", current.tc, base.tc));
         }
         if !compare::lambda_close(current.lambda_eff, base.lambda_eff) {
             lambda_regressed = true;
-            notes.push(format!("λ 偏离基线: {} vs {}", current.lambda_eff, base.lambda_eff));
+            notes.push(format!("lambda differs from baseline: {} vs {}", current.lambda_eff, base.lambda_eff));
         }
     } else {
-        notes.push("无基线，跳过回归比对".to_string());
+        notes.push("No baseline; regression comparison skipped".to_string());
     }
     Ok(RegressionReport {
         tc_regressed,

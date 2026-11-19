@@ -10,10 +10,10 @@ const HAR2EV: f64 = 13.60569253 * 2.0;
 pub fn get_energies(xml_name: &str) -> Result<Vec<Vec<f64>>> {
     if std::path::Path::new(xml_name).file_name().is_some_and(|n| n == "EIGENVAL") {
         let text =
-            std::fs::read_to_string(xml_name).context("读取 EIGENVAL 失败")?;
+            std::fs::read_to_string(xml_name).context("Read EIGENVAL Failed")?;
         let raw: Vec<&str> = text.lines().collect();
         if raw.len() <= 7 {
-            anyhow::bail!("EIGENVAL 内容过短");
+            anyhow::bail!("EIGENVAL It's too short");
         }
         let content = &raw[7..];
         // 4 列行 = k 点块头
@@ -43,9 +43,9 @@ pub fn get_energies(xml_name: &str) -> Result<Vec<Vec<f64>>> {
     } else {
         // Quantum ESPRESSO / FLEUR XML
         let text =
-            std::fs::read_to_string(xml_name).with_context(|| format!("读取 {xml_name} 失败"))?;
+            std::fs::read_to_string(xml_name).with_context(|| format!("Read {xml_name} Failed"))?;
         let doc = roxmltree::Document::parse(&text)
-            .map_err(|e| anyhow::anyhow!("解析 XML {xml_name} 失败: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Parsing XML {xml_name} Failed: {e}"))?;
         let root = doc.root_element();
         let mut eng_full: Vec<Vec<f64>> = Vec::new();
         if root.tag_name().name() == "fleurOutput" {
@@ -55,7 +55,7 @@ pub fn get_energies(xml_name: &str) -> Result<Vec<Vec<f64>>> {
                 .filter(|n| n.tag_name().name() == "eigenvalues")
                 .collect();
             let Some(eigenvalues) = eigen_nodes.last() else {
-                anyhow::bail!("XML 中未找到 eigenvalues");
+                anyhow::bail!("XML Not Found eigenvalues");
             };
             for ek in eigenvalues
                 .descendants()
@@ -134,7 +134,7 @@ pub fn run(xml: &str, mode: WindowMode) -> Result<()> {
             let (bands, actual) = qf_wannier::read_qe_bands(std::path::Path::new(xml))?;
             (bands, fermi.unwrap_or(actual))
         } else {
-            (get_energies(xml)?, fermi.context("非 QE XML 的自动选窗必须指定 --fermi（绝对 eV）")?)
+            (get_energies(xml)?, fermi.context("Not QE XML Automatic window selection must be specified --fermi (Absolutely eV)")?)
         };
         let selected = qf_wannier::select_default(&bands, actual_fermi, num_wann, &exclude_bands,
             &qf_wannier::Bounds::default(), qf_wannier::Reference::UpstreamRelative)?;
@@ -146,10 +146,10 @@ pub fn run(xml: &str, mode: WindowMode) -> Result<()> {
     match mode {
         WindowMode::Bands(n) => {
             if n.is_empty() || n.len() > 2 {
-                anyhow::bail!("-n 需要 1 或 2 个整数参数");
+                anyhow::bail!("-n Yes 1 or 2 Integer parameters");
             }
             if n.iter().any(|&i| i < 1 || i > nbnd) {
-                anyhow::bail!("band_index 必须从 1 开始");
+                anyhow::bail!("band_index It has to be from 1 Here we go");
             }
             if n.len() == 1 {
                 let (emin, emax) = band_min_max(&eng_full, n[0]);
@@ -165,19 +165,19 @@ pub fn run(xml: &str, mode: WindowMode) -> Result<()> {
         }
         WindowMode::Energies(e) => {
             if e.is_empty() || e.len() > 2 {
-                anyhow::bail!("-e 需要 1 或 2 个数值参数");
+                anyhow::bail!("-e Yes 1 or 2 numeric parameters");
             }
             if e.len() == 1 {
                 let band_index = e[0] as usize;
                 if !e[0].is_finite() || e[0].fract() != 0.0 || band_index < 1 || band_index > nbnd {
-                    anyhow::bail!("band_index 必须从 1 开始");
+                    anyhow::bail!("band_index It has to be from 1 Here we go");
                 }
                 let (emin, emax) = band_min_max(&eng_full, band_index);
                 println!("emin = {emin:.6}");
                 println!("emax = {emax:.6}");
             } else {
                 let (emin, emax) = (e[0], e[1]);
-                anyhow::ensure!(emin.is_finite() && emax.is_finite() && emin <= emax, "能量范围必须有限且递增");
+                anyhow::ensure!(emin.is_finite() && emax.is_finite() && emin <= emax, "The energy range must be finite and incremental");
                 let mut nbnd: Vec<usize> = Vec::with_capacity(eng_full.len());
                 for (ik, ek) in eng_full.iter().enumerate() {
                     let num = count_in_window(ek, emin, emax);

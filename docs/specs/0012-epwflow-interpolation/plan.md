@@ -1,6 +1,8 @@
 # 实施计划：Wannier 化与 EPW 插值
 
-**Issue**：[本地 0012](issue-draft.md)；**日期**：2026-10-15；**Spec**：[spec.md](spec.md)。
+> 2026-11-17 最新约定：预算账本功能已按用户要求彻底撤销。本文件涉及账本、campaign 身份、预算预留／结算及全局两个作业限制的旧条款均已失效；当前计算只依赖工作流记录、Slurm 作业身份及科学核验。历史消耗与验收记录不改写。详见 [0058 最新需求](../0058-epw-remove-resource-limits/spec.md)。
+
+**Issue**：[GitHub Issue #12](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/12)；**日期**：2026-10-15；**Spec**：[spec.md](spec.md)。
 
 ## 摘要与技术上下文
 
@@ -132,7 +134,6 @@ F3 复用单一窗口解析器读取已核验 wout 的 Outer／Inner，将绝对
 
 按目标版本源码 io/io.f90 核查 epwdata／crystal／wigner／vmedata／dmedata 和小端复数 epmatwp 的尺寸、有限值和完整性，替代旧 coarse.ephmat 简化角色。用当前粗网格 band.eig／phband.freq 派生工作目录内质量清单及来源绑定，报告未通过则停止。每次细网格调用前重验绑定与粗网格身份。
 
-各展宽分别使用 fine/smearing-NNNN，复制同一粗网格重启数据，重新生成全细网格选择；不沿用验证点 selecq。fine 主数据绑定 spectrum_index 所选目录；其余展宽角色加 smearing_NNNN_ 前缀共同交付和核验，避免覆盖与错配。F1 完成门及 F4 执行门使用同一质量绑定和原生适配。
 
 本次不改变 0016 选窗规则；当前源码的投影关键字能力门仍可能阻断现有安装，替代设计尚待收敛。粗／细阶段内恢复和历史粗网格导入、真实重读／超导仍单独追踪，不以进程 fixture 代替科学验收。
 

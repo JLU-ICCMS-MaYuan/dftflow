@@ -2,13 +2,13 @@ use anyhow::{Context, Result};
 use clap::Subcommand;
 use std::path::PathBuf;
 use super::report_store::ResultsBundle;
-use super::super::foundation::config;
 use super::super::foundation::status;
 
 /// delivery 子命令：一次入口收集、绘图、结果核验（FR-001/002）。
 #[derive(Subcommand)]
 pub enum DeliveryCommand {
     /// 收集各阶段交付到 results/manifest.json。
+    #[command(about = "Collect stage deliveries into results/manifest.json", long_about = "Collect stage deliveries into results/manifest.json")]
     Collect {
         #[arg(short = 'w', long)]
         work: PathBuf,
@@ -16,19 +16,14 @@ pub enum DeliveryCommand {
         json: bool,
     },
     /// 读取 results/manifest.json 并核验六组合覆盖（FR-002/004）。
+    #[command(about = "Read results/manifest.json and verify coverage of all six combinations", long_about = "Read results/manifest.json and verify coverage of all six combinations")]
     Results {
         #[arg(short = 'w', long)]
         work: PathBuf,
         #[arg(long)]
         json: bool,
     },
-    /// 读取配置并打印统一预算账本摘要（FR-005）。
-    Budget {
-        #[arg(long)]
-        config: PathBuf,
-        #[arg(long)]
-        json: bool,
-    },
+
 }
 
 /// 入口。
@@ -36,7 +31,6 @@ pub fn run(cmd: DeliveryCommand) -> Result<()> {
     match cmd {
         DeliveryCommand::Collect { work, json } => collect(&work, json),
         DeliveryCommand::Results { work, json } => results(&work, json),
-        DeliveryCommand::Budget { config: cfg_path, json } => budget(&cfg_path, json),
     }
 }
 
@@ -50,7 +44,7 @@ fn results(work: &PathBuf, json: bool) -> Result<()> {
     if path.exists() && crate::foundation::store::read::<serde_json::Value>(&path)?["kind"] == "epwflow-native-results" {
         return print_native(&crate::foundation::layout::path(work,"results"), json);
     }
-    let b = ResultsBundle::load(&path).with_context(|| format!("data_invalid: 无法加载 {}", path.display()))?;
+    let b = ResultsBundle::load(&path).with_context(|| format!("data_invalid: Cannot Load {}", path.display()))?;
     print_bundle(&b, json);
     Ok(())
 }
@@ -62,16 +56,6 @@ fn print_native(root: &std::path::Path, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn budget(cfg_path: &PathBuf, json: bool) -> Result<()> {
-    let cfg = config::Config::load(cfg_path)?;
-    let v = super::budget::ledger_summary(&cfg)?;
-    if json {
-        status::print_json(&v);
-    } else {
-        println!("{}", serde_json::to_string_pretty(&v)?);
-    }
-    Ok(())
-}
 
 fn print_bundle(b: &ResultsBundle, json: bool) {
     if json {

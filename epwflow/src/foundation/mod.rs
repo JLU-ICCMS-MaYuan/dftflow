@@ -1,9 +1,9 @@
-pub mod budget;
 pub mod band_ranges;
 pub mod chain;
 pub mod clear;
 pub mod cli;
 pub mod config;
+mod programs;
 pub mod environment;
 pub mod layout;
 pub mod parallelism;
@@ -40,3 +40,14 @@ pub(crate) mod config_versions;
 pub mod wannier_diagnostics;
 
 pub mod legacy_state;
+pub mod scientific_logs;
+
+pub mod combined_plot;
+
+mod legacy_language;
+mod electronic_reuse;
+pub(crate) mod electronic_parallel;
+
+pub mod workspace_data;
+
+pub(crate) mod reuse_files;

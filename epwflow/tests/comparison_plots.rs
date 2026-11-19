@@ -195,16 +195,16 @@ fn public_plot_groups_close_path_labels_without_moving_scientific_ticks() {
         assert!(!labels.contains(&"GAMMA"));
         let lines: Vec<_> = doc.descendants().filter(|n| n.has_tag_name("polyline") && n.attribute("stroke") == Some("#C8C8C8")).collect();
         assert_eq!(lines.len(), panels * 4,
-            "显示分组不能删除或移动原高对称点竖线");
+            "Show group not to remove or move the logarithmic vertical line");
         for panel in lines.chunks_exact(4) {
             let xs: Vec<i32> = panel.iter().map(|n| n.attribute("points").unwrap().split(',').next().unwrap().trim().parse().unwrap()).collect();
             for (index, distance) in [(1, 0.5), (2, 0.505)] {
                 assert!((xs[index] as f64 - xs[0] as f64 - (xs[3] - xs[0]) as f64 * distance).abs() <= 1.0,
-                    "高对称点竖线仍应标记原来的物理路径距离");
+                    "The high symmetry point vertical line should still mark the original physical path distance");
             }
         }
     }
-    assert_eq!(before, fingerprints(&source), "绘图不能改科学表或元数据");
+    assert_eq!(before, fingerprints(&source), "Drawings cannot change scientific tables or metadata");
     fs::remove_dir_all(root).unwrap();
 }
 fn temp() -> PathBuf {
@@ -311,7 +311,7 @@ fn error_markers_validate_semantics_and_old_metadata_remains_readable() {
         rehash(&dir);
         assert!(
             comparison::load(&dir).is_err(),
-            "标注语义错误 {case} 未被拒绝"
+            "Punctuation error {case} Not rejected"
         );
     }
 }
@@ -353,14 +353,14 @@ fn check_path_axes(svg: &str, expected_ticks: usize) {
             labels
                 .iter()
                 .any(|&&(_, y, _)| y > bottom && y < bottom + 40),
-            "高对称符号必须在底部轴外：x={x}, bottom={bottom}, labels={labels:?}"
+            "High symmetrical symbols must be outside the bottom axis:x={x}, bottom={bottom}, labels={labels:?}"
         );
         assert!(
             !texts.iter().any(|&(tx, y, text)| tx == x
                 && y > bottom
                 && y < bottom + 40
                 && text.parse::<f64>().is_ok()),
-            "高对称点处不能显示路径数值"
+            "Unable to show path values at high symmetry points"
         );
     }
     assert!(!svg.contains("k path"));
@@ -432,7 +432,7 @@ fn check_electronic_reference_lines(svg: &str, panel: usize, horizontal: bool) {
                 }
             })
             .count();
-        assert!(segments >= 3, "{name} 必须在正确能量位置画出多段彩色虚线");
+        assert!(segments >= 3, "{name} Draw multiple colour lines in the right energy position");
     }
 }
 
@@ -499,18 +499,22 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
                 .map(|p| { let (x,y)=p.split_once(',').unwrap(); (x.parse().unwrap(),y.parse().unwrap()) }).collect();
             assert!(points.len() > 50 || (points.len() == 2 && points[0].1 == points[1].1
                 && points[1].0 - points[0].0 == 30),
-                "{kind}: QE 必须为完整实线或实线图例，不能出现虚线碎段");
+                "{kind}: QE It is necessary to have a full line or a solid line legend, and no dashed segment of the line should be present");
         }
         let doc = roxmltree::Document::parse(&svg).unwrap();
-        for (color, width) in [("#282828", "4"), ("#0046D2", "3")] {
+        for (color, width) in [
+            ("#282828", qf_plot::electronic::REFERENCE_WIDTH),
+            ("#0046D2", qf_plot::electronic::INTERPOLATED_STROKE.width),
+        ] {
+            let width = width.to_string();
             let curves: Vec<_> = doc.descendants().filter(|n|
                 n.has_tag_name("polyline") && n.attribute("stroke") == Some(color)
             ).collect();
             // 声子参考使用自己的深灰；插值颜色在所有面板一致。
             if color == "#282828" && kind.starts_with("phonon_") { continue; }
-            assert!(!curves.is_empty(), "{kind}: 缺少 {color} 比较曲线");
-            assert!(curves.iter().all(|n| n.attribute("stroke-width") == Some(width)),
-                "{kind}: 图例与比较曲线的粗细必须一致");
+            assert!(!curves.is_empty(), "{kind}: Missing {color} Compare Curve");
+            assert!(curves.iter().all(|n| n.attribute("stroke-width") == Some(width.as_str())),
+                "{kind}: Legends must be in line with the roughness of the comparative curve");
         }
 
         if kind == "electronic_bands_comparison" || kind == "comparison_overview" {
@@ -537,7 +541,7 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
                     doc.descendants().any(|n| n.has_tag_name("text")
                         && n.attribute("text-anchor") == Some("middle")
                         && n.text().unwrap_or("").trim().parse::<f64>().is_ok()),
-                    "DOS 必须保留物理横轴的数值刻度"
+                    "DOS The numeric scale of the physical crossaxis must be maintained"
                 );
             }
         }
@@ -545,13 +549,13 @@ fn cli_collect_plot_move_and_replot_without_f4_or_external_calls() {
         assert!(svg.contains("electronic window = [-5.000, 5.000] eV relative to EF"));
         let qe = svg.find(if kind=="electronic_bands_comparison" || kind=="electronic_dos_comparison" || kind=="comparison_overview" {"#282828"} else {"#2D2D37"}).unwrap();
         let epw = svg.find("#0046D2").unwrap();
-        assert!(qe < epw, "EPW 必须后绘");
+        assert!(qe < epw, "EPW It's got to come back");
         if kind == "phonon_dispersion_comparison" || kind == "comparison_overview" {
-            assert!(svg.contains("#8A2BE2"));
-            assert!(svg.contains("Sampled maximum (OFF PATH): 49.00"));
-            assert!(svg.contains("mode 7 (frequency sorted)"));
-            assert!(svg.contains("(1/12, 1/12, 1/12)"));
-            assert!(svg.contains("M (high-symmetry point)"));
+            assert!(!svg.contains("#8A2BE2"));
+            assert!(!svg.contains("Sampled maximum (OFF PATH)"));
+            assert!(!svg.contains("Purple:"));
+            assert!(!svg.contains("(1/12, 1/12, 1/12)"));
+            assert!(!svg.contains("M (high-symmetry point)"));
         }
     }
     let moved = root.join("portable-results");
@@ -641,14 +645,14 @@ fn malformed_units_axes_projections_versions_and_tampering_are_rejected() {
                 rehash(&dir);
             }
             "axis" | "nan" | "reference" => {
-                let name = if case == "reference" {
+                let name = if case == "reference" || case == "axis" {
                     TABLES[1]
                 } else {
                     TABLES[3]
                 };
                 let text = fs::read_to_string(dir.join(name)).unwrap();
                 let text = match case {
-                    "axis" => text.replacen("epw,-0.5,", "epw,-0.499,", 1),
+                    "axis" => text.replace("epw,epw,0,100,1,", "epw,epw,0,100,1.01,"),
                     "nan" => text.replacen("qe,-0.5,", "qe,NaN,", 1),
                     _ => text.replacen("qe_matdyn", "qe_ph_direct", 1),
                 };
@@ -675,7 +679,7 @@ fn malformed_units_axes_projections_versions_and_tampering_are_rejected() {
                 }
             }
         }
-        assert!(comparison::load(&dir).is_err(), "未拒绝 {case}");
+        assert!(comparison::load(&dir).is_err(), "Not rejected {case}");
     }
 }
 
@@ -793,6 +797,7 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
         epw_bands: file("epw-path.eig"),
         electronic_stage: None,
         qe_phonon_bands: file("qe-path.freq"),
+        qe_phonon_dos: None,
         epw_phonon_bands: file("epw-path.freq"),
         epw_log: file("epw.out"),
         provenance: vec![file("plan.txt")],
@@ -904,7 +909,7 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
         .err()
         .unwrap()
         .to_string()
-        .contains("覆盖"));
+        .contains("not covered"));
     fs::write(root.join("test.wout"), "altered").unwrap();
     assert!(!cli(
         &[
@@ -934,7 +939,7 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
         &root,
     );
     assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("坐标"));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("coordinate"));
     assert!(!root.join("invalid/manifest.json").exists());
     sources.reciprocal[0][1] = 0.5;
     sources.mesh[1] = [0.0; 3];
@@ -953,12 +958,36 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
     .status
     .success());
     sources.mesh[1]=[0.5,0.,0.];
+    // 双方原生内部采样不同；导出保留全部点，只统计真实共同点。
+    let qe_sparse = [p_cart[0], p_cart[2]];
+    let qe_freq = qe_sparse.iter().chain(&m_cart).copied().collect::<Vec<_>>();
+    let matdyn = bands(&qe_freq, &frequencies).lines().map(|line| {
+        if line.split_whitespace().count() == 3 { format!("{line} 0\n") }
+        else { format!("{line}\n") }
+    }).collect::<String>();
+    fs::write(root.join("qe-path.freq"), matdyn).unwrap();
+    fs::write(root.join("qe-path.xml"), xml(&qe_sparse)).unwrap();
+    sources.qe_phonon_bands = file("qe-path.freq");
+    sources.qe_bands_xml = file("qe-path.xml");
+    store::write(&config, &sources).unwrap();
+    let independent = root.join("independent-exported");
+    success(cli(&["interpolation", "export-comparison", "--source", config.to_str().unwrap(),
+        "--output", independent.to_str().unwrap()], &root));
+    let independent = comparison::load(&independent).unwrap();
+    for curves in [&independent.electronic, &independent.phonon] {
+        assert!(curves.iter().any(|c| c.method == "qe" && c.points.len() == 2));
+        assert!(curves.iter().any(|c| c.method == "epw" && c.points.len() == 3));
+    }
+    let stats = independent.differences.unwrap();
+    assert_eq!(stats.phonon_path.points, 2);
+    assert_eq!(stats.phonon_path.paired_states, 18);
+    assert_eq!(stats.electronic_path.points, 2);
     sources.window_ev=[2.,3.];
     store::write(&config,&sources).unwrap();
     let empty = root.join("empty-exported");
     let out=cli(&["interpolation","export-comparison","--source",config.to_str().unwrap(),
         "--output",empty.to_str().unwrap()],&root);
-    assert!(String::from_utf8_lossy(&out.stdout).contains("无可配对数据"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("No matching data"));
     success(out);
     let data=comparison::load(&empty).unwrap();
     let stats=data.differences.as_ref().unwrap();
@@ -975,6 +1004,28 @@ fn native_export_reports_four_maxima_and_checks_nonorthogonal_mesh() {
     assert!(svg.contains("no paired data"));
     assert!(svg.contains("DOS mesh"));
     assert!(!svg.contains("quality:"));
+    assert!(!svg.contains("Purple:"));
+    assert!(!svg.contains("#8A2BE2"));
+    // 第 4 步独立原生 DOS：保留非均匀频率轴及原始密度，不做 Gaussian 重累计。
+    let native_freq = bands(&qe_sparse, &frequencies).lines().map(|line| {
+        if line.split_whitespace().count() == 3 { format!("{line} 0\n") }
+        else { format!("{line}\n") }
+    }).collect::<String>();
+    fs::write(root.join("native-qe.freq"), native_freq).unwrap();
+    fs::write(root.join("native-qe.dos"), "# Frequency DOS PDOS\n-10 0 0\n0 0.25 0.1\n13.5 0.125 0.1\n1000 0 0\n").unwrap();
+    sources.qe_phonon_bands = file("native-qe.freq");
+    sources.qe_phonon_dos = Some(file("native-qe.dos"));
+    store::write(&config, &sources).unwrap();
+    let direct = root.join("native-qe-export");
+    success(cli(&["interpolation", "export-comparison", "--source", config.to_str().unwrap(),
+        "--output", direct.to_str().unwrap()], &root));
+    let data = comparison::load(&direct).unwrap();
+    assert_eq!(data.phonon_dos.iter().find(|c|c.method=="qe").unwrap().points,
+        vec![(-10.,0.),(0.,0.25),(13.5,0.125),(1000.,0.)]);
+    assert!(data.differences.unwrap().phonon_mesh.maximum.is_none());
+    fs::write(root.join("native-qe.dos"), "0 1\n1 1\n").unwrap();
+    assert!(!cli(&["interpolation", "export-comparison", "--source", config.to_str().unwrap(),
+        "--output", root.join("tampered-qe-dos").to_str().unwrap()], &root).status.success());
     if let Ok(destination)=std::env::var("DFTFLOW_COMPARISON_VISUAL_ROOT") {
         fs::write(Path::new(&destination),results.to_string_lossy().as_bytes()).unwrap();
     }
@@ -995,7 +1046,7 @@ fn outer_window_requires_one_finite_ordered_native_record() {
         " | Outer: 2 to 2 (eV)",
         " | Outer: -1 to 3 (eV)\n | Outer: -1 to 3 (eV)",
     ] {
-        assert!(parse_outer_window(text).is_err(), "未拒绝 {text}");
+        assert!(parse_outer_window(text).is_err(), "Not rejected {text}");
     }
 }
 
@@ -1019,7 +1070,7 @@ fn frozen_window_rejects_invalid_records_and_metadata_without_inventing_legacy_b
         " | Inner: broken",
         " | Inner: -1 to 3 (eV)\n | Inner: -1 to 3 (eV)",
     ] {
-        assert!(parse_frozen_window(text).is_err(), "未拒绝 {text}");
+        assert!(parse_frozen_window(text).is_err(), "Not rejected {text}");
     }
     let root = temp();
     let work = fixture(&root);
@@ -1030,7 +1081,7 @@ fn frozen_window_rejects_invalid_records_and_metadata_without_inventing_legacy_b
         metadata.frozen_window_ev = Some(frozen);
         store::write(&dir.join("metadata.json"), &metadata).unwrap();
         rehash(&dir);
-        assert!(comparison::load(&dir).is_err(), "未拒绝 {frozen:?}");
+        assert!(comparison::load(&dir).is_err(), "Not rejected {frozen:?}");
     }
     let mut metadata = original.clone();
     metadata.disentanglement_window_ev = None;
@@ -1061,7 +1112,7 @@ fn frozen_window_rejects_invalid_records_and_metadata_without_inventing_legacy_b
 
 
 #[test]
-fn independent_electronic_axes_require_explicit_metadata_and_preserve_phonon_checks() {
+fn independent_electronic_and_phonon_axes_keep_native_samples_and_check_endpoints() {
     let root = temp();
     let work = fixture(&root);
     let dir = work.join("interpolation/comparison");
@@ -1074,7 +1125,7 @@ fn independent_electronic_axes_require_explicit_metadata_and_preserve_phonon_che
     }).collect::<Vec<_>>().join("\n") + "\n";
     fs::write(&file, reduced).unwrap();
     rehash(&dir);
-    assert!(epwflow::interpolation::comparison_data::load(&dir).is_err());
+    assert!(epwflow::interpolation::comparison_data::load(&dir).is_ok());
     let mut meta: Metadata = store::read(&dir.join("metadata.json")).unwrap();
     meta.electronic_independent_sampling = true;
     store::write(&dir.join("metadata.json"), &meta).unwrap();
@@ -1084,6 +1135,20 @@ fn independent_electronic_axes_require_explicit_metadata_and_preserve_phonon_che
     assert!(data.electronic.iter().any(|curve| curve.method == "epw" && curve.points.len() == 51));
     let file = dir.join("phonon_bands.csv");
     let text = fs::read_to_string(&file).unwrap().replace("epw,epw,0,1,0.01,", "epw,epw,0,1,0.015,");
+    fs::write(&file, text).unwrap();
+    rehash(&dir);
+    assert!(epwflow::interpolation::comparison_data::load(&dir).is_ok());
+    let before = fingerprints(&dir);
+    success(cli(&["collect", "-w", work.to_str().unwrap()], &root));
+    let results = work.join("results");
+    success(cli(&["plot", "--results", results.to_str().unwrap()], &root));
+    assert_eq!(before, fingerprints(&dir));
+    assert!(epwflow::delivery::comparison_plot::check_figure_formats(&results, &["png", "svg", "pdf"]).unwrap());
+    let svg = fs::read_to_string(results.join("figures/comparison_overview.svg")).unwrap();
+    assert!(!svg.contains("#8A2BE2"));
+    assert!(!svg.contains("Purple:"));
+    // 端点变化仍然拒绝，不能用不同物理路径冒充独立采样。
+    let text = fs::read_to_string(&file).unwrap().replace("epw,epw,0,100,1,", "epw,epw,0,100,1.01,");
     fs::write(&file, text).unwrap();
     rehash(&dir);
     assert!(epwflow::interpolation::comparison_data::load(&dir).is_err());

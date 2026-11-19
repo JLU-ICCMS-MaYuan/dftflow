@@ -1,6 +1,8 @@
 # 需求规格
 
-原文与证据见 [Issue](issue-draft.md)。用户授权真实运行和 debug，不虚构逐页审阅。
+> **协作入口（2026-11-17）**：[GitHub Issue #38](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/38)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+原文与证据见 [GitHub Issue #38](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/38)。用户授权真实运行和 debug，不虚构逐页审阅。
 
 - FR-001：编号工作区显式续算核对原始请求摘要、相同科学配置及除第七项原编排器外的全部来源。原 CLI 仅历史追溯，当前版本由冻结提交记录追溯；复用原摘要驱动子任务恢复，不改旧 request 和成功子记录。旧非编号工作区仍严格核对全部来源，不忽略科学程序、矩阵或物理数据。
 - FR-004：新尝试的 KPATH 快照路径可以改变，同一角色的 SHA256／字节数必须相同，且旧、新文件分别校验；来源内容变化仍拒绝。

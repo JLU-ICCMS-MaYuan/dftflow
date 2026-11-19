@@ -4,7 +4,7 @@ use ndarray_linalg::{EigValsh, UPLO};
 
 pub fn symmetric_eigenvalues(a: &Array2<f64>) -> Vec<f64> {
     a.eigvalsh(UPLO::Lower)
-        .expect("OpenBLAS 对称本征值求解失败")
+        .expect("OpenBLAS Symmetrical login solver failed")
         .to_vec()
 }
 

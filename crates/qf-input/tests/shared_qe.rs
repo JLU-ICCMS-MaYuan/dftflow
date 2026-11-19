@@ -54,9 +54,10 @@ fn shared_scf_preserves_explicit_mass_and_mesh_shift() {
     cfg.atomic_masses.insert("Si".into(), 29.1234);
     let entries = qf_input::species::resolve_atomic_species_entries(&cfg, &["Si".into()]).unwrap();
     assert_eq!(entries[0].1, 29.1234);
-    cfg.qe_phonon.scf.insert("kpoints".into(), json!([2, 3, 4]));
-    cfg.qe_phonon.scf.insert("k_shift".into(), json!([1, 0, 1]));
+    cfg.qe_phonon.scf.insert("kpoints".into(), json!([2, 3, 4, 1, 0, 1]));
     let cell = qf_crystal::Structure { lattice: [[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]], elements: vec!["Si".into()], counts: vec![1], positions: vec![[0.;3]], coord_type: "Direct".into(), formula: "Si".into() };
     assert!(qf_input::pw::scf_kpoints_text(&cell, &cfg.qe_phonon.scf).contains("2 3 4 1 0 1"));
+    cfg.qe_phonon.scf.insert("kpoints".into(), json!([2, 3, 4]));
+    assert!(qf_input::pw::scf_kpoints_text(&cell, &cfg.qe_phonon.scf).contains("2 3 4 0 0 0"));
     std::fs::remove_dir_all(root).unwrap();
 }

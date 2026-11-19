@@ -32,7 +32,9 @@ fn execute(
         if crate::foundation::native_jobs::retry_enabled() && dir.join("out").exists() {
             std::fs::remove_dir_all(dir.join("out"))?;
         }
-        save::stage_scf(work, &dir.join("out"), &qe.config.qe.prefix)?;
+        if crate::foundation::layout::enabled(work) {
+            crate::foundation::reuse_files::electronic(qe.config,&crate::foundation::layout::path(work,"scf/snapshot"),&dir.join("out"),true)?;
+        } else {save::stage_scf(work, &dir.join("out"), &qe.config.qe.prefix)?;}
         std::fs::write(&file, input)?;
     }
     super::execution::run(
@@ -54,6 +56,23 @@ fn dyn0(qe: &QeSettings, dir: &Path, geometry: &xml::Geometry) -> Result<Vec<QPo
         qe.config.phonon.q_grid,
         matches!(qe.config.phonon.mode, PhMode::Coords),
     )
+}
+
+/// 并行任务从同一份 QE 初始化结果重建坐标，不猜测对称性和内部编号。
+pub fn initialized_points(qe: &QeSettings, work: &Path) -> Result<Vec<QPoint>> {
+    let dir = crate::foundation::layout::path(work, "ph_init");
+    let mut points = dyn0(qe, &dir, &geometry(qe, work)?)?;
+    native_ph::control(&control(qe, &dir), &points)?;
+    for point in &mut points {
+        point.directory = format!("q{:04}", point.global_index);
+    }
+    Ok(points)
+}
+
+pub(crate) fn completed_response(qe: &QeSettings, work: &Path, q: &QPoint) -> Result<PhResponse> {
+    let dir = crate::foundation::layout::path(work, "ph").join(&q.directory);
+    qf_io::qe_completion::checked_log(&dir.join("ph.out"), false)?;
+    response(qe, &dir, q, &control(qe, &crate::foundation::layout::path(work, "ph_init")), &geometry(qe, work)?)
 }
 
 fn control(qe: &QeSettings, dir: &Path) -> PathBuf {
@@ -87,7 +106,7 @@ pub(crate) fn response(
         .collect::<Vec<_>>();
     ensure!(
         files.len() == 1,
-        "data_invalid: 缺少或存在歧义的原生 dvscf q={}",
+        "data_invalid: The birth of a lack of or disagreement dvscf q={}",
         q.global_index
     );
     // coords 的 fildyn 为不带全局编号的单 q 文件，内部 q 固定为 1。
@@ -132,7 +151,7 @@ pub fn run_q(
     q: &QPoint,
     q_index: usize,
 ) -> Result<PhResponse> {
-    ensure!(q_index == q.global_index, "data_invalid: 分 q 全局索引不符");
+    ensure!(q_index == q.global_index, "data_invalid: min q Global index does not match");
     let dir = crate::foundation::layout::path(&work, "ph").join(&q.directory);
     let input = qe.phonon_q_input(
         dir.join("out").to_str().unwrap(),

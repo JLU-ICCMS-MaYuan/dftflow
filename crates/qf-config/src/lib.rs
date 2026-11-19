@@ -41,6 +41,8 @@ pub struct Config {
     #[serde(default)]
     pub slurm: SlurmSection,
     #[serde(default)]
+    pub plot: PlotSection,
+    #[serde(default)]
     pub qe_phonon: QePhononSection,
     #[serde(default)]
     pub qe_scf: SectionMap,
@@ -108,6 +110,69 @@ pub struct SlurmSection {
     pub header: Option<String>,
 }
 
+/// 绘图格式配置段：全局统一输出格式。
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlotSection {
+    /// 输出格式列表，可选：png, svg, pdf, jpg
+    #[serde(default = "default_plot_formats")]
+    pub formats: Vec<String>,
+}
+
+impl Default for PlotSection {
+    fn default() -> Self {
+        Self {
+            formats: default_plot_formats(),
+        }
+    }
+}
+
+fn default_plot_formats() -> Vec<String> {
+    vec!["svg".to_string()]
+}
+
+impl PlotSection {
+    /// 校验格式合法性并返回规范化的格式列表。
+    pub fn validate_formats(&self) -> Result<Vec<PlotFormat>> {
+        let mut result = Vec::new();
+        for fmt in &self.formats {
+            let normalized = match fmt.to_lowercase().as_str() {
+                "png" => PlotFormat::Png,
+                "svg" => PlotFormat::Svg,
+                "pdf" => PlotFormat::Pdf,
+                "jpg" | "jpeg" => PlotFormat::Jpg,
+                _ => anyhow::bail!("Unsupported plot format: {fmt}. Allowed values: png, svg, pdf, jpg"),
+            };
+            if !result.contains(&normalized) {
+                result.push(normalized);
+            }
+        }
+        if result.is_empty() {
+            anyhow::bail!("[plot].formats cannot be empty");
+        }
+        Ok(result)
+    }
+}
+
+/// 支持的绘图格式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlotFormat {
+    Png,
+    Svg,
+    Pdf,
+    Jpg,
+}
+
+impl PlotFormat {
+    pub fn extension(&self) -> &'static str {
+        match self {
+            PlotFormat::Png => "png",
+            PlotFormat::Svg => "svg",
+            PlotFormat::Pdf => "pdf",
+            PlotFormat::Jpg => "jpg",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct VaspSection {
     #[serde(default)]
@@ -168,7 +233,7 @@ impl Config {
         let mode = self.qe.lattice_mode();
         if !VALID_LATTICE_MODES.contains(&mode) {
             anyhow::bail!(
-                "[qe].lattice_mode = {mode:?} 不合法，允许值: {}",
+                "[qe].lattice_mode = {mode:?} Invalid, allowed value: {}",
                 VALID_LATTICE_MODES.join(", ")
             );
         }
@@ -199,7 +264,7 @@ impl Config {
         }
         if !conflicts.is_empty() {
             anyhow::bail!(
-                "不允许在 input.toml 中手动指定 QE 晶格参数；请删除这些 key，由 lattice_mode 自动生成: {}",
+                "Not allowed in input.toml Manually Assign QE crystal parameters; please delete these key ,By lattice_mode Auto Generate: {}",
                 conflicts.join(", ")
             );
         }
@@ -250,11 +315,19 @@ pub fn load(path: Option<&str>, config_file: Option<&str>) -> Result<Config> {
         serde_json::from_value(base).context("deserialize merged config")?;
     config.pp_dir = resolve_pp_dir_path(config.pp_dir, config_file);
     config.validate_no_manual_lattice_params()?;
+    config.plot.validate_formats().context("validate [plot].formats")?;
     for (element, mass) in &config.atomic_masses {
-        anyhow::ensure!(mass.is_finite() && *mass > 0.0, "atomic_masses.{element} 必须为有限正数");
+        anyhow::ensure!(mass.is_finite() && *mass > 0.0, "atomic_masses.{element} It has to be a finite positive number");
     }
-    if let Some(shift) = config.qe_phonon.scf.get("k_shift") {
-        anyhow::ensure!(shift.as_array().is_some_and(|v| v.len() == 3 && v.iter().all(|n| matches!(n.as_i64(), Some(0 | 1)))), "qe_phonon.scf.k_shift 必须包含三个 0/1 整数");
+    anyhow::ensure!(!config.qe_phonon.scf.contains_key("k_shift"),
+        "qe_phonon.scf.k_shift is unsupported; use kpoints = [nk1, nk2, nk3, s1, s2, s3]");
+    if let Some(Value::Array(points)) = config.qe_phonon.scf.get("kpoints") {
+        anyhow::ensure!(matches!(points.len(), 3 | 6),
+            "qe_phonon.scf.kpoints requires 3 or 6 integers");
+        anyhow::ensure!(points[..3].iter().all(|n| n.as_u64().is_some_and(|v| v > 0 && v <= u32::MAX as u64)),
+            "qe_phonon.scf.kpoints grid requires three positive integers within u32 range");
+        anyhow::ensure!(points[3..].iter().all(|n| matches!(n.as_i64(), Some(0 | 1))),
+            "qe_phonon.scf.kpoints shift requires three 0/1 integers");
     }
     Ok(config)
 }
@@ -369,6 +442,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn phonon_kpoints_array_validation() {
+        let path = std::env::temp_dir().join(format!("qf-config-kpoints-{}.toml", std::process::id()));
+        for (points, valid) in [
+            ("[2,3,4]", true), ("[2,3,4,1,0,1]", true),
+            ("[2,3]", false), ("[0,3,4]", false), ("[2,-1,4]", false),
+            ("[2,3.5,4]", false), ("[2,3,4294967296]", false),
+            ("[2,3,4,2,0,0]", false), ("[2,3,4,0.5,0,0]", false),
+        ] {
+            std::fs::write(&path, format!("[qe_phonon.scf]\nkpoints={points}\n")).unwrap();
+            assert_eq!(load(Some(path.to_str().unwrap()), None).is_ok(), valid, "{points}");
+        }
+        std::fs::write(&path, "[qe_phonon.scf]\nkpoints=[2,3,4]\nk_shift=[1,0,1]\n").unwrap();
+        assert!(format!("{:#}", load(Some(path.to_str().unwrap()), None).unwrap_err())
+            .contains("use kpoints"));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn merge_recursive_nested_and_null_skip() {
         let mut base: Value = serde_json::json!({"qe": {"kmesh": 0.04, "ecutwfc": 60}, "a": 1});
         let over: Value =
@@ -410,15 +501,115 @@ mod tests {
         hoist_root_vasp_keys(&mut base2);
         assert!(base2.get("vasp").is_none());
     }
+
+    #[test]
+    fn plot_section_default_is_svg() {
+        let section = PlotSection::default();
+        assert_eq!(section.formats, vec!["svg".to_string()]);
+    }
+
+    #[test]
+    fn plot_format_extension() {
+        assert_eq!(PlotFormat::Png.extension(), "png");
+        assert_eq!(PlotFormat::Svg.extension(), "svg");
+        assert_eq!(PlotFormat::Pdf.extension(), "pdf");
+        assert_eq!(PlotFormat::Jpg.extension(), "jpg");
+    }
+
+    #[test]
+    fn plot_section_validate_formats_single() {
+        let section = PlotSection { formats: vec!["png".to_string()] };
+        let result = section.validate_formats().unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], PlotFormat::Png);
+    }
+
+    #[test]
+    fn plot_section_validate_formats_multiple() {
+        let section = PlotSection {
+            formats: vec!["svg".to_string(), "png".to_string(), "pdf".to_string()]
+        };
+        let result = section.validate_formats().unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], PlotFormat::Svg);
+        assert_eq!(result[1], PlotFormat::Png);
+        assert_eq!(result[2], PlotFormat::Pdf);
+    }
+
+    #[test]
+    fn plot_section_validate_formats_case_insensitive() {
+        let section = PlotSection {
+            formats: vec!["PNG".to_string(), "Svg".to_string(), "pdf".to_string()]
+        };
+        let result = section.validate_formats().unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], PlotFormat::Png);
+        assert_eq!(result[1], PlotFormat::Svg);
+        assert_eq!(result[2], PlotFormat::Pdf);
+    }
+
+    #[test]
+    fn plot_section_validate_formats_deduplicates() {
+        let section = PlotSection {
+            formats: vec!["png".to_string(), "PNG".to_string(), "png".to_string()]
+        };
+        let result = section.validate_formats().unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], PlotFormat::Png);
+    }
+
+    #[test]
+    fn plot_section_validate_formats_jpg_and_jpeg() {
+        let section1 = PlotSection { formats: vec!["jpg".to_string()] };
+        assert_eq!(section1.validate_formats().unwrap()[0], PlotFormat::Jpg);
+
+        let section2 = PlotSection { formats: vec!["jpeg".to_string()] };
+        assert_eq!(section2.validate_formats().unwrap()[0], PlotFormat::Jpg);
+    }
+
+    #[test]
+    fn plot_section_validate_formats_empty_fails() {
+        let section = PlotSection { formats: vec![] };
+        let result = section.validate_formats();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn plot_section_validate_formats_invalid_fails() {
+        let section = PlotSection { formats: vec!["gif".to_string()] };
+        let result = section.validate_formats();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unsupported plot format"));
+    }
+
+    #[test]
+    fn plot_formats_are_validated_when_loading_config() {
+        assert_eq!(load(None, None).unwrap().plot.validate_formats().unwrap(), [PlotFormat::Svg]);
+        let path = std::env::temp_dir().join(format!("qf-config-plot-{}.toml", std::process::id()));
+        for (formats, expected) in [
+            ("['PNG', 'png', 'JPEG', 'jpg']", Some(vec![PlotFormat::Png, PlotFormat::Jpg])),
+            ("[]", None),
+            ("['gif']", None),
+        ] {
+            std::fs::write(&path, format!("[plot]\nformats = {formats}\n")).unwrap();
+            let result = load(path.to_str(), path.to_str());
+            match expected {
+                Some(expected) => assert_eq!(result.unwrap().plot.validate_formats().unwrap(), expected),
+                None => assert!(result.is_err()),
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
 }
 
 /// 固定声子工作目录及配置相对路径；其他用户字段保留。
 pub fn phonon_snapshot_text(path: &str, workspace: &str) -> Result<String> {
     let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(path)?)?;
     let cfg = load(Some(path), Some(path))?;
-    let root = value.as_table_mut().context("配置必须为 TOML 表")?;
+    let root = value.as_table_mut().context("The configuration must be TOML Table")?;
     if let Some(pp) = cfg.pp_dir { root.insert("pp_dir".into(), toml::Value::String(pp)); }
-    let ph = root.entry("qe_phonon").or_insert_with(|| toml::Value::Table(Default::default())).as_table_mut().context("qe_phonon 必须为表")?;
+    let ph = root.entry("qe_phonon").or_insert_with(|| toml::Value::Table(Default::default())).as_table_mut().context("qe_phonon It has to be a watch")?;
     ph.insert("work_dir".into(), toml::Value::String(workspace.into()));
     Ok(toml::to_string_pretty(&value)?)
 }

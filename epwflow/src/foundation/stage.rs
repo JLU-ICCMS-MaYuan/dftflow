@@ -58,7 +58,7 @@ pub fn execute(
     stage_id: &str,
     launcher: &[String],
 ) -> Result<state::StageAttempt> {
-    let def = stage_def(stage_id).context("data_invalid: 未知阶段")?;
+    let def = stage_def(stage_id).context("data_invalid: Unknown stage")?;
     let deps: Vec<String> = def.dependencies.iter().map(|s| s.to_string()).collect();
 
     let mut states = BTreeMap::new();
@@ -78,7 +78,7 @@ pub fn execute(
 
     let prog = match def.program {
         Some(k) => program_path(k, binding),
-        None => bail!("not_implemented: 阶段 {stage_id} 由 F2–F4 定义，F1 尚未接入"),
+        None => bail!("not_implemented: Phase {stage_id} By F2–F4 Definitions,F1 Not yet accessed"),
     };
     let mut cmd: Vec<String> = vec![prog.to_string_lossy().into_owned()];
     cmd.extend_from_slice(&def.args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
@@ -102,7 +102,7 @@ pub fn execute(
     if complete {
         attempt.advance(state::StageState::Succeeded)?;
     } else {
-        attempt.error = Some("data_invalid: 阶段产物缺失".to_string());
+        attempt.error = Some("data_invalid: Stage product is missing".to_string());
         attempt.advance(state::StageState::Failed)?;
     }
     attempt.save(&binding.work_dir)?;

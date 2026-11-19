@@ -13,9 +13,9 @@ impl Case {
         use epwflow::foundation::{readable_state as logs, stages::Step};
         let root = self.root.join("run");
         let doc = logs::read(&root, Step::Phonon).unwrap();
-        json!({"state":match doc.get("阶段分配","状态"){Some("已完成")=>"succeeded",Some("失败")=>"failed",Some("运行中")=>"running",Some("已提交")=>"submitted",_=>"unknown"},
-            "script":{"path":logs::resolve(&root,doc.get("阶段分配","脚本").unwrap())},
-            "job":logs::jobs(&root,Step::Phonon).unwrap().get("阶段分配")})
+        json!({"state":match doc.get("Stage allocation","Status"){Some("completed")=>"succeeded",Some("failed")=>"failed",Some("running")=>"running",Some("submitted")=>"submitted",_=>"unknown"},
+            "script":{"path":logs::resolve(&root,doc.get("Stage allocation","Script").unwrap())},
+            "job":logs::jobs(&root,Step::Phonon).unwrap().get("Stage allocation")})
     }
     fn chain_submit(&self, resume: bool) -> Output {
         let mut args = vec!["--stage", "phonon", "-s"];
@@ -74,21 +74,16 @@ fn phonon_chain_single_submission_delivers_save_and_plots_without_downstream() {
     let c = Case::numbered();
     c.chain_setup();
     let out = c.chain_submit(false);
-    assert!(String::from_utf8_lossy(&out.stdout).contains("自动推进"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("advance automatically within the allocation"));
     success(out);
     assert_eq!(c.submission_count(), 1);
     assert!(!c.chain_submit(false).status.success());
     success(c.chain_execute());
     assert_eq!(c.chain_attempt()["state"], "succeeded");
     let dir = c.root.join("run/4.qe-phonon-nosplit");
-    for file in [
-        "save/scf.dvscf_q1",
-        "plots/phband/phonon_band.png",
-        "plots/phdos/phonon_dos.png",
-        "plots/phdos/phonon_dos_elements.csv",
-        "plots/phonon_combined.jpg",
-    ] {
-        assert!(dir.join(file).is_file(), "缺少 {file}");
+    assert!(dir.join("save/scf.dvscf_q1").is_file());
+    for file in ["phonon.png","phonon.plot.json"] {
+        assert!(c.root.join("run/results/4.qe-phonon-nosplit").join(file).is_file());
     }
     assert_eq!(c.chain_calls("ph"), 1);
     assert_eq!(c.chain_calls("q2r"), 1);
@@ -102,16 +97,14 @@ fn phonon_chain_single_submission_delivers_save_and_plots_without_downstream() {
     success(c.chain_submit(false));
     assert_eq!(c.submission_count(), 1);
     assert_eq!(c.calls(), calls);
-    let ledger: Value = store::read(&c.root.join("fixture-ledger.json")).unwrap();
-    assert_eq!(ledger["spent_node_seconds"], 1);
-    assert!(ledger["reservations"].as_array().unwrap().is_empty());
+    assert!(!c.root.join("fixture-ledger.json").exists());
     success(c.numbered_cli(1, &["--stage", "coarse", "-s"], None, "chain-handoff"));
     assert!(!c.root.join("run/native-plan.json").exists());
     assert_eq!(
         epwflow::foundation::readable_state::read(
             &c.root.join("run"), epwflow::foundation::stages::Step::Coarse,
-        ).unwrap().get("阶段分配", "状态"),
-        Some("已提交")
+        ).unwrap().get("Stage allocation", "Status"),
+        Some("submitted")
     );
     assert_eq!(c.calls(), calls);
 }
@@ -155,7 +148,7 @@ fn phonon_chain_missing_plot_is_rebuilt_without_qe_and_tampered_save_is_rejected
     let calls = c.calls();
     fs::remove_file(
         c.root
-            .join("run/4.qe-phonon-nosplit/plots/phdos/phonon_dos.png"),
+            .join("run/results/4.qe-phonon-nosplit/phonon.png"),
     )
     .unwrap();
     success(c.chain_submit(false));
@@ -228,7 +221,7 @@ fn phonon_chain_plot_failure_keeps_all_science_for_one_resume() {
     let c = Case::numbered();
     c.chain_setup();
     let p = c.root.join("qe_native_io.py");
-    let body = fs::read_to_string(&p).unwrap().replace("if value('fldos'):", "if value('fldos'):\n            if (ROOT/'plot-failure').exists():\n                Path('plots').mkdir(exist_ok=True)\n                Path('plots/phband').write_text('obstruction')");
+    let body = fs::read_to_string(&p).unwrap().replace("if value('fldos'):", "if value('fldos'):\n            if (ROOT/'plot-failure').exists():\n                (ROOT/'run/results/4.qe-phonon-nosplit/phonon.png').mkdir(parents=True,exist_ok=True)");
     fs::write(p, body).unwrap();
     c.put("plot-failure", "block renderer");
     success(c.chain_submit(false));
@@ -238,7 +231,8 @@ fn phonon_chain_plot_failure_keeps_all_science_for_one_resume() {
     assert_eq!(c.chain_calls("q2r"), 1);
     assert_eq!(c.chain_calls("matdyn"), 2);
     fs::remove_file(c.root.join("plot-failure")).unwrap();
-    fs::remove_file(c.root.join("run/4.qe-phonon-nosplit/plots/phband")).unwrap();
+    fs::remove_dir(c.root.join("run/results/4.qe-phonon-nosplit/phonon.png")).unwrap();
+    success(c.numbered_cli(0,&["--plot","--results",c.root.join("run/results/4.qe-phonon-nosplit").to_str().unwrap()],None,"chain-explicit-plot"));
     success(c.chain_submit(true));
     success(c.chain_execute());
     assert_eq!(c.calls(), calls);
@@ -267,13 +261,13 @@ fn phonon_chain_terminal_interruption_is_reported_and_resumed() {
     assert!(!c.chain_execute().status.success());
     // 模拟调度器中断 worker，终态已经可查而磁盘仍停在 running。
     use epwflow::foundation::{readable_state as logs, stages::Step};
-    logs::update(&c.root.join("run"),Step::Phonon,|d|{d.set("阶段分配","状态","运行中");Ok(())}).unwrap();
+    logs::update(&c.root.join("run"),Step::Phonon,|d|{d.set("Stage allocation","Status","running");Ok(())}).unwrap();
     c.put("job-201.state", "CANCELLED");
     let out = c.numbered_cli(0, &["--status", "--json"], None, "interrupted-status");
     let state: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(state["workflow_status"], "incomplete");
     assert_eq!(state["workflow_complete"], false);
-    assert_eq!(c.chain_attempt()["state"], "running", "查询不改写记录");
+    assert_eq!(c.chain_attempt()["state"], "running", "Query does not change the record");
     assert!(!c.chain_submit(false).status.success());
     fs::remove_file(c.root.join("comparison-failure")).unwrap();
     success(c.chain_submit(true));
@@ -293,9 +287,9 @@ fn phonon_chain_final_registration_interruption_resumes_without_science() {
     let calls = c.calls();
     // 科学与图表回执已发布，模拟父完成记录尚未落盘时 worker 中断。
     use epwflow::foundation::{readable_state as logs, stages::Step};
-    logs::update(&c.root.join("run"),Step::Phonon,|d|{d.set("阶段分配","状态","失败");Ok(())}).unwrap();
+    logs::update(&c.root.join("run"),Step::Phonon,|d|{d.set("Stage allocation","Status","failed");Ok(())}).unwrap();
     success(c.chain_submit(true));
-    assert_eq!(c.submission_count(), 1, "科学和图表已齐，不再提交空作业");
+    assert_eq!(c.submission_count(), 1, "Science and charts are complete and no more empty jobs are submitted");
     assert_eq!(c.calls(), calls);
     let out = c.numbered_cli(
         0,

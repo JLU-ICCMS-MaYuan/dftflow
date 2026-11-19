@@ -29,7 +29,7 @@ impl Request {
     fn verify(&self, digest: &str) -> Result<()> {
         ensure!(
             self.schema_version == 1 && self.digest == digest,
-            "input_conflict: 共享声子请求发生变化"
+            "input_conflict: Share voice requests change"
         );
         for id in &self.files {
             id.verify()?;
@@ -73,16 +73,16 @@ pub fn run(
 ) -> Result<(ScfResult, Vec<QPoint>, Vec<PhResponse>)> {
     ensure!(
         backend == Backend::Local,
-        "allocation: 共享声子链只能在已登记分配内同步执行"
+        "allocation: Shared voice sub-chains can only be synchronized within the registered distribution"
     );
     ensure!(
         cfg.phonon.mode == PhMode::Nosplit,
-        "execution_failed: 首条共享声子主路径仅支持 phonon.mode=nosplit"
+        "execution_failed: First shared phonon master path only supported phonon.mode=nosplit"
     );
     let kpath = Identity::capture(
         cfg.kpath
             .as_ref()
-            .context("required: 共享声子流程需要 kpath 或配置目录中的 KPATH.in")?,
+            .context("required: Share voice subprocesses required kpath or in the configuration directory KPATH.in")?,
     )?;
     let dir = crate::foundation::layout::path(&work, "qe-phonon");
     let request_path = dir.join("shared-request.json");
@@ -91,22 +91,16 @@ pub fn run(
     )?);
     let existing: Option<Request> = if dir.exists() {
         let request: Request =
-            store::read(&request_path).context("input_conflict: 未登记的共享声子目录，保留现场")?;
+            store::read(&request_path).context("input_conflict: Unregistered shared voice directory, on-site")?;
         request.verify(&digest)?;
         Some(request)
     } else {
         None
     };
-    let post_dir = cfg
-        .programs
-        .ph
-        .path
-        .parent()
-        .context("configuration: PH 缺少程序目录")?;
-    let q2r =
-        Identity::capture(&post_dir.join("q2r.x")).context("environment: PH 同目录缺少 q2r.x")?;
-    let matdyn = Identity::capture(&post_dir.join("matdyn.x"))
-        .context("environment: PH 同目录缺少 matdyn.x")?;
+    let q2r_program = cfg.programs.get("q2r")?;
+    let matdyn_program = cfg.programs.get("matdyn")?;
+    let q2r = Identity::capture(&q2r_program.path)?;
+    let matdyn = Identity::capture(&matdyn_program.path)?;
     let pseudo_ids: BTreeMap<_, _> = cfg
         .pseudos
         .iter()
@@ -120,7 +114,7 @@ pub fn run(
             fs::copy(&id.path, &target)?;
             ensure!(
                 store::hash_file(&target)? == id.sha256,
-                "input_conflict: 赝势复制不完整"
+                "input_conflict: Duplication incomplete"
             );
         }
         for (name, program, args) in [
@@ -134,8 +128,8 @@ pub fn run(
                 &cfg.programs.ph.path,
                 cfg.programs.ph.args.as_slice(),
             ),
-            ("q2r.x", &q2r.path, &[][..]),
-            ("matdyn.x", &matdyn.path, &[][..]),
+            ("q2r.x", &q2r.path, q2r_program.args.as_slice()),
+            ("matdyn.x", &matdyn.path, matdyn_program.args.as_slice()),
         ] {
             let mut argv = launcher.to_vec();
             argv.push(program.to_string_lossy().into_owned());
@@ -161,7 +155,8 @@ pub fn run(
         "qe_phonon": {
             "retain_epw_data": true, "work_dir": dir, "prefix": cfg.qe.prefix,
             "scf": {"calculation": "scf", "outdir": "out", "prefix": cfg.qe.prefix,
-                "kpoints": cfg.qe.scf.k_grid, "k_shift": cfg.qe.scf.k_shift,
+                "kpoints": [cfg.qe.scf.k_grid[0], cfg.qe.scf.k_grid[1], cfg.qe.scf.k_grid[2],
+                    cfg.qe.scf.k_shift[0], cfg.qe.scf.k_shift[1], cfg.qe.scf.k_shift[2]],
                 "ecutwfc": cfg.qe.ecutwfc_ry, "ecutrho": cfg.qe.ecutrho_ry,
                 "occupations": cfg.qe.occupations, "conv_thr": cfg.qe.scf.conv_thr_ry},
             "ph": {"qpoints": cfg.phonon.q_grid, "tr2_ph": cfg.phonon.tr2_ph},
@@ -245,7 +240,7 @@ pub fn run(
             Ok(())
         },
     )
-    .context("execution_failed: qeflow 声子流程失败")?;
+    .context("execution_failed: qeflow Sound subprocessor failed")?;
     store::read::<Request>(&request_path)?.verify(&digest)?;
     kpath.verify()?;
     q2r.verify()?;
@@ -264,7 +259,7 @@ pub fn run(
     )?;
     ensure!(
         points.len() == export.qpoints,
-        "data_invalid: 归档与严格 q 映射不符"
+        "data_invalid: Archive and Strict q Map does not match"
     );
     let control = dir
         .join("out/_ph0")
@@ -279,7 +274,7 @@ pub fn run(
         &json!({"schema_version": 1, "kpath": kpath, "q2r": q2r, "matdyn": matdyn, "pseudos": pseudo_ids}),
     )?;
     Ok((
-        scf_result.context("data_invalid: 共享声子链缺少 SCF 检查点")?,
+        scf_result.context("data_invalid: Share voice hype missing SCF Checkpoints")?,
         points,
         responses,
     ))

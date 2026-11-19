@@ -1,6 +1,8 @@
 # 需求规格
 
-原文见 [Issue](issue-draft.md)，无附件，images: []。
+> **协作入口（2026-11-17）**：[GitHub Issue #39](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/39)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+原文见 [GitHub Issue #39](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/39)，无附件，images: []。
 
 - FR-001：电子能带、声子色散及总览共用显示规则：G/GAMMA 显示为 Γ；屏幕上相距不超过 24 像素的一组相邻标签合并为按路径顺序的 A | L 等，去掉重复符号，显示在该组两端的中间。各条高对称点竖线、路径坐标、分段和曲线保持原样，DOS 坐标不变；该合并是显示分组，不把两个物理端点改成同一点。
 - FR-002：旧图保留；本次只更新图像和对应清单，数值质量仍 failed，不变更任何科学或投影标准。

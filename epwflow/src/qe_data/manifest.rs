@@ -130,7 +130,7 @@ impl QeManifest {
         let m: Self = super::super::foundation::store::read(path)?;
         anyhow::ensure!(
             matches!(m.schema_version, 1 | 2),
-            "unsupported_version: qe-data manifest schema_version 必须为 1 或 2"
+            "unsupported_version: qe-data manifest schema_version Must be 1 or 2"
         );
         if m.schema_version == 2 {
             m.verify()?;
@@ -141,22 +141,29 @@ impl QeManifest {
     /// 原生交付逐文件重验；版本 1 仅保留历史读取，不凭 valid 标签进入下游。
     pub fn verify(&self) -> anyhow::Result<()> {
         use anyhow::{ensure, Context};
+        if let Some(root)=self.artifact_root.as_ref().filter(|r|crate::foundation::layout::enabled(r)) {
+            ensure!(self.schema_version==2 && self.validation.all_passed(),"data_invalid: native QE results are incomplete");
+            let cfg=super::direct::current(root)?;
+            super::direct::phonon(&cfg)?;
+            return Ok(());
+        }
+
         ensure!(
             self.schema_version == 2 && self.validation.all_passed() && !self.artifacts.is_empty(),
-            "data_invalid: 缺少版本 2 原生 QE 产物身份"
+            "data_invalid: Missing version 2 Native QE The identity of the product"
         );
         let root = self
             .artifact_root
             .as_ref()
-            .context("data_invalid: QE 清单缺 artifact_root")?;
+            .context("data_invalid: QE manifest is missing artifact_root")?;
         let canonical_root = root.canonicalize()?;
         let mut roles = std::collections::BTreeSet::new();
         for a in &self.artifacts {
             ensure!(!a.relative_path.is_absolute()
                 && a.relative_path.components().all(|c| matches!(c, std::path::Component::Normal(_))),
-                "data_invalid: QE 路径非法");
+                "data_invalid: QE Path Invalid");
             if qf_io::qe_payload::unchecked(&a.relative_path) { continue; }
-            ensure!(roles.insert(&a.role), "data_invalid: QE 角色重复");
+            ensure!(roles.insert(&a.role), "data_invalid: QE Repetition");
             let p = root.join(&a.relative_path);
             ensure!(
                 p.canonicalize()?.starts_with(&canonical_root)
@@ -164,34 +171,34 @@ impl QeManifest {
                     && std::fs::metadata(&p)?.len() == a.byte_size
                     && a.byte_size > 0
                     && super::super::foundation::store::hash_file(&p)? == a.sha256,
-                "input_conflict: QE 产物变化 {}",
+                "input_conflict: QE Changes in products {}",
                 p.display()
             );
         }
         for required in ["dyn0", "phsave_control", "scf_snapshot_identity"] {
             ensure!(
                 roles.contains(&required.to_string()),
-                "data_invalid: QE 缺少必需角色 {required}"
+                "data_invalid: QE Lack of essential roles {required}"
             );
         }
         for q in &self.qpoints {
             for role in ["dyn", "patterns", "dvscf"] {
                 ensure!(
                     roles.contains(&format!("{role}_q{}", q.global_index)),
-                    "data_invalid: QE 缺少 q 角色"
+                    "data_invalid: QE Missing q Role"
                 );
             }
         }
-        let scf = self.scf.as_ref().context("data_invalid: QE 清单缺 SCF")?;
+        let scf = self.scf.as_ref().context("data_invalid: QE manifest is missing SCF")?;
         let states = self
             .states
             .as_ref()
-            .context("data_invalid: QE 清单缺 NSCF")?;
+            .context("data_invalid: QE manifest is missing NSCF")?;
         ensure!(
             scf.total_energy_ry.is_finite()
                 && !self.qpoints.is_empty()
                 && self.qpoints.len() == self.phonon_files.len(),
-            "data_invalid: QE 清单内容不完整"
+            "data_invalid: QE Incomplete content of the manifest"
         );
         let scf_xml = scf
             .snapshot_dir
@@ -199,12 +206,12 @@ impl QeManifest {
                 states
                     .wavefunctions
                     .file_name()
-                    .context("data_invalid: NSCF 保存树缺名称")?,
+                    .context("data_invalid: NSCF Save Tree Missing Name")?,
             )
             .join("data-file-schema.xml");
         let geometry = super::xml::Geometry::read(&scf_xml)?;
         let input = self.artifacts.iter().find(|a| a.role == "nscf_input")
-            .context("data_invalid: QE 清单缺 nscf_input，无法证明输入与输出一致；请用当前程序重新登记交付，保留原 PH 数据")?;
+            .context("data_invalid: QE manifest is missing nscf_input ,Could not prove that the input is the same as the output; please re-register the delivery using the current program and keep the original PH Data")?;
         let mut actual_states = super::nscf::verify_files(
             &root.join(&input.relative_path),
             &scf_xml,
@@ -215,7 +222,7 @@ impl QeManifest {
         actual_states.k_grid = states.k_grid;
         ensure!(
             serde_json::to_value(&actual_states)? == serde_json::to_value(states)?,
-            "data_invalid: NSCF 清单数值与实际 XML 不符"
+            "data_invalid: NSCF manifest values and actual XML Inconsistencies"
         );
         super::nscf::validate_grid(states, states.k_grid, states.nbnd, &geometry)?;
         for (stage, dir) in [
@@ -225,7 +232,7 @@ impl QeManifest {
                 states
                     .wavefunctions
                     .parent()
-                    .context("data_invalid: NSCF 保存树缺父目录")?
+                    .context("data_invalid: NSCF Save Tree Missing Parent Directory")?
                     .to_path_buf(),
             ),
         ] {
@@ -245,21 +252,21 @@ impl QeManifest {
                 .collect::<std::collections::BTreeSet<_>>();
             ensure!(
                 actual == declared,
-                "data_invalid: QE {stage} 保存树文件集合与清单不一致"
+                "data_invalid: QE {stage} Save tree file collections inconsistent with the manifest"
             );
         }
         for (index, q) in self.qpoints.iter().enumerate() {
             ensure!(
                 q.global_index == index + 1
                     && (q.local_index == 1 || q.local_index == q.global_index),
-                "data_invalid: QE 全局／局部 q 编号非法"
+                "data_invalid: QE Global/local q No. Illegal"
             );
             let matched = self
                 .phonon_files
                 .iter()
                 .filter(|r| r.q_id == q.global_index)
                 .collect::<Vec<_>>();
-            ensure!(matched.len() == 1, "data_invalid: QE 物理 q 响应映射不唯一");
+            ensure!(matched.len() == 1, "data_invalid: QE Physics q The response map is not unique");
             let r = matched[0];
             ensure!(
                 r.control_metadata
@@ -271,14 +278,14 @@ impl QeManifest {
                             .unwrap()
                             .relative_path
                     ),
-                "data_invalid: QE 全局 control 来源不符"
+                "data_invalid: QE Global control Source does not match"
             );
             for (role, path) in [
                 ("dyn", &r.dyn_file),
                 ("patterns", &r.patterns),
                 (
                     "dvscf",
-                    r.dvscf.as_ref().context("data_invalid: QE 缺 dvscf")?,
+                    r.dvscf.as_ref().context("data_invalid: QE Missing dvscf")?,
                 ),
             ] {
                 let artifact = self
@@ -288,7 +295,7 @@ impl QeManifest {
                     .unwrap();
                 ensure!(
                     root.join(&artifact.relative_path) == *path,
-                    "data_invalid: QE 响应路径与角色身份不符"
+                    "data_invalid: QE Response path does not match character identity"
                 );
             }
             let mut normalized = q.clone();

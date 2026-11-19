@@ -21,13 +21,13 @@ qe_process_phonon -c input.toml --plot
 
 ## 输入、输出与衔接
 
-已有 dyn → q2r → matdyn_phband/matdyn_phdos → phband/phdos 归档 → CSV、PNG 与 phonon_combined.jpg。完整文件清单见 [声子工作流](phonon-workflow.md)。默认后处理工作目录是配置文件目录，可用 qe_phonon.work_dir 明确指定。
+已有 dyn → q2r → matdyn_phband/matdyn_phdos → phband/phdos 归档 → CSV、按配置生成的独立声子谱／DOS 与联合图。完整文件清单见 [声子工作流](phonon-workflow.md)。默认后处理工作目录是配置文件目录，可用 qe_phonon.work_dir 明确指定。
 
 ## 声子谱与 DOS 绘图
 
 声子谱横轴按倒格矢度量的累计路径距离布置，只显示高对称点标签；GAMMA 显示 Γ。每个 matdyn 采样点与频率逐点对应，连续段共享端点，跳段不连线，同位置端点合并显示为 A|L 等。纵轴为 Frequency (cm⁻¹)，保留负频并显示零频参考线。
 
-独立谱 PNG 与联合 JPG 使用相同路径及绘制逻辑。联合图左谱右 DOS 约 3:1，右侧横轴是 DOS，两侧共享完整频率范围；原子投影按 POSCAR 聚合为元素。--plot 同时更新 CSV，避免旧表格与新图不一致。
+独立声子谱与联合图使用相同路径及绘制逻辑。联合图左谱右 DOS 约 3:1，右侧横轴是 DOS，两侧共享完整频率范围；原子投影按 POSCAR 聚合为元素。--plot 同时更新 CSV，避免旧表格与新图不一致。
 
 路径标签必须覆盖全部频率点，索引严格递增；点数不匹配或非有限数据明确报错，不补零或静默截断。VASPKit 生成路径基于标准化原胞，使用前确认其基底与计算晶胞一致；不会自动替换结构。
 
@@ -44,3 +44,9 @@ qe_process_phonon -c input.toml --plot
 ## DOS 网格与绘图展宽
 
 `[qe_phonon.phdos]` 未写网格时默认使用 PH 网格的两倍，显式 qpoints 或完整 nk1/nk2/nk3 优先。`plot_sigma_cm1 = 5.0` 是默认绘图高斯标准差，单位 cm⁻¹；0 关闭、10 比 5 更平滑。独立 DOS 和联合图共用处理；原始 QE 输出和 CSV 保留，平滑保持 DOS 积分及投影可加性。仅 `--plot` 即可应用新宽度；改变计算网格则必须重跑 matdyn DOS。
+
+## 图片输出格式
+
+根级 `[plot].formats = ["svg", "png", "pdf", "jpg"]` 控制三类图：`phband/phonon_band.ext`、`phdos/phonon_dos.ext`、`phonon_combined.ext`。默认仅新生成 SVG，配置 PNG 时只生成 PNG；支持大小写混用与 jpeg 别名，重复项去重，空列表和未知格式在加载时报错。PNG 保留原画布像素尺寸，带约 300 DPI 元数据；PNG/PDF 使用内置字体，不要求计算节点系统字体。
+
+格式分别保存，额外格式失败告警并继续，全部失败报错。旧格式文件不自动删除。该配置已接入单独 `--plot`、nosplit 与分 q 自动链；EPW 专属图、VASP、替位 DOS 和 Wannier 不在本次接入范围。验证见 [0074 验收](../../specs/0074-unified-plot-formats/acceptance.md)。

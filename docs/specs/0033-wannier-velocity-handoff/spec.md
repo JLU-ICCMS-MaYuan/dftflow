@@ -1,6 +1,8 @@
 # 需求规格
 
-原始需求见 [Issue](issue-draft.md)。
+> **协作入口（2026-11-17）**：[GitHub Issue #33](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/33)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+原始需求见 [GitHub Issue #33](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/33)。
 
 - FR-001：核验原生 bvec 的 k 点数、近邻数、完整四列有限数记录；mmn 必须是排除后带数平方×k 点×近邻数个有限复数。缺失／截断／不相容拒绝发布拟合完成记录。
 - FR-002：第 5 步收据绑定两文件哈希，独立重绘显式关闭 write_bvec，防止原生重绘改写已绑定文件；第 6 步验证来源并复制，复制后核对身份，不关闭 vme 绕过。

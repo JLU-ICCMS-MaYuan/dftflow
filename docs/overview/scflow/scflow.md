@@ -20,7 +20,7 @@ scflow run -c input.toml
 
 ## 输入、输出与衔接
 
-读取根目录的 *.dynN.elph* 或 elph_dir/elph.inp_lambda.N（两种布局不能混用），利用 dyn 文件或声子日志获取 q 权重；默认输出 work_dir/results。按展宽写 CSV、result.json、PDF 及汇总 CSV/PDF；ph.out 结构可解析时导出结构/CIF。
+读取根目录的 *.dynN.elph* 或 elph_dir/elph.inp_lambda.N（两种布局不能混用），利用 dyn 文件或声子日志获取 q 权重；默认输出 work_dir/results。按展宽写 CSV、result.json、PDF 和配置指定的额外图片格式，及汇总 CSV/图片；ph.out 结构可解析时导出结构/CIF。
 
 ## 使用边界
 
@@ -47,3 +47,9 @@ structure_tolerance = 0.2
 ```
 
 work_dir、results_dir 相对配置文件目录解析；integration 支持 sum/simps。不同 μ* 的分析应保留独立目录。普通声子谱没有 EPC 耦合量，不能直接推导 Tc。历史物理验证范围见 [0001](../../specs/0001-scflow-qe-superconductivity/spec.md)。
+
+## 图片输出格式
+
+根级 `[plot].formats` 支持 png/svg/pdf/jpg（jpeg 别名）、大小写不敏感和去重，默认 SVG。scflow 的系统图、文章图、汇总图都保留必需 PDF，再生成所选格式；默认 PDF+SVG，仅配置 PNG 时为 PDF+PNG。文件基础名、布局和科学数值不变，旧图片不会自动删除。
+
+所有格式从同一 SVG 绘制结果生成，PNG/PDF 使用内置字体；PNG 含约 300 DPI 元数据。额外格式失败告警，已生成 PDF 保留；必需 PDF 失败报错。库中旧的仅返回 PDF 路径接口保留，新 `*_with_formats` 接口返回成功路径列表。验证见 [0074 验收](../../specs/0074-unified-plot-formats/acceptance.md)。

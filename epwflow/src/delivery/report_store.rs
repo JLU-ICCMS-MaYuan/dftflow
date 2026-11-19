@@ -37,7 +37,7 @@ impl ResultsBundle {
     pub fn load(path: &Path) -> Result<Self> {
         let m: Self = store::read(path)?;
         if m.schema_version != 1 {
-            anyhow::bail!("data_invalid: 交付清单 schema_version={} 不支持", m.schema_version);
+            anyhow::bail!("data_invalid: Delivery manifest schema_version={} Not supported", m.schema_version);
         }
         Ok(m)
     }

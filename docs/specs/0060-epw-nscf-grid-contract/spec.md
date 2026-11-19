@@ -1,6 +1,8 @@
 # NSCF 简写网格、实际 k 点与 FFT 接续校验
 
-**Issue**：[本地 0060 草案](issue-draft.md)，线上 Gitee 用户自管，远程链接未验证。
+> **协作入口（2026-11-17）**：[GitHub Issue #60](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/60)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #60](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/60)，线上 Gitee 用户自管，远程链接未验证。
 
 **创建日期**：2026-10-26。**状态**：用户明确授权实施；按本版范围落地。
 

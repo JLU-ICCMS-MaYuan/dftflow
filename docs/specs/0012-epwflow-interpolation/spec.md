@@ -1,5 +1,9 @@
 # Feature 规格：epwflow 的 Wannier 化与 EPW 插值
 
+> **协作入口（2026-11-17）**：[GitHub Issue #12](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/12)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+> 2026-11-17 最新约定：预算账本功能已按用户要求彻底撤销。本文件涉及账本、campaign 身份、预算预留／结算及全局两个作业限制的旧条款均已失效；当前计算只依赖工作流记录、Slurm 作业身份及科学核验。历史消耗与验收记录不改写。详见 [0058 最新需求](../0058-epw-remove-resource-limits/spec.md)。
+
 ## 本次验收范围调整
 
 用户最新要求：
@@ -422,7 +426,7 @@ C 为配置，W 为运行目录，M 为粗网格或完整 F3 来源清单。缺�
 
 ## 正式落档与确认记录
 
-对应本地 [Issue 草稿](issue-draft.md)；父级 [Epic 0007](../0007-epwflow-superconductivity/issue-draft.md)。以上完整正文来自对话展示版，状态性措辞在落档时更新，FR/SC 不变。
+对应本地 [GitHub Issue #12](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/12)；父级 [GitHub Issue #7](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/7)。以上完整正文来自对话展示版，状态性措辞在落档时更新，FR/SC 不变。
 
 确认依据见本地 Issue 的“详细 Spec 审查进度”，不得把文档确认当作科学验收。
 
@@ -510,3 +514,7 @@ FR-003～009/012 继续要求真实 F2 保存数据、EPW 内置 Wannier 收敛�
 ## 2026-10-21：插值质量策略变更
 
 用户在 [0040](../0040-interpolation-quality-warnings/spec.md) 明确要求取消独立插值理想误差阈值的执行阻断。采用新要求：继续计算并记录数值告警；本文件早期“超差禁止细网格／超导”的描述保留原设计语境，由 0040 替代。独立来源、格式、非有限数、完整性、原生执行、预算及并行检查不放宽，Tc 分类／收敛结论保持真实。质量策略变化不表示旧科学验收已经通过。
+
+## 2026-11-16 比较采样与样式更新
+
+比较图紫色误差标记及两侧内部采样强制一致条款由 [0043 最新要求](../0043-epw-comparison-max-differences/spec.md) 取代。QE／EPW 保持相同物理路径、各自密度；只在已有共同点统计差值，不为配对补算或重采样，无共同点不阻止出图。实空间衰减图不属于本次样式变更。

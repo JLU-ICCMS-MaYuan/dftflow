@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 #[derive(Subcommand)]
 pub enum SuperconductivityCommand {
     /// 只读核查超导清单与模式分离；不启动后续求解。
+    #[command(about = "Validate the superconductivity manifest and mode separation read-only without starting downstream solvers", long_about = "Validate the superconductivity manifest and mode separation read-only without starting downstream solvers")]
     Check {
         #[arg(short = 'w', long)]
         work: PathBuf,
@@ -15,6 +16,7 @@ pub enum SuperconductivityCommand {
         json: bool,
     },
     /// 校验前置超导清单，登记可复用阶段；不提交计算。
+    #[command(about = "Validate the preceding superconductivity manifest and register reusable stages without submitting calculations", long_about = "Validate the preceding superconductivity manifest and register reusable stages without submitting calculations")]
     Import {
         #[arg(long)]
         source: PathBuf,
@@ -36,7 +38,7 @@ fn check(work: &Path, json: bool) -> Result<()> {
             status::print_json(&status::envelope(
                 "ok",
                 "no_data",
-                serde_json::json!({"workflow_complete": false, "reason": "superconductivity/manifest.json 不存在"}),
+                serde_json::json!({"workflow_complete": false, "reason": "superconductivity/manifest.json does not exist"}),
             ));
         } else {
             println!("workflow_status: no_data");
@@ -68,7 +70,7 @@ fn check(work: &Path, json: bool) -> Result<()> {
         return Ok(());
     }
     let m = SuperconductivityManifest::load(&path)
-        .with_context(|| format!("data_invalid: 无法加载 {}", path.display()))?;
+        .with_context(|| format!("data_invalid: Cannot Load {}", path.display()))?;
     if json {
         status::print_json(&status::envelope(
             "ok",
@@ -116,7 +118,7 @@ fn import(source: &Path) -> Result<()> {
         == Some("gap")
     {
         let r = super::points::Run::load(source)?;
-        anyhow::ensure!(r.execution_complete, "partial: 指定温度未执行完成");
+        anyhow::ensure!(r.execution_complete, "partial: specified-temperature execution incomplete");
         println!(
             "imported: run={} task=gap execution_complete={} data_complete={}",
             r.run_id, r.execution_complete, r.data_complete
@@ -124,9 +126,9 @@ fn import(source: &Path) -> Result<()> {
         return Ok(());
     }
     let m = SuperconductivityManifest::load(source)
-        .with_context(|| format!("data_invalid: 无法加载 {}", source.display()))?;
+        .with_context(|| format!("data_invalid: Cannot Load {}", source.display()))?;
     if !m.validation.all_passed() {
-        anyhow::bail!("data_invalid: 前置超导清单校验未通过，拒绝导入");
+        anyhow::bail!("data_invalid: preceding superconductivity manifest validation failed; import refused");
     }
     println!(
         "imported: run={} mode={} tc={:?} located={}",

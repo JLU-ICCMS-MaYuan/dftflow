@@ -1,6 +1,8 @@
 # Feature 规格：Wannier 外窗与冻结窗上下限的可验证选择
 
-**Issue**：[本地需求 0016 草案](issue-draft.md)，线上 Gitee Issue 尚未创建；不是已核验的平台编号。
+> **协作入口（2026-11-17）**：[GitHub Issue #16](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/16)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #16](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/16)，线上 Gitee Issue 尚未创建；不是已核验的平台编号。
 
 **创建日期**：2026-10-19。**状态**：用户最新要求放弃组合投影选窗并撤回新版科学程序构建。构建内容已撤回；用户已确认增加显式纯能量模式，兼容现有 EPW；本轮实施范围及验收见文末。下方旧组合模式的 US3、FR-004／006／007／009 与 SC-003／004 等保留为历史接入基线，不能继续作为新实施要求。线上 Issue 仍由用户管理。
 

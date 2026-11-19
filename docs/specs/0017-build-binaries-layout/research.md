@@ -88,7 +88,7 @@
 
 [0017 技术任务](tasks.md) 中 T016～T018 已完成 PATH 加载及验证。T004 的构建后产品归档、T005 的独立工具适配和其他构建／打包／历史副本迁移任务仍未完成。[当时验收](acceptance.md) 也明确构建仍使用 `target/`。
 
-旧 0017 还保留“不改变 current 安装目的地”的范围；[0011](../0011-build-history-cleanup/issue-draft.md) 的历史方案保留 native 依赖。本次最新用户要求改变这一目标，但不能倒改上述历史证据或假称迁移已经完成。
+旧 0017 还保留“不改变 current 安装目的地”的范围；[GitHub Issue #11](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/11) 的历史方案保留 native 依赖。本次最新用户要求改变这一目标，但不能倒改上述历史证据或假称迁移已经完成。
 
 ## 构建、发布和查找目前是分开的
 

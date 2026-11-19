@@ -2,6 +2,11 @@
 
 pp_dir = "./pp"
 
+# QE 声子三类图默认输出 SVG；scflow 保留 PDF 并增加所选格式。
+# 支持 png/svg/pdf/jpg，未配置时等价于下面的默认值。
+# [plot]
+# formats = ["svg"]
+
 [qe]
 executable_path = "@QE_EXEC@"
 lattice_mode = "ibrav_angstrom"

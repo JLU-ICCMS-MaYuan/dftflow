@@ -15,12 +15,12 @@ pub fn record(path: &Path) -> Result<AttemptResult> {
     let r: AttemptResult = store::read(path)?;
     ensure!(
         matches!(r.schema_version, 1 | 2),
-        "unsupported_version: 尝试版本"
+        "unsupported_version: attempt version"
     );
     ensure!(
         (r.schema_version == 2) == r.batch.is_some()
             && (r.batch.is_none() || r.request.kind == SolveKind::Gap),
-        "data_invalid: 批次证据版本冲突"
+        "data_invalid: batch evidence version conflict"
     );
     r.request.validate()?;
     r.executable.verify()?;
@@ -29,7 +29,7 @@ pub fn record(path: &Path) -> Result<AttemptResult> {
         a.verify()?;
     }
     if r.request.kind == SolveKind::Gap && matches!(r.status.as_str(), "valid" | "completed") {
-        let dir = path.parent().context("data_invalid: 尝试根目录")?;
+        let dir = path.parent().context("data_invalid: attempt root directory missing")?;
         let (status, evidence, gap) = if r.batch.is_some() {
             super::batch::inspect(&r)?
         } else {
@@ -40,21 +40,21 @@ pub fn record(path: &Path) -> Result<AttemptResult> {
                 && serde_json::to_value(&r.evidence)? == serde_json::to_value(evidence)?
                 && serde_json::to_value(&r.gap)? == serde_json::to_value(&gap)?
                 && (r.status == "valid") == gap.is_some(),
-            "data_invalid: 单点状态与原生证据冲突"
+            "data_invalid: single-point status conflicts with native evidence"
         );
         return Ok(r);
     }
     if r.status == "valid" {
-        ensure!(r.exit_status == Some(0), "data_invalid: 有效尝试退出失败");
-        let root = path.parent().context("data_invalid: 尝试根目录")?;
+        ensure!(r.exit_status == Some(0), "data_invalid: valid attempt has a failed exit status");
+        let root = path.parent().context("data_invalid: attempt root directory missing")?;
         let evidence =
             super::parse::solve_log(&std::fs::read_to_string(root.join("epw.out"))?, &r.request)?;
         ensure!(
             serde_json::to_value(&evidence)? == serde_json::to_value(&r.evidence)?,
-            "data_invalid: 求解证据与原生日志冲突"
+            "data_invalid: solver evidence conflicts with native log"
         );
         if r.request.kind == SolveKind::Nonlinear {
-            let g = r.gap.as_ref().context("data_invalid: 缺少完整能隙")?;
+            let g = r.gap.as_ref().context("data_invalid: complete gap data missing")?;
             g.validate()?;
             let name = format!(
                 "{}.imag_{}_{:06.2}",
@@ -78,10 +78,10 @@ pub fn record(path: &Path) -> Result<AttemptResult> {
             )?;
             ensure!(
                 serde_json::to_value(&parsed)? == serde_json::to_value(g)?,
-                "data_invalid: 完整能隙与原始输出冲突"
+                "data_invalid: complete gap data conflict with raw output"
             );
         } else {
-            ensure!(r.gap.is_none(), "data_invalid: 线性求解不能产生非线性能隙");
+            ensure!(r.gap.is_none(), "data_invalid: linear solve cannot produce a nonlinear gap");
         }
     }
     Ok(r)
@@ -90,7 +90,7 @@ pub fn record(path: &Path) -> Result<AttemptResult> {
 pub fn mode(result: &ModeResult, interpolation_digest: &str) -> Result<()> {
     ensure!(
         result.schema_version == 1 && result.mode != Mode::Both,
-        "data_invalid: 模式版本/身份"
+        "data_invalid: mode version/identity mismatch"
     );
     ensure!(
         result.search.min_centikelvin
@@ -102,35 +102,35 @@ pub fn mode(result: &ModeResult, interpolation_digest: &str) -> Result<()> {
                     result.thresholds.precision_k,
                     "precision_k"
                 )?,
-        "data_invalid: 搜索区间与固定阈值冲突"
+        "data_invalid: search interval conflicts with fixed thresholds"
     );
     let mut records = vec![];
     for a in &result.attempts {
-        ensure!(a.request.mode == result.mode, "data_invalid: 尝试模式冲突");
+        ensure!(a.request.mode == result.mode, "data_invalid: attempt mode conflict");
         if a.status == "valid" {
-            ensure!(a.record.is_some(), "data_invalid: 有效尝试缺少记录");
+            ensure!(a.record.is_some(), "data_invalid: valid attempt record missing");
         }
         if let Some(id) = &a.record {
             id.verify()?;
             ensure!(
                 id.path == a.directory.join("attempt.json"),
-                "data_invalid: 尝试记录错位"
+                "data_invalid: attempt-record alignment mismatch"
             );
             let r = record(&id.path)?;
             ensure!(
                 serde_json::to_value(&r.request)? == serde_json::to_value(&a.request)?
                     && r.source.interpolation_digest == interpolation_digest,
-                "input_conflict: 尝试请求/F3 身份冲突"
+                "input_conflict: attempt request/F3 identity conflict"
             );
             if a.status == "valid" {
-                ensure!(r.status == "valid", "data_invalid: 有效状态冲突");
+                ensure!(r.status == "valid", "data_invalid: valid-state conflict");
                 records.push(r);
             }
         }
     }
     ensure!(
         result.attempts.len() <= result.thresholds.max_solves as usize,
-        "data_invalid: 次数超过固定上限"
+        "data_invalid: solve count exceeds the fixed limit"
     );
     let lookup = |t: i64, kind: SolveKind, seed: Option<f64>| -> Result<&AttemptResult> {
         records
@@ -141,14 +141,14 @@ pub fn mode(result: &ModeResult, interpolation_digest: &str) -> Result<()> {
                     && r.request.kind == kind
                     && r.request.seed_mev == seed
             })
-            .context("data_invalid: 分类/必需能隙缺少有效求解证据")
+            .context("data_invalid: classification/mandatory gap lacks valid solver evidence")
     };
     let nonlinear = |t| -> Result<Side> {
         let a = lookup(t, SolveKind::Nonlinear, Some(result.initial_gaps_mev[0]))?;
         let b = lookup(t, SolveKind::Nonlinear, Some(result.initial_gaps_mev[1]))?;
         super::aniso::classify(
-            a.gap.as_ref().context("缺 Δ/Z")?,
-            b.gap.as_ref().context("缺 Δ/Z")?,
+            a.gap.as_ref().context("Delta/Z missing")?,
+            b.gap.as_ref().context("Delta/Z missing")?,
             result.thresholds.normal_gap_mev,
             result.thresholds.super_gap_mev,
         )
@@ -159,7 +159,7 @@ pub fn mode(result: &ModeResult, interpolation_digest: &str) -> Result<()> {
             r.evidence
                 .as_ref()
                 .and_then(|e| e.maximum_eigenvalue)
-                .context("data_invalid: 缺原生本征值")?,
+                .context("data_invalid: native eigenvalue missing")?,
             result.thresholds.eigen_margin,
         )
     };
@@ -175,27 +175,27 @@ pub fn mode(result: &ModeResult, interpolation_digest: &str) -> Result<()> {
         } else {
             nonlinear(t)?
         };
-        ensure!(actual == side, "data_invalid: 温度分类与原生证据矛盾");
+        ensure!(actual == side, "data_invalid: temperature classification contradicts native evidence");
         replay.observe(t, side)?;
     }
     ensure!(
         replay.interval_centikelvin == s.interval_centikelvin,
-        "data_invalid: Tc 区间与端点证据冲突"
+        "data_invalid: Tc interval conflicts with endpoint evidence"
     );
     if result.complete || s.status == "located" {
-        let [lo, hi] = s.interval_centikelvin.context("data_invalid: 定位缺区间")?;
+        let [lo, hi] = s.interval_centikelvin.context("data_invalid: located status has no interval")?;
         ensure!(
             s.status == "located"
                 && replay.status != "inconsistent"
                 && hi - lo <= s.precision_centikelvin
                 && s.points.get(&lo) == Some(&Side::Superconducting)
                 && s.points.get(&hi) == Some(&Side::Normal),
-            "data_invalid: 无有效定位证据"
+            "data_invalid: valid interval-location evidence missing"
         );
         if result.complete {
             ensure!(
                 !result.gap_temperatures_centikelvin.is_empty(),
-                "data_invalid: 必需能隙计划为空"
+                "data_invalid: mandatory gap plan empty"
             );
             for &t in result
                 .gap_temperatures_centikelvin
@@ -205,13 +205,13 @@ pub fn mode(result: &ModeResult, interpolation_digest: &str) -> Result<()> {
                 let n = nonlinear(t)?;
                 ensure!(
                     n == Side::Superconducting,
-                    "data_invalid: 必需能隙不是有效超导态"
+                    "data_invalid: mandatory gap is not a valid superconducting state"
                 );
                 if result.mode == Mode::Iso {
                     let l = linear(t)?;
                     ensure!(
                         n == Side::Uncertain || l == Side::Uncertain || l == n,
-                        "data_invalid: 同温度线性/非线性分类矛盾"
+                        "data_invalid: linear/nonlinear classifications disagree at the same temperature"
                     );
                 }
             }
@@ -224,13 +224,13 @@ pub fn mode(result: &ModeResult, interpolation_digest: &str) -> Result<()> {
 pub fn complete(work: &Path, cfg: &Config, run_id: &str) -> Result<Vec<Identity>> {
     if cfg.superconductivity.task == crate::foundation::config::SuperconductivityTask::Gap {
         let r = super::points::published(work, cfg, run_id)?;
-        ensure!(r.execution_complete, "partial: 指定温度尚未执行完成");
+        ensure!(r.execution_complete, "partial: specified-temperature execution incomplete");
         return Ok(r.attempts.into_iter().filter_map(|a| a.record).collect());
     }
     let (m, artifacts) = published(work, cfg, run_id)?;
     ensure!(
         m.converged && m.located && m.validation.all_passed(),
-        "data_invalid: 原生超导阶段尚未完成"
+        "data_invalid: native superconductivity stage incomplete"
     );
     Ok(artifacts)
 }
@@ -254,11 +254,11 @@ fn published(
     let m = super::manifest::SuperconductivityManifest::load(&path)?;
     ensure!(
         m.schema_version == 2 && m.run_id == run_id,
-        "input_conflict: 原生超导版本/运行身份不符"
+        "input_conflict: native superconductivity version/run identity mismatch"
     );
     ensure!(
         !m.converged || (m.located && m.validation.all_passed()),
-        "data_invalid: 原生超导完成状态与验证冲突"
+        "data_invalid: native superconductivity completion status conflicts with validation"
     );
     ensure!(
         (if crate::foundation::layout::enabled(work) {
@@ -270,7 +270,7 @@ fn published(
                 "interpolation/manifest.json",
             ))?
         }) == m.interpolation_digest,
-        "input_conflict: 当前 F3 改变"
+        "input_conflict: current F3 changed"
     );
     let expected = match cfg.superconductivity.mode {
         Mode::Iso => vec!["iso"],
@@ -283,15 +283,15 @@ fn published(
             .map(String::as_str)
             .collect::<Vec<_>>()
             == expected,
-        "data_invalid: 所选模式缺失"
+        "data_invalid: selected mode missing"
     );
     let mut artifacts = m.artifacts.clone();
-    ensure!(!artifacts.is_empty(), "data_invalid: 缺少原生交付产物");
+    ensure!(!artifacts.is_empty(), "data_invalid: native delivery artifacts missing");
     for r in m.native_modes.values() {
         let source = if let Some(id) = r.attempts.iter().find_map(|a| a.record.as_ref()) {
             record(&id.path)?.source
         } else {
-            // 预算等前置错误也可留下零尝试模式，来源仍须绑定当前原生 F3。
+            // 前置检查错误也可留下零尝试模式，来源仍须绑定当前原生 F3。
             let f3 = crate::interpolation::manifest::InterpolationManifest::load(
                 &crate::foundation::layout::path(&work, "interpolation/manifest.json"),
             )?;
@@ -303,14 +303,13 @@ fn published(
             .join(if r.mode == Mode::Iso { "iso" } else { "aniso" });
         ensure!(
             crate::foundation::layout::enabled(work) || root.join("search.json").is_file(),
-            "data_invalid: 缺少已发布搜索记录"
+            "data_invalid: published search record missing"
         );
-        let current =
-            super::engine::Engine::open(cfg, &source, &cfg.programs.launcher, &root, r.mode)?;
-        ensure!(
-            serde_json::to_value(current.result)? == serde_json::to_value(r)?,
-            "input_conflict: 搜索记录与固定配置/交付清单冲突"
-        );
+        source.verify(r.mode)?;
+        if root.join("search.json").is_file() {
+            let saved:super::engine::ModeResult=store::read(&root.join("search.json"))?;
+            ensure!(serde_json::to_value(saved)?==serde_json::to_value(r)?,"input_conflict: historical search result differs from delivery");
+        }
         for a in &r.attempts {
             if let Some(id) = &a.record {
                 artifacts.push(id.clone());

@@ -1,6 +1,8 @@
 # 0045：指定温度点的超导能隙规格
 
-**Issue**：[本地草案](issue-draft.md)，线上 Gitee 用户管理，远程链接待验证。**日期**：2026-10-21。**状态**：已实现，源码回归、安装和当前 PBE 公开六点实测通过；证据见验收记录。
+> **协作入口（2026-11-17）**：[GitHub Issue #45](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/45)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #45](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/45)，线上 Gitee 用户管理，远程链接待验证。**日期**：2026-10-21。**状态**：已实现，源码回归、安装和当前 PBE 公开六点实测通过；证据见验收记录。
 
 ## 原始需求记录
 

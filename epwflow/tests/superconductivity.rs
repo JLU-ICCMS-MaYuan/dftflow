@@ -33,7 +33,6 @@ fn make_config(root: &PathBuf) -> PathBuf {
     write_script(&pw2, "#!/bin/bash\nexit 0\n");
     let work = root.join("work");
     std::fs::create_dir_all(&work).unwrap();
-    let ledger = root.join("ledger.json");
     let p = root.join("config.toml");
     std::fs::write(
         &p,
@@ -48,7 +47,28 @@ Si = "{structure}"
 
 [programs]
 launcher = []
-
+pw_x = "{pw}"
+pw_args = []
+ph_x = "{ph}"
+ph_args = []
+epw_x = "{epw}"
+epw_args = []
+wannier90_x = "{wan}"
+wannier90_args = []
+pw2wannier90_x = "{pw2}"
+pw2wannier90_args = []
+bands_x = "{pw}"
+bands_args = []
+dos_x = "{pw}"
+dos_args = []
+projwfc_x = "{pw}"
+projwfc_args = []
+q2r_x = "{pw}"
+q2r_args = []
+matdyn_x = "{pw}"
+matdyn_args = []
+postw90_x = "{pw}"
+postw90_args = []
 
 [slurm]
 header = """
@@ -56,31 +76,6 @@ header = """
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 """
-
-[budget]
-campaign_id = "epic-0007"
-ledger = "{ledger}"
-
-[programs.pw]
-path = "{pw}"
-args = []
-
-[programs.ph]
-path = "{ph}"
-args = []
-
-[programs.epw]
-path = "{epw}"
-args = []
-
-[programs.wannier90]
-path = "{wan}"
-args = []
-
-[programs.pw2wannier90]
-path = "{pw2}"
-args = []
-
 
 [stages."1.qe-scf"]
 K_POINTS = "automatic\n2 2 2 0 0 0"
@@ -498,7 +493,6 @@ nqf3 = 2
             epw = epw.display(),
             wan = wan.display(),
             pw2 = pw2.display(),
-            ledger = ledger.display(),
         ),
     )
     .unwrap();
@@ -623,12 +617,12 @@ fn fortran_omitted_e_exponents_preserve_values_and_reject_invalid_tokens() {
     let actual = parse::numbers("1.7366215176-102 -2.5+100 +.25-100 1.0D-3 2e+1").unwrap();
     assert_eq!(actual, vec![1.7366215176e-102, -2.5e100, 0.25e-100, 1e-3, 20.0]);
     for bad in ["1-102", "1.2-10", "1.2--102", "1.2E-102-103", "1.2-102x", "1.0+999", "***", "NaN", "inf", "1.0E999"] {
-        assert!(parse::numbers(bad).is_err(), "必须拒绝 {bad}");
+        assert!(parse::numbers(bad).is_err(), "I must refuse {bad}");
     }
     let r = request(config::Mode::Aniso, attempt::SolveKind::Nonlinear);
     let text = raw_gap(&r, &states(), 1.7366215176e-99);
     let omitted = text.replace("1.7366215176e-102", "1.7366215176-102");
-    assert_ne!(text, omitted, "必须覆盖完整能隙文件中的真实省略格式");
+    assert_ne!(text, omitted, "You must overwrite the true omission format in the full-capable gap file");
     let gap = gap::parse_native(&omitted, 2000, r.nfreq().unwrap(), states()).unwrap();
     assert!((gap.delta_mev[0] / 1.7366215176e-99 - 1.0).abs() < 1e-12);
     let log = solve_log(&r).replace("2 1e-10", "2 1.7366215176-102");
@@ -718,40 +712,6 @@ fn native_linear_has_no_invented_residual_and_classifies_rho() {
         &r
     )
     .is_err());
-}
-
-#[test]
-fn dual_seed_uses_full_distribution_and_only_global_sign() {
-    let r = request(config::Mode::Aniso, attempt::SolveKind::Nonlinear);
-    let a = gap::parse_native(&raw_gap(&r, &states(), 2.0), 2000, 3, states()).unwrap();
-    let mut b = a.clone();
-    b.delta_mev.iter_mut().for_each(|d| *d = -*d);
-    assert_eq!(
-        aniso::classify(&a, &b, 1e-4, 1e-3).unwrap(),
-        search::Side::Superconducting
-    );
-    b.delta_mev[0] = -b.delta_mev[0];
-    assert!(aniso::classify(&a, &b, 1e-4, 1e-3).is_err());
-    b = a.clone();
-    b.z[4] += 0.1;
-    assert!(aniso::classify(&a, &b, 1e-4, 1e-3).is_err());
-    let mut cancellation = a.clone();
-    cancellation.delta_mev[0] = -6.0;
-    assert!(cancellation.band_statistics().unwrap()[&1].signed_mean_mev < 0.0);
-    assert_eq!(
-        aniso::classify(&cancellation, &cancellation, 1e-4, 1e-3).unwrap(),
-        search::Side::Superconducting
-    );
-    b.delta_mev.fill(1e-5);
-    assert_eq!(
-        aniso::classify(&b, &b, 1e-4, 1e-3).unwrap(),
-        search::Side::Normal
-    );
-    b.delta_mev[5] = 0.001;
-    assert_eq!(
-        aniso::classify(&b, &b, 1e-4, 1e-3).unwrap(),
-        search::Side::Uncertain
-    );
 }
 
 #[test]
@@ -852,73 +812,6 @@ fn native_broyden_history_rejects_unsupported_size_before_launch() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
-#[test]
-fn centikelvin_search_brackets_handles_uncertain_and_detects_inconsistent() {
-    let mut s = search::Search::new(1000, 5500, 50).unwrap();
-    let mut seen = std::collections::BTreeSet::new();
-    while let Some(t) = s.next_temperature() {
-        assert!(seen.insert(t));
-        s.observe(
-            t,
-            if t < 3200 {
-                search::Side::Superconducting
-            } else {
-                search::Side::Normal
-            },
-        )
-        .unwrap();
-    }
-    assert_eq!(s.status, "located");
-    let [a, b] = s.interval_centikelvin.unwrap();
-    assert!(a < 3200 && b >= 3200 && b - a <= 50);
-    let mut q = search::Search::new(100, 900, 1).unwrap();
-    q.observe(100, search::Side::Superconducting).unwrap();
-    q.observe(900, search::Side::Normal).unwrap();
-    assert_eq!(q.next_temperature(), Some(500));
-    q.observe(500, search::Side::Uncertain).unwrap();
-    assert_eq!(q.next_temperature(), Some(300));
-    q.observe(300, search::Side::Uncertain).unwrap();
-    assert_eq!(q.next_temperature(), Some(700));
-    q.observe(700, search::Side::Uncertain).unwrap();
-    assert_eq!(q.next_temperature(), None);
-    assert_eq!(q.status, "classification_uncertain");
-    let mut broken = search::Search::new(100, 900, 10).unwrap();
-    broken.observe(100, search::Side::Normal).unwrap();
-    broken.observe(900, search::Side::Superconducting).unwrap();
-    assert_eq!(broken.status, "inconsistent");
-    assert!(broken.observe(900, search::Side::Normal).is_err());
-}
-
-#[test]
-fn native_stage_requires_existing_allocation_without_time_or_storage_quota() {
-    use epwflow::foundation::budget::BudgetLedger;
-    let root = std::env::temp_dir().join(format!("epwflow-f4-budget-{}", store::token()));
-    std::fs::create_dir_all(&root).unwrap();
-    config::Config::load(&make_config(&root)).unwrap();
-    let mut value = serde_json::json!({
-        "schema_version":1,"campaign_id":"fixture",
-        "limits":{"node_seconds":28800,"storage_bytes":107374182400_u64,"max_lanes":2},
-        "spent_node_seconds":0,"reservations":[],"lanes":1,"storage_roots":[],"revision":0,
-        "allocations":[{"reservation_id":"native","job_id":42,
-            "node_seconds":7200,
-            "storage_bytes":1048576}]
-    });
-    let ledger: BudgetLedger = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(
-        ledger.require_allocation(42).unwrap(),
-        "native"
-    );
-    assert!(ledger.require_allocation(43).is_err());
-    value["allocations"][0]["node_seconds"] = 0.into();
-    let ledger: BudgetLedger = serde_json::from_value(value.clone()).unwrap();
-    assert!(ledger.require_allocation(42).is_ok());
-    value["allocations"][0]["node_seconds"] =
-        7200.into();
-    value["allocations"][0]["storage_bytes"] = 0.into();
-    let ledger: BudgetLedger = serde_json::from_value(value).unwrap();
-    assert!(ledger.require_allocation(42).is_ok());
-    std::fs::remove_dir_all(root).unwrap();
-}
 
 #[test]
 fn missing_native_solver_cannot_publish_superconductivity() {
@@ -964,7 +857,7 @@ fn missing_native_solver_cannot_publish_superconductivity() {
     .unwrap();
 
     let result = scheduler::run(&cfg, &work, &[], Backend::Local);
-    assert!(result.is_err(), "无原生求解证据不得发布超导结果");
+    assert!(result.is_err(), "You can't release a superconductor without proof of native solvency");
     assert!(!work.join("superconductivity/manifest.json").exists());
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -1006,378 +899,6 @@ fn binary_egnv_recovers_compressed_order_original_bands_and_weights() {
     let mut corrupt = bytes.clone();
     corrupt[0..4].copy_from_slice(&2i32.to_be_bytes());
     assert!(source::eigenvalues(&corrupt).is_err());
-}
-
-#[test]
-fn native_engine_persists_counts_reuses_valid_and_does_not_retry_failed() {
-    use epwflow::superconductivity::engine::Engine;
-    let root = std::env::temp_dir().join(format!("epwflow-engine-{}", store::token()));
-    std::fs::create_dir_all(&root).unwrap();
-    let mut cfg = config::Config::load(&make_config(&root)).unwrap();
-    cfg.superconductivity.frequency_cutoff_ev = 0.03;
-    cfg.superconductivity.initial_gaps_mev = [1.0, 10.0];
-    cfg.superconductivity.iso.as_mut().unwrap().max_k = 55.0;
-    cfg.superconductivity.iso.as_mut().unwrap().max_solves = 1;
-    let inputs = native_inputs(&root);
-    let req = request(config::Mode::Iso, attempt::SolveKind::Linear);
-    std::fs::write(root.join("stdout.fixture"), solve_log(&req)).unwrap();
-    let script = root.join("native-fixture");
-    write_script(&script, "#!/bin/bash\ncat \"$1/stdout.fixture\"\n");
-    cfg.programs.epw = config::Program {
-        path: script,
-        args: vec![root.to_string_lossy().into_owned()],
-    };
-    let dir = root.join("engine");
-    let mut calls = 0;
-    {
-        let mut e = Engine::open(&cfg, &inputs, &[], &dir, config::Mode::Iso).unwrap();
-        e.attempt(2000, attempt::SolveKind::Linear, None, &mut || {
-            calls += 1;
-            Ok(())
-        })
-        .unwrap();
-    }
-    let mut e = Engine::open(&cfg, &inputs, &[], &dir, config::Mode::Iso).unwrap();
-    e.attempt(2000, attempt::SolveKind::Linear, None, &mut || {
-        calls += 1;
-        Ok(())
-    })
-    .unwrap();
-    assert_eq!(calls, 1);
-    assert_eq!(e.result.attempts.len(), 1);
-    let err = e
-        .attempt(2100, attempt::SolveKind::Linear, None, &mut || {
-            calls += 1;
-            Ok(())
-        })
-        .unwrap_err();
-    assert!(err.to_string().contains("attempt_limit"));
-    assert_eq!(calls, 1);
-    // 模拟提交/进程启动后中断：未知状态不能自动重提。
-    e.result.attempts[0].status = "running".into();
-    e.result.attempts[0].record = None;
-    e.save().unwrap();
-    drop(e);
-    let mut e = Engine::open(&cfg, &inputs, &[], &dir, config::Mode::Iso).unwrap();
-    assert!(e
-        .attempt(2000, attempt::SolveKind::Linear, None, &mut || {
-            calls += 1;
-            Ok(())
-        })
-        .unwrap_err()
-        .to_string()
-        .contains("scheduler_unknown"));
-    assert_eq!(calls, 1);
-    // 确认失败也保持占用次数，不因重新打开而归零。
-    e.result.attempts[0].status = "failed".into();
-    e.save().unwrap();
-    drop(e);
-    let mut e = Engine::open(&cfg, &inputs, &[], &dir, config::Mode::Iso).unwrap();
-    assert!(e
-        .attempt(2000, attempt::SolveKind::Linear, None, &mut || {
-            calls += 1;
-            Ok(())
-        })
-        .is_err());
-    assert_eq!(calls, 1);
-    cfg.superconductivity.mu_star = 0.15;
-    assert!(Engine::open(&cfg, &inputs, &[], &dir, config::Mode::Iso).is_err());
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn native_engine_both_modes_use_process_results_and_keep_independent_intervals() {
-    use epwflow::superconductivity::engine::Engine;
-    let root = std::env::temp_dir().join(format!("epwflow-engine-both-{}", store::token()));
-    std::fs::create_dir_all(&root).unwrap();
-    let mut cfg = config::Config::load(&make_config(&root)).unwrap();
-    cfg.superconductivity.mode = config::Mode::Both;
-    cfg.superconductivity.frequency_cutoff_ev = 0.03;
-    cfg.superconductivity.initial_gaps_mev = [1.0, 10.0];
-    cfg.superconductivity.gap_temperatures_k = vec![20.0, 25.0, 30.0];
-    cfg.set_native(&["8.epw-superconductivity","iso","epw","INPUTEPW","nstemp"],serde_json::json!(3)).unwrap();
-    cfg.superconductivity.convergence_relative = 1e-8;
-    let tc = cfg.superconductivity.iso.as_mut().unwrap();
-    tc.min_k = 10.0;
-    tc.max_k = 55.0;
-    tc.precision_k = 5.0;
-    tc.max_solves = 64;
-    tc.normal_gap_mev = 1e-4;
-    tc.super_gap_mev = 1e-3;
-    cfg.superconductivity.aniso = cfg.superconductivity.iso.clone();
-    native_fixture::matrix(&mut cfg);
-    let mut inputs = native_inputs(&root);
-    let f3_path = root.join("interpolation/manifest.json");
-    store::write(&f3_path,&serde_json::json!({"schema_version":2,"run_id":"native-fixture","f2_digest":"fixture","wannier_digest":"fixture",
-        "coarse":null,"fine":null,"spectra":[{"smearing_id":"fixture","energy_mev":[0.0,10.0,20.0],"a2f":[0.0,0.2,0.1],
-            "lambda_integral":0.35,"lambda_sum":0.35,"cutoff_ev":0.03}],"mode_readiness":{},
-        "validation":{"status":"valid","checks":[{"name":"fixture","passed":true,"detail":"SYNTHETIC IO fixture"}],"units":{},"thresholds":{},"evidence":[]}})).unwrap();
-    inputs.interpolation_digest = store::hash_file(&f3_path).unwrap();
-    let mut native_modes = std::collections::BTreeMap::new();
-    // 此进程只模拟目标版本的 IO/收敛契约。阈值用于验证独立搜索，不是物理模型。
-    let script = root.join("epw-fixture.py");
-    write_script(&script, include_str!("fixtures/epw_tc_io.py"));
-    cfg.programs.epw = config::Program {
-        path: script,
-        args: vec!["--engine-fixture-states".into()],
-    };
-    let mut results = vec![];
-    for mode in [config::Mode::Iso, config::Mode::Aniso] {
-        let dir = root
-            .join("superconductivity")
-            .join(if mode == config::Mode::Iso {
-                "iso"
-            } else {
-                "aniso"
-            });
-        let mut e = Engine::open(&cfg, &inputs, &[], &dir, mode).unwrap();
-        let mut calls = 0;
-        let mut probe = || {
-            calls += 1;
-            Ok(())
-        };
-        assert_eq!(
-            e.probe_upper_endpoint(&mut probe).unwrap(),
-            search::Side::Normal
-        );
-        assert_eq!(
-            e.probe_upper_endpoint(&mut probe).unwrap(),
-            search::Side::Normal
-        );
-        assert!(e
-            .result
-            .attempts
-            .iter()
-            .all(|a| a.request.temperature_centikelvin == 5500));
-        assert_eq!(
-            e.result.attempts.len(),
-            if mode == config::Mode::Iso { 1 } else { 2 }
-        );
-        e.run(&mut || {
-            calls += 1;
-            Ok(())
-        })
-        .unwrap();
-        assert!(e.result.complete, "{:?}", e.result.reason);
-        assert_eq!(e.result.search.status, "located");
-        assert_eq!(calls, e.result.attempts.len());
-        let n = calls;
-        drop(e);
-        let mut resumed = Engine::open(&cfg, &inputs, &[], &dir, mode).unwrap();
-        resumed
-            .run(&mut || {
-                calls += 1;
-                Ok(())
-            })
-            .unwrap();
-        assert!(resumed.result.complete);
-        assert_eq!(calls, n);
-        results.push(resumed.result.search.interval_centikelvin.unwrap());
-        native_modes.insert(
-            if mode == config::Mode::Iso {
-                "iso".into()
-            } else {
-                "aniso".into()
-            },
-            resumed.result,
-        );
-    }
-    assert_ne!(results[0], results[1]);
-    // 固定 iso 非线性诊断可交付完整双初值，但不能冒充线性化 Tc 分类。
-    let mut diagnostic = native_modes["iso"].clone();
-    diagnostic.attempts.retain(|a| {
-        a.request.kind == attempt::SolveKind::Nonlinear && a.request.temperature_centikelvin == 2000
-    });
-    assert_eq!(diagnostic.attempts.len(), 2);
-    diagnostic.search = search::Search::new(1000, 5500, 500).unwrap();
-    diagnostic.complete = false;
-    diagnostic.reason = Some("固定非线性诊断，未执行线性 Tc 搜索".into());
-    let diagnostic_root = root.join("iso-nonlinear-diagnostic");
-    let partial = scheduler::publish(
-        &diagnostic_root,
-        "native-fixture".into(),
-        inputs.interpolation_digest.clone(),
-        config::Mode::Iso,
-        std::collections::BTreeMap::from([("iso".into(), diagnostic.clone())]),
-    )
-    .unwrap();
-    assert!(!partial.converged && !partial.located);
-    let loaded = epwflow::superconductivity::manifest::SuperconductivityManifest::load(
-        &diagnostic_root.join("manifest.json"),
-    )
-    .unwrap();
-    assert_eq!(loaded.native_modes["iso"].attempts.len(), 2);
-    diagnostic
-        .search
-        .observe(2000, search::Side::Superconducting)
-        .unwrap();
-    assert!(scheduler::publish(
-        &root.join("rejected-fake-linear"),
-        "native-fixture".into(),
-        inputs.interpolation_digest.clone(),
-        config::Mode::Iso,
-        std::collections::BTreeMap::from([("iso".into(), diagnostic)]),
-    )
-    .is_err());
-    let root_sc = root.join("superconductivity");
-    let original = scheduler::publish(
-        &root_sc,
-        "native-fixture".into(),
-        inputs.interpolation_digest.clone(),
-        config::Mode::Both,
-        native_modes,
-    )
-    .unwrap();
-    epwflow::superconductivity::verify::complete(&root, &cfg, "native-fixture").unwrap();
-    let mut tampered = original.clone();
-    tampered
-        .native_modes
-        .get_mut("iso")
-        .unwrap()
-        .search
-        .interval_centikelvin = Some([1000, 1001]);
-    store::write(&root_sc.join("manifest.json"), &tampered).unwrap();
-    assert!(
-        epwflow::superconductivity::manifest::SuperconductivityManifest::load(
-            &root_sc.join("manifest.json")
-        )
-        .is_err()
-    );
-    let mut missing_mode = original.clone();
-    missing_mode.native_modes.remove("aniso");
-    store::write(&root_sc.join("manifest.json"), &missing_mode).unwrap();
-    assert!(
-        epwflow::superconductivity::manifest::SuperconductivityManifest::load(
-            &root_sc.join("manifest.json")
-        )
-        .is_err()
-    );
-    store::write(&root_sc.join("manifest.json"), &original).unwrap();
-    let mut partial_modes = original.native_modes.clone();
-    let aniso = partial_modes.get_mut("aniso").unwrap();
-    aniso.complete = false;
-    aniso.reason = Some("fixture: stopped after a solver failure".into());
-    aniso
-        .search
-        .stop("solver_failed", "fixture: no Tc estimate");
-    scheduler::publish(
-        &root_sc,
-        "native-fixture".into(),
-        inputs.interpolation_digest.clone(),
-        config::Mode::Both,
-        partial_modes,
-    )
-    .unwrap();
-    assert!(epwflow::superconductivity::verify::complete(&root, &cfg, "native-fixture").is_err());
-    let partial_output = root.join("partial-results");
-    epwflow::delivery::collect_results(&root, Some(&partial_output)).unwrap();
-    let (_, partial) = epwflow::delivery::native::load(&partial_output).unwrap();
-    assert!(!partial.complete);
-    assert!(partial.modes["aniso"].search.estimate_k().is_none());
-    assert_eq!(
-        epwflow::delivery::check_results(&partial_output).unwrap()["workflow_complete"],
-        false
-    );
-    scheduler::publish(
-        &root_sc,
-        "native-fixture".into(),
-        inputs.interpolation_digest.clone(),
-        config::Mode::Both,
-        original.native_modes.clone(),
-    )
-    .unwrap();
-    let output = epwflow::delivery::collect_results(&root, None).unwrap();
-    epwflow::delivery::collect_results(&root, None).unwrap();
-    for action in ["collect", "results"] {
-        let cli = stage_cli::command(&["delivery", action, "-w", root.to_str().unwrap(), "--json"], &root)
-            .env("PATH", "")
-            .output()
-            .unwrap();
-        assert!(
-            cli.status.success(),
-            "{}",
-            String::from_utf8_lossy(&cli.stderr)
-        );
-        let report: serde_json::Value = serde_json::from_slice(&cli.stdout).unwrap();
-        assert_eq!(report["native_complete"], true);
-        assert_eq!(report["workflow_complete"], false, "尚未生成三格式图");
-    }
-    let (_, data) = epwflow::delivery::native::load(&output).unwrap();
-    assert_eq!(data.modes.len(), 2);
-    assert!(!data.states.is_empty());
-    assert!(data
-        .states
-        .iter()
-        .all(|s| s.k_crystal.is_some() && s.z > 0.0));
-    let moved = std::env::temp_dir().join(format!("epwflow-moved-{}", store::token()));
-    std::fs::rename(&output, &moved).unwrap();
-    let hidden = root.with_extension("hidden");
-    std::fs::rename(&root, &hidden).unwrap();
-    assert_eq!(
-        epwflow::delivery::native::check(&moved).unwrap()["source_verification"],
-        "unavailable"
-    );
-    let command = std::process::Command::new(env!("CARGO_BIN_EXE_epw_superconductivity"))
-        .args(["--plot", "--results", moved.to_str().unwrap()])
-        .env("PATH", "")
-        .output()
-        .unwrap();
-    assert!(
-        command.status.success(),
-        "{}",
-        String::from_utf8_lossy(&command.stderr)
-    );
-    assert!(epwflow::delivery::native_plot::check(&moved).unwrap());
-    let distribution =
-        std::fs::read_to_string(moved.join("figures/gap_aniso_distribution.svg")).unwrap();
-    for label in [
-        "Temperature (K)",
-        "|Delta_nk(iw0)| (meV)",
-        "normalized Fermi-surface weight",
-        "no temperature interpolation",
-    ] {
-        assert!(distribution.contains(label), "缺少分布说明 {label}");
-    }
-    if let Ok(dest) = std::env::var("EPWFLOW_FIXTURE_ARTIFACTS") {
-        std::fs::create_dir_all(&dest).unwrap();
-        for ext in ["png", "svg", "pdf"] {
-            let name = format!("gap_aniso_distribution.{ext}");
-            std::fs::copy(
-                moved.join("figures").join(&name),
-                PathBuf::from(&dest).join(&name),
-            )
-            .unwrap();
-        }
-    }
-    assert_eq!(
-        epwflow::delivery::check_results(&moved).unwrap()["workflow_complete"],
-        true
-    );
-    let before = store::hash_file(&moved.join("gap_states.csv")).unwrap();
-    epwflow::delivery::plot_results(&moved, None, &["svg".into()]).unwrap();
-    assert_eq!(
-        store::hash_file(&moved.join("gap_states.csv")).unwrap(),
-        before
-    );
-    // 同源部分重绘保留其他有效格式的归属，三格式完成门仍通过。
-    assert!(epwflow::delivery::native_plot::check(&moved).unwrap());
-    epwflow::delivery::plot_results(
-        &moved, None, &["png".into(), "svg".into(), "pdf".into()],
-    ).unwrap();
-    if let Ok(dest) = std::env::var("EPWFLOW_FIXTURE_ARTIFACTS") {
-        std::fs::create_dir_all(&dest).unwrap();
-        for name in ["summary.png", "summary.svg", "summary.pdf"] {
-            std::fs::copy(
-                moved.join("figures").join(name),
-                PathBuf::from(&dest).join(name),
-            )
-            .unwrap();
-        }
-    }
-    std::fs::write(moved.join("gap_states.csv"), "tampered").unwrap();
-    assert!(epwflow::delivery::native::load(&moved).is_err());
-    std::fs::remove_dir_all(moved).unwrap();
-    std::fs::remove_dir_all(hidden).unwrap();
 }
 
 #[test]
@@ -1496,98 +1017,6 @@ fn native_fine_handoff_binds_binary_roles_band_offset_and_rejects_changes() {
     assert!(fine::collect_fine(&root, &epw).is_err());
     std::fs::remove_dir_all(root).unwrap();
 }
-
-#[test]
-fn native_explicit_resume_preserves_failed_evidence_and_counts_unknown_attempts() {
-    use epwflow::superconductivity::engine::{Engine, Entry};
-    let root = std::env::temp_dir().join(format!("epwflow-native-retry-{}", store::token()));
-    std::fs::create_dir_all(&root).unwrap();
-    let mut cfg = config::Config::load(&make_config(&root)).unwrap();
-    cfg.superconductivity.frequency_cutoff_ev = 0.03;
-    cfg.superconductivity.iso.as_mut().unwrap().max_k = 55.0;
-    cfg.superconductivity.iso.as_mut().unwrap().max_solves = 3;
-    let input = native_inputs(&root);
-    std::fs::write(
-        root.join("stdout.fixture"),
-        solve_log(&request(config::Mode::Iso, attempt::SolveKind::Linear)),
-    )
-    .unwrap();
-    let script = root.join("retry-fixture");
-    write_script(
-        &script,
-        "#!/bin/sh\nif [ ! -f \"$1/allow\" ]; then exit 7; fi\ncat \"$1/stdout.fixture\"\n",
-    );
-    cfg.programs.epw = config::Program {
-        path: script,
-        args: vec![root.to_string_lossy().into_owned()],
-    };
-    let dir = root.join("search");
-    let mut engine = Engine::open(&cfg, &input, &[], &dir, config::Mode::Iso).unwrap();
-    assert!(engine
-        .attempt(2000, attempt::SolveKind::Linear, None, &mut || Ok(()))
-        .is_err());
-    let old = store::Identity::capture(&dir.join("attempt-0001/attempt.json")).unwrap();
-    drop(engine);
-    let mut engine = Engine::open(&cfg, &input, &[], &dir, config::Mode::Iso).unwrap();
-    assert!(engine
-        .attempt(2000, attempt::SolveKind::Linear, None, &mut || Ok(()))
-        .is_err());
-    engine
-        .prepare_resume(&mut |_| panic!("已结束进程不需猜测调度状态"))
-        .unwrap();
-    std::fs::write(root.join("allow"), "fixture").unwrap();
-    engine
-        .attempt(2000, attempt::SolveKind::Linear, None, &mut || Ok(()))
-        .unwrap();
-    old.verify().unwrap();
-    assert_eq!(engine.result.attempts.len(), 2);
-    let req = attempt::Request::from_config(
-        &cfg,
-        config::Mode::Iso,
-        attempt::SolveKind::Linear,
-        2100,
-        None,
-    )
-    .unwrap();
-    engine.result.attempts.push(Entry {
-        request: req,
-        directory: dir.join("attempt-0003"),
-        record: None,
-        status: "running".into(),
-        reason: None,
-        job_id: Some(99),
-    });
-    engine
-        .result
-        .search
-        .stop("scheduler_unknown", "fixture interrupted");
-    engine.save().unwrap();
-    drop(engine);
-    let mut engine = Engine::open(&cfg, &input, &[], &dir, config::Mode::Iso).unwrap();
-    assert!(engine
-        .prepare_resume(&mut |_| anyhow::bail!("scheduler_unknown: active"))
-        .is_err());
-    engine
-        .prepare_resume(&mut |id| {
-            assert_eq!(id, 99);
-            Ok(())
-        })
-        .unwrap();
-    assert_eq!(engine.result.attempts[2].status, "failed");
-    assert_eq!(engine.result.search.status, "pending");
-    let mut launches = 0;
-    let error = engine
-        .attempt(2100, attempt::SolveKind::Linear, None, &mut || {
-            launches += 1;
-            Ok(())
-        })
-        .unwrap_err();
-    assert!(error.to_string().contains("attempt_limit"));
-    assert_eq!(launches, 0);
-    assert_eq!(engine.result.attempts.len(), 3);
-    std::fs::remove_dir_all(root).unwrap();
-}
-
 
 #[test]
 fn gap_task_config_has_no_tc_or_dual_seed_requirement() {

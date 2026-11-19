@@ -1,6 +1,8 @@
 # 统一 DFTFlow 编译可执行程序目录规格
 
-**Issue**：[本地 0017 草案](issue-draft.md)（线上 Gitee Issue 尚未创建）
+> **协作入口（2026-11-17）**：[GitHub Issue #17](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/17)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #17](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/17)（线上 Gitee Issue 尚未创建）
 
 **创建日期**：2026-10-20
 

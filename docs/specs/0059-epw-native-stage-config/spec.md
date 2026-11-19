@@ -1,6 +1,10 @@
 # EPW 按计算阶段使用原生参数
 
-**Issue**：[本地 0059](issue-draft.md)，线上 Gitee 用户自管。
+> **协作入口（2026-11-17）**：[GitHub Issue #59](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/59)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+> 2026-11-17 最新约定：预算账本功能已按用户要求彻底撤销。本文件涉及账本、campaign 身份、预算预留／结算及全局两个作业限制的旧条款均已失效；当前计算只依赖工作流记录、Slurm 作业身份及科学核验。历史消耗与验收记录不改写。详见 [0058 最新需求](../0058-epw-remove-resource-limits/spec.md)。
+
+**Issue**：[GitHub Issue #59](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/59)，线上 Gitee 用户自管。
 
 **日期**：2026-10-26。**状态**：已实现，本轮配置、回归及八阶段能隙验收完成。
 

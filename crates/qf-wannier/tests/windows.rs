@@ -34,7 +34,7 @@ fn energy_only_uses_fermi_and_never_caps_requested_bound() {
     let error =
         qf_wannier::select_energy_only(&bands, 0., 3, &[1], &impossible, Reference::Absolute)
             .unwrap_err();
-    assert!(error.to_string().contains("k=1") && error.to_string().contains("不自动裁剪"));
+    assert!(error.to_string().contains("k=1") && error.to_string().contains("Do Not Autocrop"));
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn energy_only_supports_independent_frozen_lower_and_reference_conversion() {
     assert_eq!(s.energy_frozen_counts, vec![2, 2]);
     assert_eq!(
         s.parameters["dis_win_min"], -10.02,
-        "默认绝对谱底不重复加 Fermi"
+        "Default absolute bottom does not add Fermi"
     );
     for invalid in [
         Bounds {
@@ -132,7 +132,7 @@ fn gap_shift_and_both_cap_terms_follow_upstream() {
         Reference::UpstreamRelative,
     )
     .unwrap();
-    assert_eq!(s.frozen_cap_ev, -0.8, "不能省略第 N 带最大值项");
+    assert_eq!(s.frozen_cap_ev, -0.8, "You can't leave out N With maximum value item");
 }
 
 #[test]

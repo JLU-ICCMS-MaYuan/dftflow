@@ -1,10 +1,12 @@
 # Spec 0009：重写声子谱路径映射与绘图
 
+> **协作入口（2026-11-17）**：[GitHub Issue #9](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/9)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
 **日期**：2026-10-14
 
 **状态**：源码实现、真实数据对照与本机安装验收完成；线上 Issue 未操作。
 
-**Issue**：[本地 Bug 草稿](issue-draft.md)，0009 为本地编号，线上 Issue 由用户管理、编号与远程链接待确认。
+**Issue**：[GitHub Issue #9](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/9)，0009 为本地编号，线上 Issue 由用户管理、编号与远程链接待确认。
 
 ## 原始需求记录
 

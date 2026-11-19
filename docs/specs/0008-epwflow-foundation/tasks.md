@@ -1,5 +1,7 @@
 # 实施任务：配置、环境检查与受控执行基础
 
+> 2026-11-17 最新约定：下文旧预算登记、账本读写和全局两个作业限制已经撤销，相关旧任务不再执行。当前实现与接口以 [0058 追加需求](../0058-epw-remove-resource-limits/spec.md) 为准；历史科学证据保留。
+
 **输入**：[Spec](spec.md)、[Plan](plan.md)、[Research](research.md)、[数据模型](data-model.md)、[契约](contracts/interface.md)。
 
 ## 阶段 1：准备

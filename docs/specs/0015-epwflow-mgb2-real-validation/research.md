@@ -1,5 +1,7 @@
 # 研究与取舍
 
+> 2026-11-17 最新约定：下文旧预算登记、账本读写和全局两个作业限制已经撤销，相关旧任务不再执行。当前实现与接口以 [0058 追加需求](../0058-epw-remove-resource-limits/spec.md) 为准；历史科学证据保留。
+
 > **当前范围更新（2026-10-21）**：下文有关讲义 LDA 的参数研究属于历史记录，不再是当前计算目标或输入要求。用户已指定只完成 `examples/MgB2/sugon-amd/run/epwflow/epwinput.toml` 的 PBE iso/aniso Tc；当前计划见 [当前目录 PBE Tc 计划](current-directory-pbe-tc.md)。
 
 ## 已核查事实

@@ -1,6 +1,8 @@
 # Feature 规格：EPW 声子阶段一次提交完整交付
 
-**Issue**：[0048 本地 Issue 草案](issue-draft.md)；线上 Gitee 由用户管理，平台 Issue 尚未创建，远程双向链接待验证。
+> **协作入口（2026-11-17）**：[GitHub Issue #48](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/48)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+**Issue**：[GitHub Issue #48](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/48)；线上 Gitee 由用户管理，平台 Issue 尚未创建，远程双向链接待验证。
 
 **创建日期**：2026-10-22
 

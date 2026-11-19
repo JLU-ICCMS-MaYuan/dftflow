@@ -20,7 +20,7 @@ impl Drop for Lock {
 fn lock(ws: &str) -> Result<Lock> {
     let p = Path::new(ws).join(".chain-submit.lock");
     fs::create_dir(&p)
-        .with_context(|| format!("已有提交正在执行，或需核对残留锁: {}", p.display()))?;
+        .with_context(|| format!("Submitted in progress or need to check the remaining locks: {}", p.display()))?;
     Ok(Lock(p))
 }
 fn atomic_json(path: &Path, value: &Value) -> Result<()> {
@@ -46,7 +46,7 @@ fn active(id: &str) -> Result<bool> {
     let state = qf_runner::slurm_job_state(id)?;
     if state == "INVALID_DEPENDENCY" {
         let out = std::process::Command::new("scancel").arg(id).output()?;
-        ensure!(out.status.success(), "取消失效依赖作业失败: {id}");
+        ensure!(out.status.success(), "Could not close temporary folder: %s: {id}");
         return Ok(false);
     }
     Ok(matches!(
@@ -75,12 +75,12 @@ fn outdir(ctx: &PhononCtx) -> Result<PathBuf> {
                 .components()
                 .any(|c| matches!(c, std::path::Component::ParentDir))
             && p != Path::new("."),
-        "分 q 模式 outdir 必须是独立相对目录: {s}"
+        "min q Mode outdir Must be an independent relative directory: {s}"
     );
     Ok(p)
 }
 fn context(config: &str, input: Option<&str>, mode: &str) -> Result<PhononCtx> {
-    ensure!(mode == "index" || mode == "coords", "未知模式 {mode}");
+    ensure!(mode == "index" || mode == "coords", "Unknown Mode {mode}");
     let mut cfg = qf_config::load(Some(config), Some(config))?;
     let base = Path::new(config).parent().unwrap();
     if let Some(pp) = cfg.pp_dir.as_mut() {
@@ -139,7 +139,7 @@ fn bind_inputs(ctx: &PhononCtx, config: &str, mode: &str) -> Result<()> {
     if path.exists() {
         ensure!(
             serde_json::from_slice::<Value>(&fs::read(&path)?)? == expected,
-            "配置/结构/模式已经改变，请使用新的运行目录"
+            "The configuration/structure/model has been changed, please use the new running directory"
         );
     } else {
         atomic_json(&path, &expected)?;
@@ -154,7 +154,7 @@ pub(super) fn snapshot_inputs(ctx: &PhononCtx, config: &str, input: Option<&str>
         return Ok((cfg_path.to_string_lossy().into_owned(), verify_snapshot(ws)?.to_string_lossy().into_owned()));
     }
     let source = input.map(PathBuf::from).unwrap_or_else(|| PathBuf::from(&ctx.structure_source));
-    let name = source.file_name().context("结构文件名无效")?.to_string_lossy();
+    let name = source.file_name().context("Structure filename invalid")?.to_string_lossy();
     let mut structure_path = ws.join(format!("{name}-init"));
     if input.is_none() && ws.join("input-init.json").exists() {
         structure_path = verify_snapshot(ws)?;
@@ -165,9 +165,9 @@ pub(super) fn snapshot_inputs(ctx: &PhononCtx, config: &str, input: Option<&str>
     let expected = json!({"config":text,"structure":structure,"structure_file":structure_path.file_name().unwrap().to_string_lossy()});
     if manifest.exists() {
         verify_snapshot(ws)?;
-        ensure!(serde_json::from_slice::<Value>(&fs::read(&manifest)?)? == expected, "已有输入快照与本次输入不同，请使用原快照续算或新的工作目录");
+        ensure!(serde_json::from_slice::<Value>(&fs::read(&manifest)?)? == expected, "The existing input snapshot is different from the current input, please use the original snapshot update or a new working directory");
     } else {
-        ensure!(!cfg_path.exists() && !structure_path.exists(), "已有未登记输入快照，请先核对，禁止覆盖");
+        ensure!(!cfg_path.exists() && !structure_path.exists(), "Unregistered input snapshot available, check first, no overwrite");
         fs::write(&cfg_path, &text)?;
         fs::write(&structure_path, structure.as_bytes())?;
         atomic_json(&manifest, &expected)?;
@@ -176,15 +176,15 @@ pub(super) fn snapshot_inputs(ctx: &PhononCtx, config: &str, input: Option<&str>
 }
 fn verify_snapshot(ws: &Path) -> Result<PathBuf> {
     let manifest: Value = serde_json::from_slice(&fs::read(ws.join("input-init.json"))?)?;
-    let name = manifest["structure_file"].as_str().context("结构快照清单无效")?;
-    ensure!(Path::new(name).components().count() == 1, "结构快照路径无效");
+    let name = manifest["structure_file"].as_str().context("Structure snapshot manifest is invalid")?;
+    ensure!(Path::new(name).components().count() == 1, "Structure snapshot path invalid");
     let structure = ws.join(name);
-    ensure!(manifest["config"].as_str() == Some(fs::read_to_string(ws.join("input-init.toml"))?.as_str()) && manifest["structure"].as_str() == Some(fs::read_to_string(&structure)?.as_str()), "输入快照已改变，禁止继续计算");
+    ensure!(manifest["config"].as_str() == Some(fs::read_to_string(ws.join("input-init.toml"))?.as_str()) && manifest["structure"].as_str() == Some(fs::read_to_string(&structure)?.as_str()), "Input snapshot changed. Continue count is forbidden");
     Ok(structure)
 }
 fn verify_mode(ws: &str, mode: &str) -> Result<()> {
     let binding: Value = serde_json::from_slice(&fs::read(Path::new(ws).join("chain_inputs.json"))?)?;
-    ensure!(binding["mode"].as_str() == Some(mode), "快照绑定的拆分模式与本次模式不同");
+    ensure!(binding["mode"].as_str() == Some(mode), "Quick-separated splits are different from the current pattern");
     Ok(())
 }
 pub(super) fn snapshot_structure(ws: &str) -> Result<String> {
@@ -197,7 +197,7 @@ fn stage_command(config: &str, ws: &str, mode: &str, stage: &str) -> Result<Stri
         quote(
             std::env::current_exe()?
                 .to_str()
-                .context("程序路径不是 UTF-8")?
+                .context("Program path is not UTF-8")?
         ),
         quote(config),
         quote(&snapshot_structure(ws)?),
@@ -237,7 +237,7 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
         let e = e?;
         ensure!(
             !e.file_type()?.is_symlink(),
-            "快照不允许共享符号链接: {}",
+            "Snapshot does not allow the sharing of symbolic links: {}",
             e.path().display()
         );
         if e.file_type()?.is_dir() {
@@ -264,7 +264,7 @@ fn pre(ctx: &PhononCtx) -> Result<()> {
         phonon_init::check_save(ctx)?;
         ensure!(
             !src.join("_ph0").exists(),
-            "首次快照前已有 PH scratch，请使用新目录"
+            "It was before the first snapshot PH scratch ,Please use the new directory"
         );
         let tmp = ws.join("scf_snapshot.partial");
         if tmp.exists() {
@@ -276,7 +276,7 @@ fn pre(ctx: &PhononCtx) -> Result<()> {
     if phonon_init::check_output(ws, &ctx.prefix).is_err() {
         phonon_init::run_init(ctx)?;
     }
-    ensure!(!load_points(ctx)?.is_empty(), "初始化未产生 q 点");
+    ensure!(!load_points(ctx)?.is_empty(), "Initialization Not Generated q Points");
     Ok(())
 }
 fn crystal_from_cart(bg: [[f64; 3]; 3], cart: [f64; 3]) -> Result<[f64; 3]> {
@@ -293,7 +293,7 @@ fn crystal_from_cart(bg: [[f64; 3]; 3], cart: [f64; 3]) -> Result<[f64; 3]> {
             .max_by(|&i, &j| a[i][k].abs().partial_cmp(&a[j][k].abs()).unwrap())
             .unwrap();
         a.swap(k, pivot);
-        ensure!(a[k][k].abs() > 1e-12, "退化倒格矩阵");
+        ensure!(a[k][k].abs() > 1e-12, "Degraded Rewinding Matrix");
         let d = a[k][k];
         for j in k..4 {
             a[k][j] /= d;
@@ -322,7 +322,7 @@ fn load_points(ctx: &PhononCtx) -> Result<Vec<QIndexEntry>> {
         .map(|p| {
             // 旧 parser 字段名是 q_crystal，dyn0 中实际为 QE Cartesian。
             let cart = p.q_crystal;
-            ensure!(cart.iter().all(|v| v.is_finite()), "非有限 q 坐标");
+            ensure!(cart.iter().all(|v| v.is_finite()), "Unlimited q Coordinates");
             let crystal = crystal_from_cart(info.bg, cart)?;
             Ok(QIndexEntry {
                 directory: format!("{:02}", p.index),
@@ -344,7 +344,7 @@ fn materialize(ctx: &PhononCtx, mode: &str) -> Result<QIndexMap> {
         let old = qf_phonon::index_map::load_q_index_map(&ctx.workspace);
         ensure!(
             serde_json::to_value(&old)? == serde_json::to_value(&map)?,
-            "已有 q 映射与初始化不一致"
+            "Existing q Map does not match initialization"
         );
     } else {
         atomic_json(&path, &serde_json::to_value(&map)?)?;
@@ -356,7 +356,7 @@ fn materialize(ctx: &PhononCtx, mode: &str) -> Result<QIndexMap> {
             let target = q.join(outdir(ctx)?);
             ensure!(
                 !target.exists(),
-                "q 点目录已有数据且无复用标记，请归档后重试"
+                "q Point directory with data and no duplicate tags, please archive and try again"
             );
             let partial = q.join("scf_copy.partial");
             if partial.exists() {
@@ -431,7 +431,7 @@ fn fanout(ctx: &PhononCtx, config: &str, mode: &str, local: bool) -> Result<()> 
                 "bash run_split.sh",
                 &Path::new(&ctx.workspace).join(&e.directory),
             )?;
-            ensure!(q_done(ctx, e), "q 点 {} 未完成", e.directory);
+            ensure!(q_done(ctx, e), "q Points {} Not completed", e.directory);
         } else {
             if let Some(id) = records.get(&key) {
                 if active(id)? {
@@ -455,7 +455,7 @@ fn fanout(ctx: &PhononCtx, config: &str, mode: &str, local: bool) -> Result<()> 
     }
     if let Some(id) = records.get("post") {
         if active(id)? {
-            println!("post 已提交: {id}");
+            println!("post Submitted: {id}");
             return Ok(());
         }
     }
@@ -466,14 +466,14 @@ fn fanout(ctx: &PhononCtx, config: &str, mode: &str, local: bool) -> Result<()> 
     )?;
     records.insert("post".into(), id.clone());
     save_jobs(&ctx.workspace, &records)?;
-    println!("已安排 q 点及合并绘图作业 {id}，依赖 {}", deps.join(":"));
+    println!("Scheduled q Point & Merge Drawing Operations {id},Dependency {}", deps.join(":"));
     Ok(())
 }
 fn post(ctx: &PhononCtx, config: &str) -> Result<()> {
     let map = qf_phonon::index_map::load_q_index_map(&ctx.workspace);
     ensure!(
         !map.qpoints.is_empty() && map.qpoints.iter().all(|e| q_done(ctx, e)),
-        "仍有 q 点未完成，禁止后处理"
+        "Still q Point not completed, post-treatment prohibited"
     );
     let merged = qf_phonon::merge::merge_split_results_with_outdir(
         &ctx.workspace,
@@ -481,7 +481,7 @@ fn post(ctx: &PhononCtx, config: &str) -> Result<()> {
         &map,
         &outdir(ctx)?.to_string_lossy(),
     )?;
-    ensure!(merged.success, "合并失败: {:?}", merged.errors);
+    ensure!(merged.success, "Merge failed: {:?}", merged.errors);
     q2r_input::write_q2r_input(&ctx.workspace, &ctx.cfg, &ctx.prefix)?;
     matdyn_input::write_matdyn_phband_input(
         &ctx.workspace,
@@ -522,30 +522,22 @@ fn post(ctx: &PhononCtx, config: &str) -> Result<()> {
         false,
         true,
     )?;
-    for f in qf_phonon::archive::phonon_plot_files() {
+    for f in qf_phonon::archive::phonon_plot_files(&ctx.cfg.plot.validate_formats()?).into_iter().filter(|f| f.ends_with(".csv")) {
         ensure!(
             Path::new(&ctx.workspace)
                 .join(&f)
                 .metadata()
                 .map(|m| m.len() > 0)
                 .unwrap_or(false),
-            "缺少产物 {f}"
+            "Lack of products {f}"
         );
     }
-    ensure!(
-        Path::new(&ctx.workspace)
-            .join("phonon_combined.jpg")
-            .metadata()
-            .map(|m| m.len() > 0)
-            .unwrap_or(false),
-        "缺少联合 JPG"
-    );
     atomic_json(
         &Path::new(&ctx.workspace).join("chain_complete.json"),
         &json!({"finished":true,"prefix":ctx.prefix}),
     )?;
     refresh_workflow_status(Path::new(&ctx.workspace), &ctx.prefix)?;
-    println!("声子流程已完成：{}", ctx.workspace);
+    println!("Sound subprocess has been completed:{}", ctx.workspace);
     Ok(())
 }
 pub fn run(
@@ -555,7 +547,7 @@ pub fn run(
     submit: bool,
     mode: &str,
 ) -> Result<()> {
-    ensure!(!(run && submit), "运行和提交互斥");
+    ensure!(!(run && submit), "Operation and submission of mutual rebukes");
     let config = fs::canonicalize(config.as_deref().unwrap_or("input.toml"))?
         .to_string_lossy()
         .into_owned();
@@ -564,7 +556,7 @@ pub fn run(
     } else { input };
     let ctx = context(&config, input.as_deref(), mode)?;
     ensure!(!ctx.cfg.qe_phonon.retain_epw_data,
-        "retain_epw_data 的 EPW 交付目前仅支持 qe-phonon-nosplit；分 q 不可冒充已适配");
+        "retain_epw_data It's EPW Delivery is currently only supported qe-phonon-nosplit ;min q Don't pretend to be fit");
     if Path::new(&config) != Path::new(&ctx.workspace).join("input-init.toml") {
         bind_inputs(&ctx, &config, mode)?;
     } else { verify_snapshot(Path::new(&ctx.workspace))?; verify_mode(&ctx.workspace, mode)?; }
@@ -572,16 +564,15 @@ pub fn run(
     fs::write(Path::new(&ctx.workspace).join("chain_config_path"), &config)?;
     prepare(&ctx, &config, mode)?;
     if !run && !submit {
-        println!("已准备声子流程输入与脚本：{}", ctx.workspace);
+        println!("phonon process input and script prepared:{}", ctx.workspace);
         return Ok(());
     }
     if Path::new(&ctx.workspace)
         .join("chain_complete.json")
         .exists()
     {
-        let complete = qf_phonon::archive::phonon_plot_files()
+        let complete = qf_phonon::archive::phonon_plot_files(&ctx.cfg.plot.validate_formats()?)
             .into_iter()
-            .chain(std::iter::once("phonon_combined.jpg".into()))
             .all(|f| {
                 Path::new(&ctx.workspace)
                     .join(f)
@@ -590,7 +581,7 @@ pub fn run(
                     .unwrap_or(false)
             });
         if complete {
-            println!("声子流程已完成：{}", ctx.workspace);
+            println!("Sound subprocess has been completed:{}", ctx.workspace);
             return Ok(());
         }
         fs::remove_file(Path::new(&ctx.workspace).join("chain_complete.json"))?;
@@ -606,14 +597,14 @@ pub fn run(
         // 单个 q 点失败后的续算：只复用已经完成的 pre。
         if let Some(id) = records.get("pre") {
             if active(id)? {
-                println!("pre 已提交: {id}");
+                println!("pre Submitted: {id}");
                 return Ok(());
             }
         }
         for (stage, id) in &records {
             if stage == "post" || stage.starts_with("q:") {
                 if active(id)? {
-                    println!("已有活动作业 {stage}={id}，请等待或取消后续算");
+                    println!("Active Job Existing {stage}={id},Please wait or cancel the follow-up");
                     return Ok(());
                 }
             }
@@ -625,7 +616,7 @@ pub fn run(
         )?;
         records.insert("pre".into(), id.clone());
         save_jobs(&ctx.workspace, &records)?;
-        println!("已提交前置作业 {id}；后续计算及绘图将自动安排");
+        println!("Pre-commissioned {id};Follow-up calculations and drawings will automatically be arranged");
     }
     Ok(())
 }
@@ -661,11 +652,11 @@ pub fn stage(
                 .qpoints
                 .iter()
                 .find(|e| Some(&e.directory) == q_dir.as_ref())
-                .context("未知 q 目录")?;
-            ensure!(q_done(&ctx, e), "q 点 {} 未完成", e.directory);
+                .context("Unknown q Contents")?;
+            ensure!(q_done(&ctx, e), "q Points {} Not completed", e.directory);
             Ok(())
         }
-        _ => bail!("未知阶段 {stage}"),
+        _ => bail!("Unknown stage {stage}"),
     }
 }
 

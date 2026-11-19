@@ -13,35 +13,35 @@ pub(crate) fn number(path: &Path) -> Option<u64> {
         .flatten()
 }
 fn section(path: &Path) -> String {
-    format!("配置快照 · {}", path.file_name().unwrap().to_string_lossy())
+    format!("Configuration snapshot · {}", path.file_name().unwrap().to_string_lossy())
 }
 
 /// 原文未展开；仅登记过的状态目录编号文件采用原输入目录。
 pub(crate) fn base(path: &Path) -> Result<PathBuf> {
-    let parent = path.parent().context("configuration: 配置缺少父目录")?;
+    let parent = path.parent().context("configuration: configuration file has no parent directory")?;
     if parent.file_name().is_none_or(|n| n != "epw-state") || number(path).is_none() {
         return Ok(parent.into());
     }
     ensure!(
         !fs::symlink_metadata(path)?.file_type().is_symlink(),
-        "input_conflict: 编号配置不能是链接"
+        "input_conflict: numbered configuration cannot be a symlink"
     );
     let root = parent
         .parent()
-        .context("configuration: 状态目录缺少工作区")?;
+        .context("configuration: state directory has no workspace")?;
     let doc = log::read(root, Step::Scf)?;
     let label = section(path);
     let origin = PathBuf::from(
-        doc.get(&label, "原始目录")
-            .context("data_invalid: 编号配置缺原始目录记录")?,
+        doc.get(&label, "Original directory")
+            .context("data_invalid: numbered configuration has no original-directory record")?,
     );
     ensure!(
         origin.is_absolute(),
-        "data_invalid: 配置原始目录必须为绝对路径"
+        "data_invalid: original configuration directory must be absolute"
     );
     ensure!(
-        doc.get(&label, "原文 SHA-256") == Some(store::hash_file(path)?.as_str()),
-        "input_conflict: 编号配置内容与来源记录不符 {}",
+        doc.get(&label, "Original SHA-256") == Some(store::hash_file(path)?.as_str()),
+        "input_conflict: numbered configuration differs from source record {}",
         path.display()
     );
     Ok(origin)
@@ -54,7 +54,7 @@ fn versions(dir: &Path) -> Result<Vec<(u64, PathBuf)>> {
         if let Some(n) = number(&entry.path()) {
             ensure!(
                 entry.file_type()?.is_file(),
-                "input_conflict: 编号配置必须是独立文件 {}",
+                "input_conflict: numbered configuration must be an independent file {}",
                 entry.path().display()
             );
             result.push((n, entry.path()));
@@ -63,7 +63,7 @@ fn versions(dir: &Path) -> Result<Vec<(u64, PathBuf)>> {
     result.sort_by_key(|(n, _)| *n);
     ensure!(
         result.windows(2).all(|w| w[0].0 != w[1].0),
-        "input_conflict: 配置版本编号重复"
+        "input_conflict: duplicate configuration version number"
     );
     Ok(result)
 }
@@ -90,8 +90,8 @@ pub(crate) fn only_versions(root: &Path) -> Result<bool> {
     }
     let doc = log::read(root, Step::Scf)?;
     if doc.sections.iter().any(|(name, fields)| {
-        !name.starts_with("配置快照 · ")
-            && !(name == "工作区" && fields.keys().all(|k| k == "更新时间"))
+        !name.starts_with("Configuration snapshot · ")
+            && !(name == "Workspace" && fields.keys().all(|k| k == "Updated at"))
     }) {
         return Ok(false);
     }
@@ -99,7 +99,7 @@ pub(crate) fn only_versions(root: &Path) -> Result<bool> {
     for (_, path) in &versions {
         ensure!(
             work_dir(&fs::read(path)?, &base(path)?)? == root,
-            "input_conflict: 预存配置的工作区归属不符"
+            "input_conflict: pre-saved configuration belongs to another workspace"
         );
     }
     Ok(!versions.is_empty())
@@ -110,15 +110,15 @@ fn work_dir(raw: &[u8], origin: &Path) -> Result<PathBuf> {
         .get("work_dir")
         .map(|v| {
             v.as_str()
-                .context("configuration: work_dir 必须是路径字符串")
+                .context("configuration: work_dir must be a path string")
         })
         .transpose()?;
     paths::destination(&paths::absolute(origin, Path::new(work.unwrap_or(".")))?)
 }
 fn record(root: &Path, output: &Path, origin: &Path, raw: &[u8]) -> Result<()> {
     log::update(root, Step::Scf, |doc| {
-        doc.set(&section(output), "原始目录", origin.display());
-        doc.set(&section(output), "原文 SHA-256", store::hash_bytes(raw));
+        doc.set(&section(output), "Original directory", origin.display());
+        doc.set(&section(output), "Original SHA-256", store::hash_bytes(raw));
         Ok(())
     })
 }
@@ -130,12 +130,12 @@ fn publish(root: &Path, output: &Path, origin: &Path, raw: &[u8]) -> Result<()> 
 fn same_existing(output: &Path, origin: &Path, raw: &[u8]) -> Result<()> {
     ensure!(
         fs::read(output)? == raw,
-        "input_conflict: 配置迁移目标内容冲突 {}",
+        "input_conflict: configuration migration target content conflict {}",
         output.display()
     );
     ensure!(
         base(output)? == origin,
-        "input_conflict: 配置来源目录冲突 {}",
+        "input_conflict: configuration source-directory conflict {}",
         output.display()
     );
     Ok(())
@@ -146,29 +146,22 @@ fn migration_idle(root: &Path) -> Result<()> {
         let doc = log::read(root, step)?;
         let jobs = log::jobs(root, step)?;
         for (name, fields) in &doc.sections {
-            if fields.get("状态").is_some_and(|s| {
+            if fields.get("Status").is_some_and(|s| {
                 matches!(
                     s.as_str(),
-                    "提交中"
-                        | "提交未知"
-                        | "已提交"
-                        | "运行中"
-                        | "submitted"
-                        | "running"
-                        | "submitting"
-                        | "submission_unknown"
+                    "submitting" | "submission unknown" | "submitted" | "running" | "submission_unknown"
                 )
             }) {
                 ensure!(
                     jobs.contains_key(name),
-                    "scheduler_unknown: 旧配置仍被 {name} 使用且缺少作业号，保留原位置"
+                    "scheduler_unknown: old configuration is still used by {name} without a job ID; preserve its original location"
                 );
             }
         }
         for (_, job) in jobs {
             ensure!(
                 super::slurm::accounting(job)?.terminal,
-                "scheduler_unknown: 旧配置所属作业 {job} 仍活动，完成后再迁入 epw-state"
+                "scheduler_unknown: job {job} still uses the old configuration; migrate to epw-state after completion"
             );
         }
     }
@@ -186,19 +179,19 @@ fn recover_only_current(
     let mut found = false;
     for step in Step::ALL.into_iter().filter(|s| *s != Step::Scf) {
         let doc = log::read(root, step)?;
-        if doc.get("工作区", "当前输入版本") == Some(log::relative(root, version).as_str())
+        if doc.get("Workspace", "Current input version") == Some(log::relative(root, version).as_str())
         {
             let source = doc
-                .get("工作区", "当前输入")
-                .context("data_invalid: 现存日志缺少配置来源，不能恢复配置记录")?;
+                .get("Workspace", "Current input")
+                .context("data_invalid: existing logs lack configuration sources; cannot recover configuration records")?;
             ensure!(
                 log::resolve(root, source) == input,
-                "input_conflict: 现存日志的配置来源不同，不能恢复配置记录"
+                "input_conflict: existing logs bind different configuration sources; cannot recover records"
             );
             found = true;
         }
     }
-    ensure!(found, "data_invalid: 配置来源记录缺失且没有其他日志证据");
+    ensure!(found, "data_invalid: configuration source record missing and no corroborating logs exist");
     migration_idle(root)?;
     record(root, version, origin, raw)
 }
@@ -214,7 +207,7 @@ fn migrate(root: &Path, origin: &Path, input: &Path) -> Result<()> {
         if work_dir(&raw, origin)? == root {
             ensure!(
                 path != input,
-                "input_conflict: 迁移旧编号配置时请通过原始 --config 输入文件启动"
+                "input_conflict: start with the original --config input file to migrate old numbered configurations"
             );
             let output = state.join(path.file_name().unwrap());
             if output.exists() {
@@ -265,7 +258,7 @@ fn migrate(root: &Path, origin: &Path, input: &Path) -> Result<()> {
     for (source, _, raw) in &old {
         ensure!(
             fs::read(source)? == *raw,
-            "input_conflict: 迁移期间旧配置发生变化，保留原文件"
+            "input_conflict: old configuration changed during migration; original file preserved"
         );
     }
     for (source, _, _) in old {
@@ -279,12 +272,12 @@ pub(crate) fn backup(input: &Path) -> Result<PathBuf> {
     let input = paths::absolute(&std::env::current_dir()?, input)?;
     let origin = base(&input)?;
     let raw =
-        fs::read(&input).with_context(|| format!("configuration: 无法读取 {}", input.display()))?;
+        fs::read(&input).with_context(|| format!("configuration: cannot read {}", input.display()))?;
     let root = work_dir(&raw, &origin)?;
     let state = root.join("epw-state");
     ensure!(
         !fs::symlink_metadata(&state).is_ok_and(|m| m.file_type().is_symlink()),
-        "input_conflict: 状态目录不能是链接 {}",
+        "input_conflict: state directory cannot be a symlink {}",
         state.display()
     );
     let _guard = log::DirectoryGuard::acquire(&state)?;
@@ -302,7 +295,7 @@ pub(crate) fn backup(input: &Path) -> Result<PathBuf> {
     }
     let next = versions
         .last()
-        .map(|(n, _)| n.checked_add(1).context("data_invalid: 配置版本编号溢出"))
+        .map(|(n, _)| n.checked_add(1).context("data_invalid: configuration version number overflow"))
         .transpose()?
         .unwrap_or(0);
     let output = state.join(format!("{next:04}-config.toml"));
@@ -366,9 +359,9 @@ mod tests {
         fs::write(&old, "x=1\n").unwrap();
         for step in Step::ALL {
             log::update(&root, step, |d| {
-                d.set("阶段", "计算配置", "0000-config.toml");
-                d.set("子任务", "使用配置", old.display());
-                d.set("阶段", "批次", "same-science");
+                d.set("Stage", "Calculation configuration", "0000-config.toml");
+                d.set("Task", "Configuration used", old.display());
+                d.set("Stage", "Batch", "same-science");
                 Ok(())
             })
             .unwrap();
@@ -385,14 +378,14 @@ mod tests {
         for step in Step::ALL {
             let d = log::read(&root, step).unwrap();
             assert_eq!(
-                d.get("阶段", "计算配置"),
+                d.get("Stage", "Calculation configuration"),
                 Some("epw-state/0000-config.toml")
             );
             assert_eq!(
-                d.get("子任务", "使用配置"),
+                d.get("Task", "Configuration used"),
                 Some("epw-state/0000-config.toml")
             );
-            assert_eq!(d.get("阶段", "批次"), Some("same-science"));
+            assert_eq!(d.get("Stage", "Batch"), Some("same-science"));
         }
         assert_eq!(
             backup(&input).unwrap(),
@@ -408,7 +401,7 @@ mod tests {
         fs::write(&input, "x=1\n").unwrap();
         fs::write(&old, "x=1\n").unwrap();
         log::update(&root, Step::Scf, |d| {
-            d.set("任务 · scf", "状态", "提交未知");
+            d.set("Task · scf", "Status", "submission unknown");
             Ok(())
         })
         .unwrap();
@@ -416,7 +409,7 @@ mod tests {
         assert!(old.is_file());
         assert!(!root.join("epw-state/0000-config.toml").exists());
         log::update(&root, Step::Scf, |d| {
-            d.set("任务 · scf", "状态", "失败");
+            d.set("Task · scf", "Status", "failed");
             Ok(())
         })
         .unwrap();
@@ -427,7 +420,7 @@ mod tests {
             b"x=9\n",
         )
         .unwrap();
-        assert!(format!("{:#}", backup(&input).unwrap_err()).contains("内容冲突"));
+        assert!(format!("{:#}", backup(&input).unwrap_err()).contains("content conflict"));
         assert_eq!(fs::read(old).unwrap(), b"x=1\n");
         fs::remove_dir_all(root).unwrap();
     }

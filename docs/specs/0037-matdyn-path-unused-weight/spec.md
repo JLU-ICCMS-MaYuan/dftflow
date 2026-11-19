@@ -1,6 +1,8 @@
 # 需求规格
 
-原文与证据见 [Issue](issue-draft.md)。用户授权真实运行和 debug，不虚构逐页审阅。
+> **协作入口（2026-11-17）**：[GitHub Issue #37](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/37)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+原文与证据见 [GitHub Issue #37](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/37)。用户授权真实运行和 debug，不虚构逐页审阅。
 
 - FR-001：独立提供显式路径解析：按原生固定宽度保留前三坐标，第四字段只作未使用占位；严格校验所有坐标、频率、维度、点序与完整性。普通 parse_matdyn 的非负有限权重检查保持；EPW parse_bands 保持。自动比较及比较导出使用路径解析，不改 QE 和原始文件。
 - FR-002：不删除或修改历史原始数据、请求或成功记录；原生失败和科学质量失败分别处理。

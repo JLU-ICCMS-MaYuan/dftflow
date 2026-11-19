@@ -7,6 +7,8 @@ pub mod manifest;
 pub mod native_ph;
 pub mod nscf;
 pub mod phonon;
+pub mod phonon_state;
+pub mod phonon_parallel;
 pub mod qe_acceptance;
 pub mod qe_config;
 mod qeflow;

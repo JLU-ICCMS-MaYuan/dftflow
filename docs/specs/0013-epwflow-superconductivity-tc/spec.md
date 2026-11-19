@@ -1,5 +1,9 @@
 # Feature 规格：epwflow 的两种超导求解与受限 Tc 搜索
 
+> **协作入口（2026-11-17）**：[GitHub Issue #13](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/13)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+> 2026-11-17 最新约定：预算账本功能已按用户要求彻底撤销。本文件涉及账本、campaign 身份、预算预留／结算及全局两个作业限制的旧条款均已失效；当前计算只依赖工作流记录、Slurm 作业身份及科学核验。历史消耗与验收记录不改写。详见 [0058 最新需求](../0058-epw-remove-resource-limits/spec.md)。
+
 > **最新用户范围（2026-10-21）**：当前要求改为使用指定目录 PBE 数据，在 20、30、40 K 分别执行 iso 和 aniso 共六次原生 epw.x；以退出码和完整结束日志验收执行。取消本次 Tc 区间搜索、临界附近独立参考、双初值一致性、最合理 Tc 及先做有界诊断的要求。温度点的数值收敛状态据实报告，不作为本次执行完成的额外门槛，也不据固定温度点发布 Tc。保留历史输入输出、原共享资源额度和来源记录。 详见 [固定温度点运行验收](../0015-epwflow-mgb2-real-validation/temperature-points-validation.md)。本段替代下文历史完整 Tc 验收计划。
 
 ## 本次验收范围调整
@@ -381,7 +385,7 @@ F5 负责最终绘图、三种 PH × 两种求解的整体对照与安装交付�
 
 ## 正式落档与确认记录
 
-对应本地 [Issue 草稿](issue-draft.md)；父级 [Epic 0007](../0007-epwflow-superconductivity/issue-draft.md)。以上完整正文来自对话展示版，状态性措辞在落档时更新，FR/SC 不变。
+对应本地 [GitHub Issue #13](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/13)；父级 [GitHub Issue #7](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/7)。以上完整正文来自对话展示版，状态性措辞在落档时更新，FR/SC 不变。
 
 确认依据见本地 Issue 的“详细 Spec 审查进度”，不得把文档确认当作科学验收。
 

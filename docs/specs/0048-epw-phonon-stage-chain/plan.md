@@ -1,6 +1,6 @@
 # 实施计划：声子阶段一次提交完整交付
 
-**Issue**：[0048 本地草案](issue-draft.md)；线上登记由用户管理。
+**Issue**：[GitHub Issue #48](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/48)；线上登记由用户管理。
 **日期**：2026-10-22
 **Spec**：[spec.md](spec.md)
 

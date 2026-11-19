@@ -83,3 +83,5 @@ flowchart LR
 ## 原始电子数据的初始化边界
 
 声子初始化仅保留 SCF 保存 XML 的前置检查，不预先核对电荷密度和波函数的存在性、非空或完整性。复制和原生 PH 读取仍照常进行，真实 I/O 错误照常报告；输入、日志、dyn0 和响应数据验证保持。共享规则与 EPW 同步，见 [0067](../../specs/0067-unchecked-density-wavefunctions/spec.md)。
+
+声子图支持根级 `[plot].formats`，默认 SVG；三图格式、错误处理和续算边界见 [后处理说明](qe_process_phonon.md#图片输出格式)。

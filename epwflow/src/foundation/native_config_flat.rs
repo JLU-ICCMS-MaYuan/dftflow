@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 
 #[path = "native_config_groups.rs"]
 mod groups;
+#[path = "native_config_defaults.rs"]
+mod defaults;
 
 struct Call {
     name: String,
@@ -40,7 +42,7 @@ impl Call {
             .collect::<Vec<_>>();
         ensure!(
             section.len() == 1,
-            "configuration: stages.{}.{key}: 未知、歧义或当前流程不支持的原生参数",
+            "configuration: stages.{}.{key}: unknown, ambiguous or unsupported native parameter",
             self.name
         );
         let mut target = self.refs();
@@ -122,18 +124,6 @@ fn calls(ph: &str, spectra: &[String]) -> Vec<Call> {
         ),
         Call::new(COARSE, &[COARSE, "epw"], &["INPUTEPW"], &epw_derived),
         Call::new(
-            "6.qe-q2r",
-            &[COARSE, "comparison", "q2r"],
-            &["INPUT"],
-            &["fildyn", "flfrc"],
-        ),
-        Call::new(
-            "6.qe-matdyn",
-            &[COARSE, "comparison", "matdyn"],
-            &["INPUT"],
-            &["flfrc", "flfrq"],
-        ),
-        Call::new(
             "6.epw-comparison",
             &[COARSE, "comparison", "epw"],
             &["INPUTEPW"],
@@ -191,17 +181,17 @@ fn workflow_names(ph: &str) -> Vec<(&str, &str)> {
 
 fn rule(call: &Call, key: &str) -> &'static str {
     if call.name == "5.postw90-dos" {
-        return "实际 Wannier 外窗和绑定 NSCF 费米能，绝对 eV";
+        return "Actual Wannier outer window and bound NSCF Fermi energy, absolute eV";
     }
     match key {
-        "ibrav" | "nat" | "ntyp" => "已绑定 POSCAR 生成 CELL_PARAMETERS 和 ATOMIC_POSITIONS",
-        "fermi_energy" => "已绑定第二步 NSCF XML 的费米能，eV",
+        "ibrav" | "nat" | "ntyp" => "CELL_PARAMETERS and ATOMIC_POSITIONS generated from the bound POSCAR",
+        "fermi_energy" => "Bound stage-2 NSCF XML Fermi energy, eV",
         "proj" | "bands_skipped" | "wdata" | "dis_win_min" | "dis_win_max" | "dis_froz_min"
-        | "dis_froz_max" => "本阶段 Wannier90 原生参数或绑定 NSCF 能量的自动选窗；受控传给内嵌库",
-        "gap_edge" | "tc_linear" => "当前 Tc 搜索的已固定温度及初值请求",
-        "start_q" | "last_q" => "已核验 q 点计划中的当前序号",
-        "outdir" | "pseudo_dir" => "当前任务工作目录和已核验绑定数据",
-        _ => "当前任务已核验的数据副本和确定的输出文件名",
+        | "dis_froz_max" => "Native Wannier90 parameters or automatic windows bound to NSCF energies; passed to the embedded library",
+        "gap_edge" | "tc_linear" => "Current fixed-temperature and initial-gap requests for Tc search",
+        "start_q" | "last_q" => "Current index in the validated q-point plan",
+        "outdir" | "pseudo_dir" => "Current task working directory and validated bound data",
+        _ => "Current task validated data copy and deterministic output filename",
     }
 }
 
@@ -217,9 +207,9 @@ fn phonon_name(d: &Document, flat: bool) -> Result<String> {
         .collect::<Vec<_>>();
     ensure!(
         names.len() == 1,
-        "configuration: stages: 必须且只能设置一种 4.qe-phonon-nosplit/index/coords 阶段{}",
+        "configuration: stages: exactly one 4.qe-phonon-nosplit/index/coords stage is required{}",
         if flat {
-            "，参数直接写在该段内"
+            ", parameters are specified directly in this section"
         } else {
             ""
         }
@@ -228,6 +218,17 @@ fn phonon_name(d: &Document, flat: bool) -> Result<String> {
 }
 
 pub(super) fn expand(mut d: Document) -> Result<Document> {
+    // 历史冻结配置仅在读取边界丢弃已删除的比较专用选项，不能恢复执行。
+    for name in ["6.qe-q2r", "6.qe-matdyn"] { d.stages.remove(name); }
+    if let Some(stage) = d.stages.get_mut(COARSE).and_then(Value::as_object_mut) {
+        stage.remove("q2r"); stage.remove("matdyn");
+        if let Some(v) = stage.get_mut("comparison").and_then(Value::as_object_mut) {
+            v.remove("q2r"); v.remove("matdyn");
+        }
+        if let Some(v) = stage.get_mut("workflow").and_then(Value::as_object_mut) { v.remove("onsite_asr"); }
+    }
+    if let Some(v) = d.workflow.get_mut(COARSE).and_then(Value::as_object_mut) { v.remove("onsite_asr"); }
+
     d.eight_stages = d.stages.contains_key(ELECTRONIC) || d.stages.contains_key(SUPER);
     let grouped = d.eight_stages;
     let ph = phonon_name(&d, false).unwrap_or_default();
@@ -240,6 +241,10 @@ pub(super) fn expand(mut d: Document) -> Result<Document> {
 }
 
 fn expand_calls(mut d: Document) -> Result<Document> {
+    if let Some(workflow)=d.workflow.get_mut(SUPER).and_then(Value::as_object_mut) {
+        for name in ["initial_gaps","iso","aniso"] {workflow.remove(name);}
+    }
+
     // 未指定时限制为 500 轮；EPW 与内嵌 Wannier90 使用同一次拟合的迭代数。
     if let Some(wannier) = d.stages.get_mut("5.wannier90").and_then(Value::as_object_mut) {
         wannier.entry("num_iter").or_insert(json!(500));
@@ -260,37 +265,38 @@ fn expand_calls(mut d: Document) -> Result<Document> {
                 && name
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
-            "configuration: stages.{FINE}-{name}: 非法谱任务名"
+            "configuration: stages.{FINE}-{name}: invalid spectrum task name"
         );
     }
     let calls = calls(&ph, &spectra);
+    defaults::expand(&mut d, &calls)?;
     let mut expanded = json!({});
     for (public, internal) in workflow_names(&ph) {
         let settings = d.workflow.remove(public).unwrap_or_else(|| json!({}));
         ensure!(
             settings.is_object(),
-            "configuration: workflow.{public}: 必须是表"
+            "configuration: workflow.{public}: must be a table"
         );
         ensure!(
             settings.get("derived").is_none(),
-            "configuration: workflow.{public}.derived: 自动绑定由程序内部登记，无需配置"
+            "configuration: workflow.{public}.derived: automatic bindings are registered internally; no configuration needed"
         );
         put(&mut expanded, &[internal, "workflow"], settings);
         put(&mut expanded, &[internal, "workflow", "derived"], json!({}));
     }
     ensure!(
         d.workflow.is_empty(),
-        "configuration: workflow: 未知工作流配置段 {:?}",
+        "configuration: workflow: unknown workflow section {:?}",
         d.workflow.keys().collect::<Vec<_>>()
     );
     let tc = expanded[SUPER]["workflow"]["task"] == "tc";
     for (name, settings) in &d.stages {
         let call = calls.iter().find(|c| &c.name == name).with_context(|| {
-            format!("configuration: stages.{name}: 未知科学调用；请使用同层独立配置段")
+            format!("configuration: stages.{name}: unknown scientific call; use an independent section at the same level")
         })?;
         let settings = settings
             .as_object()
-            .with_context(|| format!("configuration: stages.{name}: 必须是表"))?;
+            .with_context(|| format!("configuration: stages.{name}: must be a table"))?;
         for section in &call.sections {
             if *section != "cards" {
                 let mut target = call.refs();
@@ -301,7 +307,7 @@ fn expand_calls(mut d: Document) -> Result<Document> {
             }
         }
         for (key, value) in settings {
-            ensure!(!value.is_object(), "configuration: stages.{name}.{key}: 不再支持多层配置，请把原生参数直接写在同层独立配置段中");
+            ensure!(!value.is_object(), "configuration: stages.{name}.{key}: nested configuration is no longer supported; put native parameters directly in independent sections at the same level");
             let mut target = call.target(key)?;
             target.push(key);
             put(&mut expanded, &target, value.clone());
@@ -311,6 +317,8 @@ fn expand_calls(mut d: Document) -> Result<Document> {
             keys.extend(["gap_edge", "tc_linear"]);
         }
         for key in keys {
+            // 用户显式给出的费米能不再同时登记为上游自动绑定。
+            if ["fermi_energy","fila2f"].contains(&key) && settings.contains_key(key) {continue;}
             let target = call.target(key)?;
             let location = target[1..]
                 .iter()
@@ -321,7 +329,7 @@ fn expand_calls(mut d: Document) -> Result<Document> {
             put(
                 &mut expanded,
                 &[&call.path[0], "workflow", "derived", &location],
-                json!(rule(call, key)),
+                json!(super::super::legacy_language::rule_identity(rule(call, key))),
             );
         }
     }
@@ -361,7 +369,7 @@ pub(super) fn flatten(mut d: Document) -> Result<Document> {
                     }
                     ensure!(
                         settings.insert(key.clone(), value.clone()).is_none(),
-                        "configuration: stages.{}.{key}: 原生参数重复",
+                        "configuration: stages.{}.{key}: duplicate native parameter",
                         call.name
                     );
                 }
@@ -380,6 +388,7 @@ pub(super) fn flatten(mut d: Document) -> Result<Document> {
         }
     }
     d.stages = flat;
+    defaults::compact(&mut d)?;
     if d.eight_stages { groups::group(d) } else { Ok(d) }
 }
 
@@ -429,12 +438,18 @@ pub(super) fn location(path: &str) -> String {
 
 pub(super) fn message(text: &str) -> String {
     // 诊断中的位置被标点或值隔开；参数本身不包含这些字符。
-    let re = regex::Regex::new(r"stages\.[A-Za-z0-9_.-]+").expect("固定位置表达式");
+    let re = regex::Regex::new(r"stages\.[A-Za-z0-9_.-]+").expect("Fixed position expression");
     re.replace_all(text, |c: &regex::Captures<'_>| location(&c[0]))
-        .replace("workflow.derived", "内部推导规则")
+        .replace("workflow.derived", "Internal derivation rule")
 }
 
-pub(super) fn format_message(text: &str, grouped: bool, ph: &str) -> String {
+pub(super) fn document_message(text: &str, document: &Document) -> String {
     let text = message(text);
-    if grouped { groups::message(&text, ph) } else { text }
+    let re = regex::Regex::new(r"stages\.[A-Za-z0-9_.-]+").expect("fixed parameter location");
+    let text = re.replace_all(&text, |c: &regex::Captures<'_>| {
+        document.input_locations.get(&c[0]).cloned().unwrap_or_else(|| c[0].into())
+    });
+    if document.eight_stages {
+        groups::message(&text, &phonon_name(document, false).unwrap_or_default())
+    } else { text.into_owned() }
 }

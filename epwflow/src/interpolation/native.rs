@@ -9,11 +9,11 @@ pub fn inspect(work: &Path) -> Result<serde_json::Value> {
     let prefix_re = regex::Regex::new(r"(?im)^\s*prefix\s*=\s*'([A-Za-z0-9_-]+)'\s*,?\s*$")?;
     let prefix = prefix_re
         .captures(&input)
-        .context("data_invalid: 缺少受支持的 EPW prefix")?;
+        .context("data_invalid: Lack of support EPW prefix")?;
     let samples_re = regex::Regex::new(r"(?im)^\s*nqstep\s*=\s*([0-9]+)\s*,?\s*$")?;
     let samples: usize = samples_re
         .captures(&input)
-        .context("data_invalid: 原生谱检查需要显式 nqstep")?[1]
+        .context("data_invalid: Native spectroscopy needs to be visible nqstep")?[1]
         .parse()?;
     let exit_code: i32 = fs::read_to_string(work.join("epw.exitcode"))?
         .trim()
@@ -35,7 +35,7 @@ pub fn inspect(work: &Path) -> Result<serde_json::Value> {
     spectra.sort();
     ensure!(
         spectra.len() == 1,
-        "data_invalid: 应有且只有一份当前原生谱，发现 {} 份",
+        "data_invalid: There's only one of the current originals {} Grandpa",
         spectra.len()
     );
     let spectrum = NativeSpectrum::read(&spectra[0], samples)?;
@@ -46,18 +46,18 @@ pub fn inspect(work: &Path) -> Result<serde_json::Value> {
                 r"(?i)convergence\s+(?:was\s+)?not\s+(?:reached|achieved)|not\s+converged"
             )?
             .is_match(&wout),
-        "data_invalid: Wannier 局域化缺少原生收敛证据"
+        "data_invalid: Wannier Localization lacks evidence of pre-generic convergence"
     );
     let disentangled = regex::Regex::new(r"Using band disentanglement\s*:\s*T")?.is_match(&wout);
     ensure!(
         !disentangled || wout.contains("<<< Disentanglement convergence criteria satisfied >>>"),
-        "data_invalid: Wannier 解纠缠缺少原生收敛证据"
+        "data_invalid: Wannier The lack of evidence of abdominal indigence"
     );
     Ok(serde_json::json!({
         "schema_version": 1, "workflow_status": "native_epc_only", "workflow_complete": false,
         "native_epc_smoke_passed": true,
         "eliashberg": "unverified", "automatic_chain": "unverified",
-        "samples": samples, "spectrum": spectra[0].file_name().context("data_invalid: 谱文件名为空")?.to_string_lossy(),
+        "samples": samples, "spectrum": spectra[0].file_name().context("data_invalid: Spectrofile name is empty")?.to_string_lossy(),
         "spectrum_sha256": super::super::foundation::store::hash_file(&spectra[0])?,
         "lambda_integral": spectrum.lambda_integral, "lambda_sum": spectrum.lambda_sum,
     }))
@@ -75,8 +75,8 @@ fn number(s: &str) -> Result<f64> {
     let value: f64 = s
         .replace(['D', 'd'], "E")
         .parse()
-        .with_context(|| format!("data_invalid: 非法原生数值 {s}"))?;
-    ensure!(value.is_finite(), "data_invalid: 原生输出含非有限数");
+        .with_context(|| format!("data_invalid: Illegal native value {s}"))?;
+    ensure!(value.is_finite(), "data_invalid: Native output is not finite");
     Ok(value)
 }
 
@@ -85,24 +85,24 @@ pub fn runtime_version(log: &str) -> Result<&str> {
     let header = regex::Regex::new(r"(?m)^\s*Program EPW v\.([0-9]+(?:\.[0-9]+)*)\s")?;
     let versions: Vec<_> = header.captures_iter(log)
         .map(|c| c.get(1).unwrap().as_str()).collect();
-    ensure!(versions.len() == 1, "environment_incompatible: 缺少唯一 EPW 运行版本记录");
+    ensure!(versions.len() == 1, "environment_incompatible: Missing Unique EPW Run Version Record");
     ensure!(matches!(versions[0], "5.9" | "6.0" | "6.1"),
-        "environment_incompatible: 未适配的 EPW 运行版本 {}", versions[0]);
+        "environment_incompatible: Unsuited EPW Run Version {}", versions[0]);
     Ok(versions[0])
 }
 
 /// EPW 的结束计时和进程退出码均必需；它不输出 PW/PH 的 JOB DONE。
 pub fn checked_log(log: &str, exit_code: i32) -> Result<()> {
-    ensure!(exit_code == 0, "execution_failed: EPW 退出码 {exit_code}");
+    ensure!(exit_code == 0, "execution_failed: EPW Exit Code {exit_code}");
     runtime_version(log)?;
     ensure!(
         !regex::Regex::new(r"(?i)error in routine|segmentation fault|MPI_Abort")?.is_match(log),
-        "execution_failed: EPW 报告原生错误"
+        "execution_failed: EPW Report native error"
     );
     ensure!(
         log.contains("Total program execution")
             && regex::Regex::new(r"EPW\s*:\s*[^\n]*WALL")?.is_match(log),
-        "data_invalid: EPW 结束计时不完整"
+        "data_invalid: EPW End timer incomplete"
     );
     Ok(())
 }
@@ -115,7 +115,7 @@ impl NativeSpectrum {
     pub fn parse(text: &str, samples: usize) -> Result<Self> {
         let (table, footer) = text
             .split_once("Integrated el-ph coupling")
-            .context("data_invalid: 原生谱缺少积分耦合结尾")?;
+            .context("data_invalid: The native spectro lacked the end of the score coupling")?;
         let header = regex::Regex::new(
             r"^\s*w\[meV\] a2f and integrated 2\*a2f/w for\s+(\d+) smearing values\s*$",
         )?;
@@ -133,40 +133,40 @@ impl NativeSpectrum {
             .collect::<Result<_>>()?;
         ensure!(
             samples >= 2 && rows.len() == samples,
-            "data_invalid: 原生谱采样数不符"
+            "data_invalid: It doesn't match the native sample"
         );
         let table_columns = rows[0]
             .len()
             .checked_sub(1)
             .filter(|n| *n > 0)
-            .context("data_invalid: 原生谱没有 α²F 列")?;
+            .context("data_invalid: There's no native α² F Columns")?;
         let columns = cumulative_columns.unwrap_or(table_columns);
         ensure!(
             columns > 0
                 && table_columns == columns * if cumulative_columns.is_some() { 2 } else { 1 },
-            "data_invalid: 谱表头与列数不一致"
+            "data_invalid: The spectrohead does not match the number of columns"
         );
         ensure!(
             rows.iter().all(|r| r.len() == table_columns + 1
                 && r[0] > 0.0
                 && r[1..].iter().all(|v| *v >= 0.0)),
-            "data_invalid: 原生谱列数、能量或权重无效"
+            "data_invalid: Invalidity of ingenuity column, energy or weight"
         );
         ensure!(
             rows.windows(2).all(|r| r[0][0] < r[1][0]),
-            "data_invalid: 原生谱能量轴未严格递增"
+            "data_invalid: The native energy axis is not strictly increasing"
         );
         let step = rows[0][0];
         ensure!(
             rows.iter()
                 .enumerate()
                 .all(|(i, r)| (r[0] - (i + 1) as f64 * step).abs() <= 1e-7 * samples as f64),
-            "data_invalid: 原生谱不是从首个正频率开始的均匀网格"
+            "data_invalid: The native spectra is not a flat grid starting with the first positive frequency"
         );
         let coupling = footer
             .lines()
             .find(|l| l.trim_start().starts_with('#'))
-            .context("data_invalid: 缺少原生积分 λ 列")?;
+            .context("data_invalid: Lack of native score")?;
         let lambda_integral: Vec<f64> = coupling
             .split_whitespace()
             .skip(1)
@@ -174,16 +174,16 @@ impl NativeSpectrum {
             .collect::<Result<_>>()?;
         ensure!(
             lambda_integral.len() == columns,
-            "data_invalid: 原生积分 λ 列数不符"
+            "data_invalid: Numerical points, ⁇ , column numbers don't match"
         );
         let summed = regex::Regex::new(r"Summed el-ph coupling\s+(\S+)")?;
         let value = summed
             .captures(footer)
-            .context("data_invalid: 原生谱缺少直接求和 λ")?;
+            .context("data_invalid: There's a lack of direct reconciliation in the native spectra λ")?;
         let lambda_sum = number(&value[1])?;
         ensure!(
             lambda_sum >= 0.0 && lambda_integral.iter().all(|v| *v >= 0.0),
-            "data_invalid: 原生 λ 为负"
+            "data_invalid: Periphery negative"
         );
         let a2f: Vec<Vec<f64>> = (1..=columns)
             .map(|i| rows.iter().map(|r| r[i]).collect())
@@ -193,7 +193,7 @@ impl NativeSpectrum {
             let reconstructed: f64 = rows.iter().map(|r| 2.0 * step * r[i + 1] / r[0]).sum();
             ensure!(
                 (reconstructed - integral).abs() <= 1e-6 + 1e-6 * integral.abs(),
-                "data_invalid: 第 {} 列原生谱积分不一致",
+                "data_invalid: I don't think so {} It's not consistent with the native spectra",
                 i + 1
             );
             if cumulative_columns.is_some() {
@@ -202,7 +202,7 @@ impl NativeSpectrum {
                     cumulative += 2.0 * step * row[i + 1] / row[0];
                     ensure!(
                         (cumulative - row[columns + i + 1]).abs() <= 1e-6 + 1e-6 * cumulative.abs(),
-                        "data_invalid: 第 {} 列原生谱累计 λ 不一致",
+                        "data_invalid: I don't think so {} It's not consistent",
                         i + 1
                     );
                 }
@@ -238,10 +238,10 @@ fn plot_header(text: &str) -> Result<(usize, usize, &str)> {
     let header = regex::Regex::new(r"(?s)^\s*&plot\s+nbnd=\s*(\d+)\s*,\s*nks=\s*(\d+)\s*/")?;
     let cap = header
         .captures(text)
-        .context("data_invalid: 缺少原生能带表头")?;
+        .context("data_invalid: Lack of native capacity to carry a watch")?;
     let bands: usize = cap[1].parse()?;
     let points: usize = cap[2].parse()?;
-    ensure!(bands > 0 && points > 0, "data_invalid: 原生能带为空");
+    ensure!(bands > 0 && points > 0, "data_invalid: It's empty");
     Ok((bands, points, &text[cap.get(0).unwrap().end()..]))
 }
 
@@ -251,26 +251,26 @@ pub fn parse_matdyn_path(text: &str) -> Result<NativeBands> {
     let mut lines = body.lines().filter(|line| !line.trim().is_empty());
     let mut out = NativeBands { points_cartesian: vec![], values: vec![] };
     for _ in 0..points {
-        let line = lines.next().context("data_invalid: matdyn 路径坐标截断")?;
+        let line = lines.next().context("data_invalid: matdyn Path Coordinate Interrupted")?;
         let coords = if line.is_ascii() && line.len() >= 50
             && line[..10].trim().is_empty() && line[50..].trim().is_empty() {
             // matdyn.f90: (10x,4f10.6)。第 4 栏可溢出为 **********，不要求空白分隔。
             [number(line[10..20].trim())?, number(line[20..30].trim())?, number(line[30..40].trim())?]
         } else {
             let row: Vec<_> = line.split_whitespace().collect();
-            ensure!(row.len() == 4, "data_invalid: matdyn 路径坐标布局错误");
+            ensure!(row.len() == 4, "data_invalid: matdyn Path Coordinate Malformed");
             [number(row[0])?, number(row[1])?, number(row[2])?]
         };
         let mut values = Vec::new();
         while values.len() < bands {
-            let line = lines.next().context("data_invalid: matdyn 路径频率截断")?;
+            let line = lines.next().context("data_invalid: matdyn Path frequency cut")?;
             values.extend(line.split_whitespace().map(number).collect::<Result<Vec<_>>>()?);
-            ensure!(values.len() <= bands, "data_invalid: matdyn 路径频率多余");
+            ensure!(values.len() <= bands, "data_invalid: matdyn Path frequency is redundant");
         }
         out.points_cartesian.push(coords);
         out.values.push(values);
     }
-    ensure!(lines.next().is_none(), "data_invalid: matdyn 路径多余记录");
+    ensure!(lines.next().is_none(), "data_invalid: matdyn Path Override Record");
     Ok(out)
 }
 
@@ -279,7 +279,7 @@ fn parse_plot(text: &str, coordinate_columns: usize) -> Result<NativeBands> {
     let tokens: Vec<&str> = body.split_whitespace().collect();
     ensure!(
         bands.checked_add(coordinate_columns).and_then(|stride| points.checked_mul(stride)) == Some(tokens.len()),
-        "data_invalid: 原生能带记录截断或多余"
+        "data_invalid: Natives can cut off or be redundant"
     );
     let mut out = NativeBands {
         points_cartesian: Vec::new(),
@@ -287,7 +287,7 @@ fn parse_plot(text: &str, coordinate_columns: usize) -> Result<NativeBands> {
     };
     for row in tokens.chunks_exact(bands + coordinate_columns) {
         if coordinate_columns == 4 {
-            ensure!(number(row[3])? >= 0.0, "data_invalid: matdyn q 权重为负");
+            ensure!(number(row[3])? >= 0.0, "data_invalid: matdyn q Weights are negative");
         }
         out.points_cartesian
             .push([number(row[0])?, number(row[1])?, number(row[2])?]);

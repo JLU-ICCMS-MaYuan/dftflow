@@ -100,7 +100,7 @@ fn parse(text: &str, name: &str) -> Result<Vec<[f64; 2]>> {
             continue;
         }
         let columns: Vec<_> = row.split_whitespace().take(2).collect();
-        let location = || format!("data_invalid: {name}:{} 需要两个有限非负数", line + 1);
+        let location = || format!("data_invalid: {name}:{} requires two finite nonnegative numbers", line + 1);
         ensure!(columns.len() == 2, "{}", location());
         let mut pair = [0.; 2];
         for i in 0..2 {
@@ -112,7 +112,7 @@ fn parse(text: &str, name: &str) -> Result<Vec<[f64; 2]>> {
         }
         samples.push(pair);
     }
-    ensure!(!samples.is_empty(), "data_invalid: {name} 没有数据行");
+    ensure!(!samples.is_empty(), "data_invalid: {name} has no data rows");
     Ok(samples)
 }
 
@@ -128,7 +128,7 @@ fn load(dir: &Path, require_images: bool) -> Result<(Data, Manifest)> {
         .collect();
     ensure!(
         manifest.schema_version == 1 && expected == actual && actual.len() == manifest.files.len(),
-        "data_invalid: 衰减图包的版本或文件集合不完整"
+        "data_invalid: Incomplete version or file collection of the decay package"
     );
     for file in &manifest.files {
         if require_images || !image(&file.relative_path) || dir.join(&file.relative_path).exists() {
@@ -142,7 +142,7 @@ fn load(dir: &Path, require_images: bool) -> Result<(Data, Manifest)> {
             && data.panels.len() == 4
             && data.sources.len() == 4
             && !data.scientific_key.is_empty(),
-        "data_invalid: 衰减图数据或绘图参数不支持"
+        "data_invalid: The decaychart data or drawing parameters are not supported"
     );
     for (i, name) in NATIVE.iter().enumerate() {
         let artifact = manifest
@@ -155,7 +155,7 @@ fn load(dir: &Path, require_images: bool) -> Result<(Data, Manifest)> {
                 && data.sources[i].sha256 == artifact.sha256
                 && data.sources[i].bytes == artifact.byte_size
                 && parse(&fs::read_to_string(dir.join(name))?, name)? == data.panels[i],
-            "input_conflict: {name} 副本、来源和绘图数据不一致"
+            "input_conflict: {name} copy, source and plot data are inconsistent"
         );
     }
     Ok((data, manifest))
@@ -254,7 +254,7 @@ fn render_all(dir: &Path, data: &Data) -> Result<()> {
         )?;
         let tree = svg2pdf::usvg::Tree::from_str(&fs::read_to_string(&svg)?, &options)?;
         let pdf = svg2pdf::to_pdf(&tree, Default::default(), Default::default())
-            .map_err(|e| anyhow::anyhow!("PDF 转换失败: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("PDF conversion failed: {e}"))?;
         fs::write(dir.join(format!("{name}.pdf")), pdf)?;
     }
     Ok(())
@@ -295,6 +295,18 @@ fn bound_sources(
 
 /// 只收集指定粗网格回执绑定的文件；也供只读原生数据出图验证使用。
 pub fn collect(completion_path: &Path, output: &Path) -> Result<()> {
+    if let Some(root)=crate::qe_data::direct::workspace(completion_path) {
+        let cfg=crate::qe_data::direct::current(&root)?;
+        let source=Step::Coarse.directory(&cfg);
+        let sources=NATIVE.iter().map(|n|Identity::reference(&source.join(n))).collect::<Vec<_>>();
+        let panels=sources.iter().zip(NATIVE).map(|(id,name)|parse(&fs::read_to_string(&id.path).with_context(||format!("data_invalid: missing {}",id.path.display()))?,name)).collect::<Result<Vec<_>>>()?;
+        let data=Data{schema_version:1,scientific_key:String::new(),completion:Identity::reference(completion_path),sources,parameters:Parameters::default(),panels};
+        fs::create_dir_all(output)?;
+        let paths=data.sources.iter().map(|id|crate::foundation::workspace_data::relative(output,&id.path)).collect::<Result<Vec<_>>>()?;
+        store::write(&output.join("decay.plot.json"),&serde_json::json!({"kind":"Decay","sources":paths}))?;
+        return render_all(output,&data).map_err(|e|anyhow::anyhow!("plot_failed: decay: {e:#}"));
+    }
+
     let completion = Identity::capture(completion_path)?;
     let receipt: Completion = if let Some(root) = crate::qe_data::direct::workspace(completion_path)
     {
@@ -304,17 +316,17 @@ pub fn collect(completion_path: &Path, output: &Path) -> Result<()> {
     };
     ensure!(
         receipt.step == Step::Coarse,
-        "input_conflict: 衰减来源必须是粗网格回执"
+        "input_conflict: decay data must come from a coarse-grid receipt"
     );
     receipt.verify()?;
     let source_dir = completion
         .target
         .parent()
-        .context("data_invalid: 粗网格回执缺父目录")?;
+        .context("data_invalid: coarse-grid receipt has no parent directory")?;
     let (sources, missing) = bound_sources(&receipt, source_dir)?;
     ensure!(
         missing.is_empty(),
-        "data_invalid: 粗网格衰减文件缺失或未绑定：{}；不自动重跑 EPW",
+        "data_invalid: coarse-grid decay file missing or unbound: {}; EPW is not rerun automatically",
         missing.join(", ")
     );
     let panels = sources
@@ -330,6 +342,17 @@ pub fn collect(completion_path: &Path, output: &Path) -> Result<()> {
         parameters: Parameters::default(),
         panels,
     };
+    if let Some(root)=crate::qe_data::direct::workspace(completion_path) {
+        let cfg=crate::qe_data::direct::current(&root)?;
+        if crate::foundation::layout::enabled(&root) {
+            let dir=stage_results::root(&cfg).join("6.epw-coarse");fs::create_dir_all(&dir)?;
+            // 只保存绘图所需的相对原始文件引用；数值仍唯一保存在第 6 步。
+            let sources=data.sources.iter().map(|id| crate::foundation::workspace_data::relative(&dir,&id.path)).collect::<Result<Vec<_>>>()?;
+            store::write(&dir.join("decay.plot.json"),&serde_json::json!({"kind":"Decay","sources":sources}))?;
+            render_all(&dir,&data).map_err(|e|anyhow::anyhow!("plot_failed: decay: {e:#}"))?;
+            return Ok(());
+        }
+    }
     fs::create_dir_all(output)?;
     let _lock = store::Lock::acquire(&output.join("decay-publication"))?;
     publication::recover(output, MANIFEST)?;
@@ -354,7 +377,7 @@ pub fn collect(completion_path: &Path, output: &Path) -> Result<()> {
         }
         ensure!(
             crate::qe_data::direct::workspace(completion_path).is_some(),
-            "input_conflict: 衰减图来源改变，保留已有包"
+            "input_conflict: The source of the decay map has changed and the package has been retained"
         );
     }
 
@@ -387,6 +410,14 @@ fn redraw_locked(dir: &Path, data: &Data, old: Vec<Artifact>) -> Result<()> {
 }
 
 pub fn redraw(dir: &Path) -> Result<()> {
+    if dir.join("decay.plot.json").is_file() {
+        let saved:serde_json::Value=store::read(&dir.join("decay.plot.json"))?;
+        let paths:Vec<PathBuf>=serde_json::from_value(saved["sources"].clone())?;
+        ensure!(paths.len()==NATIVE.len(),"data_invalid: decay source count");
+        let panels=paths.iter().zip(NATIVE).map(|(path,name)|parse(&fs::read_to_string(dir.join(path))?,name)).collect::<Result<Vec<_>>>()?;
+        let data=Data {schema_version:1,scientific_key:String::new(),completion:Identity::capture(&dir.join("decay.plot.json"))?,sources:vec![],parameters:Parameters::default(),panels};
+        return render_all(dir,&data).map_err(|e|anyhow::anyhow!("plot_failed: decay: {e:#}"));
+    }
     let _lock = store::Lock::acquire(&dir.join("decay-publication"))?;
     publication::recover(dir, MANIFEST)?;
     let (data, manifest) = load(dir, false)?;
@@ -424,10 +455,10 @@ pub fn recover_pending(cfg: &Config) -> Result<()> {
         let owner: serde_json::Value = store::read(&owner_path)?;
         let job = owner["job_id"]
             .as_u64()
-            .context("scheduler_unknown: 发布锁缺少作业号，保留原锁")?;
+            .context("scheduler_unknown: Release lock missing task number, keep original lock")?;
         ensure!(
             jobs.contains(&job),
-            "scheduler_unknown: 发布锁所属作业 {job} 不在当前任务号表，保留原锁"
+            "scheduler_unknown: Release lock-on jobs {job} Not on current task list, keep the original lock"
         );
         store::recover_finished_lock(&target, job)?;
     }
@@ -435,10 +466,21 @@ pub fn recover_pending(cfg: &Config) -> Result<()> {
 }
 
 pub fn pending(cfg: &Config) -> Result<bool> {
+    if crate::foundation::layout::enabled(&cfg.work_dir) {
+        let dir=stage_results::root(cfg).join("6.epw-coarse");
+        return Ok(!dir.join("decay.plot.json").is_file() || FIGURES.iter().any(|n|FORMATS.iter().any(|e|!dir.join(format!("{n}.{e}")).is_file())));
+    }
+
     let receipt = stages::completion(cfg, Step::Coarse)?;
     let source = Step::Coarse.directory(cfg);
     if !bound_sources(&receipt, &source)?.1.is_empty() {
         return Ok(true);
+    }
+    if crate::foundation::layout::enabled(&cfg.work_dir) {
+        let dir=stage_results::root(cfg).join("6.epw-coarse");
+        if !dir.join("decay.plot.json").is_file() {return Ok(true);}
+        let outputs=crate::foundation::readable_state::completed_files(cfg,Step::Coarse,"Published plots · decay")?;
+        return Ok(outputs.is_none() || FIGURES.iter().any(|name| FORMATS.iter().any(|ext|!dir.join(format!("{name}.{ext}")).is_file())));
     }
     let dir = source.join("decay");
     if !dir.join(MANIFEST).exists() {
@@ -459,11 +501,22 @@ pub fn pending(cfg: &Config) -> Result<bool> {
 }
 
 pub fn refresh(cfg: &Config) -> Result<()> {
+    if crate::foundation::layout::enabled(&cfg.work_dir) {
+        if !pending(cfg)? {return Ok(());}
+        let receipt=Step::Coarse.directory(cfg).join("epw_coarse.in");
+        let output=stage_results::root(cfg).join("6.epw-coarse");
+        collect(&receipt,&output)?;
+        let mut files=Vec::new();
+        for name in FIGURES { for ext in ["png","svg","pdf"] { files.push(output.join(format!("{name}.{ext}"))); } }
+        crate::foundation::readable_state::complete_files(cfg,Step::Coarse,"Published plots · decay",&files)?;
+        return Ok(());
+    }
+
     let receipt = Step::Coarse.directory(cfg).join("epw_coarse.in");
     let c = stages::completion(cfg, Step::Coarse)?;
     ensure!(
         c.scientific_key == stages::scientific_key(cfg, Step::Coarse)?,
-        "input_conflict: 粗网格配置来源改变"
+        "input_conflict: Change source of coarse grid configuration"
     );
     let dir = Step::Coarse.directory(cfg).join("decay");
     collect(&receipt, &dir)?;

@@ -1,5 +1,8 @@
 # 实施任务：QE 分阶段即时出图
 
+> 当前绘图输出以 [0055 组合图契约](../0055-electronic-plot-windows-pdos/spec.md) 为准；旧分离图、总览、±5 eV 和根目录图片要求均已替代。历史原话与验收记录保留。
+
+
 输入：[Spec](spec.md)、[Plan](plan.md)、[Research](research.md)、[数据契约](data-model.md)、[接口契约](contracts/plots.md)。
 
 ## 准备

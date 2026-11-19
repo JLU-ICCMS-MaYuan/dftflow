@@ -46,7 +46,7 @@ impl Search {
     pub fn new(min: i64, max: i64, precision: i64) -> Result<Self> {
         ensure!(
             min > 0 && max > min && precision > 0 && precision <= max - min,
-            "configuration: 无效 Tc 搜索范围/精度"
+            "configuration: invalid Tc search range/resolution"
         );
         Ok(Self {
             min_centikelvin: min,
@@ -68,7 +68,7 @@ impl Search {
     pub fn observe(&mut self, t: i64, side: Side) -> Result<()> {
         ensure!(
             t >= self.min_centikelvin && t <= self.max_centikelvin && !self.points.contains_key(&t),
-            "data_invalid: 重复或越界温度"
+            "data_invalid: duplicate or out-of-range temperature"
         );
         let was_located = self.status == "located";
         self.points.insert(t, side);
@@ -87,7 +87,7 @@ impl Search {
             .min();
         if let (Some(s), Some(n)) = (super_max, normal_min) {
             if s >= n {
-                self.stop("inconsistent", "出现高温超导侧/低温正常侧矛盾");
+                self.stop("inconsistent", "Contradictory high-temperature superconducting / low-temperature normal classifications");
                 return Ok(());
             }
             self.interval_centikelvin = Some([s, n]);
@@ -98,45 +98,5 @@ impl Search {
         Ok(())
     }
 
-    pub fn next_temperature(&mut self) -> Option<i64> {
-        if !matches!(self.status.as_str(), "pending" | "running") {
-            return None;
-        }
-        for t in [self.min_centikelvin, self.max_centikelvin] {
-            if !self.points.contains_key(&t) {
-                return Some(t);
-            }
-        }
-        if self.points[&self.min_centikelvin] != Side::Superconducting
-            || self.points[&self.max_centikelvin] != Side::Normal
-        {
-            let uncertain = self.points[&self.min_centikelvin] == Side::Uncertain
-                || self.points[&self.max_centikelvin] == Side::Uncertain;
-            self.stop(
-                if uncertain {
-                    "classification_uncertain"
-                } else {
-                    "not_bracketed"
-                },
-                "固定上下端点未形成低温超导/高温正常的有效区间",
-            );
-            return None;
-        }
-        let [lo, hi] = self.interval_centikelvin.unwrap();
-        if hi - lo <= self.precision_centikelvin {
-            self.stop("located", "有效区间达到目标宽度");
-            return None;
-        }
-        let width = hi - lo;
-        for t in [lo + width / 2, lo + width / 4, lo + 3 * width / 4] {
-            if t > lo && t < hi && !self.points.contains_key(&t) {
-                return Some(t);
-            }
-        }
-        self.stop(
-            "classification_uncertain",
-            "中点和固定四分点已尝试，无法用有效分类继续缩小区间",
-        );
-        None
-    }
+
 }

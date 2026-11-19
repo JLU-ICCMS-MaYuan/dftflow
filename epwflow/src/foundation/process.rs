@@ -39,7 +39,7 @@ pub fn run(command: &[String], work: &Path) -> Result<ExecutionReport> {
     let report = run_report(command, work)?;
     ensure!(
         report.exit_status == Some(0),
-        "execution_failed: 命令 {} 退出码 {:?}",
+        "execution_failed: command {} exit code {:?}",
         command[0],
         report.exit_status
     );
@@ -55,7 +55,7 @@ pub fn run_report_named(command: &[String], work: &Path, stem: &str) -> Result<E
     if super::native_jobs::enabled() {
         return super::native_jobs::execute(command, work, stem);
     }
-    ensure!(!command.is_empty(), "execution_failed: 空命令");
+    ensure!(!command.is_empty(), "execution_failed: empty command");
     let dir = work.join("process-logs");
     fs::create_dir_all(&dir)?;
     let stdout_path = dir.join(format!("out-{}.log", store_token()));
@@ -67,7 +67,7 @@ pub fn run_report_named(command: &[String], work: &Path, stem: &str) -> Result<E
         .stdout(fs::File::create(&stdout_path)?)
         .stderr(fs::File::create(&stderr_path)?)
         .status()
-        .with_context(|| format!("execution_failed: 无法启动 {}", command[0]))?;
+        .with_context(|| format!("execution_failed: cannot start {}", command[0]))?;
     let duration = start.elapsed().as_secs_f64();
     let exit_status = status.code();
     Ok(ExecutionReport {

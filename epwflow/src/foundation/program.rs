@@ -1,11 +1,11 @@
-//! 三个独立阶段入口，共用已有配置、账本、状态和科学执行器。
+//! 三个独立阶段入口，共用已有配置、状态和科学执行器。
 use super::{
-    cli::{self, BudgetAction, EpwCommand, ResultsCommand},
+    cli::{self, EpwCommand, ResultsCommand},
     status,
     workflow::{self, Boundary},
 };
 use anyhow::{ensure, Context, Result};
-use clap::{ArgGroup, Parser, ValueEnum};
+use clap::{ArgGroup, Parser};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,30 +31,26 @@ impl Phase {
     }
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum BudgetOperation {
-    Status,
-    Reserve,
-    Attach,
-    Reconcile,
-}
-
 #[derive(Parser)]
-#[command(about = "生成、提交或恢复本阶段；默认读取当前 input.toml 并生成脚本")]
-#[command(group(ArgGroup::new("operation").args(["check", "prepare_only", "status", "probe", "import", "migrate_state", "collect", "plot", "results_check", "export_comparison", "budget", "execute_attempt", "run_script", "all", "submit_chain"])))]
+#[command(about = "Generate, submit or resume this stage; read input.toml and generate scripts by default")]
+#[command(group(ArgGroup::new("operation").args(["check", "prepare_only", "status", "probe", "import", "migrate_state", "collect", "plot", "plot_only", "results_check", "export_comparison", "execute_attempt", "run_script", "all", "submit_chain"])))]
 struct Options {
     #[arg(short = 'c', long, default_value = "input.toml")]
     config: PathBuf,
     /// 编号工作区：选择本程序的独立科学阶段。
+    #[arg(help = "Select an independent scientific stage in the numbered workspace", long_help = "Select an independent scientific stage in the numbered workspace")]
     #[arg(long, value_enum)]
     stage: Option<super::stages::Step>,
     /// 一次性校验并导入旧 epwflow/work，保留原来源。
+    #[arg(help = "Validate and import a legacy epwflow/work once, preserving the source", long_help = "Validate and import a legacy epwflow/work once, preserving the source")]
     #[arg(long)]
     import_work: Option<PathBuf>,
     /// 导入已有 PH save；仅执行 q2r、matdyn 和绘图。
-    #[arg(long, value_name = "SAVE", conflicts_with_all = ["import_work", "migrate_state", "all", "run", "status", "probe", "import", "collect", "plot", "results_check", "budget", "export_comparison", "submit_chain"])]
+    #[arg(help = "Import existing PH save data; run only q2r, matdyn and plotting", long_help = "Import existing PH save data; run only q2r, matdyn and plotting")]
+    #[arg(long, value_name = "SAVE", conflicts_with_all = ["import_work", "migrate_state", "all", "run", "status", "probe", "import", "collect", "plot", "results_check", "export_comparison", "submit_chain"])]
     import_phonon: Option<PathBuf>,
-    /// 一次性迁移旧编号工作区的隐藏状态；保留现用科学结果与预算，不提交计算。
+    /// 一次性迁移旧编号工作区的隐藏状态；保留现用科学结果，不提交计算。
+    #[arg(help = "Migrate legacy hidden state once, preserving scientific results without submitting calculations", long_help = "Migrate legacy hidden state once, preserving scientific results without submitting calculations")]
     #[arg(long, conflicts_with_all = ["submit", "run", "status", "check", "import_work", "all", "resume"])]
     migrate_state: bool,
     #[arg(long, hide = true)]
@@ -63,6 +59,10 @@ struct Options {
     workspace_task: Option<PathBuf>,
     #[arg(long, hide = true)]
     allocated_stage: Option<super::stages::Step>,
+    #[arg(long, hide = true, value_parser = ["qe_eband", "qe_eledos"])]
+    electronic_branch: Option<String>,
+    #[arg(long, hide = true)]
+    phonon_task: Option<String>,
     #[arg(long, hide = true)]
     allocation_id: Option<String>,
     #[arg(long, hide = true)]
@@ -72,15 +72,19 @@ struct Options {
     #[arg(short = 'w', long)]
     work: Option<PathBuf>,
     /// 第 3～6 步提交阶段分配并自动后处理；第 7、8 步提交原生任务。gap 每个方法独立提交。
+    #[arg(help = "Submit stage allocations with automatic postprocessing; gap methods use independent native jobs", long_help = "Submit stage allocations with automatic postprocessing; gap methods use independent native jobs")]
     #[arg(short = 's', long, conflicts_with = "run")]
     submit: bool,
-    /// 在已经登记的 Slurm 分配内运行本阶段。
+    /// 在现有 Slurm 分配内运行本阶段。
+    #[arg(help = "Run this stage within an existing Slurm allocation", long_help = "Run this stage within an existing Slurm allocation")]
     #[arg(short = 'r', long)]
     run: bool,
     /// 恢复失败阶段；显式 --stage scf --resume -s 覆盖旧结果并强制重算，须搭配 -s 或 -r。
+    #[arg(help = "Resume a failed stage; requires -s or -r. Explicit --stage scf --resume -s overwrites old results and forces SCF recalculation", long_help = "Resume a failed stage; requires -s or -r. Explicit --stage scf --resume -s overwrites old results and forces SCF recalculation")]
     #[arg(long)]
     resume: bool,
     /// 检查配置；结合 -w 检查本阶段数据。
+    #[arg(help = "Check configuration; use -w to check this stage data", long_help = "Check configuration; use -w to check this stage data")]
     #[arg(long)]
     check: bool,
     #[arg(long)]
@@ -99,6 +103,10 @@ struct Options {
     collect: bool,
     #[arg(long)]
     plot: bool,
+    #[arg(long, conflicts_with_all = ["skip_plot", "submit", "run", "resume", "import_work", "import_phonon", "allocated_stage", "phonon_task", "electronic_branch"], help = "Plot existing superconductivity data without running calculations")]
+    plot_only: bool,
+    #[arg(long, help = "Disable automatic superconductivity plotting for this invocation")]
+    skip_plot: bool,
     #[arg(long)]
     results_check: bool,
     #[arg(long)]
@@ -109,21 +117,12 @@ struct Options {
     formats: Vec<String>,
     #[arg(long, value_name = "SOURCES")]
     export_comparison: Option<PathBuf>,
-    #[arg(long, value_enum)]
-    budget: Option<BudgetOperation>,
-    #[arg(long)]
-    ledger: Option<PathBuf>,
-    #[arg(long)]
-    label: Option<String>,
-    #[arg(long)]
-    token: Option<String>,
-    #[arg(long)]
-    job: Option<u64>,
     #[arg(long, hide = true)]
     execute_attempt: Option<String>,
     #[arg(long, hide = true)]
     run_script: bool,
     /// 仅 epw_phonon：准备当前就绪的原生脚本与待办清单，不提交。
+    #[arg(help = "epw_phonon only: prepare ready native scripts and the pending-task list without submitting", long_help = "epw_phonon only: prepare ready native scripts and the pending-task list without submitting")]
     #[arg(long, conflicts_with_all = ["submit", "run", "resume"])]
     all: bool,
     #[arg(long, hide = true, conflicts_with_all = ["submit", "run", "resume"])]
@@ -141,6 +140,27 @@ pub fn run(phase: Phase) {
 }
 
 fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
+    ensure!(!(o.plot_only || o.skip_plot) || phase == Phase::Superconductivity,
+        "input_conflict: --plot-only and --skip-plot belong to epw_superconductivity");
+    crate::superconductivity::plot::set_skip(o.skip_plot);
+    if o.plot_only {
+        ensure!(o.stage.is_none_or(|s| s == super::stages::Step::Superconductivity), "input_conflict: --plot-only belongs to stage 8");
+        if !o.config.exists() && o.config == PathBuf::from("input.toml") && PathBuf::from("inputepw.toml").is_file() { o.config = PathBuf::from("inputepw.toml"); }
+        let report = crate::superconductivity::plot::plot_config(&o.config)?;
+        println!("superconductivity_plots: {}\nplot_warnings: {}", report.files.len(), report.warnings.len());
+        return Ok(());
+    }
+    if let Some(task) = &o.phonon_task {
+        ensure!(phase == Phase::Phonon, "configuration: phonon tasks belong to epw_phonon");
+        return crate::qe_data::phonon_parallel::allocated(&o.config, task,
+            o.allocation_id.as_deref().context("allocation: phonon task allocation ID missing")?);
+    }
+    if let Some(branch) = &o.electronic_branch {
+        return super::electronic_parallel::allocated(
+            &o.config, branch, o.resume,
+            o.allocation_id.as_deref().context("allocation: electronic branch allocation ID missing")?,
+        );
+    }
     if let Some(stage) = o.allocated_stage {
         return super::workspace::allocated(
             &o.config,
@@ -148,7 +168,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             o.resume,
             o.allocation_id
                 .as_deref()
-                .context("allocation: 缺少阶段分配标识")?,
+                .context("allocation: stage allocation ID missing")?,
         );
     }
     if o.config == PathBuf::from("input.toml")
@@ -195,21 +215,21 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         return crate::superconductivity::batch::allocated_finish(
             &o.config,
             group,
-            o.batch_exit.context("required: 方法原生退出码")?,
+            o.batch_exit.context("required: native method exit code")?,
         );
     }
     ensure!(
         o.workspace_attempt.is_none() && o.workspace_task.is_none(),
-        "unsupported_version: 旧尝试脚本已经停用，请使用当前配置的公开命令重新生成"
+        "unsupported_version: legacy attempt scripts disabled; regenerate with the public command and current configuration"
     );
     if let Some(source) = &o.import_phonon {
         ensure!(
             phase == Phase::Phonon && o.stage.is_none_or(|s| s == super::stages::Step::Phonon),
-            "configuration: --import-phonon 仅属于 epw_phonon 的 phonon 阶段"
+            "configuration: --import-phonon belongs only to the epw_phonon phonon stage"
         );
         ensure!(
             !o.check || (!o.submit && !o.resume),
-            "configuration: --check 为只读操作"
+            "configuration: --check is read-only"
         );
         return super::phonon_import::command(&o.config, source, o.check, o.submit, o.resume);
     }
@@ -229,18 +249,28 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             false
         };
     if numbered && o.plot && o.results.is_none() {
+        if phase == Phase::Phonon && o.stage == Some(super::stages::Step::Electronic) {
+            let cfg=super::config::Config::load(&o.config)?;
+            let path=super::combined_plot::redraw_stage(&cfg,super::stages::Step::Electronic)?
+                .context("required: saved electronic bands and DOS are needed for stage 3 redraw")?;
+            println!("plots: {}",path.display());
+            return Ok(());
+        }
         ensure!(
-            phase == Phase::Wannier,
-            "input_conflict: 当前现场诊断图使用 epw_wannier --plot；结果包重绘使用 --results"
+            phase == Phase::Wannier && o.stage.is_none_or(|s|s==super::stages::Step::Wannier),
+            "input_conflict: use epw_wannier --plot for current-workspace diagnostics; use --results to redraw a result package"
         );
         let cfg = super::config::Config::load(&o.config)?;
-        let path = super::wannier_diagnostics::generate(&cfg)?;
-        println!("diagnostic_plots: {}", path.display());
+        if let Some(path) = super::workspace_plot::redraw_current(&cfg)? {
+            println!("plots: {}", path.display());
+        } else {
+            let path = super::wannier_diagnostics::generate(&cfg)?;
+            println!("diagnostic_plots: {}", path.display());
+        }
         return Ok(());
     }
     if numbered
         && !o.probe
-        && o.budget.is_none()
         && o.import.is_none()
         && !o.collect
         && !o.plot
@@ -250,11 +280,11 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         use super::stages::Step;
         ensure!(
             !o.all || phase == Phase::Phonon,
-            "input_conflict: --all 仅由 epw_phonon 管理"
+            "input_conflict: --all is managed only by epw_phonon"
         );
         ensure!(
             !o.resume || o.submit || o.run,
-            "required: --resume 需要 -s 或 -r"
+            "required: --resume requires -s or -r"
         );
         let target = match (phase, o.stage) {
             (Phase::Phonon, None) => Step::Phonon,
@@ -266,7 +296,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             (Phase::Wannier, Some(s @ (Step::Wannier | Step::Coarse))) => s,
             (Phase::Superconductivity, None) => Step::Superconductivity,
             (Phase::Superconductivity, Some(s @ (Step::Fine | Step::Superconductivity))) => s,
-            _ => anyhow::bail!("input_conflict: --stage 不属于当前程序"),
+            _ => anyhow::bail!("input_conflict: --stage does not belong to this program"),
         };
         let cfg = super::config::Config::load(&o.config)?;
         super::run_state::ready(&cfg.work_dir)?;
@@ -278,7 +308,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             return super::workspace::status(&cfg);
         }
         if o.check {
-            for s in target.closure() {
+            for s in super::stages::execution_steps(&cfg, target) {
                 if s == target || !super::stages::reusable(&cfg, s)? {
                     super::parallelism::preflight(&cfg, s, false)?;
                 }
@@ -293,7 +323,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
             return Ok(());
         }
         if o.submit {
-            if matches!(target, Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse) {
+            if matches!(target, Step::Scf | Step::Nscf | Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse) {
                 return super::workspace::start_stage(&o.config, target, o.resume);
             }
             return super::native_workspace::advance(&o.config, target, true, o.resume);
@@ -301,7 +331,7 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         if o.run {
             return super::workspace::start_allocated(&o.config, target, o.resume);
         }
-        if matches!(target, Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse) && !o.all {
+        if matches!(target, Step::Scf | Step::Nscf | Step::Electronic | Step::Phonon | Step::Wannier | Step::Coarse) && !o.all {
             return super::workspace::prepare_stage(&o.config, target, false, false);
         }
         super::native_workspace::advance(
@@ -318,19 +348,19 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
     }
     ensure!(
         o.stage.is_none(),
-        "input_conflict: --stage 需要 layout='numbered' 的当前配置"
+        "input_conflict: --stage requires the current layout='numbered' configuration"
     );
-    if o.submit && !o.probe && o.budget.is_none() && o.work.is_none() {
+    if o.submit && !o.probe && o.work.is_none() {
         super::config::Config::load(&o.config)?;
     }
-    ensure!(!o.submit || o.probe || o.budget.is_some(),
-        "migration_required: 新原生提交使用 layout='numbered'；旧工作区请设置新的 work_dir 并使用 --import-work 显式导入，禁止继续提交内部执行器包装脚本");
-    let work = || o.work.clone().context("required: 此操作需要 -w/--work");
-    let results = || o.results.clone().context("required: 此操作需要 --results");
+    ensure!(!o.submit || o.probe,
+        "migration_required: new native submissions require layout='numbered'; set a new work_dir and explicitly import the old workspace with --import-work; internal-executor wrapper scripts cannot be submitted");
+    let work = || o.work.clone().context("required: this operation requires -w/--work");
+    let results = || o.results.clone().context("required: this operation requires --results");
     if o.all || o.submit_chain {
         ensure!(
             phase == Phase::Phonon,
-            "input_conflict: 总脚本仅由 epw_phonon 管理"
+            "input_conflict: chain scripts are managed only by epw_phonon"
         );
         if o.submit_chain {
             return super::chain::submit(&work()?);
@@ -346,16 +376,15 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         || o.collect
         || o.plot
         || o.results_check
-        || o.export_comparison.is_some()
-        || o.budget.is_some();
+        || o.export_comparison.is_some();
     ensure!(
         !maintenance || (!o.submit && !o.run && !o.resume),
-        "input_conflict: 只读、导入或准备操作不能同时执行/提交/恢复"
+        "input_conflict: read-only, import or preparation operations cannot execute/submit/resume simultaneously"
     );
-    ensure!(!o.refresh || o.status, "required: --refresh 需要 --status");
+    ensure!(!o.refresh || o.status, "required: --refresh requires --status");
     ensure!(
         !o.resume || o.submit || o.run,
-        "required: --resume 需要 -s 或 -r"
+        "required: --resume requires -s or -r"
     );
     if let Some(attempt) = o.execute_attempt {
         return workflow::execute_phase(&work()?, &attempt, phase.boundary());
@@ -423,18 +452,18 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
     } else if let Some(source) = o.export_comparison {
         ensure!(
             phase == Phase::Wannier,
-            "input_conflict: 叠图来源导出属于 epw_wannier"
+            "input_conflict: comparison-source export belongs to epw_wannier"
         );
         EpwCommand::Interpolation {
             command: crate::interpolation::cli::InterpolationCommand::ExportComparison {
                 source,
-                output: o.output.context("required: 需要 --output")?,
+                output: o.output.context("required: --output required")?,
             },
         }
     } else if o.collect || o.plot || o.results_check {
         ensure!(
-            phase != Phase::Phonon,
-            "input_conflict: 第一阶段不提供 EPW 绘图操作"
+            phase != Phase::Phonon || (o.plot && o.results.is_some()) || (o.results_check && o.results.is_some()),
+            "input_conflict: phase one plotting requires explicit saved results"
         );
         if o.collect && o.json {
             return crate::delivery::cli::run(crate::delivery::cli::DeliveryCommand::Collect {
@@ -461,27 +490,6 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
                 },
             }
         }
-    } else if let Some(operation) = o.budget {
-        let ledger = o.ledger.context("required: 账本操作需要 --ledger")?;
-        let action = match operation {
-            BudgetOperation::Status => BudgetAction::Status {
-                ledger,
-                json: o.json,
-            },
-            BudgetOperation::Reconcile => BudgetAction::Reconcile { ledger },
-            BudgetOperation::Attach => BudgetAction::Attach {
-                ledger,
-                token: o.token.context("required: 需要 --token")?,
-                job: o.job,
-            },
-            BudgetOperation::Reserve => BudgetAction::Reserve {
-                ledger,
-                label: o.label.context("required: 需要 --label")?,
-            },
-        };
-        EpwCommand::Budget {
-            action: Some(action),
-        }
     } else {
         if o.resume {
             return workflow::resume_phase_with_mpi(
@@ -500,4 +508,15 @@ fn dispatch(phase: Phase, mut o: Options) -> Result<()> {
         return Ok(());
     };
     cli::dispatch_command(command)
+}
+
+#[cfg(test)]
+mod plot_options_tests {
+    use super::*;
+    #[test]
+    fn superconductivity_plot_flags_and_conflicts() {
+        assert!(Options::try_parse_from(["epw_superconductivity","--skip-plot"]).unwrap().skip_plot);
+        assert!(Options::try_parse_from(["epw_superconductivity","--plot-only"]).unwrap().plot_only);
+        assert!(Options::try_parse_from(["epw_superconductivity","--plot-only","--skip-plot"]).is_err());
+    }
 }

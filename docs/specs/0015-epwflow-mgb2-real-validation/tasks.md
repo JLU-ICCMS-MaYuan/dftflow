@@ -1,5 +1,7 @@
 # 测试与 debug 任务
 
+> 2026-11-17 最新约定：下文旧预算登记、账本读写和全局两个作业限制已经撤销，相关旧任务不再执行。当前实现与接口以 [0058 追加需求](../0058-epw-remove-resource-limits/spec.md) 为准；历史科学证据保留。
+
 七项历史专项的执行、补跑与验收任务已删除，范围以 [0027 的撤销记录](../0027-mgb2-epwflow-example-debug/spec.md#已移除的专项验收)为准。下文已发生的历史验证记录保留，不产生补跑义务。
 
 输入：[Spec](spec.md)、[Plan](plan.md)、[研究](research.md)、[数据](data-model.md)、[契约](contracts/verification.md)。

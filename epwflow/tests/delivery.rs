@@ -81,9 +81,9 @@ fn acceptance_table_has_six_combinations() {
         },
     };
     let table = acceptance::acceptance_table(&bundle);
-    assert_eq!(table.len(), 6, "六组合（3 PH × 2 求解）");
+    assert_eq!(table.len(), 6, "Group Six(3 PH × 2 Solution)");
     let run = table.iter().filter(|c| c.status != "not_run").count();
-    assert_eq!(run, 1, "仅实际运行组合非 not_run");
+    assert_eq!(run, 1, "Actual grouping only not_run");
 }
 
 #[test]

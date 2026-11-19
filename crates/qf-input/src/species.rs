@@ -59,7 +59,7 @@ pub fn extract_pseudo_element_token(filename: &str) -> String {
 pub fn find_pseudo_file(pp_dir: &str, element: &str) -> Result<String> {
     let dir = Path::new(pp_dir);
     if !dir.is_dir() {
-        bail!("找不到赝势目录: {pp_dir}");
+        bail!("Can not get folder: %s: %s: {pp_dir}");
     }
     let mut candidates = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -74,12 +74,12 @@ pub fn find_pseudo_file(pp_dir: &str, element: &str) -> Result<String> {
         }
     }
     match candidates.len() {
-        0 => bail!("在 {pp_dir} 中找不到元素 {element} 对应的赝势文件"),
+        0 => bail!("Yes {pp_dir} No element found in {element} Corresponding Shape Files"),
         1 => Ok(candidates.into_iter().next().unwrap()),
         _ => {
             candidates.sort();
             bail!(
-                "元素 {element} 在 {pp_dir} 中匹配到多个赝势文件: {}",
+                "Elements {element} Yes {pp_dir} Matches multiple power files: {}",
                 candidates.join(", ")
             )
         }
@@ -94,7 +94,7 @@ pub fn resolve_atomic_species_entries(
     let pp_dir = config
         .pp_dir
         .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("缺少 pp_dir 配置，无法自动匹配赝势文件"))?;
+        .ok_or_else(|| anyhow::anyhow!("Missing pp_dir Configure, unable to automatically match the power file"))?;
     let mut resolved: std::collections::BTreeMap<String, String> = Default::default();
     for element in elements {
         if !resolved.contains_key(element) {

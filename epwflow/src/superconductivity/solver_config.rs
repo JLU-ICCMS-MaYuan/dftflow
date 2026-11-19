@@ -12,12 +12,12 @@ impl<'a> SolverConfig<'a> {
         let sc = &cfg.superconductivity;
         ensure!(
             sc.gap_temperatures_k.iter().all(|t| *t <= 999.99),
-            "configuration: EPW 5.9 温度文件格式只支持到 999.99 K"
+            "configuration: EPW 5.9 temperature-file format supports at most 999.99 K"
         );
         for tc in [sc.iso.as_ref(), sc.aniso.as_ref()].into_iter().flatten() {
             ensure!(
                 tc.max_k <= 999.99,
-                "configuration: EPW 5.9 搜索温度文件格式只支持到 999.99 K"
+                "configuration: EPW 5.9 search temperature-file format supports at most 999.99 K"
             );
         }
         Ok(SolverConfig { cfg })

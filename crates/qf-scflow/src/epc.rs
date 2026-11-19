@@ -101,7 +101,7 @@ impl Dyn {
 fn parse_f64(token: &str) -> Result<f64> {
     token
         .parse::<f64>()
-        .map_err(|e| anyhow::anyhow!("数值解析失败 {token:?}: {e}"))
+        .map_err(|e| anyhow::anyhow!("Numerical resolution failed {token:?}: {e}"))
 }
 
 /// `DynElph`：单个 `*.dyn*.elph*` 文件的全部内容（按展宽区段切分）。
@@ -148,7 +148,7 @@ impl DynElph {
             let dos_line = *section
                 .iter()
                 .find(|l| l.contains("DOS"))
-                .ok_or_else(|| anyhow::anyhow!("{} 缺少 DOS 行", path.display()))?;
+                .ok_or_else(|| anyhow::anyhow!("{} Missing DOS Okay", path.display()))?;
             dos_lines.push(dos_line);
             lambda_gamma_lines.push(
                 section
@@ -159,7 +159,7 @@ impl DynElph {
             );
             if lines[i1].contains("Gaussian Broadening") {
                 let tokens: Vec<&str> = lines[i1].split_whitespace().collect();
-                let value = tokens.get(2).context("Gaussian Broadening 表头缺少数值")?;
+                let value = tokens.get(2).context("Gaussian Broadening Table Header Missing Value")?;
                 let parsed = parse_f64(value)?;
                 headers_text.push(format!("{}", parsed));
                 headers.push(Some(parsed));
@@ -173,7 +173,7 @@ impl DynElph {
         // q 点：首行前三个数值。
         let first_tokens: Vec<&str> = lines[0].split_whitespace().collect();
         if first_tokens.len() < 3 {
-            bail!("{} 首行不是 q 点", path.display());
+            bail!("{} First Line Not q Points", path.display());
         }
         let mut q_point = [0.0f64; 3];
         for k in 0..3 {
@@ -199,13 +199,13 @@ impl DynElph {
                 .captures(dl)
                 .and_then(|c| c.get(1))
                 .map(|m| m.as_str().replace('=', ""))
-                .ok_or_else(|| anyhow::anyhow!("{} Ef 解析失败", path.display()))?;
+                .ok_or_else(|| anyhow::anyhow!("{} Ef Parsing failed", path.display()))?;
             e_f.push(parse_f64(ef.trim())?);
             let d = re_dos
                 .captures(dl)
                 .and_then(|c| c.get(1))
                 .map(|m| m.as_str().replace('=', ""))
-                .ok_or_else(|| anyhow::anyhow!("{} DOS 解析失败", path.display()))?;
+                .ok_or_else(|| anyhow::anyhow!("{} DOS Parsing failed", path.display()))?;
             dos.push(parse_f64(d.trim())?);
         }
 
@@ -217,7 +217,7 @@ impl DynElph {
             for line in lg {
                 let parts: Vec<&str> = line.split('=').collect();
                 if parts.len() < 3 {
-                    bail!("{} lambda/gamma 行格式异常: {line:?}", path.display());
+                    bail!("{} lambda/gamma Line Format Malformed: {line:?}", path.display());
                 }
                 l.push(parse_f64(parts[1].split_whitespace().next().unwrap_or(""))?);
                 g.push(parse_f64(parts[2].split_whitespace().next().unwrap_or(""))?);
@@ -343,7 +343,7 @@ impl PhOuts {
     /// 从 ph.out 解析结构（笛卡尔坐标，Å）。
     pub fn structure(&self) -> Result<crate::structure_out::StructureOut> {
         if self.lines.is_empty() {
-            bail!("没有可解析的 ph.out 文件");
+            bail!("There's nothing to solve ph.out Documentation");
         }
         let keys = [
             "lattice parameter (alat)",
@@ -367,7 +367,7 @@ impl PhOuts {
             }
         }
         if idxs.iter().any(|x| x.is_none()) {
-            bail!("ph.out 缺少结构段关键字");
+            bail!("ph.out Missing Structure Key");
         }
         let get = |k: usize| idxs[k].unwrap();
         let (ai, aj) = get(0);
@@ -375,7 +375,7 @@ impl PhOuts {
             self.lines[ai][aj]
                 .split_whitespace()
                 .nth(4)
-                .context("alat 解析失败")?,
+                .context("alat Parsing failed")?,
         )?;
         let mut matrix = [[0.0f64; 3]; 3];
         for (i, key_idx) in [get(1), get(2), get(3)].iter().enumerate() {
@@ -390,14 +390,14 @@ impl PhOuts {
             .split_whitespace()
             .last()
             .and_then(|t| t.parse().ok())
-            .context("number of atoms/cell 解析失败")?;
+            .context("number of atoms/cell Parsing failed")?;
         let (si, sj) = get(4);
         let mut species = Vec::with_capacity(n_atoms);
         let mut coords = Vec::with_capacity(n_atoms);
         for line in &self.lines[si][sj + 1..sj + 1 + n_atoms] {
             let tokens: Vec<&str> = line.split_whitespace().collect();
             if tokens.len() < 4 {
-                bail!("site 行格式异常: {line}");
+                bail!("site Line Format Malformed: {line}");
             }
             species.push(tokens[1].to_string());
             coords.push([

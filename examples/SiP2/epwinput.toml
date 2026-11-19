@@ -19,30 +19,26 @@ launcher = [
     "36",
 ]
 environment_script = "/data/home/mayuan/intel-2024/oneapi/intel2024_setvars.sh"
-
-[programs.pw]
-path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/pw.x"
-args = []
-
-[programs.ph]
-path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/ph.x"
-args = []
-
-[programs.epw]
-path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/EPW/src/epw.x"
-args = [
-    "-nk",
-    "36",
-]
-
-[programs.wannier90]
-path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/wannier90.x"
-args = []
-
-[programs.postw90]
-path = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/postw90.x"
-args = []
-
+pw_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/pw.x"
+pw_args = []
+ph_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/ph.x"
+ph_args = []
+epw_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/EPW/src/epw.x"
+epw_args = ["-nk", "36"]
+wannier90_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/wannier90.x"
+wannier90_args = []
+postw90_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/postw90.x"
+postw90_args = []
+bands_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/bands.x"
+bands_args = ["-pd", ".true."]
+dos_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/dos.x"
+dos_args = ["-pd", ".true."]
+projwfc_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/projwfc.x"
+projwfc_args = ["-pd", ".true."]
+q2r_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/q2r.x"
+q2r_args = []
+matdyn_x = "/data/home/mayuan/soft/qe-7.4.1-amd-oneAPI2024/bin/matdyn.x"
+matdyn_args = []
 
 [slurm]
 header = """
@@ -50,10 +46,6 @@ header = """
 #SBATCH --nodes=1
 #SBATCH --ntasks=36
 """
-
-[budget]
-campaign_id = "epic-0007"
-ledger = "/data/home/mayuan/code/dftflow/docs/local/epwflow-campaign.json"
 
 # 第 1 步：QE SCF。SCF 与 NSCF 均使用 2×3×6、零位移网格。
 [stages."1.qe-scf"]
@@ -219,7 +211,8 @@ num_iter = 500 # 与下方 wannier90.num_iter 保持一致
 
 [stages."5.epw-wannier".wannier90]
 bands_plot = true
-bands_num_points = 1
+# 默认首段采样间隔数为 50（含两端为 51 点），可按需调整；其余段由 Wannier90 按段长比例取整。
+bands_num_points = 50
 num_wann = 96
 projections = [
     "Si:s,p",
@@ -478,7 +471,6 @@ selection_mode = "energy_only"
 [workflow."6.epw-coarse"]
 points_per_edge = 20
 fermi_source = "f2"
-onsite_asr = "gamma_hermitian"
 
 [workflow."7.epw-fine"]
 fermi_source = "f2"

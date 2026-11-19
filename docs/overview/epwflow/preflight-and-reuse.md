@@ -1,97 +1,60 @@
-# 三个 CLI 开算前，到底在查什么
+# 当前任务检查与文件接续
 
-三个 CLI 共用一套检查。可以把它理解成：**先找到本次计算的说明书，再核对阶段日志、任务号和实际科学文件；能接着用的跳过，缺的补上，对不上的停下来说明原因。**
+三个 CLI 按当前目标阶段处理直接需要的文件。指定阶段不再递归核验或自动补算历史阶段，也不顺带刷新其他阶段图表。缺少必需数据时报告来源路径并停止；原生程序失败、未收敛和活动／未知作业仍明确阻断。
 
-计算做哪些步骤，看[完整流程图](workflow.md)；本页专门说明“为什么还没开始算，就检查文件、打印 reuse 或报错”。
+## 配置与调度
 
-## 先解释这次报错：配置找错了位置
+命令中的 `-c` 相对执行目录解析；配置中的结构、赝势等相对 TOML 所在目录解析，不自动向上查找配置。程序保留配置原文版本、阶段日志及 `.jobs`，继续防止活动或未知回执重复提交。删除科学产物清单机制不等于取消这些调度记录。
 
-在 `epwflow/7.epw-fine/` 中执行：
+阶段完成状态由本阶段实际输入、原生日志和数值／格式检查确认，不只相信 Slurm 的 COMPLETED。对已完成目标显示 `stage_complete`；只有实际取用前序数据时才显示 `reuse`。指定阶段和历史自动补齐流程的语义不同，缺数据需要用户执行其所属阶段。
 
-```bash
-epw_superconductivity -c "epwinput.toml" --stage superconductivity -s
+## 各阶段的直接来源
+
+| 目标 | 主计算直接使用 | 当前阶段比较图的额外来源 |
+|---|---|---|
+| 1 SCF | 用户配置、结构、指定目录中的赝势；无前序阶段 | 无 |
+| 2 NSCF | 第 1 步电荷密度与必要保存元数据，不取 SCF 波函数 | 无 |
+| 3 QE 电子参考 | 路径 PW 取第 1 步；DOS／投影取第 2 步 | 本阶段自己的曲线 |
+| 4 PH | 第 1 步电子数据及 SCF 波函数，不要求 NSCF 或电子图 | 本阶段 q2r／matdyn 结果 |
+| 5 Wannier | 第 2 步完整均匀电子态 | 第 3 步 QE 电子曲线 |
+| 6 粗网格 EPC | 第 2 步电子态、第 4 步响应数据、第 5 步 ukk／mmn／bvec | 第 4 步声子频率及 DOS，不读取电子曲线 |
+| 7 细网格 EPC | 第 6 步实空间模型 | 不刷新历史图表 |
+| 8 超导 | 所选第 7 步参数组；iso 谱路线只读取 α²F | 本阶段求解结果 |
+
+各阶段赝势始终以用户指定目录为来源，不从前序保存树选取，不计入阶段 reuse。QE 会写入的工作区赝势副本与用户原件分开，避免原生写出影响原件。
+
+电荷密度与原始波函数不做哈希、尺寸、非空、存在性或集合完整性预检；实际复制／链接、原生读取错误照常报告。其他直接数据保留原生格式、维度、结构、日志与收敛检查。旧科学清单、文件指纹和产物登记不再参与编号接续，也不在内存重建整条历史来源链。
+
+## 输出格式
+
+阶段名带编号；每个实际文件独占一行，缩进 7 个 ASCII 空格，同次调用内同一路径不重复列出。文件族必须展开成实际名称。
+
+本仓库 EPW 6.0 重读模型的例子：
+
+```text
+reuse: 6.epw-coarse
+       6.epw-coarse/MgB2.ukk
+       6.epw-coarse/crystal.fmt
+       6.epw-coarse/dmedata.fmt
+       6.epw-coarse/epwdata.fmt
+       6.epw-coarse/out/MgB2.epmatwp
+       6.epw-coarse/vmedata.fmt
 ```
 
-命令会寻找 `7.epw-fine/epwinput.toml`，不会自动向上找。MgB₂ 当前算例实际的配置位于上一层 `epwflow/epwinput.toml`，其中已经有 `layout = "numbered"`。
+程序按来源阶段和路径稳定排序，次序不代表科学操作顺序。EPW 6.0 同时读取两种矩阵 fmt，不再为已停止读取的 wigner.fmt 加检查。后续插值不重查 Wannier 拟合窗口或强制加载上游费米能；有显式 fermi_energy 时使用用户值，否则由原生 EPW 处理。
 
-**在 `7.epw-fine/` 中应写 `-c "../epwinput.toml"`。** 可以先只检查，再提交：
+## 细网格参数组与超导软链接
 
-```bash
-epw_superconductivity -c "../epwinput.toml" --stage superconductivity --check --json
-epw_superconductivity -c "../epwinput.toml" --stage superconductivity -s
+第 7 步即使只有一组参数也使用：
+
+```text
+7.epw-fine/01.k40x40x40-q20x20x20-fsthick0.4eV-degaussw0.1eV/
 ```
 
-也可以从任意目录使用配置的绝对路径：
+编号只扫描参数目录，日志／任务号文件不参与。新增不同参数组保留旧组数据；同组重复查找返回同一目录，不新增自动参数扫描。
 
-```bash
-epw_superconductivity -c "/data/home/mayuan/code/dftflow/examples/MgB2/sugon-amd/run/epwflow/epwinput.toml" --stage superconductivity --check --json
-```
+第 8 步矩阵路线逐文件链接选定组的 ephmat 分片、egnv、freq、ikmap、npool，并链接所需 DOS、crystal.fmt、selecq.fmt；求解输出在第 8 步，不修改第 7 步源矩阵。iso 谱输入路线无需矩阵或第 1～6 步结果。显式指定谱文件时，仍需原生可读的 α²F 列格式。
 
-当前入口先判断配置文件是否存在，决定是否进入编号工作区模式。**文件不存在时，也可能落到 `--stage 需要 layout='numbered' 的当前配置` 这条报错。** 所以，这条提示不只表示配置缺少 layout；本例的问题是相对路径找不到配置，尚未进入科学计算，也不是在说第 7 步结果不合格。
+逐项文件作用见 [八步数据说明](../../specs/0052-electronic-reuse-once/reuse-files-stage-data.md)，实现与验证边界见 [0052 验收](../../specs/0052-electronic-reuse-once/reuse-files-acceptance.md)。进程替身验证不代表真实科学收敛验收。
 
-前面重复的 `input_conflict: input_conflict:` 来自错误类别与原始错误信息的重复输出，是同一条错误。
-
-## 两种相对路径，各从哪里出发
-
-| 路径写在哪里 | 从哪里开始找 | 当前算例的例子 |
-| --- | --- | --- |
-| 命令中的 `-c "epwinput.toml"` | 执行命令时所在的目录，即 `pwd` | 在 `7.epw-fine/` 中就会找该子目录里的配置 |
-| TOML 中的 `work_dir = "."` | TOML 所在目录 | 指向整个 `epwflow/` 工作区，不随终端所在目录变化 |
-| TOML 中的 `structure = "../POSCAR"` | TOML 所在目录 | 指向 `run/POSCAR` |
-| TOML 中的 `kpath = "KPATH.in"` | TOML 所在目录 | 指向 `epwflow/KPATH.in` |
-
-例如，从 `7.epw-fine/` 用 `-c "../epwinput.toml"` 找到根配置后，程序仍操作同一个根工作区，不会把第 7 步目录当成一套新计算。
-
-`layout = "numbered"` 表示使用 `1.qe-scf/` 到 `8.epw-superconductivity/` 这套目录与续算规则。它是 TOML 顶层字段，应写在第一个 `[小节]` 之前；写在 `[qe]` 等小节下面就不是顶层字段。程序建立八份可读阶段日志；布局与声子模式记录在第 4 步日志，不再生成 `layout.json`。
-
-## 从输入命令到开始计算
-
-1. 读取本次 `-c` 指定的配置，检查原生参数、结构、赝势、程序位置和 MPI／pool 设置。
-2. 比较最近一次配置版本。原文变了就在解析后的 `work_dir/epw-state/` 增加下一份 `0000-config.toml`、`0001-config.toml`；连续相同不重复保存，旧版不覆盖。
-3. 读取对应阶段日志和计算目录中的 `.jobs`，向 Slurm 查询当前任务。活动或提交回执未知时拒绝覆盖和重复提交。
-4. 从编号计算目录解析真实结果：SCF／NSCF XML、PH 响应势、Wannier 模型、粗／细矩阵和原生谱。科学完成还需通过对应解析器检查，Slurm 的 COMPLETED 本身不足以证明成功。
-5. 已成功且相容的阶段和子任务跳过；缺失项生成或接续。明确重算覆盖本阶段的可替换内容，保留阶段目录本身和打开的 Slurm 日志。
-
-```mermaid
-flowchart TD
-    A[本次配置与原文版本] --> B[阶段日志和任务号表]
-    B --> C{Slurm 任务是否仍活动或未知}
-    C -->|是| D[保留现场并说明任务或回执问题]
-    C -->|否| E[直接检查编号目录中的科学输入输出]
-    E --> F{结果是否完整且相容}
-    F -->|是| G[复用并补齐派生图或交付]
-    F -->|否| H[准备或接续缺失子任务]
-```
-
-## 八份阶段日志和任务号
-
-`epw-state/` 保存八份中文纯文本日志；需要外部声子导入时保留 `imports/`。续算信息不再另外保存为请求、尝试、进度、后处理缓存或历史目录。
-
-| 阶段日志 | 实际科学文件所在目录 | 主要检查 |
-| --- | --- | --- |
-| `1.qe-scf.log` | `1.qe-scf/` | 原生日志、总能、SCF 快照 XML |
-| `2.qe-nscf.log` | `2.qe-nscf/` | 完整网格、带数、保存树及 FFT 接续 |
-| `3.qe-electronic.log` | `3.qe-electronic/` | PW 能带、bands、DOS、投影各自结果 |
-| `4.qe-phonon-模式.log` | 同名声子目录 | 逐 q 响应势、phsave、q2r／matdyn |
-| `5.epw-wannier.log` | `5.epw-wannier/` | 拟合收敛、ukk 与模型文件 |
-| `6.epw-coarse.log` | `6.epw-coarse/` | 粗矩阵、原生日志及比较子任务 |
-| `7.epw-fine.log` | `7.epw-fine/` | 每个展宽的谱和矩阵分片 |
-| `8.epw-superconductivity.log` | `8.epw-superconductivity/` | iso／aniso、各温度或 Tc 搜索 |
-
-每个实际提交计算的阶段目录内使用同名 `.jobs`，例如 `1.qe-scf/1.qe-scf.jobs`。它只有子任务和 Slurm 作业号两列；详细进度、失败原因、科学检查及下一步放在阶段日志。
-
-旧 `native-active.json` 中已经失效的输入路径不再是重算准备的前提。旧可见布局仅在一次性转换时读取固定旧状态，先核对旧任务终态，再检查现有科学结果，最后撤下旧状态；未知或活动任务保持明确阻断。配置原文版本、实际计算文件和外部导入资料分别保留。
-
-旧 PW 能带输入中的 `CONTROL.pseudo_dir` 可以继续记录已撤下的目录。复用时完整比较原生输入，仅允许这一个目录字段的位置变化，并核对保存 XML 的元素／赝势文件映射、保存的 UPF 与当前配置赝势的 SHA-256。其他科学输入、XML 中的几何／带数及实际 k 路径仍须通过检查；原始电荷密度和波函数按 0067 不再核对；不改写历史 `eband.in` 或 XML，也不重建旧目录。
-
-八日志转换后，若第 3 步显示“旧结果需要检查”，可在修复原因后重新执行 `epw_wannier --config "epwinput.toml" --migrate-state`。它检查当前作业、配置和依赖批次，仅在现有电子子任务全部核验通过后登记完成并清除旧报错；失败保留具体原因，不准备输入或执行科学程序。相关源码、受控回归及 SiP₂ 验收边界见 [0064 验收](../../specs/0064-epw-readable-state-logs/acceptance.md)。
-
-## 检查不等于计算
-
-`--status` 展示当前记录和科学检查结果，不补图或提交科学任务。配置驱动 CLI 仍会检查是否需要保存新的原文版本。复用科学结果后，公开推进命令可以继续补图、比较数据或发布结果包；派生交付失败不会把已通过检查的 PH 或拟合结果当成未完成。
-
-结果包中的图参和科学来源清单服务于独立核验与重绘，不用来恢复任务调度。详见 [工作流](workflow.md)、[清理命令](epw_clear.md) 和 [0064 验收记录](../../specs/0064-epw-readable-state-logs/acceptance.md)。
-
-第 6 步需要的比较声子后处理也放在声子目录的 `comparison/`，进度归入第 4 步日志。它使用 Γ onsite／Hermitian 修正，和默认 simple ASR 后处理分开存放，不能混用数值；仅修改电子拟合时可直接复用这些结果。
-
-当前核验清单排除原始电荷密度和波函数，旧记录中相应条目也跳过。实际复制仍包含它们，其是否可读由原生程序读取体现；详见 [0067](../../specs/0067-unchecked-density-wavefunctions/spec.md)。
+第 8 步沿用原生 fila2f：iso 谱路线只读取选定 α²F；显式空字符串选择矩阵路线，可在本步按自己的 degaussq、nqstep 重新生成谱后求解，不重新插值第 7 步。各向异性始终需要细矩阵。已有谱的行数必须与本方法 nqstep 相容，不把旧谱当作新展宽结果。

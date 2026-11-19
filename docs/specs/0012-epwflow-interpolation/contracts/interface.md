@@ -1,5 +1,7 @@
 # CLI 与数据契约：Wannier 化与 EPW 插值
 
+> 2026-11-17 最新约定：预算账本功能已按用户要求彻底撤销。本文件涉及账本、campaign 身份、预算预留／结算及全局两个作业限制的旧条款均已失效；当前计算只依赖工作流记录、Slurm 作业身份及科学核验。历史消耗与验收记录不改写。详见 [0058 最新需求](../../0058-epw-remove-resource-limits/spec.md)。
+
 当前纯能量粗阶段归集还须核对原生 `.wout` 的唯一 Outer／Inner 与同一 F2 选择器的四界。部署 W90 的五位小数输出只允许半个显示间隔（0.000005 eV）及浮点余量；缺失、非有限、重复矛盾或超出舍入区间均为 data_invalid，不发布 wannier/manifest.json，也不启动细网格。该检查与是否配置比较图无关，不新增 CLI 或改写原生日志。历史组合模式保持原有未指定边界的语义。
 
 **版本**：1；**需求**：[Spec](../spec.md)；**模型**：[数据模型](../data-model.md)。
@@ -25,7 +27,7 @@ F1 返回配置/运行绑定与阶段协议，F2 返回 qe-data/manifest.json，
 
 ## 权限、兼容与副作用
 
-仅使用当前用户已有权限。不得自动修改系统库、清除预算、覆盖来源、取消无关作业或推送仓库。默认 outdir 是按配置目录解析的基址；实际保存树为 <outdir>/<run_id>/<stage_id>。同一绑定内路径一经准备不变，用户自定义优先，工作目录与保存目录分别显示。
+仅使用当前用户已有权限。不得自动修改系统库、清除预算、覆盖来源、取消无关作业或推送仓库。
 
 文件接口升级须新版本并提供显式兼容检查，不能静默读取未知格式。失败输出可保留用于诊断，但不能充作下游成功数据。查询和错误输出不得泄露无关配置或认证内容。
 
@@ -114,7 +116,6 @@ quality.energy_window_ev 为相对已绑定 F2 Fermi 的 eV；QualitySources.win
 
 粗网格格式标识 epw5.9-coarse-le-c16；必需重启角色是 coarse_epmatwp、coarse_epwdata、coarse_crystal、coarse_wigner、coarse_vmedata、coarse_dmedata，另记录输入、日志、Wannier 日志和独立验证输出。epmatwp 位于 coarse/out，文本重启文件位于 coarse 根。只支持已核验的小端 REAL(8) 复数布局，未知布局拒绝。
 
-每个展宽在 fine/smearing-NNNN 独立运行；fine 主数据来自 spectrum_index 所选目录，其余展宽的产物角色以 smearing_NNNN_ 前缀保存于同一 artifacts 列表，所有文件均须验源。F4 仅使用未加前缀的所选谱／矩阵角色，不再要求所选谱恰为最后一个展宽。版本 1 的清单外壳不变；本细化不允许旧简化文本进入原生生产路径。
 
 
 ## 粗／细尝试恢复契约

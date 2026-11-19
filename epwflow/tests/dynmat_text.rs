@@ -58,7 +58,7 @@ fn polar_text_fails_instead_of_dropping_born_charges() {
     assert!(dynmat_text::convert(&(input() + "\nDielectric Tensor"), &geometry()).is_err());
 }
 #[test]
-#[ignore = "需要本地已复制 SiP2 save；仅解析，不运行科学程序"]
+#[ignore = "_Other Organiser SiP2 save ;Parsing only, not running the science program"]
 fn real_sip2_all_text_stars_convert_without_loss() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/SiP2");
     let g =

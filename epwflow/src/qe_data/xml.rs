@@ -18,22 +18,22 @@ pub fn fft_grids(xml: &Path) -> Result<FftGrids> {
     let out = doc
         .descendants()
         .find(|n| n.has_tag_name("output"))
-        .context("data_invalid: XML 缺 output")?;
+        .context("data_invalid: XML Missing output")?;
     let read = |tag: &str| -> Result<[usize; 3]> {
         let node = out
             .descendants()
             .find(|n| n.has_tag_name(tag))
-            .with_context(|| format!("data_invalid: {} 缺 {tag}", xml.display()))?;
+            .with_context(|| format!("data_invalid: {} Missing {tag}", xml.display()))?;
         let mut dims = [0; 3];
         for (i, dim) in dims.iter_mut().enumerate() {
             let name = format!("nr{}", i + 1);
             *dim = node
                 .attribute(name.as_str())
-                .with_context(|| format!("data_invalid: {} 缺 {tag}.{name}", xml.display()))?
+                .with_context(|| format!("data_invalid: {} Missing {tag}.{name}", xml.display()))?
                 .parse()?;
             ensure!(
                 *dim > 0,
-                "data_invalid: {} 的 {tag}.{name} 必须为正",
+                "data_invalid: {} It's {tag}.{name} It has to be right",
                 xml.display()
             );
         }
@@ -49,7 +49,7 @@ pub fn verify_fft(scf_xml: &Path, nscf_xml: &Path) -> Result<()> {
     let scf = fft_grids(scf_xml)?;
     let nscf = fft_grids(nscf_xml)?;
     ensure!(scf == nscf,
-        "data_invalid: SCF/NSCF FFT 不一致；SCF {}: 密度 {:?}, 平滑 {:?}；NSCF {}: 密度 {:?}, 平滑 {:?}。请核对各阶段 SYSTEM 的 nr1/nr2/nr3 与 nr1s/nr2s/nr3s，以及 PH 来源；禁止继续接续响应数据",
+        "data_invalid: SCF/NSCF FFT Inconsistencies;SCF {}: Density {:?}, Smooth {:?};NSCF {}: Density {:?}, Smooth {:?}.Please check the stages SYSTEM It's nr1/nr2/nr3 with nr1s/nr2s/nr3s ,and PH Source;no continuation of response data",
         scf_xml.display(), scf.dense, scf.smooth, nscf_xml.display(), nscf.dense, nscf.smooth);
     Ok(())
 }
@@ -61,20 +61,20 @@ pub fn numbers(text: &str) -> Result<Vec<f64>> {
         .collect::<std::result::Result<Vec<_>, _>>()?;
     ensure!(
         values.iter().all(|x| x.is_finite()),
-        "data_invalid: XML 包含非有限值"
+        "data_invalid: XML Include non-finite values"
     );
     Ok(values)
 }
 pub fn vector(text: &str) -> Result<[f64; 3]> {
     numbers(text)?
         .try_into()
-        .map_err(|_| anyhow::anyhow!("data_invalid: XML 向量长度不是 3"))
+        .map_err(|_| anyhow::anyhow!("data_invalid: XML Vector length is not 3"))
 }
 pub fn text<'a, 'input>(node: roxmltree::Node<'a, 'input>, name: &str) -> Result<&'a str> {
     node.descendants()
         .find(|n| n.has_tag_name(name))
         .and_then(|n| n.text())
-        .with_context(|| format!("data_invalid: XML 缺少 {name}"))
+        .with_context(|| format!("data_invalid: XML Missing {name}"))
 }
 
 #[derive(Debug, Clone)]
@@ -92,18 +92,18 @@ impl Geometry {
         let out = doc
             .descendants()
             .find(|n| n.has_tag_name("output"))
-            .context("data_invalid: XML 缺 output")?;
+            .context("data_invalid: XML Missing output")?;
         let cell = out
             .children()
             .find(|n| n.has_tag_name("atomic_structure"))
-            .context("data_invalid: XML 缺结构")?;
+            .context("data_invalid: XML Missing Structure")?;
         let alat: f64 = cell
             .attribute("alat")
-            .context("data_invalid: XML 缺 alat")?
+            .context("data_invalid: XML Missing alat")?
             .parse()?;
         ensure!(
             alat.is_finite() && alat > 0.0,
-            "data_invalid: XML alat 非法"
+            "data_invalid: XML alat Illegal"
         );
         let mut lattice = [[0.0; 3]; 3];
         let mut reciprocal = [[0.0; 3]; 3];
@@ -118,7 +118,7 @@ impl Geometry {
                     .sum();
                 ensure!(
                     (dot - if i == j { 1.0 } else { 0.0 }).abs() < 1e-8,
-                    "data_invalid: XML 正倒格矢不相容"
+                    "data_invalid: XML It's not compatible"
                 );
             }
         }
@@ -128,31 +128,31 @@ impl Geometry {
             .map(|n| {
                 Ok((
                     n.attribute("name")
-                        .context("data_invalid: 原子无名称")?
+                        .context("data_invalid: Atom without name")?
                         .into(),
-                    vector(n.text().context("data_invalid: 原子无坐标")?)?,
+                    vector(n.text().context("data_invalid: Atoms without coordinates")?)?,
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
         let nat: usize = cell
             .attribute("nat")
-            .context("data_invalid: XML 缺 nat")?
+            .context("data_invalid: XML Missing nat")?
             .parse()?;
         ensure!(
             !atoms.is_empty() && atoms.len() == nat,
-            "data_invalid: 原子数不符"
+            "data_invalid: Atoms don't match"
         );
         let fft_node = out
             .descendants()
             .find(|n| n.has_tag_name("fft_grid"))
-            .context("data_invalid: 缺 FFT 网格")?;
+            .context("data_invalid: Missing FFT Grid")?;
         let mut fft = [0; 3];
         for (i, v) in fft.iter_mut().enumerate() {
             *v = fft_node
                 .attribute(format!("nr{}", i + 1).as_str())
-                .context("data_invalid: FFT 维度缺失")?
+                .context("data_invalid: FFT Utility Missing")?
                 .parse()?;
-            ensure!(*v > 0, "data_invalid: FFT 维度为零");
+            ensure!(*v > 0, "data_invalid: FFT Zero dimensions");
         }
         Ok(Self {
             alat,
@@ -174,7 +174,7 @@ impl Geometry {
             for j in 0..3 {
                 ensure!(
                     (self.lattice[i][j] * BOHR_ANGSTROM - qe.cell.lattice[i][j]).abs() < 1e-7,
-                    "data_invalid: QE 输出晶格与固定结构不符"
+                    "data_invalid: QE The output crystal does not match the fixed structure"
                 );
             }
         }
@@ -187,10 +187,10 @@ impl Geometry {
             .collect::<Vec<_>>();
         ensure!(
             self.atoms.len() == names.len(),
-            "data_invalid: QE 输出原子数不符"
+            "data_invalid: QE The output atoms do not match"
         );
         for (i, (name, position)) in self.atoms.iter().enumerate() {
-            ensure!(name == names[i], "data_invalid: QE 输出原子顺序不符");
+            ensure!(name == names[i], "data_invalid: QE The output atom sequence does not match");
             let expected = if qe.cell.coord_type.to_lowercase().starts_with('d') {
                 std::array::from_fn(|a| {
                     (0..3)
@@ -210,7 +210,7 @@ impl Geometry {
             });
             ensure!(
                 fractional.iter().all(|x| (x - x.round()).abs() < 1e-7),
-                "data_invalid: QE 输出原子坐标不符"
+                "data_invalid: QE The output atomic coordinates don't match"
             );
         }
         Ok(())
@@ -232,24 +232,24 @@ pub fn validate_save(
     let out = doc
         .descendants()
         .find(|n| n.has_tag_name("output"))
-        .context("data_invalid: XML 缺 output")?;
+        .context("data_invalid: XML Missing output")?;
     for flag in ["lsda", "noncolin", "spinorbit"] {
         ensure!(
             text(out, flag)?.trim() == "false",
-            "data_invalid: 当前原生适配仅验证非磁性标量波函数"
+            "data_invalid: Current native appliance only validates non-magnetic marker wave functions"
         );
     }
     let nks: usize = text(out, "nks")?.trim().parse()?;
-    ensure!(nks > 0, "data_invalid: 保存树电子态为空");
+    ensure!(nks > 0, "data_invalid: Save tree electrons as empty");
     if let Some(energy) = scf_energy {
         ensure!(
             text(out, "convergence_achieved")?.trim() == "true",
-            "data_invalid: SCF XML 未收敛"
+            "data_invalid: SCF XML Unrecovered"
         );
         let xml_energy = numbers(text(out, "etot")?)?;
         ensure!(
             xml_energy.len() == 1 && (2.0 * xml_energy[0] - energy).abs() < 1e-7,
-            "data_invalid: SCF XML 与日志总能不一致"
+            "data_invalid: SCF XML It doesn't always match the log"
         );
     }
     let geo = Geometry::read(&xml)?;

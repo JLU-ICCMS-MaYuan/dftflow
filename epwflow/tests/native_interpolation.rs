@@ -45,7 +45,6 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
     let mut cfg: config::Config = toml::from_str(include_str!("fixtures/input.toml")).unwrap();
     cfg.work_dir = root.join("run");
     cfg.outdir = root.join("out");
-    cfg.budget.ledger = root.join("fixture-ledger.json");
     cfg.structure = root.join("POSCAR");
     fs::write(
         &cfg.structure,
@@ -77,6 +76,10 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
             cfg.programs.pw = prog
         } else if name == "ph" {
             cfg.programs.ph = prog
+        } else if name == "q2r" {
+            cfg.programs.q2r = Some(prog)
+        } else if name == "matdyn" {
+            cfg.programs.matdyn = Some(prog)
         };
     }
     let ep = root.join("epw.x");
@@ -93,6 +96,10 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
     cfg.programs.launcher.clear();
     cfg.programs.wannier90 = None;
     cfg.programs.pw2wannier90 = None;
+    cfg.programs.bands = None;
+    cfg.programs.dos = None;
+    cfg.programs.projwfc = None;
+    cfg.programs.postw90 = None;
     cfg.qe.scf.k_grid = [2; 3];
     cfg.qe.nscf.k_grid = [2; 3];
     cfg.phonon.q_grid = [2; 3];
@@ -130,6 +137,15 @@ fn case_options(failure: &str, automatic: bool, compare: bool) -> Case {
         &cfg.work_dir,
     )
     .unwrap();
+    if compare {
+        // 合成的第 4 步已完成产物；比较入口不得调用 QE 去制造另一份参考。
+        let ph = cfg.work_dir.join("qe-phonon"); fs::create_dir_all(&ph).unwrap();
+        let points = [[0.,0.,0.],[0.25,0.,0.],[0.5,0.,0.],[0.,0.5,0.],[0.25,0.5,0.],[0.5,0.5,0.]];
+        let mut text = String::from("&plot nbnd=6, nks=6 /\n");
+        for p in points { text.push_str(&format!("{} {} {} 0\n100 100 100 100 100 100\n",p[0],p[1],p[2])); }
+        fs::write(ph.join("scf.phband.freq"),text).unwrap();
+        fs::write(ph.join("scf.phdos.dat"),"# Frequency[cm^-1] DOS PDOS\n0 0 0\n100 0.06 0.03\n200 0 0\n").unwrap();
+    }
     fs::write(root.join("epw-failure"), failure).unwrap();
     Case { root, cfg, preserve }
 }
@@ -184,7 +200,7 @@ fn native_pipeline_pairs_new_coarse_and_isolates_smearings() {
     let calls = fs::read_to_string(c.root.join("epw-calls")).unwrap();
     assert_eq!(calls.lines().count(), 4);
     assert_eq!(calls.matches("coarse ").count(), 2);
-    assert!(!c.cfg.budget.ledger.exists());
+    assert!(!c.root.join("fixture-ledger.json").exists());
     // 在首个展宽有效时也不能复用未知的粗网格现场。
     assert!(run(&c).is_err());
     assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap(), calls);
@@ -208,7 +224,7 @@ fn native_pipeline_failure_preserves_evidence_and_blocks_downstream() {
         );
         if failure == "fine-exit" {
             assert!(
-                fs::read_to_string(c.cfg.work_dir.join("fine/smearing-0001/epw.out"))
+                fs::read_to_string(c.cfg.work_dir.join("fine/smearing-0001/epw_fine.out"))
                     .unwrap()
                     .contains("fine failed evidence")
             );
@@ -218,7 +234,7 @@ fn native_pipeline_failure_preserves_evidence_and_blocks_downstream() {
 
 #[test]
 fn energy_window_mismatch_blocks_publication_even_without_comparison_plots() {
-    for (failure, expected) in [("coarse-window", "原生 dis_win_min"), ("coarse-window-missing", "缺少 Inner")] {
+    for (failure, expected) in [("coarse-window", "Native dis_win_min"), ("coarse-window-missing", "Missing Inner")] {
         let c = case_with_auto(failure, true);
         assert!(c.cfg.kpath.is_none());
         let error = run(&c).unwrap_err().to_string();
@@ -245,24 +261,21 @@ fn fine_rechecks_actual_windows_in_hash_consistent_legacy_coarse_manifest() {
     fs::write(&wout, text.replace(line, "| Outer: 1.52 to 5.0 (eV)")).unwrap();
     let identity = store::Identity::capture(&wout).unwrap();
     manifest.wannier_digest = identity.sha256.clone();
-    let artifact = manifest.coarse.as_mut().unwrap().artifacts.iter_mut()
-        .find(|artifact| artifact.role == "coarse_wannier").unwrap();
-    artifact.sha256 = identity.sha256;
-    artifact.byte_size = fs::metadata(&wout).unwrap().len();
+    // 当前粗网格清单不登记 wout；保留实际窗口重检的负向场景。
     store::write(&work.join("wannier/manifest.json"), &manifest).unwrap();
     interpolation::scheduler::verify_coarse(&c.cfg, work).unwrap();
     let error = interpolation::scheduler::run_fine_registered(
         &c.cfg, Backend::Local, &[], work,
     ).unwrap_err().to_string();
-    assert!(error.contains("原生 dis_win_min"), "{error}");
+    assert!(error.contains("Native dis_win_min"), "{error}");
     assert!(!work.join("fine").exists());
     assert_eq!(fs::read_to_string(c.root.join("epw-calls")).unwrap().lines().count(), 2);
 }
 
 #[test]
-#[ignore = "依赖本机忽略的真实 LDA 粗网格，只读核验须显式指定"]
+#[ignore = "Reliance on reality ignored by the machine LDA coarse Grid, read-only requires visible designation"]
 fn actual_lda_coarse_restart_and_wannier() {
-    let root = PathBuf::from(std::env::var_os("EPWFLOW_REAL_QE_ROOT").expect("指定本机来源根目录"));
+    let root = PathBuf::from(std::env::var_os("EPWFLOW_REAL_QE_ROOT").expect("Specify the root source directory of this machine"));
     let dir = root.join("019-lda-q6-phonon-wannier/coarse");
     let r = interpolation::wannier::check_native(&dir.join("mgb2.wout"), 5).unwrap();
     assert_eq!(r.num_iter, 14);
@@ -338,17 +351,16 @@ fn automatic_comparison_delivers_stage_two_figures_from_native_path_and_mesh() {
     let source: interpolation::comparison::Sources = store::read(&work.join("comparison-native/sources.json")).unwrap();
     assert_eq!(source.path.len(),6);
     assert_eq!(source.mesh.len(),8);
-    assert!(work.join("comparison-native/phonon/force-constants/reference.fc.xml").is_file());
-    let matdyn_input=fs::read_to_string(work.join("comparison-native/phonon/frequencies/matdyn.in")).unwrap();
-    assert!(matdyn_input.contains("flfrc = 'reference.fc.xml'"));
-    assert!(matdyn_input.contains("asr = 'no'") && matdyn_input.contains("q_in_band_form = .false."));
+    assert!(!work.join("comparison-native/phonon").exists());
+    assert!(source.qe_phonon_bands.path.ends_with("qe-phonon/scf.phband.freq"));
+    assert!(source.qe_phonon_dos.is_some());
     let epw = interpolation::native::parse_bands(&fs::read_to_string(&source.epw_bands.path).unwrap()).unwrap();
     assert_eq!(epw.values.len(),14);
     assert_eq!(calls(&c).lines().filter(|l|l.starts_with("coarse ")).count(),2);
     assert_eq!(calls(&c).lines().filter(|l|l.starts_with("reread ")).count(),1);
     let qe_calls=fs::read_to_string(c.root.join("scientific-calls")).unwrap();
-    assert_eq!(qe_calls.lines().filter(|l|*l=="q2r").count(),1);
-    assert_eq!(qe_calls.lines().filter(|l|*l=="matdyn").count(),1);
+    assert_eq!(qe_calls.lines().filter(|l|*l=="q2r").count(),0);
+    assert_eq!(qe_calls.lines().filter(|l|*l=="matdyn").count(),0);
     let path_input=fs::read_to_string(work.join("comparison-native/electron/reference.in")).unwrap();
     assert!(path_input.contains("'bands'"));
     assert!(!path_input.contains("'nscf'"));
@@ -384,7 +396,7 @@ fn automatic_comparison_delivers_stage_two_figures_from_native_path_and_mesh() {
 fn automatic_comparison_resume_only_retries_failed_native_task_and_rejects_tamper() {
     let c=case_options("",true,true);
     let work=&c.cfg.work_dir;
-    fs::write(c.root.join("comparison-failure"),"matdyn").unwrap();
+    fs::write(c.root.join("comparison-failure"),"epw").unwrap();
     assert!(interpolation::scheduler::run_coarse_registered(&c.cfg,Backend::Local,&[],work,work).is_err());
     assert!(!work.join("wannier/manifest.json").exists());
     let qe_before=fs::read_to_string(c.root.join("scientific-calls")).unwrap();
@@ -436,7 +448,7 @@ fn failed_coarse_requires_explicit_retry_and_overwrites_failed_outputs() {
     assert_eq!(calls(&c).lines().count(), 4);
     assert!(!c.cfg.work_dir.join("native-attempts").exists());
     assert!(!c.cfg.work_dir.join("fine").exists());
-    assert!(!c.cfg.budget.ledger.exists());
+    assert!(!c.root.join("fixture-ledger.json").exists());
 }
 
 #[test]

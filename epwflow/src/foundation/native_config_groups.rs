@@ -18,8 +18,6 @@ fn path(call: &Call) -> Vec<String> {
         "4.qe-phdos" => vec![owner, "dos"],
         "5.wannier90" => vec![WANNIER, "wannier90"],
         "5.postw90-dos" => vec![WANNIER, "postw90"],
-        "6.qe-q2r" => vec![COARSE, "q2r"],
-        "6.qe-matdyn" => vec![COARSE, "matdyn"],
         "6.epw-comparison" => vec![COARSE, "comparison"],
         "8.epw-iso" => vec![SUPER, "iso"],
         "8.epw-aniso" => vec![SUPER, "aniso"],
@@ -44,7 +42,7 @@ fn spectra(d: &Document, grouped: bool) -> Result<Vec<String>> {
         None => Ok(vec![]),
         Some(v) => Ok(v
             .as_object()
-            .context("configuration: stages.7.epw-fine.spectra: 必须是具名子任务表")?
+            .context("configuration: stages.7.epw-fine.spectra: named subtask table required")?
             .keys()
             .cloned()
             .collect()),
@@ -65,14 +63,14 @@ pub(super) fn ungroup(mut d: Document) -> Result<Document> {
     ];
     ensure!(
         d.stages.len() == expected.len() && expected.iter().all(|n| d.stages.contains_key(*n)),
-        "configuration: stages: 八主阶段配置只能包含 {:?}，不接受旧平层调用段或未知阶段",
+        "configuration: stages: the eight-stage configuration accepts only {:?}; legacy flat call sections and unknown stages are rejected",
         expected
     );
     for (name, value) in &d.stages {
-        ensure!(value.is_object(), "configuration: stages.{name}: 必须是表");
+        ensure!(value.is_object(), "configuration: stages.{name}: must be a table");
     }
     ensure!(!d.workflow.contains_key("3.qe-bands"),
-        "configuration: workflow.3.qe-bands: 八主阶段配置应使用 workflow.3.qe-electronic，不能混写旧名称");
+        "configuration: workflow.3.qe-bands: use workflow.3.qe-electronic for the eight-stage configuration; do not mix legacy names");
     if let Some(value) = d.workflow.remove(ELECTRONIC) {
         d.workflow.insert("3.qe-bands".into(), value);
     }
@@ -93,7 +91,7 @@ pub(super) fn ungroup(mut d: Document) -> Result<Document> {
             let table = node
                 .get_mut(key)
                 .and_then(Value::as_object_mut)
-                .context("configuration: 主阶段必须是表")?;
+                .context("configuration: main stage must be a table")?;
             let keys = table
                 .iter()
                 .filter(|(_, v)| !v.is_object())
@@ -110,7 +108,7 @@ pub(super) fn ungroup(mut d: Document) -> Result<Document> {
         if let Some(value) = value {
             ensure!(
                 value.is_object(),
-                "configuration: stages.{}: 用途子段必须是表",
+                "configuration: stages.{}: purpose subsection must be a table",
                 path.join(".")
             );
             flat.insert(call.name, value);
@@ -127,7 +125,7 @@ pub(super) fn ungroup(mut d: Document) -> Result<Document> {
         let remaining = source[name].as_object().unwrap();
         ensure!(
             remaining.is_empty(),
-            "configuration: stages.{name}: 未知用途子段 {:?}；不接受程序或 namelist 的额外嵌套",
+            "configuration: stages.{name}: unknown purpose subsection {:?}; additional program or namelist nesting is unsupported",
             remaining.keys().collect::<Vec<_>>()
         );
     }
@@ -377,7 +375,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "显式提供 SiP2 原配置副本及当前配置；只读比较科学设置，不转换状态或提交作业"]
+    #[ignore = "Visible Provision SiP2 original configuration copy and current configuration; read-only comparative science settings, no conversion status or submission of jobs"]
     fn real_sip2_grouped_configuration_is_read_only_and_scientifically_identical() {
         let current = std::path::PathBuf::from(
             std::env::var_os("DFTFLOW_SIP2_GROUPED_CONFIG").expect("current config"),
@@ -416,7 +414,7 @@ mod tests {
             qe.nscf_input("./out").unwrap(),
             old_qe.nscf_input("./out").unwrap()
         );
-        eprintln!("SiP2: 八主阶段，全部科学键与 SCF/NSCF 输入一致；零状态转换、零提交");
+        eprintln!("SiP2: eight stages; all scientific keys and SCF/NSCF inputs consistent; no state migration or submissions");
     }
 }
 
@@ -433,7 +431,7 @@ pub(super) fn group(mut d: Document) -> Result<Document> {
     }
     ensure!(
         d.stages.is_empty(),
-        "configuration: 尚有未知调用无法归入八主阶段"
+        "configuration: unknown calls remain outside the eight main stages"
     );
     if let Some(value) = d.workflow.remove("3.qe-bands") {
         d.workflow.insert(ELECTRONIC.into(), value);
@@ -443,7 +441,7 @@ pub(super) fn group(mut d: Document) -> Result<Document> {
 }
 
 pub(super) fn message(text: &str, ph: &str) -> String {
-    let re = regex::Regex::new(r"(?:stages|workflow)\.[A-Za-z0-9_.-]+").expect("固定位置表达式");
+    let re = regex::Regex::new(r"(?:stages|workflow)\.[A-Za-z0-9_.-]+").expect("Fixed position expression");
     re.replace_all(text, |capture: &regex::Captures<'_>| {
         let input = &capture[0];
         if let Some(rest) = input.strip_prefix("workflow.3.qe-bands") {

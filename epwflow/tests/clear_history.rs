@@ -114,7 +114,7 @@ fn default_and_explicit_preview_leave_every_file_unchanged() {
     for args in [vec![], vec!["--dry-run"]] {
         let output = c.run(&args);
         success(&output);
-        assert!(String::from_utf8_lossy(&output.stdout).contains("只读预览"));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("Read-only preview"));
         c.assert_all_histories_present();
     }
 }
@@ -185,7 +185,7 @@ fn root_and_ancestor_symlinks_are_rejected_before_any_history_is_removed() {
         symlink(&external, &old).unwrap();
         let output = c.run(&["--yes"]);
         assert!(!output.status.success());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("拒绝链接"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("rejecting links"));
         for name in HISTORIES {
             assert!(c.work.join(name).join("old/input.out").is_file());
         }
@@ -212,7 +212,7 @@ fn live_json_script_relative_path_and_symlink_references_block_all_deletion() {
         }
         let output = c.run(&["--yes"]);
         assert!(!output.status.success(), "{kind}");
-        assert!(String::from_utf8_lossy(&output.stderr).contains("引用历史"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("References to history"));
         c.assert_all_histories_present();
     }
 }

@@ -240,7 +240,7 @@ fn mgb2_eband_and_eledos_run_all_external_steps() {
         "qe_eledos/eletdos.out",
         "qe_eledos/elepdos.out",
     ] {
-        assert!(w.0.join(output).is_file(), "未执行: {output}");
+        assert!(w.0.join(output).is_file(), "Not implemented: {output}");
     }
     assert_eq!(
         fs::read_to_string(w.0.join("qe_eband/menu.txt")).unwrap(),

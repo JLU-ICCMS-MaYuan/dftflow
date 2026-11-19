@@ -1,5 +1,7 @@
 # 三个独立程序的整合契约
 
+> 2026-11-17 最新约定：下文旧预算登记、账本读写和全局两个作业限制已经撤销，相关旧任务不再执行。当前实现与接口以 [0058 追加需求](../0058-epw-remove-resource-limits/spec.md) 为准；历史科学证据保留。
+
 ## 仅修改 MPI 的失败粗阶段恢复（T051）
 
 `epw_wannier --resume -w WORK --mpi 32 -s` 读取原固定科学输入，重新验证已交付的 QE 阶段，保持同一 `calculation_dir`。仅当原运行失败、Wannier 尚未交付、原作业已知结束且为支持的单 image 布局时，才同步改变本次 MPI 启动数、pool 数、Slurm 任务数及预算请求；pool 数不能超过完整粗 k 点数。重复、缺值或不支持的并行参数明确拒绝。
@@ -8,7 +10,7 @@
 
 尚未产生的独立比较参考仍属于第二阶段，会按原科学要求执行；此能力只保证不重复已验证且兼容的 QE 主链和参考任务，不承诺第二阶段完全不调用 QE。实现与进程回归归 0008 T051，F3 来源及质量归 0012，真实科学验收继续归 0015。
 
-本次沿用本地 [0008 Issue](issue-draft.md) 与 [0010 Issue](../0010-epwflow-qe-data/issue-draft.md)，科学插值、求解和图表继续归属 0012／0013／0014，真实验证归属 0015；不另建线上 Issue。用户已明确要求实现和测试，入口形式已选择三个独立程序。本页是本次变更的集中契约，旧文档中的单一 epwflow 多子命令入口与三来源必需验收要求按本页更新；没有完成的科学证据继续保持未完成。
+本次沿用本地 [GitHub Issue #8](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/8) 与 [GitHub Issue #10](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/10)，科学插值、求解和图表继续归属 0012／0013／0014，真实验证归属 0015；不另建线上 Issue。用户已明确要求实现和测试，入口形式已选择三个独立程序。本页是本次变更的集中契约，旧文档中的单一 epwflow 多子命令入口与三来源必需验收要求按本页更新；没有完成的科学证据继续保持未完成。
 
 ## 需求与验收
 
@@ -56,7 +58,7 @@ flowchart LR
 
 ## 三程序选项约定
 
-三个入口均使用 `-c inputepw.toml`，默认固定输入并生成本阶段 Slurm 脚本，`-s` 提交，`-r` 在已登记分配中执行，`--resume -w <运行目录> -s/-r` 从固定快照恢复。`--check` 检查配置；结合 `-w` 检查本阶段数据。`--status -w` 查询共享状态，`--probe -s/-r` 探测环境，`--prepare-only` 只固定输入。`--import <清单>`、`--collect -w`、`--plot --results` 和 `--results-check --results` 复用现有校验／重绘能力，第一阶段禁止绘图和比较导出。账本通过 `--budget status|reserve|attach|reconcile` 操作。旧多层子命令不作为第四个程序保留。第二、三阶段在前置完成证据缺失时明确拒绝，不替代前一个独立程序启动计算。
+三个入口均使用 `-c inputepw.toml`，默认固定输入并生成本阶段 Slurm 脚本，`-s` 提交，`-r` 在已登记分配中执行，`--resume -w <运行目录> -s/-r` 从固定快照恢复。`--check` 检查配置；结合 `-w` 检查本阶段数据。`--status -w` 查询共享状态，`--probe -s/-r` 探测环境，`--prepare-only` 只固定输入。`--import <清单>`、`--collect -w`、`--plot --results` 和 `--results-check --results` 复用现有校验／重绘能力。第 1～4 步在科学数据核验后自动绘制对应 QE 图，结果包可显式重绘；比较导出归属后续 EPW 阶段，具体见 [0072](../0072-stage-auto-plotting/spec.md)。账本通过 `--budget status|reserve|attach|reconcile` 操作。旧多层子命令不作为第四个程序保留。第二、三阶段在前置完成证据缺失时明确拒绝，不替代前一个独立程序启动计算。
 
 ## 一条命令生成总提交脚本
 

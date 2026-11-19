@@ -1,6 +1,8 @@
 # 需求规格
 
-原文见 [Issue](issue-draft.md)。
+> **协作入口（2026-11-17）**：[GitHub Issue #35](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/35)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+原文见 [GitHub Issue #35](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/35)。
 
 - FR-001：仅准确匹配 slurm-数字.out/err 的文件属于运行日志，不冻结为原生计算输入；恢复旧清单时忽略其日志项，但所有其余已绑定输入和输出继续严格核验。
 - FR-002：工作区与原生粗网格重试归档共用当前日志同 inode 入口维护，历史保留，脚本哈希保护和科学门不变。

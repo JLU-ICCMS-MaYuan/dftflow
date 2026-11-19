@@ -260,7 +260,7 @@ pub fn write_labeled_script(
         Some(&labeled),
     ));
     if let Some(m) = completion {
-        cmds.push(echo_qeflow(&format!("完成: {m}")));
+        cmds.push(echo_qeflow(&format!("Completed: {m}")));
     }
     write_job_script(ctx.workspace, script_name, ctx.slurm_header, &cmds)
 }
@@ -289,16 +289,16 @@ pub fn write_pre_and_split_stage_script(
 ) -> Result<PathBuf> {
     let mut steps: Vec<(String, String)> = Vec::new();
     if status.scf != TaskState::Finished {
-        steps.push(("运行 SCF".to_string(), "bash run_scf.sh".to_string()));
+        steps.push(("Run SCF".to_string(), "bash run_scf.sh".to_string()));
     }
     if status.ph.dyn0 != TaskState::Finished {
         steps.push((
-            "运行 dyn0".to_string(),
+            "Run dyn0".to_string(),
             format!("qeflow qe-ph-nosplit -c {config_file} --dyn0 -r"),
         ));
     }
     steps.push((
-        "准备并提交 split q 点任务".to_string(),
+        "Preparation and submission split q Point Tasks".to_string(),
         format!("qeflow qe-split-submit -c {config_file} --mode {mode}"),
     ));
     write_labeled_script(
@@ -308,7 +308,7 @@ pub fn write_pre_and_split_stage_script(
         1,
         11,
         Some("pre_and_split"),
-        Some("1/11-3/11 pre + split 提交阶段"),
+        Some("1/11-3/11 pre + split Submission phase"),
     )
 }
 
@@ -353,7 +353,7 @@ pub fn write_merge_and_process_stage_script(
         4,
         11,
         Some("merge_and_process"),
-        Some("4/11-11/11 merge + phonon 后处理阶段"),
+        Some("4/11-11/11 merge + phonon Reprocessing phase"),
     )
 }
 
@@ -513,36 +513,36 @@ pub fn submit_slurm(work_dir: &Path, script: &str, dependencies: &[String]) -> R
     let mut command = Command::new("sbatch");
     command.arg("--parsable").arg("--kill-on-invalid-dep=yes");
     if !dependencies.is_empty() {
-        anyhow::ensure!(dependencies.iter().all(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())), "无效依赖作业号");
+        anyhow::ensure!(dependencies.iter().all(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())), "Invalid dependent job number");
         command.arg(format!("--dependency=afterok:{}", dependencies.join(":")));
     }
     let output = command.arg(script).current_dir(work_dir).output()?;
-    anyhow::ensure!(output.status.success(), "Slurm 提交 {script} 失败: {}", String::from_utf8_lossy(&output.stderr));
+    anyhow::ensure!(output.status.success(), "Slurm Submit {script} Failed: {}", String::from_utf8_lossy(&output.stderr));
     let stdout = String::from_utf8_lossy(&output.stdout);
     parse_parsable_job_id(stdout.trim())
 }
 
 pub fn parse_parsable_job_id(text: &str) -> Result<String> {
     let id = text.split(';').next().unwrap_or("");
-    anyhow::ensure!(!id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) && text.lines().count() == 1, "无法解析 Slurm 作业号: {text:?}");
+    anyhow::ensure!(!id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) && text.lines().count() == 1, "Unable to parse Slurm Job Number: {text:?}");
     Ok(id.to_string())
 }
 
 /// 查询失败不能当作作业已经结束，避免重复提交。
 pub fn slurm_job_state(id: &str) -> Result<String> {
-    anyhow::ensure!(id.chars().all(|c| c.is_ascii_digit()) && !id.is_empty(), "无效作业号");
+    anyhow::ensure!(id.chars().all(|c| c.is_ascii_digit()) && !id.is_empty(), "Invalid Job Number");
     let out = Command::new("squeue").args(["-h", "-j", id, "-o", "%T|%r"]).output()?;
-    anyhow::ensure!(out.status.success(), "squeue 查询失败: {}", String::from_utf8_lossy(&out.stderr));
+    anyhow::ensure!(out.status.success(), "squeue Query failed: {}", String::from_utf8_lossy(&out.stderr));
     let state = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if !state.is_empty() {
         if state.contains("DependencyNeverSatisfied") { return Ok("INVALID_DEPENDENCY".into()); }
         return Ok(state.split('|').next().unwrap().to_string());
     }
     let out = Command::new("sacct").args(["-n", "-X", "-j", id, "--format=State", "--parsable2"]).output()?;
-    anyhow::ensure!(out.status.success(), "sacct 查询失败");
+    anyhow::ensure!(out.status.success(), "sacct Query failed");
     let text=String::from_utf8_lossy(&out.stdout);
     let state=text.lines().next().unwrap_or("").trim().trim_end_matches('|').split_whitespace().next().unwrap_or("");
-    anyhow::ensure!(!state.is_empty(), "作业 {id} 不在队列或 accounting 中，拒绝重复提交");
+    anyhow::ensure!(!state.is_empty(), "Operations {id} Not in Queue or accounting , No duplicates");
     Ok(state.to_string())
 }
 

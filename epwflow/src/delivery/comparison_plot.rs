@@ -15,7 +15,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const ERROR_PURPLE: RGBColor = RGBColor(138, 43, 226);
 
 /// 只合并屏幕上挤在一起的文字；原始高对称点竖线和曲线坐标保持。
 fn axis_labels<'a>(ticks: impl Iterator<Item = (i32, i32, &'a str)>) -> Vec<(i32, i32, String)> {
@@ -51,79 +50,6 @@ fn coordinate(value: f64) -> String {
     format!("{value:.6}")
 }
 
-/// 路径外最大误差单独展示，不投影到无关的高对称点或覆盖连续色散。
-fn phonon_panel<DB: DrawingBackend>(area: &DrawingArea<DB, Shift>, data: &Dataset) -> Result<()>
-where
-    DB::ErrorType: 'static,
-{
-    let markers = &data.metadata.phonon_error_markers;
-    if markers.is_empty() {
-        return chart(area, &data.phonon, data, 2, "total");
-    }
-    let (_, height) = area.dim_in_pixel();
-    let (main, footer) = area.split_vertically(height.saturating_sub(155));
-    chart(&main, &data.phonon, data, 2, "total")?;
-    for (card, marker) in footer.split_evenly((1, markers.len())).iter().zip(markers) {
-        let (width, _) = card.dim_in_pixel();
-        let title = if marker.scope == "sampled_maximum" {
-            if marker.path_distance.is_some() {
-                "Sampled maximum (on path)"
-            } else {
-                "Sampled maximum (OFF PATH)"
-            }
-        } else {
-            "On-path sampled maximum"
-        };
-        let label = marker
-            .path_label
-            .as_deref()
-            .unwrap_or("Not a point on this high-symmetry path");
-        let q = marker
-            .q_crystal
-            .iter()
-            .map(|v| coordinate(*v))
-            .collect::<Vec<_>>()
-            .join(", ");
-        for (y, text, size) in [
-            (20, format!("{title}: {:.2} cm^-1", marker.error_cm1), 16),
-            (43, format!("q(crystal) = ({q})"), 14),
-            (
-                65,
-                format!("mode {} (frequency sorted); {label}", marker.mode_sorted),
-                13,
-            ),
-            (90, format!("QE ph.x: {:.6} cm^-1", marker.qe_cm1), 14),
-            (113, format!("EPW: {:.6} cm^-1", marker.epw_cm1), 14),
-            (
-                137,
-                "Maximum over verified samples; not the entire Brillouin zone".into(),
-                12,
-            ),
-        ] {
-            card.draw(&Text::new(
-                text,
-                (12, y),
-                ("sans-serif", size).into_font().color(&ERROR_PURPLE),
-            ))?;
-        }
-        // 两个紫点分别对应参考和插值频率；连线长度不代表主图的路径距离。
-        let x = width as i32 - 42;
-        let (qe_y, epw_y) = if marker.qe_cm1 <= marker.epw_cm1 {
-            (111, 87)
-        } else {
-            (87, 111)
-        };
-        card.draw(&PathElement::new(
-            vec![(x, qe_y), (x, epw_y)],
-            ERROR_PURPLE.stroke_width(2),
-        ))?;
-        for y in [qe_y, epw_y] {
-            card.draw(&Circle::new((x, y), 5, ERROR_PURPLE.filled()))?;
-        }
-    }
-    Ok(())
-}
-
 /// 每张常规图只展示自己已有数据的最大差值，不作质量判断。
 fn comparison_panel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
@@ -139,11 +65,7 @@ where
         return chart(area, curves, data, kind, projection);
     }
     let Some(differences) = &data.differences else {
-        return if kind == 2 {
-            phonon_panel(area, data)
-        } else {
-            chart(area, curves, data, kind, projection)
-        };
+        return chart(area, curves, data, kind, projection);
     };
     let stats = match kind {
         0 => &differences.electronic_path,
@@ -196,7 +118,7 @@ where
     } else {
         vec![
             format!(
-                "{}: no paired data (无可配对数据)",
+                "{}: no paired data",
                 if kind == 0 || kind == 2 {
                     "Path"
                 } else {
@@ -216,7 +138,7 @@ where
         footer.draw(&Text::new(
             line,
             (12, 18 + i as i32 * 25),
-            ("sans-serif", 14).into_font().color(&ERROR_PURPLE),
+            ("sans-serif", 14).into_font().color(&BLACK),
         ))?;
     }
     Ok(())
@@ -268,7 +190,7 @@ pub fn check_figures(results: &Path) -> Result<bool> {
         record.schema_version == 1
             && record.comparison_digest
                 == store::hash_file(&results.join("comparison/manifest.json"))?,
-        "data_invalid: 图像清单来源不符"
+        "data_invalid: Image manifest source does not match"
     );
     for file in record.files {
         file.verify(&output)?;
@@ -494,52 +416,6 @@ where
         .label("QE ph.x (direct points)")
         .legend(|(x, y)| Circle::new((x + 15, y), 4, style::WINDOWS[1].filled()));
     }
-    if kind == 2 {
-        if let Some(marker) = data
-            .metadata
-            .phonon_error_markers
-            .iter()
-            .find(|m| m.scope == "path_maximum")
-        {
-            if let Some(x) = marker.path_distance {
-                ctx.draw_series(std::iter::once(PathElement::new(
-                    vec![(x, marker.qe_cm1), (x, marker.epw_cm1)],
-                    ERROR_PURPLE.stroke_width(3),
-                )))?;
-                ctx.draw_series(
-                    [marker.qe_cm1, marker.epw_cm1]
-                        .into_iter()
-                        .map(|y| Circle::new((x, y), 6, ERROR_PURPLE.filled())),
-                )?
-                .label("Purple: max direct PH / EPW error on path")
-                .legend(|(x, y)| Circle::new((x + 15, y), 5, ERROR_PURPLE.filled()));
-                ctx.draw_series(std::iter::once(
-                    EmptyElement::at((x, marker.qe_cm1.max(marker.epw_cm1)))
-                        + Text::new(
-                            format!("mode {}: {:.2} cm^-1", marker.mode_sorted, marker.error_cm1),
-                            (10, -13),
-                            ("sans-serif", 14).into_font().color(&ERROR_PURPLE),
-                        ),
-                ))?;
-            }
-        }
-    }
-    if kind == 0 || kind == 2 {
-        if let Some(d) = &data.differences {
-            let stats=if kind==0 {&d.electronic_path} else {&d.phonon_path};
-            if let Some(m)=&stats.maximum {
-                if let Some(x)=m.path_distance {
-                    ctx.draw_series(std::iter::once(PathElement::new(
-                        vec![(x,m.qe_value),(x,m.epw_value)],ERROR_PURPLE.stroke_width(3))))?;
-                    ctx.draw_series([m.qe_value,m.epw_value].into_iter()
-                        .filter(|y| *y >= ymin && *y <= ymax)
-                        .map(|y|Circle::new((x,y),6,ERROR_PURPLE.filled())))?
-                        .label("Purple: path maximum difference")
-                        .legend(|(x,y)|Circle::new((x+15,y),5,ERROR_PURPLE.filled()));
-                }
-            }
-        }
-    }
     if kind == 0 || kind == 1 {
         // 电子能量已经是 E−E_F；零点参考与四个物理窗口边界分别标识。
         let fermi_color = style::FERMI;
@@ -739,7 +615,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             && formats
                 .iter()
                 .all(|f| matches!(f.as_str(), "png" | "svg" | "pdf")),
-        "data_invalid: 格式只能是 png,svg,pdf"
+        "data_invalid: Format can only be png,svg,pdf"
     );
     let root = results.join("comparison");
     let data = comparison::load(&root)?;
@@ -750,22 +626,22 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
     let _lock = store::Lock::acquire(&output.join("comparison-figures"))?;
     ensure!(
         !output.canonicalize()?.starts_with(root.canonicalize()?),
-        "input_conflict: 图像输出不能覆盖比较数据"
+        "input_conflict: Image output cannot overwrite comparative data"
     );
     let previous = output.join("comparison-figures.json");
     super::publication::recover(&output, "comparison-figures.json")?;
     let comparison_digest = store::hash_file(&root.join("manifest.json"))?;
     let previous_files = if previous.exists() {
         let old: Figures = store::read(&previous)?;
-        ensure!(old.schema_version == 1, "data_invalid: 图像清单版本未知");
+        ensure!(old.schema_version == 1, "data_invalid: The image manifest version is unknown");
         ensure!(old.comparison_digest == comparison_digest,
-            "input_conflict: 图像绑定其他比较来源，请使用新的输出目录");
+            "input_conflict: To bind images to other sources of comparison, use the new output directory");
         for f in &old.files {
             if output.join(&f.relative_path).exists() {
                 f.verify(&output)?;
             } else {
                 ensure!(f.relative_path.extension().and_then(|e|e.to_str()).is_some_and(|ext|formats.iter().any(|v|v==ext)),
-                    "data_invalid: 缺失图像须包含在本次重绘格式中");
+                    "data_invalid: Missing images must be included in this repainting format");
             }
         }
         old.files
@@ -779,7 +655,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             let file = PathBuf::from(format!("{name}.{format}"));
             ensure!(
                 !output.join(&file).exists() || owned.contains(&file),
-                "input_conflict: 未知图像冲突 {}",
+                "input_conflict: Unknown image conflict {}",
                 file.display()
             );
         }
@@ -810,7 +686,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
                 let options = style::font_options();
                 let tree = svg2pdf::usvg::Tree::from_str(&fs::read_to_string(&svg)?, &options)?;
                 let pdf = svg2pdf::to_pdf(&tree, Default::default(), Default::default())
-                    .map_err(|e| anyhow::anyhow!("PDF 转换失败: {e}"))?;
+                    .map_err(|e| anyhow::anyhow!("PDF conversion failed: {e}"))?;
                 fs::write(stage.join(format!("{name}.pdf")), pdf)?;
             }
         }

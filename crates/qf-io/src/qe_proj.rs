@@ -93,7 +93,7 @@ fn ft_header_line(line: &str) -> bool {
 /// 解析 projwfc 投影文件；格式不匹配时返回 `Ok(None)`（对齐 Python 返回 None）。
 pub fn parse_projwfc_file(path: &str) -> Result<Option<ProjwfcData>> {
     let text = std::fs::read_to_string(path)
-        .with_context(|| format!("读取 projwfc 文件失败: {path}"))?;
+        .with_context(|| format!("Read projwfc File Failed: {path}"))?;
     let lines: Vec<&str> = text.lines().map(|l| l.trim_end()).collect();
 
     let mut header_idx = None;
@@ -107,9 +107,9 @@ pub fn parse_projwfc_file(path: &str) -> Result<Option<ProjwfcData>> {
             && index + 1 < lines.len()
             && ft_header_line(lines[index + 1])
         {
-            nproj = parts[0].parse().context("projwfc 头部 nproj 解析失败")?;
-            nk = parts[1].parse().context("projwfc 头部 nk 解析失败")?;
-            nbnd = parts[2].parse().context("projwfc 头部 nbnd 解析失败")?;
+            nproj = parts[0].parse().context("projwfc Head nproj Parsing failed")?;
+            nk = parts[1].parse().context("projwfc Head nk Parsing failed")?;
+            nbnd = parts[2].parse().context("projwfc Head nbnd Parsing failed")?;
             header_idx = Some(index + 2);
             break;
         }
@@ -125,12 +125,12 @@ pub fn parse_projwfc_file(path: &str) -> Result<Option<ProjwfcData>> {
     for proj_idx in 0..nproj {
         idx = next_nonempty(&lines, idx);
         if idx >= lines.len() {
-            bail!("projwfc 文件结构不完整，缺少投影头部。");
+            bail!("projwfc File structure incomplete, projecting head missing.");
         }
         let tokens: Vec<&str> = lines[idx].split_whitespace().collect();
         idx += 1;
         if tokens.len() < 6 {
-            bail!("投影头部解析失败: {}", lines[idx - 1]);
+            bail!("Projection Head Parsing Failed: {}", lines[idx - 1]);
         }
 
         let atom_index = tokens[1];
@@ -144,7 +144,7 @@ pub fn parse_projwfc_file(path: &str) -> Result<Option<ProjwfcData>> {
             .filter_map(|t| t.parse::<i64>().ok())
             .collect();
         if trailing_ints.len() < 2 {
-            bail!("无法解析 l/m: {}", lines[idx - 1]);
+            bail!("Unable to parse l/m: {}", lines[idx - 1]);
         }
         let l_val = trailing_ints[trailing_ints.len() - 2];
         let m_val = trailing_ints[trailing_ints.len() - 1];
@@ -167,16 +167,16 @@ pub fn parse_projwfc_file(path: &str) -> Result<Option<ProjwfcData>> {
 
         for _ in 0..(nk * nbnd) {
             if idx >= lines.len() {
-                bail!("projwfc 文件数据长度不足。");
+                bail!("projwfc File data insufficiency.");
             }
             let parts: Vec<&str> = lines[idx].split_whitespace().collect();
             idx += 1;
             if parts.len() < 3 {
                 continue;
             }
-            let k_idx: usize = parts[0].parse::<usize>().context("projwfc k 索引解析失败")? - 1;
-            let b_idx: usize = parts[1].parse::<usize>().context("projwfc 带索引解析失败")? - 1;
-            let val: f64 = parts[2].parse().context("projwfc 权重解析失败")?;
+            let k_idx: usize = parts[0].parse::<usize>().context("projwfc k Index Parsing Failed")? - 1;
+            let b_idx: usize = parts[1].parse::<usize>().context("projwfc Parsing with Index failed")? - 1;
+            let val: f64 = parts[2].parse().context("projwfc Reconsideration failed")?;
             if k_idx < nk && b_idx < nbnd {
                 weights[proj_idx][k_idx * nbnd + b_idx] = val;
             }
@@ -194,7 +194,7 @@ pub fn parse_projwfc_file(path: &str) -> Result<Option<ProjwfcData>> {
 /// 解析 `elebanddata.dat`（bands.x 输出），返回 (k 坐标, 能量[带][k], nbnd, nks)。
 pub fn parse_elebanddata(path: &str) -> Result<(Vec<[f64; 3]>, Vec<Vec<f64>>, usize, usize)> {
     if !Path::new(path).exists() {
-        bail!("找不到能带数据文件: {path}");
+        bail!("Cannot find file with data: {path}");
     }
     let text = std::fs::read_to_string(path)?;
     let lines: Vec<&str> = text
@@ -207,9 +207,9 @@ pub fn parse_elebanddata(path: &str) -> Result<(Vec<[f64; 3]>, Vec<Vec<f64>>, us
     let header = lines.first().copied().unwrap_or("");
     let caps = header_re
         .captures(header)
-        .context("无法从 elebanddata.dat 解析 nbnd/nks。")?;
-    let nbnd: usize = caps[1].parse().context("nbnd 解析失败")?;
-    let nks: usize = caps[2].parse().context("nks 解析失败")?;
+        .context("Cannot From elebanddata.dat Parsing nbnd/nks.")?;
+    let nbnd: usize = caps[1].parse().context("nbnd Parsing failed")?;
+    let nks: usize = caps[2].parse().context("nks Parsing failed")?;
 
     let mut coords = Vec::new();
     let mut energies: Vec<Vec<f64>> = Vec::new();
@@ -240,7 +240,7 @@ pub fn parse_elebanddata(path: &str) -> Result<(Vec<[f64; 3]>, Vec<Vec<f64>>, us
         }
     }
     if coords.len() != nks || energies.len() != nks {
-        bail!("elebanddata.dat 解析的 k 点数量与头部不一致。");
+        bail!("elebanddata.dat Parsed k The number of points doesn't match the head.");
     }
     Ok((coords, energies, nbnd, nks))
 }
@@ -251,21 +251,21 @@ pub fn parse_elebanddata(path: &str) -> Result<(Vec<[f64; 3]>, Vec<Vec<f64>>, us
 
 /// 从 eband.in 读 CELL_PARAMETERS；缺段时回退同目录 POSCAR（含 scale）。
 pub fn read_cell_from_pw_input(path: &str) -> Result<[[f64; 3]; 3]> {
-    let text = std::fs::read_to_string(path).map_err(|_| anyhow::anyhow!("找不到 eband.in: {path}"))?;
+    let text = std::fs::read_to_string(path).map_err(|_| anyhow::anyhow!("Not found eband.in: {path}"))?;
     let lines: Vec<&str> = text.lines().collect();
     for idx in 0..lines.len() {
         if lines[idx].trim().to_uppercase().starts_with("CELL_PARAMETERS") {
             let mut cell = [[0.0_f64; 3]; 3];
             for (offset, row) in cell.iter_mut().enumerate() {
                 if idx + 1 + offset >= lines.len() {
-                    bail!("CELL_PARAMETERS 段不完整。");
+                    bail!("CELL_PARAMETERS Paragraph incomplete.");
                 }
                 let parts: Vec<&str> = lines[idx + 1 + offset].split_whitespace().collect();
                 if parts.len() < 3 {
-                    bail!("CELL_PARAMETERS 行格式错误。");
+                    bail!("CELL_PARAMETERS Line Format Error.");
                 }
                 for (c, part) in row.iter_mut().zip(&parts) {
-                    *c = part.parse().context("CELL_PARAMETERS 分量解析失败")?;
+                    *c = part.parse().context("CELL_PARAMETERS Parse Parsing failed")?;
                 }
             }
             return Ok(cell);
@@ -279,40 +279,40 @@ pub fn read_cell_from_pw_input(path: &str) -> Result<[[f64; 3]; 3]> {
         let ptext = std::fs::read_to_string(&poscar_path)?;
         let plines: Vec<&str> = ptext.lines().collect();
         if plines.len() < 5 {
-            bail!("POSCAR 行数不足: {}", poscar_path.display());
+            bail!("POSCAR Inadequate number of lines: {}", poscar_path.display());
         }
         let scale: f64 = plines[1]
             .trim()
             .parse()
-            .context("POSCAR scale 解析失败")?;
+            .context("POSCAR scale Parsing failed")?;
         let mut cell = [[0.0_f64; 3]; 3];
         for (row, line) in cell.iter_mut().zip(&plines[2..5]) {
             for (c, part) in row.iter_mut().zip(line.split_whitespace()) {
-                *c = part.parse::<f64>().context("POSCAR 晶格解析失败")? * scale;
+                *c = part.parse::<f64>().context("POSCAR Crystal parsing failed")? * scale;
             }
         }
         return Ok(cell);
     }
-    bail!("eband.in 中未找到 CELL_PARAMETERS 段，且同目录没有 POSCAR。")
+    bail!("eband.in Not Found CELL_PARAMETERS paragraphs, and not in the same directory POSCAR.")
 }
 
 fn read_crystal_b_kpoints(path: &str) -> Result<(Vec<String>, usize)> {
     if !Path::new(path).exists() {
-        bail!("找不到 eband.in: {path}");
+        bail!("Not found eband.in: {path}");
     }
     let text = std::fs::read_to_string(path)?;
     let mut kline = None;
     for (i, line) in text.lines().enumerate() {
         if line.trim().to_uppercase().starts_with("K_POINTS") {
             if !line.to_uppercase().contains("CRYSTAL_B") {
-                bail!("K_POINTS 段不是 crystal_b 格式。");
+                bail!("K_POINTS No, it's not crystal_b Format.");
             }
             kline = Some(i);
             break;
         }
     }
     let Some(kline) = kline else {
-        bail!("eband.in 中未找到 K_POINTS 段。");
+        bail!("eband.in Not Found K_POINTS Paragraph.");
     };
     let lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
     Ok((lines, kline))
@@ -321,13 +321,13 @@ fn read_crystal_b_kpoints(path: &str) -> Result<(Vec<String>, usize)> {
 fn read_kpoint_count(lines: &[String], start: usize) -> Result<(usize, usize)> {
     let idx = next_nonempty(lines, start);
     if idx >= lines.len() {
-        bail!("K_POINTS 段缺少点数。");
+        bail!("K_POINTS Paragraph missing points.");
     }
     let first = lines[idx]
         .split_whitespace()
         .next()
-        .context("K_POINTS 点数解析失败。")?;
-    let n: usize = first.parse().map_err(|_| anyhow::anyhow!("K_POINTS 点数解析失败。"))?;
+        .context("K_POINTS Parsing of points failed.")?;
+    let n: usize = first.parse().map_err(|_| anyhow::anyhow!("K_POINTS Parsing of points failed."))?;
     Ok((idx + 1, n))
 }
 
@@ -340,7 +340,7 @@ pub fn read_kpath_points_from_pw_input(path: &str) -> Result<(Vec<[f64; 3]>, Vec
     for _ in 0..num {
         idx = next_nonempty(&lines, idx);
         if idx >= lines.len() {
-            bail!("K_POINTS 段数据不足。");
+            bail!("K_POINTS Inadequate data for paragraph.");
         }
         let line = lines[idx].as_str();
         idx += 1;
@@ -350,12 +350,12 @@ pub fn read_kpath_points_from_pw_input(path: &str) -> Result<(Vec<[f64; 3]>, Vec
         };
         let parts: Vec<&str> = coord_part.split_whitespace().collect();
         if parts.len() < 3 {
-            bail!("K_POINTS 行格式错误: {line}");
+            bail!("K_POINTS Line Format Error: {line}");
         }
         points.push([
-            parts[0].parse().context("K_POINTS 坐标解析失败")?,
-            parts[1].parse().context("K_POINTS 坐标解析失败")?,
-            parts[2].parse().context("K_POINTS 坐标解析失败")?,
+            parts[0].parse().context("K_POINTS Coordinate Parsing Failed")?,
+            parts[1].parse().context("K_POINTS Coordinate Parsing Failed")?,
+            parts[2].parse().context("K_POINTS Coordinate Parsing Failed")?,
         ]);
         labels.push(label);
     }
@@ -371,22 +371,22 @@ pub fn read_kpoints_weights_from_pw_input(path: &str) -> Result<(Vec<[f64; 3]>, 
     for _ in 0..num {
         idx = next_nonempty(&lines, idx);
         if idx >= lines.len() {
-            bail!("K_POINTS 段数据不足。");
+            bail!("K_POINTS Inadequate data for paragraph.");
         }
         let line = lines[idx].as_str();
         idx += 1;
         let coord_part = line.split_once('!').map(|(c, _)| c).unwrap_or(line);
         let parts: Vec<&str> = coord_part.split_whitespace().collect();
         if parts.len() < 4 {
-            bail!("K_POINTS 行格式错误: {line}");
+            bail!("K_POINTS Line Format Error: {line}");
         }
         let weight: f64 = parts[3]
             .parse()
-            .map_err(|_| anyhow::anyhow!("K_POINTS 权重解析失败: {line}"))?;
+            .map_err(|_| anyhow::anyhow!("K_POINTS Reconsideration failed: {line}"))?;
         points.push([
-            parts[0].parse().context("K_POINTS 坐标解析失败")?,
-            parts[1].parse().context("K_POINTS 坐标解析失败")?,
-            parts[2].parse().context("K_POINTS 坐标解析失败")?,
+            parts[0].parse().context("K_POINTS Coordinate Parsing Failed")?,
+            parts[1].parse().context("K_POINTS Coordinate Parsing Failed")?,
+            parts[2].parse().context("K_POINTS Coordinate Parsing Failed")?,
         ]);
         weights.push(weight as i64);
     }
@@ -438,7 +438,7 @@ pub fn recip_lattice_2pi(cell: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
 /// 按 crystal_b 权重段内插值生成 k 列表（`generate_klist`）。
 pub fn generate_klist(points: &[[f64; 3]], weights: &[i64]) -> Result<Vec<[f64; 3]>> {
     if points.len() != weights.len() {
-        bail!("K_POINTS 点与权重数量不一致。");
+        bail!("K_POINTS Inconsistent number of points and weights.");
     }
     let mut klist = Vec::new();
     for i in 0..points.len() - 1 {
@@ -446,7 +446,7 @@ pub fn generate_klist(points: &[[f64; 3]], weights: &[i64]) -> Result<Vec<[f64; 
         let end = points[i + 1];
         let num = weights[i];
         if num < 1 {
-            bail!("K_POINTS 权重必须为正整数。");
+            bail!("K_POINTS Weights must be positive integer.");
         }
         for j in 0..num {
             let frac = j as f64 / num as f64;
@@ -457,7 +457,7 @@ pub fn generate_klist(points: &[[f64; 3]], weights: &[i64]) -> Result<Vec<[f64; 
             ]);
         }
     }
-    klist.push(*points.last().context("K_POINTS 为空")?);
+    klist.push(*points.last().context("K_POINTS empty")?);
     Ok(klist)
 }
 
@@ -729,7 +729,7 @@ pub fn parse_tdos_with_fermi(path: &str) -> Result<TdosData> {
         }
     }
     if energy.is_empty() {
-        bail!("未从 {path} 解析到 TDOS 数据。");
+        bail!("Not From {path} Parsing To TDOS Data.");
     }
     Ok(TdosData {
         energy,
@@ -893,14 +893,14 @@ pub fn run_process_eband(
     prefix_override: Option<&str>,
 ) -> Result<Vec<String>> {
     if !Path::new(input_path).exists() {
-        bail!("找不到输入文件: {input_path}");
+        bail!("Input file not found: {input_path}");
     }
-    let proj = parse_projwfc_file(input_path)?.context("未识别 projwfc 投影文件格式。")?;
+    let proj = parse_projwfc_file(input_path)?.context("Not recognized projwfc Projective File Format.")?;
     let (coords, energies, nbnd_band, nks_band) = parse_elebanddata(bandfile)?;
     let _ = coords;
     if proj.nk != nks_band || proj.nbnd != nbnd_band {
         bail!(
-            "投影文件与能带文件尺寸不一致: projwfc(nk={}, nbnd={}) vs bands(nk={}, nbnd={})",
+            "The projection file does not match the size of the file: projwfc(nk={}, nbnd={}) vs bands(nk={}, nbnd={})",
             proj.nk,
             proj.nbnd,
             nks_band,
@@ -914,7 +914,7 @@ pub fn run_process_eband(
     let klist = generate_klist(&kpoints, &weights)?;
     if klist.len() != nks_band {
         bail!(
-            "K_POINTS 生成的 k 点数({})与 bands 文件不一致(nks={})",
+            "K_POINTS Generated k Points({})with bands File Inconsistency(nks={})",
             klist.len(),
             nks_band
         );
@@ -1078,7 +1078,7 @@ pub fn run_process_eledos(input: &str, proj_arg: Option<&str>) -> Result<Vec<Str
         let dir = input_abs.trim_end_matches('/').to_string();
         match find_first_file(&dir, &[r".+\.tdos"]) {
             Some(p) => (dir, p),
-            None => bail!("未找到 *.tdos 文件。"),
+            None => bail!("Not found *.tdos Documentation."),
         }
     } else {
         let dir = Path::new(&input_abs)
@@ -1091,7 +1091,7 @@ pub fn run_process_eledos(input: &str, proj_arg: Option<&str>) -> Result<Vec<Str
         } else {
             match find_first_file(&dir, &[r".+\.tdos"]) {
                 Some(p) => (dir, p),
-                None => bail!("未找到 *.tdos 文件。"),
+                None => bail!("Not found *.tdos Documentation."),
             }
         }
     };
@@ -1124,7 +1124,7 @@ pub fn run_process_eledos(input: &str, proj_arg: Option<&str>) -> Result<Vec<Str
         .collect();
     pdos_files.sort();
     if pdos_files.is_empty() {
-        bail!("未找到 pdos_atm 文件。");
+        bail!("Not found pdos_atm Documentation.");
     }
 
     // data 用有序容器保持插入顺序（与 Python dict 一致）。
@@ -1168,11 +1168,11 @@ pub fn run_process_eledos(input: &str, proj_arg: Option<&str>) -> Result<Vec<Str
                 .zip(&tdos_data.energy)
                 .any(|(a, b)| (a - b).abs() > 1e-6)
         {
-            bail!("能量网格与 TDOS 不一致: {filename}");
+            bail!("Energy Grid and TDOS Inconsistencies: {filename}");
         }
         let components = orbital_components(&l_letter);
         if !values.is_empty() && values[0].len() < components.len() {
-            bail!("{filename} 的 pdos 列数不足。");
+            bail!("{filename} It's pdos Insufficient number of columns.");
         }
         for (idx, comp) in components.iter().enumerate() {
             let label = format!("{element}{atom_index}-{shell_num}{comp}");
@@ -1180,7 +1180,7 @@ pub fn run_process_eledos(input: &str, proj_arg: Option<&str>) -> Result<Vec<Str
         }
     }
     if data.is_empty() {
-        bail!("未解析到 PDOS 数据。");
+        bail!("Unsolved to PDOS Data.");
     }
 
     let labels: Vec<String> = data.iter().map(|(l, _)| l.clone()).collect();

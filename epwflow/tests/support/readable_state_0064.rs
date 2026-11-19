@@ -22,9 +22,10 @@ fn eight(c: &Case) {
     assert!(names.iter().all(|n| n.ends_with(".log") || n.ends_with("-config.toml")));
     for name in names.into_iter().filter(|n| n.ends_with(".log")) {
         let text = fs::read_to_string(root.join(name)).unwrap();
+        assert!(!text.chars().any(|c| ('\u{3400}'..='\u{9fff}').contains(&c)), "{text}");
         assert!(
-            text.contains("【阶段】")
-                && text.contains("【下一步】")
+            text.contains("[Stage]")
+                && text.contains("[Next step]")
                 && !text.contains("schema_version")
         );
     }
@@ -41,7 +42,6 @@ fn state_snapshots_keep_relative_paths_and_queued_configuration_across_directori
     value["structure"] = json!("POSCAR");
     value["kpath"] = json!("KPATH.in");
     value["pseudos"]["Si"] = json!("POSCAR");
-    value["budget"]["ledger"] = json!("budget.json");
     for p in value["programs"].as_object_mut().unwrap().values_mut() {
         if let Some(path) = p.get("path").and_then(Value::as_str) {
             if let Ok(relative) = std::path::Path::new(path).strip_prefix(&c.root) {
@@ -62,14 +62,13 @@ fn state_snapshots_keep_relative_paths_and_queued_configuration_across_directori
     assert_eq!(saved.work_dir, c.root.join("run"));
     assert_eq!(saved.structure, c.root.join("POSCAR"));
     assert_eq!(saved.pseudos["Si"], c.root.join("POSCAR"));
-    assert_eq!(saved.budget.ledger, c.root.join("budget.json"));
     assert_eq!(saved.programs.pw.path, c.root.join("pw.x"));
     success(c.stage_submit("electronic", false));
     c.numbered_change(|cfg| cfg.comparison.as_mut().unwrap().points_per_edge = 3);
     success(c.numbered_cli(0, &["--check"], None, "relative-edited"));
     success(c.stage_execute());
     let points: Vec<[f64; 3]> = store::read(&c.root.join("run/3.qe-electronic/qe_eband/path-points.json")).unwrap();
-    assert_eq!(points.len(), 3, "排队任务必须继续使用旧的相对路径快照");
+    assert_eq!(points.len(), 3, "The queue must continue to use the old relative path snapshot");
     assert!(!c.root.join("0000-config.toml").exists());
     assert!(!c.root.join("run/epw-state/0002-config.toml").exists());
     eight(&c);
@@ -99,19 +98,19 @@ fn migrated_electronic_rechecks_deleted_pseudo_directory_without_scientific_call
     let submits = fs::read(c.root.join("submissions")).unwrap_or_default();
     let needs_check = || {
         log::update(&cfg.work_dir, Step::Electronic, |d| {
-            d.set("阶段", "状态", "旧结果需要检查");
-            d.set("阶段", "科学状态", "尚未检查");
-            d.set("问题", "原因", "input_conflict: 已有 PW 能带输入与当前配置不符");
+            d.set("Stage", "Status", "Legacy results require validation");
+            d.set("Stage", "Scientific status", "not checked");
+            d.set("Problem", "Reason", "input_conflict: Existing PW Can bring input that does not match the current configuration");
             Ok(())
         }).unwrap();
     };
     needs_check();
     success(c.numbered_cli(1, &["--migrate-state"], None, "pseudo-relocation"));
     assert!(stages::reusable(&cfg, Step::Electronic).unwrap());
-    assert!(log::read(&cfg.work_dir, Step::Electronic).unwrap().sections.get("问题").is_none());
+    assert!(log::read(&cfg.work_dir, Step::Electronic).unwrap().sections.get("Problem").is_none());
     success(c.numbered_cli(1, &["--migrate-state"], None, "pseudo-relocation-again"));
     assert_eq!(scientific_before, epwflow::qe_data::save::files(&Step::Electronic.directory(&cfg)).unwrap());
-    assert!(!old_pp.exists(), "不得重建旧目录来绕过检查");
+    assert!(!old_pp.exists(), "Do not recreate old directories to bypass the check");
 
     let saved_pseudo = cfg.work_dir.join("3.qe-electronic/qe_eband/out/scf.save/POSCAR");
     let saved = fs::read(&saved_pseudo).unwrap();
@@ -123,7 +122,7 @@ fn migrated_electronic_rechecks_deleted_pseudo_directory_without_scientific_call
             "cutoff" => fs::write(&input, actual.replace("ecutwfc = 40", "ecutwfc = 41")).unwrap(),
             "path" => fs::write(&input, actual.replacen("K_POINTS crystal", "K_POINTS tpiba", 1)).unwrap(),
             "dependency" => log::update(&cfg.work_dir, Step::Electronic, |d| {
-                d.set("依赖", "nscf 批次", "other-batch"); Ok(())
+                d.set("Dependencies", "nscf batch", "other-batch"); Ok(())
             }).unwrap(),
             _ => unreachable!(),
         }
@@ -132,11 +131,11 @@ fn migrated_electronic_rechecks_deleted_pseudo_directory_without_scientific_call
         }
         let out = c.numbered_cli(1, &["--migrate-state"], None, failure);
         assert!(!out.status.success(), "{failure}: {}", String::from_utf8_lossy(&out.stdout));
-        assert_ne!(log::read(&cfg.work_dir, Step::Electronic).unwrap().get("阶段", "科学状态"), Some("已完成"));
+        assert_ne!(log::read(&cfg.work_dir, Step::Electronic).unwrap().get("Stage", "Scientific status"), Some("completed"));
         fs::write(&saved_pseudo, &saved).unwrap();
         fs::write(&input, &actual).unwrap();
-        let dependency = log::read(&cfg.work_dir, Step::Nscf).unwrap().get("阶段", "批次").unwrap().to_string();
-        log::update(&cfg.work_dir, Step::Electronic, |d| { d.set("依赖", "nscf 批次", dependency); Ok(()) }).unwrap();
+        let dependency = log::read(&cfg.work_dir, Step::Nscf).unwrap().get("Stage", "Batch").unwrap().to_string();
+        log::update(&cfg.work_dir, Step::Electronic, |d| { d.set("Dependencies", "nscf batch", dependency); Ok(()) }).unwrap();
     }
     success(c.numbered_cli(1, &["--migrate-state"], None, "pseudo-restored"));
     assert!(stages::reusable(&cfg, Step::Electronic).unwrap());
@@ -167,7 +166,7 @@ fn grouped_stage_configuration_runs_and_resumes_wannier_without_rebuilding_upstr
     success(c.stage_submit("wannier", true));
     success(c.stage_execute());
     let after = c.calls();
-    assert_eq!(before.0, after.0, "SCF/NSCF/电子/PH 不得重算");
+    assert_eq!(before.0, after.0, "SCF/NSCF/Electronic/PH No recalculation");
     assert_eq!(after.1.lines().filter(|line| line.starts_with("wannier ")).count(),
         before.1.lines().filter(|line| line.starts_with("wannier ")).count() + 1);
     let current = config::Config::load(&path).unwrap();
@@ -239,7 +238,7 @@ fn readable_0064_versions_preserve_raw_text_and_old_missing_input_never_blocks_p
     for n in 0..=2 {
         let frozen = root.join(format!("epw-state/{n:04}-config.toml"));
         assert_eq!(config::Config::load(&frozen).unwrap().work_dir, root,
-            "SCF 重算必须保留全部配置来源记录");
+            "SCF Recount must keep all configuration source records");
     }
 }
 #[test]
@@ -459,12 +458,12 @@ fn readable_0064_live_and_unknown_submissions_cannot_be_overwritten() {
     logs::set_job(
         &c.root.join("run"),
         Step::Scf,
-        "任务 · 1.qe-scf / scf",
+        "Task · 1.qe-scf / scf",
         None,
     )
     .unwrap();
     logs::update(&c.root.join("run"), Step::Scf, |d| {
-        d.set("任务 · 1.qe-scf / scf", "状态", "提交未知");
+        d.set("Task · 1.qe-scf / scf", "Status", "submission unknown");
         Ok(())
     })
     .unwrap();
@@ -583,11 +582,11 @@ fn readable_0064_queued_allocation_keeps_its_raw_version_after_user_edits() {
     use epwflow::foundation::readable_state as logs;
     let doc = logs::read(&c.root.join("run"), Step::Electronic).unwrap();
     assert!(doc
-        .get("工作区", "当前输入版本")
+        .get("Workspace", "Current input version")
         .unwrap()
         .ends_with("0001-config.toml"));
     assert!(doc
-        .get("阶段", "计算配置")
+        .get("Stage", "Calculation configuration")
         .unwrap()
         .ends_with("0000-config.toml"));
     let points: Vec<[f64; 3]> =
@@ -620,7 +619,7 @@ fn readable_0064_missing_matdyn_output_repairs_only_that_numeric_task() {
         assert_eq!(
             calls.lines().filter(|s| *s == kind).count(),
             after.lines().filter(|s| *s == kind).count(),
-            "{kind} 不应重算"
+            "{kind} There should be no recosting"
         );
     }
     assert_eq!(

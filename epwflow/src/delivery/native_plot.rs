@@ -59,11 +59,11 @@ pub fn gap_distributions(data: &Data) -> Result<BTreeMap<i64, Vec<(f64, f64)>>> 
                 && s.weight >= 0.0
                 && s.delta_mev.is_finite()
                 && s.delta_mev.abs() / GAP_BIN_MEV < u32::MAX as f64,
-            "data_invalid: 分布权重或能隙无效"
+            "data_invalid: Distribution weight or gap is invalid"
         );
         ensure!(
             identities.insert((s.temperature_centikelvin, s.kpoint, s.band)),
-            "data_invalid: 分布含重复物理态"
+            "data_invalid: Distribution includes repeat physical state"
         );
         let bin = (s.delta_mev.abs() / GAP_BIN_MEV).floor() as u32;
         *masses
@@ -78,7 +78,7 @@ pub fn gap_distributions(data: &Data) -> Result<BTreeMap<i64, Vec<(f64, f64)>>> 
             let total: f64 = bins.values().sum();
             ensure!(
                 total.is_finite() && total > 0.0,
-                "data_invalid: 分布总权重无效"
+                "data_invalid: The total distributed weight is invalid"
             );
             Ok((
                 t,
@@ -468,8 +468,13 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             && formats
                 .iter()
                 .all(|s| matches!(s.as_str(), "png" | "svg" | "pdf")),
-        "data_invalid: 格式只能为 png,svg,pdf"
+        "data_invalid: Format only for png,svg,pdf"
     );
+    if results.join("native.plot.json").is_file() {
+        let data:Data=store::read(&results.join("native.plot.json"))?;
+        render_saved(results,&data,formats).map_err(|e|anyhow::anyhow!("plot_failed: native figure output failed: {e:#}"))?;
+        return Ok(results.into());
+    }
     let (_, data) = native::load(results)?;
     let output = output
         .map(PathBuf::from)
@@ -482,7 +487,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
                 .canonicalize()
                 .unwrap_or_else(|_| results.join("gaps"))
         ),
-        "input_conflict: 不得覆盖科学数据"
+        "input_conflict: No coverage of scientific data"
     );
     let _lock = store::Lock::acquire(&output.join("native-figures"))?;
     super::publication::recover(&output, "native-figures.json")?;
@@ -496,7 +501,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
     let previous_files = old.as_ref().map(|o| o.files.clone()).unwrap_or_default();
     let data_digest = store::hash_file(&results.join("manifest.json"))?;
     if let Some(old) = old {
-        ensure!(old.schema_version == 1, "unsupported_version: 图像版本");
+        ensure!(old.schema_version == 1, "unsupported_version: Image Version");
         ensure!(
             old.data_digest == data_digest
                 || old.files.iter().all(|file| {
@@ -506,14 +511,14 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
                         })
                     })
                 }),
-            "input_conflict: 数据来源改变，须重绘全部已有格式或使用新输出目录"
+            "input_conflict: Change of data source to redraw all existing formats or to use new output directories"
         );
         for f in old.files {
             if output.join(&f.relative_path).exists() {
                 f.verify(&output)?;
             } else {
                 ensure!(f.relative_path.extension().and_then(|e|e.to_str()).is_some_and(|ext|formats.iter().any(|v|v==ext)),
-                    "data_invalid: 缺失图像须包含在本次重绘格式中");
+                    "data_invalid: Missing images must be included in this repainting format");
             }
             owned.insert(f.relative_path);
         }
@@ -523,7 +528,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
             let n = PathBuf::from(format!("{name}.{f}"));
             ensure!(
                 !output.join(&n).exists() || owned.contains(&n),
-                "input_conflict: 未知图像冲突 {}",
+                "input_conflict: Unknown image conflict {}",
                 n.display()
             );
         }
@@ -544,7 +549,7 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
                 options.fontdb_mut().load_system_fonts();
                 let tree = svg2pdf::usvg::Tree::from_str(&fs::read_to_string(&svg)?, &options)?;
                 let bytes = svg2pdf::to_pdf(&tree, Default::default(), Default::default())
-                    .map_err(|e| anyhow::anyhow!("PDF 转换失败: {e}"))?;
+                    .map_err(|e| anyhow::anyhow!("PDF conversion failed: {e}"))?;
                 fs::write(stage.join(format!("{name}.pdf")), bytes)?;
             }
         }
@@ -580,6 +585,12 @@ pub fn plot(results: &Path, output: Option<&Path>, formats: &[String]) -> Result
     Ok(output)
 }
 pub fn check(results: &Path) -> Result<bool> {
+    if results.join("native.plot.json").is_file() {
+        let data:Data=store::read(&results.join("native.plot.json"))?;
+        return Ok(KINDS.iter().enumerate().filter(|(i,_)|!(*i==4 && data.gap_run.is_some())).all(|(_,name)|
+            ["png","svg","pdf"].iter().all(|ext|results.join(format!("{name}.{ext}")).is_file())));
+    }
+
     super::publication::ensure_finished(&results.join("figures"), "native-figures.json")?;
     let path = results.join("figures/native-figures.json");
     if !path.exists() {
@@ -588,7 +599,7 @@ pub fn check(results: &Path) -> Result<bool> {
     let f: Figures = store::read(&path)?;
     ensure!(
         f.schema_version == 1 && f.data_digest == store::hash_file(&results.join("manifest.json"))?,
-        "data_invalid: 原生图表来源改变"
+        "data_invalid: Source change of native chart"
     );
     for a in &f.files {
         a.verify(&results.join("figures"))?;
@@ -606,4 +617,26 @@ pub fn check(results: &Path) -> Result<bool> {
                     == 1
             })
         }))
+}
+
+/// 显式请求或首次阶段绘图；失败直接传播，不生成发布清单或自动重画。
+pub fn render_saved(output:&Path,data:&Data,formats:&[String])->Result<()> {
+    for (i,name) in KINDS.iter().enumerate() {
+        if i==4 && data.gap_run.is_some(){continue;}
+        let size=if i==5 {(1800,1800)} else {(1300,900)};
+        let mut svg=String::new();
+        if formats.iter().any(|f|f=="svg" || f=="pdf") {
+            render(SVGBackend::with_string(&mut svg,size).into_drawing_area(),data,i)?;
+            if formats.iter().any(|f|f=="svg"){fs::write(output.join(format!("{name}.svg")),&svg)?;}
+            if formats.iter().any(|f|f=="pdf") {
+                let mut options=svg2pdf::usvg::Options::default();options.fontdb_mut().load_system_fonts();
+                let tree=svg2pdf::usvg::Tree::from_str(&svg,&options)?;
+                fs::write(output.join(format!("{name}.pdf")),svg2pdf::to_pdf(&tree,Default::default(),Default::default()).map_err(|e|anyhow::anyhow!("plot_failed: {e}"))?)?;
+            }
+        }
+        if formats.iter().any(|f|f=="png") {
+            render(BitMapBackend::new(&output.join(format!("{name}.png")),size).into_drawing_area(),data,i)?;
+        }
+    }
+    Ok(())
 }

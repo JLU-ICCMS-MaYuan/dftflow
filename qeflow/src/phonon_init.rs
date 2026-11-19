@@ -6,7 +6,7 @@ use std::{fs, path::PathBuf};
 
 pub(super) fn prepare_input(ctx: &PhononCtx) -> Result<()> {
     ensure!(!ctx.cfg.qe_phonon.retain_epw_data,
-        "retain_epw_data 目前仅适配完整 qe-phonon-nosplit，不能用于单独初始化或分 q");
+        "retain_epw_data It's only perfect for now qe-phonon-nosplit ,Could not be used for individual initialization or split q");
     let mut cfg = ctx.cfg.clone();
     for key in ["ldisp", "only_init", "lqdir"] {
         cfg.qe_phonon.ph.insert(key.into(), json!(true));
@@ -44,7 +44,7 @@ pub(super) fn check_save(ctx: &PhononCtx) -> Result<()> {
         let path = save.join(name);
         ensure!(
             path.is_file() && path.metadata()?.len() > 0,
-            "SCF 保存文件缺失或为空: {}；请先完成 SCF 或修正 outdir",
+            "SCF Save file missing or empty: {};Please finish first SCF or amendment outdir",
             path.display()
         );
     }
@@ -57,18 +57,18 @@ pub(super) fn check_output(ws: &Path, prefix: &str) -> Result<usize> {
     let mut lines = raw.lines().filter(|l| !l.trim().is_empty());
     let mesh: Vec<i64> = lines
         .next()
-        .context("dyn0 缺少网格")?
+        .context("dyn0 Missing Grid")?
         .split_whitespace()
         .map(str::parse)
         .collect::<std::result::Result<_, _>>()?;
     ensure!(
         mesh.len() == 3 && mesh.iter().all(|n| *n > 0),
-        "dyn0 网格无效"
+        "dyn0 Grid invalid"
     );
-    let count: usize = lines.next().context("dyn0 缺少 q 点数量")?.trim().parse()?;
+    let count: usize = lines.next().context("dyn0 Missing q Number of points")?.trim().parse()?;
     ensure!(
         count > 0 && lines.count() == count,
-        "dyn0 q 点数量与数据行不一致"
+        "dyn0 q The number of points is not consistent with the data line"
     );
     let points = qf_io::parse_dyn0_qpoints(&raw)?;
     ensure!(
@@ -76,7 +76,7 @@ pub(super) fn check_output(ws: &Path, prefix: &str) -> Result<usize> {
             && points
                 .iter()
                 .all(|p| p.q_crystal.iter().all(|x| x.is_finite())),
-        "dyn0 q 点缺失或存在非有限坐标"
+        "dyn0 q Point missing or non-finite coordinates"
     );
     Ok(count)
 }
@@ -116,7 +116,7 @@ pub(super) fn run_init(ctx: &PhononCtx) -> Result<()> {
         )?,
     )?;
     fs::rename(tmp, marker)?;
-    println!("QE 初始化完成：{count} 个不可约 q 点；未执行完整声子计算");
+    println!("QE Initialization complete:{count} It's not a date q dots; not performing full sound count");
     Ok(())
 }
 
@@ -135,9 +135,9 @@ fn context(config: &str, input: Option<&str>) -> Result<PhononCtx> {
         }
     });
     if fs::canonicalize(&source).ok() != fs::canonicalize(&target).ok() {
-        fs::copy(&source, &target).with_context(|| format!("复制结构 {}", source.display()))?;
+        fs::copy(&source, &target).with_context(|| format!("Copy Structure {}", source.display()))?;
     }
-    let structure = qf_crystal::parse_poscar(target.to_str().context("结构路径不是 UTF-8")?)?;
+    let structure = qf_crystal::parse_poscar(target.to_str().context("The structural path is not UTF-8")?)?;
     let prefix = cfg
         .qe_phonon
         .prefix
@@ -152,7 +152,7 @@ fn context(config: &str, input: Option<&str>) -> Result<PhononCtx> {
         .unwrap_or_else(|| structure.formula.clone());
     ensure!(
         !prefix.is_empty() && !prefix.contains(['/', '\\']) && prefix != "." && prefix != "..",
-        "prefix 必须是非空文件名前缀"
+        "prefix Must be a non-empty file prefix"
     );
     cfg.qe_phonon.work_dir = Some(ws.to_string_lossy().into_owned());
     Ok(PhononCtx {
@@ -167,7 +167,7 @@ fn context(config: &str, input: Option<&str>) -> Result<PhononCtx> {
 pub(super) fn execute(config: String, input: Option<String>) -> Result<()> {
     let config = fs::canonicalize(config)?;
     run_init(&context(
-        config.to_str().context("配置路径不是 UTF-8")?,
+        config.to_str().context("Configure Paths Not UTF-8")?,
         input.as_deref(),
     )?)
 }
@@ -178,9 +178,9 @@ pub(super) fn entry(
     run: bool,
     submit: bool,
 ) -> Result<()> {
-    ensure!(!(run && submit), "-r 与 -s 不能同时使用");
+    ensure!(!(run && submit), "-r with -s It can't be used simultaneously");
     let config = fs::canonicalize(config.as_deref().unwrap_or("input.toml"))?;
-    let config = config.to_str().context("配置路径不是 UTF-8")?;
+    let config = config.to_str().context("Configure Paths Not UTF-8")?;
     let ctx = context(config, input.as_deref())?;
     prepare_input(&ctx)?;
     let quote = phonon_chain::quote;
@@ -191,7 +191,7 @@ pub(super) fn entry(
         quote(
             std::env::current_exe()?
                 .to_str()
-                .context("程序路径不是 UTF-8")?
+                .context("Program path is not UTF-8")?
         ),
         quote(config),
         quote(&format!("{}/POSCAR", ctx.workspace))
@@ -203,12 +203,12 @@ pub(super) fn entry(
         check_save(&ctx)?;
         let job = qf_runner::submit_via_sbatch(Path::new(&ctx.workspace), "run_ph_init.sh")?;
         println!(
-            "初始化作业已提交: {}；提交成功不代表初始化完成",
-            job.context("未返回作业号")?
+            "Initialization has been submitted: {};Successful submission does not represent completion of initialization",
+            job.context("Unreturned Job Number")?
         );
     } else {
         println!(
-            "已准备 {}/ph_init.in 和 run_ph_init.sh；使用 --dyn0 -s 提交",
+            "Ready {}/ph_init.in and run_ph_init.sh ;Use --dyn0 -s Submit",
             ctx.workspace
         );
     }

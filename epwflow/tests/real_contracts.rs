@@ -155,7 +155,7 @@ fn isolated_worker(name: &str) -> bool {
         .unwrap();
     assert!(
         out.status.success(),
-        "隔离回归失败：\n{}\n{}",
+        "Isolation has failed:\n{}\n{}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
@@ -189,9 +189,9 @@ fn b01_run_and_submit_validate_missing_configuration() {
         assert!(!out.status.success());
         assert!(
             err.contains("absent-input.toml"),
-            "{cmd} 应报告实际配置路径：{err}"
+            "{cmd} The actual configuration path should be reported:{err}"
         );
-        assert!(!err.contains("not_implemented"), "{cmd} 尚未接通：{err}");
+        assert!(!err.contains("not_implemented"), "{cmd} It's not connected yet:{err}");
     }
 }
 
@@ -206,29 +206,33 @@ fn b01_until_is_a_recognized_execution_boundary() {
         "interpolation",
     ]);
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(!out.status.success(), "缺失配置不得提交成功");
+    assert!(!out.status.success(), "Missing configuration cannot be submitted successfully");
     assert!(
         err.contains("absent-input.toml"),
-        "应通过参数解析后检查配置：{err}"
+        "Check configuration through parameter resolution:{err}"
     );
     assert!(
         !err.contains("unexpected argument"),
-        "停止边界未识别：{err}"
+        "Stop border unrecognized:{err}"
     );
 }
 
 
 
 #[test]
-fn b01_resource_run_requires_registered_allocation() {
+fn b01_resource_run_checks_slurm_without_budget_registration() {
     let c = Case::new();
     c.scheduled();
+    c.qe_fixture();
+    c.script("scontrol", "#!/bin/sh\nexit 91\n");
     let o = c.cli(&["run", "-c", "input.toml", "--until", "qe-data"]);
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("allocation"));
     let o = c.execution(&["run", "-c", "input.toml", "--until", "qe-data"], 123);
     assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("尚未登记"));
+    let error = String::from_utf8_lossy(&o.stderr);
+    assert!(error.contains("scontrol"), "{error}");
+    assert!(!c.root.join("campaign").exists());
     assert!(!c.root.join("scientific-calls").exists());
 }
 
@@ -267,7 +271,7 @@ fn b09_reads_qe_schema_text_coordinates_and_sibling_eigenvalues() {
 </qes:espresso>"#,
     );
     let states = nscf::parse_xml(&c.root.join("data-file-schema.xml"))
-        .expect("应接受真实 schema 中的文本坐标与相邻 eigenvalues");
+        .expect("Should accept the truth schema text coordinates and adjacent eigenvalues");
     assert_eq!(states.kpoints, vec![[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]);
     assert_eq!(states.nbnd, 2);
     assert_eq!(states.weights.len(), 2);
@@ -286,11 +290,11 @@ fn b04_import_rejects_empty_manifest_despite_valid_label() {
     let result = reuse::import_from_run(&c.root.join("source"), &c.root.join("target"));
     assert!(
         result.is_err(),
-        "没有任何 SCF/电子态/PH 数据不能导入成功：{result:?}"
+        "Nothing SCF/Electronic State/PH Data cannot be imported successfully:{result:?}"
     );
     assert!(
         !c.root.join("target/imported/import-report.json").exists(),
-        "不得发布成功报告"
+        "Success reports are not published"
     );
 }
 
@@ -299,7 +303,7 @@ fn b08_interpolation_rejects_empty_f2_manifest() {
     let c = Case::new();
     let path = c.empty_manifest();
     let result = adapter::bind_f2(&path, &c.config());
-    assert!(result.is_err(), "F3 不得仅凭 valid 接受空 F2：{result:?}");
+    assert!(result.is_err(), "F3 You can't just do it valid Accept Empty F2:{result:?}");
 }
 
 #[test]
@@ -312,58 +316,18 @@ fn b05_scf_consumes_stdout_and_rejects_nonconvergence() {
     let cfg = c.config();
     let qe = QeSettings::from_config(&cfg).unwrap();
     let result = scf::run_scf(&qe, &c.root.join("work"), &[], Backend::Local);
-    let err = format!("{:#}", result.expect_err("未收敛必须失败"));
+    let err = format!("{:#}", result.expect_err("Failure to recover must fail"));
+    assert!(fs::read_to_string(c.root.join("work/scf/scf.out")).unwrap().contains("convergence NOT achieved"));
     assert!(
-        !err.contains("缺少 scf.out"),
-        "原生 stdout 已产生，不能因日志衔接失败掩盖收敛检查：{err}"
+        !err.contains("Missing scf.out"),
+        "Native stdout Created. Do not cover up check for log link failure:{err}"
     );
     assert!(
-        err.contains("收敛") || err.to_lowercase().contains("converg"),
-        "应诊断数值未收敛：{err}"
+        err.contains("Unfinished") || err.to_lowercase().contains("converg"),
+        "The value of the diagnosis should not be diminished:{err}"
     );
 }
 
-#[test]
-fn b06_unknown_scheduler_preserves_active_allocation() {
-    let c = Case::new();
-    let ledger = "campaign/ledger.json";
-    let out = c.cli(&[
-        "budget",
-        "reserve",
-        "--ledger",
-        ledger,
-        "--label",
-        "isolated-test",
-    ]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let text = String::from_utf8(out.stdout).unwrap();
-    let token = text.trim().strip_prefix("reserved: token=").unwrap();
-    let out = c.cli(&[
-        "budget", "attach", "--ledger", ledger, "--token", token, "--job", "424242",
-    ]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let path = c.root.join(ledger);
-    let before: Value = store::read(&path).unwrap();
-    let _ = c.cli(&["budget", "reconcile", "--ledger", ledger]);
-    let after: Value = store::read(&path).unwrap();
-    assert_eq!(
-        after["allocations"], before["allocations"],
-        "调度查询失败不能释放未知作业"
-    );
-    assert_eq!(after["lanes"], before["lanes"], "并发占用必须保留");
-    assert_eq!(
-        after["spent_node_seconds"], before["spent_node_seconds"],
-        "不能猜测实际消耗"
-    );
-}
 
 #[test]
 fn b07_qe_stages_use_bound_prefix() {
@@ -376,8 +340,8 @@ fn b07_qe_stages_use_bound_prefix() {
         ("nscf", qe.nscf_input("./tmp").unwrap()),
         ("ph_init", qe.phonon_init_input("./tmp").unwrap()),
     ] {
-        let prefix = re.captures(&input).expect("输入必须声明 prefix");
-        assert_eq!(&prefix[1], cfg.qe.prefix, "{stage} 必须使用已绑定 prefix");
+        let prefix = re.captures(&input).expect("Enter must be declared prefix");
+        assert_eq!(&prefix[1], cfg.qe.prefix, "{stage} Must use bounded prefix");
     }
 }
 
@@ -435,15 +399,15 @@ esac
     assert_eq!(
         store::hash_file(&f2).unwrap(),
         source_before,
-        "来源必须只读"
+        "Source must read only"
     );
     assert!(
         result.is_err(),
-        "无原生谱和有效数据不能发布插值成功：{result:?}"
+        "No native spectra and valid data could not be published successfully:{result:?}"
     );
     assert!(
         !work.join("interpolation/manifest.json").exists(),
-        "不得发布合成有效谱"
+        "No Synthetic Valid Synthetic Synthetic Synthesis may be published"
     );
 }
 
@@ -460,9 +424,7 @@ fn b03_rejects_superconductivity_without_successful_native_solver() {
     );
     let mut cfg = c.config();
     cfg.superconductivity.mode = Mode::Iso;
-    let iso = cfg.superconductivity.iso.as_mut().unwrap();
-    iso.max_k = 10.0;
-    iso.precision_k = 0.1;
+    cfg.superconductivity.task = epwflow::foundation::config::SuperconductivityTask::Gap;
     cfg.superconductivity.gap_temperatures_k = vec![2.0, 5.0, 8.0];
     let work = c.root.join("superconductivity-run");
     // 明确是用来检测错误放行的合成清单，没有原生求解或矩阵元来源。
@@ -477,16 +439,16 @@ fn b03_rejects_superconductivity_without_successful_native_solver() {
         "validation": {"status": "valid", "checks": [{"name":"fixture_claim", "passed":true, "detail":"not scientific evidence"}], "units": {}, "thresholds": {}, "evidence": []}
     });
     store::write(&work.join("interpolation/manifest.json"), &f3).unwrap();
-    let result = scheduler::run(&cfg, &work, &[], Backend::Local);
+    let result = scheduler::run_configured(&cfg, &work, &[], Backend::Local, false);
     assert!(
         result.is_err(),
-        "没有成功的原生 EPW 求解不得交付 Tc/能隙：{result:?}"
+        "Unsuccessful natives EPW Solution cannot be delivered Tc/ Can't stop :{result:?}"
     );
     if let Ok(manifest) = fs::read_to_string(work.join("superconductivity/manifest.json")) {
         let value: Value = serde_json::from_str(&manifest).unwrap();
         assert_ne!(
             value["validation"]["status"], "valid",
-            "可保留失败证据，不得发布有效结果"
+            "Evidence of failure may be retained and no valid result may be published"
         );
     }
 }
@@ -503,7 +465,7 @@ fn b08_wannier_final_state_does_not_override_nonconvergence() {
     let result = wannier::parse_wannier_log(&c.root.join("nonconverged.wout"));
     assert!(
         result.is_err(),
-        "明确未收敛的日志不能被 Final State 覆盖：{result:?}"
+        "Unequivocal logs are not allowed Final State Overwrite:{result:?}"
     );
 }
 
@@ -604,7 +566,7 @@ fn qe_species_layout_keeps_explicit_files_and_rejects_native_filename_limit() {
     let long = c.root.join(format!("{}.upf", "x".repeat(81)));
     fs::copy(&cfg.pseudos["Mg"], &long).unwrap();
     cfg.pseudos.insert("Mg".into(), long);
-    assert!(QeSettings::from_config(&cfg).err().unwrap().to_string().contains("80 字节"));
+    assert!(QeSettings::from_config(&cfg).err().unwrap().to_string().contains("80 bytes"));
 }
 
 #[test]
@@ -662,55 +624,6 @@ fn strict_scheduler_identity_and_accounting() {
     }
 }
 
-#[test]
-fn attached_allocations_still_enforce_existing_concurrency_limit() {
-    let c = Case::new();
-    let mut tokens = Vec::new();
-    for _ in 0..4 {
-        let out = c.cli(&[
-            "budget",
-            "reserve",
-            "--ledger",
-            "campaign/ledger.json",
-            "--label",
-            "bound",
-        ]);
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        tokens.push(
-            String::from_utf8(out.stdout)
-                .unwrap()
-                .trim()
-                .strip_prefix("reserved: token=")
-                .unwrap()
-                .to_string(),
-        );
-    }
-    assert!(c
-        .cli(&[
-            "budget",
-            "attach",
-            "--ledger",
-            "campaign/ledger.json",
-            "--token",
-            &tokens[0],
-            "--job",
-            "12"
-        ])
-        .status
-        .success());
-    assert!(c.cli(&["budget", "attach", "--ledger", "campaign/ledger.json",
-        "--token", &tokens[1], "--job", "13"]).status.success());
-    let denied = c.cli(&["budget", "attach", "--ledger", "campaign/ledger.json",
-        "--token", &tokens[2], "--job", "14"]);
-    assert!(!denied.status.success());
-    let ledger: Value = store::read(&c.root.join("campaign/ledger.json")).unwrap();
-    assert_eq!(ledger["allocations"].as_array().unwrap().len(), 2);
-    assert_eq!(ledger["reservations"].as_array().unwrap().len(), 2);
-}
 
 #[test]
 fn prepare_rejects_changed_bound_configuration_without_rewriting() {

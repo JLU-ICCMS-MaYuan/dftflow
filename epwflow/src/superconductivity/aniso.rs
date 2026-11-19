@@ -10,13 +10,13 @@ pub fn classify(a: &GapData, b: &GapData, normal_mev: f64, super_mev: f64) -> Re
             && super_mev.is_finite()
             && normal_mev > 0.0
             && super_mev > normal_mev,
-        "configuration: 能隙分类阈值无效"
+        "configuration: Invalid threshold for gap classification"
     );
     ensure!(
         a.temperature_centikelvin == b.temperature_centikelvin
             && a.states == b.states
             && a.frequencies_mev == b.frequencies_mev,
-        "data_invalid: 双初值物理索引不同"
+        "data_invalid: Two primary physical indices are different"
     );
     let delta_match = |sign: f64| {
         a.delta_mev
@@ -30,7 +30,7 @@ pub fn classify(a: &GapData, b: &GapData, normal_mev: f64, super_mev: f64) -> Re
             .all(|(x, y)| (x - y).abs() <= 1e-5 + 1e-3 * x.abs().max(y.abs()));
     ensure!(
         (delta_match(1.0) || delta_match(-1.0)) && z_match,
-        "classification_uncertain: 双初值完整 Δ/Z 不一致"
+        "classification_uncertain: Double Start Complete Δ/Z Inconsistencies"
     );
     Ok(if a.d_inf() <= normal_mev && b.d_inf() <= normal_mev {
         Side::Normal

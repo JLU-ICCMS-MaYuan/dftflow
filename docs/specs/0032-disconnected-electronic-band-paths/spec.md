@@ -1,6 +1,8 @@
 # 需求规格
 
-原始需求与真实触发见 [Issue](issue-draft.md)。
+> **协作入口（2026-11-17）**：[GitHub Issue #32](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/32)。Issue 已在 GitHub 登记，协作状态以 GitHub 为准；本文件保留设计与历史验收，旧的“本地草案／线上自管／未发布”说明是迁移前语境。Spec 远程链接待发布及验证。
+
+原始需求与真实触发见 [GitHub Issue #32](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/32)。
 
 - FR-001：在两侧原生曲线的重复 x 处拆开绘制，合并同位置不同端点名为 A | L、M | H，重复同名去重，GAMMA 仍显示 Γ；保持 QE 实线先绘、Wannier 虚线后绘、原数据和能窗不变。升级独立后处理缓存，不重算拟合或 QE。
 - FR-002：原生文件保持，当前配置与科学阶段缓存复用规则不变，只更新独立后处理。

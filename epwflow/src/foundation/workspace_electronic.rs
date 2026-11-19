@@ -30,13 +30,14 @@ impl NativeReceipt {
     fn verify(&self) -> Result<()> {
         ensure!(
             self.version == 1 && !self.outputs.is_empty(),
-            "data_invalid: 电子任务收据缺证据"
+            "data_invalid: Lack of evidence for electronic mission receipts"
         );
         self.input.verify()?;
         for id in self.outputs.iter().chain(&self.provenance) {
             id.verify()?;
         }
         if let Some(root) = &self.save_root {
+            if root.ancestors().any(super::layout::enabled) {return Ok(());}
             let mut expected = self
                 .outputs
                 .iter()
@@ -50,7 +51,7 @@ impl NativeReceipt {
                 .collect::<Vec<_>>();
             ensure!(
                 actual == expected,
-                "input_conflict: 电子保存树文件集合发生变化 {}",
+                "input_conflict: Change in the collection of electronic preservation tree files {}",
                 root.display()
             );
         }
@@ -68,8 +69,8 @@ impl NativeReceipt {
 }
 
 fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
-    let label = format!("电子子步骤 · {task}");
-    let Some(outputs) = super::readable_state::completed_files(cfg, Step::Electronic, &label)?
+    let label = format!("Electronic substep · {task}");
+    let Some(_outputs) = super::readable_state::completed_files(cfg, Step::Electronic, &label)?
     else {
         return Ok(None);
     };
@@ -96,10 +97,12 @@ fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
     let r = NativeReceipt {
         version: 1,
         key: key(cfg, task)?,
-        input: Identity::capture(&input)?,
-        outputs,
+        input: Identity::reference(&input),
+        outputs: vec![Identity::reference(&super::scientific_logs::output(&dir,match task {"pw-bands"=>"eband","bands"=>"elebanddata",_=>"eletdos"}))],
         save_root: if task == "bands" {
             None
+        } else if task=="dos" {
+            Some(super::layout::path(&cfg.work_dir,"nscf/out").join(format!("{}.save",cfg.qe.prefix)))
         } else {
             Some(dir.join(format!("out/{}.save", cfg.qe.prefix)))
         },
@@ -109,18 +112,18 @@ fn read_receipt(cfg: &Config, task: &str) -> Result<Option<NativeReceipt>> {
     match task {
         "pw-bands" => validate_pw(cfg)?,
         "bands" => {
-            qf_io::qe_completion::checked_log(&dir.join("bands.out"), false)?;
+            qf_io::qe_completion::checked_log(&super::scientific_logs::output(&dir, "elebanddata"), false)?;
             save::nonempty(&dir.join(format!("{}_band", cfg.qe.prefix)))?;
             validate_table(&dir.join(format!("{}_band.gnu", cfg.qe.prefix)), false)?;
         }
         "dos" => {
-            qf_io::qe_completion::checked_log(&dir.join("dos.out"), false)?;
+            qf_io::qe_completion::checked_log(&super::scientific_logs::output(&dir, "eletdos"), false)?;
             validate_table(&dir.join(format!("{}.tdos", cfg.qe.prefix)), true)?;
-            ensure!(
-                save::files(&super::layout::path(&cfg.work_dir, "nscf/out"))?
-                    == save::files(&dir.join("out"))?,
-                "data_invalid: DOS 数据与当前 NSCF 不一致"
-            );
+            let saved=fs::read_to_string(dir.join("eletdos.in"))?;
+            let source=super::layout::path(&cfg.work_dir,"nscf/out");
+            let relative=super::workspace_data::relative(&dir,&source)?;
+            ensure!(saved.contains(relative.to_string_lossy().as_ref()) || saved.contains(source.to_string_lossy().as_ref()),
+                "input_conflict: DOS does not reference its native NSCF source");
         }
         _ => unreachable!(),
     }
@@ -139,26 +142,26 @@ fn validate_table(path: &Path, increasing: bool) -> Result<()> {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         ensure!(
             row.len() >= 2 && row.iter().all(|v| v.is_finite()),
-            "data_invalid: 非法电子数据 {}",
+            "data_invalid: Illegal electronic data {}",
             path.display()
         );
         if increasing {
             ensure!(
                 previous.is_none_or(|p| row[0] > p),
-                "data_invalid: DOS 能量轴未递增"
+                "data_invalid: DOS The energy axis is not increasing"
             );
         }
         previous = Some(row[0]);
         count += 1;
     }
-    ensure!(count > 1, "data_invalid: 电子数据为空 {}", path.display());
+    ensure!(count > 1, "data_invalid: Electronic data is empty {}", path.display());
     Ok(())
 }
 fn persist_receipt(cfg: &Config, task: &str, r: &NativeReceipt) -> Result<()> {
     super::readable_state::complete_files(
         cfg,
         Step::Electronic,
-        &format!("电子子步骤 · {task}"),
+        &format!("Electronic substep · {task}"),
         &r.outputs
             .iter()
             .map(|id| id.path.clone())
@@ -203,6 +206,15 @@ fn scientific_args(program: &Program) -> Vec<String> {
 }
 
 fn key(cfg: &Config, task: &str) -> Result<String> {
+    if super::layout::enabled(&cfg.work_dir) {
+        let parts=match task {"pw-bands"=>vec![super::native_config::ELECTRONIC,"qe_eband","pw"],"bands"=>vec![super::native_config::ELECTRONIC,"qe_eband","bands"],_=>vec![super::native_config::ELECTRONIC,"qe_eledos","dos"]};
+        let sampling = if task == "dos" { None } else {
+            Some(json!({"pw":cfg.native_value::<serde_json::Value>(&[super::native_config::ELECTRONIC,"qe_eband","pw"])?,
+                "points":cfg.native_value::<u32>(&[super::native_config::ELECTRONIC,"workflow","points_per_edge"])?}))
+        };
+        return Ok(serde_json::to_string(&json!({"request":cfg.native_value::<serde_json::Value>(&parts)?,"path":cfg.kpath,"sampling":sampling}))?);
+    }
+
     let (program, input, upstream) = match task {
         "pw-bands" => (
             cfg.programs.pw.clone(),
@@ -210,7 +222,7 @@ fn key(cfg: &Config, task: &str) -> Result<String> {
             json!(stages::upstream(cfg, Step::Electronic)?),
         ),
         "bands" => {
-            let pw = read_receipt(cfg, "pw-bands")?.context("data_invalid: bands 缺 PW 收据")?;
+            let pw = read_receipt(cfg, "pw-bands")?.context("data_invalid: bands Missing PW Receipts")?;
             (
                 post_program(cfg, "bands")?,
                 fs::read_to_string(
@@ -235,7 +247,7 @@ fn key(cfg: &Config, task: &str) -> Result<String> {
             ),
             json!(stages::upstream(cfg, Step::Electronic)?),
         ),
-        _ => anyhow::bail!("configuration: 未知电子任务 {task}"),
+        _ => anyhow::bail!("configuration: Unknown electronic task {task}"),
     };
     Ok(store::hash_bytes(&serde_json::to_vec(&(
         1,
@@ -306,6 +318,65 @@ pub(super) fn completed(cfg: &Config) -> Result<bool> {
     Ok(true)
 }
 
+/// 检查单个分支（能带或 DOS）是否已完成。
+/// 用于并行提交场景下的独立状态追踪和选择性恢复。
+pub(super) fn branch_completed(cfg: &Config, branch: &str) -> Result<bool> {
+    match branch {
+        "qe_eband" => {
+            // 能带分支需要 pw-bands 和 bands 两个任务都完成
+            Ok(reusable(cfg, "pw-bands")? && reusable(cfg, "bands")?)
+        }
+        "qe_eledos" => {
+            Ok(reusable(cfg, "dos")? && !super::workspace_pdos::files(cfg)?.is_empty())
+        }
+        _ => anyhow::bail!("configuration: Unknown electronic branch {branch}"),
+    }
+}
+
+/// 子任务失效只清理自己的检查点；成功 PW、DOS 和另一分支保持原位。
+pub(super) fn repair_checkpoints(cfg: &Config, branch: &str, resume: bool) -> Result<()> {
+    let tasks: &[(&str, &str)] = if branch == "qe_eband" {
+        &[("pw-bands", "eband"), ("bands", "elebanddata")]
+    } else { &[("dos", "eletdos")] };
+    for &(task, stem) in tasks {
+        match reusable(cfg, task) {
+            Ok(true) => continue,
+            Err(e) if !resume => return Err(e),
+            _ => (),
+        }
+        clear_checkpoint(cfg, branch, &format!("Electronic substep · {task}"), stem)?;
+    }
+    if branch == "qe_eledos" {
+        let projection = super::workspace_pdos::files(cfg);
+        if projection.as_ref().is_ok_and(|files| !files.is_empty()) { return Ok(()); }
+        let invalid = projection.is_err();
+        if let Err(e) = projection { if !resume { return Err(e); } }
+        let old = super::readable_state::checkpoint_config(cfg, Step::Electronic, "Electronic native substep · projwfc")?;
+        let compatible = old.as_ref().map(|old| {
+            let parts = [super::native_config::ELECTRONIC, "qe_eledos", "projwfc"];
+            Ok::<_, anyhow::Error>(old.native_value::<serde_json::Value>(&parts)? == cfg.native_value::<serde_json::Value>(&parts)?)
+        }).transpose()?.unwrap_or(false);
+        if !compatible || invalid {
+            clear_checkpoint(cfg, branch, "Electronic substep · projwfc", "projwfc")?;
+            super::readable_state::update(&cfg.work_dir, Step::Electronic, |d| {
+                d.remove("Electronic native substep · projwfc"); Ok(())
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn clear_checkpoint(cfg: &Config, branch: &str, label: &str, stem: &str) -> Result<()> {
+    let directory = Step::Electronic.directory(cfg).join(branch);
+    for task in super::native_jobs::tasks(cfg)?.into_iter().filter(|t| t.directory == directory
+        && (t.stem == stem || super::scientific_logs::legacy_stem(stem) == Some(t.stem.as_str()))) {
+        let task_label = format!("Task · {} / {}", super::readable_state::relative(&cfg.work_dir, &task.directory), task.stem);
+        super::readable_state::set_job(&cfg.work_dir, Step::Electronic, &task_label, None)?;
+        super::readable_state::update(&cfg.work_dir, Step::Electronic, |d| { d.remove(&task_label); Ok(()) })?;
+    }
+    super::readable_state::update(&cfg.work_dir, Step::Electronic, |d| { d.remove(label); Ok(()) })
+}
+
 fn capture(
     cfg: &Config,
     task: &str,
@@ -327,17 +398,17 @@ fn capture(
     let mut outputs = paths
         .iter()
         .filter(|path| merged_stderr.as_ref() != Some(*path))
-        .map(|p| Identity::capture(p))
+        .map(|p| if super::layout::enabled(&cfg.work_dir) {Ok(Identity::reference(p))}else{Identity::capture(p)})
         .collect::<Result<Vec<_>>>()?;
     if let Some(root) = &save_root {
-        for file in save::files(root)? {
+        if !super::layout::enabled(&cfg.work_dir) {for file in save::files(root)? {
             outputs.push(Identity::capture(&root.join(file.relative_path))?);
-        }
+        }}
     }
     let r = NativeReceipt {
         version: 1,
         key: key(cfg, task)?,
-        input: Identity::capture(input)?,
+        input: if super::layout::enabled(&cfg.work_dir) {Identity::reference(input)}else{Identity::capture(input)?},
         outputs,
         save_root,
         provenance,
@@ -347,7 +418,7 @@ fn capture(
 }
 
 fn logs(dir: &Path, stem: &str) -> Vec<PathBuf> {
-    ["out", "err", "exitcode"]
+    ["out", "err"]
         .iter()
         .map(|ext| dir.join(format!("{stem}.{ext}")))
         .collect()
@@ -368,36 +439,25 @@ fn archive_task(_cfg: &Config, _task: &str, paths: &[PathBuf]) -> Result<()> {
 fn validate_pw(cfg: &Config) -> Result<()> {
     let dir = Step::Electronic.directory(cfg).join("qe_eband");
     save::verify_snapshot(&cfg.work_dir)?;
-    ensure!(
-        fs::read_to_string(dir.join("eband.exitcode"))?.trim() == "0",
-        "data_invalid: PW 能带缺零退出码"
-    );
     qf_io::qe_completion::checked_log(&dir.join("eband.out"), false)?;
     let qe = QeSettings::from_config(cfg)?;
-    pw_reuse::validate(
-        &fs::read_to_string(dir.join("eband.in"))?,
-        &qe.path_input("./out", &path_points(cfg)?)?,
-        &dir.join(format!("out/{}.save", cfg.qe.prefix)),
-        &cfg.pseudos,
-    )?;
+    let actual_input = fs::read_to_string(dir.join("eband.in"))?;
+    let requested = crate::interpolation::native_sampling::pw(&actual_input)?;
+    pw_reuse::validate(&actual_input, &qe.path_input("./out", &requested)?,
+        &dir.join(format!("out/{}.save", cfg.qe.prefix)), &cfg.pseudos)?;
     let geo = crate::qe_data::xml::validate_save(&dir.join("out"), &cfg.qe.prefix, &qe, None)?;
-    let states = crate::qe_data::nscf::parse_xml(
-        &dir.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix)),
-    )?;
-    let points: Vec<[f64; 3]> = store::read(&dir.join("path-points.json"))?;
-    let expected = path_points(cfg)?;
-    ensure!(
-        points.len() == expected.len()
-            && points
-                .iter()
-                .flatten()
-                .zip(expected.iter().flatten())
-                .all(|(a, b)| (a - b).abs() < 1e-10),
-        "input_conflict: 已有 PW 能带路径与当前 KPATH 不符，请重新计算电子阶段"
-    );
+    let states = crate::qe_data::nscf::parse_xml(&dir.join(format!("out/{}.save/data-file-schema.xml", cfg.qe.prefix)))?;
+    let points: Vec<[f64;3]> = store::read(&dir.join("path-points.json"))?;
+    ensure!(points.len()==requested.len()
+        && points.iter().flatten().zip(requested.iter().flatten()).all(|(a,b)|(a-b).abs()<1e-10),
+        "input_conflict: saved QE path differs from its own input");
+    let (reference,_) = crate::interpolation::automatic_comparison::path_points(
+        cfg.kpath.as_ref().context("configuration: kpath required")?, &geo.reciprocal,
+        cfg.native_value::<u32>(&[super::native_config::ELECTRONIC,"workflow","points_per_edge"])? as usize)?;
+    crate::interpolation::comparison::native_path(&reference, &states.kpoints, &geo.reciprocal)?;
     ensure!(
         states.nbnd == cfg.qe.nscf.nbnd as usize && states.kpoints.len() == points.len(),
-        "data_invalid: PW 能带带数或 k 点数不符"
+        "data_invalid: PW Can carry a number or k The points don't match"
     );
     for (actual, expected) in states.kpoints.iter().zip(points) {
         ensure!(
@@ -405,7 +465,7 @@ fn validate_pw(cfg: &Config) -> Result<()> {
                 .iter()
                 .zip(expected)
                 .all(|(a, b)| (a - b).abs() < 1e-8),
-            "data_invalid: PW 能带实际 k 点与路径不符"
+            "data_invalid: PW It's practical k Point does not match the path"
         );
     }
     Ok(())
@@ -432,7 +492,7 @@ fn prepare_pw(cfg: &Config) -> Result<()> {
     if let Some(receipt) = read_receipt(cfg, "pw-bands")? {
         ensure!(
             receipt.key == key(cfg, "pw-bands")?,
-            "input_conflict: PW 能带原生选项或上游身份不相容"
+            "input_conflict: PW It's not compatible with native options or upstream status"
         );
         return receipt.verify();
     }
@@ -444,14 +504,14 @@ fn prepare_pw(cfg: &Config) -> Result<()> {
     if successful || done {
         let receipt = inspect_legacy(cfg)?;
         persist_receipt(cfg, "pw-bands", &receipt)?;
-        println!("reuse: electronic/pw-bands（旧冻结来源已校验）");
+        super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("pw-bands (validated legacy snapshot)"));
     }
     Ok(())
 }
 fn path_points(cfg: &Config) -> Result<Vec<[f64; 3]>> {
-    let path = cfg.kpath.as_ref().context("required: 需要 KPATH.in")?;
+    let path = cfg.kpath.as_ref().context("required: Yes KPATH.in")?;
     let segments =
-        qf_input::electronic::parse_kpath_segments(path.to_str().context("KPATH 非 UTF-8")?)?;
+        qf_input::electronic::parse_kpath_segments(path.to_str().context("KPATH Not UTF-8")?)?;
     let intervals = cfg.comparison.clone().unwrap_or_default().points_per_edge;
     let mut points = vec![];
     for segment in segments {
@@ -469,11 +529,14 @@ fn path_points(cfg: &Config) -> Result<Vec<[f64; 3]>> {
 }
 
 pub(super) fn inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
+    band_inputs(cfg, qe)?;
+    dos_inputs(cfg)
+}
+
+fn band_inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
     let root = Step::Electronic.directory(cfg);
     let bands = root.join("qe_eband");
-    let dos = root.join("qe_eledos");
     fs::create_dir_all(&bands)?;
-    fs::create_dir_all(&dos)?;
     let points = path_points(cfg)?;
     let input = qe.path_input("./out", &points)?;
     if !super::native_jobs::enabled() {
@@ -495,7 +558,6 @@ pub(super) fn inputs(cfg: &Config, qe: &QeSettings) -> Result<()> {
         &[super::native_config::ELECTRONIC, "qe_eband", "bands"],
         &bands.join("elebanddata.in"),
     )?;
-    dos_inputs(cfg)?;
     Ok(())
 }
 
@@ -503,7 +565,7 @@ fn dos_inputs(cfg: &Config) -> Result<()> {
     let dos = Step::Electronic.directory(cfg).join("qe_eledos");
     fs::create_dir_all(&dos)?;
     let shared: qf_config::Config = serde_json::from_value(
-        json!({"qe_eledos":{"CONTROL":{"outdir":"./out"},"eledos":{"emin":-100,"emax":100,"DeltaE":0.01}}}),
+        json!({"qe_eledos":{"CONTROL":{"outdir":super::workspace_data::relative(&dos,&super::layout::path(&cfg.work_dir,"nscf/out"))?.to_string_lossy()},"eledos":{"emin":-100,"emax":100,"DeltaE":0.01}}}),
     )?;
     qf_input::electronic::write_eledos_inputs(dos.to_str().unwrap(), &shared, &cfg.qe.prefix)?;
     let file = dos.join("eletdos.in");
@@ -530,15 +592,15 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
     let dir = Step::Electronic.directory(cfg).join(name);
     match name {
         "qe_eband" => {
-            inputs(cfg, &QeSettings::from_config(cfg)?)?;
+            band_inputs(cfg, &QeSettings::from_config(cfg)?)?;
             if reusable(cfg, "pw-bands")? {
-                println!("reuse: electronic/pw-bands");
+                super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("pw-bands"));
             } else {
                 let mut old = logs(&dir, "eband");
                 old.push(dir.join("out"));
                 if !super::native_jobs::continuing(&dir, "eband")? {
                     archive_task(cfg, "pw-bands", &old)?;
-                    save::stage_scf(&cfg.work_dir, &dir.join("out"), &cfg.qe.prefix)?;
+                    save::stage_ground_state(&cfg.work_dir, &dir.join("out"), &cfg.qe.prefix)?;
                 }
                 qe_run(cfg, &dir, &cfg.programs.pw, "eband.in", "eband")?;
                 validate_pw(cfg)?;
@@ -555,16 +617,18 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                 persist_receipt(cfg, "pw-bands", &receipt)?;
             }
             // 路径本征值一经核验就画范围图，不等待 bands.x、DOS 或投影。
-            super::band_ranges::generate(cfg, Step::Electronic)?;
+            if let Err(e) = super::band_ranges::generate(cfg, Step::Electronic) {
+                eprintln!("Warning: Electronic band-range diagnostic failed: {e:#}");
+            }
             if reusable(cfg, "bands")? {
-                println!("reuse: electronic/bands");
+                super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("bands"));
             } else {
-                let mut paths = logs(&dir, "bands");
+                let mut paths = logs(&dir, "elebanddata");
                 paths.extend([
                     dir.join(format!("{}_band", cfg.qe.prefix)),
                     dir.join(format!("{}_band.gnu", cfg.qe.prefix)),
                 ]);
-                if !super::native_jobs::continuing(&dir, "bands")? {
+                if !super::native_jobs::continuing(&dir, "elebanddata")? {
                     archive_task(cfg, "bands", &paths)?;
                 }
                 qe_run(
@@ -572,8 +636,10 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                     &dir,
                     &post_program(cfg, "bands")?,
                     "elebanddata.in",
-                    "bands",
+                    "elebanddata",
                 )?;
+                let actual = super::scientific_logs::output(&dir, "elebanddata");
+                paths.splice(..2, ["out", "err"].map(|ext| actual.with_extension(ext)));
                 for p in &paths {
                     if p.extension().is_none_or(|ext| ext != "err") {
                         save::nonempty(p)?;
@@ -581,7 +647,7 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
                 }
                 // 后处理不得改写它读取的 portable PW 数据。
                 read_receipt(cfg, "pw-bands")?
-                    .context("data_invalid: 缺 PW 收据")?
+                    .context("data_invalid: Missing PW Receipts")?
                     .verify()?;
                 let receipt = capture(
                     cfg,
@@ -595,26 +661,21 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             }
         }
         "qe_eledos" => {
+            super::reuse_files::report(&cfg.work_dir,[super::layout::path(&cfg.work_dir,"nscf/out").join(format!("{}.save/data-file-schema.xml",cfg.qe.prefix))]);
             dos_inputs(cfg)?;
             if reusable(cfg, "dos")? {
-                println!("reuse: electronic/dos");
-                return super::workspace_qe_plot::electronic(cfg, name);
+                super::readable_state::report_reuse(cfg, super::stages::Step::Electronic, Some("dos"));
+                return super::workspace_pdos::run(cfg);
             }
-            let mut paths = logs(&dir, "dos");
+            let mut paths = logs(&dir, "eletdos");
             paths.push(dir.join(format!("{}.tdos", cfg.qe.prefix)));
-            if !super::native_jobs::continuing(&dir, "dos")? {
+            if !super::native_jobs::continuing(&dir, "eletdos")? {
                 archive_task(cfg, "dos", &paths)?;
             }
-            let source = super::layout::path(&cfg.work_dir, "nscf/out");
-            let out = dir.join("out");
-            if !out.exists() {
-                save::copy_tree(&source, &out)?;
-            }
-            ensure!(
-                save::files(&source)? == save::files(&out)?,
-                "input_conflict: DOS 副本与 NSCF 来源不一致"
-            );
-            qe_run(cfg, &dir, &post_program(cfg, "dos")?, "eletdos.in", "dos")?;
+            let out = super::layout::path(&cfg.work_dir,"nscf/out");
+            qe_run(cfg, &dir, &post_program(cfg, "dos")?, "eletdos.in", "eletdos")?;
+            let actual = super::scientific_logs::output(&dir, "eletdos");
+            paths.splice(..2, ["out", "err"].map(|ext| actual.with_extension(ext)));
             save::nonempty(&dir.join(format!("{}.tdos", cfg.qe.prefix)))?;
             let receipt = capture(
                 cfg,
@@ -626,7 +687,8 @@ pub(super) fn run_leaf(cfg: &Config, name: &str) -> Result<()> {
             )?;
             persist_receipt(cfg, "dos", &receipt)?;
         }
-        _ => anyhow::bail!("configuration: 未知电子子阶段 {name}"),
+        _ => anyhow::bail!("configuration: Unknown electron subphase {name}"),
     }
-    super::workspace_qe_plot::electronic(cfg, name)
+    if name == "qe_eledos" { super::workspace_pdos::run(cfg)?; }
+    Ok(())
 }

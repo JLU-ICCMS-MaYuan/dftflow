@@ -75,3 +75,7 @@ Wannier90 系列: `wannier_init`, `wannier_post`, `wannier_window`, `wannier_plo
 - Git 提交格式：`[YYYY-MM-DD HH:MM:SS] <需求类型>：<修改内容>`
 - 命名规则：组件用 PascalCase，工具函数用 camelCase/snake_case
 - 变更历史记录在 `AGENTS.md` 的"需求处理记录"中
+
+## Rust 绘图格式配置
+
+QE 声子三类图和 scflow 通过根级 `[plot].formats = ["svg", "png"]` 选择输出，默认 SVG；scflow 额外保留必需 PDF。支持 png/svg/pdf/jpg/jpeg、大小写不敏感、去重，空列表和未知格式加载时报错。公共转换在 `crates/qf-plot/src/formats.rs`，内置字体，PNG 带 300 DPI 元数据，不依赖外部转换工具。VASP、替位 DOS、Wannier 及 EPW 专属图尚未接入。当前说明见 `docs/overview/README.md`，构建／测试用 `bash scripts/build-native.sh`；上方 Python 架构与旧 input.toml 路径属于历史说明。

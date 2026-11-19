@@ -28,7 +28,7 @@ fn journal_name(manifest: &str) -> String {
 pub fn ensure_finished(root: &Path, manifest: &str) -> Result<()> {
     ensure!(
         !root.join(journal_name(manifest)).exists(),
-        "data_invalid: 存在半写发布；请显式 collect/plot 恢复"
+        "data_invalid: There are semi-written releases; please show collect/plot Restore"
     );
     Ok(())
 }
@@ -62,10 +62,10 @@ fn prepare<T: Serialize>(
 ) -> Result<()> {
     ensure!(
         single(manifest) && stage.parent() == Some(root),
-        "data_invalid: 发布路径越界"
+        "data_invalid: Release the path across the border"
     );
     let path = root.join(journal_name(manifest));
-    ensure!(!path.exists(), "input_conflict: 已有发布日志");
+    ensure!(!path.exists(), "input_conflict: Published Log");
     let mut payload = serde_json::to_vec_pretty(record)?;
     payload.push(b'\n');
     let journal = Journal {
@@ -95,7 +95,7 @@ pub fn publish<T: Serialize>(
     recover(root, manifest)
 }
 pub fn recover(root: &Path, manifest: &str) -> Result<()> {
-    ensure!(single(manifest), "data_invalid: 发布清单名非法");
+    ensure!(single(manifest), "data_invalid: Issued manifest name is illegal");
     let path = root.join(journal_name(manifest));
     if !path.exists() {
         return Ok(());
@@ -106,7 +106,7 @@ pub fn recover(root: &Path, manifest: &str) -> Result<()> {
             && j.manifest == manifest
             && single(&j.stage)
             && j.stage.starts_with(".native-"),
-        "data_invalid: 发布日志版本/路径非法"
+        "data_invalid: The release of the log version/path is illegal"
     );
     let stage = root.join(&j.stage);
     let next_digest = store::hash_bytes(&j.payload);
@@ -114,22 +114,22 @@ pub fn recover(root: &Path, manifest: &str) -> Result<()> {
         let actual = store::hash_file(&root.join(manifest))?;
         ensure!(
             actual == next_digest || j.previous_digest.as_ref() == Some(&actual),
-            "input_conflict: 发布清单被外部修改"
+            "input_conflict: The release manifest was externally modified"
         );
     } else {
         ensure!(
             j.previous_digest.is_none(),
-            "input_conflict: 旧发布清单丢失"
+            "input_conflict: Missing old release manifest"
         );
     }
-    ensure!(!j.files.is_empty(), "data_invalid: 发布文件集合为空");
+    ensure!(!j.files.is_empty(), "data_invalid: Release files as empty");
     let mut seen = std::collections::BTreeSet::new();
     for f in &j.files {
         ensure!(
             f.relative_path.components().count() == 1
                 && f.relative_path != Path::new(manifest)
                 && seen.insert(f.relative_path.clone()),
-            "data_invalid: 发布文件越界或重复"
+            "data_invalid: Cross-border issuance or duplication of documents"
         );
         if root.join(&f.relative_path).exists() {
             ensure!(
@@ -137,7 +137,7 @@ pub fn recover(root: &Path, manifest: &str) -> Result<()> {
                     || j.previous_files
                         .iter()
                         .any(|a| a.relative_path == f.relative_path && a.verify(root).is_ok()),
-                "input_conflict: 发布目标包含未知内容"
+                "input_conflict: Release target contains unknown content"
             );
         }
         if stage.join(&f.relative_path).exists() {
@@ -149,19 +149,19 @@ pub fn recover(root: &Path, manifest: &str) -> Result<()> {
     if stage.exists() {
         ensure!(
             stage.canonicalize()?.parent() == Some(root.canonicalize()?.as_path()),
-            "data_invalid: staging 链接越界"
+            "data_invalid: staging Link Crosses"
         );
         for e in fs::read_dir(&stage)? {
             let e = e?;
             let name = e.file_name();
             ensure!(
                 seen.contains(Path::new(&name)) || name == manifest,
-                "input_conflict: staging 包含未知文件"
+                "input_conflict: staging Contains unknown files"
             );
             if name == manifest {
                 ensure!(
                     store::hash_file(&e.path())? == next_digest,
-                    "input_conflict: staging 清单冲突"
+                    "input_conflict: staging manifest conflicts"
                 );
             }
         }

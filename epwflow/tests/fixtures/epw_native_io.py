@@ -27,6 +27,8 @@ mode=(ROOT/'epw-failure').read_text().strip() if (ROOT/'epw-failure').exists() e
 HA=27.211386245988;RY=13.605693122994
 coarse=value('epwread')=='.false.'
 reread=not coarse and 'band_plot = .true.' in text
+if reread and (ROOT/'comparison-failure').exists() and (ROOT/'comparison-failure').read_text().strip() == 'epw':
+    print('Error in routine comparison EPW fixture'); sys.exit(2)
 with (ROOT/'epw-calls').open('a') as f:f.write(('coarse' if coarse else 'reread' if reread else 'fine')+' '+str(Path.cwd())+'\n')
 def integer(v):return struct.pack('<'+'i'*len(v),*v)
 def real(v):return struct.pack('<'+'d'*len(v),*v)
@@ -94,12 +96,13 @@ if coarse or reread:
         qcr=[list(map(float,l.split()[:3])) for l in Path('qpoints.dat').read_text().splitlines()[1:]]
         qpoints=list(map(cart,qcr))
     modes=6
-    Path('epwdata.fmt').write_text('0.2\n'+f'{n} 1 {modes} 1 1\n'+'0\n'*27+'(0,0)\n'*(n*n+modes*modes))
-    Path('crystal.fmt').write_text('2\n6\nfixture-IO\n')
-    Path('wigner.fmt').write_text('1 1 1 1 1\n'+('0 0 0 0\n1\n')*3)
-    Path('vmedata.fmt').write_text('(0,0)\n'*(6*n*n));Path('dmedata.fmt').write_text('(0,0)\n'*(3*n*n))
-    (out/(prefix+'.epmatwp')).write_bytes(real([0.]*(2*n*n*modes)))
-    if mode=='coarse-truncated':(out/(prefix+'.epmatwp')).write_bytes(b'broken')
+    if coarse:
+        Path('epwdata.fmt').write_text('0.2\n'+f'{n} 1 {modes} 1 1\n'+'0\n'*27+'(0,0)\n'*(n*n+modes*modes))
+        Path('crystal.fmt').write_text('2\n6\n2 0\n'+' '.join(map(str,[1.,0.,0.,0.,1.,0.,0.,0.,1.]))+'\n'+' '.join(str(x) for row in bg for x in row)+'\n1\n1\n')
+        Path('wigner.fmt').write_text('1 1 1 1 1\n'+('0 0 0 0\n1\n')*3)
+        Path('vmedata.fmt').write_text('(0,0)\n'*(6*n*n));Path('dmedata.fmt').write_text('(0,0)\n'*(3*n*n))
+        (out/(prefix+'.epmatwp')).write_bytes(real([0.]*(2*n*n*modes)))
+        if mode=='coarse-truncated':(out/(prefix+'.epmatwp')).write_bytes(b'broken')
     wout='Using band disentanglement : T\n<<< Disentanglement convergence criteria satisfied >>>\nCycle: 14\n<<< Wannierisation convergence criteria satisfied >>>\nFinal State\n'
     wout+=''.join(f'WF centre and spread {i} ( 0 0 0 ) 1.25\n' for i in range(1,n+1))
     if coarse and value('wannierize')=='.true.':
@@ -108,12 +111,16 @@ if coarse or reread:
         wout+=f'| Outer: {lower} to {value("dis_win_max")} (eV)\n'
         if mode!='coarse-window-missing':
             wout+=f'| Inner: {value("dis_froz_min")} to {value("dis_froz_max")} (eV)\n'
-    if not coarse or value('wannierize')=='.true.': Path(prefix+'.wout').write_text(wout)
+    if coarse and value('wannierize')=='.true.': Path(prefix+'.wout').write_text(wout)
     kept=list(range(8,17));nk=coarse_nk
-    Path(prefix+'.ukk').write_text('9 7\n'+'\n'.join(map(str,kept))+'\n'+'(0,0)\n'*(9*n*nk)+'T\n'*(9*nk)+'T\n'*7+'F\n'*9+'0 0 0\n'*n)
+    if coarse and value('wannierize')=='.true.': Path(prefix+'.ukk').write_text('9 7\n'+'\n'.join(map(str,kept))+'\n'+'(0,0)\n'*(9*n*nk)+'T\n'*(9*nk)+'T\n'*7+'F\n'*9+'0 0 0\n'*n)
     if mode=='coarse-ukk':Path(prefix+'.ukk').write_text('9 7\n8\n')
     if reread:bands('band.eig',kpoints,[HA*.01*i+(0.1 if mode=='large-difference' else 0) for i in range(8,13)])
     if reread:bands('phband.freq',qpoints,[100/8.065543937+(20 if mode=='large-difference' else 0)]*6)
+    if reread and (ROOT/'bad-path-frequencies').exists():
+        lines=Path('phband.freq').read_text().splitlines()
+        row=lines[2].split(); row[0]='NaN'; lines[2]=' '.join(row)
+        Path('phband.freq').write_text('\n'.join(lines)+'\n')
 else:
     config=ROOT/'input.toml'
     stage=re.search(r'(?s)\[stages\."7\.epw-fine"\.epw\.INPUTEPW\](.*?)(?:\n\[|$)',config.read_text()) if config.is_file() else None

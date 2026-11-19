@@ -1,15 +1,13 @@
 //! F3 来源重验后，在同一 F1 分配内执行原生两模式搜索。
-use super::{engine::Engine, manifest::SuperconductivityManifest, source};
+use super::manifest::SuperconductivityManifest;
 use crate::{
     foundation::{
-        budget,
         config::{self, Mode},
         stage::Backend,
         store,
     },
-    interpolation::manifest::InterpolationManifest,
 };
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure,Result};
 use std::{collections::BTreeMap, path::Path};
 
 pub fn run(
@@ -28,79 +26,11 @@ pub fn run_with_retry(
     backend: Backend,
     retry: bool,
 ) -> Result<SuperconductivityManifest> {
-    let work = std::fs::canonicalize(work)?;
-    let path = crate::foundation::layout::path(&work, "interpolation/manifest.json");
-    let f3 = InterpolationManifest::load(&path)?;
-    ensure!(
-        f3.validation.all_passed(),
-        "data_invalid: 插值数据无效，F4 不得放行"
-    );
-    let input = source::bind(&work, cfg, &f3)?;
-    ensure!(
-        backend == Backend::Local,
-        "allocation: F4 只在 F1 已登记分配内顺序执行，不另行 sbatch"
-    );
-    let mut before = || -> Result<()> {
-        if !crate::foundation::native_jobs::enabled() {
-            let job = std::env::var("SLURM_JOB_ID")
-                .context("allocation: 缺少当前 Slurm 分配")?
-                .parse::<u64>()?;
-            budget::with_ledger(&cfg.budget.ledger, &cfg.budget.campaign_id, |ledger| {
-                ledger.require_allocation(job).map(|_| ())
-            })?;
-        }
-        ensure!(
-            (if crate::foundation::layout::enabled(&work) {
-                input.a2f.verify()?;
-                input.crystal.verify()?;
-                input.matrix_files.iter().try_for_each(|id| id.verify())?;
-                input.interpolation_digest.clone()
-            } else {
-                store::hash_file(&path)?
-            }) == input.interpolation_digest,
-            "input_conflict: F3 清单改变"
-        );
-        Ok(())
-    };
-    before()?;
-    let root = crate::foundation::layout::path(&work, "superconductivity");
-    std::fs::create_dir_all(&root)?;
-    let modes = match cfg.superconductivity.mode {
-        Mode::Iso => vec![Mode::Iso],
-        Mode::Aniso => vec![Mode::Aniso],
-        Mode::Both => vec![Mode::Iso, Mode::Aniso],
-    };
-    let mut native_modes = BTreeMap::new();
-    for mode in modes {
-        let name = if mode == Mode::Iso { "iso" } else { "aniso" };
-        let dir = root.join(name);
-        let mut engine = Engine::open(cfg, &input, launcher, &dir, mode)?;
-        if retry {
-            engine.prepare_resume(&mut |job| {
-                ensure!(
-                    crate::foundation::slurm::accounting(job)?.terminal,
-                    "scheduler_unknown: 原分配仍活动，不能重提中断尝试"
-                );
-                Ok(())
-            })?;
-        }
-        engine.run(&mut before)?;
-        native_modes.insert(name.to_string(), engine.result);
-    }
-    let result = publish(
-        &root,
-        f3.run_id,
-        input.interpolation_digest,
-        cfg.superconductivity.mode,
-        native_modes,
-    )?;
-    if !result.converged {
-        bail!("partial: 原生求解或搜索尚未完成，已保存分模式区间、尝试和停止原因");
-    }
-    Ok(result)
+    let _=(cfg,work,launcher,backend,retry);
+    anyhow::bail!("unsupported: adaptive Tc search has been removed; request native linearized temperatures explicitly")
 }
 
-/// 发布 F4 结构化交付；生产调用者必须先完成来源和预算检查。
+/// 发布 F4 结构化交付；生产调用者必须先完成来源和作业身份检查。
 pub fn publish(
     root: &Path,
     run_id: String,
@@ -115,7 +45,7 @@ pub fn publish(
     };
     ensure!(
         native_modes.keys().map(String::as_str).collect::<Vec<_>>() == expected,
-        "data_invalid: 缺少所选模式，不能发布原生阶段"
+        "data_invalid: selected modes missing; native stage cannot be published"
     );
     for r in native_modes.values() {
         super::verify::mode(r, &interpolation_digest)?;
@@ -132,7 +62,7 @@ pub fn publish(
     validation.check(
         "native_modes_complete",
         complete,
-        "所选模式的原生 Tc 区间、双初值及必需能隙点均须有效",
+        "All selected modes require valid native Tc intervals, both initial gaps and mandatory gap points",
     );
     validation.units.insert("temperature".into(), "K".into());
     validation.units.insert("gap".into(), "meV".into());
@@ -265,6 +195,6 @@ pub fn run_configured(
     if cfg.superconductivity.task == config::SuperconductivityTask::Gap {
         super::points::run(cfg, work, launcher, backend, retry)
     } else {
-        run_with_retry(cfg, work, launcher, backend, retry).map(|_| ())
+        super::linear::run(cfg,work,launcher,backend)
     }
 }

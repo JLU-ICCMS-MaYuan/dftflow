@@ -196,6 +196,7 @@ fn direct_mpirun_comes_from_job_environment_and_keeps_exit_status() {
 #[test]
 fn stage_allocations_complete_upstream_once_then_both_native_solvers() {
     let c = Case::numbered();
+    c.numbered_change(|cfg| {cfg.superconductivity.task=config::SuperconductivityTask::Gap;cfg.superconductivity.gap_temperatures_k=vec![20.,30.];});
     c.stage_setup();
     // 所有原生阶段都实际写两路日志，证明归集读取的是执行中的同一 .out。
     let programs = [
@@ -213,18 +214,18 @@ fn stage_allocations_complete_upstream_once_then_both_native_solvers() {
         success(c.stage_execute());
     }
     success(c.direct_advance(2, &["--stage", "superconductivity", "-s"], "solver-stage"));
-    success(c.stage_execute());
+    for mode in ["iso","aniso"] {assert_eq!(c.execute_record(c.method_task(mode)),0);}
+    success(c.direct_advance(2, &["--stage", "superconductivity", "-s"], "solver-collect"));
     let result: Value =
         store::read(&c.root.join("run/8.epw-superconductivity/manifest.json")).unwrap();
-    for mode in ["iso", "aniso"] {
-        assert_eq!(result["native_modes"][mode]["complete"], true);
-    }
+    assert_eq!(result["execution_complete"],true);
+    assert_eq!(result["plan"].as_array().unwrap().len(),4);
     assert_eq!(c.calls().0.lines().filter(|s| *s == "pw").count(), 3);
     assert_eq!(c.calls().0.lines().filter(|s| *s == "ph").count(), 1);
     assert_eq!(c.post_calls(), "postw90\n");
     assert!(c
         .root
-        .join("run/results/8.epw-superconductivity/stage-manifest.json")
+        .join("run/results/8.epw-superconductivity/native.plot.json")
         .is_file());
     let mut seen = std::collections::BTreeSet::new();
     let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
@@ -333,7 +334,7 @@ fn explicit_scf_resume_recomputes_success_each_time_and_blocks_running_jobs() {
         success(c.direct_advance(0, &args, "force-scf-reuse"));
         let cfg = config::Config::load(&c.root.join("input.toml")).unwrap();
         assert!(epwflow::foundation::stages::reusable(&cfg, epwflow::foundation::stages::Step::Scf).unwrap());
-        assert!(dir.join("snapshot").is_dir());
+        assert!(dir.join("out").is_dir());
         assert!(!dir.join("scf.err").exists());
     }
     assert_eq!(
@@ -358,15 +359,14 @@ fn direct_status_is_read_only_and_unknown_receipt_never_resubmits() {
         .status
         .success());
     let active = c.root.join("run/epw-state/1.qe-scf.log");
-    let ledger = c.root.join("fixture-ledger.json");
-    let before = (fs::read(&active).unwrap(), fs::read(&ledger).unwrap());
+    let before = fs::read(&active).unwrap();
     let out = c.direct_advance(0, &["--status", "--json"], "unknown-status");
     assert!(out.status.success());
     let status: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(status["native_task"]["state"], "unknown");
     assert_eq!(
         before,
-        (fs::read(&active).unwrap(), fs::read(&ledger).unwrap())
+        fs::read(&active).unwrap()
     );
     assert!(!c
         .direct_advance(0, &["--resume", "-s"], "unknown-retry")
@@ -420,7 +420,7 @@ pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
     let calls = c.calls();
     assert!(c
         .root
-        .join("run/results/3.qe-electronic/qe_eband/electronic-bands.png")
+        .join("run/results/3.qe-electronic/electronic-band-ranges.png")
         .is_file());
     assert!(!c.stage_submit("wannier", false).status.success());
     fs::remove_file(c.root.join("fail-dos")).unwrap();
@@ -428,18 +428,19 @@ pub(super) fn dos_failure_preserves_verified_pw_and_bands() {
     success(c.stage_execute());
     assert_eq!(pw, fs::read(receipts.join("eband.out")).unwrap());
     assert_eq!(bands, fs::read(receipts.join("scf_band.gnu")).unwrap());
-    assert_eq!(calls.0, c.calls().0, "成功 PW 和 PH 不重跑");
+    assert_eq!(calls.0, c.calls().0, "Success PW and PH Do not run again");
     assert!(c.root.join("run/3.qe-electronic/qe_eledos/scf.tdos").is_file());
+    assert!(c.root.join("run/results/3.qe-electronic/electronic.png").is_file());
 }
 
 #[test]
-fn sequential_public_commands_submit_only_once_and_reserve_budget_once() {
+fn sequential_public_commands_submit_only_once_without_a_ledger() {
     let c = Case::numbered();
     c.direct_setup();
     success(c.direct_advance(0, &["-s"], "sequential-a"));
     let again = c.direct_advance(0, &["-s"], "sequential-b");
     assert!(!again.status.success());
-    assert!(String::from_utf8_lossy(&again.stderr).contains("仍为 RUNNING"));
+    assert!(String::from_utf8_lossy(&again.stderr).contains("remains RUNNING"));
     assert_eq!(
         fs::read_to_string(c.root.join("submissions"))
             .unwrap()
@@ -447,10 +448,7 @@ fn sequential_public_commands_submit_only_once_and_reserve_budget_once() {
             .count(),
         1
     );
-    let ledger: Value = store::read(&c.root.join("fixture-ledger.json")).unwrap();
-    assert_eq!(ledger["reservations"].as_array().unwrap().len(), 0);
-    assert_eq!(ledger["allocations"].as_array().unwrap().len(), 1);
-    assert_eq!(ledger["allocations"][0]["job_id"], 201);
+    assert!(!c.root.join("fixture-ledger.json").exists());
 }
 
 #[test]
@@ -558,18 +556,18 @@ fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
     assert_eq!(c.execute_record(aniso), 0);
     assert!(!c
         .root
-        .join("run/results/8.epw-superconductivity/points.csv")
+        .join("run/results/8.epw-superconductivity/native.plot.json")
         .exists());
     assert_eq!(c.execute_record(iso), 0);
     // 原生作业只计算；公开命令归集核验后才发布。
     assert!(!c
         .root
-        .join("run/results/8.epw-superconductivity/points.csv")
+        .join("run/results/8.epw-superconductivity/native.plot.json")
         .exists());
     success(c.direct_advance(2, &args, "gap-both-collect"));
     assert!(c
         .root
-        .join("run/results/8.epw-superconductivity/points.csv")
+        .join("run/results/8.epw-superconductivity/native.plot.json")
         .is_file());
     epwflow::foundation::stage_results::check(&c.root.join("run/results")).unwrap();
     let launches: Vec<Value> = fs::read_to_string(c.root.join("epw-invocations.jsonl"))
@@ -614,8 +612,8 @@ fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
     let before = c.calls();
     success(c.direct_advance(2, &["--stage", "superconductivity", "-s"], "gap-reuse"));
     assert_eq!(before, c.calls());
-    let results = root.join("results");
-    assert!(results.join("points.csv").is_file());
+    let results = c.root.join("run/results/8.epw-superconductivity");
+    assert!(results.join("native.plot.json").is_file());
     assert!(!results.join("tc.csv").exists());
     assert!(!results.join("figures/tc_interval.svg").exists());
     assert_eq!(
@@ -635,7 +633,7 @@ fn direct_gap_points_run_exactly_once_without_search_and_reject_damage() {
     for f in epwflow::delivery::native::load(&results).unwrap().0.files {
         fs::copy(results.join(&f.relative_path), moved.join(&f.relative_path)).unwrap();
     }
-    fs::copy(results.join("manifest.json"), moved.join("manifest.json")).unwrap();
+    assert!(!results.join("manifest.json").exists());
     let matrix = &run.attempts[0].record.as_ref().unwrap().path;
     let record: epwflow::superconductivity::attempt::AttemptResult = store::read(matrix).unwrap();
     let id = &record.source.matrix_files[0];
@@ -699,7 +697,7 @@ fn direct_gap_failure_needs_resume_and_freezes_failed_native_evidence() {
     )
     .unwrap();
     assert!(run.execution_complete && run.data_complete);
-    assert_eq!(run.attempts.len(), 2, "只保留当前温度结果，失败尝试直接覆盖");
+    assert_eq!(run.attempts.len(), 2, "Save only current temperature results, failed to try to overwrite directly");
     assert!(run.attempts.iter().all(|a|a.status=="valid"));
     let calls: Vec<Value> = c
         .calls()
@@ -737,7 +735,7 @@ fn workspace_residual_locks_do_not_block_public_submission() {
         assert!(!again.status.success());
         let error = String::from_utf8_lossy(&again.stderr);
         assert!(error.contains("RUNNING"), "{error}");
-        assert!(!error.contains("锁"), "{error}");
+        assert!(!error.contains("Lock"), "{error}");
         assert_eq!(c.direct_execute(), 0);
         success(c.direct_advance(0, &["--stage", "scf", "-s"], "old-lock-complete"));
         assert_eq!(
@@ -758,7 +756,7 @@ fn wait_for_file(path: &std::path::Path) {
     while !path.exists() {
         assert!(
             start.elapsed() < std::time::Duration::from_secs(15),
-            "等待超时：{}",
+            "Waiting for timeout:{}",
             path.display()
         );
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -792,8 +790,8 @@ fn interrupted_public_submit_reenters_receipt_checks_without_workspace_lock() {
     let again = c.direct_advance(0, &["--stage", "scf", "-s"], "interrupted-repeat");
     assert!(!again.status.success());
     let error = String::from_utf8_lossy(&again.stderr);
-    assert!(error.contains("提交回执未知"), "{error}");
-    assert!(!error.contains("锁"), "{error}");
+    assert!(error.contains("submission receipt unknown"), "{error}");
+    assert!(!error.contains("Lock"), "{error}");
     assert_eq!(c.direct_task()["state"], "submission_pending");
     assert!(!c.root.join("run/epw-state/control.lock").exists());
     assert!(!c.root.join("run/epw-state/execution.lock").exists());
@@ -863,17 +861,44 @@ fn completed_task_reuses_science_after_fixed_script_and_slurm_log_are_overwritte
         .success());
 }
 
+
 #[test]
-fn budget_ledger_lock_still_blocks_budget_writes() {
+fn obsolete_budget_files_and_locks_do_not_affect_submission_or_completion() {
     let c = Case::numbered();
     c.direct_setup();
-    let ledger = c.root.join("fixture-ledger.json");
-    let guard = store::Lock::acquire(&ledger).unwrap();
-    let blocked = c.direct_advance(0, &["-s"], "budget-lock-blocked");
-    assert!(!blocked.status.success());
-    let error = String::from_utf8_lossy(&blocked.stderr);
-    assert!(error.contains("fixture-ledger.json.lock"), "{error}");
-    assert!(!c.root.join("submissions").exists());
-    drop(guard);
-    success(c.direct_advance(0, &["--resume", "-s"], "budget-lock-released"));
+    fs::create_dir_all(c.root.join("campaign")).unwrap();
+    fs::create_dir_all(c.root.join("state")).unwrap();
+    c.put("campaign/ledger.json", "invalid historical ledger");
+    c.put("fixture-ledger.json", r#"{"lanes":2,"allocations":[{"job_id":1},{"job_id":2}]}"#);
+    c.put("state/campaigns.json", "invalid historical registry");
+    let legacy = c.root.join("fixture-ledger.json");
+    let before = fs::read(&legacy).unwrap();
+    let _guard = store::Lock::acquire(&legacy).unwrap();
+    success(c.direct_advance(0, &["-s"], "obsolete-budget-submit"));
+    assert_eq!(c.direct_execute(), 0);
+    success(c.direct_advance(0, &["-s"], "obsolete-budget-complete"));
+    assert_eq!(fs::read(&legacy).unwrap(), before);
+    assert_eq!(fs::read_to_string(c.root.join("campaign/ledger.json")).unwrap(), "invalid historical ledger");
+    assert_eq!(fs::read_to_string(c.root.join("state/campaigns.json")).unwrap(), "invalid historical registry");
+    assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 1);
+}
+
+#[test]
+fn three_independent_workspaces_submit_with_one_shared_state_directory() {
+    let cases = [Case::numbered(), Case::numbered(), Case::numbered()];
+    let shared = cases[0].root.join("shared-state");
+    fs::create_dir_all(&shared).unwrap();
+    fs::write(shared.join("campaigns.json"), "invalid obsolete registry").unwrap();
+    for c in &cases {
+        c.direct_setup();
+        let mut cmd = Command::new(BINS[0]);
+        c.environment(&mut cmd, None);
+        cmd.env("EPWFLOW_LOCAL_STATE", &shared).env("XDG_STATE_HOME", &shared)
+            .args(["-c", "input.toml", "--stage", "scf", "-s"]);
+        success(cmd.output().unwrap());
+        assert_eq!(fs::read_to_string(c.root.join("submissions")).unwrap().lines().count(), 1);
+        assert!(!c.root.join("campaign").exists());
+        assert!(!c.root.join("fixture-ledger.json").exists());
+    }
+    assert_eq!(fs::read_to_string(shared.join("campaigns.json")).unwrap(), "invalid obsolete registry");
 }

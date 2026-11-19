@@ -8,4 +8,4 @@
 - [x] 生产路径与公开进程回归证据完整，忽略用例不计通过。证据：[验收记录](../acceptance.md)。
 - [x] 当前行为已按实测回写 Overview 与使用说明。证据：[EPW 总览](../../../overview/epwflow/README.md)、[模块手册](../../../../epwflow/README.md)。
 
-线上 Issue／远程 Spec 双向链接由用户管理，尚未发布或验证；此项为明确的交付边界，不标记线上完成，见 [本地 Issue](../issue-draft.md)。
+线上 Issue／远程 Spec 双向链接由用户管理，尚未发布或验证；此项为明确的交付边界，不标记线上完成，见 [GitHub Issue #58](https://github.com/JLU-ICCMS-MaYuan/dftflow/issues/58)。

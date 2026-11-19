@@ -10,13 +10,13 @@ use std::path::Path;
 pub fn resolve_win_path(input_path: &str) -> Result<(String, String)> {
     let mut win_path = input_path.to_string();
     if Path::new(&win_path).is_dir() {
-        anyhow::bail!("输入应为 *.win 文件路径，而不是目录。");
+        anyhow::bail!("The input should read *.win File path, not directory.");
     }
     if !win_path.ends_with(".win") {
         win_path = format!("{win_path}.win");
     }
     if !Path::new(&win_path).exists() {
-        anyhow::bail!("未找到 {win_path}，请检查 -i 参数。");
+        anyhow::bail!("Not found {win_path},Check it out -i Parameters.");
     }
     let prefix = Path::new(&win_path)
         .file_stem()
@@ -31,7 +31,7 @@ pub fn resolve_win_path(input_path: &str) -> Result<(String, String)> {
 /// 单一 `dos_project = [...]`（数组字面量原样保留，单值加引号），插回 section 末尾。
 pub fn load_post_config(path: &str) -> Result<Value> {
     if !Path::new(path).exists() {
-        anyhow::bail!("找不到配置文件: {path}");
+        anyhow::bail!("Profile not found: {path}");
     }
     let text = std::fs::read_to_string(path)?;
     let raw_lines: Vec<&str> = text.lines().collect();
@@ -88,8 +88,8 @@ pub fn load_post_config(path: &str) -> Result<Value> {
 
     let merged_text = out_lines.join("\n") + "\n";
     let parsed: Value = toml::from_str::<toml::Value>(&merged_text)
-        .map_err(|e| anyhow::anyhow!("解析合并后的配置失败: {e}"))
-        .and_then(|v| serde_json::to_value(v).map_err(|e| anyhow::anyhow!("TOML 转 JSON: {e}")))?;
+        .map_err(|e| anyhow::anyhow!("Parsing merged configuration failed: {e}"))
+        .and_then(|v| serde_json::to_value(v).map_err(|e| anyhow::anyhow!("TOML Turn JSON: {e}")))?;
     let mut template = wannier_post_template();
     let mut keys = crate::config::SHARED_ALLOWED_KEYS.to_vec();
     keys.push("wannier_post");
@@ -203,7 +203,7 @@ pub fn create_run_script(work_dir: &str, prefix: &str, cfg: &Value) -> Result<()
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))?;
     }
-    println!("已生成提交脚本: {script_path}");
+    println!("Submitted script generated: {script_path}");
     Ok(())
 }
 
@@ -213,7 +213,7 @@ pub fn run_postw90(work_dir: &str, prefix: &str, cfg: &Value) -> Result<()> {
         .as_str()
         .unwrap_or("postw90.x");
     let cmd_post = format!("{post_exec_path} \"{prefix}\" > POSTW90.log 2>&1");
-    println!("执行命令: {cmd_post}");
+    println!("Execute Command: {cmd_post}");
     qf_runner::run_shell(&cmd_post, Path::new(work_dir))?;
     Ok(())
 }
@@ -276,7 +276,7 @@ pub fn run(config: &str, input: &str, run: bool, submit: bool) -> Result<()> {
                     if !output_path.is_empty() {
                         let target = format!("{work_dir}/{prefix}_dos_{tag}.dat");
                         std::fs::rename(&output_path, &target)?;
-                        println!("已保存投影 DOS: {target}");
+                        println!("Saved Projection DOS: {target}");
                     }
                 }
             } else {
@@ -289,7 +289,7 @@ pub fn run(config: &str, input: &str, run: bool, submit: bool) -> Result<()> {
         // finally: 还原原始 .win
         let restore = std::fs::write(&win_path, &original_content);
         result?;
-        restore.with_context(|| format!("还原 {win_path}"))?;
+        restore.with_context(|| format!("Revert {win_path}"))?;
     } else if submit {
         qf_runner::submit_via_sbatch(Path::new(&work_dir), "run_postw90.sh")?;
     }

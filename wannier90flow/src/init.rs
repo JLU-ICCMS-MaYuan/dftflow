@@ -20,11 +20,11 @@ pub(crate) fn slurm_header(directory: &Path, cfg: &Value) -> String {
 /// `generate_kpoints_from_grid`：Gamma-centered 均匀网格。
 pub fn generate_kpoints_from_grid(grid: &[i64]) -> Result<Vec<[f64; 3]>> {
     if grid.len() != 3 {
-        anyhow::bail!("mp_grid 必须包含 3 个整数。");
+        anyhow::bail!("mp_grid Must Contain 3 Integer.");
     }
     let (n1, n2, n3) = (grid[0], grid[1], grid[2]);
     if n1.min(n2).min(n3) <= 0 {
-        anyhow::bail!("mp_grid 中的每个值必须 > 0。");
+        anyhow::bail!("mp_grid Every value of this value must > 0.");
     }
     let mut kpts = Vec::with_capacity((n1 * n2 * n3) as usize);
     for i in 0..n1 {
@@ -145,7 +145,7 @@ pub fn resolve_pw2_input_path(work_dir: &str, prefix: &str, cfg: &Value) -> (Str
 /// `ensure_pw2wan_input`：不存在时生成默认 pw2wannier90 输入。
 pub fn ensure_pw2wan_input(path: &str, prefix: &str, cfg: &Value) -> Result<()> {
     if Path::new(path).exists() {
-        println!("pw2wannier90 输入文件已存在: {path}");
+        println!("pw2wannier90 Input file already exists: {path}");
         return Ok(());
     }
     let pw2_cfg = cfg.get("pw2wannier90");
@@ -187,7 +187,7 @@ pub fn ensure_pw2wan_input(path: &str, prefix: &str, cfg: &Value) -> Result<()> 
         std::fs::create_dir_all(parent).ok();
     }
     std::fs::write(path, lines.join("\n")).with_context(|| format!("write {path}"))?;
-    println!("已生成 pw2wannier90 输入文件: {path}");
+    println!("Generated pw2wannier90 Enter File: {path}");
     Ok(())
 }
 
@@ -206,7 +206,7 @@ pub fn create_run_script(work_dir: &str, prefix: &str, cfg: &Value) -> Result<()
 
     let script_path = format!("{work_dir}/run_wannier90.sh");
     let content = format!(
-        "{}\n\ncd -- {} || exit $?\n\necho \"Prep NNKP at $(date)\"\n{exec_path} -pp \"{prefix}\" || exit $?\n\necho \"Run pw2wannier90 at $(date)\"\nif [ ! -f \"{pw2_input_name}\" ]; then\n  echo \"缺少 pw2wannier90 输入文件: {pw2_input_name}\"\n  exit 1\nfi\n{pw2_exec_path} < \"{pw2_input_name}\" > PW2WAN.log 2>&1 || exit $?\n\necho \"Run Wannier90 (requires *.amn/*.mmn ready)\"\n{exec_path} \"{prefix}\" > WANNIER90.log 2>&1\n",
+        "{}\n\ncd -- {} || exit $?\n\necho \"Prep NNKP at $(date)\"\n{exec_path} -pp \"{prefix}\" || exit $?\n\necho \"Run pw2wannier90 at $(date)\"\nif [ ! -f \"{pw2_input_name}\" ]; then\n  echo \"Missing pw2wannier90  Enter File: {pw2_input_name}\"\n  exit 1\nfi\n{pw2_exec_path} < \"{pw2_input_name}\" > PW2WAN.log 2>&1 || exit $?\n\necho \"Run Wannier90 (requires *.amn/*.mmn ready)\"\n{exec_path} \"{prefix}\" > WANNIER90.log 2>&1\n",
         slurm_header.trim(), qf_runner::shlex_quote(&directory.to_string_lossy())
     );
     std::fs::write(&script_path, content)?;
@@ -215,7 +215,7 @@ pub fn create_run_script(work_dir: &str, prefix: &str, cfg: &Value) -> Result<()
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))?;
     }
-    println!("已生成提交脚本: {script_path}");
+    println!("Submitted script generated: {script_path}");
     Ok(())
 }
 
@@ -231,15 +231,15 @@ pub fn run_wannier90_pipeline(work_dir: &str, prefix: &str, cfg: &Value) -> Resu
     let (pw2_input_path, pw2_input_name) = resolve_pw2_input_path(work_dir, prefix, cfg);
     ensure_pw2wan_input(&pw2_input_path, prefix, cfg)?;
 
-    println!("开始执行 Wannier90 流程（-pp -> pw2wannier90 -> wannier90）...");
+    println!("Start implementation Wannier90 Process(-pp -> pw2wannier90 -> wannier90)...");
     let cmd_pp = format!("{exec_path} -pp \"{prefix}\"");
-    println!("执行命令: {cmd_pp}");
+    println!("Execute Command: {cmd_pp}");
     qf_runner::run_shell(&cmd_pp, Path::new(work_dir))?;
     let cmd_pw2 = format!("{pw2_exec_path} < \"{pw2_input_name}\" > PW2WAN.log 2>&1");
-    println!("执行命令: {cmd_pw2}");
+    println!("Execute Command: {cmd_pw2}");
     qf_runner::run_shell(&cmd_pw2, Path::new(work_dir))?;
     let cmd_w90 = format!("{exec_path} \"{prefix}.win\" > WANNIER90.log 2>&1");
-    println!("执行命令: {cmd_w90}");
+    println!("Execute Command: {cmd_w90}");
     qf_runner::run_shell(&cmd_w90, Path::new(work_dir))?;
     Ok(())
 }
@@ -268,27 +268,27 @@ pub fn write_win(
     let kpt_cfg = &init_cfg["k_points"];
 
     if projections.is_empty() {
-        anyhow::bail!("配置缺少投影 (projections)。");
+        anyhow::bail!("Configure Missing Projection (projections).");
     }
     let Some(num_wann) = init_cfg.get("num_wann").and_then(|v| v.as_i64()) else {
-        anyhow::bail!("配置缺少 num_wann。");
+        anyhow::bail!("Configure Missing num_wann.");
     };
-    anyhow::ensure!(num_wann > 0, "num_wann 必须为正");
+    anyhow::ensure!(num_wann > 0, "num_wann It has to be right");
     let bands_file = init_cfg["bands_file"].as_str().context(
-        "上游默认组合选窗需要 wannier_init.bands_file 指向实际 QE NSCF XML；旧手填窗生成路径已弃用")?;
+        "Default upstream combination window selection needs wannier_init.bands_file Point to the actual QE NSCF XML ;Path to old hand-filled window generation disabled")?;
     let (bands, fermi) = qf_wannier::read_qe_bands(Path::new(bands_file))?;
-    anyhow::ensure!(bands.len() == kpoints.len(), "bands_file k 点数与生成的 Wannier 网格不符");
+    anyhow::ensure!(bands.len() == kpoints.len(), "bands_file k Points and Generated Wannier Grid does not match");
     if let Some(value) = init_cfg["fermi_energy"].as_f64() {
-        anyhow::ensure!((value - fermi).abs() <= 1e-8, "配置 Fermi 能与 bands_file 不一致");
+        anyhow::ensure!((value - fermi).abs() <= 1e-8, "Configure Fermi Can with bands_file Inconsistencies");
     }
     let exclude_bands: Vec<usize> = if let Some(value) = init_cfg.get("exclude_bands").filter(|v| !v.is_null()) {
-        value.as_array().context("exclude_bands 必须是 1-based 整数数组")?.iter()
-            .map(|v| v.as_u64().and_then(|n| usize::try_from(n).ok()).context("非法排除带号"))
+        value.as_array().context("exclude_bands It has to be 1-based Integer array")?.iter()
+            .map(|v| v.as_u64().and_then(|n| usize::try_from(n).ok()).context("Illegal exclusion of band number"))
             .collect::<Result<_>>()?
     } else { Vec::new() };
     let bound = |key: &str| -> Result<Option<f64>> {
         init_cfg.get(key).filter(|v| !v.is_null())
-            .map(|v| v.as_f64().with_context(|| format!("{key} 必须是有限能量数值"))).transpose()
+            .map(|v| v.as_f64().with_context(|| format!("{key} It must be a finite energy value"))).transpose()
     };
     let bounds = qf_wannier::Bounds {
         dis_win_min: bound("dis_win_min")?,
@@ -300,7 +300,7 @@ pub fn write_win(
         &exclude_bands, &bounds, qf_wannier::Reference::UpstreamRelative)?;
     let num_bands = bands[0].len() - selection.excluded_bands.len();
     if let Some(nb) = init_cfg["num_bands"].as_u64() {
-        anyhow::ensure!(nb as usize == num_bands, "num_bands 与排除后的实际能带数不符");
+        anyhow::ensure!(nb as usize == num_bands, "num_bands It doesn't match the actual number of strips after the exclusion");
     }
 
     let get_i = |k: &str| init_cfg.get(k).and_then(|v| v.as_i64());
@@ -334,7 +334,7 @@ pub fn write_win(
     let mut bands_plot = get_b("bands_plot");
     if let Some(bp) = bands_plot {
         if bp && band_path.is_empty() {
-            println!("提示：已请求 bands_plot，但未找到 kpoint_path，将自动关闭 bands_plot。");
+            println!("Hint: requested bands_plot ,But not found kpoint_path ,will automatically close bands_plot.");
             bands_plot = Some(false);
             out.push_str("bands_plot = false\n");
         } else {
@@ -529,14 +529,14 @@ pub fn run(input: &str, config: &str, run: bool, submit: bool) -> Result<()> {
     };
     let mut band_segments: Vec<KPathSegment> = Vec::new();
     if bands_plot_cfg && !Path::new(&kpath_file).exists() {
-        println!("检测到 bands_plot=true，开始运行 vaspkit 303 生成 KPATH.in ...");
+        println!("Detected bands_plot=true ,Start Run vaspkit 303 Generate KPATH.in ...");
         vaspkit_kpath(work_dir)?;
     }
     if Path::new(&kpath_file).exists() {
         band_segments = parse_kpath(&kpath_file)?;
-        println!("从 {kpath_file} 读取到 {} 段能带路径。", band_segments.len());
+        println!("From {kpath_file} Read To {} Part takes the path.", band_segments.len());
     } else {
-        println!("未找到 {kpath_file}，将不写入 kpoint_path。");
+        println!("Not found {kpath_file},Do Not Write kpoint_path.");
     }
 
     let basename = cfg["wannier_init"]["system_name"]
@@ -552,7 +552,7 @@ pub fn run(input: &str, config: &str, run: bool, submit: bool) -> Result<()> {
 
     write_win(&output, &struct_, &cfg, &kpoints, &band_segments)?;
     create_run_script(work_dir, &basename, &cfg)?;
-    println!("已生成 {output}，包含 {} 个 k 点。", kpoints.len());
+    println!("Generated {output},Organisation {} One k Points.", kpoints.len());
     if run {
         qf_wannier::require_projectability_keywords(Path::new(cfg["wannier90"]["executable_path"].as_str().unwrap_or("wannier90.x")))?;
         run_wannier90_pipeline(work_dir, &basename, &cfg)?;
@@ -573,13 +573,13 @@ pub fn vaspkit_kpath(work_dir: &str) -> Result<()> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| anyhow::anyhow!("vaspkit 运行失败，无法生成 KPATH.in: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("vaspkit Run failed, cannot generate KPATH.in: {e}"))?;
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(b"3\n303\n");
     }
     let status = child.wait()?;
     if !status.success() {
-        anyhow::bail!("vaspkit 运行失败，无法生成 KPATH.in");
+        anyhow::bail!("vaspkit Run failed, cannot generate KPATH.in");
     }
     Ok(())
 }

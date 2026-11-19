@@ -4,6 +4,17 @@
 
 ## 当前真实验收
 
+2026-11-18，#75 的 index／coords 原生 MgB₂ 真实 Slurm 提交、取消单 q 后续算及依赖关系测试均通过。每个 q 使用 6 路 MPI、OMP／MKL 各 1 线程，SCF 使用 12 路 MPI；每种模式有两个不可约 q 点。现场位于 `../local_run/0075-native-slurm-20261118-01/{index,coords}/`，包含配置、原生日志、Slurm 依赖、作业终态、输出指纹及声子图；详细结论见 [0075 验收](../../../docs/specs/0075-phonon-parallel-qpoints/acceptance.md#原生-mgb₂-双模式真实-slurm-验收2026-11-18)。
+
+在本机从仓库根重新执行，使用已有 Python 3.11+ 和 `toml`，不安装依赖：
+
+```bash
+python3 "test_auto/MgB2/epwflow/phonon_parallel_0075.py" \
+  --root "test_auto/MgB2/local_run/0075-native-slurm-new"
+```
+
+脚本拒绝覆盖已有目录，固定测试 k 网格 `[4,4,2]`、q 网格 `[2,2,1]`，复制一份受测 CLI 作为本次运行快照，仅通过公开入口提交和续算；不会修改源配置。测试依赖本机 `local` 分区及 `jobcomp/filetxt` 完成日志，真实调用 `pw.x`、`ph.x`、`q2r.x`、`matdyn.x`，并在两种模式中各取消一个已启动的本次 q 作业。取消后 collect 必须等待，续算只能替换该失败 q 的作业号；成功 q 的输入、日志、动力学矩阵指纹与修改时间、init／collect 作业号均保留。`result.json` 保存终态、并行重叠时间、九模频率和图片身份；完成后重复公开命令不得新增作业。此项验证调度与恢复，不作为网格收敛或 Tc 验收。
+
 `012-stage-results/` 使用 examples 当前 PBE 小网格配置，从 SCF 开始完成八阶段，含 iso／aniso 的 20、30、40 K 六点；未搜索 Tc、调整选窗或扫描网格。为了验证电子交付不依赖声子，测试顺序为 1 → 2 → 3 → 5 → 4 → 6 → 7 → 8。第 6 步后处理舍入误判修复后，显式恢复复用了成功粗网格检查点，旧制品原样保留。0051 合并版本随后补交付 15 张衰减图，源文件哈希及科学调用数保持不变；仓库与默认安装现已更新到同一受测制品。
 
 `011-stage-results/` 保留首轮路径行截断和日志归档问题的诊断证据，不作为最终通过现场。`001`～`010` 是历史科学尝试或替身进程验证，按各自清单只读追溯；历史阈值、脚本和安装说明不代表当前执行规则。[0015 历史记录](../../../docs/specs/0015-epwflow-mgb2-real-validation/acceptance.md)继续保留。
