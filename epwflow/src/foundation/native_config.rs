@@ -881,10 +881,10 @@ impl Config {
                 "configuration: stages.{stage}.pw.SYSTEM.ecutwfc/ecutrho: invalid cutoff energies"
             );
         }
-        let (scf_grid, shift) = pw_grid(&v, SCF)?;
-        let (nscf_grid, _) = pw_grid(&v, NSCF)?;
-        ensure!(scf_grid == nscf_grid && shift == [0; 3],
-            "configuration: stages.{SCF}.pw.K_POINTS={scf_grid:?}, shift={shift:?} and stages.{NSCF}.pw.K_POINTS={nscf_grid:?}: identical zero-shift grids required");
+        let (_, shift) = pw_grid(&v, SCF)?;
+        pw_grid(&v, NSCF)?;
+        ensure!(shift == [0; 3],
+            "configuration: stages.{SCF}.pw.K_POINTS: zero-shift grid required, shift={shift:?}");
         for task in [vec![SCF, "pw"], vec![NSCF, "pw"], vec![ELECTRONIC, "qe_eband", "pw"]] {
             let system = at(&v, &[task.as_slice(), &["SYSTEM"]].concat())?;
             for keys in [["nr1", "nr2", "nr3"], ["nr1s", "nr2s", "nr3s"]] {

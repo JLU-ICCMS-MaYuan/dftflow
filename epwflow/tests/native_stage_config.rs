@@ -280,13 +280,38 @@ fn scf_array_grids_validate_render_and_roundtrip() {
 }
 
 #[test]
+fn scf_and_nscf_grids_can_differ() {
+    for scf_grid in [[8, 8, 8], [4, 4, 4]] {
+        let mut c = Case::new();
+        let nscf_grid = [6, 6, 6];
+        c.cfg.set_native(&[SCF, "pw", "K_POINTS"], json!(scf_grid)).unwrap();
+        c.cfg.set_native(&[NSCF, "pw", "K_POINTS"], json!(nscf_grid)).unwrap();
+        for stage in [WANNIER, COARSE, FINE] {
+            for key in ["nk1", "nk2", "nk3"] {
+                c.cfg.set_native(&[stage, "epw", "INPUTEPW", key], json!(6)).unwrap();
+            }
+        }
+        c.cfg.validate().unwrap();
+        let settings = QeSettings::from_config(&c.cfg).unwrap();
+        let scf = settings.scf_input("./out").unwrap();
+        assert!(scf.contains(&format!(
+            "K_POINTS automatic\n  {} {} {} 0 0 0\n",
+            scf_grid[0], scf_grid[1], scf_grid[2]
+        )), "{scf}");
+        let nscf = settings.nscf_input("./out").unwrap();
+        let expected = qf_input::pw::uniform_kpoints_text(nscf_grid.map(i64::from), true).unwrap();
+        assert!(nscf.contains(&expected), "{nscf}");
+    }
+}
+
+#[test]
 fn scf_array_shift_is_rendered_but_epw_zero_shift_constraint_is_preserved() {
     let mut c = Case::new();
     c.cfg.set_native(&[SCF, "pw", "K_POINTS"], json!([4, 4, 2, 1, 0, 1])).unwrap();
     assert_eq!(c.cfg.qe.scf.k_shift, [1, 0, 1]);
     let input = QeSettings::from_config(&c.cfg).unwrap().scf_input("./out").unwrap();
     assert!(input.contains("K_POINTS automatic\n  4 4 2 1 0 1\n"), "{input}");
-    assert!(format!("{:#}", c.cfg.validate().unwrap_err()).contains("identical zero-shift grids required"));
+    assert!(format!("{:#}", c.cfg.validate().unwrap_err()).contains("zero-shift grid required"));
 }
 
 #[test]
