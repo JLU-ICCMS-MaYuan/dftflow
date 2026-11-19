@@ -72,10 +72,10 @@ lpade = true          # 从 false 改为 true，启用 Padé 解析延拓
 npade = 50            # 新增，使用 50% 的 Matsubara 点进行 Padé 延拓
 ```
 
-**可选添加（如果想要超导态密度）**：
+**超导态密度说明**：
 ```toml
 # 在 [stages."8.epw-superconductivity".iso] 的末尾添加
-qdos_k = true         # 新增，计算超导态密度
+当前 EPW 5.9 会自动生成 qdos_*，不添加额外开关
 ```
 
 #### 2.2 修改各向异性（aniso）配置
@@ -88,10 +88,10 @@ lpade = true          # 从 false 改为 true，启用 Padé 解析延拓
 npade = 50            # 新增，使用 50% 的 Matsubara 点进行 Padé 延拓
 ```
 
-**可选添加（如果想要超导态密度）**：
+**超导态密度说明**：
 ```toml
 # 在 [stages."8.epw-superconductivity".aniso] 的末尾添加
-qdos_k = true         # 新增，计算超导态密度
+当前 EPW 5.9 会自动生成 qdos_*，不添加额外开关
 ```
 
 #### 2.3 完整修改示例
@@ -165,7 +165,7 @@ cd /home/mayuan/code/dftflow/examples/MgB2/ubuntu
 rm -rf run/8.epw-superconductivity
 
 # 删除旧的第 8 步结果目录（如果存在）
-rm -rf run/results/8.epw-superconductivity
+rm -rf results/8.epw-superconductivity
 ```
 
 ### 步骤 5：重新提交第 8 步超导计算
@@ -218,7 +218,7 @@ ls -lh run/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/i
 # MgB2.pade_iso_030.00    - 30K 各向同性实频能隙
 # MgB2.pade_iso_040.00    - 40K 各向同性实频能隙
 
-# 检查 qdos 文件（如果添加了 qdos_k = true）
+# 检查 qdos 文件（如果已有 qdos 数据）
 ls -lh run/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/*/MgB2.qdos_*
 
 # 查看生成的文件格式
@@ -244,7 +244,7 @@ head -20 run/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV
 
 ```bash
 # 检查自动绘图结果
-ls -lh run/results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/
+ls -lh results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/
 
 # 应该看到五类图（SVG/PNG/PDF）：
 # fig1_coupling_strength.*           - 电声耦合三联图
@@ -268,7 +268,7 @@ epw_superconductivity --plot-only -c input.toml
 epw_superconductivity --plot-only -c input.toml 2>&1 | tee plot.log
 
 # 查看绘图结果
-ls -lh run/results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/*/
+ls -lh results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/*/
 ```
 
 ### 步骤 10：验证五类图的数据完整性
@@ -277,7 +277,7 @@ ls -lh run/results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degauss
 cd /home/mayuan/code/dftflow/examples/MgB2/ubuntu
 
 # 检查每类图的数据来源
-for dir in run/results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/*/; do
+for dir in results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/*/; do
     echo "=== $dir ==="
     ls -lh "$dir"/*.svg 2>/dev/null || echo "No SVG files"
     ls -lh "$dir"/*.png 2>/dev/null || echo "No PNG files"
@@ -285,7 +285,7 @@ for dir in run/results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-deg
 done
 
 # 查看绘图报告（JSON 格式）
-cat run/results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/*.plot.json | jq
+cat results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/*.plot.json | jq
 ```
 
 ---
@@ -303,7 +303,7 @@ cd /home/mayuan/code/dftflow/examples/MgB2/ubuntu
 evince ../../../examples/MgB2/Wed.9.Mori.pdf &
 
 # 打开生成的图表
-eog run/results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/fig*.png &
+eog results/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/aniso-mu0.1-Tc20-40-degaussq0.5meV/fig*.png &
 ```
 
 **对比检查清单**：
@@ -382,7 +382,7 @@ Not enough Matsubara points for Pade continuation
 **症状**：计算完成但没有 `MgB2.qdos_*` 文件
 
 **可能原因**：
-1. 未添加 `qdos_k = true` 参数
+1. 未添加额外 qdos 开关
 2. EPW 版本不支持 qdos 输出（需要 EPW 5.8+）
 
 **解决方法**：
@@ -450,7 +450,7 @@ header = """
   - [ ] 文件大小合理（约 1-10 MB，取决于采样点数）
 
 - [ ] **第 8 步超导态密度数据**（可选新增）：
-  - [ ] `MgB2.qdos_020/030/040` 存在（如果添加了 `qdos_k = true`）
+  - [ ] `MgB2.qdos_020/030/040` 存在（EPW 5.9 在 Padé 成功后自动生成）
   - [ ] 每个文件包含 2 列数据（ω, N_S(ω)/N_F）
 
 ### 绘图结果验收
@@ -508,7 +508,7 @@ header = """
 2. **EPW 官方文档**：
    - `lpade` 参数：Padé 解析延拓开关
    - `npade` 参数：Matsubara 点采样比例（%）
-   - `qdos_k` 参数：超导态密度输出开关
+   - EPW 5.9 的 qdos 自动输出：第二列为 `N_S/N_F`
 
 3. **相关 Issue 和 Spec**：
    - Issue #76：EPW 超导计算自动绘图
@@ -520,3 +520,11 @@ header = """
 **手册版本**：v1.0  
 **最后更新**：2026-11-19  
 **维护者**：Claude (Opus 5.5)
+
+## 十、2026-11-19 实际执行结果与格式修订
+
+本次已按两处配置修改执行：iso 和 aniso 均设置 lpade = true、npade = 50；没有添加 qdos_k。EPW 5.9 源码中的 supercond_iso.f90 和 supercond_aniso.f90 在 Padé 成功后都会调用 dos_quasiparticle，实际生成 MgB2.qdos_020.00、030.00、040.00。
+
+实际结果目录是配置目录下的 results/8.epw-superconductivity/，不是 run/results/。aniso 方法目录生成五类图各 SVG/PNG/PDF 一份，共 15 个文件；iso 方法目录生成其可用的图 1、3、4、5，共 12 个文件。图 2 使用 Mori Fig. 7 对应的各向异性虚频与 Padé 数据，iso 目录没有各向异性输入时留空属于预期。
+
+EPW qdos 首行是未注释的 w [eV] N_S/N_F，第二列已经是归一化值；绘图解析器会跳过该列头并避免再次除以费米面 DOS。原生 imag_aniso_gap0_* 和 pade_aniso_gap0_* 是分布／辅助文件，不会被误当作逐状态温度曲线或 Padé 主文件。

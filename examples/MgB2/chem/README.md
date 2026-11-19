@@ -2,7 +2,7 @@
 
 ## 配置与范围
 
-本目录使用 `input.toml` 的 `schema_version = 2` 八阶段 EPW 配置。结构复用 `test_auto/MgB2/MgB2.vasp`，高对称路径复用 `examples/MgB2/KPATH.in`；运行现场在 `run/`，账本在 `campaign/ledger.json`。相对路径以配置文件所在目录为基准。
+本目录使用 `input.toml` 的 `schema_version = 2` 八阶段 EPW 配置。结构复用 `test_auto/MgB2/MgB2.vasp`，高对称路径复用 `examples/MgB2/KPATH.in`；运行现场在 `run/`；已移除 `[budget]` 和 campaign／ledger 用户配置。相对路径以配置文件所在目录为基准。
 
 - SCF／NSCF：PBE，k 网格 4×4×2，截断能 40／320 Ry，MV 展宽 0.02 Ry，NSCF 16 条带。
 - 声子：index 模式，粗 q 网格 2×2×1。
@@ -17,7 +17,7 @@
 
 DFTFlow 固定入口在 `/public/home/mayuan/code/dftflow/bin/<模块>/`，QE 7.6／EPW 6.1 在 `external/q-e/bin/`，独立 Wannier90 4.0.3 在 `external/wannier90/bin/`。科学程序路径在配置中显式指定。
 
-Slurm 使用 `cpu` 分区、1 节点、56 任务，每任务 1 CPU、30 分钟时限；实际启动 32 路 MPI，EPW pool 为 32，OMP／MKL 线程为 1。粗 k 网格共 32 点，当前单 image 路径要求每 pool 一个 MPI，因此不能直接启动 56 路。作业加载 `/public/home/mayuan/intel/oneapi/setvars.sh`，使用 `LC_ALL=C`、`LANG=C`。这里是 chem 集群，不采用 Ubuntu 的 local 分区和 12 路约定。
+Slurm 使用 `cpu` 分区、1 节点、56 任务，每任务 1 CPU、30 分钟时限；实际启动 32 路 MPI，EPW pool 为 32，OMP／MKL 线程为 1。粗 k 网格共 32 点；当前保留 32 路 MPI／32 pool 的已校验组合。作业加载 `/public/home/mayuan/intel/oneapi/setvars.sh`，使用 `LC_ALL=C`、`LANG=C`。这里是 chem 集群，不采用 Ubuntu 的 local 分区和 12 路约定。
 
 DFTFlow 的私有运行库使用仓库固定前缀 `bin/.native/linux-x86_64`；不要把其中的 glibc 目录加入全局 `LD_LIBRARY_PATH`。配置环境脚本只负责科学程序，DFTFlow 的 ELF 加载器直接使用私有前缀。
 
@@ -87,4 +87,18 @@ epw_superconductivity -c "input.toml" --stage superconductivity -s
 
 ## 2026-11-19 更新
 
-已重新获取远程 master（最新仍为 62d7537），重新编译发布全部主产品和 dyn0 工具；三个 EPW 入口的配置检查均通过。当前解析器仍强制要求 `[budget]` 及固定 campaign 身份，时间和存储限制已取消，暂保留作业登记字段；这不表示废弃工作已完成。本次未提交新的科学作业，前述 4 MPI SCF 为历史验收记录。
+已重新获取远程 master（最新仍为 62d7537），重新编译发布全部主产品和 dyn0 工具；三个 EPW 入口的配置检查均通过。该次基于旧 Gitee 源，仍保留了 `[budget]`；此判断已被下述 GitHub 同步更新替代。本次未提交新的科学作业，前述 4 MPI SCF 为历史验收记录。
+
+
+## 2026-11-19：同步 GitHub 当前配置
+
+已将 GitHub `origin/master` 更新到 `f1e9d1f`（2026-11-19 13:11），重新编译安装，并按现行模板迁移本目录 `input.toml`：
+
+- 删除废弃 `[budget]`，不再配置 `campaign_id` 或 `ledger`。
+- 程序路径改为 `[programs]` 中的 `pw_x`／`ph_x`／`epw_x` 等平铺字段，各自保留独立参数数组；后处理程序全部显式指定本机位置。
+- 公共参数使用 `[baseparams]`；第 3 步及第 5／8 步用途参数按新版结构嵌套，k／q 网格使用数组。
+- 保留 chem 的 PBE 赝势、40／320 Ry、4×4×2 粗 k、2×2×1 粗 q、8×8×4／4×4×2 细网格、16 带／5 Wannier、初始四窗及 20／30／40 K 设置；不以 Ubuntu 新模板的较大网格替换本机测试参数。
+
+旧阶段日志来自旧安装版本，不能用来证明新版本已完成后续阶段；先运行三个 `--check --json`，再按当前程序提示推进。历史计算数据保留，本次不提交新的科学计算。
+
+本次验证：全部主产品及 dyn0 的 release 编译和固定入口发布成功；三个 EPW 命令的新版配置检查通过；native_stage_config、program_paths、superconductivity_plot 共 40 项通过。

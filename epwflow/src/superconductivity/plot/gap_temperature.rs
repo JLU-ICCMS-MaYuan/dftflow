@@ -20,16 +20,8 @@ fn temperature_panels(task: &PlotTask, iso: bool) -> Result<Option<Vec<Panel>>> 
                 }
             }
         } else {
-            // 原生 gap0 是五列分布而非逐状态表。优先四列契约，拒绝后改读完整虚频表。
-            for path in &data.aniso_gap0 {
-                if let Some(t) = task.load(path, io::temperature) {
-                    if let Some(mut extracted) =
-                        task.load(path, |p| io::extract_leading_gaps(&[(t, p.into())]))
-                    {
-                        series.append(&mut extracted);
-                    }
-                }
-            }
+            // 原生 gap0 是五列分布，不含逐状态身份；不能把分箱伪装成 k 点。
+            // 温度曲线只从同一方法目录的完整四列 imag_aniso 首 Matsubara 数据读取。
             for path in &data.imag_aniso {
                 let Ok(t) = io::temperature(path) else {
                     task.warn(format!("{}: invalid temperature", path.display()));

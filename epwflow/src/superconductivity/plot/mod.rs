@@ -57,9 +57,15 @@ impl DataFiles {
                 }
             } else if name.contains(".imag_aniso_gap0_") && io::temperature(&path).is_ok() {
                 data.aniso_gap0.push(path);
-            } else if name.contains(".imag_aniso_") && io::temperature(&path).is_ok() {
+            } else if name.contains(".imag_aniso_")
+                && !name.contains(".imag_aniso_gap_FS_")
+                && io::temperature(&path).is_ok()
+            {
                 data.imag_aniso.push(path);
-            } else if name.contains(".pade_aniso_") && io::temperature(&path).is_ok() {
+            } else if name.contains(".pade_aniso_")
+                && !name.contains(".pade_aniso_gap0_")
+                && io::temperature(&path).is_ok()
+            {
                 data.pade_aniso.push(path);
             } else if name.contains(".imag_iso_") && io::temperature(&path).is_ok() {
                 data.imag_iso.push(path);

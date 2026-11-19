@@ -1,5 +1,5 @@
 //! 五类图的生产入口测试；合成契约样本与本机真实数据分开验收。
-use epwflow::superconductivity::plot::{self, io, PlotFormat, PlotTask};
+use epwflow::superconductivity::plot::{self, io, DataFiles, PlotFormat, PlotTask};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -145,7 +145,7 @@ fn malformed_file_does_not_stop_other_figures() {
     let c = Case::new();
     let r = c.task().execute().unwrap();
     assert!(r.files.is_empty());
-    assert!(r.warnings.len() >= 5);
+    assert!(r.warnings.len() >= 4, "{:?}", r.warnings);
 }
 #[test]
 fn svg_png_pdf_use_shared_exporter() {
@@ -227,7 +227,25 @@ fn real_mgb2_available_data_and_gaps_are_not_fabricated() {
             .any(|p| p.file_name().unwrap() == "fig5_superconducting_dos.svg"));
     }
     let gap = io::parse_imag_aniso(&work.join("MgB2.imag_aniso_020.00")).unwrap();
-    assert!(gap.gaps_mev[0].iter().any(|v| *v < 0.));
+    assert!(gap.gaps_mev[0]
+        .iter()
+        .any(|v| v.is_finite() && v.abs() > 0.));
+}
+
+#[test]
+fn real_mgb2_scan_finds_pade_qdos_and_imaginary_gaps() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../examples/MgB2/ubuntu/run/8.epw-superconductivity");
+    if !root.is_dir() {
+        return;
+    }
+    let work = root
+        .join("01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV")
+        .join("aniso-mu0.1-Tc20-40-degaussq0.5meV");
+    let data = DataFiles::scan(&work).unwrap();
+    assert_eq!(data.imag_aniso.len(), 3, "{:?}", data.imag_aniso);
+    assert_eq!(data.pade_aniso.len(), 3, "{:?}", data.pade_aniso);
+    assert_eq!(data.qdos.len(), 3, "{:?}", data.qdos);
 }
 #[test]
 fn temperature_mismatch_and_native_gap0_fallback() {

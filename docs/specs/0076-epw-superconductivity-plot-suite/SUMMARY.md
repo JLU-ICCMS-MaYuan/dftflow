@@ -96,10 +96,10 @@ lpade = true          # 从 false 改为 true
 npade = 50            # 新增这一行
 ```
 
-### 可选（如果要生成图 5）：
+### 图 5 不需要额外开关：
 
 ```toml
-qdos_k = true         # 新增这一行（在两个部分的末尾）
+# 当前 EPW 5.9 在 lpade 成功后自动生成 qdos_*
 ```
 
 ---
@@ -132,7 +132,7 @@ ls -lh run/8.epw-superconductivity/01.k8x8x4-q4x4x4-fsthick0.4eV-degaussw0.1eV/a
 epw_superconductivity --plot-only -c input.toml
 
 # 8. 查看生成的图表
-ls -lh run/results/8.epw-superconductivity/*/*/fig*.{svg,png,pdf}
+ls -lh results/8.epw-superconductivity/*/*/fig*.{svg,png,pdf}
 ```
 
 ---
@@ -205,3 +205,9 @@ ls -lh run/results/8.epw-superconductivity/*/*/fig*.{svg,png,pdf}
 ---
 
 **更新完成**。所有文档已同步方案 B 的内容，你可以立即开始操作。
+
+## 2026-11-19 执行修订
+
+- input.toml 只需在 iso/aniso 两处设置 lpade = true、npade = 50。
+- 当前 EPW 5.9 不使用 qdos_k 配置；Padé 成功后自动写出 qdos，qdos 第二列已经是 N_S/N_F。
+- 绘图结果写入 examples/MgB2/ubuntu/results/8.epw-superconductivity/。
